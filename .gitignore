@@ -1,0 +1,36 @@
+**.pyc
+**/*.pyc
+**/build
+**/test.ll
+**/*.log
+build
+python/dist
+python/*.egg-info
+test
+**/.pytest_cache
+cscope.*
+tags
+.*.sw?
+docs/source/samples
+docs/source/tutorials
+soda_*
+out
+rapidjson
+project_*
+
+# Downloaded files
+*.params
+*.gz
+
+# Generated files
+project
+rapidjson
+
+.vscode
+*.prj
+*.png
+*.pdf
+*.dot
+*.egg-info
+
+docs/source/gallery

@@ -1,0 +1,9 @@
+sphinx==4.5.0
+sphinx-gallery
+sphinx-copybutton
+autodocsumm
+piccolo-theme
+matplotlib
+sphinxcontrib-googleanalytics
+sphinx_rtd_theme
+numpy

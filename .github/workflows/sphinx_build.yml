@@ -1,0 +1,74 @@
+# Copyright HeteroCL authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Build documentation"
+# This workflow is triggered on pushes to the repository.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+
+jobs:
+  build:
+    # This job runs on Linux
+    runs-on: ubuntu-latest
+    container:
+      image: zzzdavid/llvm-project:15.0.0
+      options: --user root
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.ref }}
+    - name: Build HCL-MLIR
+      run: |
+        git clone https://github.com/chhzh123/heterocl.git
+        cd heterocl
+        git checkout parser
+        export BUILD_DIR=/home/circleci/llvm-project/build
+        export PREFIX=/home/circleci/llvm-project/build
+        git clone https://github.com/cornell-zhang/hcl-dialect.git
+        cd hcl-dialect
+        mkdir -p build && cd build
+        cmake -G "Unix Makefiles" .. \
+            -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
+            -DPYTHON_BINDING=ON \
+            -DPython3_EXECUTABLE=`which python3`
+        make -j2
+        cd tools/hcl/python_packages/hcl_core
+        python3 -m pip install . -v
+    - name: Build docs
+      run: |
+        cd heterocl
+        export HCL_HOME=$(pwd)
+        export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
+        export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
+        export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
+        export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+        python3 -m pip install -r requirements.txt
+        cd docs
+        python3 -m pip install -r requirements.txt
+        make html
+    # Create an artifact of the html output using Github action: https://github.com/actions/upload-artifact
+    - uses: actions/upload-artifact@v1
+      with:
+        name: DocumentationHTML
+        path: docs/build/html/
+    - name: Install rsync
+      run: |
+        apt-get update && apt-get install -y rsync
+    - name: Deploy docs
+      uses: JamesIves/github-pages-deploy-action@releases/v3
+      if: github.event_name == 'push'
+      with:
+        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+        BRANCH: gh-pages
+        FOLDER: docs/build/html
