@@ -54,7 +54,7 @@ jobs:
         export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
         export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
         python3 -m pip install -r requirements.txt
-        cd docs
+        cd ../docs
         python3 -m pip install -r requirements.txt
         make html
     # Create an artifact of the html output using Github action: https://github.com/actions/upload-artifact
