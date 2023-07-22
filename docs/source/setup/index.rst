@@ -88,6 +88,7 @@ Trouble Shooting
 If you encounter the following error message when running the test command, please check if you have set up the environment correctly.
 
 .. code-block:: console
+
   >>> import heterocl.ir
   Traceback (most recent call last):
     File "<stdin>", line 1, in <module>

@@ -86,6 +86,7 @@ print(s.module)
 # - ``memref``: Used to define the shape and memory layout of the tensors.
 # - ``affine``: Used to define the loop structure.
 # - ``arith``: Used to conduct actual arithmetic operations.
+# - ``linalg``: Currently only used to initialize the tensors.
 #
 # And the inner-most dot-product is explicitly represented by a sequence of load/store
 # operations and some arithmetic operations.
