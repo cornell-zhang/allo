@@ -37,6 +37,7 @@ Documentation for HeteroCL's new frontend.
    :caption: Tutorials
 
    gallery/tutorial_01_get_started.rst
+   gallery/tutorial_02_vhls.rst
 
 
 .. toctree::
