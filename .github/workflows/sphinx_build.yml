@@ -79,6 +79,6 @@ jobs:
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-        repository-name: chhzh123/allo-docs
+        REPOSITORY_NAME: chhzh123/allo-docs
         BRANCH: gh-pages
         FOLDER: docs/build/html
