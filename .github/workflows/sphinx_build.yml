@@ -74,3 +74,11 @@ jobs:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
         FOLDER: docs/build/html
+    - name: Deploy docs to website
+      uses: JamesIves/github-pages-deploy-action@releases/v3
+      if: github.event_name == 'push'
+      with:
+        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+        repository-name: chhzh123/allo-docs
+        BRANCH: gh-pages
+        FOLDER: docs/build/html
