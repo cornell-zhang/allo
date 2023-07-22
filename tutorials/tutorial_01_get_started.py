@@ -49,6 +49,8 @@ from heterocl.ir.types import int32
 #
 # The ``hcl.grid`` API is used to define the iteration space of the loop.
 # The arguments denote the upper bounds of the loop iterators.
+# Notice the above range-loop is also supported in the new HeteroCL, so
+# users have more flexibility to define the loop structure.
 
 
 def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
