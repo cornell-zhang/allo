@@ -34,3 +34,4 @@ rapidjson
 *.egg-info
 
 docs/source/gallery
+log
