@@ -12,7 +12,7 @@ HeteroCL New Frontend Documentations
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="Author: Yi-Hsiang Lai (seanlatias@github)">
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
 
 .. only:: html
 

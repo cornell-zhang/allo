@@ -60,7 +60,7 @@ Then, you can pull the latest version of HeteroCL from GitHub by running
 Maintaining your own copy of HeteroCL is important since later on you will probably need to change the source code.
 To expose HeteroCL to your environment, please change the **last line** of the setup script :code:`~/setup.sh` to
 
-.. code-block:: console
+.. code-block:: bash
 
   export PYTHONPATH=$PYTHONPATH:~/heterocl
 
@@ -81,3 +81,19 @@ Now, you can run the following command to test if the installation is successful
   $ python -c "import heterocl as hcl; hcl.init(hcl.Int())"
 
 If you see no error message, then the installation is successful. Otherwise, please contact us for help.
+
+
+Trouble Shooting
+----------------
+If you encounter the following error message when running the test command, please check if you have set up the environment correctly.
+
+.. code-block:: console
+
+  >>> import heterocl.ir
+  Traceback (most recent call last):
+    File "<stdin>", line 1, in <module>
+  ModuleNotFoundError: No module named 'heterocl.ir'
+
+To be more specific, you can check if your :code:`PYTHONPATH` environment variable **ONLY** contains the repository path of your
+own HeteroCL (by typing ``echo $PYTHONPATH`` in the terminal).
+Otherwise, you can ``unset PYTHONPATH`` to remove the environment variable and run the setup script again.

@@ -165,8 +165,8 @@ to download the full example code</p>
 </div>
 <section class="sphx-glr-example-title" id="getting-started">
 <span id="sphx-glr-gallery-tutorial-01-get-started-py"></span><h1>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline"><span>¶</span></a></h1>
-<p><strong>Author</strong>: Yi-Hsiang Lai (<a class="reference external" href="mailto:seanlatias&#37;&#52;&#48;github">seanlatias<span>&#64;</span>github</a>)</p>
-<p>In this tutorial, we demonstrate the basic usage of HeteroCL.</p>
+<p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
+<p>In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.</p>
 <section id="import-heterocl">
 <h2>Import HeteroCL<a class="headerlink" href="#import-heterocl" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>We usually use <code class="docutils literal notranslate"><span class="pre">hcl</span></code> as the acronym of HeteroCL.</p>
@@ -174,104 +174,219 @@ to download the full example code</p>
 </pre></div>
 </div>
 </section>
-<section id="initialize-the-environment">
-<h2>Initialize the Environment<a class="headerlink" href="#initialize-the-environment" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>We need to initialize the environment for each HeteroCL application. We can
-do this by calling the API <code class="docutils literal notranslate"><span class="pre">hcl.init()</span></code>. We can also set the default data
-type for every computation via this API. The default data type is <strong>32-bit</strong>
-integers.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>For more information on the data types, please see
-<span class="xref std std-ref">sphx_glr_gallery_tutorial_05_dtype.py</span>.</p>
-</div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">hcl</span><span class="o">.</span><span class="n">init</span><span class="p">()</span>
-</pre></div>
-</div>
-</section>
 <section id="algorithm-definition">
 <h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>After we initialize, we define the algorithm by using a Python function
-definition, where the arguments are the input tensors. The function can
-optionally return tensors as outputs. In this example, the two inputs are a
-scalar <cite>a</cite> and a tensor <cite>A</cite>, and the output is also a tensor <cite>B</cite>. The main
-difference between a scalar and a tensor is that <em>a scalar cannot be updated</em>.</p>
-<p>Within the algorithm definition, we use HeteroCL APIs to describe the
-operations. In this example, we use a tensor-based declarative-style
-operation <code class="docutils literal notranslate"><span class="pre">hcl.compute</span></code>. We also show the equivalent  Python code.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>For more information on the APIs, please see
-<span class="xref std std-ref">sphx_glr_gallery_tutorial_03_api.py</span></p>
-</div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">simple_compute</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
-    <span class="n">B</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">A</span><span class="p">[</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">]</span> <span class="o">+</span> <span class="n">a</span><span class="o">.</span><span class="n">v</span><span class="p">,</span> <span class="s2">&quot;B&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    The above API is equivalent to the following Python code.</span>
+<p>HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+users can first define the algorithm in a high-level language and then
+optimize the program with various hardware customization techniques (i.e.,
+schedule primitives). Here we show how to define a general matrix multiplication
+(GEMM) in the new HeteroCL DSL.</p>
+<p>We first import the necessary data types from HeteroCL. In this example, we
+use <code class="docutils literal notranslate"><span class="pre">int32</span></code> as the data type for all the variables.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
 
-<span class="sd">    for x in range(0, 10):</span>
-<span class="sd">        for y in range(0, 10):</span>
-<span class="sd">            B[x, y] = A[x, y] + a</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="c1"># We then define a function that takes two 32x32 matrices as inputs and</span>
+<span class="c1"># returns a 32x32 matrix as output. The variable declaration is defined</span>
+<span class="c1"># as ``&lt;name&gt;: &lt;type&gt;[&lt;shape&gt;]``. We require **strict type annotation** in</span>
+<span class="c1"># HeteroCL&#39;s kernels, which is different from directly programming in Python.</span>
+<span class="c1">#</span>
+<span class="c1"># Inside the kernel, we provide a shorthand for the loop iterator. For example,</span>
+<span class="c1"># ``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following</span>
+<span class="c1"># nested for-loop:</span>
+<span class="c1">#</span>
+<span class="c1"># .. code-block:: python</span>
+<span class="c1">#</span>
+<span class="c1">#    for i in range(32):</span>
+<span class="c1">#        for j in range(32):</span>
+<span class="c1">#            for k in range(32):</span>
+<span class="c1">#                # body</span>
+<span class="c1">#</span>
+<span class="c1"># The ``hcl.grid`` API is used to define the iteration space of the loop.</span>
+<span class="c1"># The arguments denote the upper bounds of the loop iterators.</span>
+<span class="c1"># Notice the above range-loop is also supported in the new HeteroCL, so</span>
+<span class="c1"># users have more flexibility to define the loop structure.</span>
 
-    <span class="k">return</span> <span class="n">B</span>
+
+<span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
 </pre></div>
 </div>
 </section>
-<section id="inputs-outputs-definition">
-<h2>Inputs/Outputs Definition<a class="headerlink" href="#inputs-outputs-definition" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>One of the advantages of such <em>modularized algorithm definition</em> is that we
-can reuse the defined function with different input settings. We use
-<code class="docutils literal notranslate"><span class="pre">hcl.placeholder</span></code> to set the inputs, where we specify the shape, name,
-and data type. The shape must be specified and should be in the form of a
-<strong>tuple</strong>. If it is empty (i.e., <cite>()</cite>), the returned object is a <em>scalar</em>.
-Otherwise, the returned object is a <em>tensor</em>. The rest two fields are
-optional. In this example, we define a scalar input <cite>a</cite> and a
-two-dimensional tensor input <cite>A</cite>.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>For more information on the interfaces, please see
-<code class="xref py py-obj docutils literal notranslate"><span class="pre">heterocl.placeholder</span></code></p>
-</div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">placeholder</span><span class="p">((),</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span>
-<span class="n">A</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">placeholder</span><span class="p">((</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="s2">&quot;A&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</section>
-<section id="apply-hardware-customization">
-<h2>Apply Hardware Customization<a class="headerlink" href="#apply-hardware-customization" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>Usually, our next step is apply various hardware customization techniques to
-the application. In this tutorial, we skip this step which will be discussed
-in the later tutorials. However, we still need to build a default schedule
-by using <code class="docutils literal notranslate"><span class="pre">hcl.create_schedule</span></code> whose inputs are a list of inputs and
-the Python function that defines the algorithm.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">([</span><span class="n">a</span><span class="p">,</span> <span class="n">A</span><span class="p">],</span> <span class="n">simple_compute</span><span class="p">)</span>
+<section id="create-the-schedule">
+<h2>Create the Schedule<a class="headerlink" href="#create-the-schedule" title="Permalink to this headline"><span>¶</span></a></h2>
+<p>After defining the algorithm, we can start applying transformations to the
+kernel in order to achieve high performance. We call <code class="docutils literal notranslate"><span class="pre">hcl.customize</span></code> to
+create a schedule for the kernel, where <strong>schedule</strong> denotes the set of
+transformations.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="inspect-the-intermediate-representation-ir">
 <h2>Inspect the Intermediate Representation (IR)<a class="headerlink" href="#inspect-the-intermediate-representation-ir" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>A HeteroCL program will be lowered to an IR before backend code generation.
-HeteroCL provides an API for users to inspect the lowered IR. This could be
-helpful for debugging.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">hcl</span><span class="o">.</span><span class="n">lower</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+<p>HeteroCL leverage the <a class="reference external" href="https://mlir.llvm.org/">MLIR</a> infrastructure to
+represent the program, and we can directly print out the IR by using
+<code class="docutils literal notranslate"><span class="pre">s.module</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+
+<span class="c1"># Let&#39;s take a close look at the generated IR. Basically an MLIR program is</span>
+<span class="c1"># a set of operations in different dialects, and the operations are referred</span>
+<span class="c1"># to as **&lt;dialect&gt;.&lt;ops&gt;**. In this example, we can see that the generated IR</span>
+<span class="c1"># contains the following dialects:</span>
+<span class="c1">#</span>
+<span class="c1"># - ``func``: Used to define the function signature and the return of the function.</span>
+<span class="c1"># - ``memref``: Used to define the shape and memory layout of the tensors.</span>
+<span class="c1"># - ``affine``: Used to define the loop structure.</span>
+<span class="c1"># - ``arith``: Used to conduct actual arithmetic operations.</span>
+<span class="c1"># - ``linalg``: Currently only used to initialize the tensors.</span>
+<span class="c1">#</span>
+<span class="c1"># And the inner-most dot-product is explicitly represented by a sequence of load/store</span>
+<span class="c1"># operations and some arithmetic operations.</span>
+<span class="c1"># HeteroCL also attaches some attributes to the operations, including the tensor</span>
+<span class="c1"># names, loop names, and operation names, which are further used for optimization.</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @top(%arg0: memref&lt;1xi32&gt;, %arg1: memref&lt;10x10xi32&gt;) -&gt; memref&lt;10x10xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %0 = memref.alloc() {name = &quot;B&quot;} : memref&lt;10x10xi32&gt;
-    affine.for %arg2 = 0 to 10 {
-      affine.for %arg3 = 0 to 10 {
-        %1 = affine.load %arg1[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;10x10xi32&gt;
-        %2 = affine.load %arg0[0] {from = &quot;a&quot;} : memref&lt;1xi32&gt;
-        %3 = arith.extsi %1 : i32 to i33
-        %4 = arith.extsi %2 : i32 to i33
-        %5 = arith.addi %3, %4 : i33
-        %6 = arith.trunci %5 : i33 to i32
-        affine.store %6, %0[%arg2, %arg3] {to = &quot;B&quot;} : memref&lt;10x10xi32&gt;
-      } {loop_name = &quot;y&quot;}
-    } {loop_name = &quot;x&quot;, op_name = &quot;B&quot;}
-    return %0 : memref&lt;10x10xi32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
+    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
+    linalg.fill ins(%c0_i32 : i32) outs(%0 : memref&lt;32x32xi32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %1 = affine.load %arg0[%arg2, %arg4] : memref&lt;32x32xi32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] : memref&lt;32x32xi32&gt;
+          %3 = arith.muli %1, %2 : i32
+          %4 = affine.load %0[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+          %5 = arith.addi %4, %3 : i32
+          affine.store %5, %0[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+        } {loop_name = &quot;k&quot;}
+      } {loop_name = &quot;j&quot;}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_k&quot;}
+    return %0 : memref&lt;32x32xi32&gt;
+  }
+}
+</pre></div>
+</div>
+</section>
+<section id="apply-transformations">
+<h2>Apply Transformations<a class="headerlink" href="#apply-transformations" title="Permalink to this headline"><span>¶</span></a></h2>
+<p>Next, we start transforming the program by using the schedule primitives.
+We can refer to the loops by using the loop names. For example, to split
+the outer-most loop into two, we can call the <code class="docutils literal notranslate"><span class="pre">.split()</span></code> primitive as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+
+<span class="c1"># We can print out the IR again to see the effect of the transformation.</span>
+<span class="c1">#</span>
+<span class="c1"># .. note::</span>
+<span class="c1">#</span>
+<span class="c1">#   In the new HeteroCL DSL, all the transformations are applied **immediately**,</span>
+<span class="c1">#   so users can directly see the changes after they apply the transformations.</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+
+<span class="c1"># We can see that the outer-most loop is split into two loops, and the</span>
+<span class="c1"># original loop is replaced by the two new loops. The new loops are named</span>
+<span class="c1"># as ``i.outer`` and ``i.inner``.</span>
+<span class="c1">#</span>
+<span class="c1"># Similarly, we can split the ``j`` loop:</span>
+
+<span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+
+<span class="c1"># We can further reorder the loops by using ``.reorder()``. For example, we</span>
+<span class="c1"># can move the splitted outer loops together, and move the splitted inner</span>
+<span class="c1"># loops together.</span>
+
+<span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;i.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;j.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;i.inner&quot;</span><span class="p">,</span> <span class="s2">&quot;j.inner&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+
+<span class="c1"># We can see the changes from the loop names in the generated IR.</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
+module {
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
+    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
+    linalg.fill ins(%c0_i32 : i32) outs(%0 : memref&lt;32x32xi32&gt;)
+    affine.for %arg2 = 0 to 4 {
+      affine.for %arg3 = 0 to 8 {
+        affine.for %arg4 = 0 to 32 {
+          affine.for %arg5 = 0 to 32 {
+            %2 = affine.apply #map(%arg3, %arg2)
+            %3 = affine.load %arg0[%2, %arg5] : memref&lt;32x32xi32&gt;
+            %4 = affine.load %arg1[%arg5, %arg4] : memref&lt;32x32xi32&gt;
+            %5 = arith.muli %3, %4 : i32
+            %6 = affine.load %0[%2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+            %7 = arith.addi %6, %5 : i32
+            affine.store %7, %0[%2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+          } {loop_name = &quot;k&quot;}
+        } {loop_name = &quot;j&quot;}
+      } {loop_name = &quot;i.inner&quot;}
+    } {loop_name = &quot;i.outer&quot;, op_name = &quot;S_i_j_k&quot;}
+    %1 = hcl.create_op_handle &quot;S_i_j_k&quot;
+    return %0 : memref&lt;32x32xi32&gt;
+  }
+}
+
+#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
+module {
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
+    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
+    linalg.fill ins(%c0_i32 : i32) outs(%0 : memref&lt;32x32xi32&gt;)
+    affine.for %arg2 = 0 to 4 {
+      affine.for %arg3 = 0 to 8 {
+        affine.for %arg4 = 0 to 4 {
+          affine.for %arg5 = 0 to 8 {
+            affine.for %arg6 = 0 to 32 {
+              %2 = affine.apply #map(%arg5, %arg4)
+              %3 = affine.apply #map(%arg3, %arg2)
+              %4 = affine.load %arg0[%3, %arg6] : memref&lt;32x32xi32&gt;
+              %5 = affine.load %arg1[%arg6, %2] : memref&lt;32x32xi32&gt;
+              %6 = arith.muli %4, %5 : i32
+              %7 = affine.load %0[%3, %2] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+              %8 = arith.addi %7, %6 : i32
+              affine.store %8, %0[%3, %2] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+            } {loop_name = &quot;k&quot;}
+          } {loop_name = &quot;j.inner&quot;}
+        } {loop_name = &quot;j.outer&quot;}
+      } {loop_name = &quot;i.inner&quot;}
+    } {loop_name = &quot;i.outer&quot;, op_name = &quot;S_i_j_k&quot;}
+    %1 = hcl.create_op_handle &quot;S_i_j_k&quot;
+    return %0 : memref&lt;32x32xi32&gt;
+  }
+}
+
+#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
+module {
+  func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
+    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    %c0_i32 = arith.constant 0 : i32
+    linalg.fill ins(%c0_i32 : i32) outs(%0 : memref&lt;32x32xi32&gt;)
+    affine.for %arg2 = 0 to 4 {
+      affine.for %arg3 = 0 to 4 {
+        affine.for %arg4 = 0 to 8 {
+          affine.for %arg5 = 0 to 8 {
+            affine.for %arg6 = 0 to 32 {
+              %1 = affine.apply #map(%arg5, %arg3)
+              %2 = affine.apply #map(%arg4, %arg2)
+              %3 = affine.load %arg0[%2, %arg6] : memref&lt;32x32xi32&gt;
+              %4 = affine.load %arg1[%arg6, %1] : memref&lt;32x32xi32&gt;
+              %5 = arith.muli %3, %4 : i32
+              %6 = affine.load %0[%2, %1] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+              %7 = arith.addi %6, %5 : i32
+              affine.store %7, %0[%2, %1] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+            } {loop_name = &quot;k&quot;}
+          } {loop_name = &quot;j.inner&quot;}
+        } {loop_name = &quot;i.inner&quot;}
+      } {loop_name = &quot;j.outer&quot;}
+    } {loop_name = &quot;i.outer&quot;, op_name = &quot;S_i_j_k&quot;}
+    return %0 : memref&lt;32x32xi32&gt;
   }
 }
 </pre></div>
@@ -279,78 +394,48 @@ helpful for debugging.</p>
 </section>
 <section id="create-the-executable">
 <h2>Create the Executable<a class="headerlink" href="#create-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>The next step is to build the executable by using <code class="docutils literal notranslate"><span class="pre">hcl.build</span></code>. You can
-define the target of the executable, where the default target is <cite>llvm</cite>.
-Namely, the executable will be run on CPU. The input for this API is the
-schedule we just created.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">f</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+<p>The next step is to generate the executable from the schedule. We can
+directly call <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function on the schedule and specify the target
+hardware as <code class="docutils literal notranslate"><span class="pre">llvm</span></code>. By default, HeteroCL will generate a LLVM program that
+can be executed on the CPU. Otherwise, you can also specify the target as
+<code class="docutils literal notranslate"><span class="pre">vhls</span></code> to generate a Vivado HLS program that can be synthesized to an FPGA
+accelerator.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;llvm&quot;</span><span class="p">)</span>
+
+<span class="c1"># .. note::</span>
+<span class="c1">#</span>
+<span class="c1">#   ``s.build(target=&quot;llvm&quot;)`` is equivalent to ``s.build()``.</span>
 </pre></div>
 </div>
 </section>
 <section id="prepare-the-inputs-outputs-for-the-executable">
 <h2>Prepare the Inputs/Outputs for the Executable<a class="headerlink" href="#prepare-the-inputs-outputs-for-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>To run the generated executable, we can feed it with Numpy arrays by using
-<code class="docutils literal notranslate"><span class="pre">hcl.asarray</span></code>. This API transforms a Numpy array to a HeteroCL container
-that is used as inputs/outputs to the executable. In this tutorial, we
-randomly generate the values for our input tensor <cite>A</cite>. Note that since we
-return a new tensor at the end of our algorithm, we also need to prepare
-an input array for tensor <cite>B</cite>.</p>
+<p>To run the executable, we can generate random NumPy arrays as input data, and
+directly feed them into the executable. HeteroCL will automatically handle the
+input data and generate corresponding internal wrappers for LLVM to execute.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 
-<span class="n">hcl_a</span> <span class="o">=</span> <span class="mi">10</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="n">hcl_A</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">)</span>
-<span class="n">hcl_B</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.zeros.html#numpy.zeros" title="numpy.zeros" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">zeros</span></a><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
+<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">))</span>
+<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">))</span>
+<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.zeros.html#numpy.zeros" title="numpy.zeros" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">zeros</span></a><span class="p">((</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="run-the-executable">
 <h2>Run the Executable<a class="headerlink" href="#run-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>With the prepared inputs/outputs, we can finally feed them to our executable.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">f</span><span class="p">(</span><span class="n">hcl_a</span><span class="p">,</span> <span class="n">hcl_A</span><span class="p">,</span> <span class="n">hcl_B</span><span class="p">)</span>
+<p>With the prepared inputs/outputs, we can feed them to our executable.
+Notice the output is also passed into the HeteroCL as a function argument,
+and the result will be directly written into the output array.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-<section id="view-the-results">
-<h2>View the Results<a class="headerlink" href="#view-the-results" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>To view the results, we can transform the HeteroCL tensors back to Numpy
-arrays by using <code class="docutils literal notranslate"><span class="pre">asnumpy()</span></code>.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <span class="n">hcl_A</span><span class="o">.</span><span class="n">asnumpy</span><span class="p">()</span>
-<a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a> <span class="o">=</span> <span class="n">hcl_B</span><span class="o">.</span><span class="n">asnumpy</span><span class="p">()</span>
+<p>Finally, we can do a sanity check to see if the results are correct.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np</span><span class="o">.</span><span class="n">matmul</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="n">hcl_a</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
+<a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>10
-[[62 25 50 69  9 28  4 35 85 92]
- [80 83 85 20 99 43  5 15 99 75]
- [28 52 29 19 86 94 99 81  5 92]
- [30 51 88  8 23 32 91 86 50 90]
- [43 54 36 82 37 18 78 84 87 17]
- [66  7 94 85 81 22 13 41 30 28]
- [42  4 87 65 84 74 83 30 80 21]
- [81 42 11 36 47 42  0 53  0 66]
- [58 78 94 83  0 77 72 34 79  6]
- [28 81 39 61 33  6 26 65 51 31]]
-[[ 72  35  60  79  19  38  14  45  95 102]
- [ 90  93  95  30 109  53  15  25 109  85]
- [ 38  62  39  29  96 104 109  91  15 102]
- [ 40  61  98  18  33  42 101  96  60 100]
- [ 53  64  46  92  47  28  88  94  97  27]
- [ 76  17 104  95  91  32  23  51  40  38]
- [ 52  14  97  75  94  84  93  40  90  31]
- [ 91  52  21  46  57  52  10  63  10  76]
- [ 68  88 104  93  10  87  82  44  89  16]
- [ 38  91  49  71  43  16  36  75  61  41]]
-</pre></div>
-</div>
-<p>Let’s run a test</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">assert</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.array_equal.html#numpy.array_equal" title="numpy.array_equal" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">array_equal</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">+</span> <span class="mi">10</span><span class="p">)</span>
-</pre></div>
-</div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.158 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.380 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/8d3af32bb0bffe35477d27ae08e595fe/tutorial_01_get_started.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_01_get_started.py</span></code></a></p>
@@ -379,15 +464,13 @@ arrays by using <code class="docutils literal notranslate"><span class="pre">asn
                 <ul>
 <li><a class="reference internal" href="#">Getting Started</a><ul>
 <li><a class="reference internal" href="#import-heterocl">Import HeteroCL</a></li>
-<li><a class="reference internal" href="#initialize-the-environment">Initialize the Environment</a></li>
 <li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
-<li><a class="reference internal" href="#inputs-outputs-definition">Inputs/Outputs Definition</a></li>
-<li><a class="reference internal" href="#apply-hardware-customization">Apply Hardware Customization</a></li>
+<li><a class="reference internal" href="#create-the-schedule">Create the Schedule</a></li>
 <li><a class="reference internal" href="#inspect-the-intermediate-representation-ir">Inspect the Intermediate Representation (IR)</a></li>
+<li><a class="reference internal" href="#apply-transformations">Apply Transformations</a></li>
 <li><a class="reference internal" href="#create-the-executable">Create the Executable</a></li>
 <li><a class="reference internal" href="#prepare-the-inputs-outputs-for-the-executable">Prepare the Inputs/Outputs for the Executable</a></li>
 <li><a class="reference internal" href="#run-the-executable">Run the Executable</a></li>
-<li><a class="reference internal" href="#view-the-results">View the Results</a></li>
 </ul>
 </li>
 </ul>

@@ -21,15 +21,15 @@
 Getting Started
 ===============
 
-**Author**: Yi-Hsiang Lai (seanlatias@github)
+**Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
-In this tutorial, we demonstrate the basic usage of HeteroCL.
+In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.
 
 Import HeteroCL
 ---------------
 We usually use ``hcl`` as the acronym of HeteroCL.
 
-.. GENERATED FROM PYTHON SOURCE LINES 16-19
+.. GENERATED FROM PYTHON SOURCE LINES 16-20
 
 .. code-block:: default
 
@@ -43,104 +43,54 @@ We usually use ``hcl`` as the acronym of HeteroCL.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 20-31
 
-Initialize the Environment
---------------------------
-We need to initialize the environment for each HeteroCL application. We can
-do this by calling the API ``hcl.init()``. We can also set the default data
-type for every computation via this API. The default data type is **32-bit**
-integers.
-
-.. note::
-
-   For more information on the data types, please see
-   :ref:`sphx_glr_gallery_tutorial_05_dtype.py`.
-
-.. GENERATED FROM PYTHON SOURCE LINES 31-34
-
-.. code-block:: default
-
-
-    hcl.init()
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 35-51
+.. GENERATED FROM PYTHON SOURCE LINES 21-31
 
 Algorithm Definition
 --------------------
-After we initialize, we define the algorithm by using a Python function
-definition, where the arguments are the input tensors. The function can
-optionally return tensors as outputs. In this example, the two inputs are a
-scalar `a` and a tensor `A`, and the output is also a tensor `B`. The main
-difference between a scalar and a tensor is that *a scalar cannot be updated*.
+HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+users can first define the algorithm in a high-level language and then
+optimize the program with various hardware customization techniques (i.e.,
+schedule primitives). Here we show how to define a general matrix multiplication
+(GEMM) in the new HeteroCL DSL.
 
-Within the algorithm definition, we use HeteroCL APIs to describe the
-operations. In this example, we use a tensor-based declarative-style
-operation ``hcl.compute``. We also show the equivalent  Python code.
+We first import the necessary data types from HeteroCL. In this example, we
+use ``int32`` as the data type for all the variables.
 
-.. note::
-
-   For more information on the APIs, please see
-   :ref:`sphx_glr_gallery_tutorial_03_api.py`
-
-.. GENERATED FROM PYTHON SOURCE LINES 51-66
+.. GENERATED FROM PYTHON SOURCE LINES 31-63
 
 .. code-block:: default
 
 
+    from heterocl.ir.types import int32
 
-    def simple_compute(a, A):
-        B = hcl.compute(A.shape, lambda x, y: A[x, y] + a.v, "B")
-        """
-        The above API is equivalent to the following Python code.
-
-        for x in range(0, 10):
-            for y in range(0, 10):
-                B[x, y] = A[x, y] + a
-        """
-
-        return B
-
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 67-82
-
-Inputs/Outputs Definition
--------------------------
-One of the advantages of such *modularized algorithm definition* is that we
-can reuse the defined function with different input settings. We use
-``hcl.placeholder`` to set the inputs, where we specify the shape, name,
-and data type. The shape must be specified and should be in the form of a
-**tuple**. If it is empty (i.e., `()`), the returned object is a *scalar*.
-Otherwise, the returned object is a *tensor*. The rest two fields are
-optional. In this example, we define a scalar input `a` and a
-two-dimensional tensor input `A`.
-
-.. note::
-
-   For more information on the interfaces, please see
-   :obj:`heterocl.placeholder`
-
-.. GENERATED FROM PYTHON SOURCE LINES 82-86
-
-.. code-block:: default
+    # We then define a function that takes two 32x32 matrices as inputs and
+    # returns a 32x32 matrix as output. The variable declaration is defined
+    # as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
+    # HeteroCL's kernels, which is different from directly programming in Python.
+    #
+    # Inside the kernel, we provide a shorthand for the loop iterator. For example,
+    # ``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following
+    # nested for-loop:
+    #
+    # .. code-block:: python
+    #
+    #    for i in range(32):
+    #        for j in range(32):
+    #            for k in range(32):
+    #                # body
+    #
+    # The ``hcl.grid`` API is used to define the iteration space of the loop.
+    # The arguments denote the upper bounds of the loop iterators.
+    # Notice the above range-loop is also supported in the new HeteroCL, so
+    # users have more flexibility to define the loop structure.
 
 
-    a = hcl.placeholder((), "a")
-    A = hcl.placeholder((10, 10), "A")
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in hcl.grid(32, 32, 32):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
 
 
 
@@ -149,22 +99,22 @@ two-dimensional tensor input `A`.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 87-94
 
-Apply Hardware Customization
-----------------------------
-Usually, our next step is apply various hardware customization techniques to
-the application. In this tutorial, we skip this step which will be discussed
-in the later tutorials. However, we still need to build a default schedule
-by using ``hcl.create_schedule`` whose inputs are a list of inputs and
-the Python function that defines the algorithm.
+.. GENERATED FROM PYTHON SOURCE LINES 64-70
 
-.. GENERATED FROM PYTHON SOURCE LINES 94-97
+Create the Schedule
+-------------------
+After defining the algorithm, we can start applying transformations to the
+kernel in order to achieve high performance. We call ``hcl.customize`` to
+create a schedule for the kernel, where **schedule** denotes the set of
+transformations.
+
+.. GENERATED FROM PYTHON SOURCE LINES 70-73
 
 .. code-block:: default
 
 
-    s = hcl.create_schedule([a, A], simple_compute)
+    s = hcl.customize(gemm)
 
 
 
@@ -173,20 +123,36 @@ the Python function that defines the algorithm.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 98-103
+.. GENERATED FROM PYTHON SOURCE LINES 74-79
 
 Inspect the Intermediate Representation (IR)
 --------------------------------------------
-A HeteroCL program will be lowered to an IR before backend code generation.
-HeteroCL provides an API for users to inspect the lowered IR. This could be
-helpful for debugging.
+HeteroCL leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
+represent the program, and we can directly print out the IR by using
+``s.module``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 103-106
+.. GENERATED FROM PYTHON SOURCE LINES 79-98
 
 .. code-block:: default
 
 
-    print(hcl.lower(s))
+    print(s.module)
+
+    # Let's take a close look at the generated IR. Basically an MLIR program is
+    # a set of operations in different dialects, and the operations are referred
+    # to as **<dialect>.<ops>**. In this example, we can see that the generated IR
+    # contains the following dialects:
+    #
+    # - ``func``: Used to define the function signature and the return of the function.
+    # - ``memref``: Used to define the shape and memory layout of the tensors.
+    # - ``affine``: Used to define the loop structure.
+    # - ``arith``: Used to conduct actual arithmetic operations.
+    # - ``linalg``: Currently only used to initialize the tensors.
+    #
+    # And the inner-most dot-product is explicitly represented by a sequence of load/store
+    # operations and some arithmetic operations.
+    # HeteroCL also attaches some attributes to the operations, including the tensor
+    # names, loop names, and operation names, which are further used for optimization.
 
 
 
@@ -197,20 +163,23 @@ helpful for debugging.
  .. code-block:: none
 
     module {
-      func.func @top(%arg0: memref<1xi32>, %arg1: memref<10x10xi32>) -> memref<10x10xi32> attributes {itypes = "ss", otypes = "s"} {
-        %0 = memref.alloc() {name = "B"} : memref<10x10xi32>
-        affine.for %arg2 = 0 to 10 {
-          affine.for %arg3 = 0 to 10 {
-            %1 = affine.load %arg1[%arg2, %arg3] {from = "A"} : memref<10x10xi32>
-            %2 = affine.load %arg0[0] {from = "a"} : memref<1xi32>
-            %3 = arith.extsi %1 : i32 to i33
-            %4 = arith.extsi %2 : i32 to i33
-            %5 = arith.addi %3, %4 : i33
-            %6 = arith.trunci %5 : i33 to i32
-            affine.store %6, %0[%arg2, %arg3] {to = "B"} : memref<10x10xi32>
-          } {loop_name = "y"}
-        } {loop_name = "x", op_name = "B"}
-        return %0 : memref<10x10xi32>
+      func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> {
+        %0 = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%0 : memref<32x32xi32>)
+        affine.for %arg2 = 0 to 32 {
+          affine.for %arg3 = 0 to 32 {
+            affine.for %arg4 = 0 to 32 {
+              %1 = affine.load %arg0[%arg2, %arg4] : memref<32x32xi32>
+              %2 = affine.load %arg1[%arg4, %arg3] : memref<32x32xi32>
+              %3 = arith.muli %1, %2 : i32
+              %4 = affine.load %0[%arg2, %arg3] {to = "C"} : memref<32x32xi32>
+              %5 = arith.addi %4, %3 : i32
+              affine.store %5, %0[%arg2, %arg3] {to = "C"} : memref<32x32xi32>
+            } {loop_name = "k"}
+          } {loop_name = "j"}
+        } {loop_name = "i", op_name = "S_i_j_k"}
+        return %0 : memref<32x32xi32>
       }
     }
 
@@ -218,97 +187,47 @@ helpful for debugging.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 107-113
+.. GENERATED FROM PYTHON SOURCE LINES 99-104
 
-Create the Executable
+Apply Transformations
 ---------------------
-The next step is to build the executable by using ``hcl.build``. You can
-define the target of the executable, where the default target is `llvm`.
-Namely, the executable will be run on CPU. The input for this API is the
-schedule we just created.
+Next, we start transforming the program by using the schedule primitives.
+We can refer to the loops by using the loop names. For example, to split
+the outer-most loop into two, we can call the ``.split()`` primitive as follows:
 
-.. GENERATED FROM PYTHON SOURCE LINES 113-116
-
-.. code-block:: default
-
-
-    f = hcl.build(s)
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 117-125
-
-Prepare the Inputs/Outputs for the Executable
----------------------------------------------
-To run the generated executable, we can feed it with Numpy arrays by using
-``hcl.asarray``. This API transforms a Numpy array to a HeteroCL container
-that is used as inputs/outputs to the executable. In this tutorial, we
-randomly generate the values for our input tensor `A`. Note that since we
-return a new tensor at the end of our algorithm, we also need to prepare
-an input array for tensor `B`.
-
-.. GENERATED FROM PYTHON SOURCE LINES 125-133
+.. GENERATED FROM PYTHON SOURCE LINES 104-134
 
 .. code-block:: default
 
 
-    import numpy as np
+    s.split("i", factor=8)
 
-    hcl_a = 10
-    np_A = np.random.randint(100, size=A.shape)
-    hcl_A = hcl.asarray(np_A)
-    hcl_B = hcl.asarray(np.zeros(A.shape))
+    # We can print out the IR again to see the effect of the transformation.
+    #
+    # .. note::
+    #
+    #   In the new HeteroCL DSL, all the transformations are applied **immediately**,
+    #   so users can directly see the changes after they apply the transformations.
 
+    print(s.module)
 
+    # We can see that the outer-most loop is split into two loops, and the
+    # original loop is replaced by the two new loops. The new loops are named
+    # as ``i.outer`` and ``i.inner``.
+    #
+    # Similarly, we can split the ``j`` loop:
 
+    s.split("j", factor=8)
+    print(s.module)
 
+    # We can further reorder the loops by using ``.reorder()``. For example, we
+    # can move the splitted outer loops together, and move the splitted inner
+    # loops together.
 
+    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    print(s.module)
 
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 134-137
-
-Run the Executable
-------------------
-With the prepared inputs/outputs, we can finally feed them to our executable.
-
-.. GENERATED FROM PYTHON SOURCE LINES 137-140
-
-.. code-block:: default
-
-
-    f(hcl_a, hcl_A, hcl_B)
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 141-145
-
-View the Results
-----------------
-To view the results, we can transform the HeteroCL tensors back to Numpy
-arrays by using ``asnumpy()``.
-
-.. GENERATED FROM PYTHON SOURCE LINES 145-153
-
-.. code-block:: default
-
-
-    np_A = hcl_A.asnumpy()
-    np_B = hcl_B.asnumpy()
-
-    print(hcl_a)
-    print(np_A)
-    print(np_B)
+    # We can see the changes from the loop names in the generated IR.
 
 
 
@@ -318,41 +237,182 @@ arrays by using ``asnumpy()``.
 
  .. code-block:: none
 
-    10
-    [[62 25 50 69  9 28  4 35 85 92]
-     [80 83 85 20 99 43  5 15 99 75]
-     [28 52 29 19 86 94 99 81  5 92]
-     [30 51 88  8 23 32 91 86 50 90]
-     [43 54 36 82 37 18 78 84 87 17]
-     [66  7 94 85 81 22 13 41 30 28]
-     [42  4 87 65 84 74 83 30 80 21]
-     [81 42 11 36 47 42  0 53  0 66]
-     [58 78 94 83  0 77 72 34 79  6]
-     [28 81 39 61 33  6 26 65 51 31]]
-    [[ 72  35  60  79  19  38  14  45  95 102]
-     [ 90  93  95  30 109  53  15  25 109  85]
-     [ 38  62  39  29  96 104 109  91  15 102]
-     [ 40  61  98  18  33  42 101  96  60 100]
-     [ 53  64  46  92  47  28  88  94  97  27]
-     [ 76  17 104  95  91  32  23  51  40  38]
-     [ 52  14  97  75  94  84  93  40  90  31]
-     [ 91  52  21  46  57  52  10  63  10  76]
-     [ 68  88 104  93  10  87  82  44  89  16]
-     [ 38  91  49  71  43  16  36  75  61  41]]
+    #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
+    module {
+      func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> {
+        %0 = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%0 : memref<32x32xi32>)
+        affine.for %arg2 = 0 to 4 {
+          affine.for %arg3 = 0 to 8 {
+            affine.for %arg4 = 0 to 32 {
+              affine.for %arg5 = 0 to 32 {
+                %2 = affine.apply #map(%arg3, %arg2)
+                %3 = affine.load %arg0[%2, %arg5] : memref<32x32xi32>
+                %4 = affine.load %arg1[%arg5, %arg4] : memref<32x32xi32>
+                %5 = arith.muli %3, %4 : i32
+                %6 = affine.load %0[%2, %arg4] {to = "C"} : memref<32x32xi32>
+                %7 = arith.addi %6, %5 : i32
+                affine.store %7, %0[%2, %arg4] {to = "C"} : memref<32x32xi32>
+              } {loop_name = "k"}
+            } {loop_name = "j"}
+          } {loop_name = "i.inner"}
+        } {loop_name = "i.outer", op_name = "S_i_j_k"}
+        %1 = hcl.create_op_handle "S_i_j_k"
+        return %0 : memref<32x32xi32>
+      }
+    }
+
+    #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
+    module {
+      func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> {
+        %0 = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%0 : memref<32x32xi32>)
+        affine.for %arg2 = 0 to 4 {
+          affine.for %arg3 = 0 to 8 {
+            affine.for %arg4 = 0 to 4 {
+              affine.for %arg5 = 0 to 8 {
+                affine.for %arg6 = 0 to 32 {
+                  %2 = affine.apply #map(%arg5, %arg4)
+                  %3 = affine.apply #map(%arg3, %arg2)
+                  %4 = affine.load %arg0[%3, %arg6] : memref<32x32xi32>
+                  %5 = affine.load %arg1[%arg6, %2] : memref<32x32xi32>
+                  %6 = arith.muli %4, %5 : i32
+                  %7 = affine.load %0[%3, %2] {to = "C"} : memref<32x32xi32>
+                  %8 = arith.addi %7, %6 : i32
+                  affine.store %8, %0[%3, %2] {to = "C"} : memref<32x32xi32>
+                } {loop_name = "k"}
+              } {loop_name = "j.inner"}
+            } {loop_name = "j.outer"}
+          } {loop_name = "i.inner"}
+        } {loop_name = "i.outer", op_name = "S_i_j_k"}
+        %1 = hcl.create_op_handle "S_i_j_k"
+        return %0 : memref<32x32xi32>
+      }
+    }
+
+    #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
+    module {
+      func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> {
+        %0 = memref.alloc() {name = "C"} : memref<32x32xi32>
+        %c0_i32 = arith.constant 0 : i32
+        linalg.fill ins(%c0_i32 : i32) outs(%0 : memref<32x32xi32>)
+        affine.for %arg2 = 0 to 4 {
+          affine.for %arg3 = 0 to 4 {
+            affine.for %arg4 = 0 to 8 {
+              affine.for %arg5 = 0 to 8 {
+                affine.for %arg6 = 0 to 32 {
+                  %1 = affine.apply #map(%arg5, %arg3)
+                  %2 = affine.apply #map(%arg4, %arg2)
+                  %3 = affine.load %arg0[%2, %arg6] : memref<32x32xi32>
+                  %4 = affine.load %arg1[%arg6, %1] : memref<32x32xi32>
+                  %5 = arith.muli %3, %4 : i32
+                  %6 = affine.load %0[%2, %1] {to = "C"} : memref<32x32xi32>
+                  %7 = arith.addi %6, %5 : i32
+                  affine.store %7, %0[%2, %1] {to = "C"} : memref<32x32xi32>
+                } {loop_name = "k"}
+              } {loop_name = "j.inner"}
+            } {loop_name = "i.inner"}
+          } {loop_name = "j.outer"}
+        } {loop_name = "i.outer", op_name = "S_i_j_k"}
+        return %0 : memref<32x32xi32>
+      }
+    }
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 154-155
 
-Let's run a test
+.. GENERATED FROM PYTHON SOURCE LINES 135-143
 
-.. GENERATED FROM PYTHON SOURCE LINES 155-157
+Create the Executable
+---------------------
+The next step is to generate the executable from the schedule. We can
+directly call ``.build()`` function on the schedule and specify the target
+hardware as ``llvm``. By default, HeteroCL will generate a LLVM program that
+can be executed on the CPU. Otherwise, you can also specify the target as
+``vhls`` to generate a Vivado HLS program that can be synthesized to an FPGA
+accelerator.
+
+.. GENERATED FROM PYTHON SOURCE LINES 143-150
 
 .. code-block:: default
 
 
-    assert np.array_equal(np_B, np_A + 10)
+    mod = s.build(target="llvm")
+
+    # .. note::
+    #
+    #   ``s.build(target="llvm")`` is equivalent to ``s.build()``.
+
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 151-156
+
+Prepare the Inputs/Outputs for the Executable
+---------------------------------------------
+To run the executable, we can generate random NumPy arrays as input data, and
+directly feed them into the executable. HeteroCL will automatically handle the
+input data and generate corresponding internal wrappers for LLVM to execute.
+
+.. GENERATED FROM PYTHON SOURCE LINES 156-163
+
+.. code-block:: default
+
+
+    import numpy as np
+
+    np_A = np.random.randint(0, 100, (32, 32))
+    np_B = np.random.randint(0, 100, (32, 32))
+    np_C = np.zeros((32, 32), dtype=np.int32)
+
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 164-169
+
+Run the Executable
+------------------
+With the prepared inputs/outputs, we can feed them to our executable.
+Notice the output is also passed into the HeteroCL as a function argument,
+and the result will be directly written into the output array.
+
+.. GENERATED FROM PYTHON SOURCE LINES 169-172
+
+.. code-block:: default
+
+
+    mod(np_A, np_B, np_C)
+
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 173-174
+
+Finally, we can do a sanity check to see if the results are correct.
+
+.. GENERATED FROM PYTHON SOURCE LINES 174-178
+
+.. code-block:: default
+
+
+    golden_C = np.matmul(np_A, np_B)
+
+    np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
 
 
 
@@ -363,7 +423,7 @@ Let's run a test
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.158 seconds)
+   **Total running time of the script:** ( 0 minutes  0.380 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_01_get_started.py:
