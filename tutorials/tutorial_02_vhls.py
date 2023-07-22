@@ -66,7 +66,7 @@ def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
 # original dot-product.
 #
 # .. image:: ../_static/scalar-vector-product.png
-#    :width: 400
+#    :width: 600
 #
 # .. note::
 #
@@ -154,7 +154,7 @@ mod = s.build(target=target)
 #
 #    You need to configure the Vivado HLS environment before running the generated code.
 #    We have the Vivado environment configured in the ``brg-zhang`` server, so you can directly
-#    ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to configure the environment.
+#    ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to set up the environment.
 #
 # .. code-block:: python
 #

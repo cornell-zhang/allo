@@ -29,7 +29,7 @@ We have already prepared a prebuilt version of LLVM on our server, so you can di
 Please follow the instruction below to set up the environment.
 
 Make sure you have the access to the :code:`brg-zhang` or :code:`zhang-21` server. You can log into the server by
-SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`
+SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`_
 for more details on configuring VSCode. Those servers are only accessible from the campus network.
 
 After logging into the server, the first step is to install an Anaconda environment. We recommend you to install your own
