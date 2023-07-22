@@ -5,9 +5,9 @@
 Getting Started
 ===============
 
-**Author**: Yi-Hsiang Lai (seanlatias@github)
+**Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
-In this tutorial, we demonstrate the basic usage of HeteroCL.
+In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.
 
 Import HeteroCL
 ---------------
@@ -16,141 +16,155 @@ We usually use ``hcl`` as the acronym of HeteroCL.
 
 import heterocl as hcl
 
-##############################################################################
-# Initialize the Environment
-# --------------------------
-# We need to initialize the environment for each HeteroCL application. We can
-# do this by calling the API ``hcl.init()``. We can also set the default data
-# type for every computation via this API. The default data type is **32-bit**
-# integers.
-#
-# .. note::
-#
-#    For more information on the data types, please see
-#    :ref:`sphx_glr_gallery_tutorial_05_dtype.py`.
-
-hcl.init()
 
 ##############################################################################
 # Algorithm Definition
 # --------------------
-# After we initialize, we define the algorithm by using a Python function
-# definition, where the arguments are the input tensors. The function can
-# optionally return tensors as outputs. In this example, the two inputs are a
-# scalar `a` and a tensor `A`, and the output is also a tensor `B`. The main
-# difference between a scalar and a tensor is that *a scalar cannot be updated*.
+# HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+# users can first define the algorithm in a high-level language and then
+# optimize the program with various hardware customization techniques (i.e.,
+# schedule primitives). Here we show how to define a general matrix multiplication
+# (GEMM) in the new HeteroCL DSL.
 #
-# Within the algorithm definition, we use HeteroCL APIs to describe the
-# operations. In this example, we use a tensor-based declarative-style
-# operation ``hcl.compute``. We also show the equivalent  Python code.
+# We first import the necessary data types from HeteroCL. In this example, we
+# use ``int32`` as the data type for all the variables.
+
+from heterocl.ir.types import int32
+
+# We then define a function that takes two 32x32 matrices as inputs and
+# returns a 32x32 matrix as output. The variable declaration is defined
+# as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
+# HeteroCL's kernels, which is different from directly programming in Python.
 #
-# .. note::
+# Inside the kernel, we provide a shorthand for the loop iterator. For example,
+# ``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following
+# nested for-loop:
 #
-#    For more information on the APIs, please see
-#    :ref:`sphx_glr_gallery_tutorial_03_api.py`
+# .. code-block:: python
+#
+#    for i in range(32):
+#        for j in range(32):
+#            for k in range(32):
+#                # body
+#
+# The ``hcl.grid`` API is used to define the iteration space of the loop.
+# The arguments denote the upper bounds of the loop iterators.
 
 
-def simple_compute(a, A):
-    B = hcl.compute(A.shape, lambda x, y: A[x, y] + a.v, "B")
-    """
-    The above API is equivalent to the following Python code.
-
-    for x in range(0, 10):
-        for y in range(0, 10):
-            B[x, y] = A[x, y] + a
-    """
-
-    return B
+def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+    C: int32[32, 32] = 0
+    for i, j, k in hcl.grid(32, 32, 32):
+        C[i, j] += A[i, k] * B[k, j]
+    return C
 
 
 ##############################################################################
-# Inputs/Outputs Definition
-# -------------------------
-# One of the advantages of such *modularized algorithm definition* is that we
-# can reuse the defined function with different input settings. We use
-# ``hcl.placeholder`` to set the inputs, where we specify the shape, name,
-# and data type. The shape must be specified and should be in the form of a
-# **tuple**. If it is empty (i.e., `()`), the returned object is a *scalar*.
-# Otherwise, the returned object is a *tensor*. The rest two fields are
-# optional. In this example, we define a scalar input `a` and a
-# two-dimensional tensor input `A`.
-#
-# .. note::
-#
-#    For more information on the interfaces, please see
-#    :obj:`heterocl.placeholder`
+# Create the Schedule
+# -------------------
+# After defining the algorithm, we can start applying transformations to the
+# kernel in order to achieve high performance. We call ``hcl.customize`` to
+# create a schedule for the kernel, where **schedule** denotes the set of
+# transformations.
 
-a = hcl.placeholder((), "a")
-A = hcl.placeholder((10, 10), "A")
-
-##############################################################################
-# Apply Hardware Customization
-# ----------------------------
-# Usually, our next step is apply various hardware customization techniques to
-# the application. In this tutorial, we skip this step which will be discussed
-# in the later tutorials. However, we still need to build a default schedule
-# by using ``hcl.create_schedule`` whose inputs are a list of inputs and
-# the Python function that defines the algorithm.
-
-s = hcl.create_schedule([a, A], simple_compute)
+s = hcl.customize(gemm)
 
 ##############################################################################
 # Inspect the Intermediate Representation (IR)
 # --------------------------------------------
-# A HeteroCL program will be lowered to an IR before backend code generation.
-# HeteroCL provides an API for users to inspect the lowered IR. This could be
-# helpful for debugging.
+# HeteroCL leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
+# represent the program, and we can directly print out the IR by using
+# ``s.module``.
 
-print(hcl.lower(s))
+print(s.module)
+
+# Let's take a close look at the generated IR. Basically an MLIR program is
+# a set of operations in different dialects, and the operations are referred
+# to as **<dialect>.<ops>**. In this example, we can see that the generated IR
+# contains the following dialects:
+#
+# - ``func``: Used to define the function signature and the return of the function.
+# - ``memref``: Used to define the shape and memory layout of the tensors.
+# - ``affine``: Used to define the loop structure.
+# - ``arith``: Used to conduct actual arithmetic operations.
+#
+# And the inner-most dot-product is explicitly represented by a sequence of load/store
+# operations and some arithmetic operations.
+# HeteroCL also attaches some attributes to the operations, including the tensor
+# names, loop names, and operation names, which are further used for optimization.
+
+##############################################################################
+# Apply Transformations
+# ---------------------
+# Next, we start transforming the program by using the schedule primitives.
+# We can refer to the loops by using the loop names. For example, to split
+# the outer-most loop into two, we can call the ``.split()`` primitive as follows:
+
+s.split("i", factor=8)
+
+# We can print out the IR again to see the effect of the transformation.
+#
+# .. note::
+#
+#   In the new HeteroCL DSL, all the transformations are applied **immediately**,
+#   so users can directly see the changes after they apply the transformations.
+
+print(s.module)
+
+# We can see that the outer-most loop is split into two loops, and the
+# original loop is replaced by the two new loops. The new loops are named
+# as ``i.outer`` and ``i.inner``.
+#
+# Similarly, we can split the ``j`` loop:
+
+s.split("j", factor=8)
+print(s.module)
+
+# We can further reorder the loops by using ``.reorder()``. For example, we
+# can move the splitted outer loops together, and move the splitted inner
+# loops together.
+
+s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+print(s.module)
+
+# We can see the changes from the loop names in the generated IR.
 
 ##############################################################################
 # Create the Executable
 # ---------------------
-# The next step is to build the executable by using ``hcl.build``. You can
-# define the target of the executable, where the default target is `llvm`.
-# Namely, the executable will be run on CPU. The input for this API is the
-# schedule we just created.
+# The next step is to generate the executable from the schedule. We can
+# directly call ``.build()`` function on the schedule and specify the target
+# hardware as ``llvm``. By default, HeteroCL will generate a LLVM program that
+# can be executed on the CPU. Otherwise, you can also specify the target as
+# ``vhls`` to generate a Vivado HLS program that can be synthesized to an FPGA
+# accelerator.
 
-f = hcl.build(s)
+mod = s.build(target="llvm")
 
 ##############################################################################
 # Prepare the Inputs/Outputs for the Executable
 # ---------------------------------------------
-# To run the generated executable, we can feed it with Numpy arrays by using
-# ``hcl.asarray``. This API transforms a Numpy array to a HeteroCL container
-# that is used as inputs/outputs to the executable. In this tutorial, we
-# randomly generate the values for our input tensor `A`. Note that since we
-# return a new tensor at the end of our algorithm, we also need to prepare
-# an input array for tensor `B`.
+# To run the executable, we can generate random NumPy arrays as input data, and
+# directly feed them into the executable. HeteroCL will automatically handle the
+# input data and generate corresponding internal wrappers for LLVM to execute.
 
 import numpy as np
 
-hcl_a = 10
-np_A = np.random.randint(100, size=A.shape)
-hcl_A = hcl.asarray(np_A)
-hcl_B = hcl.asarray(np.zeros(A.shape))
+np_A = np.random.randint(100, size=(32, 32))
+np_B = np.random.randint(100, size=(32, 32))
+np_C = np.zeros((32, 32), dtype=np.int32)
 
 ##############################################################################
 # Run the Executable
 # ------------------
-# With the prepared inputs/outputs, we can finally feed them to our executable.
+# With the prepared inputs/outputs, we can feed them to our executable.
+# Notice the output is also passed into the HeteroCL as a function argument,
+# and the result will be directly written into the output array.
 
-f(hcl_a, hcl_A, hcl_B)
-
-##############################################################################
-# View the Results
-# ----------------
-# To view the results, we can transform the HeteroCL tensors back to Numpy
-# arrays by using ``asnumpy()``.
-
-np_A = hcl_A.asnumpy()
-np_B = hcl_B.asnumpy()
-
-print(hcl_a)
-print(np_A)
-print(np_B)
+mod(np_A, np_B, np_C)
 
 ##############################################################################
-# Let's run a test
+# Finally, we can do a sanity check to see if the results are correct.
 
-assert np.array_equal(np_B, np_A + 10)
+golden_C = np.matmul(np_A, np_B)
+
+assert np.array_equal(np_C, golden_C)
