@@ -28,7 +28,6 @@ rapidjson
 
 .vscode
 *.prj
-*.png
 *.pdf
 *.dot
 *.egg-info
