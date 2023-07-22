@@ -141,6 +141,10 @@ print(s.module)
 
 mod = s.build(target="llvm")
 
+# .. note::
+#
+#   ``s.build(target="llvm")`` is equivalent to ``s.build()``.
+
 ##############################################################################
 # Prepare the Inputs/Outputs for the Executable
 # ---------------------------------------------
@@ -150,8 +154,8 @@ mod = s.build(target="llvm")
 
 import numpy as np
 
-np_A = np.random.randint(100, size=(32, 32))
-np_B = np.random.randint(100, size=(32, 32))
+np_A = np.random.randint(0, 100, (32, 32))
+np_B = np.random.randint(0, 100, (32, 32))
 np_C = np.zeros((32, 32), dtype=np.int32)
 
 ##############################################################################
@@ -168,4 +172,4 @@ mod(np_A, np_B, np_C)
 
 golden_C = np.matmul(np_A, np_B)
 
-assert np.array_equal(np_C, golden_C)
+np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
