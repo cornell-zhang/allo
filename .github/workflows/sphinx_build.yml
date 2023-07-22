@@ -9,11 +9,13 @@ on:
       - main
     paths:
       - 'docs/**'
+      - 'tutorials/**'
   pull_request:
     branches:
       - main
     paths:
       - 'docs/**'
+      - 'tutorials/**'
 
 jobs:
   build:
