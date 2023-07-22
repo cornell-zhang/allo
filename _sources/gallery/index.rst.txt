@@ -16,6 +16,23 @@ HeteroCL New Frontend Documentations
 
 .. only:: html
 
+  .. image:: /gallery/images/thumb/sphx_glr_tutorial_02_vhls_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_tutorial_02_vhls.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Vivado HLS Backend</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
   .. image:: /gallery/images/thumb/sphx_glr_tutorial_01_get_started_thumb.png
     :alt:
 
@@ -35,6 +52,7 @@ HeteroCL New Frontend Documentations
 .. toctree::
    :hidden:
 
+   /gallery/tutorial_02_vhls
    /gallery/tutorial_01_get_started
 
 

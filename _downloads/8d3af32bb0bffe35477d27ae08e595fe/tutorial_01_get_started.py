@@ -31,6 +31,7 @@ import heterocl as hcl
 
 from heterocl.ir.types import int32
 
+# %%
 # We then define a function that takes two 32x32 matrices as inputs and
 # returns a 32x32 matrix as output. The variable declaration is defined
 # as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
@@ -79,6 +80,7 @@ s = hcl.customize(gemm)
 
 print(s.module)
 
+# %%
 # Let's take a close look at the generated IR. Basically an MLIR program is
 # a set of operations in different dialects, and the operations are referred
 # to as **<dialect>.<ops>**. In this example, we can see that the generated IR
@@ -104,6 +106,7 @@ print(s.module)
 
 s.split("i", factor=8)
 
+# %%
 # We can print out the IR again to see the effect of the transformation.
 #
 # .. note::
@@ -113,6 +116,7 @@ s.split("i", factor=8)
 
 print(s.module)
 
+# %%
 # We can see that the outer-most loop is split into two loops, and the
 # original loop is replaced by the two new loops. The new loops are named
 # as ``i.outer`` and ``i.inner``.
@@ -122,6 +126,7 @@ print(s.module)
 s.split("j", factor=8)
 print(s.module)
 
+# %%
 # We can further reorder the loops by using ``.reorder()``. For example, we
 # can move the splitted outer loops together, and move the splitted inner
 # loops together.
@@ -129,6 +134,7 @@ print(s.module)
 s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
 print(s.module)
 
+# %%
 # We can see the changes from the loop names in the generated IR.
 
 ##############################################################################
@@ -143,6 +149,7 @@ print(s.module)
 
 mod = s.build(target="llvm")
 
+# %%
 # .. note::
 #
 #   ``s.build(target="llvm")`` is equivalent to ``s.build()``.
@@ -173,5 +180,4 @@ mod(np_A, np_B, np_C)
 # Finally, we can do a sanity check to see if the results are correct.
 
 golden_C = np.matmul(np_A, np_B)
-
 np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)

@@ -25,7 +25,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Index" href="../genindex.html" />
+    <link rel="next" title="Vivado HLS Backend" href="tutorial_02_vhls.html" />
     <link rel="prev" title="Installation" href="../setup/index.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -143,6 +143,7 @@
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado HLS Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul>
@@ -184,30 +185,26 @@ schedule primitives). Here we show how to define a general matrix multiplication
 <p>We first import the necessary data types from HeteroCL. In this example, we
 use <code class="docutils literal notranslate"><span class="pre">int32</span></code> as the data type for all the variables.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
-
-<span class="c1"># We then define a function that takes two 32x32 matrices as inputs and</span>
-<span class="c1"># returns a 32x32 matrix as output. The variable declaration is defined</span>
-<span class="c1"># as ``&lt;name&gt;: &lt;type&gt;[&lt;shape&gt;]``. We require **strict type annotation** in</span>
-<span class="c1"># HeteroCL&#39;s kernels, which is different from directly programming in Python.</span>
-<span class="c1">#</span>
-<span class="c1"># Inside the kernel, we provide a shorthand for the loop iterator. For example,</span>
-<span class="c1"># ``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following</span>
-<span class="c1"># nested for-loop:</span>
-<span class="c1">#</span>
-<span class="c1"># .. code-block:: python</span>
-<span class="c1">#</span>
-<span class="c1">#    for i in range(32):</span>
-<span class="c1">#        for j in range(32):</span>
-<span class="c1">#            for k in range(32):</span>
-<span class="c1">#                # body</span>
-<span class="c1">#</span>
-<span class="c1"># The ``hcl.grid`` API is used to define the iteration space of the loop.</span>
-<span class="c1"># The arguments denote the upper bounds of the loop iterators.</span>
-<span class="c1"># Notice the above range-loop is also supported in the new HeteroCL, so</span>
-<span class="c1"># users have more flexibility to define the loop structure.</span>
-
-
-<span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+</pre></div>
+</div>
+<p>We then define a function that takes two 32x32 matrices as inputs and
+returns a 32x32 matrix as output. The variable declaration is defined
+as <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;:</span> <span class="pre">&lt;type&gt;[&lt;shape&gt;]</span></code>. We require <strong>strict type annotation</strong> in
+HeteroCL’s kernels, which is different from directly programming in Python.</p>
+<p>Inside the kernel, we provide a shorthand for the loop iterator. For example,
+<code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">i,</span> <span class="pre">j,</span> <span class="pre">k</span> <span class="pre">in</span> <span class="pre">hcl.grid(32,</span> <span class="pre">32,</span> <span class="pre">32)</span></code> is equivalent to the following
+nested for-loop:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+            <span class="c1"># body</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">hcl.grid</span></code> API is used to define the iteration space of the loop.
+The arguments denote the upper bounds of the loop iterators.
+Notice the above range-loop is also supported in the new HeteroCL, so
+users have more flexibility to define the loop structure.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
     <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
         <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
@@ -231,22 +228,6 @@ transformations.</p>
 represent the program, and we can directly print out the IR by using
 <code class="docutils literal notranslate"><span class="pre">s.module</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-
-<span class="c1"># Let&#39;s take a close look at the generated IR. Basically an MLIR program is</span>
-<span class="c1"># a set of operations in different dialects, and the operations are referred</span>
-<span class="c1"># to as **&lt;dialect&gt;.&lt;ops&gt;**. In this example, we can see that the generated IR</span>
-<span class="c1"># contains the following dialects:</span>
-<span class="c1">#</span>
-<span class="c1"># - ``func``: Used to define the function signature and the return of the function.</span>
-<span class="c1"># - ``memref``: Used to define the shape and memory layout of the tensors.</span>
-<span class="c1"># - ``affine``: Used to define the loop structure.</span>
-<span class="c1"># - ``arith``: Used to conduct actual arithmetic operations.</span>
-<span class="c1"># - ``linalg``: Currently only used to initialize the tensors.</span>
-<span class="c1">#</span>
-<span class="c1"># And the inner-most dot-product is explicitly represented by a sequence of load/store</span>
-<span class="c1"># operations and some arithmetic operations.</span>
-<span class="c1"># HeteroCL also attaches some attributes to the operations, including the tensor</span>
-<span class="c1"># names, loop names, and operation names, which are further used for optimization.</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
@@ -271,6 +252,21 @@ represent the program, and we can directly print out the IR by using
 }
 </pre></div>
 </div>
+<p>Let’s take a close look at the generated IR. Basically an MLIR program is
+a set of operations in different dialects, and the operations are referred
+to as <strong>&lt;dialect&gt;.&lt;ops&gt;</strong>. In this example, we can see that the generated IR
+contains the following dialects:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">func</span></code>: Used to define the function signature and the return of the function.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">memref</span></code>: Used to define the shape and memory layout of the tensors.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">affine</span></code>: Used to define the loop structure.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">arith</span></code>: Used to conduct actual arithmetic operations.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">linalg</span></code>: Currently only used to initialize the tensors.</p></li>
+</ul>
+<p>And the inner-most dot-product is explicitly represented by a sequence of load/store
+operations and some arithmetic operations.
+HeteroCL also attaches some attributes to the operations, including the tensor
+names, loop names, and operation names, which are further used for optimization.</p>
 </section>
 <section id="apply-transformations">
 <h2>Apply Transformations<a class="headerlink" href="#apply-transformations" title="Permalink to this headline"><span>¶</span></a></h2>
@@ -278,33 +274,15 @@ represent the program, and we can directly print out the IR by using
 We can refer to the loops by using the loop names. For example, to split
 the outer-most loop into two, we can call the <code class="docutils literal notranslate"><span class="pre">.split()</span></code> primitive as follows:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
-
-<span class="c1"># We can print out the IR again to see the effect of the transformation.</span>
-<span class="c1">#</span>
-<span class="c1"># .. note::</span>
-<span class="c1">#</span>
-<span class="c1">#   In the new HeteroCL DSL, all the transformations are applied **immediately**,</span>
-<span class="c1">#   so users can directly see the changes after they apply the transformations.</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-
-<span class="c1"># We can see that the outer-most loop is split into two loops, and the</span>
-<span class="c1"># original loop is replaced by the two new loops. The new loops are named</span>
-<span class="c1"># as ``i.outer`` and ``i.inner``.</span>
-<span class="c1">#</span>
-<span class="c1"># Similarly, we can split the ``j`` loop:</span>
-
-<span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-
-<span class="c1"># We can further reorder the loops by using ``.reorder()``. For example, we</span>
-<span class="c1"># can move the splitted outer loops together, and move the splitted inner</span>
-<span class="c1"># loops together.</span>
-
-<span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;i.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;j.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;i.inner&quot;</span><span class="p">,</span> <span class="s2">&quot;j.inner&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-
-<span class="c1"># We can see the changes from the loop names in the generated IR.</span>
+</pre></div>
+</div>
+<p>We can print out the IR again to see the effect of the transformation.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In the new HeteroCL DSL, all the transformations are applied <strong>immediately</strong>,
+so users can directly see the changes after they apply the transformations.</p>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
@@ -332,8 +310,17 @@ module {
     return %0 : memref&lt;32x32xi32&gt;
   }
 }
-
-#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
+</pre></div>
+</div>
+<p>We can see that the outer-most loop is split into two loops, and the
+original loop is replaced by the two new loops. The new loops are named
+as <code class="docutils literal notranslate"><span class="pre">i.outer</span></code> and <code class="docutils literal notranslate"><span class="pre">i.inner</span></code>.</p>
+<p>Similarly, we can split the <code class="docutils literal notranslate"><span class="pre">j</span></code> loop:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
 module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
     %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
@@ -361,8 +348,16 @@ module {
     return %0 : memref&lt;32x32xi32&gt;
   }
 }
-
-#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
+</pre></div>
+</div>
+<p>We can further reorder the loops by using <code class="docutils literal notranslate"><span class="pre">.reorder()</span></code>. For example, we
+can move the splitted outer loops together, and move the splitted inner
+loops together.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;i.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;j.outer&quot;</span><span class="p">,</span> <span class="s2">&quot;i.inner&quot;</span><span class="p">,</span> <span class="s2">&quot;j.inner&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>#map = affine_map&lt;(d0, d1) -&gt; (d0 + d1 * 8)&gt;
 module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
     %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
@@ -391,6 +386,7 @@ module {
 }
 </pre></div>
 </div>
+<p>We can see the changes from the loop names in the generated IR.</p>
 </section>
 <section id="create-the-executable">
 <h2>Create the Executable<a class="headerlink" href="#create-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
@@ -401,11 +397,11 @@ can be executed on the CPU. Otherwise, you can also specify the target as
 <code class="docutils literal notranslate"><span class="pre">vhls</span></code> to generate a Vivado HLS program that can be synthesized to an FPGA
 accelerator.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;llvm&quot;</span><span class="p">)</span>
-
-<span class="c1"># .. note::</span>
-<span class="c1">#</span>
-<span class="c1">#   ``s.build(target=&quot;llvm&quot;)`` is equivalent to ``s.build()``.</span>
 </pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">s.build(target=&quot;llvm&quot;)</span></code> is equivalent to <code class="docutils literal notranslate"><span class="pre">s.build()</span></code>.</p>
 </div>
 </section>
 <section id="prepare-the-inputs-outputs-for-the-executable">
@@ -431,11 +427,10 @@ and the result will be directly written into the output array.</p>
 </div>
 <p>Finally, we can do a sanity check to see if the results are correct.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np</span><span class="o">.</span><span class="n">matmul</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
-
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.380 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.310 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/8d3af32bb0bffe35477d27ae08e595fe/tutorial_01_get_started.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_01_get_started.py</span></code></a></p>
@@ -492,7 +487,7 @@ and the result will be directly written into the output array.</p>
 
             <div class="right">
                 
-                    <a href="../genindex.html"><span>Index</span><span class="icon">&gt;</span></a>
+                    <a href="tutorial_02_vhls.html"><span>Vivado HLS Backend</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
