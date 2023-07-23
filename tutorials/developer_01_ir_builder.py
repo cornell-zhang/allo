@@ -88,7 +88,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 #   denote the current position of the IR builder. For example, when we are
 #   building the body of a function, the insertion point is the function body.
 # - ``buffers``: The dictionary that stores all the tensors in the program.
-# - ``induction_vars``: The list of loop iterators, e.g., i, j, k.
+# - ``induction_vars``: The list of loop iterators, e.g., ``i``, ``j``, ``k``.
 # - ``global_vars``: The global variables defined outside the user-defined function.
 # - ``top_func``: The top-level function of the current program.
 # 
@@ -105,7 +105,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 
 ##############################################################################
 # FunctionDef Node
-# ================
+# ^^^^^^^^^^^^^^^^
 # And then we meet the ``FunctionDef`` node, which is the function definition.
 # The ``build_FunctionDef`` function first creates the input and output data types
 # based on users' annotations. Then, it creates a new MLIR function operation by calling
@@ -117,6 +117,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # Here, ``func_d`` is the `func <https://mlir.llvm.org/docs/Dialects/Func/>`_ dialect defined in MLIR.
 # The ``FuncOp`` is the operation that represents a function in MLIR. The function arguments are
 # explained below:
+# 
 # - ``name`` is the name of the function, and we directly use the AST ``FunctionDef`` node's name ``vector_add`` as the operation name.
 # - ``type`` is the ``FunctionType`` that defines the input and output types of the function.
 # - ``ip`` is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling ``ctx.get_ip()``.
@@ -129,13 +130,13 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # .. note::
 # 
 #    You may probably notice the ``MockArg`` class. This is a mock class that is used to store the
-#    function arguments, which is ``BlockArgument``s in MLIR. It is different from other operations
+#    function arguments, which are ``BlockArgument`` s in MLIR. It is different from other operations
 #    that inherently have a ``result`` attribute. Therefore, we mock the ``BlockArgument`` to make
 #    it consistent with other operations by providing a ``result`` property method.
 
 ##############################################################################
 # AnnAssign Node
-# ==============
+# ^^^^^^^^^^^^^^
 # Next, let's visit the ``AnnAssign`` node, which is the annotated assignment statement.
 # The ``build_AnnAssign`` function first evaluate the right hand side of the assignment statement
 # by calling ``rhs = build_stmt(ctx, node.value)``. Then, it gets the user-defined type annotation
@@ -164,7 +165,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 
 ##############################################################################
 # For Node
-# ========
+# ^^^^^^^^
 # The next operator is the ``For`` node, which is the for-loop statement. We provide different APIs to
 # support different loop structures, so we need to further dispatch the ``For`` node to the corresponding
 # builder function. For example, here we use ``hcl.grid``, so it will be dispatched to ``build_grid_for``.
@@ -186,7 +187,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 
 ##############################################################################
 # Other Nodes
-# ===========
+# ^^^^^^^^^^^
 # The build process is similar for other nodes, so I will not go into them one by one.
 # Please refer to the `source code <https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py>`_ for more details.
 # After building the IR, you can call ``s.module`` to see the effect.
