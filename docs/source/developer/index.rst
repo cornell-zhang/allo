@@ -18,37 +18,10 @@
     specific language governing permissions and limitations
     under the License.
 
-###############################
-HeteroCL Internal Documentation
-###############################
+.. _setup:
 
-Documentation for HeteroCL's new frontend.
+#######################
+Frontend DSL Comparison
+#######################
 
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Getting Started
-
-   setup/index.rst
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Tutorials
-
-   gallery/tutorial_01_get_started.rst
-   gallery/tutorial_02_vhls.rst
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Developer Guide
-
-   developer/index.rst
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Reference
-
-   genindex
+We briefly mention the differences between the old HeteroCL and the new DSL frontend.
