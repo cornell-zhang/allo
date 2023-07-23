@@ -120,7 +120,7 @@ the **scalar-vector product** since it changes the computation order of the
 original dot-product.
 
 .. image:: ../_static/scalar-vector-product.png
-   :width: 400
+   :width: 600
 
 .. note::
 
@@ -170,10 +170,10 @@ This is used to change the computation order of matrix multiplication.
         affine.for %arg2 = 0 to 1024 {
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %1 = affine.load %arg0[%arg2, %arg3] : memref<1024x1024xf32>
-              %2 = affine.load %arg1[%arg3, %arg4] : memref<1024x1024xf32>
+              %1 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %2 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
               %3 = arith.mulf %1, %2 : f32
-              %4 = affine.load %0[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
+              %4 = affine.load %0[%arg2, %arg4] {from = "C", to = "C"} : memref<1024x1024xf32>
               %5 = arith.addf %4, %3 : f32
               affine.store %5, %0[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
             } {loop_name = "j"}
@@ -231,8 +231,8 @@ we can directly use ``<func>.<tensor>`` to access a specific tensor in the sched
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %2 = affine.load %arg0[%arg2, %arg3] : memref<1024x1024xf32>
-              %3 = affine.load %arg1[%arg3, %arg4] : memref<1024x1024xf32>
+              %2 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %3 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
               %4 = arith.mulf %2, %3 : f32
               %5 = affine.load %1[%arg4] : memref<1024xf32>
               %6 = arith.addf %5, %4 : f32
@@ -291,8 +291,8 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %2 = affine.load %arg0[%arg2, %arg3] : memref<1024x1024xf32>
-              %3 = affine.load %arg1[%arg3, %arg4] : memref<1024x1024xf32>
+              %2 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %3 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
               %4 = arith.mulf %2, %3 : f32
               %5 = affine.load %1[%arg4] : memref<1024xf32>
               %6 = arith.addf %5, %4 : f32
@@ -355,7 +355,7 @@ Vivado HLS code, which will returns the generated code as a string.
       float v0[1024][1024],
       float v1[1024][1024],
       float v2[1024][1024]
-    ) {     // L451
+    ) {     // L507
       for (int v3 = 0; v3 < 1024; v3++) {   //
         for (int v4 = 0; v4 < 1024; v4++) { //
           v2[v3][v4] = 0.000000;    //
@@ -452,7 +452,7 @@ To run Vivado HLS, you can simply invoke the built module without passing any ar
 
    You need to configure the Vivado HLS environment before running the generated code.
    We have the Vivado environment configured in the ``brg-zhang`` server, so you can directly
-   ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to configure the environment.
+   ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to set up the environment.
 
 .. code-block:: python
 
@@ -499,7 +499,7 @@ with II=1.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.133 seconds)
+   **Total running time of the script:** ( 0 minutes  0.131 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

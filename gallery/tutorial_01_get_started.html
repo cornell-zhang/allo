@@ -145,6 +145,10 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado HLS Backend</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Frontend DSL Comparison</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../genindex.html">Index</a></li>
@@ -238,10 +242,10 @@ represent the program, and we can directly print out the IR by using
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
-          %1 = affine.load %arg0[%arg2, %arg4] : memref&lt;32x32xi32&gt;
-          %2 = affine.load %arg1[%arg4, %arg3] : memref&lt;32x32xi32&gt;
+          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
           %3 = arith.muli %1, %2 : i32
-          %4 = affine.load %0[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+          %4 = affine.load %0[%arg2, %arg3] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
           %5 = arith.addi %4, %3 : i32
           affine.store %5, %0[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
         } {loop_name = &quot;k&quot;}
@@ -296,10 +300,10 @@ module {
         affine.for %arg4 = 0 to 32 {
           affine.for %arg5 = 0 to 32 {
             %2 = affine.apply #map(%arg3, %arg2)
-            %3 = affine.load %arg0[%2, %arg5] : memref&lt;32x32xi32&gt;
-            %4 = affine.load %arg1[%arg5, %arg4] : memref&lt;32x32xi32&gt;
+            %3 = affine.load %arg0[%2, %arg5] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+            %4 = affine.load %arg1[%arg5, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
             %5 = arith.muli %3, %4 : i32
-            %6 = affine.load %0[%2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+            %6 = affine.load %0[%2, %arg4] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
             %7 = arith.addi %6, %5 : i32
             affine.store %7, %0[%2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
           } {loop_name = &quot;k&quot;}
@@ -333,10 +337,10 @@ module {
             affine.for %arg6 = 0 to 32 {
               %2 = affine.apply #map(%arg5, %arg4)
               %3 = affine.apply #map(%arg3, %arg2)
-              %4 = affine.load %arg0[%3, %arg6] : memref&lt;32x32xi32&gt;
-              %5 = affine.load %arg1[%arg6, %2] : memref&lt;32x32xi32&gt;
+              %4 = affine.load %arg0[%3, %arg6] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+              %5 = affine.load %arg1[%arg6, %2] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
               %6 = arith.muli %4, %5 : i32
-              %7 = affine.load %0[%3, %2] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+              %7 = affine.load %0[%3, %2] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
               %8 = arith.addi %7, %6 : i32
               affine.store %8, %0[%3, %2] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
             } {loop_name = &quot;k&quot;}
@@ -370,10 +374,10 @@ module {
             affine.for %arg6 = 0 to 32 {
               %1 = affine.apply #map(%arg5, %arg3)
               %2 = affine.apply #map(%arg4, %arg2)
-              %3 = affine.load %arg0[%2, %arg6] : memref&lt;32x32xi32&gt;
-              %4 = affine.load %arg1[%arg6, %1] : memref&lt;32x32xi32&gt;
+              %3 = affine.load %arg0[%2, %arg6] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
+              %4 = affine.load %arg1[%arg6, %1] {from = &quot;B&quot;} : memref&lt;32x32xi32&gt;
               %5 = arith.muli %3, %4 : i32
-              %6 = affine.load %0[%2, %1] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+              %6 = affine.load %0[%2, %1] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
               %7 = arith.addi %6, %5 : i32
               affine.store %7, %0[%2, %1] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
             } {loop_name = &quot;k&quot;}
@@ -430,7 +434,7 @@ and the result will be directly written into the output array.</p>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.214 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.219 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/8d3af32bb0bffe35477d27ae08e595fe/tutorial_01_get_started.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_01_get_started.py</span></code></a></p>

@@ -25,7 +25,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Index" href="../genindex.html" />
+    <link rel="next" title="Frontend DSL Comparison" href="../developer/index.html" />
     <link rel="prev" title="Getting Started" href="tutorial_01_get_started.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -145,6 +145,10 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorial_01_get_started.html">Getting Started</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Vivado HLS Backend</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Frontend DSL Comparison</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../genindex.html">Index</a></li>
@@ -214,7 +218,7 @@ We try to implement the <strong>interleaving accumulation</strong> technique pre
 <a class="reference external" href="https://arxiv.org/abs/1805.08288">this paper</a>, which is also viewed as
 the <strong>scalar-vector product</strong> since it changes the computation order of the
 original dot-product.</p>
-<a class="reference internal image-reference" href="../_images/scalar-vector-product.png"><img alt="../_images/scalar-vector-product.png" src="../_images/scalar-vector-product.png" style="width: 400px;" /></a>
+<a class="reference internal image-reference" href="../_images/scalar-vector-product.png"><img alt="../_images/scalar-vector-product.png" src="../_images/scalar-vector-product.png" style="width: 600px;" /></a>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>To get more rational of this technique, please refer to the above mentioned
@@ -237,10 +241,10 @@ This is used to change the computation order of matrix multiplication.</p>
     affine.for %arg2 = 0 to 1024 {
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %1 = affine.load %arg0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
-          %2 = affine.load %arg1[%arg3, %arg4] : memref&lt;1024x1024xf32&gt;
+          %1 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %2 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
           %3 = arith.mulf %1, %2 : f32
-          %4 = affine.load %0[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          %4 = affine.load %0[%arg2, %arg4] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
           %5 = arith.addf %4, %3 : f32
           affine.store %5, %0[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
         } {loop_name = &quot;j&quot;}
@@ -278,8 +282,8 @@ we can directly use <code class="docutils literal notranslate"><span class="pre"
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %2 = affine.load %arg0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
-          %3 = affine.load %arg1[%arg3, %arg4] : memref&lt;1024x1024xf32&gt;
+          %2 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %3 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
           %4 = arith.mulf %2, %3 : f32
           %5 = affine.load %1[%arg4] : memref&lt;1024xf32&gt;
           %6 = arith.addf %5, %4 : f32
@@ -317,8 +321,8 @@ initialize and write the intermediate buffer back to output tensor.</p>
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %2 = affine.load %arg0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
-          %3 = affine.load %arg1[%arg3, %arg4] : memref&lt;1024x1024xf32&gt;
+          %2 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %3 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
           %4 = arith.mulf %2, %3 : f32
           %5 = affine.load %1[%arg4] : memref&lt;1024xf32&gt;
           %6 = arith.addf %5, %4 : f32
@@ -363,7 +367,7 @@ void gemm(
   float v0[1024][1024],
   float v1[1024][1024],
   float v2[1024][1024]
-) {     // L451
+) {     // L507
   for (int v3 = 0; v3 &lt; 1024; v3++) {   //
     for (int v4 = 0; v4 &lt; 1024; v4++) { //
       v2[v3][v4] = 0.000000;    //
@@ -422,7 +426,7 @@ the Vivado HLS project.</p>
 <p class="admonition-title">Note</p>
 <p>You need to configure the Vivado HLS environment before running the generated code.
 We have the Vivado environment configured in the <code class="docutils literal notranslate"><span class="pre">brg-zhang</span></code> server, so you can directly
-<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/heterocl/vitis_2019.2_opt.sh</span></code> to configure the environment.</p>
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/heterocl/vitis_2019.2_opt.sh</span></code> to set up the environment.</p>
 </div>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="p">()</span>
 </pre></div>
@@ -460,7 +464,7 @@ We have the Vivado environment configured in the <code class="docutils literal n
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 with II=1.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.133 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.131 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>
@@ -513,7 +517,7 @@ with II=1.</p>
 
             <div class="right">
                 
-                    <a href="../genindex.html"><span>Index</span><span class="icon">&gt;</span></a>
+                    <a href="../developer/index.html"><span>Frontend DSL Comparison</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
