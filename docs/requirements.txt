@@ -7,3 +7,4 @@ matplotlib
 sphinxcontrib-googleanalytics
 sphinx_rtd_theme
 numpy
+astpretty
