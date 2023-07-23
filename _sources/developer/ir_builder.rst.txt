@@ -18,10 +18,9 @@
     specific language governing permissions and limitations
     under the License.
 
-.. _setup:
+######################
+IR Builder Walkthrough
+######################
 
-#######################
-Frontend DSL Comparison
-#######################
-
-We briefly mention the differences between the old HeteroCL and the new DSL frontend.
+This tutorial will walk you through the process of building a simple
+heterogeneous program using the IR builder.
