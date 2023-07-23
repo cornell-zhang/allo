@@ -6,12 +6,12 @@
 
 Computation times
 =================
-**00:00.360** total execution time for **gallery** files:
+**00:00.458** total execution time for **gallery** files:
 
 +-------------------------------------------------------------------------------------+-----------+--------+
-| :ref:`sphx_glr_gallery_tutorial_01_get_started.py` (``tutorial_01_get_started.py``) | 00:00.222 | 0.0 MB |
+| :ref:`sphx_glr_gallery_tutorial_01_get_started.py` (``tutorial_01_get_started.py``) | 00:00.289 | 0.0 MB |
 +-------------------------------------------------------------------------------------+-----------+--------+
-| :ref:`sphx_glr_gallery_tutorial_02_vhls.py` (``tutorial_02_vhls.py``)               | 00:00.132 | 0.0 MB |
+| :ref:`sphx_glr_gallery_tutorial_02_vhls.py` (``tutorial_02_vhls.py``)               | 00:00.161 | 0.0 MB |
 +-------------------------------------------------------------------------------------+-----------+--------+
-| :ref:`sphx_glr_gallery_developer_01_ir_builder.py` (``developer_01_ir_builder.py``) | 00:00.007 | 0.0 MB |
+| :ref:`sphx_glr_gallery_developer_01_ir_builder.py` (``developer_01_ir_builder.py``) | 00:00.008 | 0.0 MB |
 +-------------------------------------------------------------------------------------+-----------+--------+

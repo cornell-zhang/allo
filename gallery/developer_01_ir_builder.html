@@ -148,10 +148,6 @@
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">IR Builder Walkthrough</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#functiondef-node">FunctionDef Node</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#annassign-node">AnnAssign Node</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#for-node">For Node</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#other-nodes">Other Nodes</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
@@ -381,7 +377,7 @@ The AST context stores necessary information used to build the IR, including:</p
 denote the current position of the IR builder. For example, when we are
 building the body of a function, the insertion point is the function body.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">buffers</span></code>: The dictionary that stores all the tensors in the program.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">induction_vars</span></code>: The list of loop iterators, e.g., i, j, k.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">induction_vars</span></code>: The list of loop iterators, e.g., <code class="docutils literal notranslate"><span class="pre">i</span></code>, <code class="docutils literal notranslate"><span class="pre">j</span></code>, <code class="docutils literal notranslate"><span class="pre">k</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">global_vars</span></code>: The global variables defined outside the user-defined function.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">top_func</span></code>: The top-level function of the current program.</p></li>
 </ul>
@@ -394,10 +390,8 @@ inside the body of the module, and recursively call <code class="docutils litera
         <span class="n">build_stmt</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">stmt</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-</section>
 <section id="functiondef-node">
-<h1>FunctionDef Node<a class="headerlink" href="#functiondef-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<h3>FunctionDef Node<a class="headerlink" href="#functiondef-node" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>And then we meet the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node, which is the function definition.
 The <code class="docutils literal notranslate"><span class="pre">build_FunctionDef</span></code> function first creates the input and output data types
 based on users’ annotations. Then, it creates a new MLIR function operation by calling</p>
@@ -406,24 +400,26 @@ based on users’ annotations. Then, it creates a new MLIR function operation by
 </div>
 <p>Here, <code class="docutils literal notranslate"><span class="pre">func_d</span></code> is the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/Func/">func</a> dialect defined in MLIR.
 The <code class="docutils literal notranslate"><span class="pre">FuncOp</span></code> is the operation that represents a function in MLIR. The function arguments are
-explained below:
-- <code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the function, and we directly use the AST <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node’s name <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> as the operation name.
-- <code class="docutils literal notranslate"><span class="pre">type</span></code> is the <code class="docutils literal notranslate"><span class="pre">FunctionType</span></code> that defines the input and output types of the function.
-- <code class="docutils literal notranslate"><span class="pre">ip</span></code> is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling <code class="docutils literal notranslate"><span class="pre">ctx.get_ip()</span></code>.
-- <code class="docutils literal notranslate"><span class="pre">loc</span></code> is the actual line number of the function, which can be usually omitted.</p>
+explained below:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the function, and we directly use the AST <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node’s name <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> as the operation name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> is the <code class="docutils literal notranslate"><span class="pre">FunctionType</span></code> that defines the input and output types of the function.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ip</span></code> is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling <code class="docutils literal notranslate"><span class="pre">ctx.get_ip()</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loc</span></code> is the actual line number of the function, which can be usually omitted.</p></li>
+</ul>
 <p>After creating the function operation, we need to create the function body. We first update the insertion point
 to the function body by calling <code class="docutils literal notranslate"><span class="pre">ctx.push_ip(func_op.entry_block)</span></code>. Then, we traverse the function body and recursively
 call <code class="docutils literal notranslate"><span class="pre">build_stmt</span></code>. The function arguments are inserted into the <code class="docutils literal notranslate"><span class="pre">buffers</span></code> for further usage.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>You may probably notice the <code class="docutils literal notranslate"><span class="pre">MockArg</span></code> class. This is a mock class that is used to store the
-function arguments, which is <code class="docutils literal notranslate"><span class="pre">BlockArgument``s</span> <span class="pre">in</span> <span class="pre">MLIR.</span> <span class="pre">It</span> <span class="pre">is</span> <span class="pre">different</span> <span class="pre">from</span> <span class="pre">other</span> <span class="pre">operations</span>
-<span class="pre">that</span> <span class="pre">inherently</span> <span class="pre">have</span> <span class="pre">a</span> <span class="pre">``result</span></code> attribute. Therefore, we mock the <code class="docutils literal notranslate"><span class="pre">BlockArgument</span></code> to make
+function arguments, which are <code class="docutils literal notranslate"><span class="pre">BlockArgument</span></code> s in MLIR. It is different from other operations
+that inherently have a <code class="docutils literal notranslate"><span class="pre">result</span></code> attribute. Therefore, we mock the <code class="docutils literal notranslate"><span class="pre">BlockArgument</span></code> to make
 it consistent with other operations by providing a <code class="docutils literal notranslate"><span class="pre">result</span></code> property method.</p>
 </div>
 </section>
 <section id="annassign-node">
-<h1>AnnAssign Node<a class="headerlink" href="#annassign-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<h3>AnnAssign Node<a class="headerlink" href="#annassign-node" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>Next, let’s visit the <code class="docutils literal notranslate"><span class="pre">AnnAssign</span></code> node, which is the annotated assignment statement.
 The <code class="docutils literal notranslate"><span class="pre">build_AnnAssign</span></code> function first evaluate the right hand side of the assignment statement
 by calling <code class="docutils literal notranslate"><span class="pre">rhs</span> <span class="pre">=</span> <span class="pre">build_stmt(ctx,</span> <span class="pre">node.value)</span></code>. Then, it gets the user-defined type annotation
@@ -448,7 +444,7 @@ For example, the <code class="docutils literal notranslate"><span class="pre">in
 from the <code class="docutils literal notranslate"><span class="pre">ctx.global_vars</span></code> dictionary by calling something like <code class="docutils literal notranslate"><span class="pre">ctx.global_vars[node.slice.value.elts[0].id]</span></code>.</p>
 </section>
 <section id="for-node">
-<h1>For Node<a class="headerlink" href="#for-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<h3>For Node<a class="headerlink" href="#for-node" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>The next operator is the <code class="docutils literal notranslate"><span class="pre">For</span></code> node, which is the for-loop statement. We provide different APIs to
 support different loop structures, so we need to further dispatch the <code class="docutils literal notranslate"><span class="pre">For</span></code> node to the corresponding
 builder function. For example, here we use <code class="docutils literal notranslate"><span class="pre">hcl.grid</span></code>, so it will be dispatched to <code class="docutils literal notranslate"><span class="pre">build_grid_for</span></code>.</p>
@@ -465,13 +461,13 @@ Before building the loop body, we need to update the insertion point:</p>
 </div>
 </section>
 <section id="other-nodes">
-<h1>Other Nodes<a class="headerlink" href="#other-nodes" title="Permalink to this headline"><span>¶</span></a></h1>
+<h3>Other Nodes<a class="headerlink" href="#other-nodes" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>The build process is similar for other nodes, so I will not go into them one by one.
 Please refer to the <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py">source code</a> for more details.
 After building the IR, you can call <code class="docutils literal notranslate"><span class="pre">s.module</span></code> to see the effect.</p>
 <p>Most of the MLIR operations can be found on this <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/">webpage</a>, and now
 you can follow the definitions and add more amazing facilities to the new HeteroCL frontend!</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.007 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.008 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-01-ir-builder-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/63c20f575338e824342a139a2a3bd294/developer_01_ir_builder.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">developer_01_ir_builder.py</span></code></a></p>
@@ -481,6 +477,8 @@ you can follow the definitions and add more amazing facilities to the new Hetero
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+</section>
 </section>
 
 
@@ -499,13 +497,15 @@ you can follow the definitions and add more amazing facilities to the new Hetero
                 <ul>
 <li><a class="reference internal" href="#">IR Builder Walkthrough</a><ul>
 <li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
-<li><a class="reference internal" href="#traverse-the-ast">Traverse the AST</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#traverse-the-ast">Traverse the AST</a><ul>
 <li><a class="reference internal" href="#functiondef-node">FunctionDef Node</a></li>
 <li><a class="reference internal" href="#annassign-node">AnnAssign Node</a></li>
 <li><a class="reference internal" href="#for-node">For Node</a></li>
 <li><a class="reference internal" href="#other-nodes">Other Nodes</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
             </div>
