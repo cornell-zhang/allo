@@ -1,0 +1,542 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>IR Builder Walkthrough &#8212; HeteroCL Internal Documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/clipboard.min.js"></script>
+    <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <script src="../_static/js/petite-vue.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Frontend DSL Comparison" href="../developer/comparison.html" />
+    <link rel="prev" title="Vivado HLS Backend" href="tutorial_02_vhls.html" /> 
+  </head><body data-dark_mode_code_blocks="true">
+
+<div id="top_nav">
+    
+
+    <nav>
+        
+            
+        
+
+        <p id="toggle_sidebar">
+            <a href="#" title="Toggle sidebar">|||</a>
+        </p>
+        <h1><a href="../index.html" title="Go to homepage">HeteroCL Internal Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/heterocl">
+    
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
+            <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
+        </svg>
+    
+</a>
+        
+
+        <a id="mode_toggle" href="#" @click.prevent="handleClick" :title="mode">
+    <template v-if="mode == 'light'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_light"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M67.48,18.073c1.913,-1.912 1.913,-5.018 0,-6.931c-1.912,-1.912 -5.018,-1.912 -6.931,0l-6.798,6.799c-1.912,1.912 -1.912,5.018 0,6.931c1.913,1.912 5.018,1.912 6.931,-0l6.798,-6.799Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.728,61.108c1.912,-1.913 1.912,-5.018 -0,-6.931c-1.913,-1.913 -5.019,-1.913 -6.931,-0l-6.799,6.798c-1.912,1.913 -1.912,5.019 0,6.931c1.913,1.913 5.019,1.913 6.931,0l6.799,-6.798Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.682,54.177c-1.913,-1.913 -5.018,-1.913 -6.931,-0c-1.912,1.913 -1.912,5.018 0,6.931l6.798,6.798c1.913,1.913 5.019,1.913 6.931,0c1.913,-1.912 1.913,-5.018 0,-6.931l-6.798,-6.798Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M4.901,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,-0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M18.929,11.142c-1.912,-1.912 -5.018,-1.912 -6.931,0c-1.912,1.913 -1.912,5.019 0,6.931l6.799,6.799c1.912,1.912 5.018,1.912 6.931,-0c1.912,-1.913 1.912,-5.019 -0,-6.931l-6.799,-6.799Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.108,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c-0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c-0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'dark'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_dark"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.901,2.196 -4.901,4.901c0,2.705 2.197,4.901 4.901,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.662,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.989,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.732,61.103c1.91,-1.91 1.91,-5.011 0,-6.921l-0.009,-0.01c-1.91,-1.91 -5.012,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.909,1.91 5.011,1.91 6.92,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.672,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.52,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l-0,-0.01c-0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.901,2.196 -4.901,4.901c0,2.704 2.197,4.9 4.901,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.73,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 -0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.098,34.623c-2.699,0 -4.891,2.192 -4.891,4.892l-0,0.019c-0,2.699 2.192,4.891 4.891,4.891c2.7,0 4.892,-2.192 4.892,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.892,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'darkest'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_darkest"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><path d="M39.315,23.791c8.684,-0 15.734,7.05 15.734,15.733c0,8.684 -7.05,15.734 -15.734,15.734c-8.683,0 -15.733,-7.05 -15.733,-15.734c-0,-8.683 7.05,-15.733 15.733,-15.733Zm0,4.737c6.069,0 10.997,4.927 10.997,10.996c-0,6.069 -4.928,10.996 -10.997,10.996c-6.068,0 -10.996,-4.927 -10.996,-10.996c0,-6.069 4.928,-10.996 10.996,-10.996Z" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.216,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.9,2.196 -4.9,4.901c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.666,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.99,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.737,61.103c1.909,-1.91 1.909,-5.011 -0,-6.921l-0.01,-0.01c-1.91,-1.91 -5.011,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.91,1.91 5.011,1.91 6.921,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.676,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.524,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l0,-0.01c0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.216,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901c-0,2.704 2.196,4.9 4.9,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.734,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.103,34.623c-2.7,0 -4.892,2.192 -4.892,4.892l-0,0.019c-0,2.699 2.192,4.891 4.892,4.891c2.699,0 4.891,-2.192 4.891,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.891,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+</a>
+
+<script>
+(function() {
+    const LOCAL_STORAGE_KEY = 'piccoloThemeMode'
+
+    var initialMode = localStorage.getItem(LOCAL_STORAGE_KEY)
+
+    if (initialMode) {
+        // Make sure the value in local storage is valid
+        if (['light', 'dark', 'darkest'].indexOf(initialMode) == -1) {
+            initialMode = 'light'
+            localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+        }
+    } else {
+        // Check if the client prefers dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            initialMode = 'dark'
+        } else {
+            initialMode = 'light'
+        }
+        localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+    }
+
+    document.documentElement.dataset.mode = initialMode
+
+    PetiteVue.createApp({
+        'mode': initialMode,
+        handleClick() {
+            let currentMode = this.mode
+
+            if (currentMode == 'light') {
+                this.mode = 'dark'
+            } else if (currentMode == 'dark') {
+                this.mode = 'darkest'
+            } else if (currentMode == 'darkest') {
+                this.mode = 'light'
+            }
+
+            document.documentElement.dataset.mode = this.mode
+            localStorage.setItem(LOCAL_STORAGE_KEY, this.mode)
+
+            console.log(this.mode)
+        }
+    }).mount('#mode_toggle')
+})()
+</script>
+            <p class="mobile_search_link">
+                <a href="../search.html" title="Search">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 64" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2">
+                        <path d="M14.873 40.009c-2.315-3.943-3.642-8.532-3.642-13.429C11.231 11.91 23.141 0 37.811 0s26.58 11.91 26.58 26.58-11.91 26.58-26.58 26.58a26.44 26.44 0 0 1-14.277-4.161L9.739 62.794a3.12 3.12 0 0 1-4.413 0L.913 58.382c-1.217-1.218-1.217-3.196 0-4.413l13.96-13.96zM37.811 8.054c10.225 0 18.526 8.301 18.526 18.526s-8.301 18.526-18.526 18.526-18.526-8.301-18.526-18.526S27.586 8.054 37.811 8.054z" fill="#fff" />
+                    </svg>
+                </a>
+            </p>
+        
+
+        <div class="searchbox_wrapper">
+            
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+    </nav>
+</div>
+
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../setup/index.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial_01_get_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado HLS Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">IR Builder Walkthrough</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#functiondef-node">FunctionDef Node</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#annassign-node">AnnAssign Node</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#for-node">For Node</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#other-nodes">Other Nodes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../genindex.html">Index</a></li>
+</ul>
+
+        </div>
+      </div>
+
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="sphx-glr-download-link-note admonition note">
+<p class="admonition-title">Note</p>
+<p><a class="reference internal" href="#sphx-glr-download-gallery-developer-01-ir-builder-py"><span class="std std-ref">Go to the end</span></a>
+to download the full example code</p>
+</div>
+<section class="sphx-glr-example-title" id="ir-builder-walkthrough">
+<span id="sphx-glr-gallery-developer-01-ir-builder-py"></span><h1>IR Builder Walkthrough<a class="headerlink" href="#ir-builder-walkthrough" title="Permalink to this headline"><span>¶</span></a></h1>
+<p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
+<p>This guide will walk you through the process of translating a Python-based
+HeteroCL program to the internal MLIR representation. We will use the vector
+addition example to demonstrate the process.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">heterocl</span> <span class="k">as</span> <span class="nn">hcl</span>
+<span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
+</pre></div>
+</div>
+<section id="algorithm-definition">
+<h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
+<p>We can define a <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> function as follows. In the new frontend, we
+leverage the <a class="reference external" href="https://en.wikipedia.org/wiki/Parsing">parsing</a> technique to
+translate the Python code to an MLIR program. Therefore, the first
+step is to parse the Python code to the
+<a class="reference external" href="https://en.wikipedia.org/wiki/Abstract_syntax_tree">AST</a> representation.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span>
+
+
+<span class="k">def</span> <span class="nf">vector_add</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
+    <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">B</span>
+</pre></div>
+</div>
+<p>Python has a rich set of tools to support
+<a class="reference external" href="https://en.wikipedia.org/wiki/Reflective_programming">reflection</a>.
+One of the most useful tools is the <code class="docutils literal notranslate"><span class="pre">inspect</span></code> module, which provides
+an API to access the source code of a Python function. We can call
+<code class="docutils literal notranslate"><span class="pre">inspect.getsource</span></code> to get the source code of the <code class="docutils literal notranslate"><span class="pre">vector_add</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">inspect</span>
+
+<span class="n">src</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsource</span><span class="p">(</span><span class="n">vector_add</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>def vector_add(A: int32[M, N]) -&gt; int32[M, N]:
+    B: int32[M, N] = 0
+    for i, j in hcl.grid(M, N):
+        B[i, j] = A[i, j] + 1
+    return B
+</pre></div>
+</div>
+<p>After we get the string representation of the source code, we can use
+the <code class="docutils literal notranslate"><span class="pre">ast</span></code> module to parse the code to an AST. The <code class="docutils literal notranslate"><span class="pre">astpretty</span></code> module
+can be used to print the AST in a human-readable format, which requires to
+be installed through <code class="docutils literal notranslate"><span class="pre">pip</span></code> separately. Otherwise, you can just use
+<code class="docutils literal notranslate"><span class="pre">ast.dump</span></code> to print the AST in raw format.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">ast</span><span class="o">,</span> <span class="nn">astpretty</span>
+
+<span class="n">tree</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+<span class="n">astpretty</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">show_offsets</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Module(
+  body=[
+    FunctionDef(
+      name=&#39;vector_add&#39;,
+      args=arguments(
+        posonlyargs=[],
+        args=[
+          arg(
+            arg=&#39;A&#39;,
+            annotation=Subscript(
+              value=Name(id=&#39;int32&#39;, ctx=Load()),
+              slice=Tuple(
+                elts=[
+                  Name(id=&#39;M&#39;, ctx=Load()),
+                  Name(id=&#39;N&#39;, ctx=Load()),
+                ],
+                ctx=Load(),
+              ),
+              ctx=Load(),
+            ),
+            type_comment=None,
+          ),
+        ],
+        vararg=None,
+        kwonlyargs=[],
+        kw_defaults=[],
+        kwarg=None,
+        defaults=[],
+      ),
+      body=[
+        AnnAssign(
+          target=Name(id=&#39;B&#39;, ctx=Store()),
+          annotation=Subscript(
+            value=Name(id=&#39;int32&#39;, ctx=Load()),
+            slice=Tuple(
+              elts=[
+                Name(id=&#39;M&#39;, ctx=Load()),
+                Name(id=&#39;N&#39;, ctx=Load()),
+              ],
+              ctx=Load(),
+            ),
+            ctx=Load(),
+          ),
+          value=Constant(value=0, kind=None),
+          simple=1,
+        ),
+        For(
+          target=Tuple(
+            elts=[
+              Name(id=&#39;i&#39;, ctx=Store()),
+              Name(id=&#39;j&#39;, ctx=Store()),
+            ],
+            ctx=Store(),
+          ),
+          iter=Call(
+            func=Attribute(
+              value=Name(id=&#39;hcl&#39;, ctx=Load()),
+              attr=&#39;grid&#39;,
+              ctx=Load(),
+            ),
+            args=[
+              Name(id=&#39;M&#39;, ctx=Load()),
+              Name(id=&#39;N&#39;, ctx=Load()),
+            ],
+            keywords=[],
+          ),
+          body=[
+            Assign(
+              targets=[
+                Subscript(
+                  value=Name(id=&#39;B&#39;, ctx=Load()),
+                  slice=Tuple(
+                    elts=[
+                      Name(id=&#39;i&#39;, ctx=Load()),
+                      Name(id=&#39;j&#39;, ctx=Load()),
+                    ],
+                    ctx=Load(),
+                  ),
+                  ctx=Store(),
+                ),
+              ],
+              value=BinOp(
+                left=Subscript(
+                  value=Name(id=&#39;A&#39;, ctx=Load()),
+                  slice=Tuple(
+                    elts=[
+                      Name(id=&#39;i&#39;, ctx=Load()),
+                      Name(id=&#39;j&#39;, ctx=Load()),
+                    ],
+                    ctx=Load(),
+                  ),
+                  ctx=Load(),
+                ),
+                op=Add(),
+                right=Constant(value=1, kind=None),
+              ),
+              type_comment=None,
+            ),
+          ],
+          orelse=[],
+          type_comment=None,
+        ),
+        Return(
+          value=Name(id=&#39;B&#39;, ctx=Load()),
+        ),
+      ],
+      decorator_list=[],
+      returns=Subscript(
+        value=Name(id=&#39;int32&#39;, ctx=Load()),
+        slice=Tuple(
+          elts=[
+            Name(id=&#39;M&#39;, ctx=Load()),
+            Name(id=&#39;N&#39;, ctx=Load()),
+          ],
+          ctx=Load(),
+        ),
+        ctx=Load(),
+      ),
+      type_comment=None,
+    ),
+  ],
+  type_ignores=[],
+)
+</pre></div>
+</div>
+<p>The AST is a tree structure that represents the syntactic structure of the
+source code. Each node is an operator or an annotation in the source code.
+For example, the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node represents a function
+definition, and the <code class="docutils literal notranslate"><span class="pre">AnnAssign</span></code> node represents an annotated assignment statement.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>We also wrap the above functions in <code class="docutils literal notranslate"><span class="pre">hcl.customize</span></code>, you can
+directly call <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">hcl.customize(vector_add,</span> <span class="pre">verbose=True)</span></code> to obtain
+the AST of the function. The entry point of the <code class="docutils literal notranslate"><span class="pre">customize</span></code> function is
+located in <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/heterocl/customize.py#L228">heterocl/customize.py</a>.</p>
+</div>
+</section>
+<section id="traverse-the-ast">
+<h2>Traverse the AST<a class="headerlink" href="#traverse-the-ast" title="Permalink to this headline"><span>¶</span></a></h2>
+<p>After obtaining the AST, we can traverse the tree node one by one to generate the IR.
+The IR builder is inside <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py">heterocl/ir/builder.py</a>.
+Basically, the builder is a dispatcher that maps the AST node to the corresponding
+IR builder function. For example, the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node will be mapped to
+<code class="docutils literal notranslate"><span class="pre">ASTTransformer.build_FunctionDef</span></code>.</p>
+<p>All the builder function are <code class="docutils literal notranslate"><span class="pre">staticmethod</span></code> s that take in two arguments:
+an AST context and an AST node.
+The AST context stores necessary information used to build the IR, including:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ip_stack</span></code>: The stack of insertion points. The insertion point is used to
+denote the current position of the IR builder. For example, when we are
+building the body of a function, the insertion point is the function body.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">buffers</span></code>: The dictionary that stores all the tensors in the program.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">induction_vars</span></code>: The list of loop iterators, e.g., i, j, k.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">global_vars</span></code>: The global variables defined outside the user-defined function.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">top_func</span></code>: The top-level function of the current program.</p></li>
+</ul>
+<p>The first node to traverse is the <code class="docutils literal notranslate"><span class="pre">Module</span></code> node, which is the root of the AST.
+We can see the <code class="docutils literal notranslate"><span class="pre">build_Module</span></code> function only does one thing: traverse the statements
+inside the body of the module, and recursively call <code class="docutils literal notranslate"><span class="pre">build_stmt</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@staticmethod</span>
+<span class="k">def</span> <span class="nf">build_Module</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">stmt</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">body</span><span class="p">:</span>
+        <span class="n">build_stmt</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">stmt</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="functiondef-node">
+<h1>FunctionDef Node<a class="headerlink" href="#functiondef-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<p>And then we meet the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node, which is the function definition.
+The <code class="docutils literal notranslate"><span class="pre">build_FunctionDef</span></code> function first creates the input and output data types
+based on users’ annotations. Then, it creates a new MLIR function operation by calling</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">func_op</span> <span class="o">=</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">func_type</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="n">loc</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Here, <code class="docutils literal notranslate"><span class="pre">func_d</span></code> is the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/Func/">func</a> dialect defined in MLIR.
+The <code class="docutils literal notranslate"><span class="pre">FuncOp</span></code> is the operation that represents a function in MLIR. The function arguments are
+explained below:
+- <code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the function, and we directly use the AST <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node’s name <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> as the operation name.
+- <code class="docutils literal notranslate"><span class="pre">type</span></code> is the <code class="docutils literal notranslate"><span class="pre">FunctionType</span></code> that defines the input and output types of the function.
+- <code class="docutils literal notranslate"><span class="pre">ip</span></code> is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling <code class="docutils literal notranslate"><span class="pre">ctx.get_ip()</span></code>.
+- <code class="docutils literal notranslate"><span class="pre">loc</span></code> is the actual line number of the function, which can be usually omitted.</p>
+<p>After creating the function operation, we need to create the function body. We first update the insertion point
+to the function body by calling <code class="docutils literal notranslate"><span class="pre">ctx.push_ip(func_op.entry_block)</span></code>. Then, we traverse the function body and recursively
+call <code class="docutils literal notranslate"><span class="pre">build_stmt</span></code>. The function arguments are inserted into the <code class="docutils literal notranslate"><span class="pre">buffers</span></code> for further usage.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You may probably notice the <code class="docutils literal notranslate"><span class="pre">MockArg</span></code> class. This is a mock class that is used to store the
+function arguments, which is <code class="docutils literal notranslate"><span class="pre">BlockArgument``s</span> <span class="pre">in</span> <span class="pre">MLIR.</span> <span class="pre">It</span> <span class="pre">is</span> <span class="pre">different</span> <span class="pre">from</span> <span class="pre">other</span> <span class="pre">operations</span>
+<span class="pre">that</span> <span class="pre">inherently</span> <span class="pre">have</span> <span class="pre">a</span> <span class="pre">``result</span></code> attribute. Therefore, we mock the <code class="docutils literal notranslate"><span class="pre">BlockArgument</span></code> to make
+it consistent with other operations by providing a <code class="docutils literal notranslate"><span class="pre">result</span></code> property method.</p>
+</div>
+</section>
+<section id="annassign-node">
+<h1>AnnAssign Node<a class="headerlink" href="#annassign-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<p>Next, let’s visit the <code class="docutils literal notranslate"><span class="pre">AnnAssign</span></code> node, which is the annotated assignment statement.
+The <code class="docutils literal notranslate"><span class="pre">build_AnnAssign</span></code> function first evaluate the right hand side of the assignment statement
+by calling <code class="docutils literal notranslate"><span class="pre">rhs</span> <span class="pre">=</span> <span class="pre">build_stmt(ctx,</span> <span class="pre">node.value)</span></code>. Then, it gets the user-defined type annotation
+to generate correct data types for the tensor. Please refer to <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/MemRef/">memref</a>
+dialect for more details. Similarly, we can call <code class="docutils literal notranslate"><span class="pre">memref_d.AllocOp</span></code> to create a new memory allocation,
+and you can see the actual <code class="docutils literal notranslate"><span class="pre">memref.alloc</span></code> operation in the generated MLIR code.</p>
+<p>One more thing to mention is that what we see inside the AST is just <strong>string</strong>, so if we want to
+get the actual value of a literal, we need to retrieve it from the <code class="docutils literal notranslate"><span class="pre">ctx.global_vars</span></code> dictionary.
+For example, the <code class="docutils literal notranslate"><span class="pre">int32[M,</span> <span class="pre">N]</span></code> generates the following annotation:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">slice</span><span class="o">=</span><span class="n">Index</span><span class="p">(</span>
+  <span class="n">value</span><span class="o">=</span><span class="n">Tuple</span><span class="p">(</span>
+    <span class="n">elts</span><span class="o">=</span><span class="p">[</span>
+      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">&#39;M&#39;</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
+      <span class="n">Name</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s1">&#39;N&#39;</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">()),</span>
+    <span class="p">],</span>
+    <span class="n">ctx</span><span class="o">=</span><span class="n">Load</span><span class="p">(),</span>
+  <span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>We can see the <code class="docutils literal notranslate"><span class="pre">M</span></code> and <code class="docutils literal notranslate"><span class="pre">N</span></code> are just the <code class="docutils literal notranslate"><span class="pre">Name</span></code> nodes, and we need to retrieve the actual value
+from the <code class="docutils literal notranslate"><span class="pre">ctx.global_vars</span></code> dictionary by calling something like <code class="docutils literal notranslate"><span class="pre">ctx.global_vars[node.slice.value.elts[0].id]</span></code>.</p>
+</section>
+<section id="for-node">
+<h1>For Node<a class="headerlink" href="#for-node" title="Permalink to this headline"><span>¶</span></a></h1>
+<p>The next operator is the <code class="docutils literal notranslate"><span class="pre">For</span></code> node, which is the for-loop statement. We provide different APIs to
+support different loop structures, so we need to further dispatch the <code class="docutils literal notranslate"><span class="pre">For</span></code> node to the corresponding
+builder function. For example, here we use <code class="docutils literal notranslate"><span class="pre">hcl.grid</span></code>, so it will be dispatched to <code class="docutils literal notranslate"><span class="pre">build_grid_for</span></code>.</p>
+<p>We provide some helper functions in <code class="docutils literal notranslate"><span class="pre">heterocl/ir/transform.py</span></code> to make the IR creation easier.
+In this case, we can just call <code class="docutils literal notranslate"><span class="pre">build_for_loops</span></code> and pass in the bounds and the names of the loops
+to create a loop nest.
+Before building the loop body, we need to update the insertion point:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ctx</span><span class="o">.</span><span class="n">set_ip</span><span class="p">(</span><span class="n">for_loops</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>After calling <code class="docutils literal notranslate"><span class="pre">build_stmts(ctx,</span> <span class="pre">node.body)</span></code>, we also need to recover the insertion point:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ctx</span><span class="o">.</span><span class="n">pop_ip</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="other-nodes">
+<h1>Other Nodes<a class="headerlink" href="#other-nodes" title="Permalink to this headline"><span>¶</span></a></h1>
+<p>The build process is similar for other nodes, so I will not go into them one by one.
+Please refer to the <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py">source code</a> for more details.
+After building the IR, you can call <code class="docutils literal notranslate"><span class="pre">s.module</span></code> to see the effect.</p>
+<p>Most of the MLIR operations can be found on this <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/">webpage</a>, and now
+you can follow the definitions and add more amazing facilities to the new HeteroCL frontend!</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.007 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-01-ir-builder-py">
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/63c20f575338e824342a139a2a3bd294/developer_01_ir_builder.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">developer_01_ir_builder.py</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/3bd558739d56fea84d5bc34e888e3da9/developer_01_ir_builder.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">developer_01_ir_builder.ipynb</span></code></a></p>
+</div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents<span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:<span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">IR Builder Walkthrough</a><ul>
+<li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
+<li><a class="reference internal" href="#traverse-the-ast">Traverse the AST</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#functiondef-node">FunctionDef Node</a></li>
+<li><a class="reference internal" href="#annassign-node">AnnAssign Node</a></li>
+<li><a class="reference internal" href="#for-node">For Node</a></li>
+<li><a class="reference internal" href="#other-nodes">Other Nodes</a></li>
+</ul>
+
+            </div>
+        </div>
+    
+
+      <div class="clearer"></div>
+    </div>
+    <div class="button_nav_wrapper">
+        <div class="button_nav">
+            <div class="left">
+                
+                <a href="tutorial_02_vhls.html">
+                    <span class="icon">&lt;</span><span>Vivado HLS Backend</span></a>
+                
+            </div>
+
+            <div class="right">
+                
+                    <a href="../developer/comparison.html"><span>Frontend DSL Comparison</span><span class="icon">&gt;</span></a>
+                
+            </div>
+        </div>
+    </div>
+
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2023, HeteroCL Authors.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
+    </div>
+
+<p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
+  </body>
+</html>

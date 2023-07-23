@@ -16,6 +16,23 @@ HeteroCL New Frontend Documentations
 
 .. only:: html
 
+  .. image:: /gallery/images/thumb/sphx_glr_developer_01_ir_builder_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_developer_01_ir_builder.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">IR Builder Walkthrough</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
   .. image:: /gallery/images/thumb/sphx_glr_tutorial_02_vhls_thumb.png
     :alt:
 
@@ -52,6 +69,7 @@ HeteroCL New Frontend Documentations
 .. toctree::
    :hidden:
 
+   /gallery/developer_01_ir_builder
    /gallery/tutorial_02_vhls
    /gallery/tutorial_01_get_started
 

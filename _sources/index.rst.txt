@@ -44,8 +44,8 @@ Documentation for HeteroCL's new frontend.
    :maxdepth: 1
    :caption: Developer Guide
 
+   gallery/developer_01_ir_builder.rst
    developer/comparison.rst
-   developer/ir_builder.rst
 
 
 .. toctree::
