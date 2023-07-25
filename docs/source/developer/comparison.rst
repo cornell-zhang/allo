@@ -24,4 +24,7 @@ Frontend DSL Comparison
 
 We briefly mention the differences between the old HeteroCL and the new DSL frontend.
 
-Work in progress...
+Working in progress...
+
+- Strict type annotation
+- LLVM module

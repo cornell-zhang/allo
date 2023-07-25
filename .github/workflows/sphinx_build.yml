@@ -75,10 +75,13 @@ jobs:
         BRANCH: gh-pages
         FOLDER: docs/build/html
     - name: Deploy docs to website
-      uses: JamesIves/github-pages-deploy-action@releases/v3
-      if: github.event_name == 'push'
+      uses: cpina/github-action-push-to-another-repository@main
+      env:
+        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
       with:
-        ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-        REPOSITORY_NAME: chhzh123/allo-docs
-        BRANCH: gh-pages
-        FOLDER: docs/build/html
+        source-directory: 'docs/build/html'
+        destination-github-username: 'chhzh123'
+        destination-repository-name: 'allo-docs'
+        user-email: hc676@cornell.edu
+        target-branch: gh-pages
+        target-directory: '.'
