@@ -7,15 +7,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'docs/**'
-      - 'tutorials/**'
   pull_request:
     branches:
       - main
-    paths:
-      - 'docs/**'
-      - 'tutorials/**'
 
 jobs:
   build:
@@ -84,4 +78,4 @@ jobs:
         destination-repository-name: 'allo-docs'
         user-email: hc676@cornell.edu
         target-branch: gh-pages
-        target-directory: '.'
+        target-directory: ""
