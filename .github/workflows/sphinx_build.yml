@@ -68,6 +68,7 @@ jobs:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
         FOLDER: docs/build/html
+    - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
       uses: cpina/github-action-push-to-another-repository@main
       env:
