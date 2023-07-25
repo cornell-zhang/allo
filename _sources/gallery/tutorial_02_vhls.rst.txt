@@ -173,12 +173,12 @@ This is used to change the computation order of matrix multiplication.
               %1 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
               %2 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
               %3 = arith.mulf %1, %2 : f32
-              %4 = affine.load %0[%arg2, %arg4] {from = "C", to = "C"} : memref<1024x1024xf32>
+              %4 = affine.load %0[%arg2, %arg4] {from = "C"} : memref<1024x1024xf32>
               %5 = arith.addf %4, %3 : f32
               affine.store %5, %0[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
             } {loop_name = "j"}
-          } {loop_name = "k", op_name = "S_k", reduction}
-        } {loop_name = "i", op_name = "S_i_j"}
+          } {loop_name = "k", op_name = "S_k_0", reduction}
+        } {loop_name = "i", op_name = "S_i_j_0"}
         return %0 : memref<1024x1024xf32>
       }
     }
@@ -238,12 +238,12 @@ we can directly use ``<func>.<tensor>`` to access a specific tensor in the sched
               %6 = arith.addf %5, %4 : f32
               affine.store %6, %1[%arg4] : memref<1024xf32>
             } {loop_name = "j"}
-          } {loop_name = "k", op_name = "S_k", reduction}
+          } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 1024 {
             %2 = affine.load %1[%arg3] : memref<1024xf32>
             affine.store %2, %0[%arg2, %arg3] : memref<1024x1024xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
-        } {loop_name = "i", op_name = "S_i_j"}
+        } {loop_name = "i", op_name = "S_i_j_0"}
         return %0 : memref<1024x1024xf32>
       }
     }
@@ -298,12 +298,12 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
               %6 = arith.addf %5, %4 : f32
               affine.store %6, %1[%arg4] : memref<1024xf32>
             } {loop_name = "j", pipeline_ii = 1 : i32}
-          } {loop_name = "k", op_name = "S_k", reduction}
+          } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 1024 {
             %2 = affine.load %1[%arg3] : memref<1024xf32>
             affine.store %2, %0[%arg2, %arg3] : memref<1024x1024xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
-        } {loop_name = "i", op_name = "S_i_j"}
+        } {loop_name = "i", op_name = "S_i_j_0"}
         return %0 : memref<1024x1024xf32>
       }
     }
@@ -355,19 +355,19 @@ Vivado HLS code, which will returns the generated code as a string.
       float v0[1024][1024],
       float v1[1024][1024],
       float v2[1024][1024]
-    ) {     // L509
+    ) {     // L575
       for (int v3 = 0; v3 < 1024; v3++) {   //
         for (int v4 = 0; v4 < 1024; v4++) { //
           v2[v3][v4] = 0.000000;    //
         }
       }
-      l_S_i_j_i: for (int i = 0; i < 1024; i++) {   //
+      l_S_i_j_0_i: for (int i = 0; i < 1024; i++) { //
         float v6[1024];     //
         l_j_init: for (int j_init = 0; j_init < 1024; j_init++) {   //
         #pragma HLS pipeline II=1
           v6[j_init] = 0.000000;    //
         }
-        l_S_k_k: for (int k = 0; k < 1024; k++) {   //
+        l_S_k_0_k: for (int k = 0; k < 1024; k++) { //
           l_j: for (int j = 0; j < 1024; j++) {     //
           #pragma HLS pipeline II=1
             float v10 = v0[i][k];   //
@@ -499,7 +499,7 @@ with II=1.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.161 seconds)
+   **Total running time of the script:** ( 0 minutes  0.128 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

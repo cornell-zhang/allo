@@ -245,12 +245,12 @@ This is used to change the computation order of matrix multiplication.</p>
           %1 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
           %2 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
           %3 = arith.mulf %1, %2 : f32
-          %4 = affine.load %0[%arg2, %arg4] {from = &quot;C&quot;, to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          %4 = affine.load %0[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
           %5 = arith.addf %4, %3 : f32
           affine.store %5, %0[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
         } {loop_name = &quot;j&quot;}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k&quot;, reduction}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j&quot;}
+      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
     return %0 : memref&lt;1024x1024xf32&gt;
   }
 }
@@ -290,12 +290,12 @@ we can directly use <code class="docutils literal notranslate"><span class="pre"
           %6 = arith.addf %5, %4 : f32
           affine.store %6, %1[%arg4] : memref&lt;1024xf32&gt;
         } {loop_name = &quot;j&quot;}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k&quot;, reduction}
+      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 1024 {
         %2 = affine.load %1[%arg3] : memref&lt;1024xf32&gt;
         affine.store %2, %0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j&quot;}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
     return %0 : memref&lt;1024x1024xf32&gt;
   }
 }
@@ -329,12 +329,12 @@ initialize and write the intermediate buffer back to output tensor.</p>
           %6 = arith.addf %5, %4 : f32
           affine.store %6, %1[%arg4] : memref&lt;1024xf32&gt;
         } {loop_name = &quot;j&quot;, pipeline_ii = 1 : i32}
-      } {loop_name = &quot;k&quot;, op_name = &quot;S_k&quot;, reduction}
+      } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 1024 {
         %2 = affine.load %1[%arg3] : memref&lt;1024xf32&gt;
         affine.store %2, %0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
-    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j&quot;}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
     return %0 : memref&lt;1024x1024xf32&gt;
   }
 }
@@ -368,19 +368,19 @@ void gemm(
   float v0[1024][1024],
   float v1[1024][1024],
   float v2[1024][1024]
-) {     // L509
+) {     // L575
   for (int v3 = 0; v3 &lt; 1024; v3++) {   //
     for (int v4 = 0; v4 &lt; 1024; v4++) { //
       v2[v3][v4] = 0.000000;    //
     }
   }
-  l_S_i_j_i: for (int i = 0; i &lt; 1024; i++) {   //
+  l_S_i_j_0_i: for (int i = 0; i &lt; 1024; i++) { //
     float v6[1024];     //
     l_j_init: for (int j_init = 0; j_init &lt; 1024; j_init++) {   //
     #pragma HLS pipeline II=1
       v6[j_init] = 0.000000;    //
     }
-    l_S_k_k: for (int k = 0; k &lt; 1024; k++) {   //
+    l_S_k_0_k: for (int k = 0; k &lt; 1024; k++) { //
       l_j: for (int j = 0; j &lt; 1024; j++) {     //
       #pragma HLS pipeline II=1
         float v10 = v0[i][k];   //
@@ -465,7 +465,7 @@ We have the Vivado environment configured in the <code class="docutils literal n
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 with II=1.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.161 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.128 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>

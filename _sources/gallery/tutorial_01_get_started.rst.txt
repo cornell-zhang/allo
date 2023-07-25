@@ -171,12 +171,12 @@ represent the program, and we can directly print out the IR by using
               %1 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref<32x32xi32>
               %2 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref<32x32xi32>
               %3 = arith.muli %1, %2 : i32
-              %4 = affine.load %0[%arg2, %arg3] {from = "C", to = "C"} : memref<32x32xi32>
+              %4 = affine.load %0[%arg2, %arg3] {from = "C"} : memref<32x32xi32>
               %5 = arith.addi %4, %3 : i32
               affine.store %5, %0[%arg2, %arg3] {to = "C"} : memref<32x32xi32>
             } {loop_name = "k"}
           } {loop_name = "j"}
-        } {loop_name = "i", op_name = "S_i_j_k"}
+        } {loop_name = "i", op_name = "S_i_j_k_0"}
         return %0 : memref<32x32xi32>
       }
     }
@@ -263,14 +263,14 @@ We can print out the IR again to see the effect of the transformation.
                 %3 = affine.load %arg0[%2, %arg5] {from = "A"} : memref<32x32xi32>
                 %4 = affine.load %arg1[%arg5, %arg4] {from = "B"} : memref<32x32xi32>
                 %5 = arith.muli %3, %4 : i32
-                %6 = affine.load %0[%2, %arg4] {from = "C", to = "C"} : memref<32x32xi32>
+                %6 = affine.load %0[%2, %arg4] {from = "C"} : memref<32x32xi32>
                 %7 = arith.addi %6, %5 : i32
                 affine.store %7, %0[%2, %arg4] {to = "C"} : memref<32x32xi32>
               } {loop_name = "k"}
             } {loop_name = "j"}
           } {loop_name = "i.inner"}
-        } {loop_name = "i.outer", op_name = "S_i_j_k"}
-        %1 = hcl.create_op_handle "S_i_j_k"
+        } {loop_name = "i.outer", op_name = "S_i_j_k_0"}
+        %1 = hcl.create_op_handle "S_i_j_k_0"
         return %0 : memref<32x32xi32>
       }
     }
@@ -319,15 +319,15 @@ Similarly, we can split the ``j`` loop:
                   %4 = affine.load %arg0[%3, %arg6] {from = "A"} : memref<32x32xi32>
                   %5 = affine.load %arg1[%arg6, %2] {from = "B"} : memref<32x32xi32>
                   %6 = arith.muli %4, %5 : i32
-                  %7 = affine.load %0[%3, %2] {from = "C", to = "C"} : memref<32x32xi32>
+                  %7 = affine.load %0[%3, %2] {from = "C"} : memref<32x32xi32>
                   %8 = arith.addi %7, %6 : i32
                   affine.store %8, %0[%3, %2] {to = "C"} : memref<32x32xi32>
                 } {loop_name = "k"}
               } {loop_name = "j.inner"}
             } {loop_name = "j.outer"}
           } {loop_name = "i.inner"}
-        } {loop_name = "i.outer", op_name = "S_i_j_k"}
-        %1 = hcl.create_op_handle "S_i_j_k"
+        } {loop_name = "i.outer", op_name = "S_i_j_k_0"}
+        %1 = hcl.create_op_handle "S_i_j_k_0"
         return %0 : memref<32x32xi32>
       }
     }
@@ -374,14 +374,14 @@ loops together.
                   %3 = affine.load %arg0[%2, %arg6] {from = "A"} : memref<32x32xi32>
                   %4 = affine.load %arg1[%arg6, %1] {from = "B"} : memref<32x32xi32>
                   %5 = arith.muli %3, %4 : i32
-                  %6 = affine.load %0[%2, %1] {from = "C", to = "C"} : memref<32x32xi32>
+                  %6 = affine.load %0[%2, %1] {from = "C"} : memref<32x32xi32>
                   %7 = arith.addi %6, %5 : i32
                   affine.store %7, %0[%2, %1] {to = "C"} : memref<32x32xi32>
                 } {loop_name = "k"}
               } {loop_name = "j.inner"}
             } {loop_name = "i.inner"}
           } {loop_name = "j.outer"}
-        } {loop_name = "i.outer", op_name = "S_i_j_k"}
+        } {loop_name = "i.outer", op_name = "S_i_j_k_0"}
         return %0 : memref<32x32xi32>
       }
     }
@@ -425,24 +425,27 @@ accelerator.
 
   ``s.build(target="llvm")`` is equivalent to ``s.build()``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 158-163
+.. GENERATED FROM PYTHON SOURCE LINES 158-167
 
 Prepare the Inputs/Outputs for the Executable
 ---------------------------------------------
 To run the executable, we can generate random NumPy arrays as input data, and
 directly feed them into the executable. HeteroCL will automatically handle the
-input data and generate corresponding internal wrappers for LLVM to execute.
+input data and generate corresponding internal wrappers for LLVM to execute,
+but we still need to make sure the data types are consistent. By default,
+``np.random.randint`` will generate np.int64 data type, while we use ``int32``
+when defining our kernel function, so we need to explicitly cast the data type
+to ``np.int32``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 163-170
+.. GENERATED FROM PYTHON SOURCE LINES 167-173
 
 .. code-block:: default
 
 
     import numpy as np
 
-    np_A = np.random.randint(0, 100, (32, 32))
-    np_B = np.random.randint(0, 100, (32, 32))
-    np_C = np.zeros((32, 32), dtype=np.int32)
+    np_A = np.random.randint(0, 100, (32, 32)).astype(np.int32)
+    np_B = np.random.randint(0, 100, (32, 32)).astype(np.int32)
 
 
 
@@ -451,20 +454,20 @@ input data and generate corresponding internal wrappers for LLVM to execute.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 171-176
+.. GENERATED FROM PYTHON SOURCE LINES 174-179
 
 Run the Executable
 ------------------
 With the prepared inputs/outputs, we can feed them to our executable.
-Notice the output is also passed into the HeteroCL as a function argument,
-and the result will be directly written into the output array.
+Notice our module can return a new array as output, so we can directly
+assign the output to a new variable.
 
-.. GENERATED FROM PYTHON SOURCE LINES 176-179
+.. GENERATED FROM PYTHON SOURCE LINES 179-182
 
 .. code-block:: default
 
 
-    mod(np_A, np_B, np_C)
+    np_C = mod(np_A, np_B)
 
 
 
@@ -473,11 +476,11 @@ and the result will be directly written into the output array.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 180-181
+.. GENERATED FROM PYTHON SOURCE LINES 183-184
 
 Finally, we can do a sanity check to see if the results are correct.
 
-.. GENERATED FROM PYTHON SOURCE LINES 181-184
+.. GENERATED FROM PYTHON SOURCE LINES 184-187
 
 .. code-block:: default
 
@@ -494,7 +497,7 @@ Finally, we can do a sanity check to see if the results are correct.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.289 seconds)
+   **Total running time of the script:** ( 0 minutes  0.107 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_01_get_started.py:

@@ -159,22 +159,25 @@ mod = s.build(target="llvm")
 # ---------------------------------------------
 # To run the executable, we can generate random NumPy arrays as input data, and
 # directly feed them into the executable. HeteroCL will automatically handle the
-# input data and generate corresponding internal wrappers for LLVM to execute.
+# input data and generate corresponding internal wrappers for LLVM to execute,
+# but we still need to make sure the data types are consistent. By default,
+# ``np.random.randint`` will generate np.int64 data type, while we use ``int32``
+# when defining our kernel function, so we need to explicitly cast the data type
+# to ``np.int32``.
 
 import numpy as np
 
-np_A = np.random.randint(0, 100, (32, 32))
-np_B = np.random.randint(0, 100, (32, 32))
-np_C = np.zeros((32, 32), dtype=np.int32)
+np_A = np.random.randint(0, 100, (32, 32)).astype(np.int32)
+np_B = np.random.randint(0, 100, (32, 32)).astype(np.int32)
 
 ##############################################################################
 # Run the Executable
 # ------------------
 # With the prepared inputs/outputs, we can feed them to our executable.
-# Notice the output is also passed into the HeteroCL as a function argument,
-# and the result will be directly written into the output array.
+# Notice our module can return a new array as output, so we can directly
+# assign the output to a new variable.
 
-mod(np_A, np_B, np_C)
+np_C = mod(np_A, np_B)
 
 ##############################################################################
 # Finally, we can do a sanity check to see if the results are correct.
