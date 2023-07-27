@@ -22,7 +22,7 @@
 Frontend DSL Comparison
 #######################
 
-We briefly mention the differences between the old Allo and the new DSL frontend.
+We briefly mention the differences between HeteroCL and the Allo DSL.
 
 Working in progress...
 

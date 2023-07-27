@@ -44,6 +44,7 @@ Documentation for Allo DSL.
    :maxdepth: 1
    :caption: Developer Guide
 
+   developer/index.rst
    gallery/developer_01_ir_builder.rst
    developer/comparison.rst
 
