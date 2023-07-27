@@ -533,10 +533,10 @@ class ASTTransformer(Builder):
             type_str = type_hint.value.id
             # pylint: disable=redefined-builtin
             slice = (
-                type_hint.slice
-                if isinstance(type_hint.slice, ast.Tuple)
-                else type_hint.slice.value
-            )  # ast.Index
+                type_hint.slice.value
+                if isinstance(type_hint.slice, ast.Index)
+                else type_hint.slice
+            )
             elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
             shape = [
                 x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
@@ -579,10 +579,10 @@ class ASTTransformer(Builder):
                 type_str = type_hint.value.id
                 # pylint: disable=redefined-builtin
                 slice = (
-                    type_hint.slice
-                    if isinstance(type_hint.slice, ast.Tuple)
-                    else type_hint.slice.value
-                )  # ast.Index
+                    type_hint.slice.value
+                    if isinstance(type_hint.slice, ast.Index)
+                    else type_hint.slice
+                )
                 elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
                 shape = [
                     x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
