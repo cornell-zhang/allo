@@ -353,8 +353,8 @@ class ASTTransformer(Builder):
             #       inside the node
             # pylint: disable=redefined-builtin
             slice = (
-                node.slice if isinstance(node.slice, ast.Tuple) else node.slice.value
-            )  # ast.Index
+                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            )
             elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
             ctx.dim_count = 0
             ctx.affine_vars = []
@@ -474,9 +474,7 @@ class ASTTransformer(Builder):
         ctx.affine_vars = []
         index_exprs = []
         # pylint: disable=redefined-builtin
-        slice = (
-            node.slice if isinstance(node.slice, ast.Tuple) else node.slice.value
-        )  # ast.Index
+        slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
         is_affine = True
         for index in elts:
