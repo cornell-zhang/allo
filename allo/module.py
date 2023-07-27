@@ -20,10 +20,18 @@ from hcl_mlir.runtime import (
     make_nd_memref_descriptor,
     ranked_memref_to_numpy,
 )
-from .context import get_context, get_location
+from .context import get_context, set_context, get_location
 from .utils import np_type_to_str
 from .report import parse_xml
 from .runtime import run_process, copy_build_files
+
+
+def invoke_mlir_parser(mod: str):
+    set_context()
+    with get_context() as ctx, get_location():
+        hcl_d.register_dialect(ctx)
+        module = Module.parse(str(mod), ctx)
+    return module
 
 
 class LLVMModule:
