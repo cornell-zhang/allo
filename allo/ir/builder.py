@@ -6,7 +6,6 @@ import ast
 import inspect
 import textwrap
 from hcl_mlir.ir import (
-    Location,
     InsertionPoint,
     FunctionType,
     MemRefType,
@@ -35,7 +34,6 @@ from hcl_mlir.dialects import (
     linalg as linalg_d,
 )
 from hcl_mlir import get_mlir_type
-from ..utils import get_src_loc
 from ..context import get_context, get_location
 from .transform import build_for_loops
 
@@ -525,8 +523,6 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_AnnAssign(ctx, node):
         ip = ctx.get_ip()
-        filename, lineno = get_src_loc()
-        loc = Location.file(filename, lineno, 0)
         type_hint = node.annotation
         if node.value is None:
             raise RuntimeError(
@@ -547,7 +543,7 @@ class ASTTransformer(Builder):
             ]
             ele_type = get_mlir_type(type_str)
             memref_type = MemRefType.get(shape, ele_type)
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip, loc=loc)
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             ctx.buffers[node.target.id] = alloc_op
             with ip:
@@ -572,8 +568,6 @@ class ASTTransformer(Builder):
             old_ctx = None
 
         ip = ctx.get_ip()
-        filename, lineno = get_src_loc()
-        loc = Location.file(filename, lineno, 0)
         input_types = []
         input_typehints = []
         arg_names = []
@@ -621,7 +615,7 @@ class ASTTransformer(Builder):
 
         # Build function
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip, loc=loc)
+        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip)
         func_op.add_entry_block()
         ctx.top_func = func_op
         for name, arg in zip(arg_names, func_op.arguments):
