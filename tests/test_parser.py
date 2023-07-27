@@ -548,5 +548,3 @@ if __name__ == "__main__":
     test_fcompute_wrap_more()
     test_compute_at()
     test_imperfect_loops()
-
-sys.exit()
