@@ -63,6 +63,23 @@ Allo Documentations
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
+  .. image:: /gallery/images/thumb/sphx_glr_developer_02_mlir_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_developer_02_mlir.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">MLIR Translation Guide</div>
+    </div>
+
+
+.. raw:: html
+
     </div>
 
 
@@ -72,6 +89,7 @@ Allo Documentations
    /gallery/developer_01_ir_builder
    /gallery/tutorial_02_vhls
    /gallery/tutorial_01_get_started
+   /gallery/developer_02_mlir
 
 
 
