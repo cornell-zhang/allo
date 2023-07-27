@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 xcl2_SRCS:=${COMMON_REPO}/xcl2.cpp
