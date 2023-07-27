@@ -49,6 +49,10 @@ We also provide a script to set up the backend LLVM compiler. You can copy the s
   $ cp /work/shared/common/allo/setup.sh ~/
   $ source ~/setup.sh
 
+.. note::
+
+  You can also add this line to your :code:`~/.bashrc` file so that you don't need to run the setup script every time.
+
 Then, you can pull the latest version of Allo from GitHub and install it by running
 
 .. code-block:: console
@@ -56,10 +60,6 @@ Then, you can pull the latest version of Allo from GitHub and install it by runn
   $ git clone https://github.com/cornell-zhang/allo.git
   $ cd allo
   $ python3 -m pip install -e .
-
-.. note::
-
-  You can also add this line to your :code:`~/.bashrc` file so that you don't need to run the setup script every time.
 
 Now, you can run the following command to test if the installation is successful
 
