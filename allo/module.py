@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, consider-using-with
 
 import os
 import io
@@ -170,8 +170,7 @@ class HLSModule:
     def __repr__(self):
         if self.mode is None:
             return self.hls_code
-        else:
-            return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
+        return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, shell=True):
         platform = "vivado_hls"

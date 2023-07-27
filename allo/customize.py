@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
-import io
 import inspect
 import textwrap
 import ast
@@ -303,18 +302,16 @@ class Schedule:
         if target is None or target == "llvm":
             target = "llvm"
             _mlir_lower_pipeline(self.module, lower_linalg=True)
-            mod = LLVMModule(self.module, top_func_name=self.top_func.name.value)
-            return mod
+            return LLVMModule(self.module, top_func_name=self.top_func.name.value)
         if target == "vhls":
             # FIXME: Handle linalg.fill
             _mlir_lower_pipeline(self.module, lower_linalg=True)
-            mod = HLSModule(
+            return HLSModule(
                 self.module,
                 top_func_name=self.top_func.name.value,
                 mode=mode,
                 project=project,
             )
-            return mod
         raise NotImplementedError(f"Target {target} is not supported")
 
 
