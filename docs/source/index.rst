@@ -46,6 +46,7 @@ Documentation for Allo DSL.
 
    developer/index.rst
    gallery/developer_01_ir_builder.rst
+   gallery/developer_02_mlir.rst
    developer/comparison.rst
 
 

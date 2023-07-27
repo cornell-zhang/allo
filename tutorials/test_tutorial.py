@@ -12,3 +12,7 @@ def test_tutorial_02():
 
 def test_guide_01():
     import developer_01_ir_builder
+
+
+def test_guide_02():
+    import developer_02_mlir
