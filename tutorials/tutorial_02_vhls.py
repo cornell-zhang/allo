@@ -131,8 +131,9 @@ print(code)
 # create a target platform, and configure the target with the ``vivado_hls`` compiler.
 # The ``project`` argument is used to specify the name of the Vivado HLS project folder.
 
-target = allo.Platform.xilinx_zc706
-target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
+# target = allo.Platform.xilinx_zc706
+# target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
+target = "vhls"
 
 # %%
 # Finally, we call the ``.build()`` function with the specified ``target`` to generate

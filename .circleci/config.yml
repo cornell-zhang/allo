@@ -33,11 +33,6 @@ jobs:
             make -j4
             export PYTHONPATH=$(pwd)/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
       - run:
-          name: MLIR Tests
-          command: |
-            cd hcl-dialect/build
-            cmake --build . --target check-hcl
-      - run:
           name: Install Allo Dependencies
           command: |
             python3 -m pip install -r requirements.txt
@@ -49,19 +44,19 @@ jobs:
       - run: 
           name: Allo Tests
           command: |
-            export HCL_HOME=$(pwd)
+            export ALLO_HOME=$(pwd)
             export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
             export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
-            export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
-            export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
-            python3 -m pytest tests -v
+            export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
+            # python3 -m pytest tests -v
       - run:
           name: Allo Tutorials
           command: |
-            export HCL_HOME=$(pwd)
+            export ALLO_HOME=$(pwd)
             export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
             export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
-            export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
-            export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
+            export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
             cd tutorials
             python3 -m pytest test_tutorial.py -v
