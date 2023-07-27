@@ -186,15 +186,15 @@ After the installation, you can create a new environment for Allo by running the
 <span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>~/setup.sh
 </pre></div>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You can also add this line to your <code class="code docutils literal notranslate"><span class="pre">~/.bashrc</span></code> file so that you don’t need to run the setup script every time.</p>
+</div>
 <p>Then, you can pull the latest version of Allo from GitHub and install it by running</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git
 <span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>allo
 <span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>You can also add this line to your <code class="code docutils literal notranslate"><span class="pre">~/.bashrc</span></code> file so that you don’t need to run the setup script every time.</p>
 </div>
 <p>Now, you can run the following command to test if the installation is successful</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import allo as allo; import allo.ir as air&quot;</span>

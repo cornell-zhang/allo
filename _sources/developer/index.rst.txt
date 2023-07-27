@@ -29,7 +29,7 @@ the Allo repository, which helps create a `PR (pull request) <https://docs.githu
 
 To create your own fork, click on the "Fork" button on the top right of the `Allo repository <https://github.com/cornell-zhang/allo>`_.
 This will create a copy of the repository under your own GitHub account. Please do *NOT* make it public
-at this time.
+at this time. (By default, fork from a private repository should be private.)
 
 Next, you can clone your fork to your local machine OR if you have already cloned the Allo repository, you can add your fork as a remote:
 
