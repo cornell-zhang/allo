@@ -130,16 +130,10 @@ print(code)
 # We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
 # create a target platform, and configure the target with the ``vivado_hls`` compiler.
 # The ``project`` argument is used to specify the name of the Vivado HLS project folder.
-
-# target = allo.Platform.xilinx_zc706
-# target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
-target = "vhls"
-
-# %%
 # Finally, we call the ``.build()`` function with the specified ``target`` to generate
 # the Vivado HLS project.
 
-mod = s.build(target=target)
+mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
 
 # %%
 # You will see a ``gemm.prj`` folder is generated in the current directory:

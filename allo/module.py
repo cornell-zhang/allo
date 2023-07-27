@@ -167,6 +167,12 @@ class HLSModule:
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write("")
 
+    def __repr__(self):
+        if self.mode is None:
+            return self.hls_code
+        else:
+            return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
+
     def __call__(self, shell=True):
         platform = "vivado_hls"
         if platform in {"vivado_hls", "vitis_hls"}:
