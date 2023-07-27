@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -7,38 +7,37 @@ Getting Started
 
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
-In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.
+In this tutorial, we demonstrate the basic usage of Allo-MLIR with the new DSL frontend.
 
-Import HeteroCL
+Import Allo
 ---------------
-We usually use ``hcl`` as the acronym of HeteroCL.
 """
 
-import heterocl as hcl
+import allo
 
 
 ##############################################################################
 # Algorithm Definition
 # --------------------
-# HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+# Allo leverages a algorithm-optimization decoupled paradigm, which means
 # users can first define the algorithm in a high-level language and then
 # optimize the program with various hardware customization techniques (i.e.,
 # schedule primitives). Here we show how to define a general matrix multiplication
-# (GEMM) in the new HeteroCL DSL.
+# (GEMM) in the new Allo DSL.
 #
-# We first import the necessary data types from HeteroCL. In this example, we
+# We first import the necessary data types from Allo. In this example, we
 # use ``int32`` as the data type for all the variables.
 
-from heterocl.ir.types import int32
+from allo.ir.types import int32
 
 # %%
 # We then define a function that takes two 32x32 matrices as inputs and
 # returns a 32x32 matrix as output. The variable declaration is defined
 # as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
-# HeteroCL's kernels, which is different from directly programming in Python.
+# Allo's kernels, which is different from directly programming in Python.
 #
 # Inside the kernel, we provide a shorthand for the loop iterator. For example,
-# ``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following
+# ``for i, j, k in allo.grid(32, 32, 32)`` is equivalent to the following
 # nested for-loop:
 #
 # .. code-block:: python
@@ -48,15 +47,15 @@ from heterocl.ir.types import int32
 #            for k in range(32):
 #                # body
 #
-# The ``hcl.grid`` API is used to define the iteration space of the loop.
+# The ``allo.grid`` API is used to define the iteration space of the loop.
 # The arguments denote the upper bounds of the loop iterators.
-# Notice the above range-loop is also supported in the new HeteroCL, so
+# Notice the above range-loop is also supported in the new Allo, so
 # users have more flexibility to define the loop structure.
 
 
 def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
     C: int32[32, 32] = 0
-    for i, j, k in hcl.grid(32, 32, 32):
+    for i, j, k in allo.grid(32, 32, 32):
         C[i, j] += A[i, k] * B[k, j]
     return C
 
@@ -65,16 +64,16 @@ def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
 # Create the Schedule
 # -------------------
 # After defining the algorithm, we can start applying transformations to the
-# kernel in order to achieve high performance. We call ``hcl.customize`` to
+# kernel in order to achieve high performance. We call ``allo.customize`` to
 # create a schedule for the kernel, where **schedule** denotes the set of
 # transformations.
 
-s = hcl.customize(gemm)
+s = allo.customize(gemm)
 
 ##############################################################################
 # Inspect the Intermediate Representation (IR)
 # --------------------------------------------
-# HeteroCL leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
+# Allo leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
 # represent the program, and we can directly print out the IR by using
 # ``s.module``.
 
@@ -94,7 +93,7 @@ print(s.module)
 #
 # And the inner-most dot-product is explicitly represented by a sequence of load/store
 # operations and some arithmetic operations.
-# HeteroCL also attaches some attributes to the operations, including the tensor
+# Allo also attaches some attributes to the operations, including the tensor
 # names, loop names, and operation names, which are further used for optimization.
 
 ##############################################################################
@@ -111,7 +110,7 @@ s.split("i", factor=8)
 #
 # .. note::
 #
-#   In the new HeteroCL DSL, all the transformations are applied **immediately**,
+#   In the new Allo DSL, all the transformations are applied **immediately**,
 #   so users can directly see the changes after they apply the transformations.
 
 print(s.module)
@@ -142,7 +141,7 @@ print(s.module)
 # ---------------------
 # The next step is to generate the executable from the schedule. We can
 # directly call ``.build()`` function on the schedule and specify the target
-# hardware as ``llvm``. By default, HeteroCL will generate a LLVM program that
+# hardware as ``llvm``. By default, Allo will generate a LLVM program that
 # can be executed on the CPU. Otherwise, you can also specify the target as
 # ``vhls`` to generate a Vivado HLS program that can be synthesized to an FPGA
 # accelerator.
@@ -158,7 +157,7 @@ mod = s.build(target="llvm")
 # Prepare the Inputs/Outputs for the Executable
 # ---------------------------------------------
 # To run the executable, we can generate random NumPy arrays as input data, and
-# directly feed them into the executable. HeteroCL will automatically handle the
+# directly feed them into the executable. Allo will automatically handle the
 # input data and generate corresponding internal wrappers for LLVM to execute,
 # but we still need to make sure the data types are consistent. By default,
 # ``np.random.randint`` will generate np.int64 data type, while we use ``int32``

@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>Getting Started &#8212; HeteroCL Internal Documentation</title>
+    <title>Getting Started &#8212; Allo Internal Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -40,8 +40,8 @@
         <p id="toggle_sidebar">
             <a href="#" title="Toggle sidebar">|||</a>
         </p>
-        <h1><a href="../index.html" title="Go to homepage">HeteroCL Internal Documentation</a></h1>
-            <a id="source_link" href="https://github.com/cornell-zhang/heterocl">
+        <h1><a href="../index.html" title="Go to homepage">Allo Internal Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
     
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
             <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
@@ -172,32 +172,31 @@ to download the full example code</p>
 <section class="sphx-glr-example-title" id="getting-started">
 <span id="sphx-glr-gallery-tutorial-01-get-started-py"></span><h1>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
-<p>In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.</p>
-<section id="import-heterocl">
-<h2>Import HeteroCL<a class="headerlink" href="#import-heterocl" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>We usually use <code class="docutils literal notranslate"><span class="pre">hcl</span></code> as the acronym of HeteroCL.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">heterocl</span> <span class="k">as</span> <span class="nn">hcl</span>
+<p>In this tutorial, we demonstrate the basic usage of Allo-MLIR with the new DSL frontend.</p>
+<section id="import-allo">
+<h2>Import Allo<a class="headerlink" href="#import-allo" title="Permalink to this headline"><span>¶</span></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
 </pre></div>
 </div>
 </section>
 <section id="algorithm-definition">
 <h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+<p>Allo leverages a algorithm-optimization decoupled paradigm, which means
 users can first define the algorithm in a high-level language and then
 optimize the program with various hardware customization techniques (i.e.,
 schedule primitives). Here we show how to define a general matrix multiplication
-(GEMM) in the new HeteroCL DSL.</p>
-<p>We first import the necessary data types from HeteroCL. In this example, we
+(GEMM) in the new Allo DSL.</p>
+<p>We first import the necessary data types from Allo. In this example, we
 use <code class="docutils literal notranslate"><span class="pre">int32</span></code> as the data type for all the variables.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
 </pre></div>
 </div>
 <p>We then define a function that takes two 32x32 matrices as inputs and
 returns a 32x32 matrix as output. The variable declaration is defined
 as <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;:</span> <span class="pre">&lt;type&gt;[&lt;shape&gt;]</span></code>. We require <strong>strict type annotation</strong> in
-HeteroCL’s kernels, which is different from directly programming in Python.</p>
+Allo’s kernels, which is different from directly programming in Python.</p>
 <p>Inside the kernel, we provide a shorthand for the loop iterator. For example,
-<code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">i,</span> <span class="pre">j,</span> <span class="pre">k</span> <span class="pre">in</span> <span class="pre">hcl.grid(32,</span> <span class="pre">32,</span> <span class="pre">32)</span></code> is equivalent to the following
+<code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">i,</span> <span class="pre">j,</span> <span class="pre">k</span> <span class="pre">in</span> <span class="pre">allo.grid(32,</span> <span class="pre">32,</span> <span class="pre">32)</span></code> is equivalent to the following
 nested for-loop:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
@@ -205,13 +204,13 @@ nested for-loop:</p>
             <span class="c1"># body</span>
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">hcl.grid</span></code> API is used to define the iteration space of the loop.
+<p>The <code class="docutils literal notranslate"><span class="pre">allo.grid</span></code> API is used to define the iteration space of the loop.
 The arguments denote the upper bounds of the loop iterators.
-Notice the above range-loop is also supported in the new HeteroCL, so
+Notice the above range-loop is also supported in the new Allo, so
 users have more flexibility to define the loop structure.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
     <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
         <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">C</span>
 </pre></div>
@@ -220,16 +219,16 @@ users have more flexibility to define the loop structure.</p>
 <section id="create-the-schedule">
 <h2>Create the Schedule<a class="headerlink" href="#create-the-schedule" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>After defining the algorithm, we can start applying transformations to the
-kernel in order to achieve high performance. We call <code class="docutils literal notranslate"><span class="pre">hcl.customize</span></code> to
+kernel in order to achieve high performance. We call <code class="docutils literal notranslate"><span class="pre">allo.customize</span></code> to
 create a schedule for the kernel, where <strong>schedule</strong> denotes the set of
 transformations.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="inspect-the-intermediate-representation-ir">
 <h2>Inspect the Intermediate Representation (IR)<a class="headerlink" href="#inspect-the-intermediate-representation-ir" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>HeteroCL leverage the <a class="reference external" href="https://mlir.llvm.org/">MLIR</a> infrastructure to
+<p>Allo leverage the <a class="reference external" href="https://mlir.llvm.org/">MLIR</a> infrastructure to
 represent the program, and we can directly print out the IR by using
 <code class="docutils literal notranslate"><span class="pre">s.module</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
@@ -270,7 +269,7 @@ contains the following dialects:</p>
 </ul>
 <p>And the inner-most dot-product is explicitly represented by a sequence of load/store
 operations and some arithmetic operations.
-HeteroCL also attaches some attributes to the operations, including the tensor
+Allo also attaches some attributes to the operations, including the tensor
 names, loop names, and operation names, which are further used for optimization.</p>
 </section>
 <section id="apply-transformations">
@@ -284,7 +283,7 @@ the outer-most loop into two, we can call the <code class="docutils literal notr
 <p>We can print out the IR again to see the effect of the transformation.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>In the new HeteroCL DSL, all the transformations are applied <strong>immediately</strong>,
+<p>In the new Allo DSL, all the transformations are applied <strong>immediately</strong>,
 so users can directly see the changes after they apply the transformations.</p>
 </div>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
@@ -397,7 +396,7 @@ module {
 <h2>Create the Executable<a class="headerlink" href="#create-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>The next step is to generate the executable from the schedule. We can
 directly call <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function on the schedule and specify the target
-hardware as <code class="docutils literal notranslate"><span class="pre">llvm</span></code>. By default, HeteroCL will generate a LLVM program that
+hardware as <code class="docutils literal notranslate"><span class="pre">llvm</span></code>. By default, Allo will generate a LLVM program that
 can be executed on the CPU. Otherwise, you can also specify the target as
 <code class="docutils literal notranslate"><span class="pre">vhls</span></code> to generate a Vivado HLS program that can be synthesized to an FPGA
 accelerator.</p>
@@ -412,7 +411,7 @@ accelerator.</p>
 <section id="prepare-the-inputs-outputs-for-the-executable">
 <h2>Prepare the Inputs/Outputs for the Executable<a class="headerlink" href="#prepare-the-inputs-outputs-for-the-executable" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>To run the executable, we can generate random NumPy arrays as input data, and
-directly feed them into the executable. HeteroCL will automatically handle the
+directly feed them into the executable. Allo will automatically handle the
 input data and generate corresponding internal wrappers for LLVM to execute,
 but we still need to make sure the data types are consistent. By default,
 <code class="docutils literal notranslate"><span class="pre">np.random.randint</span></code> will generate np.int64 data type, while we use <code class="docutils literal notranslate"><span class="pre">int32</span></code>
@@ -438,7 +437,7 @@ assign the output to a new variable.</p>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.110 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.103 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/8d3af32bb0bffe35477d27ae08e595fe/tutorial_01_get_started.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_01_get_started.py</span></code></a></p>
@@ -466,7 +465,7 @@ assign the output to a new variable.</p>
             <div class="page_toc">
                 <ul>
 <li><a class="reference internal" href="#">Getting Started</a><ul>
-<li><a class="reference internal" href="#import-heterocl">Import HeteroCL</a></li>
+<li><a class="reference internal" href="#import-allo">Import Allo</a></li>
 <li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
 <li><a class="reference internal" href="#create-the-schedule">Create the Schedule</a></li>
 <li><a class="reference internal" href="#inspect-the-intermediate-representation-ir">Inspect the Intermediate Representation (IR)</a></li>
@@ -503,7 +502,7 @@ assign the output to a new variable.</p>
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, HeteroCL Authors.
+        &#169; Copyright 2023, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
     </div>
 

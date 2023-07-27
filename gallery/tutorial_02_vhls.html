@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>Vivado HLS Backend &#8212; HeteroCL Internal Documentation</title>
+    <title>Vivado HLS Backend &#8212; Allo Internal Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -40,8 +40,8 @@
         <p id="toggle_sidebar">
             <a href="#" title="Toggle sidebar">|||</a>
         </p>
-        <h1><a href="../index.html" title="Go to homepage">HeteroCL Internal Documentation</a></h1>
-            <a id="source_link" href="https://github.com/cornell-zhang/heterocl">
+        <h1><a href="../index.html" title="Go to homepage">Allo Internal Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
     
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
             <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
@@ -172,13 +172,13 @@ to download the full example code</p>
 <section class="sphx-glr-example-title" id="vivado-hls-backend">
 <span id="sphx-glr-gallery-tutorial-02-vhls-py"></span><h1>Vivado HLS Backend<a class="headerlink" href="#vivado-hls-backend" title="Permalink to this headline"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
-<p>In this tutorial, we will demonstrate how to leverage the new HeteroCL DSL frontend to generate
+<p>In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
 Vivado HLS code for FPGA.</p>
-<section id="import-heterocl">
-<h2>Import HeteroCL<a class="headerlink" href="#import-heterocl" title="Permalink to this headline"><span>¶</span></a></h2>
+<section id="import-allo">
+<h2>Import Allo<a class="headerlink" href="#import-allo" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>First, we import the necessary packages.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">heterocl</span> <span class="k">as</span> <span class="nn">hcl</span>
-<span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">float32</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
+<span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">float32</span>
 </pre></div>
 </div>
 </section>
@@ -192,21 +192,21 @@ However, we will make some changes to demonstrate more features of the DSL.</p>
 </div>
 <p>Here, we define the main computation of the GEMM but use <code class="docutils literal notranslate"><span class="pre">float32</span></code> as the
 data type. Notice that users can easily leverage the previously defined arguments
-(e.g., <code class="docutils literal notranslate"><span class="pre">M</span></code>, <code class="docutils literal notranslate"><span class="pre">N</span></code>, and <code class="docutils literal notranslate"><span class="pre">K</span></code>) to construct the matrices, and HeteroCL will
+(e.g., <code class="docutils literal notranslate"><span class="pre">M</span></code>, <code class="docutils literal notranslate"><span class="pre">N</span></code>, and <code class="docutils literal notranslate"><span class="pre">K</span></code>) to construct the matrices, and Allo will
 automatically captures the global variables.</p>
-<p>Since HeteroCL has a strict type system, we need to be careful about the
+<p>Since Allo has a strict type system, we need to be careful about the
 data types of the variables. To initialize matrix <code class="docutils literal notranslate"><span class="pre">C</span></code> with all zeros, we
 need to pass in a floating-point value <code class="docutils literal notranslate"><span class="pre">0.0</span></code> instead of an integer.</p>
-<p>We also use the <code class="docutils literal notranslate"><span class="pre">hcl.reduction</span></code> API to denote the reduction axis. The
+<p>We also use the <code class="docutils literal notranslate"><span class="pre">allo.reduction</span></code> API to denote the reduction axis. The
 reduction axis is the loop iterator that is used to accumulate the result.
 In this example, we use <code class="docutils literal notranslate"><span class="pre">k</span></code> as the reduction axis, which means the
 computation of <code class="docutils literal notranslate"><span class="pre">C[i,</span> <span class="pre">j]</span></code> will be accumulated along the <code class="docutils literal notranslate"><span class="pre">k</span></code> dimension.
-This annotation is necessary for later optimizations, since HeteroCL leverages
+This annotation is necessary for later optimizations, since Allo leverages
 this information to generate correct intermediate buffers.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
     <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
             <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">C</span>
 </pre></div>
@@ -225,7 +225,7 @@ original dot-product.</p>
 <p>To get more rational of this technique, please refer to the above mentioned
 paper from Torsten Hoefler’s group.</p>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>We first reorder the inner reduction loop with the middle loop.
@@ -258,14 +258,14 @@ This is used to change the computation order of matrix multiplication.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>This reordering seems to be easy, but it is impossible in the old HeteroCL,
-since the previous HeteroCL directly generate reduction variables which make
+<p>This reordering seems to be easy, but it is impossible in the old Allo,
+since the previous Allo directly generate reduction variables which make
 the <code class="docutils literal notranslate"><span class="pre">j</span></code> loop becomes imperfect, while MLIR only supports reordering perfect
 loops.</p>
 </div>
 <p>Next, we create a new buffer for the output tensor <code class="docutils literal notranslate"><span class="pre">C</span></code>.
 We provide a <code class="docutils literal notranslate"><span class="pre">.buffer_at()</span></code> primitive for users to quickly create a new buffer
-along a specific axis. Since HeteroCL has attached all the tensors to the function,
+along a specific axis. Since Allo has attached all the tensors to the function,
 we can directly use <code class="docutils literal notranslate"><span class="pre">&lt;func&gt;.&lt;tensor&gt;</span></code> to access a specific tensor in the schedule.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">gemm</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
@@ -301,7 +301,7 @@ we can directly use <code class="docutils literal notranslate"><span class="pre"
 }
 </pre></div>
 </div>
-<p>From the above generated code, we can see that HeteroCL automatically
+<p>From the above generated code, we can see that Allo automatically
 creates an intermediate buffer <code class="docutils literal notranslate"><span class="pre">%1</span></code> for <code class="docutils literal notranslate"><span class="pre">C</span></code> and attach it inside the <code class="docutils literal notranslate"><span class="pre">i</span></code> loop.
 Also two additional loop nested named <code class="docutils literal notranslate"><span class="pre">j_init</span></code> and <code class="docutils literal notranslate"><span class="pre">j_back</span></code> are created to
 initialize and write the intermediate buffer back to output tensor.</p>
@@ -368,7 +368,7 @@ void gemm(
   float v0[1024][1024],
   float v1[1024][1024],
   float v2[1024][1024]
-) {     // L575
+) {     //
   for (int v3 = 0; v3 &lt; 1024; v3++) {   //
     for (int v4 = 0; v4 &lt; 1024; v4++) { //
       v2[v3][v4] = 0.000000;    //
@@ -403,11 +403,12 @@ void gemm(
 <p>We can see that the generated code preserves the same structure as the IR, and inserts
 necessary headers and pragmas for Vivado HLS. The generated code can be directly passed
 to Vivado HLS to generate RTL designs.</p>
-<p>We even provide an easy way to invoke Vivado HLS from HeteroCL. Users can simply
+<p>We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
 create a target platform, and configure the target with the <code class="docutils literal notranslate"><span class="pre">vivado_hls</span></code> compiler.
 The <code class="docutils literal notranslate"><span class="pre">project</span></code> argument is used to specify the name of the Vivado HLS project folder.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">target</span> <span class="o">=</span> <span class="n">hcl</span><span class="o">.</span><span class="n">Platform</span><span class="o">.</span><span class="n">xilinx_zc706</span>
-<span class="n">target</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">compiler</span><span class="o">=</span><span class="s2">&quot;vivado_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;debug&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># target = allo.Platform.xilinx_zc706</span>
+<span class="c1"># target.config(compiler=&quot;vivado_hls&quot;, mode=&quot;debug&quot;, project=&quot;gemm.prj&quot;)</span>
+<span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;vhls&quot;</span>
 </pre></div>
 </div>
 <p>Finally, we call the <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function with the specified <code class="docutils literal notranslate"><span class="pre">target</span></code> to generate
@@ -427,7 +428,7 @@ the Vivado HLS project.</p>
 <p class="admonition-title">Note</p>
 <p>You need to configure the Vivado HLS environment before running the generated code.
 We have the Vivado environment configured in the <code class="docutils literal notranslate"><span class="pre">brg-zhang</span></code> server, so you can directly
-<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/heterocl/vitis_2019.2_opt.sh</span></code> to set up the environment.</p>
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/allo/vitis_2019.2_opt.sh</span></code> to set up the environment.</p>
 </div>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="p">()</span>
 </pre></div>
@@ -465,7 +466,7 @@ We have the Vivado environment configured in the <code class="docutils literal n
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 with II=1.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.157 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.078 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>
@@ -493,7 +494,7 @@ with II=1.</p>
             <div class="page_toc">
                 <ul>
 <li><a class="reference internal" href="#">Vivado HLS Backend</a><ul>
-<li><a class="reference internal" href="#import-heterocl">Import HeteroCL</a></li>
+<li><a class="reference internal" href="#import-allo">Import Allo</a></li>
 <li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
 <li><a class="reference internal" href="#scalar-vector-product-for-gemm">Scalar-Vector Product for GEMM</a></li>
 <li><a class="reference internal" href="#codegen-for-vivado-hls">Codegen for Vivado HLS</a></li>
@@ -526,7 +527,7 @@ with II=1.</p>
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, HeteroCL Authors.
+        &#169; Copyright 2023, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
     </div>
 

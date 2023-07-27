@@ -1,6 +1,6 @@
 :orphan:
 
-HeteroCL New Frontend Documentations
+Allo Documentations
 ====================================
 
 

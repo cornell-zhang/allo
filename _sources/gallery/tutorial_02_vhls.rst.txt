@@ -24,10 +24,10 @@ Vivado HLS Backend
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 
-In this tutorial, we will demonstrate how to leverage the new HeteroCL DSL frontend to generate
+In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
 Vivado HLS code for FPGA.
 
-Import HeteroCL
+Import Allo
 ---------------
 First, we import the necessary packages.
 
@@ -36,8 +36,8 @@ First, we import the necessary packages.
 .. code-block:: default
 
 
-    import heterocl as hcl
-    from heterocl.ir.types import float32
+    import allo
+    from allo.ir.types import float32
 
 
 
@@ -73,18 +73,18 @@ We can define the constants as follows, which denotes the matrix sizes:
 
 Here, we define the main computation of the GEMM but use ``float32`` as the
 data type. Notice that users can easily leverage the previously defined arguments
-(e.g., ``M``, ``N``, and ``K``) to construct the matrices, and HeteroCL will
+(e.g., ``M``, ``N``, and ``K``) to construct the matrices, and Allo will
 automatically captures the global variables.
 
-Since HeteroCL has a strict type system, we need to be careful about the
+Since Allo has a strict type system, we need to be careful about the
 data types of the variables. To initialize matrix ``C`` with all zeros, we
 need to pass in a floating-point value ``0.0`` instead of an integer.
 
-We also use the ``hcl.reduction`` API to denote the reduction axis. The
+We also use the ``allo.reduction`` API to denote the reduction axis. The
 reduction axis is the loop iterator that is used to accumulate the result.
 In this example, we use ``k`` as the reduction axis, which means the
 computation of ``C[i, j]`` will be accumulated along the ``k`` dimension.
-This annotation is necessary for later optimizations, since HeteroCL leverages
+This annotation is necessary for later optimizations, since Allo leverages
 this information to generate correct intermediate buffers.
 
 .. GENERATED FROM PYTHON SOURCE LINES 48-58
@@ -95,8 +95,8 @@ this information to generate correct intermediate buffers.
 
     def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
         C: float32[M, N] = 0.0
-        for i, j in hcl.grid(M, N):
-            for k in hcl.reduction(K):
+        for i, j in allo.grid(M, N):
+            for k in allo.reduction(K):
                 C[i, j] += A[i, k] * B[k, j]
         return C
 
@@ -132,7 +132,7 @@ original dot-product.
 .. code-block:: default
 
 
-    s = hcl.customize(gemm)
+    s = allo.customize(gemm)
 
 
 
@@ -191,8 +191,8 @@ This is used to change the computation order of matrix multiplication.
 
 .. note::
 
-   This reordering seems to be easy, but it is impossible in the old HeteroCL,
-   since the previous HeteroCL directly generate reduction variables which make
+   This reordering seems to be easy, but it is impossible in the old Allo,
+   since the previous Allo directly generate reduction variables which make
    the ``j`` loop becomes imperfect, while MLIR only supports reordering perfect
    loops.
 
@@ -200,7 +200,7 @@ This is used to change the computation order of matrix multiplication.
 
 Next, we create a new buffer for the output tensor ``C``.
 We provide a ``.buffer_at()`` primitive for users to quickly create a new buffer
-along a specific axis. Since HeteroCL has attached all the tensors to the function,
+along a specific axis. Since Allo has attached all the tensors to the function,
 we can directly use ``<func>.<tensor>`` to access a specific tensor in the schedule.
 
 .. GENERATED FROM PYTHON SOURCE LINES 98-102
@@ -254,7 +254,7 @@ we can directly use ``<func>.<tensor>`` to access a specific tensor in the sched
 
 .. GENERATED FROM PYTHON SOURCE LINES 103-107
 
-From the above generated code, we can see that HeteroCL automatically
+From the above generated code, we can see that Allo automatically
 creates an intermediate buffer ``%1`` for ``C`` and attach it inside the ``i`` loop.
 Also two additional loop nested named ``j_init`` and ``j_back`` are created to
 initialize and write the intermediate buffer back to output tensor.
@@ -355,7 +355,7 @@ Vivado HLS code, which will returns the generated code as a string.
       float v0[1024][1024],
       float v1[1024][1024],
       float v2[1024][1024]
-    ) {     // L575
+    ) {     //
       for (int v3 = 0; v3 < 1024; v3++) {   //
         for (int v4 = 0; v4 < 1024; v4++) { //
           v2[v3][v4] = 0.000000;    //
@@ -399,17 +399,18 @@ to Vivado HLS to generate RTL designs.
 
 .. GENERATED FROM PYTHON SOURCE LINES 130-133
 
-We even provide an easy way to invoke Vivado HLS from HeteroCL. Users can simply
+We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
 create a target platform, and configure the target with the ``vivado_hls`` compiler.
 The ``project`` argument is used to specify the name of the Vivado HLS project folder.
 
-.. GENERATED FROM PYTHON SOURCE LINES 133-137
+.. GENERATED FROM PYTHON SOURCE LINES 133-138
 
 .. code-block:: default
 
 
-    target = hcl.Platform.xilinx_zc706
-    target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
+    # target = allo.Platform.xilinx_zc706
+    # target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
+    target = "vhls"
 
 
 
@@ -418,12 +419,12 @@ The ``project`` argument is used to specify the name of the Vivado HLS project f
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 138-140
+.. GENERATED FROM PYTHON SOURCE LINES 139-141
 
 Finally, we call the ``.build()`` function with the specified ``target`` to generate
 the Vivado HLS project.
 
-.. GENERATED FROM PYTHON SOURCE LINES 140-143
+.. GENERATED FROM PYTHON SOURCE LINES 141-144
 
 .. code-block:: default
 
@@ -437,7 +438,7 @@ the Vivado HLS project.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 144-162
+.. GENERATED FROM PYTHON SOURCE LINES 145-163
 
 You will see a ``gemm.prj`` folder is generated in the current directory:
 
@@ -452,13 +453,13 @@ To run Vivado HLS, you can simply invoke the built module without passing any ar
 
    You need to configure the Vivado HLS environment before running the generated code.
    We have the Vivado environment configured in the ``brg-zhang`` server, so you can directly
-   ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to set up the environment.
+   ``source /work/shared/common/allo/vitis_2019.2_opt.sh`` to set up the environment.
 
 .. code-block:: python
 
    mod()
 
-.. GENERATED FROM PYTHON SOURCE LINES 164-199
+.. GENERATED FROM PYTHON SOURCE LINES 165-200
 
 After executing the above command, you will see the following output:
 
@@ -499,7 +500,7 @@ with II=1.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.157 seconds)
+   **Total running time of the script:** ( 0 minutes  0.078 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

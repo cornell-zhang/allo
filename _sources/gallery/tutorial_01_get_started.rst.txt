@@ -23,18 +23,17 @@ Getting Started
 
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
-In this tutorial, we demonstrate the basic usage of HeteroCL-MLIR with the new DSL frontend.
+In this tutorial, we demonstrate the basic usage of Allo-MLIR with the new DSL frontend.
 
-Import HeteroCL
+Import Allo
 ---------------
-We usually use ``hcl`` as the acronym of HeteroCL.
 
-.. GENERATED FROM PYTHON SOURCE LINES 16-20
+.. GENERATED FROM PYTHON SOURCE LINES 15-19
 
 .. code-block:: default
 
 
-    import heterocl as hcl
+    import allo
 
 
 
@@ -44,25 +43,25 @@ We usually use ``hcl`` as the acronym of HeteroCL.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 21-31
+.. GENERATED FROM PYTHON SOURCE LINES 20-30
 
 Algorithm Definition
 --------------------
-HeteroCL leverages a algorithm-optimization decoupled paradigm, which means
+Allo leverages a algorithm-optimization decoupled paradigm, which means
 users can first define the algorithm in a high-level language and then
 optimize the program with various hardware customization techniques (i.e.,
 schedule primitives). Here we show how to define a general matrix multiplication
-(GEMM) in the new HeteroCL DSL.
+(GEMM) in the new Allo DSL.
 
-We first import the necessary data types from HeteroCL. In this example, we
+We first import the necessary data types from Allo. In this example, we
 use ``int32`` as the data type for all the variables.
 
-.. GENERATED FROM PYTHON SOURCE LINES 31-34
+.. GENERATED FROM PYTHON SOURCE LINES 30-33
 
 .. code-block:: default
 
 
-    from heterocl.ir.types import int32
+    from allo.ir.types import int32
 
 
 
@@ -71,15 +70,15 @@ use ``int32`` as the data type for all the variables.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 35-55
+.. GENERATED FROM PYTHON SOURCE LINES 34-54
 
 We then define a function that takes two 32x32 matrices as inputs and
 returns a 32x32 matrix as output. The variable declaration is defined
 as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
-HeteroCL's kernels, which is different from directly programming in Python.
+Allo's kernels, which is different from directly programming in Python.
 
 Inside the kernel, we provide a shorthand for the loop iterator. For example,
-``for i, j, k in hcl.grid(32, 32, 32)`` is equivalent to the following
+``for i, j, k in allo.grid(32, 32, 32)`` is equivalent to the following
 nested for-loop:
 
 .. code-block:: python
@@ -89,12 +88,12 @@ nested for-loop:
            for k in range(32):
                # body
 
-The ``hcl.grid`` API is used to define the iteration space of the loop.
+The ``allo.grid`` API is used to define the iteration space of the loop.
 The arguments denote the upper bounds of the loop iterators.
-Notice the above range-loop is also supported in the new HeteroCL, so
+Notice the above range-loop is also supported in the new Allo, so
 users have more flexibility to define the loop structure.
 
-.. GENERATED FROM PYTHON SOURCE LINES 55-64
+.. GENERATED FROM PYTHON SOURCE LINES 54-63
 
 .. code-block:: default
 
@@ -102,7 +101,7 @@ users have more flexibility to define the loop structure.
 
     def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
-        for i, j, k in hcl.grid(32, 32, 32):
+        for i, j, k in allo.grid(32, 32, 32):
             C[i, j] += A[i, k] * B[k, j]
         return C
 
@@ -114,21 +113,21 @@ users have more flexibility to define the loop structure.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 65-71
+.. GENERATED FROM PYTHON SOURCE LINES 64-70
 
 Create the Schedule
 -------------------
 After defining the algorithm, we can start applying transformations to the
-kernel in order to achieve high performance. We call ``hcl.customize`` to
+kernel in order to achieve high performance. We call ``allo.customize`` to
 create a schedule for the kernel, where **schedule** denotes the set of
 transformations.
 
-.. GENERATED FROM PYTHON SOURCE LINES 71-74
+.. GENERATED FROM PYTHON SOURCE LINES 70-73
 
 .. code-block:: default
 
 
-    s = hcl.customize(gemm)
+    s = allo.customize(gemm)
 
 
 
@@ -137,15 +136,15 @@ transformations.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 75-80
+.. GENERATED FROM PYTHON SOURCE LINES 74-79
 
 Inspect the Intermediate Representation (IR)
 --------------------------------------------
-HeteroCL leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
+Allo leverage the `MLIR <https://mlir.llvm.org/>`_ infrastructure to
 represent the program, and we can directly print out the IR by using
 ``s.module``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 80-83
+.. GENERATED FROM PYTHON SOURCE LINES 79-82
 
 .. code-block:: default
 
@@ -185,7 +184,7 @@ represent the program, and we can directly print out the IR by using
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 84-99
+.. GENERATED FROM PYTHON SOURCE LINES 83-98
 
 Let's take a close look at the generated IR. Basically an MLIR program is
 a set of operations in different dialects, and the operations are referred
@@ -200,10 +199,10 @@ contains the following dialects:
 
 And the inner-most dot-product is explicitly represented by a sequence of load/store
 operations and some arithmetic operations.
-HeteroCL also attaches some attributes to the operations, including the tensor
+Allo also attaches some attributes to the operations, including the tensor
 names, loop names, and operation names, which are further used for optimization.
 
-.. GENERATED FROM PYTHON SOURCE LINES 101-106
+.. GENERATED FROM PYTHON SOURCE LINES 100-105
 
 Apply Transformations
 ---------------------
@@ -211,7 +210,7 @@ Next, we start transforming the program by using the schedule primitives.
 We can refer to the loops by using the loop names. For example, to split
 the outer-most loop into two, we can call the ``.split()`` primitive as follows:
 
-.. GENERATED FROM PYTHON SOURCE LINES 106-109
+.. GENERATED FROM PYTHON SOURCE LINES 105-108
 
 .. code-block:: default
 
@@ -225,16 +224,16 @@ the outer-most loop into two, we can call the ``.split()`` primitive as follows:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 110-116
+.. GENERATED FROM PYTHON SOURCE LINES 109-115
 
 We can print out the IR again to see the effect of the transformation.
 
 .. note::
 
-  In the new HeteroCL DSL, all the transformations are applied **immediately**,
+  In the new Allo DSL, all the transformations are applied **immediately**,
   so users can directly see the changes after they apply the transformations.
 
-.. GENERATED FROM PYTHON SOURCE LINES 116-119
+.. GENERATED FROM PYTHON SOURCE LINES 115-118
 
 .. code-block:: default
 
@@ -279,7 +278,7 @@ We can print out the IR again to see the effect of the transformation.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 120-125
+.. GENERATED FROM PYTHON SOURCE LINES 119-124
 
 We can see that the outer-most loop is split into two loops, and the
 original loop is replaced by the two new loops. The new loops are named
@@ -287,7 +286,7 @@ as ``i.outer`` and ``i.inner``.
 
 Similarly, we can split the ``j`` loop:
 
-.. GENERATED FROM PYTHON SOURCE LINES 125-129
+.. GENERATED FROM PYTHON SOURCE LINES 124-128
 
 .. code-block:: default
 
@@ -336,13 +335,13 @@ Similarly, we can split the ``j`` loop:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 130-133
+.. GENERATED FROM PYTHON SOURCE LINES 129-132
 
 We can further reorder the loops by using ``.reorder()``. For example, we
 can move the splitted outer loops together, and move the splitted inner
 loops together.
 
-.. GENERATED FROM PYTHON SOURCE LINES 133-137
+.. GENERATED FROM PYTHON SOURCE LINES 132-136
 
 .. code-block:: default
 
@@ -390,22 +389,22 @@ loops together.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 138-139
+.. GENERATED FROM PYTHON SOURCE LINES 137-138
 
 We can see the changes from the loop names in the generated IR.
 
-.. GENERATED FROM PYTHON SOURCE LINES 141-149
+.. GENERATED FROM PYTHON SOURCE LINES 140-148
 
 Create the Executable
 ---------------------
 The next step is to generate the executable from the schedule. We can
 directly call ``.build()`` function on the schedule and specify the target
-hardware as ``llvm``. By default, HeteroCL will generate a LLVM program that
+hardware as ``llvm``. By default, Allo will generate a LLVM program that
 can be executed on the CPU. Otherwise, you can also specify the target as
 ``vhls`` to generate a Vivado HLS program that can be synthesized to an FPGA
 accelerator.
 
-.. GENERATED FROM PYTHON SOURCE LINES 149-152
+.. GENERATED FROM PYTHON SOURCE LINES 148-151
 
 .. code-block:: default
 
@@ -419,25 +418,25 @@ accelerator.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 153-156
+.. GENERATED FROM PYTHON SOURCE LINES 152-155
 
 .. note::
 
   ``s.build(target="llvm")`` is equivalent to ``s.build()``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 158-167
+.. GENERATED FROM PYTHON SOURCE LINES 157-166
 
 Prepare the Inputs/Outputs for the Executable
 ---------------------------------------------
 To run the executable, we can generate random NumPy arrays as input data, and
-directly feed them into the executable. HeteroCL will automatically handle the
+directly feed them into the executable. Allo will automatically handle the
 input data and generate corresponding internal wrappers for LLVM to execute,
 but we still need to make sure the data types are consistent. By default,
 ``np.random.randint`` will generate np.int64 data type, while we use ``int32``
 when defining our kernel function, so we need to explicitly cast the data type
 to ``np.int32``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 167-173
+.. GENERATED FROM PYTHON SOURCE LINES 166-172
 
 .. code-block:: default
 
@@ -454,7 +453,7 @@ to ``np.int32``.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 174-179
+.. GENERATED FROM PYTHON SOURCE LINES 173-178
 
 Run the Executable
 ------------------
@@ -462,7 +461,7 @@ With the prepared inputs/outputs, we can feed them to our executable.
 Notice our module can return a new array as output, so we can directly
 assign the output to a new variable.
 
-.. GENERATED FROM PYTHON SOURCE LINES 179-182
+.. GENERATED FROM PYTHON SOURCE LINES 178-181
 
 .. code-block:: default
 
@@ -476,11 +475,11 @@ assign the output to a new variable.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 183-184
+.. GENERATED FROM PYTHON SOURCE LINES 182-183
 
 Finally, we can do a sanity check to see if the results are correct.
 
-.. GENERATED FROM PYTHON SOURCE LINES 184-187
+.. GENERATED FROM PYTHON SOURCE LINES 183-186
 
 .. code-block:: default
 
@@ -497,7 +496,7 @@ Finally, we can do a sanity check to see if the results are correct.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.110 seconds)
+   **Total running time of the script:** ( 0 minutes  0.103 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_01_get_started.py:

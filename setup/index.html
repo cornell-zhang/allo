@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>Installation &#8212; HeteroCL Internal Documentation</title>
+    <title>Installation &#8212; Allo Internal Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -26,7 +26,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Getting Started" href="../gallery/tutorial_01_get_started.html" />
-    <link rel="prev" title="HeteroCL Internal Documentation" href="../index.html" /> 
+    <link rel="prev" title="Allo Internal Documentation" href="../index.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -40,8 +40,8 @@
         <p id="toggle_sidebar">
             <a href="#" title="Toggle sidebar">|||</a>
         </p>
-        <h1><a href="../index.html" title="Go to homepage">HeteroCL Internal Documentation</a></h1>
-            <a id="source_link" href="https://github.com/cornell-zhang/heterocl">
+        <h1><a href="../index.html" title="Go to homepage">Allo Internal Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
     
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
             <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
@@ -166,7 +166,7 @@
             
   <section id="installation">
 <span id="setup"></span><h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline"><span>¶</span></a></h1>
-<p>To install and use HeteroCL, we need to have the LLVM compiler infrastructure installed on our system.
+<p>To install and use Allo, we need to have the LLVM compiler infrastructure installed on our system.
 We have already prepared a prebuilt version of LLVM on our server, so you can directly export it to your system path.
 Please follow the instruction below to set up the environment.</p>
 <p>Make sure you have the access to the <code class="code docutils literal notranslate"><span class="pre">brg-zhang</span></code> or <code class="code docutils literal notranslate"><span class="pre">zhang-21</span></code> server. You can log into the server by
@@ -176,24 +176,24 @@ for more details on configuring VSCode. Those servers are only accessible from t
 <a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html">Miniconda</a>, which is a lightweight version of Anaconda and contains
 only the necessary packages. You can download the installer from the link above and install it on your system.
 After the installation, you can create a new environment and install the required packages by running the following commands:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>hcl<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.8
-<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>hcl
-<span class="gp">$ </span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/work/shared/common/heterocl/requirements.txt
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.8
+<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
+<span class="gp">$ </span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/work/shared/common/allo/requirements.txt
 </pre></div>
 </div>
 <p>We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory by running</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>cp<span class="w"> </span>/work/shared/common/heterocl/setup.sh<span class="w"> </span>~/
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>cp<span class="w"> </span>/work/shared/common/allo/setup.sh<span class="w"> </span>~/
 </pre></div>
 </div>
-<p>Then, you can pull the latest version of HeteroCL from GitHub by running</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/chhzh123/heterocl.git
-<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>heterocl
+<p>Then, you can pull the latest version of Allo from GitHub by running</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/chhzh123/allo.git
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>allo
 <span class="gp">$ </span>git<span class="w"> </span>checkout<span class="w"> </span>parser
 </pre></div>
 </div>
-<p>Maintaining your own copy of HeteroCL is important since later on you will probably need to change the source code.
-To expose HeteroCL to your environment, please change the <strong>last line</strong> of the setup script <code class="code docutils literal notranslate"><span class="pre">~/setup.sh</span></code> to</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$PYTHONPATH</span>:~/heterocl
+<p>Maintaining your own copy of Allo is important since later on you will probably need to change the source code.
+To expose Allo to your environment, please change the <strong>last line</strong> of the setup script <code class="code docutils literal notranslate"><span class="pre">~/setup.sh</span></code> to</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$PYTHONPATH</span>:~/allo
 </pre></div>
 </div>
 <p>Then, you can run the setup script to set up the environment</p>
@@ -205,21 +205,21 @@ To expose HeteroCL to your environment, please change the <strong>last line</str
 <p>You can also add this line to your <code class="code docutils literal notranslate"><span class="pre">~/.bashrc</span></code> file so that you don’t need to run the setup script every time.</p>
 </div>
 <p>Now, you can run the following command to test if the installation is successful</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import heterocl as hcl; hcl.init(hcl.Int())&quot;</span>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import allo as allo; allo.init(allo.Int())&quot;</span>
 </pre></div>
 </div>
 <p>If you see no error message, then the installation is successful. Otherwise, please contact us for help.</p>
 <section id="trouble-shooting">
 <h2>Trouble Shooting<a class="headerlink" href="#trouble-shooting" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>If you encounter the following error message when running the test command, please check if you have set up the environment correctly.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt;&gt;&gt; import heterocl.ir</span>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">&gt;&gt;&gt; import allo.ir</span>
 <span class="go">Traceback (most recent call last):</span>
 <span class="go">  File &quot;&lt;stdin&gt;&quot;, line 1, in &lt;module&gt;</span>
-<span class="go">ModuleNotFoundError: No module named &#39;heterocl.ir&#39;</span>
+<span class="go">ModuleNotFoundError: No module named &#39;allo.ir&#39;</span>
 </pre></div>
 </div>
 <p>To be more specific, you can check if your <code class="code docutils literal notranslate"><span class="pre">PYTHONPATH</span></code> environment variable <strong>ONLY</strong> contains the repository path of your
-own HeteroCL (by typing <code class="docutils literal notranslate"><span class="pre">echo</span> <span class="pre">$PYTHONPATH</span></code> in the terminal).
+own Allo (by typing <code class="docutils literal notranslate"><span class="pre">echo</span> <span class="pre">$PYTHONPATH</span></code> in the terminal).
 Otherwise, you can <code class="docutils literal notranslate"><span class="pre">unset</span> <span class="pre">PYTHONPATH</span></code> to remove the environment variable and run the setup script again.</p>
 </section>
 </section>
@@ -255,7 +255,7 @@ Otherwise, you can <code class="docutils literal notranslate"><span class="pre">
             <div class="left">
                 
                 <a href="../index.html">
-                    <span class="icon">&lt;</span><span>HeteroCL Internal Documentation</span></a>
+                    <span class="icon">&lt;</span><span>Allo Internal Documentation</span></a>
                 
             </div>
 
@@ -269,7 +269,7 @@ Otherwise, you can <code class="docutils literal notranslate"><span class="pre">
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, HeteroCL Authors.
+        &#169; Copyright 2023, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
     </div>
 

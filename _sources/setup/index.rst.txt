@@ -1,4 +1,4 @@
-..  Copyright HeteroCL authors. All Rights Reserved.
+..  Copyright Allo authors. All Rights Reserved.
     SPDX-License-Identifier: Apache-2.0
 
 ..  Licensed to the Apache Software Foundation (ASF) under one
@@ -24,7 +24,7 @@
 Installation
 ############
 
-To install and use HeteroCL, we need to have the LLVM compiler infrastructure installed on our system.
+To install and use Allo, we need to have the LLVM compiler infrastructure installed on our system.
 We have already prepared a prebuilt version of LLVM on our server, so you can directly export it to your system path.
 Please follow the instruction below to set up the environment.
 
@@ -39,30 +39,30 @@ After the installation, you can create a new environment and install the require
 
 .. code-block:: console
 
-  $ conda create -n hcl python=3.8
-  $ conda activate hcl
-  $ python -m pip install -r /work/shared/common/heterocl/requirements.txt
+  $ conda create -n allo python=3.8
+  $ conda activate allo
+  $ python -m pip install -r /work/shared/common/allo/requirements.txt
 
 We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory by running
 
 .. code-block:: console
 
-  $ cp /work/shared/common/heterocl/setup.sh ~/
+  $ cp /work/shared/common/allo/setup.sh ~/
 
-Then, you can pull the latest version of HeteroCL from GitHub by running
+Then, you can pull the latest version of Allo from GitHub by running
 
 .. code-block:: console
 
-  $ git clone https://github.com/chhzh123/heterocl.git
-  $ cd heterocl
+  $ git clone https://github.com/chhzh123/allo.git
+  $ cd allo
   $ git checkout parser
 
-Maintaining your own copy of HeteroCL is important since later on you will probably need to change the source code.
-To expose HeteroCL to your environment, please change the **last line** of the setup script :code:`~/setup.sh` to
+Maintaining your own copy of Allo is important since later on you will probably need to change the source code.
+To expose Allo to your environment, please change the **last line** of the setup script :code:`~/setup.sh` to
 
 .. code-block:: bash
 
-  export PYTHONPATH=$PYTHONPATH:~/heterocl
+  export PYTHONPATH=$PYTHONPATH:~/allo
 
 Then, you can run the setup script to set up the environment
 
@@ -78,7 +78,7 @@ Now, you can run the following command to test if the installation is successful
 
 .. code-block:: console
 
-  $ python -c "import heterocl as hcl; hcl.init(hcl.Int())"
+  $ python -c "import allo as allo; allo.init(allo.Int())"
 
 If you see no error message, then the installation is successful. Otherwise, please contact us for help.
 
@@ -89,11 +89,11 @@ If you encounter the following error message when running the test command, plea
 
 .. code-block:: console
 
-  >>> import heterocl.ir
+  >>> import allo.ir
   Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
-  ModuleNotFoundError: No module named 'heterocl.ir'
+  ModuleNotFoundError: No module named 'allo.ir'
 
 To be more specific, you can check if your :code:`PYTHONPATH` environment variable **ONLY** contains the repository path of your
-own HeteroCL (by typing ``echo $PYTHONPATH`` in the terminal).
+own Allo (by typing ``echo $PYTHONPATH`` in the terminal).
 Otherwise, you can ``unset PYTHONPATH`` to remove the environment variable and run the setup script again.

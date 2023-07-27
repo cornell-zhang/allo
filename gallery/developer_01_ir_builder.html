@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>IR Builder Walkthrough &#8212; HeteroCL Internal Documentation</title>
+    <title>IR Builder Walkthrough &#8212; Allo Internal Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -40,8 +40,8 @@
         <p id="toggle_sidebar">
             <a href="#" title="Toggle sidebar">|||</a>
         </p>
-        <h1><a href="../index.html" title="Go to homepage">HeteroCL Internal Documentation</a></h1>
-            <a id="source_link" href="https://github.com/cornell-zhang/heterocl">
+        <h1><a href="../index.html" title="Go to homepage">Allo Internal Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
     
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
             <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
@@ -173,10 +173,10 @@ to download the full example code</p>
 <span id="sphx-glr-gallery-developer-01-ir-builder-py"></span><h1>IR Builder Walkthrough<a class="headerlink" href="#ir-builder-walkthrough" title="Permalink to this headline"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>This guide will walk you through the process of translating a Python-based
-HeteroCL program to the internal MLIR representation. We will use the vector
+Allo program to the internal MLIR representation. We will use the vector
 addition example to demonstrate the process.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">heterocl</span> <span class="k">as</span> <span class="nn">hcl</span>
-<span class="kn">from</span> <span class="nn">heterocl.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
+<span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
 </pre></div>
 </div>
 <section id="algorithm-definition">
@@ -191,7 +191,7 @@ step is to parse the Python code to the
 
 <span class="k">def</span> <span class="nf">vector_add</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">hcl</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
         <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
     <span class="k">return</span> <span class="n">B</span>
 </pre></div>
@@ -209,7 +209,7 @@ an API to access the source code of a Python function. We can call
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>def vector_add(A: int32[M, N]) -&gt; int32[M, N]:
     B: int32[M, N] = 0
-    for i, j in hcl.grid(M, N):
+    for i, j in allo.grid(M, N):
         B[i, j] = A[i, j] + 1
     return B
 </pre></div>
@@ -281,7 +281,7 @@ be installed through <code class="docutils literal notranslate"><span class="pre
           ),
           iter=Call(
             func=Attribute(
-              value=Name(id=&#39;hcl&#39;, ctx=Load()),
+              value=Name(id=&#39;allo&#39;, ctx=Load()),
               attr=&#39;grid&#39;,
               ctx=Load(),
             ),
@@ -356,16 +356,16 @@ For example, the <code class="docutils literal notranslate"><span class="pre">Fu
 definition, and the <code class="docutils literal notranslate"><span class="pre">AnnAssign</span></code> node represents an annotated assignment statement.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>We also wrap the above functions in <code class="docutils literal notranslate"><span class="pre">hcl.customize</span></code>, you can
-directly call <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">hcl.customize(vector_add,</span> <span class="pre">verbose=True)</span></code> to obtain
+<p>We also wrap the above functions in <code class="docutils literal notranslate"><span class="pre">allo.customize</span></code>, you can
+directly call <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">allo.customize(vector_add,</span> <span class="pre">verbose=True)</span></code> to obtain
 the AST of the function. The entry point of the <code class="docutils literal notranslate"><span class="pre">customize</span></code> function is
-located in <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/heterocl/customize.py#L228">heterocl/customize.py</a>.</p>
+located in <a class="reference external" href="https://github.com/chhzh123/allo/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/allo/customize.py#L228">allo/customize.py</a>.</p>
 </div>
 </section>
 <section id="traverse-the-ast">
 <h2>Traverse the AST<a class="headerlink" href="#traverse-the-ast" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>After obtaining the AST, we can traverse the tree node one by one to generate the IR.
-The IR builder is inside <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py">heterocl/ir/builder.py</a>.
+The IR builder is inside <a class="reference external" href="https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py">allo/ir/builder.py</a>.
 Basically, the builder is a dispatcher that maps the AST node to the corresponding
 IR builder function. For example, the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node will be mapped to
 <code class="docutils literal notranslate"><span class="pre">ASTTransformer.build_FunctionDef</span></code>.</p>
@@ -447,8 +447,8 @@ from the <code class="docutils literal notranslate"><span class="pre">ctx.global
 <h3>For Node<a class="headerlink" href="#for-node" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>The next operator is the <code class="docutils literal notranslate"><span class="pre">For</span></code> node, which is the for-loop statement. We provide different APIs to
 support different loop structures, so we need to further dispatch the <code class="docutils literal notranslate"><span class="pre">For</span></code> node to the corresponding
-builder function. For example, here we use <code class="docutils literal notranslate"><span class="pre">hcl.grid</span></code>, so it will be dispatched to <code class="docutils literal notranslate"><span class="pre">build_grid_for</span></code>.</p>
-<p>We provide some helper functions in <code class="docutils literal notranslate"><span class="pre">heterocl/ir/transform.py</span></code> to make the IR creation easier.
+builder function. For example, here we use <code class="docutils literal notranslate"><span class="pre">allo.grid</span></code>, so it will be dispatched to <code class="docutils literal notranslate"><span class="pre">build_grid_for</span></code>.</p>
+<p>We provide some helper functions in <code class="docutils literal notranslate"><span class="pre">allo/ir/transform.py</span></code> to make the IR creation easier.
 In this case, we can just call <code class="docutils literal notranslate"><span class="pre">build_for_loops</span></code> and pass in the bounds and the names of the loops
 to create a loop nest.
 Before building the loop body, we need to update the insertion point:</p>
@@ -463,11 +463,11 @@ Before building the loop body, we need to update the insertion point:</p>
 <section id="other-nodes">
 <h3>Other Nodes<a class="headerlink" href="#other-nodes" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>The build process is similar for other nodes, so I will not go into them one by one.
-Please refer to the <a class="reference external" href="https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py">source code</a> for more details.
+Please refer to the <a class="reference external" href="https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py">source code</a> for more details.
 After building the IR, you can call <code class="docutils literal notranslate"><span class="pre">s.module</span></code> to see the effect.</p>
 <p>Most of the MLIR operations can be found on this <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/">webpage</a>, and now
-you can follow the definitions and add more amazing facilities to the new HeteroCL frontend!</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.008 seconds)</p>
+you can follow the definitions and add more amazing facilities to the new Allo frontend!</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.007 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-01-ir-builder-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/63c20f575338e824342a139a2a3bd294/developer_01_ir_builder.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">developer_01_ir_builder.py</span></code></a></p>
@@ -533,7 +533,7 @@ you can follow the definitions and add more amazing facilities to the new Hetero
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, HeteroCL Authors.
+        &#169; Copyright 2023, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
     </div>
 
