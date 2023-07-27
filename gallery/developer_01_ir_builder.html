@@ -26,7 +26,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Frontend DSL Comparison" href="../developer/comparison.html" />
-    <link rel="prev" title="Vivado HLS Backend" href="tutorial_02_vhls.html" /> 
+    <link rel="prev" title="Developer Setup" href="../developer/index.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -147,6 +147,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">IR Builder Walkthrough</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
@@ -181,7 +182,7 @@ addition example to demonstrate the process.</p>
 </div>
 <section id="algorithm-definition">
 <h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>We can define a <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> function as follows. In the new frontend, we
+<p>We can define a <code class="docutils literal notranslate"><span class="pre">matrix_add</span></code> function as follows. In the new frontend, we
 leverage the <a class="reference external" href="https://en.wikipedia.org/wiki/Parsing">parsing</a> technique to
 translate the Python code to an MLIR program. Therefore, the first
 step is to parse the Python code to the
@@ -189,7 +190,7 @@ step is to parse the Python code to the
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span>
 
 
-<span class="k">def</span> <span class="nf">vector_add</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
+<span class="k">def</span> <span class="nf">matrix_add</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
     <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
         <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
@@ -200,14 +201,14 @@ step is to parse the Python code to the
 <a class="reference external" href="https://en.wikipedia.org/wiki/Reflective_programming">reflection</a>.
 One of the most useful tools is the <code class="docutils literal notranslate"><span class="pre">inspect</span></code> module, which provides
 an API to access the source code of a Python function. We can call
-<code class="docutils literal notranslate"><span class="pre">inspect.getsource</span></code> to get the source code of the <code class="docutils literal notranslate"><span class="pre">vector_add</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">inspect.getsource</span></code> to get the source code of the <code class="docutils literal notranslate"><span class="pre">matrix_add</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">inspect</span>
 
-<span class="n">src</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsource</span><span class="p">(</span><span class="n">vector_add</span><span class="p">)</span>
+<span class="n">src</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsource</span><span class="p">(</span><span class="n">matrix_add</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
 </pre></div>
 </div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>def vector_add(A: int32[M, N]) -&gt; int32[M, N]:
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>def matrix_add(A: int32[M, N]) -&gt; int32[M, N]:
     B: int32[M, N] = 0
     for i, j in allo.grid(M, N):
         B[i, j] = A[i, j] + 1
@@ -228,7 +229,7 @@ be installed through <code class="docutils literal notranslate"><span class="pre
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Module(
   body=[
     FunctionDef(
-      name=&#39;vector_add&#39;,
+      name=&#39;matrix_add&#39;,
       args=arguments(
         posonlyargs=[],
         args=[
@@ -357,15 +358,15 @@ definition, and the <code class="docutils literal notranslate"><span class="pre"
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>We also wrap the above functions in <code class="docutils literal notranslate"><span class="pre">allo.customize</span></code>, you can
-directly call <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">allo.customize(vector_add,</span> <span class="pre">verbose=True)</span></code> to obtain
+directly call <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">allo.customize(matrix_add,</span> <span class="pre">verbose=True)</span></code> to obtain
 the AST of the function. The entry point of the <code class="docutils literal notranslate"><span class="pre">customize</span></code> function is
-located in <a class="reference external" href="https://github.com/chhzh123/allo/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/allo/customize.py#L228">allo/customize.py</a>.</p>
+located in <a class="reference external" href="https://github.com/cornell-zhang/allo/blob/3cd1680f929f84e88bd2bbff4909bf13d95696f3/allo/customize.py#L339">allo/customize.py</a>.</p>
 </div>
 </section>
 <section id="traverse-the-ast">
 <h2>Traverse the AST<a class="headerlink" href="#traverse-the-ast" title="Permalink to this headline"><span>¶</span></a></h2>
 <p>After obtaining the AST, we can traverse the tree node one by one to generate the IR.
-The IR builder is inside <a class="reference external" href="https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py">allo/ir/builder.py</a>.
+The IR builder is inside <a class="reference external" href="https://github.com/cornell-zhang/allo/blob/main/allo/ir/builder.py">allo/ir/builder.py</a>.
 Basically, the builder is a dispatcher that maps the AST node to the corresponding
 IR builder function. For example, the <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node will be mapped to
 <code class="docutils literal notranslate"><span class="pre">ASTTransformer.build_FunctionDef</span></code>.</p>
@@ -402,7 +403,7 @@ based on users’ annotations. Then, it creates a new MLIR function operation by
 The <code class="docutils literal notranslate"><span class="pre">FuncOp</span></code> is the operation that represents a function in MLIR. The function arguments are
 explained below:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the function, and we directly use the AST <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node’s name <code class="docutils literal notranslate"><span class="pre">vector_add</span></code> as the operation name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the function, and we directly use the AST <code class="docutils literal notranslate"><span class="pre">FunctionDef</span></code> node’s name <code class="docutils literal notranslate"><span class="pre">matrix_add</span></code> as the operation name.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> is the <code class="docutils literal notranslate"><span class="pre">FunctionType</span></code> that defines the input and output types of the function.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ip</span></code> is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling <code class="docutils literal notranslate"><span class="pre">ctx.get_ip()</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">loc</span></code> is the actual line number of the function, which can be usually omitted.</p></li>
@@ -463,7 +464,7 @@ Before building the loop body, we need to update the insertion point:</p>
 <section id="other-nodes">
 <h3>Other Nodes<a class="headerlink" href="#other-nodes" title="Permalink to this headline"><span>¶</span></a></h3>
 <p>The build process is similar for other nodes, so I will not go into them one by one.
-Please refer to the <a class="reference external" href="https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py">source code</a> for more details.
+Please refer to the <a class="reference external" href="https://github.com/cornell-zhang/allo/blob/main/allo/ir/builder.py">source code</a> for more details.
 After building the IR, you can call <code class="docutils literal notranslate"><span class="pre">s.module</span></code> to see the effect.</p>
 <p>Most of the MLIR operations can be found on this <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/">webpage</a>, and now
 you can follow the definitions and add more amazing facilities to the new Allo frontend!</p>
@@ -518,8 +519,8 @@ you can follow the definitions and add more amazing facilities to the new Allo f
         <div class="button_nav">
             <div class="left">
                 
-                <a href="tutorial_02_vhls.html">
-                    <span class="icon">&lt;</span><span>Vivado HLS Backend</span></a>
+                <a href="../developer/index.html">
+                    <span class="icon">&lt;</span><span>Developer Setup</span></a>
                 
             </div>
 

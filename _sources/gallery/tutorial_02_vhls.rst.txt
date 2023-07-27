@@ -24,11 +24,11 @@ Vivado HLS Backend
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 
-In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
+In this tutorial, we will demonstrate how to leverage the Allo DSL to generate
 Vivado HLS code for FPGA.
 
 Import Allo
----------------
+-----------
 First, we import the necessary packages.
 
 .. GENERATED FROM PYTHON SOURCE LINES 18-22
@@ -397,39 +397,19 @@ We can see that the generated code preserves the same structure as the IR, and i
 necessary headers and pragmas for Vivado HLS. The generated code can be directly passed
 to Vivado HLS to generate RTL designs.
 
-.. GENERATED FROM PYTHON SOURCE LINES 130-133
+.. GENERATED FROM PYTHON SOURCE LINES 130-134
 
-We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
-create a target platform, and configure the target with the ``vivado_hls`` compiler.
-The ``project`` argument is used to specify the name of the Vivado HLS project folder.
+We also provide an easy way to invoke Vivado HLS from Allo. Users can simply provide
+the synthesis mode that are supported by Vivado HLS (e.g., ``csim``, ``csyn``, ``cosim``,
+and ``impl``), and the target project folder name. Allo will automatically generate
+the HLS project and invoke the compiler to generate the RTL design.
 
-.. GENERATED FROM PYTHON SOURCE LINES 133-138
-
-.. code-block:: default
-
-
-    # target = allo.Platform.xilinx_zc706
-    # target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
-    target = "vhls"
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 139-141
-
-Finally, we call the ``.build()`` function with the specified ``target`` to generate
-the Vivado HLS project.
-
-.. GENERATED FROM PYTHON SOURCE LINES 141-144
+.. GENERATED FROM PYTHON SOURCE LINES 134-137
 
 .. code-block:: default
 
 
-    mod = s.build(target=target)
+    mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
 
 
 
@@ -438,7 +418,7 @@ the Vivado HLS project.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 145-163
+.. GENERATED FROM PYTHON SOURCE LINES 138-156
 
 You will see a ``gemm.prj`` folder is generated in the current directory:
 
@@ -459,7 +439,7 @@ To run Vivado HLS, you can simply invoke the built module without passing any ar
 
    mod()
 
-.. GENERATED FROM PYTHON SOURCE LINES 165-200
+.. GENERATED FROM PYTHON SOURCE LINES 158-197
 
 After executing the above command, you will see the following output:
 
@@ -497,10 +477,14 @@ After executing the above command, you will see the following output:
 From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 with II=1.
 
+.. note::
+
+  The results are also printed to a file named ``report.json`` for further analysis.
+
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.078 seconds)
+   **Total running time of the script:** ( 0 minutes  0.107 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

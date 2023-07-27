@@ -25,7 +25,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="IR Builder Walkthrough" href="developer_01_ir_builder.html" />
+    <link rel="next" title="Developer Setup" href="../developer/index.html" />
     <link rel="prev" title="Getting Started" href="tutorial_01_get_started.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -147,6 +147,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
@@ -172,7 +173,7 @@ to download the full example code</p>
 <section class="sphx-glr-example-title" id="vivado-hls-backend">
 <span id="sphx-glr-gallery-tutorial-02-vhls-py"></span><h1>Vivado HLS Backend<a class="headerlink" href="#vivado-hls-backend" title="Permalink to this headline"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
-<p>In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
+<p>In this tutorial, we will demonstrate how to leverage the Allo DSL to generate
 Vivado HLS code for FPGA.</p>
 <section id="import-allo">
 <h2>Import Allo<a class="headerlink" href="#import-allo" title="Permalink to this headline"><span>¶</span></a></h2>
@@ -403,17 +404,11 @@ void gemm(
 <p>We can see that the generated code preserves the same structure as the IR, and inserts
 necessary headers and pragmas for Vivado HLS. The generated code can be directly passed
 to Vivado HLS to generate RTL designs.</p>
-<p>We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
-create a target platform, and configure the target with the <code class="docutils literal notranslate"><span class="pre">vivado_hls</span></code> compiler.
-The <code class="docutils literal notranslate"><span class="pre">project</span></code> argument is used to specify the name of the Vivado HLS project folder.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># target = allo.Platform.xilinx_zc706</span>
-<span class="c1"># target.config(compiler=&quot;vivado_hls&quot;, mode=&quot;debug&quot;, project=&quot;gemm.prj&quot;)</span>
-<span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;vhls&quot;</span>
-</pre></div>
-</div>
-<p>Finally, we call the <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function with the specified <code class="docutils literal notranslate"><span class="pre">target</span></code> to generate
-the Vivado HLS project.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">target</span><span class="p">)</span>
+<p>We also provide an easy way to invoke Vivado HLS from Allo. Users can simply provide
+the synthesis mode that are supported by Vivado HLS (e.g., <code class="docutils literal notranslate"><span class="pre">csim</span></code>, <code class="docutils literal notranslate"><span class="pre">csyn</span></code>, <code class="docutils literal notranslate"><span class="pre">cosim</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">impl</span></code>), and the target project folder name. Allo will automatically generate
+the HLS project and invoke the compiler to generate the RTL design.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>You will see a <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code> folder is generated in the current directory:</p>
@@ -466,7 +461,11 @@ We have the Vivado environment configured in the <code class="docutils literal n
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 with II=1.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.078 seconds)</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The results are also printed to a file named <code class="docutils literal notranslate"><span class="pre">report.json</span></code> for further analysis.</p>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.107 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>
@@ -519,7 +518,7 @@ with II=1.</p>
 
             <div class="right">
                 
-                    <a href="developer_01_ir_builder.html"><span>IR Builder Walkthrough</span><span class="icon">&gt;</span></a>
+                    <a href="../developer/index.html"><span>Developer Setup</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

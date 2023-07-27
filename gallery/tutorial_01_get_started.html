@@ -147,6 +147,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
@@ -172,20 +173,21 @@ to download the full example code</p>
 <section class="sphx-glr-example-title" id="getting-started">
 <span id="sphx-glr-gallery-tutorial-01-get-started-py"></span><h1>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
-<p>In this tutorial, we demonstrate the basic usage of Allo-MLIR with the new DSL frontend.</p>
+<p>In this tutorial, we demonstrate the basic usage of Allo.</p>
 <section id="import-allo">
 <h2>Import Allo<a class="headerlink" href="#import-allo" title="Permalink to this headline"><span>¶</span></a></h2>
+<p>First we import the necessary packages.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
 </pre></div>
 </div>
 </section>
 <section id="algorithm-definition">
 <h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
-<p>Allo leverages a algorithm-optimization decoupled paradigm, which means
+<p>Allo leverages an algorithm-optimization decoupled paradigm, which means
 users can first define the algorithm in a high-level language and then
 optimize the program with various hardware customization techniques (i.e.,
 schedule primitives). Here we show how to define a general matrix multiplication
-(GEMM) in the new Allo DSL.</p>
+(GEMM) in the Allo DSL.</p>
 <p>We first import the necessary data types from Allo. In this example, we
 use <code class="docutils literal notranslate"><span class="pre">int32</span></code> as the data type for all the variables.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">int32</span>
@@ -283,7 +285,7 @@ the outer-most loop into two, we can call the <code class="docutils literal notr
 <p>We can print out the IR again to see the effect of the transformation.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>In the new Allo DSL, all the transformations are applied <strong>immediately</strong>,
+<p>In the Allo DSL, all the transformations are applied <strong>immediately</strong>,
 so users can directly see the changes after they apply the transformations.</p>
 </div>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
@@ -437,7 +439,7 @@ assign the output to a new variable.</p>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.103 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.110 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/8d3af32bb0bffe35477d27ae08e595fe/tutorial_01_get_started.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_01_get_started.py</span></code></a></p>
