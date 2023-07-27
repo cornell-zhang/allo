@@ -18,7 +18,7 @@ from allo.ir.types import int32
 ##############################################################################
 # Algorithm Definition
 # --------------------
-# We can define a ``vector_add`` function as follows. In the new frontend, we
+# We can define a ``matrix_add`` function as follows. In the new frontend, we
 # leverage the `parsing <https://en.wikipedia.org/wiki/Parsing>`_ technique to
 # translate the Python code to an MLIR program. Therefore, the first
 # step is to parse the Python code to the
@@ -27,7 +27,7 @@ from allo.ir.types import int32
 M, N = 1024, 1024
 
 
-def vector_add(A: int32[M, N]) -> int32[M, N]:
+def matrix_add(A: int32[M, N]) -> int32[M, N]:
     B: int32[M, N] = 0
     for i, j in allo.grid(M, N):
         B[i, j] = A[i, j] + 1
@@ -39,11 +39,11 @@ def vector_add(A: int32[M, N]) -> int32[M, N]:
 # `reflection <https://en.wikipedia.org/wiki/Reflective_programming>`_.
 # One of the most useful tools is the ``inspect`` module, which provides
 # an API to access the source code of a Python function. We can call
-# ``inspect.getsource`` to get the source code of the ``vector_add``.
+# ``inspect.getsource`` to get the source code of the ``matrix_add``.
 
 import inspect
 
-src = inspect.getsource(vector_add)
+src = inspect.getsource(matrix_add)
 print(src)
 
 # %%
@@ -67,15 +67,15 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # .. note::
 #
 #    We also wrap the above functions in ``allo.customize``, you can
-#    directly call ``s = allo.customize(vector_add, verbose=True)`` to obtain
+#    directly call ``s = allo.customize(matrix_add, verbose=True)`` to obtain
 #    the AST of the function. The entry point of the ``customize`` function is
-#    located in `allo/customize.py <https://github.com/chhzh123/allo/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/allo/customize.py#L228>`_.
+#    located in `allo/customize.py <https://github.com/cornell-zhang/allo/blob/3cd1680f929f84e88bd2bbff4909bf13d95696f3/allo/customize.py#L339>`_.
 
 ##############################################################################
 # Traverse the AST
 # ----------------
 # After obtaining the AST, we can traverse the tree node one by one to generate the IR.
-# The IR builder is inside `allo/ir/builder.py <https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py>`_.
+# The IR builder is inside `allo/ir/builder.py <https://github.com/cornell-zhang/allo/blob/main/allo/ir/builder.py>`_.
 # Basically, the builder is a dispatcher that maps the AST node to the corresponding
 # IR builder function. For example, the ``FunctionDef`` node will be mapped to
 # ``ASTTransformer.build_FunctionDef``.
@@ -118,7 +118,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # The ``FuncOp`` is the operation that represents a function in MLIR. The function arguments are
 # explained below:
 #
-# - ``name`` is the name of the function, and we directly use the AST ``FunctionDef`` node's name ``vector_add`` as the operation name.
+# - ``name`` is the name of the function, and we directly use the AST ``FunctionDef`` node's name ``matrix_add`` as the operation name.
 # - ``type`` is the ``FunctionType`` that defines the input and output types of the function.
 # - ``ip`` is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling ``ctx.get_ip()``.
 # - ``loc`` is the actual line number of the function, which can be usually omitted.
@@ -189,7 +189,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # Other Nodes
 # ^^^^^^^^^^^
 # The build process is similar for other nodes, so I will not go into them one by one.
-# Please refer to the `source code <https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py>`_ for more details.
+# Please refer to the `source code <https://github.com/cornell-zhang/allo/blob/main/allo/ir/builder.py>`_ for more details.
 # After building the IR, you can call ``s.module`` to see the effect.
 #
 # Most of the MLIR operations can be found on this `webpage <https://mlir.llvm.org/docs/Dialects/>`_, and now

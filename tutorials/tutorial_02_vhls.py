@@ -8,11 +8,11 @@ Vivado HLS Backend
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 
-In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
+In this tutorial, we will demonstrate how to leverage the Allo DSL to generate
 Vivado HLS code for FPGA.
 
 Import Allo
----------------
+-----------
 First, we import the necessary packages.
 """
 
@@ -127,11 +127,10 @@ print(code)
 # to Vivado HLS to generate RTL designs.
 
 # %%
-# We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
-# create a target platform, and configure the target with the ``vivado_hls`` compiler.
-# The ``project`` argument is used to specify the name of the Vivado HLS project folder.
-# Finally, we call the ``.build()`` function with the specified ``target`` to generate
-# the Vivado HLS project.
+# We also provide an easy way to invoke Vivado HLS from Allo. Users can simply provide
+# the synthesis mode that are supported by Vivado HLS (e.g., ``csim``, ``csyn``, ``cosim``,
+# and ``impl``), and the target project folder name. Allo will automatically generate
+# the HLS project and invoke the compiler to generate the RTL design.
 
 mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
 
@@ -191,3 +190,7 @@ mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
 #
 # From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
 # with II=1.
+#
+# .. note::
+#
+#   The results are also printed to a file named ``report.json`` for further analysis.

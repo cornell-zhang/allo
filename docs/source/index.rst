@@ -22,7 +22,7 @@
 Allo Internal Documentation
 ###############################
 
-Documentation for Allo's new frontend.
+Documentation for Allo DSL.
 
 
 .. toctree::

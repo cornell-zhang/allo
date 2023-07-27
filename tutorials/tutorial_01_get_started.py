@@ -7,10 +7,11 @@ Getting Started
 
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
-In this tutorial, we demonstrate the basic usage of Allo-MLIR with the new DSL frontend.
+In this tutorial, we demonstrate the basic usage of Allo.
 
 Import Allo
----------------
+-----------
+First we import the necessary packages.
 """
 
 import allo
@@ -19,11 +20,11 @@ import allo
 ##############################################################################
 # Algorithm Definition
 # --------------------
-# Allo leverages a algorithm-optimization decoupled paradigm, which means
+# Allo leverages an algorithm-optimization decoupled paradigm, which means
 # users can first define the algorithm in a high-level language and then
 # optimize the program with various hardware customization techniques (i.e.,
 # schedule primitives). Here we show how to define a general matrix multiplication
-# (GEMM) in the new Allo DSL.
+# (GEMM) in the Allo DSL.
 #
 # We first import the necessary data types from Allo. In this example, we
 # use ``int32`` as the data type for all the variables.
@@ -110,7 +111,7 @@ s.split("i", factor=8)
 #
 # .. note::
 #
-#   In the new Allo DSL, all the transformations are applied **immediately**,
+#   In the Allo DSL, all the transformations are applied **immediately**,
 #   so users can directly see the changes after they apply the transformations.
 
 print(s.module)

@@ -89,10 +89,6 @@ class Schedule:
         self.ip = ip
         self.primitive_sequences = []
 
-    def __repr__(self):
-        # Used for Module.parse
-        return str(self.module)
-
     def get_loops(self):
         return get_affine_loop_nests(self.top_func)
 

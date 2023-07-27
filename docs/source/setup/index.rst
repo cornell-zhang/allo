@@ -35,40 +35,27 @@ for more details on configuring VSCode. Those servers are only accessible from t
 After logging into the server, the first step is to install an Anaconda environment. We recommend you to install your own
 `Miniconda <https://docs.conda.io/en/latest/miniconda.html>`_, which is a lightweight version of Anaconda and contains
 only the necessary packages. You can download the installer from the link above and install it on your system.
-After the installation, you can create a new environment and install the required packages by running the following commands:
+After the installation, you can create a new environment for Allo by running the following commands:
 
 .. code-block:: console
 
   $ conda create -n allo python=3.8
   $ conda activate allo
-  $ python -m pip install -r /work/shared/common/allo/requirements.txt
 
-We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory by running
+We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory and run it
 
 .. code-block:: console
 
   $ cp /work/shared/common/allo/setup.sh ~/
-
-Then, you can pull the latest version of Allo from GitHub by running
-
-.. code-block:: console
-
-  $ git clone https://github.com/chhzh123/allo.git
-  $ cd allo
-  $ git checkout parser
-
-Maintaining your own copy of Allo is important since later on you will probably need to change the source code.
-To expose Allo to your environment, please change the **last line** of the setup script :code:`~/setup.sh` to
-
-.. code-block:: bash
-
-  export PYTHONPATH=$PYTHONPATH:~/allo
-
-Then, you can run the setup script to set up the environment
-
-.. code-block:: console
-
   $ source ~/setup.sh
+
+Then, you can pull the latest version of Allo from GitHub and install it by running
+
+.. code-block:: console
+
+  $ git clone https://github.com/cornell-zhang/allo.git
+  $ cd allo
+  $ python3 -m pip install -e .
 
 .. note::
 
@@ -78,22 +65,6 @@ Now, you can run the following command to test if the installation is successful
 
 .. code-block:: console
 
-  $ python -c "import allo as allo; allo.init(allo.Int())"
+  $ python3 -c "import allo as allo; import allo.ir as air"
 
 If you see no error message, then the installation is successful. Otherwise, please contact us for help.
-
-
-Trouble Shooting
-----------------
-If you encounter the following error message when running the test command, please check if you have set up the environment correctly.
-
-.. code-block:: console
-
-  >>> import allo.ir
-  Traceback (most recent call last):
-    File "<stdin>", line 1, in <module>
-  ModuleNotFoundError: No module named 'allo.ir'
-
-To be more specific, you can check if your :code:`PYTHONPATH` environment variable **ONLY** contains the repository path of your
-own Allo (by typing ``echo $PYTHONPATH`` in the terminal).
-Otherwise, you can ``unset PYTHONPATH`` to remove the environment variable and run the setup script again.
