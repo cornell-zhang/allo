@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
 
 import os
 import ctypes
@@ -75,18 +76,14 @@ class LLVMModule:
                 if isinstance(arg, int):
                     if str(in_type) != "i32":
                         raise RuntimeError(
-                            "Input type mismatch, expected i32, but got {}".format(
-                                str(in_type)
-                            )
+                            f"Input type mismatch, expected i32, but got {str(in_type)}"
                         )
                     c_int_p = ctypes.c_int * 1
                     new_args.append(c_int_p(arg))
                 elif isinstance(arg, float):
                     if str(in_type) != "f32":
                         raise RuntimeError(
-                            "Input type mismatch, expected f32, but got {}".format(
-                                str(in_type)
-                            )
+                            f"Input type mismatch, expected f32, but got {str(in_type)}"
                         )
                     c_float_p = ctypes.c_float * 1
                     new_args.append(c_float_p(arg))
@@ -97,7 +94,7 @@ class LLVMModule:
                 target_type = str(MemRefType(in_type).element_type)
                 if np_type != target_type:
                     raise RuntimeError(
-                        "Input type mismatch: {} vs {}".format(np_type, target_type)
+                        f"Input type mismatch: {np_type} vs {target_type}"
                     )
                 new_args.append(
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))

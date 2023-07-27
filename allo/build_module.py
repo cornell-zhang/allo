@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
 
 from hcl_mlir.dialects import hcl as hcl_d
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager

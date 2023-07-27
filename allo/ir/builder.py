@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
+# pylint: disable=no-name-in-module, unused-argument
 
 import ast
 import inspect
@@ -125,6 +126,7 @@ class MockConstant(MockOp):
         else:
             dtype = F32Type.get()
             value_attr = FloatAttr.get(dtype, self.val)
+        # pylint: disable=too-many-function-args
         const_op = arith_d.ConstantOp(dtype, value_attr, ip=self.ctx.get_ip())
         return const_op.result
 
@@ -158,10 +160,9 @@ class ASTTransformer(Builder):
     def build_Name(ctx, node):
         if node.id in ctx.buffers:
             return ctx.buffers[node.id]
-        elif node.id in ctx.global_vars:
+        if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
-        else:
-            raise RuntimeError("Unsupported Name")
+        raise RuntimeError("Unsupported Name")
 
     @staticmethod
     def build_Constant(ctx, node):
@@ -222,16 +223,13 @@ class ASTTransformer(Builder):
                 and node.iter.func.id == "range"
             ):
                 return ASTTransformer.build_range_for(ctx, node)
-            elif (
+            if (
                 isinstance(node.iter, ast.Call)
                 and isinstance(node.iter.func, ast.Attribute)
-                and (
-                    node.iter.func.attr == "grid" or node.iter.func.attr == "reduction"
-                )
+                and (node.iter.func.attr in {"grid", "reduction"})
             ):
                 return ASTTransformer.build_grid_for(ctx, node)
-            else:
-                raise RuntimeError("Unsupported for loop")
+            raise RuntimeError("Unsupported for loop")
 
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
@@ -309,7 +307,7 @@ class ASTTransformer(Builder):
         elif dtype.startswith("f"):
             op = opcls["float"]
         else:
-            raise RuntimeError("Unsupported types for binary op: {}".format(dtype))
+            raise RuntimeError(f"Unsupported types for binary op: {dtype}")
         return op(lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
@@ -336,7 +334,7 @@ class ASTTransformer(Builder):
             op = opcls["float"]
         else:
             raise RuntimeError(
-                "Unsupported types for unary op: {}".format(type(node.operand.value))
+                f"Unsupported types for unary op: {type(node.operand.value)}"
             )
         return op(MockConstant(node.operand.value, ctx).result, ip=ctx.get_ip())
 
@@ -353,6 +351,7 @@ class ASTTransformer(Builder):
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
+            # pylint: disable=redefined-builtin
             slice = (
                 node.slice if isinstance(node.slice, ast.Tuple) else node.slice.value
             )  # ast.Index
@@ -376,7 +375,7 @@ class ASTTransformer(Builder):
             )
             store_op.attributes["to"] = StringAttr.get(node.value.id)
             return store_op
-        elif isinstance(node, ast.Name):  # scalar
+        if isinstance(node, ast.Name):  # scalar
             affine_map = AffineMap.get(
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
             )
@@ -390,8 +389,7 @@ class ASTTransformer(Builder):
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
-        else:
-            raise RuntimeError("Unsupported store")
+        raise RuntimeError("Unsupported store")
 
     @staticmethod
     def build_Assign(ctx, node):
@@ -414,11 +412,11 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_AugAssign(ctx, node):
-        ip = ctx.get_ip()
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
         if isinstance(node.target, ast.Subscript):
+            # pylint: disable=redefined-variable-type
             node.target.ctx = ast.Load()
             lhs = build_stmt(ctx, node.target)
             node.target.ctx = ast.Store()
@@ -435,6 +433,7 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_affine_expr(ctx, node):
+        # pylint: disable=no-else-return
         if isinstance(node, ast.Name):
             if node.id in ctx.induction_vars or (
                 node.id in ctx.buffers
@@ -446,7 +445,7 @@ class ASTTransformer(Builder):
                 return AffineExpr.get_dim(ctx.dim_count - 1)
             else:
                 return None
-        elif isinstance(node, ast.BinOp):
+        if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)
             rhs = ASTTransformer.build_affine_expr(ctx, node.right)
             op = {
@@ -464,10 +463,9 @@ class ASTTransformer(Builder):
                 ast.BitAnd: lambda l, r: l & r,
             }.get(type(node.op))
             return op(lhs, rhs)
-        elif isinstance(node, ast.Constant):
+        if isinstance(node, ast.Constant):
             return AffineConstantExpr.get(node.value)
-        else:
-            raise RuntimeError("Unsupported affine expression")
+        raise RuntimeError("Unsupported affine expression")
 
     @staticmethod
     def build_Subscript(ctx, node):
@@ -475,6 +473,7 @@ class ASTTransformer(Builder):
         ctx.dim_count = 0
         ctx.affine_vars = []
         index_exprs = []
+        # pylint: disable=redefined-builtin
         slice = (
             node.slice if isinstance(node.slice, ast.Tuple) else node.slice.value
         )  # ast.Index
@@ -485,8 +484,8 @@ class ASTTransformer(Builder):
             if expr is None:
                 is_affine = False
                 break
-            else:
-                index_exprs.append(expr)
+            index_exprs.append(expr)
+        # pylint: disable=no-else-return
         if is_affine:
             if isinstance(node.ctx, ast.Load):
                 affine_map = AffineMap.get(
@@ -514,6 +513,7 @@ class ASTTransformer(Builder):
                 else:
                     raise RuntimeError(f"Unsupported index type, got {expr.type}")
                 new_indices.append(expr)
+            # pylint: disable=no-value-for-parameter, redefined-variable-type
             load_op = memref_d.LoadOp(
                 ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
             )
@@ -531,6 +531,7 @@ class ASTTransformer(Builder):
         rhs = build_stmt(ctx, node.value)
         if isinstance(type_hint, ast.Subscript):
             type_str = type_hint.value.id
+            # pylint: disable=redefined-builtin
             slice = (
                 type_hint.slice
                 if isinstance(type_hint.slice, ast.Tuple)
@@ -547,6 +548,7 @@ class ASTTransformer(Builder):
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             ctx.buffers[node.target.id] = alloc_op
             with ip:
+                # pylint: disable=unexpected-keyword-arg
                 linalg_d.fill(rhs.result, outs=[alloc_op.result])
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
@@ -575,6 +577,7 @@ class ASTTransformer(Builder):
         def build_type(type_hint):
             if isinstance(type_hint, ast.Subscript):
                 type_str = type_hint.value.id
+                # pylint: disable=redefined-builtin
                 slice = (
                     type_hint.slice
                     if isinstance(type_hint.slice, ast.Tuple)
@@ -614,6 +617,7 @@ class ASTTransformer(Builder):
             output_typehints.append(extra_type_hint)
 
         # Build function
+        # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
         func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip)
         func_op.add_entry_block()
@@ -677,6 +681,7 @@ class ASTTransformer(Builder):
                 "uge": 9,
             },
         }
+        # pylint: disable=no-else-return
         if is_affine:
             eq_flags = []
             cond_op = node.ops[0]
@@ -704,20 +709,19 @@ class ASTTransformer(Builder):
                 return arith_d.CmpIOp(
                     out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
                 )
-            elif dtype.startswith("fixed"):
+            if dtype.startswith("fixed"):
                 op = ATTR_MAP["fixed"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
                 return hcl_d.CmpFixedOp(
                     out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
                 )
-            elif dtype.startswith("f"):
+            if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
                 return arith_d.CmpFOp(
                     out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
                 )
-            else:
-                raise RuntimeError("Unsupported types for binary op: {}".format(dtype))
+            raise RuntimeError(f"Unsupported types for binary op: {dtype}")
 
     @staticmethod
     def build_If(ctx, node, is_affine=False):
@@ -756,22 +760,21 @@ class ASTTransformer(Builder):
     def build_Module(ctx, node):
         for stmt in node.body:
             build_stmt(ctx, stmt)
-        return None
 
     @staticmethod
     def build_Call(ctx, node):
         if isinstance(node.func, ast.Name):
+            # pylint: disable=no-else-return
             # Builtin functions
             if node.func.id == "float":
                 if node.args[0].id in ctx.global_vars:
                     return MockConstant(float(ctx.global_vars[node.args[0].id]), ctx)
-                else:
-                    # TODO: Support other types
-                    return arith_d.SIToFPOp(
-                        F32Type.get(),
-                        ctx.buffers[node.args[0].id].result,
-                        ip=ctx.get_ip(),
-                    )
+                # TODO: Support other types
+                return arith_d.SIToFPOp(
+                    F32Type.get(),
+                    ctx.buffers[node.args[0].id].result,
+                    ip=ctx.get_ip(),
+                )
             elif node.func.id == "int":
                 return MockConstant(int(ctx.global_vars[node.args[0].id]), ctx)
             # User-defined functions
@@ -782,7 +785,7 @@ class ASTTransformer(Builder):
                     # Has already been defined in the top-level scope
                     stmts = [func]
                 else:
-                    src, start_lineno = inspect.getsourcelines(func)
+                    src, _ = inspect.getsourcelines(func)
                     src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
                     src = textwrap.dedent("\n".join(src))
                     tree = ast.parse(src)

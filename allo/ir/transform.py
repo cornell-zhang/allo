@@ -20,10 +20,10 @@ class LoopBand:
 
     def add_loop(self, name, loop):
         self.loops[name] = loop
-        self.__setattr__(name, loop)
+        setattr(self, name, loop)
 
     def __repr__(self):
-        return "LoopBand({})".format(list(self.loops.keys()))
+        return f"LoopBand({list(self.loops.keys())})"
 
     def __iter__(self):
         return self.loops.items().__iter__()
@@ -31,8 +31,7 @@ class LoopBand:
     def __getitem__(self, name):
         if name in self.loops:
             return self.loops[name]
-        else:
-            raise AttributeError(f"No such loop {name}")
+        raise AttributeError(f"No such loop {name}")
 
 
 def get_loop_band_names(func):
@@ -46,6 +45,7 @@ def get_loop_band_names(func):
 def find_loop_in_bands(func, axis):
     results = []
     bands = get_affine_loop_nests(func)
+    # pylint: disable=no-else-raise
     if isinstance(axis, affine_d.AffineForOp):
         axis_name = StringAttr(axis.attributes["loop_name"]).value
         for band in bands:
@@ -55,7 +55,7 @@ def find_loop_in_bands(func, axis):
                     op_name = loop[1].attributes["op_name"]
                 if loop[1] == axis:
                     return op_name, axis_name
-        raise RuntimeError("Cannot find the band of loop {}".format(axis_name))
+        raise RuntimeError(f"Cannot find the band of loop {axis_name}")
     else:  # axis is a string
         axis_name = axis
         for band in bands:
@@ -66,11 +66,9 @@ def find_loop_in_bands(func, axis):
                 if loop[0] == axis_name:
                     results.append(op_name)
         if len(results) == 0:
-            raise RuntimeError("Cannot find the band of loop {}".format(axis_name))
-        elif len(results) > 1:
-            raise RuntimeError(
-                "Find multiple bands containing loop {}".format(axis_name)
-            )
+            raise RuntimeError(f"Cannot find the band of loop {axis_name}")
+        if len(results) > 1:
+            raise RuntimeError(f"Find multiple bands containing loop {axis_name}")
         return results[0], axis_name
 
 

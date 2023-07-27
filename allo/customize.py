@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
 
 import io
 import inspect
@@ -56,7 +57,7 @@ def _get_global_vars(_func):
         if isinstance(var, (int, float)):
             global_vars[name] = var
     if closure:
-        freevar_values = list(map(lambda x: x.cell_contents, closure))
+        freevar_values = [x.cell_contents for x in closure]
         for name, value in zip(freevar_names, freevar_values):
             global_vars[name] = value
 
@@ -308,7 +309,7 @@ class Schedule:
             _mlir_lower_pipeline(self.module, lower_linalg=True)
             mod = LLVMModule(self.module, top_func_name=self.top_func.name.value)
             return mod
-        elif target == "vhls":
+        if target == "vhls":
             # FIXME: Handle linalg.fill
             _mlir_lower_pipeline(self.module, lower_linalg=True)
             buf = io.StringIO()
@@ -316,29 +317,28 @@ class Schedule:
             buf.seek(0)
             hls_code = buf.read()
             return hls_code
-        elif str(target.tool.mode) == "debug":
-            _mlir_lower_pipeline(self.module, lower_linalg=True)
-            target.top = self.top_func.name.value
-            copy_build_files(target)
-            buf = io.StringIO()
-            hcl_d.emit_vhls(self.module, buf)
-            buf.seek(0)
-            hls_code = buf.read()
-            with open(f"{target.project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(hls_code)
-            with open(f"{target.project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write("")
+        if str(target.tool.mode) == "debug":
+            raise NotImplementedError("Debug mode is not supported")
+            # _mlir_lower_pipeline(self.module, lower_linalg=True)
+            # target.top = self.top_func.name.value
+            # copy_build_files(target)
+            # buf = io.StringIO()
+            # hcl_d.emit_vhls(self.module, buf)
+            # buf.seek(0)
+            # hls_code = buf.read()
+            # with open(f"{target.project}/kernel.cpp", "w", encoding="utf-8") as outfile:
+            #     outfile.write(hls_code)
+            # with open(f"{target.project}/host.cpp", "w", encoding="utf-8") as outfile:
+            #     outfile.write("")
 
-            hcl_module = HCLModule(target.top, hls_code, target, host_src=None)
-            return hcl_module
-        else:
-            NotImplementedError("Target {} is not supported".format(target))
+            # hcl_module = HCLModule(target.top, hls_code, target, host_src=None)
+            # return hcl_module
+        raise NotImplementedError(f"Target {target} is not supported")
 
 
 def customize(fn, verbose=False):
     # Get Python AST
-    file = getsourcefile(fn)
-    src, start_lineno = getsourcelines(fn)
+    src, _ = getsourcelines(fn)
     src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
     src = textwrap.dedent("\n".join(src))
     if verbose:
@@ -349,7 +349,7 @@ def customize(fn, verbose=False):
             import astpretty
 
             astpretty.pprint(tree, indent=2, show_offsets=False)
-        except:
+        except ImportError:
             print(ast.dump(tree))
     # Create MLIR module
     set_context()
