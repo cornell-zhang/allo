@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Modification: https://github.com/awslabs/slapo/blob/main/docs/source/conf.py
 
@@ -18,13 +18,13 @@ import os
 import sys
 
 try:
-    # The gallery scripts require to import heterocl module.
-    # We first try to import heterocl from existing sys.path.
-    import heterocl
+    # The gallery scripts require to import allo module.
+    # We first try to import allo from existing sys.path.
+    import allo
 
-    # If successful, heterocl is already installed.
+    # If successful, allo is already installed.
 except ImportError:
-    # Otherwise, we might in a git repo, and we can import heterocl from the repo by adding the repo root to sys.path.
+    # Otherwise, we might in a git repo, and we can import allo from the repo by adding the repo root to sys.path.
     sys.path.insert(0, os.path.abspath("../../python"))
 
 # Note that a warning still will be issued "unsupported object from its setup() function"
@@ -37,9 +37,9 @@ sphinx.application.ExtensionError = sphinx.errors.ExtensionError
 
 # -- Project information -----------------------------------------------------
 
-project = "HeteroCL"
-author = "HeteroCL Authors"
-copyright = "2023, HeteroCL Authors"
+project = "Allo"
+author = "Allo Authors"
+copyright = "2023, Allo Authors"
 
 # The full version, including alpha/beta/rc tags
 release = "0.5"
@@ -105,15 +105,15 @@ intersphinx_mapping = {
 # html_favicon = '_static/favicon.svg'
 html_theme = "piccolo_theme"
 html_theme_options = {
-    "source_url": "https://github.com/cornell-zhang/heterocl",
-    # "repository_url": "https://github.com/cornell-zhang/heterocl",
+    "source_url": "https://github.com/cornell-zhang/allo",
+    # "repository_url": "https://github.com/cornell-zhang/allo",
     # "use_repository_button": True,
     # "logo_only": True,
     # "extra_navbar": r"",
     # "show_navbar_depth": 1,
     # "home_page_in_toc": True
 }
-html_title = "HeteroCL Internal Documentation"
+html_title = "Allo Internal Documentation"
 html_permalinks_icon = "<span>¶</span>"
 
 # Add any paths that contain custom static files (such as style sheets) here,

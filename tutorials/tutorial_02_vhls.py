@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -8,16 +8,16 @@ Vivado HLS Backend
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 
-In this tutorial, we will demonstrate how to leverage the new HeteroCL DSL frontend to generate
+In this tutorial, we will demonstrate how to leverage the new Allo DSL frontend to generate
 Vivado HLS code for FPGA.
 
-Import HeteroCL
+Import Allo
 ---------------
 First, we import the necessary packages.
 """
 
-import heterocl as hcl
-from heterocl.ir.types import float32
+import allo
+from allo.ir.types import float32
 
 ##############################################################################
 # Algorithm Definition
@@ -32,25 +32,25 @@ M, N, K = 1024, 1024, 1024
 # %%
 # Here, we define the main computation of the GEMM but use ``float32`` as the
 # data type. Notice that users can easily leverage the previously defined arguments
-# (e.g., ``M``, ``N``, and ``K``) to construct the matrices, and HeteroCL will
+# (e.g., ``M``, ``N``, and ``K``) to construct the matrices, and Allo will
 # automatically captures the global variables.
 #
-# Since HeteroCL has a strict type system, we need to be careful about the
+# Since Allo has a strict type system, we need to be careful about the
 # data types of the variables. To initialize matrix ``C`` with all zeros, we
 # need to pass in a floating-point value ``0.0`` instead of an integer.
 #
-# We also use the ``hcl.reduction`` API to denote the reduction axis. The
+# We also use the ``allo.reduction`` API to denote the reduction axis. The
 # reduction axis is the loop iterator that is used to accumulate the result.
 # In this example, we use ``k`` as the reduction axis, which means the
 # computation of ``C[i, j]`` will be accumulated along the ``k`` dimension.
-# This annotation is necessary for later optimizations, since HeteroCL leverages
+# This annotation is necessary for later optimizations, since Allo leverages
 # this information to generate correct intermediate buffers.
 
 
 def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
     C: float32[M, N] = 0.0
-    for i, j in hcl.grid(M, N):
-        for k in hcl.reduction(K):
+    for i, j in allo.grid(M, N):
+        for k in allo.reduction(K):
             C[i, j] += A[i, k] * B[k, j]
     return C
 
@@ -73,7 +73,7 @@ def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
 #    To get more rational of this technique, please refer to the above mentioned
 #    paper from Torsten Hoefler's group.
 
-s = hcl.customize(gemm)
+s = allo.customize(gemm)
 
 # %%
 # We first reorder the inner reduction loop with the middle loop.
@@ -85,22 +85,22 @@ print(s.module)
 # %%
 # .. note::
 #
-#    This reordering seems to be easy, but it is impossible in the old HeteroCL,
-#    since the previous HeteroCL directly generate reduction variables which make
+#    This reordering seems to be easy, but it is impossible in the old Allo,
+#    since the previous Allo directly generate reduction variables which make
 #    the ``j`` loop becomes imperfect, while MLIR only supports reordering perfect
 #    loops.
 
 # %%
 # Next, we create a new buffer for the output tensor ``C``.
 # We provide a ``.buffer_at()`` primitive for users to quickly create a new buffer
-# along a specific axis. Since HeteroCL has attached all the tensors to the function,
+# along a specific axis. Since Allo has attached all the tensors to the function,
 # we can directly use ``<func>.<tensor>`` to access a specific tensor in the schedule.
 
 s.buffer_at(gemm.C, axis="i")
 print(s.module)
 
 # %%
-# From the above generated code, we can see that HeteroCL automatically
+# From the above generated code, we can see that Allo automatically
 # creates an intermediate buffer ``%1`` for ``C`` and attach it inside the ``i`` loop.
 # Also two additional loop nested named ``j_init`` and ``j_back`` are created to
 # initialize and write the intermediate buffer back to output tensor.
@@ -127,11 +127,11 @@ print(code)
 # to Vivado HLS to generate RTL designs.
 
 # %%
-# We even provide an easy way to invoke Vivado HLS from HeteroCL. Users can simply
+# We even provide an easy way to invoke Vivado HLS from Allo. Users can simply
 # create a target platform, and configure the target with the ``vivado_hls`` compiler.
 # The ``project`` argument is used to specify the name of the Vivado HLS project folder.
 
-target = hcl.Platform.xilinx_zc706
+target = allo.Platform.xilinx_zc706
 target.config(compiler="vivado_hls", mode="debug", project="gemm.prj")
 
 # %%
@@ -154,7 +154,7 @@ mod = s.build(target=target)
 #
 #    You need to configure the Vivado HLS environment before running the generated code.
 #    We have the Vivado environment configured in the ``brg-zhang`` server, so you can directly
-#    ``source /work/shared/common/heterocl/vitis_2019.2_opt.sh`` to set up the environment.
+#    ``source /work/shared/common/allo/vitis_2019.2_opt.sh`` to set up the environment.
 #
 # .. code-block:: python
 #

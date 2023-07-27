@@ -1,0 +1,67 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Python CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-python/ for more details
+
+version: 2
+jobs:
+  build:
+    working_directory: ~/allo
+    docker:
+      - image: zzzdavid/llvm-project:15.0.0
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
+    resource_class: large
+    steps:
+      - checkout  # checkout source code to working directory
+      - run:
+          name: Build HCL-MLIR
+          command: |
+            export BUILD_DIR=/home/circleci/llvm-project/build
+            export PREFIX=/home/circleci/llvm-project/build
+            git clone https://github.com/cornell-zhang/hcl-dialect.git
+            cd hcl-dialect
+            mkdir -p build && cd build
+            cmake -G "Unix Makefiles" .. \
+                -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
+                -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
+                -DPYTHON_BINDING=ON \
+                -DPython3_EXECUTABLE=`which python3`
+            make -j4
+            export PYTHONPATH=$(pwd)/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+      - run:
+          name: MLIR Tests
+          command: |
+            cd hcl-dialect/build
+            cmake --build . --target check-hcl
+      - run:
+          name: Install Allo Dependencies
+          command: |
+            python3 -m pip install -r requirements.txt
+      - run:
+          name: Formatting Check
+          command: |
+            python3 -m pip install black==23.1.0 pylint==2.17.1
+            bash ./.circleci/task_lint.sh
+      - run: 
+          name: Allo Tests
+          command: |
+            export HCL_HOME=$(pwd)
+            export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
+            export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
+            export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
+            python3 -m pytest tests -v
+      - run:
+          name: Allo Tutorials
+          command: |
+            export HCL_HOME=$(pwd)
+            export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
+            export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
+            export PYTHONPATH=$HCL_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            export PYTHONPATH=$HCL_HOME:${PYTHONPATH}
+            cd tutorials
+            python3 -m pytest test_tutorial.py -v

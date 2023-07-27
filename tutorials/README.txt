@@ -1,2 +1,2 @@
-HeteroCL New Frontend Documentations
+Allo New Frontend Documentations
 ====================================

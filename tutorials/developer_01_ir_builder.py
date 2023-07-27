@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -8,12 +8,12 @@ IR Builder Walkthrough
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 This guide will walk you through the process of translating a Python-based
-HeteroCL program to the internal MLIR representation. We will use the vector
+Allo program to the internal MLIR representation. We will use the vector
 addition example to demonstrate the process.
 """
 
-import heterocl as hcl
-from heterocl.ir.types import int32
+import allo
+from allo.ir.types import int32
 
 ##############################################################################
 # Algorithm Definition
@@ -29,7 +29,7 @@ M, N = 1024, 1024
 
 def vector_add(A: int32[M, N]) -> int32[M, N]:
     B: int32[M, N] = 0
-    for i, j in hcl.grid(M, N):
+    for i, j in allo.grid(M, N):
         B[i, j] = A[i, j] + 1
     return B
 
@@ -66,16 +66,16 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 #
 # .. note::
 #
-#    We also wrap the above functions in ``hcl.customize``, you can
-#    directly call ``s = hcl.customize(vector_add, verbose=True)`` to obtain
+#    We also wrap the above functions in ``allo.customize``, you can
+#    directly call ``s = allo.customize(vector_add, verbose=True)`` to obtain
 #    the AST of the function. The entry point of the ``customize`` function is
-#    located in `heterocl/customize.py <https://github.com/chhzh123/heterocl/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/heterocl/customize.py#L228>`_.
+#    located in `allo/customize.py <https://github.com/chhzh123/allo/blob/cdcccefcec223c3354cd95907a932f74dfa6c08a/allo/customize.py#L228>`_.
 
 ##############################################################################
 # Traverse the AST
 # ----------------
 # After obtaining the AST, we can traverse the tree node one by one to generate the IR.
-# The IR builder is inside `heterocl/ir/builder.py <https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py>`_.
+# The IR builder is inside `allo/ir/builder.py <https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py>`_.
 # Basically, the builder is a dispatcher that maps the AST node to the corresponding
 # IR builder function. For example, the ``FunctionDef`` node will be mapped to
 # ``ASTTransformer.build_FunctionDef``.
@@ -168,9 +168,9 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # ^^^^^^^^
 # The next operator is the ``For`` node, which is the for-loop statement. We provide different APIs to
 # support different loop structures, so we need to further dispatch the ``For`` node to the corresponding
-# builder function. For example, here we use ``hcl.grid``, so it will be dispatched to ``build_grid_for``.
+# builder function. For example, here we use ``allo.grid``, so it will be dispatched to ``build_grid_for``.
 # 
-# We provide some helper functions in ``heterocl/ir/transform.py`` to make the IR creation easier.
+# We provide some helper functions in ``allo/ir/transform.py`` to make the IR creation easier.
 # In this case, we can just call ``build_for_loops`` and pass in the bounds and the names of the loops
 # to create a loop nest.
 # Before building the loop body, we need to update the insertion point:
@@ -189,8 +189,8 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # Other Nodes
 # ^^^^^^^^^^^
 # The build process is similar for other nodes, so I will not go into them one by one.
-# Please refer to the `source code <https://github.com/chhzh123/heterocl/blob/parser/heterocl/ir/builder.py>`_ for more details.
+# Please refer to the `source code <https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py>`_ for more details.
 # After building the IR, you can call ``s.module`` to see the effect.
 # 
 # Most of the MLIR operations can be found on this `webpage <https://mlir.llvm.org/docs/Dialects/>`_, and now
-# you can follow the definitions and add more amazing facilities to the new HeteroCL frontend!
+# you can follow the definitions and add more amazing facilities to the new Allo frontend!

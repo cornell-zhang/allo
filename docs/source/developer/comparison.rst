@@ -1,4 +1,4 @@
-..  Copyright HeteroCL authors. All Rights Reserved.
+..  Copyright Allo authors. All Rights Reserved.
     SPDX-License-Identifier: Apache-2.0
 
 ..  Licensed to the Apache Software Foundation (ASF) under one
@@ -22,7 +22,7 @@
 Frontend DSL Comparison
 #######################
 
-We briefly mention the differences between the old HeteroCL and the new DSL frontend.
+We briefly mention the differences between the old Allo and the new DSL frontend.
 
 Working in progress...
 

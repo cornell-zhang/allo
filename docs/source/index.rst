@@ -1,4 +1,4 @@
-..  Copyright HeteroCL authors. All Rights Reserved.
+..  Copyright Allo authors. All Rights Reserved.
     SPDX-License-Identifier: Apache-2.0
 
 ..  Licensed to the Apache Software Foundation (ASF) under one
@@ -19,10 +19,10 @@
     under the License.
 
 ###############################
-HeteroCL Internal Documentation
+Allo Internal Documentation
 ###############################
 
-Documentation for HeteroCL's new frontend.
+Documentation for Allo's new frontend.
 
 
 .. toctree::
