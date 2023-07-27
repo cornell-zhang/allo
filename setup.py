@@ -3,6 +3,7 @@
 
 import setuptools
 
+
 def setup():
     with open("README.md", encoding="utf-8") as fp:
         long_description = fp.read()

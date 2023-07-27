@@ -79,11 +79,11 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # Basically, the builder is a dispatcher that maps the AST node to the corresponding
 # IR builder function. For example, the ``FunctionDef`` node will be mapped to
 # ``ASTTransformer.build_FunctionDef``.
-# 
+#
 # All the builder function are ``staticmethod`` s that take in two arguments:
 # an AST context and an AST node.
 # The AST context stores necessary information used to build the IR, including:
-# 
+#
 # - ``ip_stack``: The stack of insertion points. The insertion point is used to
 #   denote the current position of the IR builder. For example, when we are
 #   building the body of a function, the insertion point is the function body.
@@ -91,11 +91,11 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # - ``induction_vars``: The list of loop iterators, e.g., ``i``, ``j``, ``k``.
 # - ``global_vars``: The global variables defined outside the user-defined function.
 # - ``top_func``: The top-level function of the current program.
-# 
+#
 # The first node to traverse is the ``Module`` node, which is the root of the AST.
 # We can see the ``build_Module`` function only does one thing: traverse the statements
 # inside the body of the module, and recursively call ``build_stmt``.
-# 
+#
 # .. code-block:: python
 #
 #    @staticmethod
@@ -109,26 +109,26 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # And then we meet the ``FunctionDef`` node, which is the function definition.
 # The ``build_FunctionDef`` function first creates the input and output data types
 # based on users' annotations. Then, it creates a new MLIR function operation by calling
-# 
+#
 # .. code-block:: python
 #
 #    func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip, loc=loc)
-# 
+#
 # Here, ``func_d`` is the `func <https://mlir.llvm.org/docs/Dialects/Func/>`_ dialect defined in MLIR.
 # The ``FuncOp`` is the operation that represents a function in MLIR. The function arguments are
 # explained below:
-# 
+#
 # - ``name`` is the name of the function, and we directly use the AST ``FunctionDef`` node's name ``vector_add`` as the operation name.
 # - ``type`` is the ``FunctionType`` that defines the input and output types of the function.
 # - ``ip`` is the insertion point of the function, which is the current insertion point of the AST context, and we can directly obtain it by calling ``ctx.get_ip()``.
 # - ``loc`` is the actual line number of the function, which can be usually omitted.
-# 
+#
 # After creating the function operation, we need to create the function body. We first update the insertion point
 # to the function body by calling ``ctx.push_ip(func_op.entry_block)``. Then, we traverse the function body and recursively
 # call ``build_stmt``. The function arguments are inserted into the ``buffers`` for further usage.
-# 
+#
 # .. note::
-# 
+#
 #    You may probably notice the ``MockArg`` class. This is a mock class that is used to store the
 #    function arguments, which are ``BlockArgument`` s in MLIR. It is different from other operations
 #    that inherently have a ``result`` attribute. Therefore, we mock the ``BlockArgument`` to make
@@ -143,13 +143,13 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # to generate correct data types for the tensor. Please refer to `memref <https://mlir.llvm.org/docs/Dialects/MemRef/>`_
 # dialect for more details. Similarly, we can call ``memref_d.AllocOp`` to create a new memory allocation,
 # and you can see the actual ``memref.alloc`` operation in the generated MLIR code.
-# 
+#
 # One more thing to mention is that what we see inside the AST is just **string**, so if we want to
 # get the actual value of a literal, we need to retrieve it from the ``ctx.global_vars`` dictionary.
 # For example, the ``int32[M, N]`` generates the following annotation:
-# 
+#
 # .. code-block:: python
-# 
+#
 #    slice=Index(
 #      value=Tuple(
 #        elts=[
@@ -159,7 +159,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 #        ctx=Load(),
 #      ),
 #    )
-# 
+#
 # We can see the ``M`` and ``N`` are just the ``Name`` nodes, and we need to retrieve the actual value
 # from the ``ctx.global_vars`` dictionary by calling something like ``ctx.global_vars[node.slice.value.elts[0].id]``.
 
@@ -169,20 +169,20 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # The next operator is the ``For`` node, which is the for-loop statement. We provide different APIs to
 # support different loop structures, so we need to further dispatch the ``For`` node to the corresponding
 # builder function. For example, here we use ``allo.grid``, so it will be dispatched to ``build_grid_for``.
-# 
+#
 # We provide some helper functions in ``allo/ir/transform.py`` to make the IR creation easier.
 # In this case, we can just call ``build_for_loops`` and pass in the bounds and the names of the loops
 # to create a loop nest.
 # Before building the loop body, we need to update the insertion point:
-# 
+#
 # .. code-block:: python
-# 
+#
 #    ctx.set_ip(for_loops[-1].body.operations[0])
-# 
+#
 # After calling ``build_stmts(ctx, node.body)``, we also need to recover the insertion point:
-# 
+#
 # .. code-block:: python
-# 
+#
 #    ctx.pop_ip()
 
 ##############################################################################
@@ -191,6 +191,6 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # The build process is similar for other nodes, so I will not go into them one by one.
 # Please refer to the `source code <https://github.com/chhzh123/allo/blob/parser/allo/ir/builder.py>`_ for more details.
 # After building the IR, you can call ``s.module`` to see the effect.
-# 
+#
 # Most of the MLIR operations can be found on this `webpage <https://mlir.llvm.org/docs/Dialects/>`_, and now
 # you can follow the definitions and add more amazing facilities to the new Allo frontend!
