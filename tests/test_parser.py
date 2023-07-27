@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
 import numpy as np
 import allo
 from allo.ir.types import int1, int32, float32, index
@@ -118,14 +117,6 @@ def test_interleaving_acc():
     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
     print(s.build(target="vhls"))
     return s
-
-
-def test_platform():
-    s = test_interleaving_acc()
-    target = allo.Platform.xilinx_zc706
-    target.config(compiler="vivado_hls", mode="debug", project="gemm-inter-acc.prj")
-    mod = s.build(target=target)
-    mod()
 
 
 def test_buffer_at():
@@ -256,16 +247,6 @@ def test_nested_functions():
         D = matrix_add(C)
         return D
 
-    s1 = allo.customize(gemm)
-    s1.reorder("k", "j")
-    s1.buffer_at(gemm.C, axis="i")
-    s1.pipeline("j")
-    print(s1.module)
-    # Top-level
-    s = allo.customize(top)
-    s.compose(s1)
-    print(s.module)
-    sys.exit()
     # Separate compilation (just for testing)
     s_gemm = allo.customize(gemm)
     mod_gemm = s_gemm.build()
@@ -359,7 +340,6 @@ def test_nested_functions_3():
     print(s.module)
     f = s.build(target="vhls")
     print(f)
-    return f
 
 
 def test_rhs_binaryop():

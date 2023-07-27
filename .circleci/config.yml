@@ -49,7 +49,7 @@ jobs:
             export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
             export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
             export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
-            # python3 -m pytest tests -v
+            python3 -m pytest tests -v
       - run:
           name: Allo Tutorials
           command: |
