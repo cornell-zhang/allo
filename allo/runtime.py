@@ -2,16 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import re
+import subprocess
 
 
-def copy_build_files(target, script=None):
+def run_process(cmd, pattern=None):
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+    out, err = p.communicate()
+    if err:
+        raise RuntimeError("Error raised: ", err.decode())
+    if pattern:
+        return re.findall(pattern, out.decode("utf-8"))
+    return out.decode("utf-8")
+
+
+def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     # make the project folder and copy files
-    os.makedirs(target.project, exist_ok=True)
+    os.makedirs(project, exist_ok=True)
     path = os.path.dirname(__file__)
     path = os.path.join(path, "harness/")
-    project = target.project
-    platform = str(target.tool.name)
-    mode = str(target.tool.mode)
     if platform in {"vivado_hls", "vitis_hls"}:
         os.system("cp " + path + "vivado/* " + project)
         if platform == "vitis_hls":
@@ -31,7 +40,7 @@ def copy_build_files(target, script=None):
             ) as tcl_file:
                 for line in tcl_file:
                     if "set_top" in line:
-                        line = "set_top " + target.top + "\n"
+                        line = "set_top " + top + "\n"
                     # pylint: disable=too-many-boolean-expressions
                     if (
                         ("csim_design" in line and "csim" in removed_mode)

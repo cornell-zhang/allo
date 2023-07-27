@@ -31,7 +31,7 @@ from .ir.builder import ASTTransformer, ASTContext
 from .context import get_context, set_context, get_location
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
-from .module import LLVMModule
+from .module import LLVMModule, HLSModule
 
 
 def getsourcefile(obj):
@@ -303,7 +303,7 @@ class Schedule:
                             )
                             break
 
-    def build(self, target=None):
+    def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"
             _mlir_lower_pipeline(self.module, lower_linalg=True)
@@ -312,27 +312,13 @@ class Schedule:
         if target == "vhls":
             # FIXME: Handle linalg.fill
             _mlir_lower_pipeline(self.module, lower_linalg=True)
-            buf = io.StringIO()
-            hcl_d.emit_vhls(self.module, buf)
-            buf.seek(0)
-            hls_code = buf.read()
-            return hls_code
-        if str(target.tool.mode) == "debug":
-            raise NotImplementedError("Debug mode is not supported")
-            # _mlir_lower_pipeline(self.module, lower_linalg=True)
-            # target.top = self.top_func.name.value
-            # copy_build_files(target)
-            # buf = io.StringIO()
-            # hcl_d.emit_vhls(self.module, buf)
-            # buf.seek(0)
-            # hls_code = buf.read()
-            # with open(f"{target.project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-            #     outfile.write(hls_code)
-            # with open(f"{target.project}/host.cpp", "w", encoding="utf-8") as outfile:
-            #     outfile.write("")
-
-            # hcl_module = HCLModule(target.top, hls_code, target, host_src=None)
-            # return hcl_module
+            mod = HLSModule(
+                self.module,
+                top_func_name=self.top_func.name.value,
+                mode=mode,
+                project=project,
+            )
+            return mod
         raise NotImplementedError(f"Target {target} is not supported")
 
 

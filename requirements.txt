@@ -8,4 +8,5 @@ pytest
 black==23.1.0
 pylint==2.17.1
 matplotlib
+pandas
 astpretty
