@@ -1,2 +1,2 @@
-Allo New Frontend Documentations
+Allo Documentations
 ====================================
