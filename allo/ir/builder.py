@@ -54,6 +54,7 @@ def get_kwarg(kwargs, name):
     for keyword in kwargs:
         if keyword.arg == name:
             return keyword.value
+    raise RuntimeError(f"Keyword argument {name} not found")
 
 
 class Builder:
@@ -542,6 +543,8 @@ class ASTTransformer(Builder):
         rhs = build_stmt(ctx, node.value)
         if isinstance(type_hint, ast.Subscript):
             type_str = type_hint.value.id
+            if type_str in ctx.global_vars:
+                type_str = str(ctx.global_vars[type_str])
             # pylint: disable=redefined-builtin
             slice = (
                 type_hint.slice.value
@@ -563,6 +566,8 @@ class ASTTransformer(Builder):
                 linalg_d.fill(rhs.result, outs=[alloc_op.result])
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
+            if type_str in ctx.global_vars:
+                type_str = str(ctx.global_vars[type_str])
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
             ASTTransformer.build_store(ctx, node.target, rhs)
@@ -588,6 +593,8 @@ class ASTTransformer(Builder):
         def build_type(type_hint):
             if isinstance(type_hint, ast.Subscript):
                 type_str = type_hint.value.id
+                if type_str in ctx.global_vars:
+                    type_str = str(ctx.global_vars[type_str])
                 # pylint: disable=redefined-builtin
                 slice = (
                     type_hint.slice.value
@@ -603,6 +610,8 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, ele_type)
             elif isinstance(type_hint, ast.Name):
                 type_str = type_hint.id
+                if type_str in ctx.global_vars:
+                    type_str = str(ctx.global_vars[type_str])
                 memref_type = get_mlir_type(type_str)
             else:
                 raise RuntimeError("Unsupported function argument type")

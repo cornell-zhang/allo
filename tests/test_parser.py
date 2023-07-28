@@ -513,6 +513,35 @@ def test_imperfect_loops():
     print(s1.build("vhls"))
 
 
+def test_polymorphism():
+    T = float32
+    M, N, K = 32, 32, 32
+
+    def gemm(A: T[M, K], B: T[K, N]) -> T[M, N]:
+        C: T[M, N] = 0
+        for i, j, k in allo.grid(M, N, K):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((M, K)).astype(np.float32)
+    np_B = np.random.random((K, N)).astype(np.float32)
+    allo_C = mod(np_A, np_B)
+    np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
+
+    T = int32
+    M, N, K = 4, 4, 4
+    s1 = allo.customize(gemm)
+    print(s1.module)
+    mod1 = s1.build()
+    np_A = np.random.randint(0, 10, size=(M, K)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(K, N)).astype(np.int32)
+    allo_C = mod1(np_A, np_B)
+    np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -534,3 +563,4 @@ if __name__ == "__main__":
     test_fcompute_wrap_more()
     test_compute_at()
     test_imperfect_loops()
+    test_polymorphism()
