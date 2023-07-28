@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 # LLVM
 export LLVM_HOME=/work/shared/common/llvm-project-hcl
