@@ -46,21 +46,20 @@ def getsourcelines(obj):
 
 
 def _get_global_vars(_func):
-    # Discussions: https://github.com/taichi-dev/taichi/issues/282
-    # global_vars = _func.__globals__.copy()
     global_vars = {}
 
-    freevar_names = _func.__code__.co_freevars
-    closure = _func.__closure__
     # Get back to the outer-most scope (user-defined function)
     for name, var in inspect.stack()[2][0].f_locals.items():
-        if isinstance(var, (int, float)):
+        if isinstance(var, (int, float)) or inspect.isfunction(var):
             global_vars[name] = var
+
+    # Discussions: https://github.com/taichi-dev/taichi/issues/282
+    freevar_names = _func.__code__.co_freevars
+    closure = _func.__closure__
     if closure:
         freevar_values = [x.cell_contents for x in closure]
         for name, value in zip(freevar_names, freevar_values):
             global_vars[name] = value
-
     return global_vars
 
 

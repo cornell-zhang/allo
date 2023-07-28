@@ -559,6 +559,42 @@ def test_softmax():
     print(s.module)
 
 
+def test_triple_call():
+    M = 12
+    N = 768
+    K = 768
+    H = 64
+
+    def Linear_layer(
+        inp: float32[M, K], W: float32[K, N], B: float32[N]
+    ) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N, name="gemm"):
+            for k in allo.reduction(K):
+                outp[i, j] += inp[i, k] * W[k, j]
+        for i, j in allo.grid(M, N, name="bias"):
+            outp[i, j] += B[j]
+        return outp
+
+    def Add1(inp: float32[M, N]) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
+        for i, j in allo.grid(M, H, name="add"):
+            outp[i, j] = inp[i, j] + 1.0
+        return outp
+
+    def Add2(inp: float32[M, N]) -> float32[M, N]:
+        outp = Add1(inp)
+        return outp
+
+    def Top(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
+        outp = Linear_layer(inp, W, B)
+        outp = Add2(outp)
+        return outp
+
+    s = allo.customize(Top)
+    print(s.module)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -582,3 +618,4 @@ if __name__ == "__main__":
     test_imperfect_loops()
     test_polymorphism()
     test_softmax()
+    test_triple_call()
