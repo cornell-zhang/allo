@@ -54,7 +54,7 @@ more like the NumPy operations, so we do not need to explicitly express the
 for loops inside the program, which may be easier to conduct program transformations
 for specific backends.
 
-.. GENERATED FROM PYTHON SOURCE LINES 28-43
+.. GENERATED FROM PYTHON SOURCE LINES 28-44
 
 .. code-block:: default
 
@@ -71,6 +71,7 @@ for specific backends.
     """
 
     # .. note::
+    #
     #    For more linalg examples, please refer to the `linalg test suite <https://github.com/llvm/llvm-project/tree/main/mlir/test/Dialect/Linalg>`_.
 
 
@@ -80,12 +81,12 @@ for specific backends.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 44-46
+.. GENERATED FROM PYTHON SOURCE LINES 45-47
 
 We wrap the MLIR parser in allo, so we can directly invoke it to parse the MLIR
 program.
 
-.. GENERATED FROM PYTHON SOURCE LINES 46-50
+.. GENERATED FROM PYTHON SOURCE LINES 47-51
 
 .. code-block:: default
 
@@ -115,7 +116,7 @@ program.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 51-88
+.. GENERATED FROM PYTHON SOURCE LINES 52-89
 
 The above result should be exactly the same as what we defined in the MLIR program,
 meaning the MLIR program is valid. Otherwise, for example, if omit the return value
@@ -155,7 +156,7 @@ Then we can directly invoke the module with random inputs, and see if the result
    However, we only include several lowering passes from commonly used dialects in the module,
    so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.
 
-.. GENERATED FROM PYTHON SOURCE LINES 88-95
+.. GENERATED FROM PYTHON SOURCE LINES 89-96
 
 .. code-block:: default
 
@@ -173,7 +174,7 @@ Then we can directly invoke the module with random inputs, and see if the result
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 96-109
+.. GENERATED FROM PYTHON SOURCE LINES 97-110
 
 We verify the correctness of our handwritten MLIR program, but we definitely don't want users to write
 these tedious IR code by hand, so we need to think about how to raise the abstraction level and let
@@ -189,7 +190,7 @@ Therefore, the frontend interface may look like this:
 
 Later, we want to figure out a way to lower this high-level program to the MLIR program we defined above.
 
-.. GENERATED FROM PYTHON SOURCE LINES 111-119
+.. GENERATED FROM PYTHON SOURCE LINES 112-120
 
 Define an MLIR program with Tensor dialect
 ------------------------------------------
@@ -200,7 +201,7 @@ Thanks to the `tensor dialect <https://mlir.llvm.org/docs/Dialects/TensorOps>`_,
 easily leverage it to conduct slicing, reshaping, and other tensor operations. Following
 shows an example of how to use the tensor dialect to define a matmul program:
 
-.. GENERATED FROM PYTHON SOURCE LINES 119-133
+.. GENERATED FROM PYTHON SOURCE LINES 120-134
 
 .. code-block:: default
 
@@ -225,13 +226,13 @@ shows an example of how to use the tensor dialect to define a matmul program:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 134-137
+.. GENERATED FROM PYTHON SOURCE LINES 135-138
 
 It is very similar to the original one, but the main difference is that we use ``tensor``
 instead of ``memref`` to define the input and output of the operations.
 Again, we can invoke the MLIR parser to check if the program is valid.
 
-.. GENERATED FROM PYTHON SOURCE LINES 137-141
+.. GENERATED FROM PYTHON SOURCE LINES 138-142
 
 .. code-block:: default
 
@@ -263,7 +264,7 @@ Again, we can invoke the MLIR parser to check if the program is valid.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 142-154
+.. GENERATED FROM PYTHON SOURCE LINES 143-155
 
 It outputs without any error, so we know that the program is valid.
 And we can also invoke the LLVM execution engine trying to execute the program.
@@ -278,7 +279,7 @@ You will see the following error message:
 
    python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209: mlir::FailureOr<llvm::SmallVector<mlir::Operation*, 4> > linalgOpToLoopsImpl(mlir::PatternRewriter&, mlir::linalg::LinalgOp) [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() && "expected linalg op with buffer semantics"' failed.
 
-.. GENERATED FROM PYTHON SOURCE LINES 156-158
+.. GENERATED FROM PYTHON SOURCE LINES 157-159
 
 Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.
@@ -286,7 +287,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.118 seconds)
+   **Total running time of the script:** ( 0 minutes  0.127 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_02_mlir.py:
