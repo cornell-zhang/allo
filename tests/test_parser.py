@@ -542,6 +542,23 @@ def test_polymorphism():
     np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
 
 
+def test_softmax():
+    inp_size = 32
+
+    def kernel(input: float32[inp_size, inp_size]) -> float32[inp_size, inp_size]:
+        output: float32[inp_size, inp_size] = 0.0
+        row_sum: float32[inp_size] = 0.0
+        for i, j in allo.grid(inp_size, inp_size, name="exp_sum"):
+            input[i, j] = allo.exp(input[i, j])
+            row_sum[i] += input[i, j]
+        for i, j in allo.grid(inp_size, inp_size, name="update"):
+            output[i, j] = input[i, j] / row_sum[i]
+        return output
+
+    s = allo.customize(kernel)
+    print(s.module)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -564,3 +581,4 @@ if __name__ == "__main__":
     test_compute_at()
     test_imperfect_loops()
     test_polymorphism()
+    test_softmax()

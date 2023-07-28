@@ -229,7 +229,7 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_For(ctx, node):
         if node.orelse:
-            raise RuntimeError("'else' clause for 'for' not supported in HCL kernels")
+            raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
         with ctx.loop_scope_guard():
             if (
                 isinstance(node.iter, ast.Call)
@@ -825,8 +825,8 @@ class ASTTransformer(Builder):
                     ip=ctx.get_ip(),
                 )
                 return call_op
-        if node.func.value.id != "hcl":
-            raise RuntimeError("Only support hcl functions for now")
+        if node.func.value.id != "allo":
+            raise RuntimeError("Only support allo functions for now")
         opcls = {
             "exp": math_d.ExpOp,
             "log": math_d.LogOp,
