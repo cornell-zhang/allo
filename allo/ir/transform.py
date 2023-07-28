@@ -107,14 +107,16 @@ def annotate(op, name):
     op.attributes[name] = UnitAttr.get()
 
 
-def build_for_loops(grid, ip, name="loop"):
+def build_for_loops(grid, ip, name="loop", stage_name=None):
     for_loops = []
     if isinstance(name, str):
         names = [name + f"_l_{i}" for i in range(len(grid))]
-        stage_name = "S_" + name
+        if stage_name is None:
+            stage_name = "S_" + name
     else:  # list
         names = name
-        stage_name = "S_" + "_".join(names)
+        if stage_name is None:
+           stage_name = "S_" + "_".join(names)
     assert len(grid) >= 1
 
     def recursive_for(for_handle, idx):

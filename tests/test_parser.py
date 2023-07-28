@@ -151,10 +151,10 @@ def test_schedule():
 def test_multiband():
     def kernel(A: int32[32, 32]) -> int32[32, 32]:
         B: int32[32, 32] = 0
-        for i, j in allo.grid(32, 32):
+        for i, j in allo.grid(32, 32, name="B"):
             B[i, j] = A[i, j] + 1
         C: int32[32, 32] = 0
-        for i, j in allo.grid(32, 32):
+        for i, j in allo.grid(32, 32, name="C"):
             C[i, j] = B[i, j] * 2
         return C
 

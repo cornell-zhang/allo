@@ -50,6 +50,12 @@ def get_extra_type_hints_from_str(dtype):
     return "_"
 
 
+def get_kwarg(kwargs, name):
+    for keyword in kwargs:
+        if keyword.arg == name:
+            return keyword.value
+
+
 class Builder:
     def __call__(self, ctx, node):
         method = getattr(self, "build_" + node.__class__.__name__, None)
@@ -195,13 +201,19 @@ class ASTTransformer(Builder):
             x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
             for x in node.iter.args
         ]
+        # get loop names
         if isinstance(node.target, ast.Tuple):
             names = [x.id for x in node.target.elts]
         else:
             names = [node.target.id]
         # avoid name conflicts
         names += [str(ctx.loop_band_count)]
-        for_loops = build_for_loops(grid, ip, names)
+        # get stage name
+        if len(node.iter.keywords) == 0:
+            stage_name = None
+        else:
+            stage_name = get_kwarg(node.iter.keywords, "name").value
+        for_loops = build_for_loops(grid, ip, names, stage_name)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
             ctx.induction_vars[name] = iv
