@@ -160,7 +160,8 @@ def test_multiband():
 
     s = allo.customize(kernel)
     loops = s.get_loops()
-    s.compute_at(loops[0].j, loops[1].j)
+    print(loops)
+    s.compute_at(loops.B.j, loops.C.j)
     print(s.module)
     mod = s.build()
     np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
@@ -475,7 +476,7 @@ def test_compute_at():
     # axis 2
     s2 = allo.customize(kernel)
     loops = s2.get_loops()
-    s2.compute_at(loops[0].m, loops[1].mm)
+    s2.compute_at(loops.S_i_j_m_0.m, loops.S_ii_jj_mm_1.mm)
     # _verify_build(s2)
     print(s2.module)
     print(s2.build("vhls"))
