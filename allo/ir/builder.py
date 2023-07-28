@@ -7,6 +7,7 @@ import ast
 import inspect
 import textwrap
 from hcl_mlir.ir import (
+    Location,
     InsertionPoint,
     FunctionType,
     MemRefType,
@@ -35,7 +36,6 @@ from hcl_mlir.dialects import (
     linalg as linalg_d,
 )
 from hcl_mlir import get_mlir_type
-from ..context import get_context, get_location
 from .transform import build_for_loops
 
 
@@ -56,7 +56,7 @@ class Builder:
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        with get_context(), get_location():
+        with ctx.mlir_ctx, Location.unknown():
             return method(ctx, node)
 
 
@@ -72,12 +72,13 @@ class LoopScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars):
+    def __init__(self, global_vars, mlir_ctx):
         self.ip_stack = []
         self.buffers = {}
         self.induction_vars = {}
         self.top_func = None
         self.global_vars = global_vars
+        self.mlir_ctx = mlir_ctx
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
@@ -562,7 +563,7 @@ class ASTTransformer(Builder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(global_vars=ctx.global_vars)
+            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx)
             ctx.set_ip(old_ctx.top_func)
         else:
             old_ctx = None
@@ -788,7 +789,9 @@ class ASTTransformer(Builder):
                     src = textwrap.dedent("\n".join(src))
                     tree = ast.parse(src)
                     # Create a new context to avoid name collision
-                    func_ctx = ASTContext(global_vars=ctx.global_vars)
+                    func_ctx = ASTContext(
+                        global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx
+                    )
                     func_ctx.set_ip(ctx.top_func)
                     stmts = build_stmts(func_ctx, tree.body)
                     func_ctx.pop_ip()

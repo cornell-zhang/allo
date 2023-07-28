@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 from hcl_mlir.ir import (
     Module,
+    Context,
+    Location,
     InsertionPoint,
     StringAttr,
     IntegerType,
@@ -27,7 +29,6 @@ from hcl_mlir.exceptions import (
 )
 
 from .ir.builder import ASTTransformer, ASTContext
-from .context import get_context, set_context, get_location
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
 from .module import LLVMModule, HLSModule
@@ -65,7 +66,7 @@ def _get_global_vars(_func):
 
 def wrapped_apply(fn):
     def wrapper(*args, **kwargs):
-        with get_context(), get_location():
+        with args[0].module.context, Location.unknown():
             res = fn(*args, **kwargs)
         _mlir_lower_pipeline(args[0].module)
         args[0].primitive_sequences.append((fn.__name__, args[1:], kwargs))
@@ -331,13 +332,12 @@ def customize(fn, verbose=False):
         except ImportError:
             print(ast.dump(tree))
     # Create MLIR module
-    set_context()
-    with get_context() as mlir_ctx, get_location():
+    with Context() as mlir_ctx, Location.unknown():
         hcl_d.register_dialect(mlir_ctx)
         module = Module.create()
     # Start building IR
     global_vars = _get_global_vars(fn)
-    ctx = ASTContext(global_vars=global_vars)
+    ctx = ASTContext(global_vars=global_vars, mlir_ctx=mlir_ctx)
     ctx.set_ip(module.body)
     ASTTransformer()(ctx, tree)
     # Attach buffers to function

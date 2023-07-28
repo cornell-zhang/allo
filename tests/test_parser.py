@@ -116,7 +116,6 @@ def test_interleaving_acc():
     np_C_allo = mod(np_A, np_B)
     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
     print(s.build(target="vhls"))
-    return s
 
 
 def test_buffer_at():
@@ -308,25 +307,27 @@ def test_nested_functions_3():
     N = 1024
     K = 1024
 
-    def gemm(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
+    def gemm1(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
         outp: float32[M, N] = 0.0
-        # This code can be Executed correctly
-        # for i in range(M):
-        #     for j in range(N):
-        #         v: float32 = 0.0
-        #         for k in allo.reduction(K):
-        #             v += inp[i, k] * W[k, j]
-        #         outp[i, j] = v + B[j]
-        # return outp
-        # if I write in this way, it would report "RuntimeError: Failure while executing pass pipeline":
-        # for i in range(M):
-        #     for j in range(N):
-        #         for k in allo.reduction(K):
-        #             outp[i, j] += inp[i, k] * W[k, j]
-        #         outp[i, j] += B[j]
-        # return outp
+        for i in range(M):
+            for j in range(N):
+                v: float32 = 0.0
+                for k in allo.reduction(K):
+                    v += inp[i, k] * W[k, j]
+                outp[i, j] = v + B[j]
+        return outp
 
-        # In addition, if there are other for construction, it would also report the same issue, such as:
+    def gemm2(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
+        for i in range(M):
+            for j in range(N):
+                for k in allo.reduction(K):
+                    outp[i, j] += inp[i, k] * W[k, j]
+                outp[i, j] += B[j]
+        return outp
+
+    def gemm3(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
         for i in range(M):
             for j in range(N):
                 outp[i, j] = B[j]
@@ -336,9 +337,13 @@ def test_nested_functions_3():
                     outp[i, j] += inp[i, k] * W[k, j]
         return outp
 
-    s = allo.customize(gemm)
-    print(s.module)
-    f = s.build(target="vhls")
+    s1 = allo.customize(gemm1)
+    print(s1.module)
+    s2 = allo.customize(gemm2)
+    print(s2.module)
+    s3 = allo.customize(gemm3)
+    print(s3.module)
+    f = s1.build(target="vhls")
     print(f)
 
 
