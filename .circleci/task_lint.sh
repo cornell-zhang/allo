@@ -8,7 +8,7 @@ set -o pipefail
 
 echo "Check license header..."
 python3 scripts/lint/check_license_header.py HEAD~1
-python3 scripts/lint/check_license_header.py origin/main
+python3 scripts/lint/check_license_header.py origin/main --
 
 echo "Check Python formats using black..."
 bash ./scripts/lint/git-black.sh HEAD~1
