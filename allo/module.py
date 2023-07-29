@@ -63,7 +63,7 @@ class LLVMModule:
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
-                "func.func(convert-linalg-to-affine-loops),lower-affine,convert-scf-to-cf,convert-arith-to-llvm,convert-memref-to-llvm,convert-func-to-llvm,convert-cf-to-llvm,reconcile-unrealized-casts"
+                "func.func(convert-linalg-to-affine-loops),lower-affine,convert-scf-to-cf,convert-arith-to-llvm,convert-memref-to-llvm,convert-func-to-llvm,convert-cf-to-llvm,convert-math-to-llvm,reconcile-unrealized-casts"
             )
             pm.run(self.module)
             # Add shared library

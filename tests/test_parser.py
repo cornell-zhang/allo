@@ -558,6 +558,12 @@ def test_softmax():
     s = allo.customize(kernel)
     print(s.module)
 
+    mod = s.build()
+    np_1 = np.random.uniform(-1, 1, size=(inp_size, inp_size)).astype(np.float32)
+    np_2 = np.exp(np_1) / np.sum(np.exp(np_1), axis=-1, keepdims=True)
+    np_3 = mod(np_1)
+    np.testing.assert_allclose(np_3, np_2, rtol=1e-03)
+
 
 def test_triple_call():
     M = 12
