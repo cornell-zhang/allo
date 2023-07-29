@@ -601,6 +601,40 @@ def test_triple_call():
     print(s.module)
 
 
+def test_gelu():
+    m, n = 32, 32
+
+    def kernel(input: float32[m, n]) -> float32[m, n]:
+        output: float32[m, n] = 0.0
+        for i, j in allo.grid(m, n):
+            output[i, j] = (
+                0.5
+                * input[i, j]
+                * (
+                    1.0
+                    + allo.tanh(
+                        allo.sqrt(2.0 / 3.1415926)
+                        * (input[i, j] + 0.044715 * allo.power(input[i, j], 3.0))
+                    )
+                )
+            )
+        return output
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+    np_1 = np.random.uniform(-1, 1, size=(m, n)).astype(np.float32)
+    np_2 = (
+        0.5
+        * np_1
+        * (1 + np.tanh(np.sqrt(2 / np.pi) * (np_1 + 0.044715 * np.power(np_1, 3))))
+    )
+    np_3 = np.zeros((m, n), dtype="float")
+
+    np_3 = f(np_1)
+    np.testing.assert_allclose(np_3, np_2, rtol=1e-03)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -625,3 +659,4 @@ if __name__ == "__main__":
     test_polymorphism()
     test_softmax()
     test_triple_call()
+    test_gelu()
