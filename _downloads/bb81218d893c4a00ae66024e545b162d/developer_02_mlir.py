@@ -37,6 +37,7 @@ func.func @matmul(%A: memref<32x32xi32>, %B: memref<32x32xi32>) -> memref<32x32x
 }
 """
 
+# %%
 # .. note::
 #
 #    For more linalg examples, please refer to the `linalg test suite <https://github.com/llvm/llvm-project/tree/main/mlir/test/Dialect/Linalg>`_.
