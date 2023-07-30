@@ -675,6 +675,18 @@ def test_compose_nested():
     print(f)
 
 
+def test_no_init():
+    M, N = 4, 4
+
+    def kernel() -> int32:
+        outp: float32[M, N]
+        v: int32
+        return v
+
+    s = allo.customize(kernel)
+    print(s.module)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -701,3 +713,4 @@ if __name__ == "__main__":
     test_triple_call()
     test_gelu()
     test_compose_nested()
+    test_no_init()

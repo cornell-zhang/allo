@@ -536,11 +536,10 @@ class ASTTransformer(Builder):
     def build_AnnAssign(ctx, node):
         ip = ctx.get_ip()
         type_hint = node.annotation
-        if node.value is None:
-            raise RuntimeError(
-                "Please explicitly initialize the buffer with an initial value"
-            )
-        rhs = build_stmt(ctx, node.value)
+        if node.value is not None:
+            rhs = build_stmt(ctx, node.value)
+        else:
+            rhs = None
         if isinstance(type_hint, ast.Subscript):
             type_str = type_hint.value.id
             if type_str in ctx.global_vars:
@@ -561,16 +560,18 @@ class ASTTransformer(Builder):
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             ctx.buffers[node.target.id] = alloc_op
-            with ip:
-                # pylint: disable=unexpected-keyword-arg
-                linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            if rhs is not None:
+                with ip:
+                    # pylint: disable=unexpected-keyword-arg
+                    linalg_d.fill(rhs.result, outs=[alloc_op.result])
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-            ASTTransformer.build_store(ctx, node.target, rhs)
+            if rhs is not None:
+                ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
