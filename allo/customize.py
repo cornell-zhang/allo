@@ -6,6 +6,7 @@ import inspect
 import textwrap
 import ast
 from dataclasses import dataclass
+from functools import wraps
 
 from hcl_mlir.ir import (
     Module,
@@ -65,6 +66,7 @@ def _get_global_vars(_func):
 
 
 def wrapped_apply(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
         with args[0].module.context, Location.unknown():
             res = fn(*args, **kwargs)
@@ -362,8 +364,8 @@ class Schedule:
                         ):
                             from .ir.builder import MockArg
 
-                            self.partition(
-                                MockArg(op.operands[arg_idx]), *args[1:], **kwargs
+                            self.partition.__wrapped__(
+                                self, MockArg(op.operands[arg_idx]), *args[1:], **kwargs
                             )
                             break
 
