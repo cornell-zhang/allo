@@ -635,6 +635,46 @@ def test_gelu():
     np.testing.assert_allclose(np_3, np_2, rtol=1e-03)
 
 
+def test_compose_nested():
+    M, N, K = 4, 4, 4
+
+    def Linear_layer(
+        inp: float32[M, K], W: float32[K, N], B: float32[N]
+    ) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N, name="gemm"):
+            for k in allo.reduction(K):
+                outp[i, j] += inp[i, k] * W[k, j]
+        for i, j in allo.grid(M, N, name="bias"):
+            outp[i, j] += B[j]
+        return outp
+
+    def Add1(inp: float32[M, N]) -> float32[M, N]:
+        outp: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N, name="add"):
+            outp[i, j] = inp[i, j] + 1.0
+        return outp
+
+    def Add2(inp: float32[M, N]) -> float32[M, N]:
+        outp = Add1(inp)
+        return outp
+
+    def Top(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
+        outp = Linear_layer(inp, W, B)
+        outp = Add2(outp)
+        return outp
+
+    s_add2 = allo.customize(Add2)
+    s_add2.partition(Add2.inp)
+    print(s_add2.module)
+    s = allo.customize(Top)
+    s.compose(s_add2)
+    print(s.module)
+
+    f = s.build(target="vhls")
+    print(f)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -660,3 +700,4 @@ if __name__ == "__main__":
     test_softmax()
     test_triple_call()
     test_gelu()
+    test_compose_nested()

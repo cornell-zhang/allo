@@ -17,6 +17,7 @@ from hcl_mlir.ir import (
     IntegerAttr,
     F32Type,
     MemRefType,
+    FlatSymbolRefAttr,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -173,6 +174,65 @@ class Schedule:
             factor=factor,
             ip=self.ip,
         )
+        # TODO: Deep nested functions may still have chance to meet errors,
+        #       since this process is not recursive.
+        # Make sure the arguments of subfunctions are also partitioned
+        func_to_partitioned = []
+        for call_op in self.top_func.entry_block.operations:
+            if isinstance(call_op, func_d.CallOp):
+                # test arguments
+                for idx, arg in enumerate(call_op.operands):
+                    if arg == target.result:
+                        func_to_partitioned.append(
+                            (FlatSymbolRefAttr(call_op.attributes["callee"]).value, idx)
+                        )
+                # test results
+                for idx, res in enumerate(call_op.results):
+                    if res == target.result:
+                        func_to_partitioned.append(
+                            (
+                                FlatSymbolRefAttr(call_op.attributes["callee"]).value,
+                                len(call_op.operands) + idx,
+                            )
+                        )
+        # Add partition ops to subfunctions
+        # pylint: disable=too-many-nested-blocks
+        for (
+            func_name,
+            idx,
+        ) in func_to_partitioned:
+            for op in self.module.body.operations:
+                if (
+                    isinstance(op, func_d.FuncOp)
+                    and StringAttr(op.attributes["sym_name"]).value == func_name
+                ):
+                    if idx < len(op.arguments):
+                        hcl_d.PartitionOp(
+                            op.arguments[idx],
+                            partition_kind=partition_type,
+                            dim=dim,
+                            factor=factor,
+                            ip=InsertionPoint.at_block_terminator(op.entry_block),
+                        )
+                    else:
+                        idx = idx - len(op.arguments)
+                        assert (
+                            idx == 0
+                        ), "Can only partition one function return for now"
+                        return_op = None
+                        for inner_op in op.entry_block.operations:
+                            if isinstance(inner_op, func_d.ReturnOp):
+                                return_op = inner_op
+                                break
+                        else:
+                            raise RuntimeError("No return op found")
+                        hcl_d.PartitionOp(
+                            return_op.operands[idx],
+                            partition_kind=partition_type,
+                            dim=dim,
+                            factor=factor,
+                            ip=InsertionPoint.at_block_terminator(op.entry_block),
+                        )
 
     @wrapped_apply
     def buffer_at(self, target, axis):
@@ -260,15 +320,24 @@ class Schedule:
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
-            func_to_replace = sch.top_func
-            for func in self.module.body.operations:
-                if func.name.value == func_to_replace.name.value:
-                    func.operation.erase()
-                    break
-            new_mod = Module.parse(str(sch.top_func))
+            funcs_to_replace = []
+            new_mod = Module.parse(str(sch.module))
             for func in new_mod.body.operations:
-                if func.name.value == func_to_replace.name.value:
-                    func.move_before(self.module.body.operations[0])
+                # Move all the functions to the front of the current module
+                if isinstance(func, func_d.FuncOp):
+                    for target in self.module.body.operations:
+                        if (
+                            isinstance(target, func_d.FuncOp)
+                            and func.name.value == target.name.value
+                        ):
+                            func.move_before(target)
+                            target.operation.erase()
+                            funcs_to_replace.append(func.name.value)
+                            break
+                    else:
+                        raise RuntimeError(
+                            f"Target function {func.name.value} not found"
+                        )
             # Need to update CallOp arguments since some of them may be partitioned
             # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:
@@ -288,8 +357,8 @@ class Schedule:
                     for op in self.top_func.entry_block.operations:
                         if (
                             isinstance(op, func_d.CallOp)
-                            and str(op.attributes["callee"])[1:]
-                            == func_to_replace.name.value
+                            and FlatSymbolRefAttr(op.attributes["callee"]).value
+                            in funcs_to_replace
                         ):
                             from .ir.builder import MockArg
 
