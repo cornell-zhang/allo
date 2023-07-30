@@ -817,6 +817,9 @@ class ASTTransformer(Builder):
                     func_ctx.set_ip(ctx.top_func)
                     stmts = build_stmts(func_ctx, tree.body)
                     func_ctx.pop_ip()
+                    # Attach buffers to function
+                    for name, buffer in func_ctx.buffers.items():
+                        setattr(func, name, buffer)
                 # Build call function in the top-level
                 new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
                 call_op = func_d.CallOp(
