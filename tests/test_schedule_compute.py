@@ -126,36 +126,24 @@ def test_compute_at():
         for ii, jj, mm in allo.grid(10, 20, 30):
             C[ii, jj, mm] = B[ii, jj, mm] + 1
         return C
-    
-    def _verify_build(sch):
-        f = allo.build(sch)
-        a_np = np.random.randint(low=0, high=100, size=(10, 20, 30))
-        a_allo = allo.asarray(a_np)
-        c_allo = allo.asarray(np.zeros(a_np.shape), dtype=allo.Int(32))
-        f(a_allo, c_allo)
-        c_np = a_np * 2 + 1
-        np.testing.assert_allclose(c_np, c_allo.asnumpy())
 
     def test_case_1():
         # axis 0
         s0 = allo.customize(kernel)
         loops = s0.get_loops()
         s0.compute_at(loops[0]["i"], loops[1]["ii"])
-        #_verify_build(s0)
         print(s0.module)
 
         # axis 1
         s1 = allo.customize(kernel)
         loops = s1.get_loops()
         s1.compute_at(loops[0]["j"], loops[1]["jj"])
-        #_verify_build(s1)
         print(s1.module)
         
         # axis 2
         s2 = allo.customize(kernel)
         loops = s2.get_loops()
         s2.compute_at(loops[0]["m"], loops[1]["mm"])
-        #_verify_build(s2)
         print(s2.module)
         
 
@@ -164,7 +152,6 @@ def test_compute_at():
         loops = s.get_loops()
         s.compute_at(loops[0]["m"], loops[1]["mm"])
         s.fuse("ii", "jj")
-        #_verify_build(s)
         print(s.module)
         
 
@@ -174,7 +161,6 @@ def test_compute_at():
         s.compute_at(loops[0]["m"], loops[1]["mm"])
         s.split("ii", factor=3)
         s.split("jj", factor=3)
-        #_verify_build(s)
         print(s.module)
        
 
@@ -185,7 +171,6 @@ def test_compute_at():
         loops = s.get_loops()
         s.compute_at(loops[0]["m"], loops[1]["mm"])
         s.reorder("jj", "ii")
-        #_verify_build(s)
         print(s.module)
 
     # compute_at and reorder, compute at an axis that has been reordered
@@ -195,7 +180,6 @@ def test_compute_at():
         loops = s.get_loops()
         s.compute_at(loops[0]["j"], loops[1]["jj"])
         s.reorder("jj", "ii")
-        #_verify_build(s)
         print(s.module)
         
 
@@ -206,7 +190,6 @@ def test_compute_at():
         s.split("ii", factor=3)
         s.split("jj", factor=3)
         s.reorder("ii.outer", "jj.outer", "ii.inner", "jj.inner")
-        #_verify_build(s)
         print(s.module)
     
     test_case_1()
