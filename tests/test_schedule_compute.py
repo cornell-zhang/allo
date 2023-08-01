@@ -34,7 +34,9 @@ def test_unroll():
 
 
 def test_fuse():
-    def fuse(A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]) -> int32[10, 20, 30, 40]:
+    def fuse(
+        A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]
+    ) -> int32[10, 20, 30, 40]:
         C: int32[10, 20, 30, 40] = 0
         for i, j, k, l in allo.grid(10, 20, 30, 40):
             C[i, j, k, l] = A[i, j, k, l] + B[i, j, k, l]
@@ -46,7 +48,9 @@ def test_fuse():
 
 
 def test_reorder():
-    def reorder(A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]) -> int32[10, 20, 30, 40]:
+    def reorder(
+        A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]
+    ) -> int32[10, 20, 30, 40]:
         C: int32[10, 20, 30, 40] = 0
         for i, j, k, l in allo.grid(10, 20, 30, 40):
             C[i, j, k, l] = A[i, j, k, l] + B[i, j, k, l]
@@ -74,7 +78,7 @@ def test_split():
         for i, j in allo.grid(10, 20):
             C[i, j] = A[i, j] + B[i, j]
         return C
-    
+
     def test_transform_mode_1():
         s = allo.customize(split)
         factor = 4
@@ -97,7 +101,7 @@ def test_split_reorder():
         for i, j in allo.grid(10, 20):
             C[i, j] = A[i, j] + B[i, j]
         return C
-    
+
     def test_case_1():
         s = allo.customize(split_reorder)
         s.split("i", factor=2)
@@ -118,7 +122,7 @@ def test_split_reorder():
 
 def test_compute_at():
     def kernel(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
-        B: int32[10, 20 ,30] = 0
+        B: int32[10, 20, 30] = 0
         for i, j, m in allo.grid(10, 20, 30):
             B[i, j, m] = A[i, j, m] * 2
 
@@ -137,20 +141,18 @@ def test_compute_at():
         s1 = allo.customize(kernel)
         s1.compute_at("j", "jj")
         print(s1.module)
-        
+
         # axis 2
         s2 = allo.customize(kernel)
         loops = s2.get_loops()
         s2.compute_at("m", "mm")
         print(s2.module)
-        
 
     def test_case_2():
         s = allo.customize(kernel)
         s.compute_at("m", "mm")
         s.fuse("ii", "jj")
         print(s.module)
-        
 
     def test_case_3():
         s = allo.customize(kernel)
@@ -158,7 +160,6 @@ def test_compute_at():
         s.split("ii", factor=3)
         s.split("jj", factor=3)
         print(s.module)
-       
 
     # compute_at and reorder, compute at an axis that is not reordered
     # check both directions of reorder and compute_at
@@ -175,7 +176,6 @@ def test_compute_at():
         s.compute_at("j", "jj")
         s.reorder("jj", "ii")
         print(s.module)
-        
 
     def test_case_6():
         s = allo.customize(kernel)
@@ -184,7 +184,7 @@ def test_compute_at():
         s.split("jj", factor=3)
         s.reorder("ii.outer", "jj.outer", "ii.inner", "jj.inner")
         print(s.module)
-    
+
     test_case_1()
     test_case_2()
     test_case_3()
@@ -195,7 +195,7 @@ def test_compute_at():
 
 def test_compute_at_complex():
     def compute_at_complex(A: int32[10, 20, 30]) -> int32[10, 20, 30]:
-        B: int32[10, 20 ,30] = 0
+        B: int32[10, 20, 30] = 0
         for i, j, m in allo.grid(10, 20, 30):
             B[i, j, m] = A[i, j, m] * 2
 
@@ -206,13 +206,12 @@ def test_compute_at_complex():
         D: int32[10, 20, 30] = 0
         for iii, jjj, mmm in allo.grid(10, 20, 30):
             D[iii, jjj, mmm] = C[iii, jjj, mmm] % 3
-        return D 
-    
+        return D
+
     s = allo.customize(compute_at_complex)
     s.compute_at("j", "jj")
     s.compute_at("m", "mmm")
     print(s.module)
-
 
 
 def test_multi_stage():
@@ -221,7 +220,7 @@ def test_multi_stage():
         for x in allo.grid(10):
             v: int32 = 0
             for r in allo.reduction(10):
-                v += A[x, r] 
+                v += A[x, r]
             B[x] = v
         return B
 
