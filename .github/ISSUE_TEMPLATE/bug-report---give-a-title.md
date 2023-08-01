@@ -1,5 +1,3 @@
-# Copyright Allo authors. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
 ---
 name: Bug report - Give a title
 about: Create a report to help us improve
