@@ -6,6 +6,7 @@
 import ast
 import inspect
 import textwrap
+import numpy as np
 from hcl_mlir.ir import (
     Location,
     InsertionPoint,
@@ -24,6 +25,8 @@ from hcl_mlir.ir import (
     AffineMapAttr,
     IntegerSet,
     FlatSymbolRefAttr,
+    DenseElementsAttr,
+    TypeAttr,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -425,6 +428,40 @@ class ASTTransformer(Builder):
         return store_op
 
     @staticmethod
+    def build_constant_tensor(ctx, node):
+        if isinstance(node.value, ast.List):
+            values = compile(ast.Expression(node.value), "", "eval")
+            # pylint: disable=eval-used
+            values = eval(values)
+            np_values = np.asarray(values)
+            if np.all(np_values == np_values.astype(int)):
+                dtype = IntegerType.get_signless(32)
+                np_values = np_values.astype(np.int32)
+            elif np.issubdtype(np_values.dtype, float):
+                dtype = F32Type.get()
+                np_values = np_values.astype(np.float32)
+            else:
+                raise RuntimeError("Unsupported constant tensor element type")
+
+            value_attr = DenseElementsAttr.get(np_values)
+            sym_name = StringAttr.get(node.target.id)
+            sym_visibility = StringAttr.get("private")
+            memref_type = MemRefType.get(np_values.shape, dtype)
+            type_attr = TypeAttr.get(memref_type)
+            const_tensor = memref_d.GlobalOp(
+                sym_name=sym_name,
+                type=type_attr,
+                sym_visibility=sym_visibility,
+                initial_value=value_attr,
+                constant=True,
+                alignment=None,
+                ip=InsertionPoint(ctx.top_func),
+            )
+            const_tensor.attributes["constant"] = UnitAttr.get()
+            return const_tensor
+        raise RuntimeError("Unsupported constant tensor")
+
+    @staticmethod
     def build_AugAssign(ctx, node):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
@@ -537,7 +574,12 @@ class ASTTransformer(Builder):
         ip = ctx.get_ip()
         type_hint = node.annotation
         if node.value is not None:
-            rhs = build_stmt(ctx, node.value)
+            if isinstance(node.value, ast.List):
+                rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            elif isinstance(node.value, ast.Constant):
+                rhs = build_stmt(ctx, node.value)
+            else:
+                raise RuntimeError("Unsupported data type")
         else:
             rhs = None
         if isinstance(type_hint, ast.Subscript):
@@ -557,13 +599,26 @@ class ASTTransformer(Builder):
             ]
             ele_type = get_mlir_type(type_str)
             memref_type = MemRefType.get(shape, ele_type)
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-            ctx.buffers[node.target.id] = alloc_op
-            if rhs is not None:
-                with ip:
-                    # pylint: disable=unexpected-keyword-arg
-                    linalg_d.fill(rhs.result, outs=[alloc_op.result])
+
+            if isinstance(node.value, ast.List):
+                # pylint: disable=redefined-variable-type
+                rhs = memref_d.GetGlobalOp(
+                    memref_type,
+                    FlatSymbolRefAttr.get(node.target.id),
+                    ip=ctx.get_ip(),
+                )
+                ctx.buffers[node.target.id] = rhs
+
+            elif isinstance(node.value, ast.Constant):
+                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                alloc_op.attributes["name"] = StringAttr.get(node.target.id)
+                ctx.buffers[node.target.id] = alloc_op
+                if rhs is not None:
+                    with ip:
+                        # pylint: disable=unexpected-keyword-arg
+                        linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                else:
+                    raise RuntimeError("Unsupported data type")
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
