@@ -737,8 +737,6 @@ def test_no_init():
 
 def test_const_tensor_int():
 
-    # np_A = np.random.randint(0, 5, size=(10,10), dtype=np.int32)
-    # py_A = np_A
     def kernel() -> int32[2,2]:
         cp1 : int32[2,2] = [[1,2],[3,4]]
         cp2 : int32[2,2] = [[1,2],[3,4]]
