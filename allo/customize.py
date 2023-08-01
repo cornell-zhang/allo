@@ -6,15 +6,19 @@ import inspect
 import textwrap
 import ast
 from dataclasses import dataclass
+from functools import wraps
 
 from hcl_mlir.ir import (
     Module,
+    Context,
+    Location,
     InsertionPoint,
     StringAttr,
     IntegerType,
     IntegerAttr,
     F32Type,
     MemRefType,
+    FlatSymbolRefAttr,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -27,7 +31,6 @@ from hcl_mlir.exceptions import (
 )
 
 from .ir.builder import ASTTransformer, ASTContext
-from .context import get_context, set_context, get_location
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
 from .module import LLVMModule, HLSModule
@@ -45,27 +48,27 @@ def getsourcelines(obj):
 
 
 def _get_global_vars(_func):
-    # Discussions: https://github.com/taichi-dev/taichi/issues/282
-    # global_vars = _func.__globals__.copy()
     global_vars = {}
 
-    freevar_names = _func.__code__.co_freevars
-    closure = _func.__closure__
     # Get back to the outer-most scope (user-defined function)
     for name, var in inspect.stack()[2][0].f_locals.items():
-        if isinstance(var, (int, float)):
+        if isinstance(var, (int, float)) or inspect.isfunction(var):
             global_vars[name] = var
+
+    # Discussions: https://github.com/taichi-dev/taichi/issues/282
+    freevar_names = _func.__code__.co_freevars
+    closure = _func.__closure__
     if closure:
         freevar_values = [x.cell_contents for x in closure]
         for name, value in zip(freevar_names, freevar_values):
             global_vars[name] = value
-
     return global_vars
 
 
 def wrapped_apply(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
-        with get_context(), get_location():
+        with args[0].module.context, Location.unknown():
             res = fn(*args, **kwargs)
         _mlir_lower_pipeline(args[0].module)
         args[0].primitive_sequences.append((fn.__name__, args[1:], kwargs))
@@ -173,6 +176,65 @@ class Schedule:
             factor=factor,
             ip=self.ip,
         )
+        # TODO: Deep nested functions may still have chance to meet errors,
+        #       since this process is not recursive.
+        # Make sure the arguments of subfunctions are also partitioned
+        func_to_partitioned = []
+        for call_op in self.top_func.entry_block.operations:
+            if isinstance(call_op, func_d.CallOp):
+                # test arguments
+                for idx, arg in enumerate(call_op.operands):
+                    if arg == target.result:
+                        func_to_partitioned.append(
+                            (FlatSymbolRefAttr(call_op.attributes["callee"]).value, idx)
+                        )
+                # test results
+                for idx, res in enumerate(call_op.results):
+                    if res == target.result:
+                        func_to_partitioned.append(
+                            (
+                                FlatSymbolRefAttr(call_op.attributes["callee"]).value,
+                                len(call_op.operands) + idx,
+                            )
+                        )
+        # Add partition ops to subfunctions
+        # pylint: disable=too-many-nested-blocks
+        for (
+            func_name,
+            idx,
+        ) in func_to_partitioned:
+            for op in self.module.body.operations:
+                if (
+                    isinstance(op, func_d.FuncOp)
+                    and StringAttr(op.attributes["sym_name"]).value == func_name
+                ):
+                    if idx < len(op.arguments):
+                        hcl_d.PartitionOp(
+                            op.arguments[idx],
+                            partition_kind=partition_type,
+                            dim=dim,
+                            factor=factor,
+                            ip=InsertionPoint.at_block_terminator(op.entry_block),
+                        )
+                    else:
+                        idx = idx - len(op.arguments)
+                        assert (
+                            idx == 0
+                        ), "Can only partition one function return for now"
+                        return_op = None
+                        for inner_op in op.entry_block.operations:
+                            if isinstance(inner_op, func_d.ReturnOp):
+                                return_op = inner_op
+                                break
+                        else:
+                            raise RuntimeError("No return op found")
+                        hcl_d.PartitionOp(
+                            return_op.operands[idx],
+                            partition_kind=partition_type,
+                            dim=dim,
+                            factor=factor,
+                            ip=InsertionPoint.at_block_terminator(op.entry_block),
+                        )
 
     @wrapped_apply
     def buffer_at(self, target, axis):
@@ -260,15 +322,24 @@ class Schedule:
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
-            func_to_replace = sch.top_func
-            for func in self.module.body.operations:
-                if func.name.value == func_to_replace.name.value:
-                    func.operation.erase()
-                    break
-            new_mod = Module.parse(str(sch.top_func))
+            funcs_to_replace = []
+            new_mod = Module.parse(str(sch.module))
             for func in new_mod.body.operations:
-                if func.name.value == func_to_replace.name.value:
-                    func.move_before(self.module.body.operations[0])
+                # Move all the functions to the front of the current module
+                if isinstance(func, func_d.FuncOp):
+                    for target in self.module.body.operations:
+                        if (
+                            isinstance(target, func_d.FuncOp)
+                            and func.name.value == target.name.value
+                        ):
+                            func.move_before(target)
+                            target.operation.erase()
+                            funcs_to_replace.append(func.name.value)
+                            break
+                    else:
+                        raise RuntimeError(
+                            f"Target function {func.name.value} not found"
+                        )
             # Need to update CallOp arguments since some of them may be partitioned
             # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:
@@ -288,13 +359,13 @@ class Schedule:
                     for op in self.top_func.entry_block.operations:
                         if (
                             isinstance(op, func_d.CallOp)
-                            and str(op.attributes["callee"])[1:]
-                            == func_to_replace.name.value
+                            and FlatSymbolRefAttr(op.attributes["callee"]).value
+                            in funcs_to_replace
                         ):
                             from .ir.builder import MockArg
 
-                            self.partition(
-                                MockArg(op.operands[arg_idx]), *args[1:], **kwargs
+                            self.partition.__wrapped__(
+                                self, MockArg(op.operands[arg_idx]), *args[1:], **kwargs
                             )
                             break
 
@@ -331,13 +402,12 @@ def customize(fn, verbose=False):
         except ImportError:
             print(ast.dump(tree))
     # Create MLIR module
-    set_context()
-    with get_context() as mlir_ctx, get_location():
+    with Context() as mlir_ctx, Location.unknown():
         hcl_d.register_dialect(mlir_ctx)
         module = Module.create()
     # Start building IR
     global_vars = _get_global_vars(fn)
-    ctx = ASTContext(global_vars=global_vars)
+    ctx = ASTContext(global_vars=global_vars, mlir_ctx=mlir_ctx)
     ctx.set_ip(module.body)
     ASTTransformer()(ctx, tree)
     # Attach buffers to function

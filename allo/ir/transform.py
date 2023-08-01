@@ -48,22 +48,22 @@ def find_loop_in_bands(func, axis):
     # pylint: disable=no-else-raise
     if isinstance(axis, affine_d.AffineForOp):
         axis_name = StringAttr(axis.attributes["loop_name"]).value
-        for band in bands:
+        for _, band in bands:
             op_name = None
-            for i, loop in enumerate(band):
+            for i, (_, for_loop) in enumerate(band):
                 if i == 0:
-                    op_name = loop[1].attributes["op_name"]
-                if loop[1] == axis:
+                    op_name = for_loop.attributes["op_name"]
+                if for_loop == axis:
                     return op_name, axis_name
         raise RuntimeError(f"Cannot find the band of loop {axis_name}")
     else:  # axis is a string
         axis_name = axis
-        for band in bands:
+        for _, band in bands:
             op_name = None
-            for i, loop in enumerate(band):
+            for i, (name, for_loop) in enumerate(band):
                 if i == 0:
-                    op_name = loop[1].attributes["op_name"]
-                if loop[0] == axis_name:
+                    op_name = for_loop.attributes["op_name"]
+                if name == axis_name:
                     results.append(op_name)
         if len(results) == 0:
             raise RuntimeError(f"Cannot find the band of loop {axis_name}")
@@ -93,13 +93,13 @@ def get_affine_loop_nests(func):
                 except IndexError:
                     pass
 
-    results = []
+    results = LoopBand()
     for op in func.entry_block.operations:
         if isinstance(op, affine_d.AffineForOp):  # outer-most
             band = LoopBand()
             band.add_loop(StringAttr(op.attributes["loop_name"]).value, op)
             DFS(op.body.operations, band)
-            results.append(band)
+            results.add_loop(StringAttr(op.attributes["op_name"]).value, band)
     return results
 
 
@@ -107,14 +107,16 @@ def annotate(op, name):
     op.attributes[name] = UnitAttr.get()
 
 
-def build_for_loops(grid, ip, name="loop"):
+def build_for_loops(grid, ip, name="loop", stage_name=None):
     for_loops = []
     if isinstance(name, str):
         names = [name + f"_l_{i}" for i in range(len(grid))]
-        stage_name = "S_" + name
+        if stage_name is None:
+            stage_name = "S_" + name
     else:  # list
         names = name
-        stage_name = "S_" + "_".join(names)
+        if stage_name is None:
+            stage_name = "S_" + "_".join(names)
     assert len(grid) >= 1
 
     def recursive_for(for_handle, idx):

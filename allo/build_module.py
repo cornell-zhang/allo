@@ -5,8 +5,6 @@
 from hcl_mlir.dialects import hcl as hcl_d
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
 
-from .context import get_context
-
 
 def _mlir_lower_pipeline(module, **kwargs):
     hcl_d.loop_transformation(module)
@@ -17,7 +15,7 @@ def _mlir_lower_pipeline(module, **kwargs):
         passes += ["convert-linalg-to-affine-loops"]
     pipeline = f'func.func({",".join(passes)})'
     try:
-        with get_context():
+        with module.context:
             mlir_pass_manager.parse(pipeline).run(module)
         return module
     except Exception as e:

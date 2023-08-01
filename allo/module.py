@@ -8,7 +8,15 @@ import subprocess
 import time
 import ctypes
 import numpy as np
-from hcl_mlir.ir import Module, UnitAttr, MemRefType, IntegerType, F32Type
+from hcl_mlir.ir import (
+    Context,
+    Location,
+    Module,
+    UnitAttr,
+    MemRefType,
+    IntegerType,
+    F32Type,
+)
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -20,16 +28,22 @@ from hcl_mlir.runtime import (
     make_nd_memref_descriptor,
     ranked_memref_to_numpy,
 )
-from .context import get_context, get_location
 from .utils import np_type_to_str
 from .report import parse_xml
 from .runtime import run_process, copy_build_files
 
 
+def invoke_mlir_parser(mod: str):
+    with Context() as ctx, Location.unknown():
+        hcl_d.register_dialect(ctx)
+        module = Module.parse(str(mod), ctx)
+    return module
+
+
 class LLVMModule:
     def __init__(self, mod, top_func_name):
         # Copy the module to avoid modifying the original one
-        with get_context() as ctx, get_location():
+        with Context() as ctx:
             self.module = Module.parse(str(mod), ctx)
             # find top func op
             func = None
@@ -49,9 +63,10 @@ class LLVMModule:
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
-                "func.func(convert-linalg-to-affine-loops),lower-affine,convert-scf-to-cf,convert-arith-to-llvm,convert-memref-to-llvm,convert-func-to-llvm,convert-cf-to-llvm,reconcile-unrealized-casts"
+                "func.func(convert-linalg-to-affine-loops),lower-affine"
             )
             pm.run(self.module)
+            hcl_d.lower_hcl_to_llvm(self.module, ctx)
             # Add shared library
             if os.getenv("LLVM_BUILD_DIR") is not None:
                 shared_libs = [

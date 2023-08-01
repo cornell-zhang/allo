@@ -7,6 +7,7 @@ import ast
 import inspect
 import textwrap
 from hcl_mlir.ir import (
+    Location,
     InsertionPoint,
     FunctionType,
     MemRefType,
@@ -35,7 +36,6 @@ from hcl_mlir.dialects import (
     linalg as linalg_d,
 )
 from hcl_mlir import get_mlir_type
-from ..context import get_context, get_location
 from .transform import build_for_loops
 
 
@@ -50,13 +50,20 @@ def get_extra_type_hints_from_str(dtype):
     return "_"
 
 
+def get_kwarg(kwargs, name):
+    for keyword in kwargs:
+        if keyword.arg == name:
+            return keyword.value
+    raise RuntimeError(f"Keyword argument {name} not found")
+
+
 class Builder:
     def __call__(self, ctx, node):
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        with get_context(), get_location():
+        with ctx.mlir_ctx, Location.unknown():
             return method(ctx, node)
 
 
@@ -72,12 +79,13 @@ class LoopScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars):
+    def __init__(self, global_vars, mlir_ctx):
         self.ip_stack = []
         self.buffers = {}
         self.induction_vars = {}
         self.top_func = None
         self.global_vars = global_vars
+        self.mlir_ctx = mlir_ctx
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
@@ -194,13 +202,19 @@ class ASTTransformer(Builder):
             x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
             for x in node.iter.args
         ]
+        # get loop names
         if isinstance(node.target, ast.Tuple):
             names = [x.id for x in node.target.elts]
         else:
             names = [node.target.id]
         # avoid name conflicts
         names += [str(ctx.loop_band_count)]
-        for_loops = build_for_loops(grid, ip, names)
+        # get stage name
+        if len(node.iter.keywords) == 0:
+            stage_name = None
+        else:
+            stage_name = get_kwarg(node.iter.keywords, "name").value
+        for_loops = build_for_loops(grid, ip, names, stage_name)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
             ctx.induction_vars[name] = iv
@@ -215,7 +229,7 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_For(ctx, node):
         if node.orelse:
-            raise RuntimeError("'else' clause for 'for' not supported in HCL kernels")
+            raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
         with ctx.loop_scope_guard():
             if (
                 isinstance(node.iter, ast.Call)
@@ -522,13 +536,14 @@ class ASTTransformer(Builder):
     def build_AnnAssign(ctx, node):
         ip = ctx.get_ip()
         type_hint = node.annotation
-        if node.value is None:
-            raise RuntimeError(
-                "Please explicitly initialize the buffer with an initial value"
-            )
-        rhs = build_stmt(ctx, node.value)
+        if node.value is not None:
+            rhs = build_stmt(ctx, node.value)
+        else:
+            rhs = None
         if isinstance(type_hint, ast.Subscript):
             type_str = type_hint.value.id
+            if type_str in ctx.global_vars:
+                type_str = str(ctx.global_vars[type_str])
             # pylint: disable=redefined-builtin
             slice = (
                 type_hint.slice.value
@@ -545,14 +560,18 @@ class ASTTransformer(Builder):
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             ctx.buffers[node.target.id] = alloc_op
-            with ip:
-                # pylint: disable=unexpected-keyword-arg
-                linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            if rhs is not None:
+                with ip:
+                    # pylint: disable=unexpected-keyword-arg
+                    linalg_d.fill(rhs.result, outs=[alloc_op.result])
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
+            if type_str in ctx.global_vars:
+                type_str = str(ctx.global_vars[type_str])
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-            ASTTransformer.build_store(ctx, node.target, rhs)
+            if rhs is not None:
+                ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
@@ -562,7 +581,7 @@ class ASTTransformer(Builder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(global_vars=ctx.global_vars)
+            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx)
             ctx.set_ip(old_ctx.top_func)
         else:
             old_ctx = None
@@ -575,6 +594,8 @@ class ASTTransformer(Builder):
         def build_type(type_hint):
             if isinstance(type_hint, ast.Subscript):
                 type_str = type_hint.value.id
+                if type_str in ctx.global_vars:
+                    type_str = str(ctx.global_vars[type_str])
                 # pylint: disable=redefined-builtin
                 slice = (
                     type_hint.slice.value
@@ -590,6 +611,8 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, ele_type)
             elif isinstance(type_hint, ast.Name):
                 type_str = type_hint.id
+                if type_str in ctx.global_vars:
+                    type_str = str(ctx.global_vars[type_str])
                 memref_type = get_mlir_type(type_str)
             else:
                 raise RuntimeError("Unsupported function argument type")
@@ -788,10 +811,15 @@ class ASTTransformer(Builder):
                     src = textwrap.dedent("\n".join(src))
                     tree = ast.parse(src)
                     # Create a new context to avoid name collision
-                    func_ctx = ASTContext(global_vars=ctx.global_vars)
+                    func_ctx = ASTContext(
+                        global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx
+                    )
                     func_ctx.set_ip(ctx.top_func)
                     stmts = build_stmts(func_ctx, tree.body)
                     func_ctx.pop_ip()
+                    # Attach buffers to function
+                    for name, buffer in func_ctx.buffers.items():
+                        setattr(func, name, buffer)
                 # Build call function in the top-level
                 new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
                 call_op = func_d.CallOp(
@@ -801,8 +829,8 @@ class ASTTransformer(Builder):
                     ip=ctx.get_ip(),
                 )
                 return call_op
-        if node.func.value.id != "hcl":
-            raise RuntimeError("Only support hcl functions for now")
+        if node.func.value.id != "allo":
+            raise RuntimeError("Only support allo functions for now")
         opcls = {
             "exp": math_d.ExpOp,
             "log": math_d.LogOp,
