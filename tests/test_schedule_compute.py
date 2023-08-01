@@ -130,35 +130,31 @@ def test_compute_at():
     def test_case_1():
         # axis 0
         s0 = allo.customize(kernel)
-        loops = s0.get_loops()
-        s0.compute_at(loops[0]["i"], loops[1]["ii"])
+        s0.compute_at("i", "ii")
         print(s0.module)
 
         # axis 1
         s1 = allo.customize(kernel)
-        loops = s1.get_loops()
-        s1.compute_at(loops[0]["j"], loops[1]["jj"])
+        s1.compute_at("j", "jj")
         print(s1.module)
         
         # axis 2
         s2 = allo.customize(kernel)
         loops = s2.get_loops()
-        s2.compute_at(loops[0]["m"], loops[1]["mm"])
+        s2.compute_at("m", "mm")
         print(s2.module)
         
 
     def test_case_2():
         s = allo.customize(kernel)
-        loops = s.get_loops()
-        s.compute_at(loops[0]["m"], loops[1]["mm"])
+        s.compute_at("m", "mm")
         s.fuse("ii", "jj")
         print(s.module)
         
 
     def test_case_3():
         s = allo.customize(kernel)
-        loops = s.get_loops()
-        s.compute_at(loops[0]["m"], loops[1]["mm"])
+        s.compute_at("m", "mm")
         s.split("ii", factor=3)
         s.split("jj", factor=3)
         print(s.module)
@@ -168,8 +164,7 @@ def test_compute_at():
     # check both directions of reorder and compute_at
     def test_case_4():
         s = allo.customize(kernel)
-        loops = s.get_loops()
-        s.compute_at(loops[0]["m"], loops[1]["mm"])
+        s.compute_at("m", "mm")
         s.reorder("jj", "ii")
         print(s.module)
 
@@ -177,16 +172,14 @@ def test_compute_at():
     # note that the results will be different
     def test_case_5():
         s = allo.customize(kernel)
-        loops = s.get_loops()
-        s.compute_at(loops[0]["j"], loops[1]["jj"])
+        s.compute_at("j", "jj")
         s.reorder("jj", "ii")
         print(s.module)
         
 
     def test_case_6():
         s = allo.customize(kernel)
-        loops = s.get_loops()
-        s.compute_at(loops[0]["m"], loops[1]["mm"])
+        s.compute_at("m", "mm")
         s.split("ii", factor=3)
         s.split("jj", factor=3)
         s.reorder("ii.outer", "jj.outer", "ii.inner", "jj.inner")
@@ -216,10 +209,8 @@ def test_compute_at_complex():
         return D 
     
     s = allo.customize(compute_at_complex)
-    loops = s.get_loops()
-    s.compute_at(loops[0]["j"], loops[1]["jj"])
-    loops = s.get_loops()
-    s.compute_at(loops[0]["m"], loops[1]["mmm"])
+    s.compute_at("j", "jj")
+    s.compute_at("m", "mmm")
     print(s.module)
 
 
