@@ -426,23 +426,23 @@ class ASTTransformer(Builder):
         # Store LHS
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
         return store_op
-    
+
     ## TODO: (zhichen) Int32 const tensor is done
     @staticmethod
     def build_constant_tensor(ctx, node):
         if isinstance(node.value, (ast.List, ast.Tuple)):
-            code = compile(ast.Expression(node.value), '', 'eval')
-            values = eval(code)
-            if (all(isinstance(val, int)) for val in values):
+            values = compile(ast.Expression(node.value), "", "eval")
+            # pylint: disable=eval-used
+            values = eval(values)
+            np_values = np.asarray(values)
+            if np.all(np_values == np_values.astype(int)):
                 dtype = IntegerType.get_signless(32)
-                np_type = np.int32
-            elif (all(isinstance(val, float)) for val in values):
+                np_values = np_values.astype(np.int32)
+            elif np.issubdtype(np_values.dtype, float):
                 dtype = F32Type.get()
-                np_type = np.float32
+                np_values = np_values.astype(np.float32)
             else:
                 raise RuntimeError("Unsupported constant tensor element type")
-            
-            np_values = np.asarray(values,dtype=np_type) 
 
             value_attr = DenseElementsAttr.get(np_values)
             sym_name = StringAttr.get(node.target.id)
@@ -458,10 +458,9 @@ class ASTTransformer(Builder):
                 alignment=None,
                 ip=InsertionPoint(ctx.top_func),
             )
-            const_tensor.attributes["constant"] = UnitAttr.get()    
+            const_tensor.attributes["constant"] = UnitAttr.get()
             return const_tensor
-        else:
-            raise RuntimeError("Unsupported constant tensor")
+        raise RuntimeError("Unsupported constant tensor")
 
     @staticmethod
     def build_AugAssign(ctx, node):
@@ -578,8 +577,8 @@ class ASTTransformer(Builder):
         if node.value is not None:
             if isinstance(node.value, (ast.List, ast.Tuple)):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            
-            elif isinstance(node.value, ast.Constant):   
+
+            elif isinstance(node.value, ast.Constant):
                 rhs = build_stmt(ctx, node.value)
         else:
             rhs = None
@@ -600,13 +599,14 @@ class ASTTransformer(Builder):
             ]
             ele_type = get_mlir_type(type_str)
             memref_type = MemRefType.get(shape, ele_type)
-           
+
             if isinstance(node.value, (ast.List, ast.Tuple)):
+                # pylint: disable=redefined-variable-type
                 rhs = memref_d.GetGlobalOp(
-                memref_type,
-                FlatSymbolRefAttr.get(node.target.id),
-                ip = ctx.get_ip(),
-            )
+                    memref_type,
+                    FlatSymbolRefAttr.get(node.target.id),
+                    ip=ctx.get_ip(),
+                )
                 ctx.buffers[node.target.id] = rhs
 
             elif isinstance(node.value, ast.Constant):

@@ -735,23 +735,42 @@ def test_no_init():
     s = allo.customize(kernel)
     print(s.module)
 
-def test_const_tensor_int():
 
-    def kernel() -> int32[2,2]:
-        cp1 : int32[2,2] = [[1,2],[3,4]]
-        cp2 : int32[2,2] = [[1,2],[3,4]]
-        res : int32[2,2] = 0
-        for i,j in allo.grid(2,2):
-            res[i,j]=cp1[i,j]+cp2[i,j]
+def test_const_tensor_int():
+    def kernel() -> int32[2, 2]:
+        cp1: int32[2, 2] = [[1, 2], [3, 4]]
+        cp2: int32[2, 2] = [[1, 2], [3, 4]]
+        res: int32[2, 2] = 0
+        for i, j in allo.grid(2, 2):
+            res[i, j] = cp1[i, j] + cp2[i, j]
         return res
-    
+
     s = allo.customize(kernel)
     f = s.build()
     print(s.module)
-    np_0 = np.zeros((2,2), dtype="int32")
+    np_0 = np.zeros((2, 2), dtype="int32")
     np_1 = np.array([[1, 2], [3, 4]])
     np_0 = f()
     assert np.array_equal(np_0, np_1 * 2)
+
+
+def test_const_tensor_float():
+    def kernel() -> float32[2, 2]:
+        cp1: float32[2, 2] = [[1.1, 2.0], [3.0, 4.0]]
+        cp2: float32[2, 2] = [[1.1, 2.0], [3.0, 4.0]]
+        res: float32[2, 2] = 0.0
+        for i, j in allo.grid(2, 2):
+            res[i, j] = cp1[i, j] + cp2[i, j]
+        return res
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    np_0 = np.zeros((2, 2), dtype="float32")
+    np_1 = np.array([[1.1, 2.0], [3.0, 4.0]], dtype="float32")
+    np_0 = f()
+    assert np.array_equal(np_0, np_1 * 2.0)
+
 
 if __name__ == "__main__":
     test_gemm_grid_for()
@@ -782,4 +801,4 @@ if __name__ == "__main__":
     test_no_init()
     test_double_partition()
     test_const_tensor_int()
-
+    test_const_tensor_float
