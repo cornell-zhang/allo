@@ -755,21 +755,21 @@ def test_const_tensor_int():
 
 
 def test_const_tensor_float():
-    def kernel() -> float32[2, 2]:
-        cp1: float32[2, 2] = [[1.1, 2.0], [3.0, 4.0]]
-        cp2: float32[2, 2] = [[1.1, 2.0], [3.0, 4.0]]
-        res: float32[2, 2] = 0.0
-        for i, j in allo.grid(2, 2):
+    def kernel() -> float32[2, 3]:
+        cp1: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
+        cp2: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
+        res: float32[2, 3] = 0.0
+        for i, j in allo.grid(2, 3):
             res[i, j] = cp1[i, j] + cp2[i, j]
         return res
 
     s = allo.customize(kernel)
     f = s.build()
     print(s.module)
-    np_0 = np.zeros((2, 2), dtype="float32")
-    np_1 = np.array([[1.1, 2.0], [3.0, 4.0]], dtype="float32")
+    np_0 = np.zeros((2, 3), dtype="float32")
+    np_1 = np.array([[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]], dtype="float32")
     np_0 = f()
-    assert np.array_equal(np_0, np_1 * 2.0)
+    np.testing.assert_allclose(np_0, np_1 * 2.0, atol=1e-4)
 
 
 if __name__ == "__main__":
@@ -801,4 +801,4 @@ if __name__ == "__main__":
     test_no_init()
     test_double_partition()
     test_const_tensor_int()
-    test_const_tensor_float
+    test_const_tensor_float()

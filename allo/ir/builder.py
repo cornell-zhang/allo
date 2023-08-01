@@ -427,10 +427,9 @@ class ASTTransformer(Builder):
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
         return store_op
 
-    ## TODO: (zhichen) Int32 const tensor is done
     @staticmethod
     def build_constant_tensor(ctx, node):
-        if isinstance(node.value, (ast.List, ast.Tuple)):
+        if isinstance(node.value, ast.List):
             values = compile(ast.Expression(node.value), "", "eval")
             # pylint: disable=eval-used
             values = eval(values)
@@ -575,11 +574,12 @@ class ASTTransformer(Builder):
         ip = ctx.get_ip()
         type_hint = node.annotation
         if node.value is not None:
-            if isinstance(node.value, (ast.List, ast.Tuple)):
+            if isinstance(node.value, ast.List):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
-
             elif isinstance(node.value, ast.Constant):
                 rhs = build_stmt(ctx, node.value)
+            else:
+                raise RuntimeError("Unsupported data type")
         else:
             rhs = None
         if isinstance(type_hint, ast.Subscript):
@@ -600,7 +600,7 @@ class ASTTransformer(Builder):
             ele_type = get_mlir_type(type_str)
             memref_type = MemRefType.get(shape, ele_type)
 
-            if isinstance(node.value, (ast.List, ast.Tuple)):
+            if isinstance(node.value, ast.List):
                 # pylint: disable=redefined-variable-type
                 rhs = memref_d.GetGlobalOp(
                     memref_type,
@@ -617,6 +617,8 @@ class ASTTransformer(Builder):
                     with ip:
                         # pylint: disable=unexpected-keyword-arg
                         linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                else:
+                    raise RuntimeError("Unsupported data type")
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
