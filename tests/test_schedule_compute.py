@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
 import allo
 import numpy as np
 import pytest
@@ -15,8 +16,7 @@ def test_pipeline():
         return C
 
     s = allo.customize(pipeline)
-    initiation_interval = 4
-    s.pipeline("i", initiation_interval)
+    s.pipeline("i", initiation_interval=4)
     print(s.module)
 
 
@@ -28,8 +28,7 @@ def test_unroll():
         return C
 
     s = allo.customize(unroll)
-    factor = 4
-    s.unroll("i", factor=factor)
+    s.unroll("i", factor=4)
     print(s.module)
 
 
@@ -81,14 +80,12 @@ def test_split():
 
     def test_transform_mode_1():
         s = allo.customize(split)
-        factor = 4
-        s.split("j", factor=factor)
+        s.split("j", factor=4)
         print(s.module)
 
     def test_transform_mode_2():
         s = allo.customize(split)
-        factor = 3
-        s.split("j", factor=factor)
+        s.split("j", factor=3)
         print(s.module)
 
     test_transform_mode_1()
@@ -227,3 +224,17 @@ def test_multi_stage():
     s = allo.customize(multi_stage)
     s.split("x", 5)
     print(s.module)
+
+
+if __name__ == "__main__":
+    test_pipeline()
+    test_unroll()
+    test_fuse()
+    test_reorder()
+    test_split()
+    test_split_reorder()
+    test_compute_at()
+    test_compute_at_complex()
+    test_multi_stage()
+
+sys.exit()
