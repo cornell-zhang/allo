@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
 import allo
 import numpy as np
 import pytest
@@ -236,5 +235,3 @@ if __name__ == "__main__":
     test_compute_at()
     test_compute_at_complex()
     test_multi_stage()
-
-sys.exit()
