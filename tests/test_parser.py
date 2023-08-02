@@ -848,4 +848,3 @@ if __name__ == "__main__":
     test_const_tensor_float()
     test_const_tensor_int_vars()
     test_const_tensor_float_vars()
-
