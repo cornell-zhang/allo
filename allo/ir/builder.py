@@ -611,7 +611,7 @@ class ASTTransformer(Builder):
                     ip=ctx.get_ip(),
                 )
                 ctx.buffers[node.target.id] = rhs
-            elif isinstance(node.value, ast.Constant):
+            elif isinstance(node.value, ast.Constant) or (node.value is None):
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                 alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                 ctx.buffers[node.target.id] = alloc_op
@@ -619,8 +619,8 @@ class ASTTransformer(Builder):
                     with ip:
                         # pylint: disable=unexpected-keyword-arg
                         linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                else:
-                    raise RuntimeError("Unsupported data type")
+            else:
+                raise RuntimeError("Unsupported data type")
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
