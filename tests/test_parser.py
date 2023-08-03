@@ -772,6 +772,50 @@ def test_const_tensor_float():
     np.testing.assert_allclose(np_0, np_1 * 2.0, atol=1e-4)
 
 
+def test_const_tensor_int_vars():
+    M = 10
+    N = 10
+    np_0 = np.random.randint(0, 20, size=(M, N), dtype="int32")
+    np_1 = np.random.randint(0, 20, size=(M, N), dtype="int32")
+
+    def kernel() -> int32[M, N]:
+        cp1: int32[M, N] = np_0
+        cp2: int32[M, N] = np_1
+        res: int32[M, N] = 1
+        for i, j in allo.grid(M, N):
+            res[i, j] += cp1[i, j] * cp2[i, j]
+        return res
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    np_2 = np.zeros((M, N), dtype="int32")
+    np_2 = f()
+    assert np.array_equal(np_2, 1 + np_0 * np_1)
+
+
+def test_const_tensor_float_vars():
+    M = 10
+    N = 10
+    np_0 = np.random.uniform(size=(M, N))
+    np_1 = np.random.uniform(size=(M, N))
+
+    def kernel() -> float32[M, N]:
+        cp1: float32[M, N] = np_0
+        cp2: float32[M, N] = np_1
+        res: float32[M, N] = 1.0
+        for i, j in allo.grid(M, N):
+            res[i, j] += cp1[i, j] * cp2[i, j]
+        return res
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    np_2 = np.zeros((M, N), dtype="float32")
+    np_2 = f()
+    np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -802,3 +846,5 @@ if __name__ == "__main__":
     test_double_partition()
     test_const_tensor_int()
     test_const_tensor_float()
+    test_const_tensor_int_vars()
+    test_const_tensor_float_vars()
