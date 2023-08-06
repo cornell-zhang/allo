@@ -724,13 +724,21 @@ def test_double_partition():
     print(f)
 
 
-def test_no_init():
-    M, N = 4, 4
-
+def test_no_init_scalar():
     def kernel() -> int32:
-        outp: float32[M, N]
         v: int32
         return v
+
+    s = allo.customize(kernel)
+    print(s.module)
+
+
+def test_no_init_tensor():
+    M, N = 4, 4
+
+    def kernel() -> float32[M, N]:
+        outp: float32[M, N]
+        return outp
 
     s = allo.customize(kernel)
     print(s.module)
@@ -842,7 +850,8 @@ if __name__ == "__main__":
     test_triple_call()
     test_gelu()
     test_compose_nested()
-    test_no_init()
+    test_no_init_scalar()
+    test_no_init_tensor()
     test_double_partition()
     test_const_tensor_int()
     test_const_tensor_float()
