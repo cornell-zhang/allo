@@ -824,6 +824,46 @@ def test_const_tensor_float_vars():
     np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
 
 
+def test_tensor_matmul_int32():
+    M = 10
+    K = 15
+    N = 20
+    np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
+    np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
+
+    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        C: int32[M, N] = 0
+        C = allo.matmul(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((M, N), dtype="int32")
+    np_2 = f(np_0, np_1)
+    np.testing.assert_array_equal(np_2, np_0 @ np_1)
+    print(s.module)
+
+
+def test_tensor_matmul_float32():
+    M = 10
+    K = 15
+    N = 20
+    np_0 = np.float32(np.random.uniform(size=(M, K)))
+    np_1 = np.float32(np.random.uniform(size=(K, N)))
+
+    def kernel(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
+        C: float32[M, N] = 0.0
+        C = allo.matmul(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((M, N), dtype="float32")
+    np_2 = f(np_0, np_1)
+    np.testing.assert_allclose(np_2, np_0 @ np_1, atol=1e-4)
+    print(s.module)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -857,3 +897,5 @@ if __name__ == "__main__":
     test_const_tensor_float()
     test_const_tensor_int_vars()
     test_const_tensor_float_vars()
+    test_tensor_matmul_int32()
+    test_tensor_matmul_float32()

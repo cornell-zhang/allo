@@ -409,10 +409,28 @@ class ASTTransformer(Builder):
         raise RuntimeError("Unsupported store")
 
     @staticmethod
+    def build_Matmul(ctx, node):
+        ip = ctx.get_ip()
+        # pylint: disable=unexpected-keyword-arg
+        with ip:
+            outputs = linalg_d.matmul(
+                ctx.buffers[node.value.args[0].id].result,
+                ctx.buffers[node.value.args[1].id].result,
+                outs=[ctx.buffers[node.targets[0].id].result],
+            )
+        return outputs
+
+    @staticmethod
     def build_Assign(ctx, node):
         # Compute RHS
         if isinstance(node.value, ast.Name):  # scalar
             rhs = ctx.buffers[node.value.id]
+        elif (
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and (node.value.func.attr == "matmul")
+        ):
+            return ASTTransformer.build_Matmul(ctx, node)
         else:
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
