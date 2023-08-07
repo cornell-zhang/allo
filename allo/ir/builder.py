@@ -922,7 +922,7 @@ class ASTTransformer(Builder):
         with ip:
             memref_type = MemRefType.get(shape, dtype)
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            # TODO: (Zhichen) add this func when tensor supported
+            # TODO: Use linalg_d.InitTensorOp when tensor dialect is supported
             # alloc_op = linalg_d.InitTensorOp(shape, dtype)
             if str(dtype) == "i32":
                 zero = arith_d.ConstantOp(
