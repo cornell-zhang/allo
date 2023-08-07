@@ -848,20 +848,13 @@ def test_tensor_matmul_only2D():
     M = 10
     K = 15
     N = 20
-    np_0 = np.random.randint(0, 20, size=(M, K, M, K), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(M, K, K, N), dtype="int32")
 
     def kernel(A: int32[M, K, M, K], B: int32[M, K, K, N]) -> int32[M, K, M, N]:
         C = allo.matmul(A, B)
         return C
 
     with pytest.raises(RuntimeError) as excinfo:
-        s = allo.customize(kernel)
-        f = s.build()
-        np_2 = np.zeros((M, K, M, N), dtype="int32")
-        np_2 = f(np_0, np_1)
-        np.testing.assert_array_equal(np_2, np.matmul(np_0, np_1))
-        print(s.module)
+        allo.customize(kernel)
     assert "Only support two 2D matrix multiplication" in str(excinfo.value)
 
 
