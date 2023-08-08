@@ -604,7 +604,7 @@ class ASTTransformer(Builder):
                 for x in elts
             ]
             ele_type = get_mlir_type(type_str)
-            if ctx.enable_tensor is False:
+            if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, ele_type)
                 if isinstance(node.value, (ast.List, ast.Name)):
                     # pylint: disable=redefined-variable-type
@@ -640,7 +640,7 @@ class ASTTransformer(Builder):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
-            if ctx.enable_tensor is False:
+            if not ctx.enable_tensor:
                 # TODO: figure out why zero-shape cannot work
                 ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
                 if rhs is not None:
@@ -673,7 +673,7 @@ class ASTTransformer(Builder):
         input_typehints = []
         arg_names = []
 
-        def build_type(type_hint, enable_tensor=False):
+        def build_type(type_hint):
             if isinstance(type_hint, ast.Subscript):
                 type_str = type_hint.value.id
                 if type_str in ctx.global_vars:
@@ -690,7 +690,7 @@ class ASTTransformer(Builder):
                     for x in elts
                 ]
                 ele_type = get_mlir_type(type_str)
-                if enable_tensor is False:
+                if not ctx.enable_tensor:
                     data_type = MemRefType.get(shape, ele_type)
                 else:
                     data_type = RankedTensorType.get(shape, ele_type)
@@ -699,7 +699,7 @@ class ASTTransformer(Builder):
                 ele_type = get_mlir_type(type_str)
                 if type_str in ctx.global_vars:
                     type_str = str(ctx.global_vars[type_str])
-                if enable_tensor is False:
+                if not ctx.enable_tensor:
                     data_type = get_mlir_type(type_str)
                 else:
                     data_type = RankedTensorType.get([], ele_type)
@@ -710,7 +710,7 @@ class ASTTransformer(Builder):
 
         # Build input types
         for arg in node.args.args:
-            arg_type, extra_type_hint = build_type(arg.annotation, ctx.enable_tensor)
+            arg_type, extra_type_hint = build_type(arg.annotation)
             input_types.append(arg_type)
             input_typehints.append(extra_type_hint)
             arg_names.append(arg.arg)
@@ -722,7 +722,7 @@ class ASTTransformer(Builder):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            output_type, extra_type_hint = build_type(node.returns, ctx.enable_tensor)
+            output_type, extra_type_hint = build_type(node.returns)
             output_types.append(output_type)
             output_typehints.append(extra_type_hint)
 
