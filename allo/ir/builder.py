@@ -606,12 +606,24 @@ class ASTTransformer(Builder):
             ele_type = get_mlir_type(type_str)
             if ctx.enable_tensor is False:
                 memref_type = MemRefType.get(shape, ele_type)
-                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-                alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                ctx.buffers[node.target.id] = alloc_op
-                with ip:
-                    # pylint: disable=unexpected-keyword-arg
-                    linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                if isinstance(node.value, (ast.List, ast.Name)):
+                # pylint: disable=redefined-variable-type
+                    rhs = memref_d.GetGlobalOp(
+                        memref_type,
+                        FlatSymbolRefAttr.get(node.target.id),
+                        ip=ctx.get_ip(),
+                    )
+                    ctx.buffers[node.target.id] = rhs
+                elif isinstance(node.value, ast.Constant) or (node.value is None):
+                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                    alloc_op.attributes["name"] = StringAttr.get(node.target.id)
+                    ctx.buffers[node.target.id] = alloc_op
+                    if rhs is not None:
+                        with ip:
+                            # pylint: disable=unexpected-keyword-arg
+                            linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                else:
+                    raise RuntimeError("Unsupported data type")
             else:
                 tensor_type = RankedTensorType.get(shape, ele_type)
                 tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
@@ -631,7 +643,8 @@ class ASTTransformer(Builder):
             if ctx.enable_tensor is False:
                 # TODO: figure out why zero-shape cannot work
                 ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-                ASTTransformer.build_store(ctx, node.target, rhs)
+                if rhs is not None:
+                    ASTTransformer.build_store(ctx, node.target, rhs)
             else:
                 ele_type = get_mlir_type(type_str)
                 tensor_type = RankedTensorType.get([], ele_type)
@@ -641,10 +654,6 @@ class ASTTransformer(Builder):
                 tensor_d.YieldOp(rhs.result, ip=ip)
                 ip = ctx.pop_ip()
                 ctx.buffers[node.target.id] = tensorgen_op
-            # TODO: figure out why zero-shape cannot work
-            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-            if rhs is not None:
-                ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
