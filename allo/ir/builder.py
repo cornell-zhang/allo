@@ -10,6 +10,7 @@ import numpy as np
 from hcl_mlir.ir import (
     Location,
     InsertionPoint,
+    ShapedType,
     FunctionType,
     MemRefType,
     IntegerType,
@@ -435,7 +436,7 @@ class ASTTransformer(Builder):
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, func_d.CallOp):
+        if isinstance(rhs, (func_d.CallOp, linalg_d.InitTensorOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
@@ -906,6 +907,10 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
+        if node.func.attr == "matmul":
+            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+            outs = ASTTransformer.build_Matmul(ctx, new_args)
+            return outs
         opcls = {
             "exp": math_d.ExpOp,
             "log": math_d.LogOp,
@@ -920,6 +925,41 @@ class ASTTransformer(Builder):
         }.get(node.func.attr)
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         return opcls(*new_args, ip=ctx.get_ip())
+
+    @staticmethod
+    def build_Matmul(ctx, new_args):
+        ip = ctx.get_ip()
+        dtype = ShapedType(new_args[0].type).element_type
+        argAshape = ShapedType(new_args[0].type).shape
+        argBshape = ShapedType(new_args[1].type).shape
+        if len(argAshape) != 2 or len(argBshape) != 2:
+            raise RuntimeError("Only support two 2D matrix multiplication")
+        shape = (argAshape[0], argBshape[1])
+
+        # pylint: disable=unexpected-keyword-arg
+        with ip:
+            memref_type = MemRefType.get(shape, dtype)
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+            # TODO: Use linalg_d.InitTensorOp when tensor dialect is supported
+            # alloc_op = linalg_d.InitTensorOp(shape, dtype)
+            if str(dtype) == "i32":
+                zero = arith_d.ConstantOp(
+                    value=IntegerAttr.get(dtype, 0), result=dtype
+                ).result
+            elif str(dtype) == "f32":
+                zero = arith_d.ConstantOp(
+                    value=FloatAttr.get(dtype, 0.0), result=dtype
+                ).result
+            else:
+                raise RuntimeError("Unsupported data type")
+            # pylint: disable=unexpected-keyword-arg
+            linalg_d.fill(zero, outs=[alloc_op.result])
+            linalg_d.matmul(
+                new_args[0],
+                new_args[1],
+                outs=[alloc_op],
+            )
+        return alloc_op
 
     @staticmethod
     def build_Return(ctx, node):
