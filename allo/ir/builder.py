@@ -623,6 +623,8 @@ class ASTTransformer(Builder):
                         with ip:
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                    else:
+                        ASTTransformer.build_init(ctx, alloc_op, ele_type)
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
@@ -921,13 +923,9 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
-        if node.func.attr == "matmul":
+        if node.func.attr in {"matmul", "bmm"}:
             new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-            outs = ASTTransformer.build_Matmul(ctx, new_args)
-            return outs
-        if node.func.attr == "bmm":
-            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-            outs = ASTTransformer.build_bmm(ctx, new_args)
+            outs = ASTTransformer.build_Matmul(ctx, node.func.attr, new_args)
             return outs
         opcls = {
             "exp": math_d.ExpOp,
@@ -945,74 +943,61 @@ class ASTTransformer(Builder):
         return opcls(*new_args, ip=ctx.get_ip())
 
     @staticmethod
-    def build_Matmul(ctx, new_args):
+    def build_Matmul(ctx, attr, new_args):
         ip = ctx.get_ip()
+        # matrix shape
         dtype = ShapedType(new_args[0].type).element_type
         argAshape = ShapedType(new_args[0].type).shape
         argBshape = ShapedType(new_args[1].type).shape
-        if len(argAshape) != 2 or len(argBshape) != 2:
-            raise RuntimeError("Only support two 2D matrix multiplication")
-        shape = (argAshape[0], argBshape[1])
+        if attr == "matmul":
+            if len(argAshape) != 2 or len(argBshape) != 2:
+                raise RuntimeError("Only support two 2D matrix multiplication")
+            shape = (argAshape[0], argBshape[1])
+        if attr == "bmm":
+            if len(argAshape) != 3 or len(argBshape) != 3:
+                raise RuntimeError("Only support two 3D batch matrix multiplication")
+            shape = (argAshape[0], argAshape[1], argBshape[2])
 
         # pylint: disable=unexpected-keyword-arg
         with ip:
-            memref_type = MemRefType.get(shape, dtype)
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            # TODO: Use linalg_d.InitTensorOp when tensor dialect is supported
-            # alloc_op = linalg_d.InitTensorOp(shape, dtype)
-            if str(dtype) == "i32":
-                zero = arith_d.ConstantOp(
-                    value=IntegerAttr.get(dtype, 0), result=dtype
-                ).result
-            elif str(dtype) == "f32":
-                zero = arith_d.ConstantOp(
-                    value=FloatAttr.get(dtype, 0.0), result=dtype
-                ).result
+            if not ctx.enable_tensor:
+                memref_type = MemRefType.get(shape, dtype)
+                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                raise RuntimeError("Unsupported data type")
-            # pylint: disable=unexpected-keyword-arg
-            linalg_d.fill(zero, outs=[alloc_op.result])
-            linalg_d.matmul(
-                new_args[0],
-                new_args[1],
-                outs=[alloc_op],
-            )
+                alloc_op = linalg_d.InitTensorOp(shape, dtype, [], ip=ip)
+            ASTTransformer.build_init(ctx, alloc_op, dtype)
+            if attr == "matmul":
+                linalg_d.matmul(
+                    new_args[0],
+                    new_args[1],
+                    outs=[alloc_op],
+                )
+            if attr == "bmm":
+                linalg_d.batch_matmul(
+                    new_args[0],
+                    new_args[1],
+                    outs=[alloc_op],
+                )
         return alloc_op
 
     @staticmethod
-    def build_bmm(ctx, new_args):
-        ip = ctx.get_ip()
-        dtype = ShapedType(new_args[0].type).element_type
-        argAshape = ShapedType(new_args[0].type).shape
-        argBshape = ShapedType(new_args[1].type).shape
-        if len(argAshape) != 3 or len(argBshape) != 3:
-            raise RuntimeError("Only support two 3D batch matrix multiplication")
-        shape = (argAshape[0], argAshape[1], argBshape[2])
-
-        # pylint: disable=unexpected-keyword-arg
-        with ip:
-            memref_type = MemRefType.get(shape, dtype)
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            # TODO: Use linalg_d.InitTensorOp when tensor dialect is supported
-            # alloc_op = linalg_d.InitTensorOp(shape, dtype)
+    def build_init(ctx, init_op, dtype):
+        # initialize data op
+        with ctx.get_ip():
             if str(dtype) == "i32":
+                # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
                     value=IntegerAttr.get(dtype, 0), result=dtype
                 ).result
             elif str(dtype) == "f32":
+                # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
                     value=FloatAttr.get(dtype, 0.0), result=dtype
                 ).result
             else:
                 raise RuntimeError("Unsupported data type")
             # pylint: disable=unexpected-keyword-arg
-            linalg_d.fill(zero, outs=[alloc_op.result])
-            linalg_d.batch_matmul(
-                new_args[0],
-                new_args[1],
-                outs=[alloc_op],
-            )
-        return alloc_op
+            linalg_d.fill(zero, outs=[init_op.result])
 
     @staticmethod
     def build_Return(ctx, node):

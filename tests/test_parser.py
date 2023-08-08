@@ -749,7 +749,7 @@ def test_const_tensor_int():
     def kernel() -> int32[2, 2]:
         cp1: int32[2, 2] = [[1, 2], [3, 4]]
         cp2: int32[2, 2] = [[1, 2], [3, 4]]
-        res: int32[2, 2] = 0
+        res: int32[2, 2]
         for i, j in allo.grid(2, 2):
             res[i, j] = cp1[i, j] + cp2[i, j]
         return res
@@ -767,9 +767,9 @@ def test_const_tensor_float():
     def kernel() -> float32[2, 3]:
         cp1: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
         cp2: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
-        res: float32[2, 3] = 0.0
+        res: float32[2, 3]
         for i, j in allo.grid(2, 3):
-            res[i, j] = cp1[i, j] + cp2[i, j]
+            res[i, j] += cp1[i, j] + cp2[i, j]
         return res
 
     s = allo.customize(kernel)
@@ -790,7 +790,7 @@ def test_const_tensor_int_vars():
     def kernel() -> int32[M, N]:
         cp1: int32[M, N] = np_0
         cp2: int32[M, N] = np_1
-        res: int32[M, N] = 1
+        res: int32[M, N]
         for i, j in allo.grid(M, N):
             res[i, j] += cp1[i, j] * cp2[i, j]
         return res
@@ -800,7 +800,7 @@ def test_const_tensor_int_vars():
     print(s.module)
     np_2 = np.zeros((M, N), dtype="int32")
     np_2 = f()
-    assert np.array_equal(np_2, 1 + np_0 * np_1)
+    assert np.array_equal(np_2, np_0 * np_1)
 
 
 def test_const_tensor_float_vars():
@@ -890,8 +890,9 @@ def test_batch_matmul():
         return D
 
     s = allo.customize(kernel)
-    f = s.build()
     print(s.module)
+    f = s.build()
+
     outs = np.zeros((M, M, N), dtype="float32")
     outs = f(A, B)
     bmm_outs = np.einsum("ijk,ikn->ijn", A, B)
@@ -926,8 +927,8 @@ def test_batch_matmul_nested():
         return D
 
     s = allo.customize(kernel)
-    f = s.build()
     print(s.module)
+    f = s.build()
     outs = np.zeros((M, N, K), dtype="int32")
     outs = f(A, B, A)
     out_1 = np.einsum("ijk,ikn->ijn", A, B)
