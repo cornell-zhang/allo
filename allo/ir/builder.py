@@ -607,7 +607,7 @@ class ASTTransformer(Builder):
             if ctx.enable_tensor is False:
                 memref_type = MemRefType.get(shape, ele_type)
                 if isinstance(node.value, (ast.List, ast.Name)):
-                # pylint: disable=redefined-variable-type
+                    # pylint: disable=redefined-variable-type
                     rhs = memref_d.GetGlobalOp(
                         memref_type,
                         FlatSymbolRefAttr.get(node.target.id),

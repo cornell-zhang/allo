@@ -1,13 +1,19 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import int32
 import numpy as np
 
-def same(A: int32[32,1]) -> int32[32,1]:
+
+def same(A: int32[32, 1]) -> int32[32, 1]:
     return A
 
+
 def outzero() -> int32:
-    C:int32 = 0
+    C: int32 = 0
     return C
+
 
 # test_td_outzero = """
 # func.func @outzero() -> tensor<i32> {
@@ -21,8 +27,9 @@ def outzero() -> int32:
 # mod = allo.invoke_mlir_parser(test_td_outzero)
 # print(mod)
 
+
 def half(A: int32[2, 2]) -> int32[1, 1]:
-  return A[:1, :1]
+    return A[:1, :1]
 
 
 s = allo.customize(outzero, verbose=True, enable_tensor=True)
@@ -45,5 +52,3 @@ print(s.module)
 # """
 # mod = allo.invoke_mlir_parser(test_td_same_1)
 # print(mod)
-
-
