@@ -878,6 +878,63 @@ def test_tensor_matmul_nested():
     np.testing.assert_allclose(outs, np.matmul(np.matmul(A, B), A), atol=1e-4)
 
 
+def test_batch_matmul():
+    M = 10
+    K = 20
+    N = 25
+    A = np.float32(np.random.uniform(size=(M, M, K)))
+    B = np.float32(np.random.uniform(size=(M, K, N)))
+
+    def kernel(A: float32[M, M, K], B: float32[M, K, N]) -> float32[M, M, N]:
+        D = allo.bmm(A, B)
+        return D
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    outs = np.zeros((M, M, N), dtype="float32")
+    outs = f(A, B)
+    bmm_outs = np.einsum("ijk,ikn->ijn", A, B)
+    np.testing.assert_allclose(outs, bmm_outs, atol=1e-4)
+
+
+def test_batch_matmul_only3D():
+    M = 10
+    K = 20
+    N = 25
+
+    def kernel(A: float32[M, K, K, N], B: float32[M, K, N, M]) -> float32[M, K, K, M]:
+        D = allo.bmm(A, B)
+        return D
+
+    with pytest.raises(RuntimeError) as excinfo:
+        allo.customize(kernel)
+    assert "Only support two 3D batch matrix multiplication" in str(excinfo.value)
+
+
+def test_batch_matmul_nested():
+    M = 10
+    K = 20
+    N = 25
+    A = np.random.randint(0, 20, size=(M, N, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+
+    def kernel(
+        A: int32[M, N, K], B: int32[M, K, N], C: int32[M, N, K]
+    ) -> int32[M, N, K]:
+        D = allo.bmm(allo.bmm(A, B), C)
+        return D
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    outs = np.zeros((M, N, K), dtype="int32")
+    outs = f(A, B, A)
+    out_1 = np.einsum("ijk,ikn->ijn", A, B)
+    out_2 = np.einsum("ijk,ikn->ijn", out_1, A)
+    np.testing.assert_allclose(outs, out_2, atol=1e-4)
+
+
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -914,3 +971,6 @@ if __name__ == "__main__":
     test_tensor_matmul()
     test_tensor_matmul_only2D()
     test_tensor_matmul_nested()
+    test_batch_matmul()
+    test_batch_matmul_only3D()
+    test_batch_matmul_nested()
