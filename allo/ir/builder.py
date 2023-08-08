@@ -11,6 +11,7 @@ from hcl_mlir.ir import (
     InsertionPoint,
     FunctionType,
     MemRefType,
+    RankedTensorType,
     IntegerType,
     IndexType,
     F32Type,
@@ -29,6 +30,7 @@ from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
     memref as memref_d,
+    tensor as tensor_d,
     affine as affine_d,
     scf as scf_d,
     arith as arith_d,
@@ -90,6 +92,7 @@ class ASTContext:
         # used for AffineExpr dim counting
         self.dim_count = 0
         self.affine_vars = []
+        self.enable_tensor = False
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
@@ -557,20 +560,43 @@ class ASTTransformer(Builder):
                 for x in elts
             ]
             ele_type = get_mlir_type(type_str)
-            memref_type = MemRefType.get(shape, ele_type)
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-            ctx.buffers[node.target.id] = alloc_op
-            with ip:
-                # pylint: disable=unexpected-keyword-arg
-                linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            if ctx.enable_tensor is False:
+                memref_type = MemRefType.get(shape, ele_type)
+                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                alloc_op.attributes["name"] = StringAttr.get(node.target.id)
+                ctx.buffers[node.target.id] = alloc_op
+                with ip:
+                    # pylint: disable=unexpected-keyword-arg
+                    linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            else:
+                tensor_type = RankedTensorType.get(shape, ele_type)
+                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
+                index_type = []
+                for _ in elts:
+                    index_type.append(IndexType.get())
+                ctx.set_ip(tensorgen_op.regions[0].blocks.append(*index_type))
+                ip = ctx.get_ip()
+
+                tensor_d.YieldOp(rhs.result, ip=ip)
+                ip = ctx.pop_ip()
+                ctx.buffers[node.target.id] = tensorgen_op
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
-            # TODO: figure out why zero-shape cannot work
-            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-            ASTTransformer.build_store(ctx, node.target, rhs)
+            if ctx.enable_tensor is False:
+                # TODO: figure out why zero-shape cannot work
+                ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
+                ASTTransformer.build_store(ctx, node.target, rhs)
+            else:
+                ele_type = get_mlir_type(type_str)
+                tensor_type = RankedTensorType.get([], ele_type)
+                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
+                ctx.set_ip(tensorgen_op.regions[0].blocks.append(*[]))
+                ip = ctx.get_ip()
+                tensor_d.YieldOp(rhs.result, ip=ip)
+                ip = ctx.pop_ip()
+                ctx.buffers[node.target.id] = tensorgen_op
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
@@ -590,7 +616,7 @@ class ASTTransformer(Builder):
         input_typehints = []
         arg_names = []
 
-        def build_type(type_hint):
+        def build_type(type_hint, enable_tensor=False):
             if isinstance(type_hint, ast.Subscript):
                 type_str = type_hint.value.id
                 if type_str in ctx.global_vars:
@@ -607,20 +633,26 @@ class ASTTransformer(Builder):
                     for x in elts
                 ]
                 ele_type = get_mlir_type(type_str)
-                memref_type = MemRefType.get(shape, ele_type)
+                if enable_tensor is False:
+                    data_type = MemRefType.get(shape, ele_type)
+                else:
+                    data_type = RankedTensorType.get(shape, ele_type)
             elif isinstance(type_hint, ast.Name):
                 type_str = type_hint.id
                 if type_str in ctx.global_vars:
                     type_str = str(ctx.global_vars[type_str])
-                memref_type = get_mlir_type(type_str)
+                if enable_tensor is False:
+                    data_type = get_mlir_type(type_str)
+                else:
+                    data_type = RankedTensorType.get([], ele_type)
             else:
                 raise RuntimeError("Unsupported function argument type")
             extra_type_hint = get_extra_type_hints_from_str(type_str)
-            return memref_type, extra_type_hint
+            return data_type, extra_type_hint
 
         # Build input types
         for arg in node.args.args:
-            arg_type, extra_type_hint = build_type(arg.annotation)
+            arg_type, extra_type_hint = build_type(arg.annotation, ctx.enable_tensor)
             input_types.append(arg_type)
             input_typehints.append(extra_type_hint)
             arg_names.append(arg.arg)
@@ -632,7 +664,7 @@ class ASTTransformer(Builder):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            output_type, extra_type_hint = build_type(node.returns)
+            output_type, extra_type_hint = build_type(node.returns, ctx.enable_tensor)
             output_types.append(output_type)
             output_typehints.append(extra_type_hint)
 
