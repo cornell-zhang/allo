@@ -696,6 +696,7 @@ class ASTTransformer(Builder):
                     data_type = RankedTensorType.get(shape, ele_type)
             elif isinstance(type_hint, ast.Name):
                 type_str = type_hint.id
+                ele_type = get_mlir_type(type_str)
                 if type_str in ctx.global_vars:
                     type_str = str(ctx.global_vars[type_str])
                 if enable_tensor is False:
