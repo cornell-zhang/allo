@@ -825,59 +825,6 @@ def test_const_tensor_float_vars():
     np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
 
 
-def test_tensor_matmul():
-    M = 10
-    K = 15
-    N = 20
-    np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
-
-    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        C = allo.matmul(A, B)
-        return C
-
-    s = allo.customize(kernel)
-    f = s.build()
-    np_2 = np.zeros((M, N), dtype="int32")
-    np_2 = f(np_0, np_1)
-    np.testing.assert_array_equal(np_2, np.matmul(np_0, np_1))
-    print(s.module)
-
-
-def test_tensor_matmul_only2D():
-    M = 10
-    K = 15
-    N = 20
-
-    def kernel(A: int32[M, K, M, K], B: int32[M, K, K, N]) -> int32[M, K, M, N]:
-        C = allo.matmul(A, B)
-        return C
-
-    with pytest.raises(RuntimeError) as excinfo:
-        allo.customize(kernel)
-    assert "Only support two 2D matrix multiplication" in str(excinfo.value)
-
-
-def test_tensor_matmul_nested():
-    M = 10
-    K = 15
-    A = np.random.uniform(size=(M, K))
-    B = np.random.uniform(size=(K, M))
-
-    def kernel() -> float32[M, K]:
-        A1: float32[M, K] = A
-        B1: float32[K, M] = B
-        D = allo.matmul(allo.matmul(A1, B1), A1)
-        return D
-
-    s = allo.customize(kernel)
-    f = s.build()
-    outs = np.zeros((M, K), dtype="float32")
-    outs = f(A, B, A)
-    print(s.module)
-    np.testing.assert_allclose(outs, np.matmul(np.matmul(A, B), A), atol=1e-4)
-
-
 if __name__ == "__main__":
     test_gemm_grid_for()
     test_gemm_range_for()
@@ -911,6 +858,3 @@ if __name__ == "__main__":
     test_const_tensor_float()
     test_const_tensor_int_vars()
     test_const_tensor_float_vars()
-    test_tensor_matmul()
-    test_tensor_matmul_only2D()
-    test_tensor_matmul_nested()
