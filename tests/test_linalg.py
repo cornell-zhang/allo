@@ -36,7 +36,7 @@ def test_linalg_tensor_matmul_only2D():
 
     with pytest.raises(RuntimeError) as excinfo:
         allo.customize(kernel)
-    assert "Only support two 2D matrix multiplication" in str(excinfo.value)
+    assert "Only support matrix multiplication of two 2D inputs" in str(excinfo.value)
 
 
 def test_linalg_tensor_matmul_nested():
@@ -50,18 +50,19 @@ def test_linalg_tensor_matmul_nested():
         B1: float32[K, M] = B
         C: float32[M, K]
         D = allo.matmul(allo.matmul(A1, B1), A1)
+        # GeLU of matrix D
         for i, j in allo.grid(M, K):
             C[i, j] = (
                 0.5
-                * A1[i, j]
+                * D[i, j]
                 * (
                     1.0
                     + allo.tanh(
                         allo.sqrt(2.0 / 3.1415926)
-                        * (A1[i, j] + 0.044715 * allo.power(A1[i, j], 3.0))
+                        * (D[i, j] + 0.044715 * allo.power(D[i, j], 3.0))
                     )
                 )
-            ) - D[i, j]
+            )
         return C
 
     s = allo.customize(kernel)
@@ -69,8 +70,13 @@ def test_linalg_tensor_matmul_nested():
     f = s.build()
     outs = np.zeros((M, K), dtype="float32")
     outs = f(A, B, A)
-    np_2 = 0.5 * A * (1 + np.tanh(np.sqrt(2 / np.pi) * (A + 0.044715 * np.power(A, 3))))
-    np.testing.assert_allclose(outs, np_2 - np.matmul(np.matmul(A, B), A), atol=1e-4)
+    np_D = np.matmul(np.matmul(A, B), A)
+    np_GeLU = (
+        0.5
+        * np_D
+        * (1 + np.tanh(np.sqrt(2 / np.pi) * (np_D + 0.044715 * np.power(np_D, 3))))
+    )
+    np.testing.assert_allclose(outs, np_GeLU, atol=1e-4)
 
 
 def test_linalg_batch_matmul():
@@ -105,7 +111,9 @@ def test_linalg_batch_matmul_only3D():
 
     with pytest.raises(RuntimeError) as excinfo:
         allo.customize(kernel)
-    assert "Only support two 3D batch matrix multiplication" in str(excinfo.value)
+    assert "Only support batched matrix multiplication of two 3D inputs" in str(
+        excinfo.value
+    )
 
 
 def test_linalg_batch_matmul_nested():

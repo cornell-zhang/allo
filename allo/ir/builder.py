@@ -623,8 +623,6 @@ class ASTTransformer(Builder):
                         with ip:
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                    else:
-                        ASTTransformer.build_init(ctx, alloc_op, ele_type)
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
@@ -951,11 +949,15 @@ class ASTTransformer(Builder):
         argBshape = ShapedType(new_args[1].type).shape
         if attr == "matmul":
             if len(argAshape) != 2 or len(argBshape) != 2:
-                raise RuntimeError("Only support two 2D matrix multiplication")
+                raise RuntimeError(
+                    "Only support matrix multiplication of two 2D inputs"
+                )
             shape = (argAshape[0], argBshape[1])
         if attr == "bmm":
             if len(argAshape) != 3 or len(argBshape) != 3:
-                raise RuntimeError("Only support two 3D batch matrix multiplication")
+                raise RuntimeError(
+                    "Only support batched matrix multiplication of two 3D inputs"
+                )
             shape = (argAshape[0], argAshape[1], argBshape[2])
 
         # pylint: disable=unexpected-keyword-arg
@@ -965,7 +967,7 @@ class ASTTransformer(Builder):
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
                 alloc_op = linalg_d.InitTensorOp(shape, dtype, [], ip=ip)
-            ASTTransformer.build_init(ctx, alloc_op, dtype)
+            ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
             if attr == "matmul":
                 linalg_d.matmul(
                     new_args[0],
@@ -981,7 +983,7 @@ class ASTTransformer(Builder):
         return alloc_op
 
     @staticmethod
-    def build_init(ctx, init_op, dtype):
+    def build_init_zero(ctx, init_op, dtype):
         # initialize data op
         with ctx.get_ip():
             if str(dtype) == "i32":
