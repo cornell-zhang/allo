@@ -570,7 +570,7 @@ class ASTTransformer(Builder):
                 else:
                     raise RuntimeError(f"Unsupported index type, got {expr.type}")
                 new_indices.append(expr)
-            # pylint: disable=no-value-for-parameter, redefined-variable-type
+            # pylint: disable=redefined-variable-type
             load_op = memref_d.LoadOp(
                 ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
             )
@@ -814,7 +814,6 @@ class ASTTransformer(Builder):
             # avoid rebuilding the same op
             rhs_res = rhs.result
             dtype = str(rhs_res.type)
-            out_dtype = IntegerType.get_signless(1)
             if dtype.startswith("i"):
                 op = ATTR_MAP["int"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
@@ -961,7 +960,7 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, dtype)
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = tensor_d.EmptyOp(shape, dtype, [], ip=ip)
+                alloc_op = tensor_d.EmptyOp(dtype, shape, ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
             if attr == "matmul":
                 linalg_d.matmul(

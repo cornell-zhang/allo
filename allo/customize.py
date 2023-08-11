@@ -319,6 +319,7 @@ class Schedule:
 
     @wrapped_apply
     def compose(self, *schs):
+        # pylint: disable=too-many-nested-blocks
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
