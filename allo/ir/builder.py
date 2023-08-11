@@ -422,7 +422,7 @@ class ASTTransformer(Builder):
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         # FIXME: linalg_d.InitTensorOp is removed in LLVM 18
-        if isinstance(rhs, (func_d.CallOp, memref_d.AllocOp)):
+        if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
@@ -961,7 +961,7 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, dtype)
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = linalg_d.InitTensorOp(shape, dtype, [], ip=ip)
+                alloc_op = tensor_d.EmptyOp(shape, dtype, [], ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
             if attr == "matmul":
                 linalg_d.matmul(
