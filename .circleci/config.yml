@@ -33,7 +33,8 @@ jobs:
                 -DPython3_EXECUTABLE=`which python3` \
                 -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
             make -j4
-            export PYTHONPATH=$(pwd)/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            cd tools/hcl/python_packages/hcl_core
+            python3 -m pip install -e .
       - run:
           name: Install Allo Dependencies
           command: |
