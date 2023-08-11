@@ -23,7 +23,7 @@ jobs:
             source activate hcl-dev
             export BUILD_DIR=/root/llvm-project/build
             export PREFIX=/root/llvm-project/build
-            git submodule update --init --recursive
+            git submodule update --init
             cd externals/hcl_mlir
             mkdir -p build && cd build
             cmake -G "Unix Makefiles" .. \
