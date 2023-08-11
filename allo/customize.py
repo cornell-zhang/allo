@@ -398,7 +398,7 @@ class Schedule:
         raise NotImplementedError(f"Target {target} is not supported")
 
 
-def customize(fn, verbose=False):
+def customize(fn, verbose=False, enable_tensor=False):
     # Get Python AST
     src, _ = getsourcelines(fn)
     src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
@@ -421,6 +421,7 @@ def customize(fn, verbose=False):
     global_vars = _get_global_vars(fn)
     ctx = ASTContext(global_vars=global_vars, mlir_ctx=mlir_ctx)
     ctx.set_ip(module.body)
+    ctx.enable_tensor = enable_tensor
     ASTTransformer()(ctx, tree)
     # Attach buffers to function
     for name, buffer in ctx.buffers.items():

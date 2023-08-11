@@ -472,14 +472,16 @@ def parse_xml(path, prod_name, top="top", print_flag=False):
 
     # Latency information extraction
     clock_unit = overall_latency["unit"]
-    summary = perf_estimate["SummaryOfLoopLatency"]
-
     info_table = Displayer(clock_unit)
-    info_table.init_table(summary)
-    info_table.collect_data(summary)
+    if "SummaryOfLoopLatency" in perf_estimate:
+        summary = perf_estimate["SummaryOfLoopLatency"]
+        info_table.init_table(summary)
+        info_table.collect_data(summary)
 
     if print_flag:
         print(table)
+        if "SummaryOfLoopLatency" in perf_estimate:
+            info_table.display()
     return info_table
 
 
