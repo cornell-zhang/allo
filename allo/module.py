@@ -63,9 +63,9 @@ class LLVMModule:
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
-                "func.func(convert-linalg-to-affine-loops),lower-affine"
+                "builtin.module(func.func(convert-linalg-to-affine-loops),lower-affine)"
             )
-            pm.run(self.module)
+            pm.run(self.module.operation)
             hcl_d.lower_hcl_to_llvm(self.module, ctx)
             # Add shared library
             if os.getenv("LLVM_BUILD_DIR") is not None:

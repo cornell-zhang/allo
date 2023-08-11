@@ -13,10 +13,10 @@ def _mlir_lower_pipeline(module, **kwargs):
         passes += ["canonicalize"]
     if "lower_linalg" in kwargs:
         passes += ["convert-linalg-to-affine-loops"]
-    pipeline = f'func.func({",".join(passes)})'
+    pipeline = f'builtin.module(func.func({",".join(passes)}))'
     try:
         with module.context:
-            mlir_pass_manager.parse(pipeline).run(module)
+            mlir_pass_manager.parse(pipeline).run(module.operation)
         return module
     except Exception as e:
         print("Error: failed to run MLIR lower pipeline, printing module...")

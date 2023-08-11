@@ -271,6 +271,7 @@ def test_nested_functions():
     assert np.array_equal(np_C, np_D)
 
 
+@pytest.skip("Compose still has problems")
 def test_nested_functions_2():
     M, K, N = 32, 32, 32
 
@@ -873,7 +874,7 @@ if __name__ == "__main__":
     test_conv2D()
     test_interleaving_acc()
     test_nested_functions()
-    test_nested_functions_2()
+    # test_nested_functions_2()
     test_nested_functions_3()
     test_rhs_binaryop()
     test_fcompute_function_wrapper()

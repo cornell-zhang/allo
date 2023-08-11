@@ -421,7 +421,8 @@ class ASTTransformer(Builder):
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, (func_d.CallOp, linalg_d.InitTensorOp, memref_d.AllocOp)):
+        # FIXME: linalg_d.InitTensorOp is removed in LLVM 18
+        if isinstance(rhs, (func_d.CallOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
@@ -458,7 +459,7 @@ class ASTTransformer(Builder):
         type_attr = TypeAttr.get(memref_type)
         const_tensor = memref_d.GlobalOp(
             sym_name=sym_name,
-            type=type_attr,
+            type_=type_attr,
             sym_visibility=sym_visibility,
             initial_value=value_attr,
             constant=True,
@@ -817,21 +818,15 @@ class ASTTransformer(Builder):
             if dtype.startswith("i"):
                 op = ATTR_MAP["int"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpIOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return arith_d.CmpIOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             if dtype.startswith("fixed"):
                 op = ATTR_MAP["fixed"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return hcl_d.CmpFixedOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return hcl_d.CmpFixedOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpFOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return arith_d.CmpFOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             raise RuntimeError(f"Unsupported types for binary op: {dtype}")
 
     @staticmethod
