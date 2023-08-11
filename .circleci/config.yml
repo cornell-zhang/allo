@@ -23,8 +23,8 @@ jobs:
             source activate hcl-dev
             export BUILD_DIR=/root/llvm-project/build
             export PREFIX=/root/llvm-project/build
-            git clone https://github.com/cornell-zhang/hcl-dialect.git
-            cd hcl-dialect
+            git submodule update --init --recursive
+            cd externals/hcl_mlir
             mkdir -p build && cd build
             cmake -G "Unix Makefiles" .. \
                 -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
@@ -56,4 +56,4 @@ jobs:
             export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
             export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
             python3 -m pytest tests -v
-            python3 -m pytest test_tutorial.py -v
+            python3 -m pytest tutorials -v
