@@ -358,7 +358,10 @@ class Schedule:
                             arg_idx = idx
                             break
                     return_op = list(sch.top_func.entry_block.operations)[-1]
-                    if return_op.operands[0] == target.result:
+                    if (
+                        len(return_op.operands) > 0
+                        and return_op.operands[0] == target.result
+                    ):
                         arg_idx = len(sch.top_func.arguments)
                     if arg_idx == -1:
                         # The partitioned array is inside the subfunction,
