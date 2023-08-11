@@ -319,6 +319,7 @@ class Schedule:
 
     @wrapped_apply
     def compose(self, *schs):
+        # pylint: disable=too-many-nested-blocks
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
@@ -345,17 +346,24 @@ class Schedule:
             for primitive in sch.primitive_sequences:
                 if primitive[0] == "partition":
                     args, kwargs = primitive[1:]
+                    # todo: Need to update the context
                     if len(args) != 0:
                         target = args[0]
                     else:
                         target = kwargs["target"]
                     arg_idx = -1
+                    # Only function arguments and output tensors may affect the partition in the top level
                     for idx, arg in enumerate(sch.top_func.arguments):
                         if arg == target.result:
                             arg_idx = idx
                             break
-                    else:
-                        raise RuntimeError("Target not found")
+                    return_op = list(sch.top_func.entry_block.operations)[-1]
+                    if return_op.operands[0] == target.result:
+                        arg_idx = len(sch.top_func.arguments)
+                    if arg_idx == -1:
+                        # The partitioned array is inside the subfunction,
+                        # so we don't need to update the CallOp in the top level
+                        continue
                     for op in self.top_func.entry_block.operations:
                         if (
                             isinstance(op, func_d.CallOp)
@@ -364,10 +372,15 @@ class Schedule:
                         ):
                             from .ir.builder import MockArg
 
+                            # After all the transformations are added, we lower the module
+                            # Otherwise, the MLIR verifier will complain
+                            if arg_idx >= len(op.operands):
+                                target = op
+                            else:
+                                target = MockArg(op.operands[arg_idx])
                             self.partition.__wrapped__(
-                                self, MockArg(op.operands[arg_idx]), *args[1:], **kwargs
+                                self, target, *args[1:], **kwargs
                             )
-                            break
 
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":

@@ -421,7 +421,8 @@ class ASTTransformer(Builder):
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, (func_d.CallOp, linalg_d.InitTensorOp, memref_d.AllocOp)):
+        # FIXME: linalg_d.InitTensorOp is removed in LLVM 18
+        if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
@@ -458,7 +459,7 @@ class ASTTransformer(Builder):
         type_attr = TypeAttr.get(memref_type)
         const_tensor = memref_d.GlobalOp(
             sym_name=sym_name,
-            type=type_attr,
+            type_=type_attr,
             sym_visibility=sym_visibility,
             initial_value=value_attr,
             constant=True,
@@ -569,7 +570,7 @@ class ASTTransformer(Builder):
                 else:
                     raise RuntimeError(f"Unsupported index type, got {expr.type}")
                 new_indices.append(expr)
-            # pylint: disable=no-value-for-parameter, redefined-variable-type
+            # pylint: disable=redefined-variable-type
             load_op = memref_d.LoadOp(
                 ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
             )
@@ -813,25 +814,18 @@ class ASTTransformer(Builder):
             # avoid rebuilding the same op
             rhs_res = rhs.result
             dtype = str(rhs_res.type)
-            out_dtype = IntegerType.get_signless(1)
             if dtype.startswith("i"):
                 op = ATTR_MAP["int"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpIOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return arith_d.CmpIOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             if dtype.startswith("fixed"):
                 op = ATTR_MAP["fixed"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return hcl_d.CmpFixedOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return hcl_d.CmpFixedOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpFOp(
-                    out_dtype, op, lhs.result, rhs_res, ip=ctx.get_ip()
-                )
+                return arith_d.CmpFOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             raise RuntimeError(f"Unsupported types for binary op: {dtype}")
 
     @staticmethod
@@ -966,7 +960,7 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, dtype)
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = linalg_d.InitTensorOp(shape, dtype, [], ip=ip)
+                alloc_op = tensor_d.EmptyOp(dtype, shape, ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
             if attr == "matmul":
                 linalg_d.matmul(

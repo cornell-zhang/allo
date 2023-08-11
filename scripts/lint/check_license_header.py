@@ -47,6 +47,8 @@ def main():
 
     error_list = []
     for fname in res.split():
+        if fname.startswith(".github/ISSUE_TEMPLATE"):
+            continue
         if not check_license(fname):
             error_list.append(fname)
 

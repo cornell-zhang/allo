@@ -1,9 +1,6 @@
-<!--- Copyright Allo authors. All Rights Reserved. -->
-<!--- SPDX-License-Identifier: Apache-2.0  -->
-
 ---
 name: Bug report
-description: Create a report to help us improve
+about: Create a bug report to help us improve
 title: "[BUG]"
 labels: bug
 assignees: chhzh123
