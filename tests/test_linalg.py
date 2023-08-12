@@ -6,7 +6,7 @@ import allo
 from allo.ir.types import int1, int32, float32, index
 
 
-def test_linalg_tensor_matmul():
+def test_linalg_matmul():
     M = 10
     K = 15
     N = 20
@@ -25,7 +25,7 @@ def test_linalg_tensor_matmul():
     print(s.module)
 
 
-def test_linalg_tensor_matmul_only2D():
+def test_linalg_matmul_only2D():
     M = 10
     K = 15
     N = 20
@@ -39,7 +39,7 @@ def test_linalg_tensor_matmul_only2D():
     assert "Only support matrix multiplication of two 2D inputs" in str(excinfo.value)
 
 
-def test_linalg_tensor_matmul_nested():
+def test_linalg_matmul_nested():
     M = 10
     K = 15
     A = np.random.uniform(size=(M, K))
@@ -140,10 +140,47 @@ def test_linalg_batch_matmul_nested():
     np.testing.assert_allclose(outs, out_2, atol=1e-4)
 
 
+def test_linalg_exp():
+    M = 10
+    K = 15
+    A = np.float32(np.random.uniform(size=(M, K)))
+    B = np.float32(np.random.uniform(size=(K, M)))
+
+    def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
+        D = allo.matmul(A, B)
+        C = allo.exp_m(D)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    outs = np.zeros((M, M), dtype="float32")
+    outs = f(A, B)
+    np_outs = np.exp(np.matmul(A, B))
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+@pytest.mark.skip("Lowering to llvm still has problems")
+def test_linalg_softmax():
+    M = 10
+    K = 15
+    A = np.float32(np.random.uniform(size=(M, K)))
+
+    def kernel(A: float32[M, K]) -> float32[M, K]:
+        outs = allo.softmax(A)
+        return outs
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+
+
 if __name__ == "__main__":
-    test_linalg_tensor_matmul()
-    test_linalg_tensor_matmul_only2D()
-    test_linalg_tensor_matmul_nested()
+    test_linalg_matmul()
+    test_linalg_matmul_only2D()
+    test_linalg_matmul_nested()
     test_linalg_batch_matmul()
     test_linalg_batch_matmul_only3D()
     test_linalg_batch_matmul_nested()
+    test_linalg_exp()
+    # test_linalg_softmax()

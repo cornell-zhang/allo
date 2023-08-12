@@ -915,9 +915,9 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
-        if node.func.attr in {"matmul", "bmm"}:
+        if node.func.attr in {"matmul", "bmm", "exp_m", "softmax"}:
             new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-            outs = ASTTransformer.build_Matmul(ctx, node.func.attr, new_args)
+            outs = ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
             return outs
         opcls = {
             "exp": math_d.ExpOp,
@@ -935,26 +935,30 @@ class ASTTransformer(Builder):
         return opcls(*new_args, ip=ctx.get_ip())
 
     @staticmethod
-    def build_Matmul(ctx, attr, new_args):
+    def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        # matrix shape
-        dtype = ShapedType(new_args[0].type).element_type
-        argAshape = ShapedType(new_args[0].type).shape
-        argBshape = ShapedType(new_args[1].type).shape
-        if attr == "matmul":
-            if len(argAshape) != 2 or len(argBshape) != 2:
-                raise RuntimeError(
-                    "Only support matrix multiplication of two 2D inputs"
-                )
-            shape = (argAshape[0], argBshape[1])
-        if attr == "bmm":
-            if len(argAshape) != 3 or len(argBshape) != 3:
-                raise RuntimeError(
-                    "Only support batched matrix multiplication of two 3D inputs"
-                )
-            shape = (argAshape[0], argAshape[1], argBshape[2])
-
-        # pylint: disable=unexpected-keyword-arg
+        if attr in {"exp_m", "softmax"}:
+            dtype = ShapedType(new_args[0].type).element_type
+            argshape = ShapedType(new_args[0].type).shape
+            shape = argshape
+        if attr in {"matmul", "bmm"}:
+            # matrix shape
+            dtype = ShapedType(new_args[0].type).element_type
+            argAshape = ShapedType(new_args[0].type).shape
+            argBshape = ShapedType(new_args[1].type).shape
+            if attr == "matmul":
+                if len(argAshape) != 2 or len(argBshape) != 2:
+                    raise RuntimeError(
+                        "Only support matrix multiplication of two 2D inputs"
+                    )
+                shape = (argAshape[0], argBshape[1])
+            if attr == "bmm":
+                if len(argAshape) != 3 or len(argBshape) != 3:
+                    raise RuntimeError(
+                        "Only support batched matrix multiplication of two 3D inputs"
+                    )
+                shape = (argAshape[0], argAshape[1], argBshape[2])
+                # pylint: disable=unexpected-keyword-arg
         with ip:
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, dtype)
@@ -973,6 +977,19 @@ class ASTTransformer(Builder):
                     new_args[0],
                     new_args[1],
                     outs=[alloc_op],
+                )
+            if attr == "exp_m":
+                linalg_d.exp(
+                    new_args[0],
+                    outs=[alloc_op],
+                )
+            # TODO: softmax failed to lower
+            if attr == "softmax":
+                linalg_d.SoftmaxOp(
+                    input=new_args[0],
+                    dimension=1,
+                    result=[],
+                    output=alloc_op,
                 )
         return alloc_op
 
