@@ -29,6 +29,7 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
+    UnrankedTensorType,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -915,7 +916,7 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
-        if node.func.attr in {"matmul", "bmm", "exp_m", "softmax"}:
+        if node.func.attr in {"matmul", "bmm", "exp", "softmax"}:
             new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
             outs = ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
             return outs
@@ -937,11 +938,19 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        if attr in {"exp_m", "softmax"}:
-            dtype = ShapedType(new_args[0].type).element_type
-            argshape = ShapedType(new_args[0].type).shape
-            shape = argshape
-        if attr in {"matmul", "bmm"}:
+        if attr in {"exp", "softmax"}:
+            # pylint: disable=no-else-return
+            if attr == "exp" and isinstance(new_args[0].type, (F32Type, IntegerType)):
+                return math_d.ExpOp(new_args[0], ip=ip)
+            elif isinstance(
+                new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+            ):
+                dtype = ShapedType(new_args[0].type).element_type
+                argshape = ShapedType(new_args[0].type).shape
+                shape = argshape
+            else:
+                raise RuntimeError("Unsupported operation")
+        elif attr in {"matmul", "bmm"}:
             # matrix shape
             dtype = ShapedType(new_args[0].type).element_type
             argAshape = ShapedType(new_args[0].type).shape
@@ -958,7 +967,9 @@ class ASTTransformer(Builder):
                         "Only support batched matrix multiplication of two 3D inputs"
                     )
                 shape = (argAshape[0], argAshape[1], argBshape[2])
-                # pylint: disable=unexpected-keyword-arg
+        else:
+            raise RuntimeError("Unsupported operation")
+        # pylint: disable=unexpected-keyword-arg
         with ip:
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, dtype)
@@ -978,12 +989,12 @@ class ASTTransformer(Builder):
                     new_args[1],
                     outs=[alloc_op],
                 )
-            if attr == "exp_m":
+            if attr == "exp":
                 linalg_d.exp(
                     new_args[0],
                     outs=[alloc_op],
                 )
-            # TODO: softmax failed to lower
+            # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
             if attr == "softmax":
                 linalg_d.SoftmaxOp(
                     input=new_args[0],

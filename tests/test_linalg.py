@@ -148,7 +148,7 @@ def test_linalg_exp():
 
     def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
         D = allo.matmul(A, B)
-        C = allo.exp_m(D)
+        C = allo.exp(D)
         return C
 
     s = allo.customize(kernel)
@@ -160,7 +160,7 @@ def test_linalg_exp():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-@pytest.mark.skip("Lowering to llvm still has problems")
+@pytest.mark.skip("failed to lower to LLVM, see https://reviews.llvm.org/D153422")
 def test_linalg_softmax():
     M = 10
     K = 15
