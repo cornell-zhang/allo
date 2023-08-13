@@ -916,45 +916,54 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
-        if node.func.attr in {"matmul", "bmm", "exp", "softmax"}:
-            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-            outs = ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
-            return outs
-        opcls = {
-            "exp": math_d.ExpOp,
-            "log": math_d.LogOp,
-            "log2": math_d.Log2Op,
-            "log10": math_d.Log10Op,
-            "sqrt": math_d.SqrtOp,
-            "sin": math_d.SinOp,
-            "cos": math_d.CosOp,
-            "tan": math_d.TanOp,
-            "tanh": math_d.TanhOp,
-            "power": math_d.PowFOp,
-        }.get(node.func.attr)
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-        return opcls(*new_args, ip=ctx.get_ip())
+        # pylint: disable=no-else-return
+        if isinstance(new_args[0].type, (F32Type, IntegerType)):
+            opcls = {
+                "exp": math_d.ExpOp,
+                "log": math_d.LogOp,
+                "log2": math_d.Log2Op,
+                "log10": math_d.Log10Op,
+                "sqrt": math_d.SqrtOp,
+                "sin": math_d.SinOp,
+                "cos": math_d.CosOp,
+                "tan": math_d.TanOp,
+                "tanh": math_d.TanhOp,
+                "power": math_d.PowFOp,
+            }.get(node.func.attr)
+            return opcls(*new_args, ip=ctx.get_ip())
+        elif isinstance(
+            new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+        ) and node.func.attr in {
+            "matmul",
+            "bmm",
+            "softmax",
+            "exp",
+            "abs",
+            "log",
+            "add",
+            "sub",
+            "div",
+        }:
+            return ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
+        else:
+            raise RuntimeError(
+                f"Unsupported function {node.func.attr} with type {new_args[0].type}"
+            )
 
     @staticmethod
     def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax"}:
-            # pylint: disable=no-else-return
-            if attr == "exp" and isinstance(new_args[0].type, (F32Type, IntegerType)):
-                return math_d.ExpOp(new_args[0], ip=ip)
-            elif isinstance(
-                new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
-            ):
-                dtype = ShapedType(new_args[0].type).element_type
-                argshape = ShapedType(new_args[0].type).shape
-                shape = argshape
-            else:
-                raise RuntimeError("Unsupported operation")
-        elif attr in {"matmul", "bmm"}:
+        if attr in {"exp", "softmax", "abs", "log"}:
+            dtype = ShapedType(new_args[0].type).element_type
+            argshape = ShapedType(new_args[0].type).shape
+            shape = argshape
+        elif attr in {"matmul", "bmm", "add", "sub", "div"}:
             # matrix shape
             dtype = ShapedType(new_args[0].type).element_type
             argAshape = ShapedType(new_args[0].type).shape
             argBshape = ShapedType(new_args[1].type).shape
+            shape = (argAshape[0], argAshape[1])
             if attr == "matmul":
                 if len(argAshape) != 2 or len(argBshape) != 2:
                     raise RuntimeError(
@@ -969,7 +978,6 @@ class ASTTransformer(Builder):
                 shape = (argAshape[0], argAshape[1], argBshape[2])
         else:
             raise RuntimeError("Unsupported operation")
-        # pylint: disable=unexpected-keyword-arg
         with ip:
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, dtype)
@@ -977,31 +985,32 @@ class ASTTransformer(Builder):
             else:
                 alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
-            if attr == "matmul":
-                linalg_d.matmul(
-                    new_args[0],
-                    new_args[1],
-                    outs=[alloc_op],
-                )
-            if attr == "bmm":
-                linalg_d.batch_matmul(
-                    new_args[0],
-                    new_args[1],
-                    outs=[alloc_op],
-                )
-            if attr == "exp":
-                linalg_d.exp(
-                    new_args[0],
-                    outs=[alloc_op],
-                )
+            if attr in {"matmul", "bmm", "add", "sub", "div"}:
+                {
+                    "matmul": linalg_d.matmul,
+                    "bmm": linalg_d.batch_matmul,
+                    "add": linalg_d.add,
+                    "sub": linalg_d.sub,
+                    "div": linalg_d.div,
+                }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
+            elif attr in {"exp", "log", "abs"}:
+                {
+                    "exp": linalg_d.exp,
+                    "log": linalg_d.log,
+                    "abs": linalg_d.abs,
+                }.get(
+                    attr
+                )(new_args[0], outs=[alloc_op])
             # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
-            if attr == "softmax":
+            elif attr == "softmax":
                 linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
                     result=[],
                     output=alloc_op,
                 )
+            else:
+                raise RuntimeError("Unsupported operation")
         return alloc_op
 
     @staticmethod

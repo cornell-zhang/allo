@@ -140,7 +140,7 @@ def test_linalg_batch_matmul_nested():
     np.testing.assert_allclose(outs, out_2, atol=1e-4)
 
 
-def test_linalg_exp():
+def test_linalg_math():
     M = 10
     K = 15
     A = np.float32(np.random.uniform(size=(M, K)))
@@ -148,7 +148,7 @@ def test_linalg_exp():
 
     def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
         D = allo.matmul(A, B)
-        C = allo.exp(D)
+        C = allo.div(allo.sub(allo.add(allo.exp(D), allo.abs(D)), allo.log(D)), D)
         return C
 
     s = allo.customize(kernel)
@@ -156,11 +156,12 @@ def test_linalg_exp():
     print(s.module)
     outs = np.zeros((M, M), dtype="float32")
     outs = f(A, B)
-    np_outs = np.exp(np.matmul(A, B))
+    np1 = np.matmul(A, B)
+    np_outs = (np.exp(np1) + np.abs(np1) - np.log(np1)) / np1
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-@pytest.mark.skip("failed to lower to LLVM, see https://reviews.llvm.org/D153422")
+# TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
 def test_linalg_softmax():
     M = 10
     K = 15
@@ -172,7 +173,9 @@ def test_linalg_softmax():
 
     s = allo.customize(kernel)
     print(s.module)
-    f = s.build()
+    with pytest.raises(RuntimeError) as excinfo:
+        f = s.build()
+    assert "Failure while creating the ExecutionEngine." in str(excinfo.value)
 
 
 if __name__ == "__main__":
@@ -182,5 +185,5 @@ if __name__ == "__main__":
     test_linalg_batch_matmul()
     test_linalg_batch_matmul_only3D()
     test_linalg_batch_matmul_nested()
-    test_linalg_exp()
-    # test_linalg_softmax()
+    test_linalg_math()
+    test_linalg_softmax()
