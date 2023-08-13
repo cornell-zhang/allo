@@ -975,7 +975,7 @@ class ASTTransformer(Builder):
                 memref_type = MemRefType.get(shape, dtype)
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = tensor_d.EmptyOp(dtype, shape, ip=ip)
+                alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
             if attr == "matmul":
                 linalg_d.matmul(
