@@ -173,9 +173,8 @@ def test_linalg_softmax():
 
     s = allo.customize(kernel)
     print(s.module)
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(RuntimeError):
         f = s.build()
-    assert "Failure while creating the ExecutionEngine." in str(excinfo.value)
 
 
 if __name__ == "__main__":

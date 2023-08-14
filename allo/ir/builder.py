@@ -917,7 +917,6 @@ class ASTTransformer(Builder):
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-        # pylint: disable=no-else-return
         if isinstance(new_args[0].type, (F32Type, IntegerType)):
             opcls = {
                 "exp": math_d.ExpOp,
@@ -932,7 +931,8 @@ class ASTTransformer(Builder):
                 "power": math_d.PowFOp,
             }.get(node.func.attr)
             return opcls(*new_args, ip=ctx.get_ip())
-        elif isinstance(
+        # TODO: Matrix arithmetic requires overloading.
+        if isinstance(
             new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
         ) and node.func.attr in {
             "matmul",
@@ -946,24 +946,22 @@ class ASTTransformer(Builder):
             "div",
         }:
             return ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
-        else:
-            raise RuntimeError(
-                f"Unsupported function {node.func.attr} with type {new_args[0].type}"
-            )
+        raise RuntimeError(
+            f"Unsupported function {node.func.attr} with type {new_args[0].type}"
+        )
 
     @staticmethod
     def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax", "abs", "log"}:
+        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
             dtype = ShapedType(new_args[0].type).element_type
             argshape = ShapedType(new_args[0].type).shape
             shape = argshape
-        elif attr in {"matmul", "bmm", "add", "sub", "div"}:
+        elif attr in {"matmul", "bmm"}:
             # matrix shape
             dtype = ShapedType(new_args[0].type).element_type
             argAshape = ShapedType(new_args[0].type).shape
             argBshape = ShapedType(new_args[1].type).shape
-            shape = (argAshape[0], argAshape[1])
             if attr == "matmul":
                 if len(argAshape) != 2 or len(argBshape) != 2:
                     raise RuntimeError(
