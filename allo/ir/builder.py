@@ -953,11 +953,11 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
+        if attr in {"exp", "softmax", "abs", "log"}:
             dtype = ShapedType(new_args[0].type).element_type
             argshape = ShapedType(new_args[0].type).shape
             shape = argshape
-        elif attr in {"matmul", "bmm"}:
+        elif attr in {"matmul", "bmm", "add", "sub", "div"}:
             # matrix shape
             dtype = ShapedType(new_args[0].type).element_type
             argAshape = ShapedType(new_args[0].type).shape
@@ -967,13 +967,23 @@ class ASTTransformer(Builder):
                     raise RuntimeError(
                         "Only support matrix multiplication of two 2D inputs"
                     )
+                if argAshape[1] != argBshape[0]:
+                    raise RuntimeError("Inputs must follow the matmul rule")
                 shape = (argAshape[0], argBshape[1])
             if attr == "bmm":
                 if len(argAshape) != 3 or len(argBshape) != 3:
                     raise RuntimeError(
                         "Only support batched matrix multiplication of two 3D inputs"
                     )
+                if argAshape[2] != argBshape[1] or argAshape[0] != argBshape[0]:
+                    raise RuntimeError("Inputs must follow the bmm rule")
                 shape = (argAshape[0], argAshape[1], argBshape[2])
+            if attr in {"add", "sub", "div"}:
+                if argAshape != argBshape:
+                    raise RuntimeError(
+                        "Only support element-wise operation of two inputs with the same shape"
+                    )
+                shape = argAshape
         else:
             raise RuntimeError("Unsupported operation")
         with ip:
