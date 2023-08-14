@@ -953,11 +953,20 @@ class ASTTransformer(Builder):
     @staticmethod
     def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax", "abs", "log"}:
+        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
             dtype = ShapedType(new_args[0].type).element_type
             argshape = ShapedType(new_args[0].type).shape
             shape = argshape
-        elif attr in {"matmul", "bmm", "add", "sub", "div"}:
+            if attr in {"add", "sub", "div"}:
+                if (
+                    ShapedType(new_args[0].type).shape
+                    != ShapedType(new_args[1].type).shape
+                ):
+                    raise RuntimeError(
+                        "Only support element-wise operation of two inputs with the same shape"
+                    )
+                shape = argshape
+        elif attr in {"matmul", "bmm"}:
             # matrix shape
             dtype = ShapedType(new_args[0].type).element_type
             argAshape = ShapedType(new_args[0].type).shape
@@ -968,22 +977,24 @@ class ASTTransformer(Builder):
                         "Only support matrix multiplication of two 2D inputs"
                     )
                 if argAshape[1] != argBshape[0]:
-                    raise RuntimeError("Inputs must follow the matmul rule")
+                    raise RuntimeError(
+                        "The second dimension of the first input and the first dimension of the second input must be the same"
+                    )
                 shape = (argAshape[0], argBshape[1])
             if attr == "bmm":
                 if len(argAshape) != 3 or len(argBshape) != 3:
                     raise RuntimeError(
                         "Only support batched matrix multiplication of two 3D inputs"
                     )
-                if argAshape[2] != argBshape[1] or argAshape[0] != argBshape[0]:
-                    raise RuntimeError("Inputs must follow the bmm rule")
-                shape = (argAshape[0], argAshape[1], argBshape[2])
-            if attr in {"add", "sub", "div"}:
-                if argAshape != argBshape:
+                if argAshape[2] != argBshape[1]:
                     raise RuntimeError(
-                        "Only support element-wise operation of two inputs with the same shape"
+                        "The third dimension of the first input and the second dimension of the second input must be the same"
                     )
-                shape = argAshape
+                if argAshape[0] != argBshape[0]:
+                    raise RuntimeError(
+                        "The first dimension of the first input and the first dimension of the second input must be the same"
+                    )
+                shape = (argAshape[0], argAshape[1], argBshape[2])
         else:
             raise RuntimeError("Unsupported operation")
         with ip:
