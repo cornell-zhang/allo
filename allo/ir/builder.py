@@ -29,6 +29,7 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
+    UnrankedTensorType,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -915,65 +916,120 @@ class ASTTransformer(Builder):
                 return call_op
         if node.func.value.id != "allo":
             raise RuntimeError("Only support allo functions for now")
-        if node.func.attr in {"matmul", "bmm"}:
-            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-            outs = ASTTransformer.build_Matmul(ctx, node.func.attr, new_args)
-            return outs
-        opcls = {
-            "exp": math_d.ExpOp,
-            "log": math_d.LogOp,
-            "log2": math_d.Log2Op,
-            "log10": math_d.Log10Op,
-            "sqrt": math_d.SqrtOp,
-            "sin": math_d.SinOp,
-            "cos": math_d.CosOp,
-            "tan": math_d.TanOp,
-            "tanh": math_d.TanhOp,
-            "power": math_d.PowFOp,
-        }.get(node.func.attr)
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-        return opcls(*new_args, ip=ctx.get_ip())
+        if isinstance(new_args[0].type, (F32Type, IntegerType)):
+            opcls = {
+                "exp": math_d.ExpOp,
+                "log": math_d.LogOp,
+                "log2": math_d.Log2Op,
+                "log10": math_d.Log10Op,
+                "sqrt": math_d.SqrtOp,
+                "sin": math_d.SinOp,
+                "cos": math_d.CosOp,
+                "tan": math_d.TanOp,
+                "tanh": math_d.TanhOp,
+                "power": math_d.PowFOp,
+            }.get(node.func.attr)
+            return opcls(*new_args, ip=ctx.get_ip())
+        # TODO: Matrix arithmetic requires overloading.
+        if isinstance(
+            new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+        ) and node.func.attr in {
+            "matmul",
+            "bmm",
+            "softmax",
+            "exp",
+            "abs",
+            "log",
+            "add",
+            "sub",
+            "div",
+        }:
+            return ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
+        raise RuntimeError(
+            f"Unsupported function {node.func.attr} with type {new_args[0].type}"
+        )
 
     @staticmethod
-    def build_Matmul(ctx, attr, new_args):
+    def build_linalgOp(ctx, attr, new_args):
         ip = ctx.get_ip()
-        # matrix shape
-        dtype = ShapedType(new_args[0].type).element_type
-        argAshape = ShapedType(new_args[0].type).shape
-        argBshape = ShapedType(new_args[1].type).shape
-        if attr == "matmul":
-            if len(argAshape) != 2 or len(argBshape) != 2:
-                raise RuntimeError(
-                    "Only support matrix multiplication of two 2D inputs"
-                )
-            shape = (argAshape[0], argBshape[1])
-        if attr == "bmm":
-            if len(argAshape) != 3 or len(argBshape) != 3:
-                raise RuntimeError(
-                    "Only support batched matrix multiplication of two 3D inputs"
-                )
-            shape = (argAshape[0], argAshape[1], argBshape[2])
-
-        # pylint: disable=unexpected-keyword-arg
+        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
+            dtype = ShapedType(new_args[0].type).element_type
+            argshape = ShapedType(new_args[0].type).shape
+            shape = argshape
+            if attr in {"add", "sub", "div"}:
+                if (
+                    ShapedType(new_args[0].type).shape
+                    != ShapedType(new_args[1].type).shape
+                ):
+                    raise RuntimeError(
+                        "Only support element-wise operation of two inputs with the same shape"
+                    )
+                shape = argshape
+        elif attr in {"matmul", "bmm"}:
+            # matrix shape
+            dtype = ShapedType(new_args[0].type).element_type
+            argAshape = ShapedType(new_args[0].type).shape
+            argBshape = ShapedType(new_args[1].type).shape
+            if attr == "matmul":
+                if len(argAshape) != 2 or len(argBshape) != 2:
+                    raise RuntimeError(
+                        "Only support matrix multiplication of two 2D inputs"
+                    )
+                if argAshape[1] != argBshape[0]:
+                    raise RuntimeError(
+                        "The second dimension of the first input and the first dimension of the second input must be the same"
+                    )
+                shape = (argAshape[0], argBshape[1])
+            if attr == "bmm":
+                if len(argAshape) != 3 or len(argBshape) != 3:
+                    raise RuntimeError(
+                        "Only support batched matrix multiplication of two 3D inputs"
+                    )
+                if argAshape[2] != argBshape[1]:
+                    raise RuntimeError(
+                        "The third dimension of the first input and the second dimension of the second input must be the same"
+                    )
+                if argAshape[0] != argBshape[0]:
+                    raise RuntimeError(
+                        "The first dimension of the first input and the first dimension of the second input must be the same"
+                    )
+                shape = (argAshape[0], argAshape[1], argBshape[2])
+        else:
+            raise RuntimeError("Unsupported operation")
         with ip:
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, dtype)
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = tensor_d.EmptyOp(dtype, shape, ip=ip)
+                alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
             ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
-            if attr == "matmul":
-                linalg_d.matmul(
-                    new_args[0],
-                    new_args[1],
-                    outs=[alloc_op],
+            if attr in {"matmul", "bmm", "add", "sub", "div"}:
+                {
+                    "matmul": linalg_d.matmul,
+                    "bmm": linalg_d.batch_matmul,
+                    "add": linalg_d.add,
+                    "sub": linalg_d.sub,
+                    "div": linalg_d.div,
+                }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
+            elif attr in {"exp", "log", "abs"}:
+                {
+                    "exp": linalg_d.exp,
+                    "log": linalg_d.log,
+                    "abs": linalg_d.abs,
+                }.get(
+                    attr
+                )(new_args[0], outs=[alloc_op])
+            # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
+            elif attr == "softmax":
+                linalg_d.SoftmaxOp(
+                    input=new_args[0],
+                    dimension=1,
+                    result=[],
+                    output=alloc_op,
                 )
-            if attr == "bmm":
-                linalg_d.batch_matmul(
-                    new_args[0],
-                    new_args[1],
-                    outs=[alloc_op],
-                )
+            else:
+                raise RuntimeError("Unsupported operation")
         return alloc_op
 
     @staticmethod
