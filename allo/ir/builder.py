@@ -260,13 +260,11 @@ class ASTTransformer(Builder):
                 "float": arith_d.AddFOp,
                 "int": arith_d.AddIOp,
                 "fixed": hcl_d.AddFixedOp,
-                "memref": ASTTransformer.build_linalgOp,
             },
             ast.Sub: {
                 "float": arith_d.SubFOp,
                 "int": arith_d.SubIOp,
                 "fixed": hcl_d.SubFixedOp,
-                "memref": ASTTransformer.build_linalgOp,
             },
             ast.Mult: {
                 "float": arith_d.MulFOp,
@@ -278,7 +276,6 @@ class ASTTransformer(Builder):
                 "int": arith_d.DivSIOp,
                 "uint": arith_d.DivUIOp,
                 "fixed": hcl_d.DivFixedOp,
-                "memref": ASTTransformer.build_linalgOp,
             },
             ast.FloorDiv: {
                 "float": RuntimeError,
@@ -325,13 +322,12 @@ class ASTTransformer(Builder):
         # FIXME: workaround to get the type
         if dtype.startswith("memref"):
             new_args = [lhs.result, rhs.result]
-            op = opcls["memref"]
             attr = {
                 ast.Add: "add",
                 ast.Sub: "sub",
                 ast.Div: "div",
             }.get(type(node.op))
-            return op(ctx, attr, new_args)
+            return ASTTransformer.build_linalgOp(ctx, attr, new_args)
         if dtype.startswith("i"):
             op = opcls["int"]
         elif dtype.startswith("fixed"):
