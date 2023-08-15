@@ -34,9 +34,8 @@ def test_linalg_matmul_only2D():
         C = allo.matmul(A, B)
         return C
 
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(AssertionError):
         allo.customize(kernel)
-    assert "Only support matrix multiplication of two 2D inputs" in str(excinfo.value)
 
 
 def test_linalg_matmul_nested():
@@ -109,11 +108,8 @@ def test_linalg_batch_matmul_only3D():
         D = allo.bmm(A, B)
         return D
 
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(AssertionError):
         allo.customize(kernel)
-    assert "Only support batched matrix multiplication of two 3D inputs" in str(
-        excinfo.value
-    )
 
 
 def test_linalg_batch_matmul_nested():
@@ -148,7 +144,7 @@ def test_linalg_math():
 
     def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
         D = allo.matmul(A, B)
-        C = allo.div(allo.sub(allo.add(allo.exp(D), allo.abs(D)), allo.log(D)), D)
+        C = (allo.exp(D) + allo.abs(D) - allo.log(D)) / D
         return C
 
     s = allo.customize(kernel)

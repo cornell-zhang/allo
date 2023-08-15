@@ -321,7 +321,13 @@ class ASTTransformer(Builder):
         dtype = str(lhs.result.type)
         # FIXME: workaround to get the type
         if dtype.startswith("memref"):
-            dtype = str(rhs.result.type)
+            new_args = [lhs.result, rhs.result]
+            attr = {
+                ast.Add: "add",
+                ast.Sub: "sub",
+                ast.Div: "div",
+            }.get(type(node.op))
+            return ASTTransformer.build_linalgOp(ctx, attr, new_args)
         if dtype.startswith("i"):
             op = opcls["int"]
         elif dtype.startswith("fixed"):
@@ -957,14 +963,13 @@ class ASTTransformer(Builder):
             dtype = ShapedType(new_args[0].type).element_type
             argshape = ShapedType(new_args[0].type).shape
             shape = argshape
+
             if attr in {"add", "sub", "div"}:
-                if (
+                assert (
                     ShapedType(new_args[0].type).shape
-                    != ShapedType(new_args[1].type).shape
-                ):
-                    raise RuntimeError(
-                        "Only support element-wise operation of two inputs with the same shape"
-                    )
+                    == ShapedType(new_args[1].type).shape
+                ), f"Only support element-wise {attr} of two inputs with the same shape, got {ShapedType(new_args[0].type).shape} and {ShapedType(new_args[1].type).shape}"
+
                 shape = argshape
         elif attr in {"matmul", "bmm"}:
             # matrix shape
@@ -972,28 +977,23 @@ class ASTTransformer(Builder):
             argAshape = ShapedType(new_args[0].type).shape
             argBshape = ShapedType(new_args[1].type).shape
             if attr == "matmul":
-                if len(argAshape) != 2 or len(argBshape) != 2:
-                    raise RuntimeError(
-                        "Only support matrix multiplication of two 2D inputs"
-                    )
-                if argAshape[1] != argBshape[0]:
-                    raise RuntimeError(
-                        "The second dimension of the first input and the first dimension of the second input must be the same"
-                    )
+                assert (
+                    len(argAshape) == 2 and len(argBshape) == 2
+                ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"
+                assert (
+                    argAshape[1] == argBshape[0]
+                ), f"The second dimension of the first input and the first dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
                 shape = (argAshape[0], argBshape[1])
             if attr == "bmm":
-                if len(argAshape) != 3 or len(argBshape) != 3:
-                    raise RuntimeError(
-                        "Only support batched matrix multiplication of two 3D inputs"
-                    )
-                if argAshape[2] != argBshape[1]:
-                    raise RuntimeError(
-                        "The third dimension of the first input and the second dimension of the second input must be the same"
-                    )
-                if argAshape[0] != argBshape[0]:
-                    raise RuntimeError(
-                        "The first dimension of the first input and the first dimension of the second input must be the same"
-                    )
+                assert (
+                    len(argAshape) == 3 and len(argBshape) == 3
+                ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
+                assert (
+                    argAshape[2] == argBshape[1]
+                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape[2]} and {argBshape[1]}"
+                assert (
+                    argAshape[0] == argBshape[0]
+                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 shape = (argAshape[0], argAshape[1], argBshape[2])
         else:
             raise RuntimeError("Unsupported operation")
