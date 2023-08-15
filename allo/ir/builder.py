@@ -89,7 +89,6 @@ class ASTContext:
     def __init__(self, global_vars, mlir_ctx):
         self.ip_stack = []
         self.buffers = {}
-        self.induction_vars = {}
         self.top_func = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
@@ -197,7 +196,6 @@ class ASTTransformer(Builder):
         for_loops = build_for_loops(grid, ip, names)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
-            ctx.induction_vars[name] = iv
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
@@ -225,7 +223,6 @@ class ASTTransformer(Builder):
         for_loops = build_for_loops(grid, ip, names, stage_name)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
-            ctx.induction_vars[name] = iv
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
@@ -501,7 +498,7 @@ class ASTTransformer(Builder):
     def build_affine_expr(ctx, node):
         # pylint: disable=no-else-return
         if isinstance(node, ast.Name):
-            if node.id in ctx.induction_vars or (
+            if (
                 node.id in ctx.buffers
                 and isinstance(ctx.buffers[node.id], MockArg)
                 and str(ctx.buffers[node.id].result.type) == "index"
