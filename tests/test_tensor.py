@@ -1,6 +1,5 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-
 import allo
 from allo.ir.types import int32
 import numpy as np
@@ -13,6 +12,11 @@ def test_same():
     s = allo.customize(same, enable_tensor=True)
     print(s.module)
 
+    mod = s.build()
+    np_A = np.zeros((32, 32)).astype(np.int32)
+    np_A_allo = mod(np_A)
+    np.testing.assert_allclose(np_A, np_A_allo, rtol=1e-5)
+
 
 def test_same_scalar():
     def same_scalar(A: int32) -> int32:
@@ -20,6 +24,11 @@ def test_same_scalar():
 
     s = allo.customize(same_scalar, enable_tensor=True)
     print(s.module)
+
+    mod = s.build()
+    np_A = np.zeros(1, dtype=np.int32)
+    np_A_allo = mod(np_A)
+    np.testing.assert_allclose(np_A, np_A_allo, rtol=1e-5)
 
 
 def test_outzero():
@@ -30,6 +39,11 @@ def test_outzero():
     s = allo.customize(outzero, enable_tensor=True)
     print(s.module)
 
+    mod = s.build()
+    np_C = np.zeros((32, 32)).astype(np.int32)
+    np_C_allo = mod()
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
 
 def test_outzero_scalar():
     def outzero_scalar() -> int32:
@@ -38,6 +52,11 @@ def test_outzero_scalar():
 
     s = allo.customize(outzero_scalar, enable_tensor=True)
     print(s.module)
+
+    mod = s.build()
+    np_C = np.zeros(1, dtype=np.int32)
+    np_C_allo = mod()
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
 
 
 if __name__ == "__main__":
