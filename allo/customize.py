@@ -69,10 +69,21 @@ def _get_global_vars(_func):
 def wrapped_apply(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        with args[0].module.context, Location.unknown():
+        sch = args[0]
+        with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
-        _mlir_lower_pipeline(args[0].module)
-        args[0].primitive_sequences.append((fn.__name__, args[1:], kwargs))
+        _mlir_lower_pipeline(sch.module)
+        # Update top function in the current context
+        for op in sch.module.body.operations:
+            if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
+                sch.top_func = op
+                break
+        else:
+            raise RuntimeError("Top function not found")
+        # Update insertion point
+        sch.ip = InsertionPoint.at_block_terminator(sch.top_func.entry_block)
+        # Record primitive sequences
+        sch.primitive_sequences.append((fn.__name__, args[1:], kwargs))
         return res
 
     return wrapper
@@ -89,7 +100,8 @@ class Schedule:
     def __init__(self, module, top_func, func_args, ip):
         self.module = module
         self.top_func = top_func
-        self.func_args = func_args
+        self.top_func_name = top_func.name.value
+        self.func_args = func_args  # only store names here
         self.ip = ip
         self.primitive_sequences = []
 
@@ -258,6 +270,7 @@ class Schedule:
 
     @wrapped_apply
     def buffer_at(self, target, axis):
+        target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -268,6 +281,7 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
+        target = self._find_target(target)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
@@ -307,6 +321,7 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
+        target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -409,13 +424,13 @@ class Schedule:
         if target is None or target == "llvm":
             target = "llvm"
             _mlir_lower_pipeline(self.module, lower_linalg=True)
-            return LLVMModule(self.module, top_func_name=self.top_func.name.value)
+            return LLVMModule(self.module, top_func_name=self.top_func_name)
         if target == "vhls":
             # FIXME: Handle linalg.fill
             _mlir_lower_pipeline(self.module, lower_linalg=True)
             return HLSModule(
                 self.module,
-                top_func_name=self.top_func.name.value,
+                top_func_name=self.top_func_name,
                 mode=mode,
                 project=project,
             )
@@ -451,19 +466,16 @@ def customize(fn, verbose=False, enable_tensor=False):
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,
     # which will cause conflicts of different buffers in different contexts.
-    cnt_live_op = 0
     for name, buffer in ctx.buffers.items():
-        if isinstance(buffer, memref_d.AllocOp):
-            # Intermediate buffers
-            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
-            cnt_live_op += 1
-        elif isinstance(buffer, MockArg):
-            # Function arguments
+        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+            # Intermediate buffers and function arguments
             setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
     # Check if there are memory leaks
-    # All live operations = memory_alloc + {top_func} + {top_func_ip}
-    assert cnt_live_op + 2 == ctx.mlir_ctx._get_live_operation_count(), (
-        "All live operations = memory_alloc + 1 (top_func) + 1 (top_func_ip), "
-        f"expected {cnt_live_op + 2}, but got {ctx.mlir_ctx._get_live_operation_count()}"
+    # All live operations = {top_func} + {top_func_ip}
+    buffer = None
+    ctx.buffers = None
+    assert module.context._get_live_operation_count() == 2, (
+        "All live operations = 1 (top_func) + 1 (top_func_ip), "
+        f"expected 2, but got {module.context._get_live_operation_count()}"
     )
     return sch
