@@ -582,7 +582,9 @@ class ASTTransformer(Builder):
         ip = ctx.get_ip()
         type_hint = node.annotation
         if node.value is not None:
-            if isinstance(node.value, (ast.List, ast.Name)):
+            if isinstance(node.value, ast.Name) and ctx.buffers.get(node.value.id) != None:
+                rhs = ctx.buffers[node.value.id]
+            elif isinstance(node.value, (ast.List, ast.Name)):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
             elif isinstance(node.value, ast.Constant):
                 rhs = build_stmt(ctx, node.value)
@@ -608,7 +610,16 @@ class ASTTransformer(Builder):
             ele_type = get_mlir_type(type_str)
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, ele_type)
-                if isinstance(node.value, (ast.List, ast.Name)):
+                if isinstance(node.value, ast.Name) and ctx.buffers.get(node.value.id) != None and isinstance(rhs, memref_d.AllocOp):
+                    source_shape = ShapedType(rhs.result.type).shape
+                    if(shape != source_shape):
+                        raise RuntimeError("Shapes are not equal!")
+                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                    alloc_op.attributes["name"] = StringAttr.get(node.target.id)
+                    ctx.buffers[node.target.id] = alloc_op
+                    with ip:
+                        linalg_d.copy(rhs, outs = [alloc_op], )
+                elif isinstance(node.value, (ast.List, ast.Name)):
                     # pylint: disable=redefined-variable-type
                     rhs = memref_d.GetGlobalOp(
                         memref_type,
@@ -646,7 +657,10 @@ class ASTTransformer(Builder):
                 # TODO: figure out why zero-shape cannot work
                 ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
                 if rhs is not None:
-                    ASTTransformer.build_store(ctx, node.target, rhs)
+                    if isinstance(rhs, (MockConstant, MockScalar)):
+                        ASTTransformer.build_store(ctx, node.target, rhs)
+                    else:
+                        raise RuntimeError("Unsupported data type")
             else:
                 ele_type = get_mlir_type(type_str)
                 tensor_type = RankedTensorType.get([], ele_type)

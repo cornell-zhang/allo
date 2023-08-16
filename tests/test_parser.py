@@ -861,6 +861,29 @@ def test_const_tensor_float_vars():
     np_2 = f()
     np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
 
+def test_copy_memref():
+    M, N = 2, 2
+    def kernel() -> int32[M, N]:
+        temp: int32[M, N] = 0
+        outp: int32[M, N] = temp
+        return outp
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build(target="vhls")
+    print(f)
+
+def test_copy_scalar():
+    def kernel() -> int32:
+        temp: int32 = 0
+        outp: int32 = temp
+        return outp
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build(target="vhls")
+    print(f)
+
 
 if __name__ == "__main__":
     test_gemm_grid_for()
@@ -896,3 +919,5 @@ if __name__ == "__main__":
     test_const_tensor_float()
     test_const_tensor_int_vars()
     test_const_tensor_float_vars()
+    test_copy_memref()
+    test_copy_scalar()
