@@ -3,6 +3,7 @@
 # Reference: taichi/python/taichi/lang/ast/transform.py
 # pylint: disable=no-name-in-module, unused-argument
 
+import gc
 import ast
 import inspect
 import textwrap
@@ -205,6 +206,12 @@ class ASTTransformer(Builder):
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
+        # Remove loop variables
+        for name, iv in zip(names, ivs):
+            ctx.buffers.pop(name)
+        for_loops = None
+        # Not sure why the for loops will not be collected if we do not call gc.collect()
+        gc.collect()
         ctx.pop_ip()
 
     @staticmethod
@@ -235,6 +242,12 @@ class ASTTransformer(Builder):
         if node.iter.func.attr == "reduction":
             for loop in for_loops:
                 loop.attributes["reduction"] = UnitAttr.get()
+        # Remove loop variables
+        for name, iv in zip(names, ivs):
+            ctx.buffers.pop(name)
+        for_loops = None
+        # Not sure why the for loops will not be collected if we do not call gc.collect()
+        gc.collect()
         ctx.pop_ip()
 
     @staticmethod

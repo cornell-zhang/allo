@@ -423,17 +423,24 @@ def customize(fn, verbose=False, enable_tensor=False):
     ctx.enable_tensor = enable_tensor
     module = ASTTransformer()(ctx, tree)
     # Attach buffers to function
+    cnt_live_op = 0
     for name, buffer in ctx.buffers.items():
-        if (
-            isinstance(buffer, memref_d.AllocOp)
-            or isinstance(buffer, MockArg)
-            and name in ctx.func_args[fn.__name__]
-        ):
+        if isinstance(buffer, memref_d.AllocOp):
+            # Intermediate buffers
             setattr(fn, name, buffer)
+            cnt_live_op += 1
+        elif isinstance(buffer, MockArg):
+            # Function arguments
+            setattr(fn, name, buffer)
+    # Check if there are memory leaks
+    # All live operations = memory_alloc + {top_func}
+    assert cnt_live_op + 1 == ctx.mlir_ctx._get_live_operation_count(), (
+        "All live operations = memory_alloc + 1 (top_func), "
+        f"expected {cnt_live_op + 1}, but got {ctx.mlir_ctx._get_live_operation_count()}"
+    )
     sch = Schedule(
         module,
         ctx.top_func,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
     )
-    ctx = None
     return sch
