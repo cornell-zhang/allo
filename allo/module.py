@@ -45,6 +45,13 @@ class LLVMModule:
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
             self.module = Module.parse(str(mod), ctx)
+            # Remove .partition() annotation
+            hcl_d.remove_stride_map(self.module)
+            # Run through lowering passes
+            pm = PassManager.parse(
+                "builtin.module(one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},func.func(convert-linalg-to-affine-loops),lower-affine)"
+            )
+            pm.run(self.module.operation)
             # find top func op
             func = None
             for op in self.module.body.operations:
@@ -59,13 +66,6 @@ class LLVMModule:
             func.attributes["top"] = UnitAttr.get()
             self.top_func_type = func.type
             self.top_func_name = top_func_name
-            # Remove .partition() annotation
-            hcl_d.remove_stride_map(self.module)
-            # Run through lowering passes
-            pm = PassManager.parse(
-                "builtin.module(func.func(convert-linalg-to-affine-loops),lower-affine)"
-            )
-            pm.run(self.module.operation)
             hcl_d.lower_hcl_to_llvm(self.module, ctx)
             # Add shared library
             if os.getenv("LLVM_BUILD_DIR") is not None:

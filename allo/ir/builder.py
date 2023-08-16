@@ -641,7 +641,6 @@ class ASTTransformer(Builder):
                     index_type.append(IndexType.get())
                 ctx.set_ip(tensorgen_op.regions[0].blocks.append(*index_type))
                 ip = ctx.get_ip()
-
                 tensor_d.YieldOp(rhs.result, ip=ip)
                 ip = ctx.pop_ip()
                 ctx.buffers[node.target.id] = tensorgen_op
@@ -649,20 +648,10 @@ class ASTTransformer(Builder):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
-            if not ctx.enable_tensor:
-                # TODO: figure out why zero-shape cannot work
-                ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-                if rhs is not None:
-                    ASTTransformer.build_store(ctx, node.target, rhs)
-            else:
-                ele_type = get_mlir_type(type_str)
-                tensor_type = RankedTensorType.get([], ele_type)
-                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
-                ctx.set_ip(tensorgen_op.regions[0].blocks.append(*[]))
-                ip = ctx.get_ip()
-                tensor_d.YieldOp(rhs.result, ip=ip)
-                ip = ctx.pop_ip()
-                ctx.buffers[node.target.id] = tensorgen_op
+            # TODO: figure out why zero-shape cannot work
+            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
+            if rhs is not None:
+                ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
@@ -708,10 +697,7 @@ class ASTTransformer(Builder):
                 ele_type = get_mlir_type(type_str)
                 if type_str in ctx.global_vars:
                     type_str = str(ctx.global_vars[type_str])
-                if not ctx.enable_tensor:
-                    data_type = get_mlir_type(type_str)
-                else:
-                    data_type = RankedTensorType.get([], ele_type)
+                data_type = get_mlir_type(type_str)
             else:
                 raise RuntimeError("Unsupported function argument type")
             extra_type_hint = get_extra_type_hints_from_str(type_str)
