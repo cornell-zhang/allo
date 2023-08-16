@@ -641,7 +641,6 @@ class ASTTransformer(Builder):
                     index_type.append(IndexType.get())
                 ctx.set_ip(tensorgen_op.regions[0].blocks.append(*index_type))
                 ip = ctx.get_ip()
-
                 tensor_d.YieldOp(rhs.result, ip=ip)
                 ip = ctx.pop_ip()
                 ctx.buffers[node.target.id] = tensorgen_op
