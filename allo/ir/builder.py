@@ -8,6 +8,7 @@ import inspect
 import textwrap
 import numpy as np
 from hcl_mlir.ir import (
+    Module,
     Location,
     InsertionPoint,
     ShapedType,
@@ -71,7 +72,8 @@ class Builder:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
         with ctx.mlir_ctx, Location.unknown():
-            return method(ctx, node)
+            res = method(ctx, node)
+            return res
 
 
 class LoopScopeGuard:
@@ -92,6 +94,10 @@ class ASTContext:
         self.top_func = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
+        hcl_d.register_dialect(mlir_ctx)
+        # map from function name to function arguments
+        self.func_args = {}
+        # used to avoid loop band naming conflict
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
@@ -726,6 +732,7 @@ class ASTTransformer(Builder):
         ctx.top_func = func_op
         for name, arg in zip(arg_names, func_op.arguments):
             ctx.buffers[name] = MockArg(arg)
+        ctx.func_args[node.name] = arg_names
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         if not isinstance(stmts[-1], func_d.ReturnOp):
@@ -853,8 +860,13 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_Module(ctx, node):
+        with ctx.mlir_ctx:
+            module = Module.create(loc=Location.unknown())
+        ctx.set_ip(module.body)
         for stmt in node.body:
             build_stmt(ctx, stmt)
+        ctx.pop_ip()
+        return module
 
     @staticmethod
     def build_Call(ctx, node):

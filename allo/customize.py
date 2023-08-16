@@ -16,6 +16,7 @@ from hcl_mlir.ir import (
     StringAttr,
     IntegerType,
     IntegerAttr,
+    UnitAttr,
     F32Type,
     MemRefType,
     FlatSymbolRefAttr,
@@ -30,7 +31,7 @@ from hcl_mlir.exceptions import (
     HCLValueError,
 )
 
-from .ir.builder import ASTTransformer, ASTContext
+from .ir.builder import ASTTransformer, ASTContext, MockArg
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
 from .module import LLVMModule, HLSModule
@@ -417,21 +418,22 @@ def customize(fn, verbose=False, enable_tensor=False):
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
-    # Create MLIR module
-    with Context() as mlir_ctx, Location.unknown():
-        hcl_d.register_dialect(mlir_ctx)
-        module = Module.create()
     # Start building IR
-    global_vars = _get_global_vars(fn)
-    ctx = ASTContext(global_vars=global_vars, mlir_ctx=mlir_ctx)
-    ctx.set_ip(module.body)
+    ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
     ctx.enable_tensor = enable_tensor
-    ASTTransformer()(ctx, tree)
+    module = ASTTransformer()(ctx, tree)
     # Attach buffers to function
     for name, buffer in ctx.buffers.items():
-        setattr(fn, name, buffer)
-    return Schedule(
+        if (
+            isinstance(buffer, memref_d.AllocOp)
+            or isinstance(buffer, MockArg)
+            and name in ctx.func_args[fn.__name__]
+        ):
+            setattr(fn, name, buffer)
+    sch = Schedule(
         module,
         ctx.top_func,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
     )
+    ctx = None
+    return sch
