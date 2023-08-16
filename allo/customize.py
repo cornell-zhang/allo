@@ -31,7 +31,7 @@ from hcl_mlir.exceptions import (
     HCLValueError,
 )
 
-from .ir.builder import ASTTransformer, ASTContext, MockArg
+from .ir.builder import ASTTransformer, ASTContext, MockArg, MockBuffer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
 from .module import LLVMModule, HLSModule
@@ -86,9 +86,10 @@ class Partition:
 
 
 class Schedule:
-    def __init__(self, module, top_func, ip):
+    def __init__(self, module, top_func, func_args, ip):
         self.module = module
         self.top_func = top_func
+        self.func_args = func_args
         self.ip = ip
         self.primitive_sequences = []
 
@@ -149,8 +150,26 @@ class Schedule:
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.FuseOp(arg_results, ip=self.ip)
 
+    def _find_target(self, target):
+        assert isinstance(target, MockBuffer), "Target must be a buffer"
+        func_name, target_name = target.path.rsplit(".", 1)
+        # Find arguments
+        for name, op in zip(self.func_args[func_name], self.top_func.arguments):
+            if name == target_name:
+                return MockArg(op)
+        # Find inner intermediate buffers
+        for op in self.top_func.entry_block.operations:
+            if (
+                isinstance(op, memref_d.AllocOp)
+                and "name" in op.attributes
+                and StringAttr(op.attributes["name"]).value == target_name
+            ):
+                return op
+        raise RuntimeError(f"Target {target} not found")
+
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
+        target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -422,25 +441,29 @@ def customize(fn, verbose=False, enable_tensor=False):
     ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
     ctx.enable_tensor = enable_tensor
     module = ASTTransformer()(ctx, tree)
-    # Attach buffers to function
+    sch = Schedule(
+        module,
+        ctx.top_func,
+        ctx.func_args,
+        InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
+    )
+    # Attach buffers to schedule:
+    # The reason why we do not attach buffers to function is that
+    # we may have multiple schedules referring to the same function,
+    # which will cause conflicts of different buffers in different contexts.
     cnt_live_op = 0
     for name, buffer in ctx.buffers.items():
         if isinstance(buffer, memref_d.AllocOp):
             # Intermediate buffers
-            setattr(fn, name, buffer)
+            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
             cnt_live_op += 1
         elif isinstance(buffer, MockArg):
             # Function arguments
-            setattr(fn, name, buffer)
+            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
     # Check if there are memory leaks
-    # All live operations = memory_alloc + {top_func}
-    assert cnt_live_op + 1 == ctx.mlir_ctx._get_live_operation_count(), (
-        "All live operations = memory_alloc + 1 (top_func), "
-        f"expected {cnt_live_op + 1}, but got {ctx.mlir_ctx._get_live_operation_count()}"
-    )
-    sch = Schedule(
-        module,
-        ctx.top_func,
-        InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
+    # All live operations = memory_alloc + {top_func} + {top_func_ip}
+    assert cnt_live_op + 2 == ctx.mlir_ctx._get_live_operation_count(), (
+        "All live operations = memory_alloc + 1 (top_func) + 1 (top_func_ip), "
+        f"expected {cnt_live_op + 2}, but got {ctx.mlir_ctx._get_live_operation_count()}"
     )
     return sch

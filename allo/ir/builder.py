@@ -134,6 +134,14 @@ class MockArg(MockOp):
         return self.val
 
 
+class MockBuffer(MockOp):
+    def __init__(self, path):
+        self.path = path
+
+    def __repr__(self):
+        return f"MockBuffer({self.path})"
+
+
 class MockConstant(MockOp):
     def __init__(self, val, ctx):
         self.val = val
