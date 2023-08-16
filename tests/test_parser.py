@@ -884,6 +884,28 @@ def test_copy_scalar():
     f = s.build(target="vhls")
     print(f)
 
+def test_copy_Arg():
+    M, N = 2, 2
+    def kernel(inp:int32[M,N]) -> int32[M, N]:
+        outp: int32[M, N] = inp
+        return outp
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build(target="vhls")
+    print(f)
+
+def test_copy_Arg_scalar():
+    M, N = 2, 2
+    def kernel(inp:int32) -> int32:
+        outp: int32 = inp
+        return outp
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build(target="vhls")
+    print(f)
+
 
 if __name__ == "__main__":
     test_gemm_grid_for()
@@ -921,3 +943,5 @@ if __name__ == "__main__":
     test_const_tensor_float_vars()
     test_copy_memref()
     test_copy_scalar()
+    test_copy_Arg()
+    test_copy_Arg_scalar()
