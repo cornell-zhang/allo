@@ -16,7 +16,6 @@ from hcl_mlir.ir import (
     StringAttr,
     IntegerType,
     IntegerAttr,
-    UnitAttr,
     F32Type,
     MemRefType,
     FlatSymbolRefAttr,
@@ -25,7 +24,6 @@ from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
     func as func_d,
-    affine as affine_d,
 )
 from hcl_mlir.exceptions import (
     HCLValueError,
@@ -416,8 +414,6 @@ class Schedule:
                             and FlatSymbolRefAttr(op.attributes["callee"]).value
                             in funcs_to_replace
                         ):
-                            from .ir.builder import MockBuffer
-
                             # After all the transformations are added, we lower the module
                             # Otherwise, the MLIR verifier will complain
                             if arg_idx >= len(op.operands):

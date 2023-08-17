@@ -58,7 +58,7 @@ def get_loop_band_names(func):
 def find_loop_in_bands(func, axis):
     results = []
     bands = get_affine_loop_nests(func)
-    # pylint: disable=no-else-raise
+    # pylint: disable=no-else-return
     if isinstance(axis, LoopWrapper):
         assert "." in axis.name
         path, axis = axis.name.split(".", 1)
