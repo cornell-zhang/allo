@@ -24,6 +24,8 @@ from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
     func as func_d,
+    affine as affine_d,
+    linalg as linalg_d,
 )
 from hcl_mlir.exceptions import (
     HCLValueError,
@@ -458,7 +460,7 @@ class Schedule:
         raise NotImplementedError(f"Target {target} is not supported")
 
 
-def customize(fn, verbose=False, enable_tensor=False):
+def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
     # Get Python AST
     src, _ = getsourcelines(fn)
     src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
@@ -476,7 +478,12 @@ def customize(fn, verbose=False, enable_tensor=False):
     # Start building IR
     ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
     ctx.enable_tensor = enable_tensor
+    ctx.lower_linalg = lower_linalg
     module = ASTTransformer()(ctx, tree)
+    # Lower linalg
+    if ctx.lower_linalg:
+        linalg_attr(ctx, module)
+
     sch = Schedule(
         module,
         ctx.top_func,
@@ -502,3 +509,72 @@ def customize(fn, verbose=False, enable_tensor=False):
         f"expected 2, but got {module.context._get_live_operation_count()}"
     )
     return sch
+
+
+# Lower linalg
+def linalg_attr(ctx, module):
+    # Lower the module
+    def linalg_add_anno(op):
+        nonlocal cnt_unnamed, cnt_linalg
+        if isinstance(op, affine_d.AffineForOp):
+            if ("loop_name" not in op.attributes) and ("op_name" not in op.attributes):
+                if cnt_unnamed == 0:
+                    buffer_name = f"linalg_buffer_{cnt_linalg}"
+                    op.attributes["op_name"] = StringAttr.get(
+                        ctx.buffers[buffer_name].value
+                    )
+                loop_name = f"L_{cnt_unnamed}"
+                cnt_unnamed += 1
+                op.attributes["loop_name"] = StringAttr.get(loop_name)
+            linalg_add_anno(op.body.operations[0])
+
+    with module.context:
+        func = None
+        for op in module.body.operations:
+            if (
+                isinstance(op, func_d.FuncOp)
+                and op.name.value == ctx.top_func.name.value
+            ):
+                func = op
+                cnt_linalg = 0
+                for op in func.entry_block.operations:
+                    if isinstance(
+                        op,
+                        (
+                            linalg_d.BatchMatmulOp,
+                            linalg_d.MatmulOp,
+                            linalg_d.SoftmaxOp,
+                            linalg_d.FillOp,
+                            linalg_d.AddOp,
+                            linalg_d.SubOp,
+                            linalg_d.DivOp,
+                            linalg_d.ExpOp,
+                            linalg_d.LogOp,
+                            linalg_d.AbsOp,
+                            affine_d.AffineForOp,
+                        ),
+                    ):
+                        if not isinstance(
+                            op,
+                            affine_d.AffineForOp,
+                        ):
+                            buffer_name = f"linalg_buffer_{cnt_linalg}"
+                            ctx.buffers[buffer_name] = op.attributes["op_name"]
+                        cnt_linalg += 1
+                break
+
+        _mlir_lower_pipeline(module, lower_linalg=True)
+        func = None
+        for op in module.body.operations:
+            if (
+                isinstance(op, func_d.FuncOp)
+                and op.name.value == ctx.top_func.name.value
+            ):
+                func = op
+                cnt_linalg = 0
+                for op in func.entry_block.operations:
+                    cnt_unnamed = 0
+                    linalg_add_anno(op)
+                    if isinstance(op, affine_d.AffineForOp):
+                        cnt_linalg += 1
+                break
