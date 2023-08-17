@@ -17,7 +17,7 @@ def test_linalg_matmul():
         C = allo.matmul(A, B)
         return C
 
-    s = allo.customize(kernel, lower_linalg=True)
+    s = allo.customize(kernel)
     f = s.build()
     np_2 = np.zeros((M, N), dtype="int32")
     np_2 = f(np_0, np_1)
@@ -64,7 +64,7 @@ def test_linalg_matmul_nested():
             )
         return C
 
-    s = allo.customize(kernel, lower_linalg=True)
+    s = allo.customize(kernel)
     print(s.module)
     f = s.build()
     outs = np.zeros((M, K), dtype="float32")
@@ -123,26 +123,27 @@ def test_linalg_batch_matmul_nested():
         C: int32[M, N, K]
         for i, j, k in allo.grid(M, N, K):
             C[i, j, k] = A[i, j, k] + 1
-        D = allo.bmm(allo.bmm(A, B, name="loop1"), C, name="loop2")
+        D = allo.bmm(allo.bmm(A, B, name="bmm1"), C, name="bmm2")
         return D
 
     s = allo.customize(kernel, lower_linalg=True)
-    print(s.module)
     f = s.build()
-
-    loops = s.get_loops()
-    s.split(loops.loop1.L_0, 8)
     print(s.module)
 
     loops = s.get_loops()
-    s.reorder(loops.loop1["L_0.outer"], loops.loop1.L_1, loops.loop1["L_0.inner"])
-    s.unroll(loops.loop2.L_2)
+    s.split(loops.bmm1.L_0, 8)
     print(s.module)
 
-    s.fuse(loops.loop1["L_0.outer"], loops.loop1.L_1)
-    s.pipeline(loops.loop2.L_3)
+    loops = s.get_loops()
+    s.reorder(loops.bmm1["L_0.outer"], loops.bmm1.L_1, loops.bmm1["L_0.inner"])
+    s.unroll(loops.bmm2.L_2)
+    print(s.module)
+
+    s.fuse(loops.bmm1["L_0.outer"], loops.bmm1.L_1)
+    s.pipeline(loops.bmm2.L_3)
     print(s.module)
     print(s.build("vhls"))
+
     outs = np.zeros((M, N, K), dtype="int32")
     outs = f(A, B)
     out_1 = np.einsum("ijk,ikn->ijn", A, B)

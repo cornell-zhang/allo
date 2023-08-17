@@ -88,7 +88,6 @@ class LoopScopeGuard:
         self.ctx.loop_band_count += 1
 
 
-# pylint: disable=too-many-instance-attributes
 class ASTContext:
     def __init__(self, global_vars, mlir_ctx):
         self.ip_stack = []
@@ -107,7 +106,6 @@ class ASTContext:
         self.no_name_linalg_count = 0
         self.affine_vars = []
         self.enable_tensor = False
-        self.lower_linalg = False
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
@@ -358,8 +356,8 @@ class ASTTransformer(Builder):
                 ast.Sub: "sub",
                 ast.Div: "div",
             }.get(type(node.op))
-            return ASTTransformer.build_linalgOp(
-                ctx, node=None, attribute=attr, new_args=new_args
+            return ASTTransformer.build_linalg_op(
+                ctx, node=None, op_name=attr, new_args=new_args
             )
         if dtype.startswith("i"):
             op = opcls["int"]
@@ -978,20 +976,20 @@ class ASTTransformer(Builder):
             "sub",
             "div",
         }:
-            return ASTTransformer.build_linalgOp(
-                ctx, node=node, attribute=None, new_args=new_args
+            return ASTTransformer.build_linalg_op(
+                ctx, node=node, op_name=None, new_args=new_args
             )
         raise RuntimeError(
             f"Unsupported function {node.func.attr} with type {new_args[0].type}"
         )
 
     @staticmethod
-    def build_linalgOp(ctx, node, attribute, new_args):
+    def build_linalg_op(ctx, node, op_name, new_args):
         # +-/ and allo.add() are all supported
         if node is not None:
             attr = node.func.attr
-        elif attribute is not None:
-            attr = attribute
+        elif op_name is not None:
+            attr = op_name
         else:
             raise RuntimeError("No attribute provided")
         ip = ctx.get_ip()
@@ -1040,10 +1038,10 @@ class ASTTransformer(Builder):
             else:
                 alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
             ASTTransformer.build_init_zero(
-                ctx, node=node, attribute=attribute, init_op=alloc_op, dtype=dtype
+                ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
             )
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
-                opcls = {
+                op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
@@ -1051,14 +1049,14 @@ class ASTTransformer(Builder):
                     "div": linalg_d.div,
                 }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
             elif attr in {"exp", "log", "abs"}:
-                opcls = {
+                op = {
                     "exp": linalg_d.exp,
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                 }.get(attr)(new_args[0], outs=[alloc_op])
             # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
             elif attr == "softmax":
-                opcls = linalg_d.SoftmaxOp(
+                op = linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
                     result=[],
@@ -1067,18 +1065,18 @@ class ASTTransformer(Builder):
             else:
                 raise RuntimeError("Unsupported operation")
             if hasattr(node, "keywords") and len(node.keywords) > 0:
-                opcls.owner.attributes["op_name"] = StringAttr.get(
+                op.owner.attributes["op_name"] = StringAttr.get(
                     node.keywords[0].value.value
                 )
             else:
-                opcls.owner.attributes["op_name"] = StringAttr.get(
+                op.owner.attributes["op_name"] = StringAttr.get(
                     f"{attr}_{ctx.no_name_linalg_count}"
                 )
                 ctx.no_name_linalg_count += 1
         return alloc_op
 
     @staticmethod
-    def build_init_zero(ctx, node, attribute, init_op, dtype):
+    def build_init_zero(ctx, node, op_name, init_op, dtype):
         # initialize data op
         with ctx.get_ip():
             if str(dtype) == "i32":
@@ -1106,7 +1104,7 @@ class ASTTransformer(Builder):
                 )
             else:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{attribute}_init_zero_{ctx.no_name_linalg_count}"
+                    f"{op_name}_init_zero_{ctx.no_name_linalg_count}"
                 )
 
     @staticmethod
