@@ -925,8 +925,11 @@ class ASTTransformer(Builder):
                     stmts = build_stmts(func_ctx, tree.body)
                     func_ctx.pop_ip()
                     # Attach buffers to function
+                    # FIXME: Should create subschedule
                     for name, buffer in func_ctx.buffers.items():
-                        setattr(func, name, buffer)
+                        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+                            # Intermediate buffers and function arguments
+                            setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
                 # Build call function in the top-level
                 new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
                 call_op = func_d.CallOp(

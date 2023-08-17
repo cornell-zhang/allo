@@ -124,14 +124,9 @@ class Schedule:
         band_name, _ = find_loop_in_bands(self.top_func, args[0])
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdls = []
-        for name in args:
-            if isinstance(name, affine_d.AffineForOp):
-                name = StringAttr(name.attributes["loop_name"]).value
-            loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(
-                    op_hdl.result, StringAttr.get(name), ip=self.ip
-                )
-            )
+        for arg in args:
+            band_name, axis = find_loop_in_bands(self.top_func, arg)
+            loop_hdls.append(hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=self.ip))
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.ReorderOp(arg_results, ip=self.ip)
 
@@ -151,14 +146,9 @@ class Schedule:
         band_name, _ = find_loop_in_bands(self.top_func, args[0])
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdls = []
-        for name in args:
-            if isinstance(name, affine_d.AffineForOp):
-                name = StringAttr(name.attributes["loop_name"]).value
-            loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(
-                    op_hdl.result, StringAttr.get(name), ip=self.ip
-                )
-            )
+        for arg in args:
+            band_name, axis = find_loop_in_bands(self.top_func, arg)
+            loop_hdls.append(hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=self.ip))
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.FuseOp(arg_results, ip=self.ip)
 
@@ -474,6 +464,8 @@ def customize(fn, verbose=False, enable_tensor=False):
     # All live operations = {top_func} + {top_func_ip}
     buffer = None
     ctx.buffers = None
+    # Functions are stored in ctx.global_vars, which should also be removed
+    ctx = None
     assert module.context._get_live_operation_count() == 2, (
         "All live operations = 1 (top_func) + 1 (top_func_ip), "
         f"expected 2, but got {module.context._get_live_operation_count()}"
