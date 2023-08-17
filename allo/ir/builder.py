@@ -1076,6 +1076,13 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_init_zero(ctx, node, op_name, init_op, dtype):
+        # +-/ and allo.add() are all supported
+        if node is not None:
+            attr = node.func.attr
+        elif op_name is not None:
+            attr = op_name
+        else:
+            raise RuntimeError("No attribute provided")
         # initialize data op
         with ctx.get_ip():
             if str(dtype) == "i32":
@@ -1097,13 +1104,9 @@ class ASTTransformer(Builder):
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
                     f"{node.keywords[0].value.value}_init_zero"
                 )
-            elif node is not None:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.func.attr}_init_zero_{ctx.unnamed_linalg_op_count}"
-                )
             else:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
+                    f"{attr}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
 
     @staticmethod
