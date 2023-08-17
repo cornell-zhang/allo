@@ -652,6 +652,7 @@ class ASTTransformer(Builder):
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
                         with ip:
+                            # pylint: disable=unexpected-keyword-arg
                             linalg_d.copy(
                                 rhs.result,
                                 outs=[alloc_op],
