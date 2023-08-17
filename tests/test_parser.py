@@ -666,7 +666,7 @@ def test_compose_nested():
         return outp
 
     s_add2 = allo.customize(Add2)
-    s_add2.partition(Add2.inp)
+    s_add2.partition(s_add2.inp)
     print(s_add2.module)
     s = allo.customize(Top)
     s.compose(s_add2)
@@ -716,8 +716,8 @@ def test_double_partition():
         return outp1
 
     s_add = allo.customize(Add)
-    s_add.partition(Add.inp1, partition_type=1, dim=2, factor=2)
-    s_add.partition(Add.inp2, partition_type=1, dim=2, factor=2)
+    s_add.partition(s_add.inp1, partition_type=1, dim=2, factor=2)
+    s_add.partition(s_add.inp2, partition_type=1, dim=2, factor=2)
     print(s_add.module)
     s = allo.customize(Top)
     s.compose(s_add)
@@ -788,7 +788,7 @@ def test_output_partition_compose():
         return outp1
 
     s_ll = allo.customize(Linear_layer)
-    s_ll.partition(Linear_layer.outp, partition_type=1, dim=2, factor=2)
+    s_ll.partition(s_ll.outp, partition_type=1, dim=2, factor=2)
     s = allo.customize(Top)
     s.compose(s_ll)
     print(s.module)
@@ -868,4 +868,7 @@ if __name__ == "__main__":
     test_const_tensor_float()
     test_const_tensor_int_vars()
     test_const_tensor_float_vars()
+    test_no_init_scalar()
+    test_double_partition()
+    test_output_partition_compose()
     test_partition_and_compose()

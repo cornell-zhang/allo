@@ -126,7 +126,11 @@ class Schedule:
         loop_hdls = []
         for arg in args:
             band_name, axis = find_loop_in_bands(self.top_func, arg)
-            loop_hdls.append(hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=self.ip))
+            loop_hdls.append(
+                hcl_d.CreateLoopHandleOp(
+                    op_hdl.result, StringAttr.get(axis), ip=self.ip
+                )
+            )
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.ReorderOp(arg_results, ip=self.ip)
 
@@ -148,17 +152,25 @@ class Schedule:
         loop_hdls = []
         for arg in args:
             band_name, axis = find_loop_in_bands(self.top_func, arg)
-            loop_hdls.append(hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=self.ip))
+            loop_hdls.append(
+                hcl_d.CreateLoopHandleOp(
+                    op_hdl.result, StringAttr.get(axis), ip=self.ip
+                )
+            )
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.FuseOp(arg_results, ip=self.ip)
 
     def _find_target(self, target):
         assert isinstance(target, MockBuffer), "Target must be a buffer"
+        if target.op is not None:
+            return -1, target.op
         func_name, target_name = target.path.rsplit(".", 1)
         # Find arguments
-        for name, op in zip(self.func_args[func_name], self.top_func.arguments):
+        for idx, (name, op) in enumerate(
+            zip(self.func_args[func_name], self.top_func.arguments)
+        ):
             if name == target_name:
-                return MockArg(op)
+                return idx, MockArg(op)
         # Find inner intermediate buffers
         for op in self.top_func.entry_block.operations:
             if (
@@ -166,12 +178,18 @@ class Schedule:
                 and "name" in op.attributes
                 and StringAttr(op.attributes["name"]).value == target_name
             ):
-                return op
+                # verify if it is a return tensor
+                return_op = list(self.top_func.entry_block.operations)[-1]
+                if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
+                    idx = len(self.top_func.arguments)
+                else:
+                    idx = -1
+                return idx, op
         raise RuntimeError(f"Target {target} not found")
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
-        target = self._find_target(target)
+        _, target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -260,7 +278,7 @@ class Schedule:
 
     @wrapped_apply
     def buffer_at(self, target, axis):
-        target = self._find_target(target)
+        _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -271,7 +289,7 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
-        target = self._find_target(target)
+        _, target = self._find_target(target)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
@@ -311,7 +329,7 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
-        target = self._find_target(target)
+        _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -342,14 +360,14 @@ class Schedule:
             raise RuntimeError("Reuse buffer not found")
         return new_reuse_buffers[0]
 
-    @wrapped_apply
     def compose(self, *schs):
         # pylint: disable=too-many-nested-blocks
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             funcs_to_replace = []
-            new_mod = Module.parse(str(sch.module))
+            # Create a new module in the current context
+            new_mod = Module.parse(str(sch.module), self.module.context)
             for func in new_mod.body.operations:
                 # Move all the functions to the front of the current module
                 if isinstance(func, func_d.FuncOp):
@@ -366,49 +384,61 @@ class Schedule:
                         raise RuntimeError(
                             f"Target function {func.name.value} not found"
                         )
+            func = None
+            new_mod = None
             # Need to update CallOp arguments since some of them may be partitioned
             # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:
                 if primitive[0] == "partition":
                     args, kwargs = primitive[1:]
-                    # todo: Need to update the context
+                    # =================================
+                    # The context is sch.module.context
                     if len(args) != 0:
                         target = args[0]
                     else:
                         target = kwargs["target"]
-                    arg_idx = -1
-                    # Only function arguments and output tensors may affect the partition in the top level
-                    for idx, arg in enumerate(sch.top_func.arguments):
-                        if arg == target.result:
-                            arg_idx = idx
-                            break
-                    return_op = list(sch.top_func.entry_block.operations)[-1]
-                    if (
-                        len(return_op.operands) > 0
-                        and return_op.operands[0] == target.result
-                    ):
-                        arg_idx = len(sch.top_func.arguments)
+                    arg_idx, _ = sch._find_target(target)
                     if arg_idx == -1:
                         # The partitioned array is inside the subfunction,
                         # so we don't need to update the CallOp in the top level
                         continue
+                    # ==================================
+                    # The context is self.module.context
+                    # Update top-level function call interface
                     for op in self.top_func.entry_block.operations:
                         if (
                             isinstance(op, func_d.CallOp)
                             and FlatSymbolRefAttr(op.attributes["callee"]).value
                             in funcs_to_replace
                         ):
-                            from .ir.builder import MockArg
+                            from .ir.builder import MockBuffer
 
                             # After all the transformations are added, we lower the module
                             # Otherwise, the MLIR verifier will complain
                             if arg_idx >= len(op.operands):
-                                target = op
+                                target = MockBuffer(
+                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
+                                    op=op,
+                                )
                             else:
-                                target = MockArg(op.operands[arg_idx])
-                            self.partition.__wrapped__(
-                                self, target, *args[1:], **kwargs
-                            )
+                                target = MockBuffer(
+                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
+                                    op=MockArg(op.operands[arg_idx]),
+                                )
+                            with self.module.context, Location.unknown():
+                                self.partition.__wrapped__(
+                                    self, target, *args[1:], **kwargs
+                                )
+                                # Still need to append the current partition primitive to the sequence
+                                # This is used for deep nested composition
+                                # e.g.
+                                #   s1.partition(...)
+                                #   s2.compose(s1)
+                                #   s3.compose(s2)
+                                # If not appended, s3 will not know the partition primitive of s1
+                                self.primitive_sequences.append(
+                                    ("partition", [target] + list(args[1:]), kwargs)
+                                )
 
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":

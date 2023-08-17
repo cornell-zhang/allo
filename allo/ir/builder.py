@@ -135,8 +135,11 @@ class MockArg(MockOp):
 
 
 class MockBuffer(MockOp):
-    def __init__(self, path):
+    def __init__(self, path, op=None):
         self.path = path
+        # Normally we do not use this attribute to avoid possible context conflicts
+        # only when we need to access the op directly, we set this attribute (e.g., compose)
+        self.op = op
 
     def __repr__(self):
         return f"MockBuffer({self.path})"
@@ -452,7 +455,6 @@ class ASTTransformer(Builder):
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        # FIXME: linalg_d.InitTensorOp is removed in LLVM 18
         if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
