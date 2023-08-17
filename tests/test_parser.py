@@ -171,40 +171,40 @@ def test_multiband():
     assert np.array_equal(np_B, np_C)
 
 
-# def test_conv2D():
-#     def conv2D(A: int32[10, 10]) -> int32[8, 8]:
-#         B: int32[8, 8] = 0
-#         for i, j in allo.grid(8, 8):
-#             v: int32 = 0
-#             for rx, ry in allo.reduction(3, 3):
-#                 v += A[i + rx, j + ry]
-#             B[i, j] = v
-#         return B
+def test_conv2D():
+    def conv2D(A: int32[10, 10]) -> int32[8, 8]:
+        B: int32[8, 8] = 0
+        for i, j in allo.grid(8, 8):
+            v: int32 = 0
+            for rx, ry in allo.reduction(3, 3):
+                v += A[i + rx, j + ry]
+            B[i, j] = v
+        return B
 
-#     s = allo.customize(conv2D)
-#     s.split("j", 4)
-#     s.reorder("j.outer", "i", "j.inner")
-#     LB = s.reuse_at(s.A, axis="i")
-#     WB = s.reuse_at(LB, axis="j.inner")
-#     s.partition(LB, dim=2)
-#     s.partition(WB)
-#     s.pipeline("i")
-#     print(s.module)
-#     mod = s.build()
+    s = allo.customize(conv2D)
+    s.split("j", 4)
+    s.reorder("j.outer", "i", "j.inner")
+    LB = s.reuse_at(s.A, axis="i")
+    WB = s.reuse_at(LB, axis="j.inner")
+    s.partition(LB, dim=2)
+    s.partition(WB)
+    s.pipeline("i")
+    print(s.module)
+    mod = s.build()
 
-#     # testing
-#     np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
-#     np_C = np.zeros((8, 8), dtype="int")
+    # testing
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    np_C = np.zeros((8, 8), dtype="int")
 
-#     for y in range(0, 8):
-#         for x in range(0, 8):
-#             for r in range(0, 3):
-#                 for c in range(0, 3):
-#                     np_C[y][x] += np_A[y + r][x + c]
+    for y in range(0, 8):
+        for x in range(0, 8):
+            for r in range(0, 3):
+                for c in range(0, 3):
+                    np_C[y][x] += np_A[y + r][x + c]
 
-#     np_B = mod(np_A)
+    np_B = mod(np_A)
 
-#     assert np.array_equal(np_B, np_C)
+    assert np.array_equal(np_B, np_C)
 
 
 def test_bconv2D_nchw():
@@ -271,37 +271,37 @@ def test_nested_functions():
     assert np.array_equal(np_C, np_D)
 
 
-# def test_nested_functions_2():
-#     M, K, N = 32, 32, 32
+def test_nested_functions_2():
+    M, K, N = 32, 32, 32
 
-#     def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]) -> None:
-#         for i, j in allo.grid(M, N):
-#             for k in allo.reduction(K):
-#                 C[i, j] += A[i, k] * B[k, j]
+    def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]) -> None:
+        for i, j in allo.grid(M, N):
+            for k in allo.reduction(K):
+                C[i, j] += A[i, k] * B[k, j]
 
-#     def top(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-#         C: int32[M, N] = 0
-#         gemm(A, B, C)
-#         return C
+    def top(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        C: int32[M, N] = 0
+        gemm(A, B, C)
+        return C
 
-#     s1 = allo.customize(gemm)
-#     s1.reorder("k", "j")
-#     s1.partition(s1.C, dim=2)
-#     s1.buffer_at(s1.C, axis="i")
-#     s1.pipeline("j")
-#     # Top-level
-#     s = allo.customize(top, verbose=True)
-#     s.compose(s1)
-#     print(s.module)
-#     mod = s.build()
+    s1 = allo.customize(gemm)
+    s1.reorder("k", "j")
+    s1.partition(s1.C, dim=2)
+    s1.buffer_at(s1.C, axis="i")
+    s1.pipeline("j")
+    # Top-level
+    s = allo.customize(top)
+    s.compose(s1)
+    print(s.module)
+    mod = s.build()
 
-#     # Testing
-#     np_A = np.random.randint(0, 100, size=(M, K)).astype(np.int32)
-#     np_B = np.random.randint(0, 100, size=(K, N)).astype(np.int32)
-#     np_C = mod(np_A, np_B)
-#     np_D = np.matmul(np_A, np_B)
-#     assert np.array_equal(np_C, np_D)
-#     print("Success!")
+    # Testing
+    np_A = np.random.randint(0, 100, size=(M, K)).astype(np.int32)
+    np_B = np.random.randint(0, 100, size=(K, N)).astype(np.int32)
+    np_C = mod(np_A, np_B)
+    np_D = np.matmul(np_A, np_B)
+    assert np.array_equal(np_C, np_D)
+    print("Success!")
 
 
 def test_nested_functions_3():
@@ -814,23 +814,23 @@ def test_partition_and_compose():
             outp[i, j] += inp[i, k] * W[j, k]
         return outp
 
-    # def top(
-    #     inp: float32[inp_num, inp_len],
-    #     W: float32[inp_len, inp_len],
-    #     B: float32[inp_len],
-    # ) -> float32[inp_num, inp_len]:
-    #     outp: float32[inp_num, inp_len]
-    #     outp = Linear_layer_q(inp, W, B)
-    #     return outp
+    def top(
+        inp: float32[inp_num, inp_len],
+        W: float32[inp_len, inp_len],
+        B: float32[inp_len],
+    ) -> float32[inp_num, inp_len]:
+        outp: float32[inp_num, inp_len]
+        outp = Linear_layer_q(inp, W, B)
+        return outp
 
     s_q = allo.customize(Linear_layer_q)
     s_q.partition(s_q.inp, partition_type=2, dim=1, factor=Max_size)
     s_q.partition(s_q.W, partition_type=2, dim=1, factor=Max_size)
     print(s_q.module)
-    # s = allo.customize(top)
-    # s.compose(s_q)
-    # print(s.module)
-    # print(s.build(target="vhls"))
+    s = allo.customize(top)
+    s.compose(s_q)
+    print(s.module)
+    print(s.build(target="vhls"))
 
 
 if __name__ == "__main__":
@@ -842,10 +842,10 @@ if __name__ == "__main__":
     test_buffer_at()
     test_schedule()
     test_multiband()
-    # test_conv2D()
+    test_conv2D()
     test_interleaving_acc()
     test_nested_functions()
-    # test_nested_functions_2()
+    test_nested_functions_2()
     test_nested_functions_3()
     test_rhs_binaryop()
     test_fcompute_function_wrapper()

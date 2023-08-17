@@ -17,8 +17,6 @@ def _mlir_lower_pipeline(module, **kwargs):
     try:
         with module.context:
             mlir_pass_manager.parse(pipeline).run(module.operation)
-        # Remove previous Python-C++ references
-        module.context._clear_live_operations()
         return module
     except Exception as e:
         print("Error: failed to run MLIR lower pipeline, printing module...")

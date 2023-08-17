@@ -73,6 +73,8 @@ def wrapped_apply(fn):
         with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
         _mlir_lower_pipeline(sch.module)
+        # Remove previous Python-C++ references
+        sch.module.context._clear_live_operations()
         # Update top function in the current context
         for op in sch.module.body.operations:
             if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
@@ -358,8 +360,11 @@ class Schedule:
         ]
         if len(new_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
-        return new_reuse_buffers[0]
+        return MockBuffer(
+            f"{self.top_func_name}.{StringAttr(new_reuse_buffers[0].attributes['name']).value}"
+        )
 
+    @wrapped_apply
     def compose(self, *schs):
         # pylint: disable=too-many-nested-blocks
         for sch in schs:
