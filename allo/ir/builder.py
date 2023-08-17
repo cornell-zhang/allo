@@ -458,6 +458,8 @@ class ASTTransformer(Builder):
         if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
+            if isinstance(rhs, func_d.CallOp):
+                rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
             if isinstance(node.targets[0], ast.Name):
                 ctx.buffers[node.targets[0].id] = rhs
                 return rhs

@@ -185,10 +185,18 @@ class Schedule:
                 else:
                     idx = -1
                 return idx, op
+            if (
+                isinstance(op, func_d.CallOp)
+                and "name" in op.attributes
+                and StringAttr(op.attributes["name"]).value == target_name
+            ):
+                return -1, op
         raise RuntimeError(f"Target {target} not found")
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
+        # TODO: (1) test whether partition the same array
+        #       (2) whether the partition has conflicts for different functions
         _, target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
@@ -216,6 +224,24 @@ class Schedule:
             factor=factor,
             ip=self.ip,
         )
+        # calling the same function
+        partitioned_arrays = [target.result]
+        if isinstance(target, func_d.CallOp):
+            for call_op in self.top_func.entry_block.operations:
+                if (
+                    isinstance(call_op, func_d.CallOp)
+                    and target.attributes["callee"] == call_op.attributes["callee"]
+                ):
+                    hcl_d.PartitionOp(
+                        call_op.results[0],
+                        partition_kind=partition_type,
+                        dim=dim,
+                        factor=factor,
+                        ip=InsertionPoint.at_block_terminator(
+                            self.top_func.entry_block
+                        ),
+                    )
+                    partitioned_arrays.append(call_op.results[0])
         # TODO: Deep nested functions may still have chance to meet errors,
         #       since this process is not recursive.
         # Make sure the arguments of subfunctions are also partitioned
@@ -224,13 +250,13 @@ class Schedule:
             if isinstance(call_op, func_d.CallOp):
                 # test arguments
                 for idx, arg in enumerate(call_op.operands):
-                    if arg == target.result:
+                    if arg in partitioned_arrays:
                         func_to_partitioned.append(
                             (FlatSymbolRefAttr(call_op.attributes["callee"]).value, idx)
                         )
                 # test results
                 for idx, res in enumerate(call_op.results):
-                    if res == target.result:
+                    if res in partitioned_arrays:
                         func_to_partitioned.append(
                             (
                                 FlatSymbolRefAttr(call_op.attributes["callee"]).value,
@@ -488,7 +514,7 @@ def customize(fn, verbose=False, enable_tensor=False):
     # we may have multiple schedules referring to the same function,
     # which will cause conflicts of different buffers in different contexts.
     for name, buffer in ctx.buffers.items():
-        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+        if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
             # Intermediate buffers and function arguments
             setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
     # Check if there are memory leaks

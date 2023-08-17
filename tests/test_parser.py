@@ -833,5 +833,58 @@ def test_partition_and_compose():
     print(s.build(target="vhls"))
 
 
+def test_call_partition():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp: int32[M, N]
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_addi(inp)
+        for i, j in allo.grid(M, N):
+            outp[i, j] = temp1[i, j] + temp2[i, j]
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.temp1)
+    s.partition(s.temp2)
+    print(s.module)
+
+
+def test_call_partition_nested():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    def matrix_add(A: int32[M, N], B: int32[M, N]) -> int32[M, N]:
+        C: int32[M, N]
+        for i, j in allo.grid(M, N):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp: int32[M, N]
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_addi(inp)
+        outp = matrix_add(temp1, temp2)
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.temp1)
+    print(s.module)
+
+    f = s.build(target="vhls")
+    print(f)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
