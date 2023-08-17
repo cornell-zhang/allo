@@ -692,23 +692,13 @@ class ASTTransformer(Builder):
             type_str = type_hint.id
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
-            if not ctx.enable_tensor:
-                # TODO: figure out why zero-shape cannot work
-                ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
-                if rhs is not None:
-                    if isinstance(rhs, (MockConstant, MockScalar, MockArg)):
-                        ASTTransformer.build_store(ctx, node.target, rhs)
-                    else:
-                        raise RuntimeError("Unsupported data type")
-            else:
-                ele_type = get_mlir_type(type_str)
-                tensor_type = RankedTensorType.get([], ele_type)
-                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
-                ctx.set_ip(tensorgen_op.regions[0].blocks.append(*[]))
-                ip = ctx.get_ip()
-                tensor_d.YieldOp(rhs.result, ip=ip)
-                ip = ctx.pop_ip()
-                ctx.buffers[node.target.id] = tensorgen_op
+            # TODO: figure out why zero-shape cannot work
+            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
+            if rhs is not None:
+                if isinstance(rhs, (MockConstant, MockScalar, MockArg)):
+                    ASTTransformer.build_store(ctx, node.target, rhs)
+                else:
+                    raise RuntimeError("Unsupported data type")
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
