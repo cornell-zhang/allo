@@ -459,6 +459,8 @@ class ASTTransformer(Builder):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
+                if isinstance(rhs, func_d.CallOp):
+                    rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
                 ctx.buffers[node.targets[0].id] = rhs
                 return rhs
         # Store LHS
