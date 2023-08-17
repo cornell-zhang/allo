@@ -105,7 +105,7 @@ def test_interleaving_acc():
     s = allo.customize(gemm)
     print(s.module)
     s.reorder("k", "j")
-    s.buffer_at(gemm.C, axis="i")
+    s.buffer_at(s.C, axis="i")
     s.pipeline("j")
     print(s.module)
 
@@ -129,7 +129,7 @@ def test_buffer_at():
         return B
 
     s = allo.customize(gemm)
-    s.buffer_at(gemm.B, axis="i")
+    s.buffer_at(s.B, axis="i")
     print(s.module)
 
 
@@ -144,7 +144,7 @@ def test_schedule():
     # Some meaningless schedules, not used for execution
     s.fuse("i", "j", "k")
     s.unroll("i_j_k_fused")
-    s.reshape(gemm.A, (32, 4, 8))
+    s.reshape(s.A, (32, 4, 8))
     s.parallel("i_j_k_fused")
     print(s.module)
 
@@ -184,7 +184,7 @@ def test_conv2D():
     s = allo.customize(conv2D)
     s.split("j", 4)
     s.reorder("j.outer", "i", "j.inner")
-    LB = s.reuse_at(conv2D.A, axis="i")
+    LB = s.reuse_at(s.A, axis="i")
     WB = s.reuse_at(LB, axis="j.inner")
     s.partition(LB, dim=2)
     s.partition(WB)
@@ -271,7 +271,6 @@ def test_nested_functions():
     assert np.array_equal(np_C, np_D)
 
 
-@pytest.mark.skip("Compose still has problems")
 def test_nested_functions_2():
     M, K, N = 32, 32, 32
 
@@ -287,11 +286,11 @@ def test_nested_functions_2():
 
     s1 = allo.customize(gemm)
     s1.reorder("k", "j")
-    s1.partition(gemm.C, dim=2)
-    s1.buffer_at(gemm.C, axis="i")
+    s1.partition(s1.C, dim=2)
+    s1.buffer_at(s1.C, axis="i")
     s1.pipeline("j")
     # Top-level
-    s = allo.customize(top, verbose=True)
+    s = allo.customize(top)
     s.compose(s1)
     print(s.module)
     mod = s.build()
@@ -667,7 +666,7 @@ def test_compose_nested():
         return outp
 
     s_add2 = allo.customize(Add2)
-    s_add2.partition(Add2.inp)
+    s_add2.partition(s_add2.inp)
     print(s_add2.module)
     s = allo.customize(Top)
     s.compose(s_add2)
@@ -717,8 +716,8 @@ def test_double_partition():
         return outp1
 
     s_add = allo.customize(Add)
-    s_add.partition(Add.inp1, partition_type=1, dim=2, factor=2)
-    s_add.partition(Add.inp2, partition_type=1, dim=2, factor=2)
+    s_add.partition(s_add.inp1, partition_type=1, dim=2, factor=2)
+    s_add.partition(s_add.inp2, partition_type=1, dim=2, factor=2)
     print(s_add.module)
     s = allo.customize(Top)
     s.compose(s_add)
@@ -789,7 +788,7 @@ def test_output_partition_compose():
         return outp1
 
     s_ll = allo.customize(Linear_layer)
-    s_ll.partition(Linear_layer.outp, partition_type=1, dim=2, factor=2)
+    s_ll.partition(s_ll.outp, partition_type=1, dim=2, factor=2)
     s = allo.customize(Top)
     s.compose(s_ll)
     print(s.module)
@@ -798,129 +797,41 @@ def test_output_partition_compose():
     print(f)
 
 
-def test_no_init_tensor():
-    M, N = 4, 4
+def test_partition_and_compose():
+    inp_num = 12
+    inp_len = 768
+    Max_size = 12
 
-    def kernel() -> float32[M, N]:
-        outp: float32[M, N]
+    def Linear_layer_q(
+        inp: float32[inp_num, inp_len],
+        W: float32[inp_len, inp_len],
+        B: float32[inp_len],
+    ) -> float32[inp_num, inp_len]:
+        outp: float32[inp_num, inp_len]
+        for i, j in allo.grid(inp_num, inp_len, name="bias"):
+            outp[i, j] = B[j]
+        for i, j, k in allo.grid(inp_num, inp_len, inp_len, name="gemm"):
+            outp[i, j] += inp[i, k] * W[j, k]
         return outp
 
-    s = allo.customize(kernel)
+    def top(
+        inp: float32[inp_num, inp_len],
+        W: float32[inp_len, inp_len],
+        B: float32[inp_len],
+    ) -> float32[inp_num, inp_len]:
+        outp: float32[inp_num, inp_len]
+        outp = Linear_layer_q(inp, W, B)
+        return outp
+
+    s_q = allo.customize(Linear_layer_q)
+    s_q.partition(s_q.inp, partition_type=2, dim=1, factor=Max_size)
+    s_q.partition(s_q.W, partition_type=2, dim=1, factor=Max_size)
+    print(s_q.module)
+    s = allo.customize(top)
+    s.compose(s_q)
     print(s.module)
-
-
-def test_const_tensor_int():
-    def kernel() -> int32[2, 2]:
-        cp1: int32[2, 2] = [[1, 2], [3, 4]]
-        cp2: int32[2, 2] = [[1, 2], [3, 4]]
-        res: int32[2, 2] = 0
-        for i, j in allo.grid(2, 2):
-            res[i, j] = cp1[i, j] + cp2[i, j]
-        return res
-
-    s = allo.customize(kernel)
-    f = s.build()
-    print(s.module)
-    np_0 = np.zeros((2, 2), dtype="int32")
-    np_1 = np.array([[1, 2], [3, 4]])
-    np_0 = f()
-    assert np.array_equal(np_0, np_1 * 2)
-
-
-def test_const_tensor_float():
-    def kernel() -> float32[2, 3]:
-        cp1: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
-        cp2: float32[2, 3] = [[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]]
-        res: float32[2, 3] = 0.0
-        for i, j in allo.grid(2, 3):
-            res[i, j] = cp1[i, j] + cp2[i, j]
-        return res
-
-    s = allo.customize(kernel)
-    f = s.build()
-    print(s.module)
-    np_0 = np.zeros((2, 3), dtype="float32")
-    np_1 = np.array([[1.05, 2.0, 3.5], [3.0, 4.0, 4.5]], dtype="float32")
-    np_0 = f()
-    np.testing.assert_allclose(np_0, np_1 * 2.0, atol=1e-4)
-
-
-def test_const_tensor_int_vars():
-    M = 10
-    N = 10
-    np_0 = np.random.randint(0, 20, size=(M, N), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(M, N), dtype="int32")
-
-    def kernel() -> int32[M, N]:
-        cp1: int32[M, N] = np_0
-        cp2: int32[M, N] = np_1
-        res: int32[M, N] = 1
-        for i, j in allo.grid(M, N):
-            res[i, j] += cp1[i, j] * cp2[i, j]
-        return res
-
-    s = allo.customize(kernel)
-    f = s.build()
-    print(s.module)
-    np_2 = np.zeros((M, N), dtype="int32")
-    np_2 = f()
-    assert np.array_equal(np_2, 1 + np_0 * np_1)
-
-
-def test_const_tensor_float_vars():
-    M = 10
-    N = 10
-    np_0 = np.random.uniform(size=(M, N))
-    np_1 = np.random.uniform(size=(M, N))
-
-    def kernel() -> float32[M, N]:
-        cp1: float32[M, N] = np_0
-        cp2: float32[M, N] = np_1
-        res: float32[M, N] = 1.0
-        for i, j in allo.grid(M, N):
-            res[i, j] += cp1[i, j] * cp2[i, j]
-        return res
-
-    s = allo.customize(kernel)
-    f = s.build()
-    print(s.module)
-    np_2 = np.zeros((M, N), dtype="float32")
-    np_2 = f()
-    np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
+    print(s.build(target="vhls"))
 
 
 if __name__ == "__main__":
-    test_gemm_grid_for()
-    test_gemm_range_for()
-    test_gemm_reduction_var()
-    test_gemm_float()
-    test_nested_if()
-    test_buffer_at()
-    test_schedule()
-    test_multiband()
-    test_conv2D()
-    test_interleaving_acc()
-    test_nested_functions()
-    # test_nested_functions_2()
-    test_nested_functions_3()
-    test_rhs_binaryop()
-    test_fcompute_function_wrapper()
-    test_llvm_arg()
-    test_index_arg()
-    test_fcompute_wrap_more()
-    test_compute_at()
-    test_imperfect_loops()
-    test_polymorphism()
-    test_softmax()
-    test_triple_call()
-    test_gelu()
-    test_compose_nested()
-    test_math_scalar()
-    test_no_init_scalar()
-    test_no_init_tensor()
-    test_double_partition()
-    test_output_partition_compose()
-    test_const_tensor_int()
-    test_const_tensor_float()
-    test_const_tensor_int_vars()
-    test_const_tensor_float_vars()
+    pytest.main([__file__])

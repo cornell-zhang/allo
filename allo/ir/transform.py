@@ -11,6 +11,15 @@ from hcl_mlir.dialects import (
 )
 
 
+class LoopWrapper:
+    def __init__(self, name, loop):
+        self.name = name
+        self.loop = loop
+
+    def __repr__(self):
+        return f"LoopWrapper({self.name})"
+
+
 class LoopBand:
     def __init__(self):
         """
@@ -18,7 +27,11 @@ class LoopBand:
         """
         self.loops = {}
 
-    def add_loop(self, name, loop):
+    def add_loop(self, path, name, loop):
+        if path != "":
+            full_name = f"{path}.{name}"
+        if not isinstance(loop, LoopBand):
+            loop = LoopWrapper(full_name, loop)
         self.loops[name] = loop
         setattr(self, name, loop)
 
@@ -45,8 +58,12 @@ def get_loop_band_names(func):
 def find_loop_in_bands(func, axis):
     results = []
     bands = get_affine_loop_nests(func)
-    # pylint: disable=no-else-raise
-    if isinstance(axis, affine_d.AffineForOp):
+    # pylint: disable=no-else-return
+    if isinstance(axis, LoopWrapper):
+        assert "." in axis.name
+        path, axis = axis.name.split(".", 1)
+        return path, axis
+    elif isinstance(axis, affine_d.AffineForOp):
         axis_name = StringAttr(axis.attributes["loop_name"]).value
         for _, band in bands:
             op_name = None
@@ -62,7 +79,7 @@ def find_loop_in_bands(func, axis):
             op_name = None
             for i, (name, for_loop) in enumerate(band):
                 if i == 0:
-                    op_name = for_loop.attributes["op_name"]
+                    op_name = for_loop.loop.attributes["op_name"]
                 if name == axis_name:
                     results.append(op_name)
         if len(results) == 0:
@@ -75,7 +92,7 @@ def find_loop_in_bands(func, axis):
 def get_affine_loop_nests(func):
     cnt_unnamed = 0
 
-    def DFS(operations, band):
+    def DFS(operations, band, path=""):
         nonlocal cnt_unnamed
         for op in operations:
             if isinstance(op, affine_d.AffineForOp):
@@ -84,22 +101,23 @@ def get_affine_loop_nests(func):
                     cnt_unnamed += 1
                 else:
                     name = StringAttr(op.attributes["loop_name"]).value
-                band.add_loop(name, op)
-                DFS(op.body.operations, band)
+                band.add_loop(path, name, op)
+                DFS(op.body.operations, band, path)
             elif isinstance(op, (affine_d.AffineIfOp, scf_d.IfOp)):
-                DFS(op.then_block.operations, band)
+                DFS(op.then_block.operations, band, path)
                 try:
-                    DFS(op.else_block.operations, band)
+                    DFS(op.else_block.operations, band, path)
                 except IndexError:
                     pass
 
     results = LoopBand()
     for op in func.entry_block.operations:
         if isinstance(op, affine_d.AffineForOp):  # outer-most
+            band_name = StringAttr(op.attributes["op_name"]).value
             band = LoopBand()
-            band.add_loop(StringAttr(op.attributes["loop_name"]).value, op)
-            DFS(op.body.operations, band)
-            results.add_loop(StringAttr(op.attributes["op_name"]).value, band)
+            band.add_loop(band_name, StringAttr(op.attributes["loop_name"]).value, op)
+            DFS(op.body.operations, band, path=band_name)
+            results.add_loop("", band_name, band)
     return results
 
 

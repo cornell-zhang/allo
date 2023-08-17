@@ -94,9 +94,9 @@ print(s.module)
 # Next, we create a new buffer for the output tensor ``C``.
 # We provide a ``.buffer_at()`` primitive for users to quickly create a new buffer
 # along a specific axis. Since Allo has attached all the tensors to the function,
-# we can directly use ``<func>.<tensor>`` to access a specific tensor in the schedule.
+# we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the schedule.
 
-s.buffer_at(gemm.C, axis="i")
+s.buffer_at(s.C, axis="i")
 print(s.module)
 
 # %%

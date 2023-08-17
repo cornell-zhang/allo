@@ -24,13 +24,12 @@ from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
     func as func_d,
-    affine as affine_d,
 )
 from hcl_mlir.exceptions import (
     HCLValueError,
 )
 
-from .ir.builder import ASTTransformer, ASTContext
+from .ir.builder import ASTTransformer, ASTContext, MockArg, MockBuffer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline
 from .module import LLVMModule, HLSModule
@@ -68,10 +67,23 @@ def _get_global_vars(_func):
 def wrapped_apply(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        with args[0].module.context, Location.unknown():
+        sch = args[0]
+        with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
-        _mlir_lower_pipeline(args[0].module)
-        args[0].primitive_sequences.append((fn.__name__, args[1:], kwargs))
+        _mlir_lower_pipeline(sch.module)
+        # Remove previous Python-C++ references
+        sch.module.context._clear_live_operations()
+        # Update top function in the current context
+        for op in sch.module.body.operations:
+            if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
+                sch.top_func = op
+                break
+        else:
+            raise RuntimeError("Top function not found")
+        # Update insertion point
+        sch.ip = InsertionPoint.at_block_terminator(sch.top_func.entry_block)
+        # Record primitive sequences
+        sch.primitive_sequences.append((fn.__name__, args[1:], kwargs))
         return res
 
     return wrapper
@@ -85,9 +97,11 @@ class Partition:
 
 
 class Schedule:
-    def __init__(self, module, top_func, ip):
+    def __init__(self, module, top_func, func_args, ip):
         self.module = module
         self.top_func = top_func
+        self.top_func_name = top_func.name.value
+        self.func_args = func_args  # only store names here
         self.ip = ip
         self.primitive_sequences = []
 
@@ -110,12 +124,11 @@ class Schedule:
         band_name, _ = find_loop_in_bands(self.top_func, args[0])
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdls = []
-        for name in args:
-            if isinstance(name, affine_d.AffineForOp):
-                name = StringAttr(name.attributes["loop_name"]).value
+        for arg in args:
+            band_name, axis = find_loop_in_bands(self.top_func, arg)
             loop_hdls.append(
                 hcl_d.CreateLoopHandleOp(
-                    op_hdl.result, StringAttr.get(name), ip=self.ip
+                    op_hdl.result, StringAttr.get(axis), ip=self.ip
                 )
             )
         arg_results = [arg.result for arg in loop_hdls]
@@ -137,19 +150,46 @@ class Schedule:
         band_name, _ = find_loop_in_bands(self.top_func, args[0])
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdls = []
-        for name in args:
-            if isinstance(name, affine_d.AffineForOp):
-                name = StringAttr(name.attributes["loop_name"]).value
+        for arg in args:
+            band_name, axis = find_loop_in_bands(self.top_func, arg)
             loop_hdls.append(
                 hcl_d.CreateLoopHandleOp(
-                    op_hdl.result, StringAttr.get(name), ip=self.ip
+                    op_hdl.result, StringAttr.get(axis), ip=self.ip
                 )
             )
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.FuseOp(arg_results, ip=self.ip)
 
+    def _find_target(self, target):
+        assert isinstance(target, MockBuffer), "Target must be a buffer"
+        if target.op is not None:
+            return -1, target.op
+        func_name, target_name = target.path.rsplit(".", 1)
+        # Find arguments
+        for idx, (name, op) in enumerate(
+            zip(self.func_args[func_name], self.top_func.arguments)
+        ):
+            if name == target_name:
+                return idx, MockArg(op)
+        # Find inner intermediate buffers
+        for op in self.top_func.entry_block.operations:
+            if (
+                isinstance(op, memref_d.AllocOp)
+                and "name" in op.attributes
+                and StringAttr(op.attributes["name"]).value == target_name
+            ):
+                # verify if it is a return tensor
+                return_op = list(self.top_func.entry_block.operations)[-1]
+                if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
+                    idx = len(self.top_func.arguments)
+                else:
+                    idx = -1
+                return idx, op
+        raise RuntimeError(f"Target {target} not found")
+
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
+        _, target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -238,6 +278,7 @@ class Schedule:
 
     @wrapped_apply
     def buffer_at(self, target, axis):
+        _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -248,6 +289,7 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
+        _, target = self._find_target(target)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
@@ -287,6 +329,7 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
+        _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -315,7 +358,9 @@ class Schedule:
         ]
         if len(new_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
-        return new_reuse_buffers[0]
+        return MockBuffer(
+            f"{self.top_func_name}.{StringAttr(new_reuse_buffers[0].attributes['name']).value}"
+        )
 
     @wrapped_apply
     def compose(self, *schs):
@@ -324,7 +369,8 @@ class Schedule:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             funcs_to_replace = []
-            new_mod = Module.parse(str(sch.module))
+            # Create a new module in the current context
+            new_mod = Module.parse(str(sch.module), self.module.context)
             for func in new_mod.body.operations:
                 # Move all the functions to the front of the current module
                 if isinstance(func, func_d.FuncOp):
@@ -341,58 +387,71 @@ class Schedule:
                         raise RuntimeError(
                             f"Target function {func.name.value} not found"
                         )
+            func = None
+            new_mod = None
             # Need to update CallOp arguments since some of them may be partitioned
             # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:
                 if primitive[0] == "partition":
                     args, kwargs = primitive[1:]
-                    # todo: Need to update the context
+                    # =================================
+                    # The context is sch.module.context
                     if len(args) != 0:
                         target = args[0]
                     else:
                         target = kwargs["target"]
-                    arg_idx = -1
-                    # Only function arguments and output tensors may affect the partition in the top level
-                    for idx, arg in enumerate(sch.top_func.arguments):
-                        if arg == target.result:
-                            arg_idx = idx
-                            break
-                    return_op = list(sch.top_func.entry_block.operations)[-1]
-                    if return_op.operands[0] == target.result:
-                        arg_idx = len(sch.top_func.arguments)
+                    arg_idx, _ = sch._find_target(target)
                     if arg_idx == -1:
                         # The partitioned array is inside the subfunction,
                         # so we don't need to update the CallOp in the top level
                         continue
+                    # ==================================
+                    # The context is self.module.context
+                    # Update top-level function call interface
                     for op in self.top_func.entry_block.operations:
                         if (
                             isinstance(op, func_d.CallOp)
                             and FlatSymbolRefAttr(op.attributes["callee"]).value
                             in funcs_to_replace
                         ):
-                            from .ir.builder import MockArg
-
                             # After all the transformations are added, we lower the module
                             # Otherwise, the MLIR verifier will complain
                             if arg_idx >= len(op.operands):
-                                target = op
+                                target = MockBuffer(
+                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
+                                    op=op,
+                                )
                             else:
-                                target = MockArg(op.operands[arg_idx])
-                            self.partition.__wrapped__(
-                                self, target, *args[1:], **kwargs
-                            )
+                                target = MockBuffer(
+                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
+                                    op=MockArg(op.operands[arg_idx]),
+                                )
+                            with self.module.context, Location.unknown():
+                                self.partition.__wrapped__(
+                                    self, target, *args[1:], **kwargs
+                                )
+                                # Still need to append the current partition primitive to the sequence
+                                # This is used for deep nested composition
+                                # e.g.
+                                #   s1.partition(...)
+                                #   s2.compose(s1)
+                                #   s3.compose(s2)
+                                # If not appended, s3 will not know the partition primitive of s1
+                                self.primitive_sequences.append(
+                                    ("partition", [target] + list(args[1:]), kwargs)
+                                )
 
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"
             _mlir_lower_pipeline(self.module, lower_linalg=True)
-            return LLVMModule(self.module, top_func_name=self.top_func.name.value)
+            return LLVMModule(self.module, top_func_name=self.top_func_name)
         if target == "vhls":
             # FIXME: Handle linalg.fill
             _mlir_lower_pipeline(self.module, lower_linalg=True)
             return HLSModule(
                 self.module,
-                top_func_name=self.top_func.name.value,
+                top_func_name=self.top_func_name,
                 mode=mode,
                 project=project,
             )
@@ -414,21 +473,32 @@ def customize(fn, verbose=False, enable_tensor=False):
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
-    # Create MLIR module
-    with Context() as mlir_ctx, Location.unknown():
-        hcl_d.register_dialect(mlir_ctx)
-        module = Module.create()
     # Start building IR
-    global_vars = _get_global_vars(fn)
-    ctx = ASTContext(global_vars=global_vars, mlir_ctx=mlir_ctx)
-    ctx.set_ip(module.body)
+    ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
     ctx.enable_tensor = enable_tensor
-    ASTTransformer()(ctx, tree)
-    # Attach buffers to function
-    for name, buffer in ctx.buffers.items():
-        setattr(fn, name, buffer)
-    return Schedule(
+    module = ASTTransformer()(ctx, tree)
+    sch = Schedule(
         module,
         ctx.top_func,
+        ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
     )
+    # Attach buffers to schedule:
+    # The reason why we do not attach buffers to function is that
+    # we may have multiple schedules referring to the same function,
+    # which will cause conflicts of different buffers in different contexts.
+    for name, buffer in ctx.buffers.items():
+        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+            # Intermediate buffers and function arguments
+            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
+    # Check if there are memory leaks
+    # All live operations = {top_func} + {top_func_ip}
+    buffer = None
+    ctx.buffers = None
+    # Functions are stored in ctx.global_vars, which should also be removed
+    ctx = None
+    assert module.context._get_live_operation_count() == 2, (
+        "All live operations = 1 (top_func) + 1 (top_func_ip), "
+        f"expected 2, but got {module.context._get_live_operation_count()}"
+    )
+    return sch

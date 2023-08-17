@@ -3,11 +3,13 @@
 # Reference: taichi/python/taichi/lang/ast/transform.py
 # pylint: disable=no-name-in-module, unused-argument
 
+import gc
 import ast
 import inspect
 import textwrap
 import numpy as np
 from hcl_mlir.ir import (
+    Module,
     Location,
     InsertionPoint,
     ShapedType,
@@ -71,7 +73,8 @@ class Builder:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
         with ctx.mlir_ctx, Location.unknown():
-            return method(ctx, node)
+            res = method(ctx, node)
+            return res
 
 
 class LoopScopeGuard:
@@ -89,10 +92,13 @@ class ASTContext:
     def __init__(self, global_vars, mlir_ctx):
         self.ip_stack = []
         self.buffers = {}
-        self.induction_vars = {}
         self.top_func = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
+        hcl_d.register_dialect(mlir_ctx)
+        # map from function name to function arguments
+        self.func_args = {}
+        # used to avoid loop band naming conflict
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
@@ -126,6 +132,17 @@ class MockArg(MockOp):
     @property
     def result(self):
         return self.val
+
+
+class MockBuffer(MockOp):
+    def __init__(self, path, op=None):
+        self.path = path
+        # Normally we do not use this attribute to avoid possible context conflicts
+        # only when we need to access the op directly, we set this attribute (e.g., compose)
+        self.op = op
+
+    def __repr__(self):
+        return f"MockBuffer({self.path})"
 
 
 class MockConstant(MockOp):
@@ -197,10 +214,15 @@ class ASTTransformer(Builder):
         for_loops = build_for_loops(grid, ip, names)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
-            ctx.induction_vars[name] = iv
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
+        # Remove loop variables
+        for name, iv in zip(names, ivs):
+            ctx.buffers.pop(name)
+        for_loops = None
+        # Not sure why the for loops will not be collected if we do not call gc.collect()
+        gc.collect()
         ctx.pop_ip()
 
     @staticmethod
@@ -225,13 +247,18 @@ class ASTTransformer(Builder):
         for_loops = build_for_loops(grid, ip, names, stage_name)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
-            ctx.induction_vars[name] = iv
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
         if node.iter.func.attr == "reduction":
             for loop in for_loops:
                 loop.attributes["reduction"] = UnitAttr.get()
+        # Remove loop variables
+        for name, iv in zip(names, ivs):
+            ctx.buffers.pop(name)
+        for_loops = None
+        # Not sure why the for loops will not be collected if we do not call gc.collect()
+        gc.collect()
         ctx.pop_ip()
 
     @staticmethod
@@ -428,7 +455,6 @@ class ASTTransformer(Builder):
             rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        # FIXME: linalg_d.InitTensorOp is removed in LLVM 18
         if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
@@ -501,7 +527,7 @@ class ASTTransformer(Builder):
     def build_affine_expr(ctx, node):
         # pylint: disable=no-else-return
         if isinstance(node, ast.Name):
-            if node.id in ctx.induction_vars or (
+            if (
                 node.id in ctx.buffers
                 and isinstance(ctx.buffers[node.id], MockArg)
                 and str(ctx.buffers[node.id].result.type) == "index"
@@ -729,6 +755,7 @@ class ASTTransformer(Builder):
         ctx.top_func = func_op
         for name, arg in zip(arg_names, func_op.arguments):
             ctx.buffers[name] = MockArg(arg)
+        ctx.func_args[node.name] = arg_names
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         if not isinstance(stmts[-1], func_d.ReturnOp):
@@ -856,8 +883,13 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_Module(ctx, node):
+        with ctx.mlir_ctx:
+            module = Module.create(loc=Location.unknown())
+        ctx.set_ip(module.body)
         for stmt in node.body:
             build_stmt(ctx, stmt)
+        ctx.pop_ip()
+        return module
 
     @staticmethod
     def build_Call(ctx, node):
@@ -895,8 +927,11 @@ class ASTTransformer(Builder):
                     stmts = build_stmts(func_ctx, tree.body)
                     func_ctx.pop_ip()
                     # Attach buffers to function
+                    # FIXME: Should create subschedule
                     for name, buffer in func_ctx.buffers.items():
-                        setattr(func, name, buffer)
+                        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+                            # Intermediate buffers and function arguments
+                            setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
                 # Build call function in the top-level
                 new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
                 call_op = func_d.CallOp(
