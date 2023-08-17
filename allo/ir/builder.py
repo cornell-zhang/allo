@@ -613,13 +613,16 @@ class ASTTransformer(Builder):
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
                         source_shape = ShapedType(rhs.result.type).shape
-                        if(shape != source_shape):
+                        if shape != source_shape:
                             raise RuntimeError("Shapes are not equal!")
                         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
                         with ip:
-                            linalg_d.copy(rhs.result, outs = [alloc_op], )
+                            linalg_d.copy(
+                                rhs.result,
+                                outs=[alloc_op],
+                            )
                     else:
                         raise RuntimeError("Unsupported data type")
                 elif isinstance(node.value, (ast.List, ast.Name)):

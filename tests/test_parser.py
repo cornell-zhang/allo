@@ -861,8 +861,10 @@ def test_const_tensor_float_vars():
     np_2 = f()
     np.testing.assert_allclose(np_2, 1.0 + np_0 * np_1, atol=1e-4)
 
+
 def test_copy_memref():
     M, N = 2, 2
+
     def kernel() -> int32[M, N]:
         temp: int32[M, N] = 0
         outp: int32[M, N] = temp
@@ -872,6 +874,7 @@ def test_copy_memref():
     print(s.module)
     f = s.build(target="vhls")
     print(f)
+
 
 def test_copy_scalar():
     def kernel() -> int32:
@@ -884,9 +887,11 @@ def test_copy_scalar():
     f = s.build(target="vhls")
     print(f)
 
+
 def test_copy_Arg():
     M, N = 2, 2
-    def kernel(inp:int32[M,N]) -> int32[M, N]:
+
+    def kernel(inp: int32[M, N]) -> int32[M, N]:
         outp: int32[M, N] = inp
         return outp
 
@@ -895,9 +900,9 @@ def test_copy_Arg():
     f = s.build(target="vhls")
     print(f)
 
+
 def test_copy_Arg_scalar():
-    M, N = 2, 2
-    def kernel(inp:int32) -> int32:
+    def kernel(inp: int32) -> int32:
         outp: int32 = inp
         return outp
 
