@@ -8,14 +8,14 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/sphinx_build.yml'
+      - '.github/workflows/**'
       - 'docs/**'
       - 'tutorials/**'
   pull_request:
     branches:
       - main
     paths:
-      - '.github/workflows/sphinx_build.yml'
+      - '.github/workflows/**'
       - 'docs/**'
       - 'tutorials/**'
 
@@ -55,11 +55,12 @@ jobs:
         python3 -m pip install . -v
     - name: Build docs
       run: |
+        source activate hcl-dev
         export ALLO_HOME=$(pwd)
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
         export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
-        export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+        export PYTHONPATH=$ALLO_HOME/externals/hcl_mlir/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
         python3 -m pip install -r requirements.txt
         cd docs
         python3 -m pip install -r requirements.txt
