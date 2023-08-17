@@ -8,12 +8,14 @@ on:
     branches:
       - main
     paths:
+      - '.github/workflows/**'
       - 'docs/**'
       - 'tutorials/**'
   pull_request:
     branches:
       - main
     paths:
+      - '.github/workflows/**'
       - 'docs/**'
       - 'tutorials/**'
 
@@ -22,35 +24,43 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: zzzdavid/llvm-project:15.0.0
+      image: chhzh123/llvm-project:18.x
       options: --user root
 
     steps:
     - uses: actions/checkout@v3
       with:
         ref: ${{ github.ref }}
+    - name: Patch LLVM Project
+      run: |
+        cp externals/llvm_patch /root/llvm-project
+        cd /root/llvm-project
+        git apply llvm_patch
     - name: Build HCL-MLIR
       run: |
-        export BUILD_DIR=/home/circleci/llvm-project/build
-        export PREFIX=/home/circleci/llvm-project/build
-        git clone https://github.com/cornell-zhang/hcl-dialect.git
-        cd hcl-dialect
+        source activate hcl-dev
+        export BUILD_DIR=/root/llvm-project/build
+        export PREFIX=/root/llvm-project/build
+        git submodule update --init
+        cd externals/hcl_mlir
         mkdir -p build && cd build
         cmake -G "Unix Makefiles" .. \
             -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
             -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
             -DPYTHON_BINDING=ON \
-            -DPython3_EXECUTABLE=`which python3`
+            -DPython3_EXECUTABLE=`which python3` \
+            -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
         make -j2
         cd tools/hcl/python_packages/hcl_core
         python3 -m pip install . -v
     - name: Build docs
       run: |
+        source activate hcl-dev
         export ALLO_HOME=$(pwd)
-        export LLVM_BUILD_DIR=/home/circleci/llvm-project/build
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
         export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
-        export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+        export PYTHONPATH=$ALLO_HOME/externals/hcl_mlir/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
         python3 -m pip install -r requirements.txt
         cd docs
         python3 -m pip install -r requirements.txt
