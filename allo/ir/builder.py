@@ -102,8 +102,7 @@ class ASTContext:
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
-        # used for no_name_linalg op naming
-        self.no_name_linalg_count = 0
+        self.unnamed_linalg_op_count = 0
         self.affine_vars = []
         self.enable_tensor = False
 
@@ -1070,9 +1069,9 @@ class ASTTransformer(Builder):
                 )
             else:
                 op.owner.attributes["op_name"] = StringAttr.get(
-                    f"{attr}_{ctx.no_name_linalg_count}"
+                    f"{attr}_{ctx.unnamed_linalg_op_count}"
                 )
-                ctx.no_name_linalg_count += 1
+                ctx.unnamed_linalg_op_count += 1
         return alloc_op
 
     @staticmethod
@@ -1100,11 +1099,11 @@ class ASTTransformer(Builder):
                 )
             elif node is not None:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.func.attr}_init_zero_{ctx.no_name_linalg_count}"
+                    f"{node.func.attr}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
             else:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{op_name}_init_zero_{ctx.no_name_linalg_count}"
+                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
 
     @staticmethod

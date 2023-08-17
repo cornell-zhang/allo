@@ -127,7 +127,6 @@ def test_linalg_batch_matmul_nested():
         return D
 
     s = allo.customize(kernel, lower_linalg=True)
-    f = s.build()
     print(s.module)
 
     loops = s.get_loops()
@@ -141,6 +140,7 @@ def test_linalg_batch_matmul_nested():
 
     s.fuse(loops.bmm1["L_0.outer"], loops.bmm1.L_1)
     s.pipeline(loops.bmm2.L_3)
+    f = s.build()
     print(s.module)
     print(s.build("vhls"))
 
@@ -162,7 +162,7 @@ def test_linalg_math():
         C = (allo.add(allo.exp(D), allo.abs(D)) - allo.log(D)) / D
         return C
 
-    s = allo.customize(kernel, lower_linalg=True)
+    s = allo.customize(kernel)
     f = s.build()
     print(s.module)
     outs = np.zeros((M, M), dtype="float32")
