@@ -883,56 +883,6 @@ def test_copy_Arg_scalar():
     print(f)
 
 
-def test_copy_memref():
-    M, N = 2, 2
-
-    def kernel() -> int32[M, N]:
-        temp: int32[M, N] = 0
-        outp: int32[M, N] = temp
-        return outp
-
-    s = allo.customize(kernel)
-    print(s.module)
-    f = s.build(target="vhls")
-    print(f)
-
-
-def test_copy_scalar():
-    def kernel() -> int32:
-        temp: int32 = 0
-        outp: int32 = temp
-        return outp
-
-    s = allo.customize(kernel)
-    print(s.module)
-    f = s.build(target="vhls")
-    print(f)
-
-
-def test_copy_Arg():
-    M, N = 2, 2
-
-    def kernel(inp: int32[M, N]) -> int32[M, N]:
-        outp: int32[M, N] = inp
-        return outp
-
-    s = allo.customize(kernel)
-    print(s.module)
-    f = s.build(target="vhls")
-    print(f)
-
-
-def test_copy_Arg_scalar():
-    def kernel(inp: int32) -> int32:
-        outp: int32 = inp
-        return outp
-
-    s = allo.customize(kernel)
-    print(s.module)
-    f = s.build(target="vhls")
-    print(f)
-
-
 if __name__ == "__main__":
     pytest.main([__file__])
 
