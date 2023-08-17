@@ -18,6 +18,12 @@ jobs:
     steps:
       - checkout  # checkout source code to working directory
       - run:
+          name: Patch LLVM Project
+          command: |
+            cp externals/llvm_patch /root/llvm-project
+            cd /root/llvm-project
+            git apply llvm_patch
+      - run:
           name: Build HCL-MLIR
           command: |
             source activate hcl-dev
