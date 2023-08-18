@@ -206,7 +206,7 @@ class ASTTransformer(ASTBuilder):
                 "uint": RuntimeError,
             },
         }.get(type(node.op))
-        dtype = str(lhs.result.type)
+        dtype = str(node.dtype)
         # FIXME: workaround to get the type
         if dtype.startswith("memref"):
             new_args = [lhs.result, rhs.result]
@@ -502,13 +502,9 @@ class ASTTransformer(ASTBuilder):
                 else type_hint.slice
             )
             elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-            shape = [
-                x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                for x in elts
-            ]
-            ele_type = get_mlir_type(type_str)
+            shape, dtype = node.shape, node.dtype
             if not ctx.enable_tensor:
-                memref_type = MemRefType.get(shape, ele_type)
+                memref_type = build_shaped_type(dtype, shape, False)
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
                         source_shape = ShapedType(rhs.result.type).shape
@@ -543,7 +539,7 @@ class ASTTransformer(ASTBuilder):
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
-                tensor_type = RankedTensorType.get(shape, ele_type)
+                tensor_type = build_shaped_type(dtype, shape, True)
                 tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
                 index_type = []
                 for _ in elts:
