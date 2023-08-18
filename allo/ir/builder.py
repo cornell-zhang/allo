@@ -727,17 +727,21 @@ class ASTTransformer(ASTBuilder):
             assert (
                 len(node.args) == 1
             ), "Only support one argument for `float` and `int`"
+            new_arg = [stmt.result for stmt in build_stmts(ctx, node.args)][0]
             if node.func.id == "float":
-                if node.args[0].id in ctx.global_vars:
-                    return MockConstant(float(ctx.global_vars[node.args[0].id]), ctx)
                 # TODO: Support other types
                 return arith_d.SIToFPOp(
                     F32Type.get(),
-                    ctx.buffers[node.args[0].id].result,
+                    new_arg,
                     ip=ctx.get_ip(),
                 )
             if node.func.id == "int":
-                return MockConstant(int(ctx.global_vars[node.args[0].id]), ctx)
+                # TODO: Support other types
+                return arith_d.FPToSIOp(
+                    IntegerType.get_signless(32),
+                    new_arg,
+                    ip=ctx.get_ip(),
+                )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
