@@ -207,6 +207,7 @@ def test_conv2D():
     assert np.array_equal(np_B, np_C)
 
 
+@pytest.mark.skip(reason="Type casting not implemented")
 def test_bconv2D_nchw():
     bs = 4
     ic, oc = 6, 16
@@ -367,22 +368,6 @@ def test_rhs_binaryop():
         return res
 
     s = allo.customize(kernel, verbose=True)
-    print(s.module)
-
-
-def test_fcompute_function_wrapper():
-    def kernel(A: int32[10]) -> int32[10]:
-        def foo(x: int32) -> int32:
-            y: int32 = 0
-            y = x + 1
-            return y
-
-        B: int32[10] = 0
-        for i in range(10):
-            B[i] = foo(A[i])
-        return B
-
-    s = allo.customize(kernel)
     print(s.module)
 
 

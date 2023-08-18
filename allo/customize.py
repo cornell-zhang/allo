@@ -29,7 +29,10 @@ from hcl_mlir.exceptions import (
     HCLValueError,
 )
 
-from .ir.builder import ASTTransformer, ASTContext, MockArg, MockBuffer
+from .ir.visitor import ASTContext
+from .ir.utils import MockArg, MockBuffer
+from .ir.builder import ASTTransformer
+from .ir.infer import TypeInferer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .module import LLVMModule, HLSModule
@@ -500,9 +503,19 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
+    # Type construction
+    ctx_type_inf = ASTContext(
+        global_vars=_get_global_vars(fn),
+        mlir_ctx=Context(),
+        enable_tensor=enable_tensor,
+    )
+    tree = TypeInferer()(ctx_type_inf, tree)
     # Start building IR
-    ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
-    ctx.enable_tensor = enable_tensor
+    ctx = ASTContext(
+        global_vars=_get_global_vars(fn),
+        mlir_ctx=Context(),
+        enable_tensor=enable_tensor,
+    )
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)

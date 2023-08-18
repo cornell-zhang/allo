@@ -5,14 +5,10 @@
 
 import gc
 import ast
-import inspect
-import textwrap
-import numpy as np
 from hcl_mlir.ir import (
     Module,
     Location,
     InsertionPoint,
-    ShapedType,
     FunctionType,
     MemRefType,
     RankedTensorType,
@@ -44,30 +40,28 @@ from hcl_mlir.dialects import (
     math as math_d,
     linalg as linalg_d,
 )
-from hcl_mlir import get_mlir_type
 from .transform import build_for_loops
+from .utils import (
+    MockArg,
+    MockScalar,
+    MockConstant,
+    MockBuffer,
+    get_extra_type_hints,
+    get_kwarg,
+)
+from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 
 
-def get_extra_type_hints_from_str(dtype):
-    """
-    dtype: Allo type
-    """
-    if dtype.startswith("int"):
-        return "s"
-    if dtype.startswith("uint"):
-        return "u"
-    return "_"
+def build_shaped_type(dtype, shape, enable_tensor=False):
+    if len(shape) == 0:
+        return dtype.build()
+    if not enable_tensor:
+        return MemRefType.get(shape, dtype.build())
+    return RankedTensorType.get(shape, dtype.build())
 
 
-def get_kwarg(kwargs, name):
-    for keyword in kwargs:
-        if keyword.arg == name:
-            return keyword.value
-    raise RuntimeError(f"Keyword argument {name} not found")
-
-
-class Builder:
+class ASTBuilder(ASTVisitor):
     def __call__(self, ctx, node):
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
@@ -78,119 +72,7 @@ class Builder:
             return res
 
 
-class LoopScopeGuard:
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.ctx.loop_band_count += 1
-
-
-class ASTContext:
-    def __init__(self, global_vars, mlir_ctx):
-        self.ip_stack = []
-        self.buffers = {}
-        self.top_func = None
-        self.global_vars = global_vars
-        self.mlir_ctx = mlir_ctx
-        hcl_d.register_dialect(mlir_ctx)
-        # map from function name to function arguments
-        self.func_args = {}
-        # used to avoid loop band naming conflict
-        self.loop_band_count = 0
-        # used for AffineExpr dim counting
-        self.dim_count = 0
-        self.unnamed_linalg_op_count = 0
-        self.affine_vars = []
-        self.enable_tensor = False
-
-    def set_ip(self, ip):
-        if not isinstance(ip, InsertionPoint):
-            ip = InsertionPoint(ip)
-        self.ip_stack.append(ip)
-
-    def get_ip(self):
-        return self.ip_stack[-1]
-
-    def pop_ip(self):
-        return self.ip_stack.pop()
-
-    def loop_scope_guard(self):
-        return LoopScopeGuard(self)
-
-
-class MockOp:
-    def __init__(self):
-        pass
-
-
-class MockArg(MockOp):
-    def __init__(self, val):
-        self.val = val
-
-    @property
-    def result(self):
-        return self.val
-
-
-class MockBuffer(MockOp):
-    def __init__(self, path, op=None):
-        self.path = path
-        # Normally we do not use this attribute to avoid possible context conflicts
-        # only when we need to access the op directly, we set this attribute (e.g., compose)
-        self.op = op
-
-    def __repr__(self):
-        return f"MockBuffer({self.path})"
-
-
-class MockConstant(MockOp):
-    def __init__(self, val, ctx):
-        self.val = val
-        self.ctx = ctx
-
-    @property
-    def result(self):
-        # TODO: Support other types
-        if isinstance(self.val, int):
-            dtype = IntegerType.get_signless(32)
-            value_attr = IntegerAttr.get(dtype, self.val)
-        else:
-            dtype = F32Type.get()
-            value_attr = FloatAttr.get(dtype, self.val)
-        # pylint: disable=too-many-function-args
-        const_op = arith_d.ConstantOp(dtype, value_attr, ip=self.ctx.get_ip())
-        return const_op.result
-
-
-class MockScalar(MockOp):
-    def __init__(self, name, dtype, ctx):
-        self.name = name
-        self.ctx = ctx
-        shape = (1,)
-        ele_type = get_mlir_type(dtype)
-        memref_type = MemRefType.get(shape, ele_type)
-        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-        alloc_op.attributes["name"] = StringAttr.get(name)
-        self.op = alloc_op
-
-    @property
-    def result(self):
-        affine_map = AffineMap.get(
-            dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-        )
-        affine_attr = AffineMapAttr.get(affine_map)
-        load = affine_d.AffineLoadOp(
-            self.op.result, [], affine_attr, ip=self.ctx.get_ip()
-        )
-        load.attributes["from"] = StringAttr.get(self.name)
-        return load.result
-
-
-class ASTTransformer(Builder):
+class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
         if node.id in ctx.buffers:
@@ -321,9 +203,9 @@ class ASTTransformer(Builder):
                 "uint": RuntimeError,
             },
         }.get(type(node.op))
-        dtype = str(lhs.result.type)
+        dtype = str(node.dtype.build())
         # FIXME: workaround to get the type
-        if dtype.startswith("memref"):
+        if len(node.shape) > 0:
             new_args = [lhs.result, rhs.result]
             attr = {
                 ast.Add: "add",
@@ -331,7 +213,7 @@ class ASTTransformer(Builder):
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_linalg_op(
-                ctx, node=None, op_name=attr, new_args=new_args
+                ctx, node=node, op_name=attr, new_args=new_args
             )
         if dtype.startswith("i"):
             op = opcls["int"]
@@ -447,28 +329,11 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_constant_tensor(ctx, node):
-        if isinstance(node.value, ast.Name):
-            values = ctx.global_vars[node.value.id]
-        elif isinstance(node.value, ast.List):
-            values = compile(ast.Expression(node.value), "", "eval")
-            # pylint: disable=eval-used
-            values = eval(values)
-        else:
-            raise RuntimeError("Unsupported type")
-        np_values = np.asarray(values)
-        if np.issubdtype(np_values.dtype, np.integer):
-            dtype = IntegerType.get_signless(32)
-            np_values = np_values.astype(np.int32)
-        elif np.issubdtype(np_values.dtype, np.floating):
-            dtype = F32Type.get()
-            np_values = np_values.astype(np.float32)
-        else:
-            raise RuntimeError("Unsupported constant tensor element type")
-
+        np_values = node.np_values
         value_attr = DenseElementsAttr.get(np_values)
         sym_name = StringAttr.get(node.target.id)
         sym_visibility = StringAttr.get("private")
-        memref_type = MemRefType.get(np_values.shape, dtype)
+        memref_type = MemRefType.get(np_values.shape, node.dtype.build())
         type_attr = TypeAttr.get(memref_type)
         const_tensor = memref_d.GlobalOp(
             sym_name=sym_name,
@@ -617,17 +482,11 @@ class ASTTransformer(Builder):
                 else type_hint.slice
             )
             elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-            shape = [
-                x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                for x in elts
-            ]
-            ele_type = get_mlir_type(type_str)
+            shape, dtype = node.shape, node.dtype
             if not ctx.enable_tensor:
-                memref_type = MemRefType.get(shape, ele_type)
+                memref_type = build_shaped_type(dtype, shape, False)
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        source_shape = ShapedType(rhs.result.type).shape
-                        assert shape == source_shape, "Shapes are not equal!"
                         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
@@ -658,7 +517,7 @@ class ASTTransformer(Builder):
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
-                tensor_type = RankedTensorType.get(shape, ele_type)
+                tensor_type = build_shaped_type(dtype, shape, True)
                 tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
                 index_type = []
                 for _ in elts:
@@ -690,48 +549,16 @@ class ASTTransformer(Builder):
         else:
             old_ctx = None
 
-        ip = ctx.get_ip()
-        input_types = []
-        input_typehints = []
         arg_names = []
 
-        def build_type(type_hint):
-            if isinstance(type_hint, ast.Subscript):
-                type_str = type_hint.value.id
-                if type_str in ctx.global_vars:
-                    type_str = str(ctx.global_vars[type_str])
-                # pylint: disable=redefined-builtin
-                slice = (
-                    type_hint.slice.value
-                    if isinstance(type_hint.slice, ast.Index)
-                    else type_hint.slice
-                )
-                elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-                shape = [
-                    x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                    for x in elts
-                ]
-                ele_type = get_mlir_type(type_str)
-                if not ctx.enable_tensor:
-                    data_type = MemRefType.get(shape, ele_type)
-                else:
-                    data_type = RankedTensorType.get(shape, ele_type)
-            elif isinstance(type_hint, ast.Name):
-                type_str = type_hint.id
-                ele_type = get_mlir_type(type_str)
-                if type_str in ctx.global_vars:
-                    type_str = str(ctx.global_vars[type_str])
-                data_type = get_mlir_type(type_str)
-            else:
-                raise RuntimeError("Unsupported function argument type")
-            extra_type_hint = get_extra_type_hints_from_str(type_str)
-            return data_type, extra_type_hint
-
         # Build input types
+        input_types = []
+        input_typehints = []
         for arg in node.args.args:
-            arg_type, extra_type_hint = build_type(arg.annotation)
-            input_types.append(arg_type)
-            input_typehints.append(extra_type_hint)
+            input_types.append(
+                build_shaped_type(arg.dtype, arg.shape, ctx.enable_tensor)
+            )
+            input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 
         # Build return type
@@ -741,14 +568,17 @@ class ASTTransformer(Builder):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            output_type, extra_type_hint = build_type(node.returns)
-            output_types.append(output_type)
-            output_typehints.append(extra_type_hint)
+            output_types.append(
+                build_shaped_type(
+                    node.returns.dtype, node.returns.shape, ctx.enable_tensor
+                )
+            )
+            output_typehints.append(get_extra_type_hints(node.returns.dtype))
 
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip)
+        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         ctx.top_func = func_op
         for name, arg in zip(arg_names, func_op.arguments):
@@ -954,14 +784,10 @@ class ASTTransformer(Builder):
             # Has already been defined in the top-level scope
             stmts = [func]
         else:
-            src, _ = inspect.getsourcelines(func)
-            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-            src = textwrap.dedent("\n".join(src))
-            tree = ast.parse(src)
             # Create a new context to avoid name collision
             func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)
             func_ctx.set_ip(ctx.top_func)
-            stmts = build_stmts(func_ctx, tree.body)
+            stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
             # Attach buffers to function
             # FIXME: Should create subschedule
@@ -985,50 +811,13 @@ class ASTTransformer(Builder):
         assert op_name is not None and op_name != ""
         attr = op_name
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
-            dtype = ShapedType(new_args[0].type).element_type
-            argshape = ShapedType(new_args[0].type).shape
-            shape = argshape
-
-            if attr in {"add", "sub", "div"}:
-                assert (
-                    ShapedType(new_args[0].type).shape
-                    == ShapedType(new_args[1].type).shape
-                ), f"Only support element-wise {attr} of two inputs with the same shape, got {ShapedType(new_args[0].type).shape} and {ShapedType(new_args[1].type).shape}"
-
-                shape = argshape
-        elif attr in {"matmul", "bmm"}:
-            # matrix shape
-            dtype = ShapedType(new_args[0].type).element_type
-            argAshape = ShapedType(new_args[0].type).shape
-            argBshape = ShapedType(new_args[1].type).shape
-            if attr == "matmul":
-                assert (
-                    len(argAshape) == 2 and len(argBshape) == 2
-                ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"
-                assert (
-                    argAshape[1] == argBshape[0]
-                ), f"The second dimension of the first input and the first dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
-                shape = (argAshape[0], argBshape[1])
-            if attr == "bmm":
-                assert (
-                    len(argAshape) == 3 and len(argBshape) == 3
-                ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
-                assert (
-                    argAshape[2] == argBshape[1]
-                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape[2]} and {argBshape[1]}"
-                assert (
-                    argAshape[0] == argBshape[0]
-                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
-                shape = (argAshape[0], argAshape[1], argBshape[2])
-        else:
-            raise RuntimeError("Unsupported operation")
+        dtype, shape = node.dtype, node.shape
         with ip:
             if not ctx.enable_tensor:
-                memref_type = MemRefType.get(shape, dtype)
+                memref_type = MemRefType.get(shape, dtype.build())
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
+                alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ip)
             ASTTransformer.build_init_zero(
                 ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
             )
@@ -1071,15 +860,15 @@ class ASTTransformer(Builder):
     def build_init_zero(ctx, node, op_name, init_op, dtype):
         # initialize data op
         with ctx.get_ip():
-            if str(dtype) == "i32":
+            if str(dtype) == "int32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
-                    value=IntegerAttr.get(dtype, 0), result=dtype
+                    value=IntegerAttr.get(dtype.build(), 0), result=dtype.build()
                 ).result
-            elif str(dtype) == "f32":
+            elif str(dtype) == "float32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
-                    value=FloatAttr.get(dtype, 0.0), result=dtype
+                    value=FloatAttr.get(dtype.build(), 0.0), result=dtype.build()
                 ).result
             else:
                 raise RuntimeError("Unsupported data type")
