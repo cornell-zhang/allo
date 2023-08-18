@@ -799,16 +799,12 @@ class ASTTransformer(ASTBuilder):
         func = ctx.global_vars[node.func.id]
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
-            stmts = [func]
+            raise RuntimeError("Cannot define a function inside another function")
         else:
-            src, _ = inspect.getsourcelines(func)
-            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-            src = textwrap.dedent("\n".join(src))
-            tree = ast.parse(src)
             # Create a new context to avoid name collision
             func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)
             func_ctx.set_ip(ctx.top_func)
-            stmts = build_stmts(func_ctx, tree.body)
+            stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
             # Attach buffers to function
             # FIXME: Should create subschedule
@@ -832,44 +828,7 @@ class ASTTransformer(ASTBuilder):
         assert op_name is not None and op_name != ""
         attr = op_name
         ip = ctx.get_ip()
-        if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
-            dtype = ShapedType(new_args[0].type).element_type
-            argshape = ShapedType(new_args[0].type).shape
-            shape = argshape
-
-            if attr in {"add", "sub", "div"}:
-                assert (
-                    ShapedType(new_args[0].type).shape
-                    == ShapedType(new_args[1].type).shape
-                ), f"Only support element-wise {attr} of two inputs with the same shape, got {ShapedType(new_args[0].type).shape} and {ShapedType(new_args[1].type).shape}"
-
-                shape = argshape
-        elif attr in {"matmul", "bmm"}:
-            # matrix shape
-            dtype = ShapedType(new_args[0].type).element_type
-            argAshape = ShapedType(new_args[0].type).shape
-            argBshape = ShapedType(new_args[1].type).shape
-            if attr == "matmul":
-                assert (
-                    len(argAshape) == 2 and len(argBshape) == 2
-                ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"
-                assert (
-                    argAshape[1] == argBshape[0]
-                ), f"The second dimension of the first input and the first dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
-                shape = (argAshape[0], argBshape[1])
-            if attr == "bmm":
-                assert (
-                    len(argAshape) == 3 and len(argBshape) == 3
-                ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
-                assert (
-                    argAshape[2] == argBshape[1]
-                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape[2]} and {argBshape[1]}"
-                assert (
-                    argAshape[0] == argBshape[0]
-                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
-                shape = (argAshape[0], argAshape[1], argBshape[2])
-        else:
-            raise RuntimeError("Unsupported operation")
+        dtype, shape = node.dtype, node.shape
         with ip:
             if not ctx.enable_tensor:
                 memref_type = MemRefType.get(shape, dtype)
@@ -918,12 +877,12 @@ class ASTTransformer(ASTBuilder):
     def build_init_zero(ctx, node, op_name, init_op, dtype):
         # initialize data op
         with ctx.get_ip():
-            if str(dtype) == "i32":
+            if str(dtype) == "int32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
                     value=IntegerAttr.get(dtype, 0), result=dtype
                 ).result
-            elif str(dtype) == "f32":
+            elif str(dtype) == "float32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
                     value=FloatAttr.get(dtype, 0.0), result=dtype
