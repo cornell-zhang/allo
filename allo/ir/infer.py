@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=unused-argument
 
 import ast
 import inspect
@@ -44,8 +45,10 @@ class TypeInferer(ASTVisitor):
         node.shape = tuple()
         if isinstance(node.value, int):
             node.dtype = int32
-        if isinstance(node.value, float):
+        elif isinstance(node.value, float):
             node.dtype = float32
+        else:
+            raise RuntimeError("Unsupported constant type")
         return node
 
     @staticmethod
@@ -84,8 +87,10 @@ class TypeInferer(ASTVisitor):
         node.shape = tuple()
         if isinstance(node.operand.dtype, int):
             node.dtype = int32
-        if isinstance(node.operand.dtype, float):
+        elif isinstance(node.operand.dtype, float):
             node.dtype = float32
+        else:
+            raise RuntimeError("Unsupported constant type")
         return node
 
     @staticmethod
@@ -270,26 +275,25 @@ class TypeInferer(ASTVisitor):
             if node.func.id == "float":
                 node.dtype = float32
                 node.shape = tuple()
-                return node
-            if node.func.id == "int":
+            elif node.func.id == "int":
                 node.dtype = int32
                 node.shape = tuple()
-                return node
-            raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+            else:
+                raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+            return node
 
         if obj.__module__.startswith("allo"):
             # Allo library functions
-            new_args = [stmt for stmt in visit_stmts(ctx, node.args)]
+            new_args = visit_stmts(ctx, node.args)
             fn_name = obj.__name__
             if len(new_args[0].shape) == 0:
                 # element-wise operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
                 return node
-            else:
-                return TypeInferer.visit_linalg_op(
-                    ctx, node=node, op_name=fn_name, new_args=new_args
-                )
+            return TypeInferer.visit_linalg_op(
+                ctx, node=node, op_name=fn_name, new_args=new_args
+            )
 
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]

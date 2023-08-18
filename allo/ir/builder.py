@@ -5,14 +5,10 @@
 
 import gc
 import ast
-import inspect
-import textwrap
-import numpy as np
 from hcl_mlir.ir import (
     Module,
     Location,
     InsertionPoint,
-    ShapedType,
     FunctionType,
     MemRefType,
     RankedTensorType,

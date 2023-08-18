@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=redefined-builtin
+# pylint: disable=redefined-builtin, no-name-in-module
 
 from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
 from hcl_mlir.dialects import hcl as hcl_d
@@ -32,17 +32,11 @@ class Index(AlloType):
 
 
 class Int(AlloType):
-    def __init__(self, bits, name):
-        super().__init__(bits, name)
-
     def build(self):
         return IntegerType.get_signless(self.bits)
 
 
 class UInt(AlloType):
-    def __init__(self, bits, name):
-        super().__init__(bits, name)
-
     def build(self):
         return IntegerType.get_unsigned(self.bits)
 
@@ -53,6 +47,7 @@ class Float(AlloType):
             raise RuntimeError("Unsupported floating point type")
         super().__init__(bits, name)
 
+    # pylint: disable=inconsistent-return-statements
     def build(self):
         if self.bits == 16:
             return F16Type.get()
