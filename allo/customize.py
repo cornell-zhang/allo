@@ -478,7 +478,7 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
     ctx.enable_tensor = enable_tensor
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
-        lower_linalg_and_attach_names(ctx, module)
+        lower_linalg_and_attach_names(module)
 
     sch = Schedule(
         module,

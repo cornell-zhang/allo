@@ -30,9 +30,12 @@ def _mlir_lower_pipeline(module, **kwargs):
         raise e
 
 
-def lower_linalg_and_attach_names(ctx, module):
+def lower_linalg_and_attach_names(module):
+    op_names = []
+    cnt_loop_nests = 0
+
     def is_linalg_op(op):
-        if isinstance(
+        return isinstance(
             op,
             (
                 linalg_d.BatchMatmulOp,
@@ -46,19 +49,14 @@ def lower_linalg_and_attach_names(ctx, module):
                 linalg_d.LogOp,
                 linalg_d.AbsOp,
             ),
-        ):
-            return True
-        return False
+        )
 
     def annotate_affine_for(op):
-        nonlocal cnt_unnamed, cnt_for_block_op
+        nonlocal cnt_unnamed, cnt_loop_nests
         if isinstance(op, affine_d.AffineForOp):
             if ("loop_name" not in op.attributes) and ("op_name" not in op.attributes):
                 if cnt_unnamed == 0:
-                    buffer_name = f"linalg_buffer_{cnt_for_block_op}"
-                    op.attributes["op_name"] = StringAttr.get(
-                        ctx.buffers[buffer_name].value
-                    )
+                    op.attributes["op_name"] = StringAttr.get(op_names[cnt_loop_nests])
                 loop_name = f"L_{cnt_unnamed}"
                 cnt_unnamed += 1
                 op.attributes["loop_name"] = StringAttr.get(loop_name)
@@ -66,33 +64,18 @@ def lower_linalg_and_attach_names(ctx, module):
 
     with module.context:
         for op in module.body.operations:
-            if (
-                isinstance(op, func_d.FuncOp)
-                and op.name.value == ctx.top_func.name.value
-            ):
+            if isinstance(op, func_d.FuncOp):
                 func = op
-                cnt_for_block_op = 0
                 for op_ in func.entry_block.operations:
                     if is_linalg_op(op_) or isinstance(op_, affine_d.AffineForOp):
-                        # If the op is linalg_op, then it needs an op_name
-                        if is_linalg_op(op_):
-                            buffer_name = f"linalg_buffer_{cnt_for_block_op}"
-                            ctx.buffers[buffer_name] = op_.attributes["op_name"]
-                        # Count the number of for_block_op in the function
-                        cnt_for_block_op += 1
-                break
+                        op_names.append(op_.attributes["op_name"].value)
 
         _mlir_lower_pipeline(module, lower_linalg=True)
         for op in module.body.operations:
-            if (
-                isinstance(op, func_d.FuncOp)
-                and op.name.value == ctx.top_func.name.value
-            ):
+            if isinstance(op, func_d.FuncOp):
                 func = op
-                cnt_for_block_op = 0
                 for op_ in func.entry_block.operations:
                     cnt_unnamed = 0
                     annotate_affine_for(op_)
                     if isinstance(op_, affine_d.AffineForOp):
-                        cnt_for_block_op += 1
-                break
+                        cnt_loop_nests += 1
