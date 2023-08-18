@@ -35,9 +35,17 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Name(ctx, node):
         if node.id in ctx.buffers:
-            return ctx.buffers[node.id]
+            var = ctx.buffers[node.id]
+            node.dtype = var.dtype
+            node.shape = var.shape
+            return node
         if node.id in ctx.global_vars:
-            return MockConstant(ctx.global_vars[node.id], ctx)
+            if isinstance(ctx.global_vars[node.id], int):
+                node.dtype = int32
+            elif isinstance(ctx.global_vars[node.id], float):
+                node.dtype = float32
+            node.shape = tuple()
+            return node
         raise RuntimeError("Unsupported Name")
 
     @staticmethod
@@ -54,6 +62,8 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_all_for(ctx, node):
         visit_stmts(ctx, node.body)
+        node.shape = None
+        node.dtype = None
         return node
 
     @staticmethod
@@ -121,9 +131,11 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
                 ctx.buffers[node.targets[0].id] = rhs
+                node.dtype = rhs.dtype
+                node.shape = rhs.shape
                 return rhs
         # store LHS
-        lhs = TypeInferer.visit_store(ctx, node.targets[0], rhs)
+        lhs = visit_stmt(ctx, node.targets[0])
         node.dtype = lhs.dtype
         node.shape = lhs.shape
         return node
@@ -163,9 +175,8 @@ class TypeInferer(ASTVisitor):
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
-        res = TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
+        TypeInferer.visit_general_binop(ctx, node.target, lhs, rhs)
         # store LHS
-        lhs = TypeInferer.visit_store(ctx, node.target, res)
         node.dtype = lhs.dtype
         node.shape = lhs.shape
         return node
@@ -251,17 +262,25 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Compare(ctx, node, is_affine=False):
-        pass
+    def visit_Compare(ctx, node):
+        # FIXME: Not supported yet
+        node.dtype = None
+        node.shape = None
+        return node
 
     @staticmethod
-    def visit_If(ctx, node, is_affine=False):
-        pass
+    def visit_If(ctx, node):
+        # FIXME: Not supported yet
+        node.dtype = None
+        node.shape = None
+        return node
 
     @staticmethod
     def visit_Module(ctx, node):
         for stmt in node.body:
             visit_stmt(ctx, stmt)
+        node.dtype = None
+        node.shape = None
         return node
 
     @staticmethod
@@ -373,6 +392,8 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Expr(ctx, node):
         visit_stmt(ctx, node.value)
+        node.dtype = None
+        node.shape = None
         return node
 
     @staticmethod
