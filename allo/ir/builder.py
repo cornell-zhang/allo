@@ -58,6 +58,8 @@ from .symbol_resolver import ASTResolver
 
 
 def build_shaped_type(dtype, shape, enable_tensor=False):
+    if len(shape) == 0:
+        return dtype.build()
     if not enable_tensor:
         return MemRefType.get(shape, dtype.build())
     return RankedTensorType.get(shape, dtype.build())
@@ -799,7 +801,7 @@ class ASTTransformer(ASTBuilder):
         func = ctx.global_vars[node.func.id]
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
-            raise RuntimeError("Cannot define a function inside another function")
+            stmts = [func]
         else:
             # Create a new context to avoid name collision
             func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)

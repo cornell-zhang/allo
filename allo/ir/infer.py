@@ -113,8 +113,9 @@ class TypeInferer(ASTVisitor):
         if isinstance(rhs, ast.Call):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
-            ctx.buffers[node.targets[0].id] = rhs
-            return rhs
+            if isinstance(node.targets[0], ast.Name):
+                ctx.buffers[node.targets[0].id] = rhs
+                return rhs
         # store LHS
         lhs = TypeInferer.visit_store(ctx, node.targets[0], rhs)
         node.dtype = lhs.dtype
@@ -155,6 +156,13 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
+        if ctx.top_func is not None:
+            # Nested function def
+            # Create a new context to avoid name collision
+            old_ctx = ctx
+            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx, enable_tensor=old_ctx.enable_tensor)
+        else:
+            old_ctx = None
         # Input types
         for arg in node.args.args:
             arg.dtype, arg.shape = TypeInferer.visit_type_hint(arg.annotation, ctx)
@@ -177,6 +185,11 @@ class TypeInferer(ASTVisitor):
         else:
             node.dtype = stmts[-1].dtype
             node.shape = stmts[-1].shape
+        # Recover the old context
+        if old_ctx is not None:
+            ctx = old_ctx
+        # Add the visited function to global variable for later reference
+        ctx.global_vars[node.name] = node
         return node
 
     @staticmethod
@@ -204,9 +217,11 @@ class TypeInferer(ASTVisitor):
             if node.func.id == "float":
                 node.dtype = float32
                 node.shape = tuple()
+                return node
             if node.func.id == "int":
                 node.dtype = int32
                 node.shape = tuple()
+                return node
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
@@ -221,24 +236,29 @@ class TypeInferer(ASTVisitor):
                 ctx, node=node, op_name=fn_name, new_args=new_args
             )
 
-        # Visit arguments in the top-level
-        visit_stmts(ctx, node.args)
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]
-        src, _ = inspect.getsourcelines(func)
-        src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-        src = textwrap.dedent("\n".join(src))
-        tree = ast.parse(src)
-        # Create a new context to avoid name collision
-        func_ctx = ASTContext(
-            global_vars=ctx.global_vars,
-            mlir_ctx=ctx.mlir_ctx,
-            enable_tensor=ctx.enable_tensor,
-        )
-        stmts = visit_stmts(func_ctx, tree.body)
-        # Attach type-inferenced tree to the top-level AST
-        node.tree = tree
-        if not isinstance(stmts[-1], ast.Return):
+        if isinstance(func, ast.FunctionDef):
+            # Has already been defined in the top-level scope
+            stmts = [func]
+        else:
+            # Visit arguments in the top-level
+            visit_stmts(ctx, node.args)
+            func = ctx.global_vars[node.func.id]
+            src, _ = inspect.getsourcelines(func)
+            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
+            src = textwrap.dedent("\n".join(src))
+            tree = ast.parse(src)
+            # Create a new context to avoid name collision
+            func_ctx = ASTContext(
+                global_vars=ctx.global_vars,
+                mlir_ctx=ctx.mlir_ctx,
+                enable_tensor=ctx.enable_tensor,
+            )
+            stmts = visit_stmts(func_ctx, tree.body)
+            # Attach type-inferenced tree to the top-level AST
+            node.tree = tree
+        if not isinstance(stmts[-1], ast.FunctionDef):
             node.dtype = None
             node.shape = None
         else:
