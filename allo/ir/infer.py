@@ -27,7 +27,7 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type {node.id}"
-            return dtype, []
+            return dtype, tuple()
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -70,8 +70,10 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
         # TODO: Add type casting
-        assert lhs.shape == rhs.shape, "Shape mismatch"
-        assert lhs.dtype == rhs.dtype, "Type mismatch"
+        assert (
+            lhs.shape == rhs.shape
+        ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
+        assert lhs.dtype == rhs.dtype, f"Type mismatch, got {lhs.dtype} and {rhs.dtype}"
         node.dtype = lhs.dtype
         node.shape = lhs.shape
         return node
