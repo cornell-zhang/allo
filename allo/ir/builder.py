@@ -207,9 +207,9 @@ class ASTTransformer(ASTBuilder):
                 "uint": RuntimeError,
             },
         }.get(type(node.op))
-        dtype = str(node.dtype)
+        dtype = str(node.dtype.build())
         # FIXME: workaround to get the type
-        if dtype.startswith("memref"):
+        if len(node.shape) > 0:
             new_args = [lhs.result, rhs.result]
             attr = {
                 ast.Add: "add",
@@ -217,7 +217,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_linalg_op(
-                ctx, node=None, op_name=attr, new_args=new_args
+                ctx, node=node, op_name=attr, new_args=new_args
             )
         if dtype.startswith("i"):
             op = opcls["int"]

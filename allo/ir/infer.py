@@ -111,7 +111,7 @@ class TypeInferer(ASTVisitor):
             rhs = visit_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, ast.Call):
+        if isinstance(rhs, ast.Call) or len(rhs.shape) > 0:
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
             if isinstance(node.targets[0], ast.Name):
