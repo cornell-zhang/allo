@@ -4,6 +4,7 @@
 import ast
 import inspect
 import textwrap
+import numpy as np
 
 from .utils import MockConstant
 from .visitor import ASTVisitor, ASTContext
@@ -123,6 +124,29 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def build_constant_tensor(ctx, node):
+        if isinstance(node.value, ast.Name):
+            values = ctx.global_vars[node.value.id]
+        elif isinstance(node.value, ast.List):
+            values = compile(ast.Expression(node.value), "", "eval")
+            # pylint: disable=eval-used
+            values = eval(values)
+        else:
+            raise RuntimeError("Unsupported type")
+        np_values = np.asarray(values)
+        if np.issubdtype(np_values.dtype, np.integer):
+            node.dtype = int32
+            np_values = np_values.astype(np.int32)
+        elif np.issubdtype(np_values.dtype, np.floating):
+            node.dtype = float32
+            np_values = np_values.astype(np.float32)
+        else:
+            raise RuntimeError("Unsupported constant tensor element type")
+        node.np_values = np_values
+        node.shape = np_values.shape
+        return node
+
+    @staticmethod
     def visit_AugAssign(ctx, node):
         # visit RHS
         rhs = visit_stmt(ctx, node.value)
@@ -150,8 +174,33 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        node.dtype, node.shape = TypeInferer.visit_type_hint(node.annotation, ctx)
+        target_dtype, target_shape = TypeInferer.visit_type_hint(node.annotation, ctx)
+        if node.value is not None:
+            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
+                rhs = ctx.buffers[node.value.id]
+                assert (
+                    rhs.dtype == target_dtype
+                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
+                assert (
+                    rhs.shape == target_shape
+                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
+            elif isinstance(node.value, (ast.List, ast.Name)):
+                rhs = TypeInferer.visit_constant_tensor(ctx, node)
+                assert (
+                    rhs.dtype == target_dtype
+                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
+                assert (
+                    rhs.shape == target_shape
+                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
+            elif isinstance(node.value, ast.Constant):
+                rhs = visit_stmt(ctx, node.value)
+            else:
+                raise RuntimeError("Unsupported data type")
+        else:
+            rhs = None
         ctx.buffers[node.target.id] = node
+        node.dtype = target_dtype
+        node.shape = target_shape
         return node
 
     @staticmethod
@@ -160,7 +209,11 @@ class TypeInferer(ASTVisitor):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx, enable_tensor=old_ctx.enable_tensor)
+            ctx = ASTContext(
+                global_vars=ctx.global_vars,
+                mlir_ctx=old_ctx.mlir_ctx,
+                enable_tensor=old_ctx.enable_tensor,
+            )
         else:
             old_ctx = None
         # Input types
@@ -232,9 +285,11 @@ class TypeInferer(ASTVisitor):
                 # element-wise operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
-            return TypeInferer.visit_linalg_op(
-                ctx, node=node, op_name=fn_name, new_args=new_args
-            )
+                return node
+            else:
+                return TypeInferer.visit_linalg_op(
+                    ctx, node=node, op_name=fn_name, new_args=new_args
+                )
 
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]

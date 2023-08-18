@@ -333,28 +333,11 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_constant_tensor(ctx, node):
-        if isinstance(node.value, ast.Name):
-            values = ctx.global_vars[node.value.id]
-        elif isinstance(node.value, ast.List):
-            values = compile(ast.Expression(node.value), "", "eval")
-            # pylint: disable=eval-used
-            values = eval(values)
-        else:
-            raise RuntimeError("Unsupported type")
-        np_values = np.asarray(values)
-        if np.issubdtype(np_values.dtype, np.integer):
-            dtype = IntegerType.get_signless(32)
-            np_values = np_values.astype(np.int32)
-        elif np.issubdtype(np_values.dtype, np.floating):
-            dtype = F32Type.get()
-            np_values = np_values.astype(np.float32)
-        else:
-            raise RuntimeError("Unsupported constant tensor element type")
-
+        np_values = node.np_values
         value_attr = DenseElementsAttr.get(np_values)
         sym_name = StringAttr.get(node.target.id)
         sym_visibility = StringAttr.get("private")
-        memref_type = MemRefType.get(np_values.shape, dtype)
+        memref_type = MemRefType.get(np_values.shape, node.dtype)
         type_attr = TypeAttr.get(memref_type)
         const_tensor = memref_d.GlobalOp(
             sym_name=sym_name,
@@ -508,8 +491,6 @@ class ASTTransformer(ASTBuilder):
                 memref_type = build_shaped_type(dtype, shape, False)
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        source_shape = ShapedType(rhs.result.type).shape
-                        assert shape == source_shape, "Shapes are not equal!"
                         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
