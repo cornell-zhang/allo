@@ -24,8 +24,8 @@ class AlloType:
 
 
 class Index(AlloType):
-    def __init__(self, name):
-        super().__init__(32, name)
+    def __init__(self):
+        super().__init__(32, "index")
 
     def build(self):
         return IndexType.get()
@@ -86,7 +86,7 @@ int8 = Int(8, "int8")
 int16 = Int(16, "int16")
 int32 = Int(32, "int32")
 int64 = Int(64, "int64")
-index = Index(32, "index")
+index = Index()
 float16 = Float(16, "float16")
 float32 = Float(32, "float32")
 float64 = Float(64, "float64")

@@ -51,11 +51,17 @@ from .utils import (
     MockScalar,
     MockConstant,
     MockBuffer,
-    get_extra_type_hints_from_str,
-    get_kwarg
+    get_extra_type_hints,
+    get_kwarg,
 )
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
+
+
+def build_shaped_type(dtype, shape, enable_tensor=False):
+    if not enable_tensor:
+        return MemRefType.get(shape, dtype.build())
+    return RankedTensorType.get(shape, dtype.build())
 
 
 class ASTBuilder(ASTVisitor):
@@ -569,48 +575,14 @@ class ASTTransformer(ASTBuilder):
         else:
             old_ctx = None
 
-        ip = ctx.get_ip()
-        input_types = []
-        input_typehints = []
         arg_names = []
 
-        def build_type(type_hint):
-            if isinstance(type_hint, ast.Subscript):
-                type_str = type_hint.value.id
-                if type_str in ctx.global_vars:
-                    type_str = str(ctx.global_vars[type_str])
-                # pylint: disable=redefined-builtin
-                slice = (
-                    type_hint.slice.value
-                    if isinstance(type_hint.slice, ast.Index)
-                    else type_hint.slice
-                )
-                elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-                shape = [
-                    x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                    for x in elts
-                ]
-                ele_type = get_mlir_type(type_str)
-                if not ctx.enable_tensor:
-                    data_type = MemRefType.get(shape, ele_type)
-                else:
-                    data_type = RankedTensorType.get(shape, ele_type)
-            elif isinstance(type_hint, ast.Name):
-                type_str = type_hint.id
-                ele_type = get_mlir_type(type_str)
-                if type_str in ctx.global_vars:
-                    type_str = str(ctx.global_vars[type_str])
-                data_type = get_mlir_type(type_str)
-            else:
-                raise RuntimeError("Unsupported function argument type")
-            extra_type_hint = get_extra_type_hints_from_str(type_str)
-            return data_type, extra_type_hint
-
         # Build input types
+        input_types = []
+        input_typehints = []
         for arg in node.args.args:
-            arg_type, extra_type_hint = build_type(arg.annotation)
-            input_types.append(arg_type)
-            input_typehints.append(extra_type_hint)
+            input_types.append(build_shaped_type(arg.dtype, arg.shape))
+            input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 
         # Build return type
@@ -620,14 +592,15 @@ class ASTTransformer(ASTBuilder):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            output_type, extra_type_hint = build_type(node.returns)
-            output_types.append(output_type)
-            output_typehints.append(extra_type_hint)
+            output_types.append(
+                build_shaped_type(node.returns.dtype, node.returns.shape)
+            )
+            output_typehints.append(get_extra_type_hints(node.returns.dtype))
 
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ip)
+        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         ctx.top_func = func_op
         for name, arg in zip(arg_names, func_op.arguments):

@@ -18,15 +18,13 @@ from hcl_mlir.dialects import (
     arith as arith_d,
 )
 from hcl_mlir import get_mlir_type
+from .types import AlloType
 
 
-def get_extra_type_hints_from_str(dtype):
-    """
-    dtype: Allo type
-    """
-    if dtype.startswith("int"):
+def get_extra_type_hints(dtype: AlloType):
+    if str(dtype).startswith("int"):
         return "s"
-    if dtype.startswith("uint"):
+    if str(dtype).startswith("uint"):
         return "u"
     return "_"
 

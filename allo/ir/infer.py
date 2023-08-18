@@ -83,6 +83,7 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Name):
             return ctx.buffers[node.id]
         raise RuntimeError("Unsupported store")
+
     @staticmethod
     def visit_Assign(ctx, node):
         pass
@@ -129,7 +130,9 @@ class TypeInferer(ASTVisitor):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            node.dtype, node.shape = TypeInferer.visit_type_hint(node.returns, ctx)
+            node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
+                node.returns, ctx
+            )
             ctx.buffers[node.name] = node
 
         visit_stmts(ctx, node.body)
