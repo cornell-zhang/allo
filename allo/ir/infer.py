@@ -2,23 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ast
+from .utils import MockConstant
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 
 
-class Visitor:
-    def __call__(self, ctx, node):
-        method = getattr(self, "visit_" + node.__class__.__name__, None)
-        if method is None:
-            error_msg = f'Unsupported node "{node.__class__.__name__}"'
-            raise RuntimeError(error_msg)
-        return method(ctx, node)
-
-
-def print_node(node):
-    print(node.__class__.__name__, node.dtype, node.shape)
-
-
-class TypeInferer(Visitor):
+class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_type_hint(node, ctx):
         if isinstance(node, ast.Subscript):
@@ -42,7 +31,7 @@ class TypeInferer(Visitor):
         if node.id in ctx.buffers:
             return ctx.buffers[node.id]
         if node.id in ctx.global_vars:
-            return ctx.global_vars[node.id]
+            return MockConstant(ctx.global_vars[node.id], ctx)
         raise RuntimeError("Unsupported Name")
 
     @staticmethod

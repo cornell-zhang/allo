@@ -46,28 +46,19 @@ from hcl_mlir.dialects import (
 )
 from hcl_mlir import get_mlir_type
 from .transform import build_for_loops
+from .utils import (
+    MockArg,
+    MockScalar,
+    MockConstant,
+    MockBuffer,
+    get_extra_type_hints_from_str,
+    get_kwarg
+)
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 
 
-def get_extra_type_hints_from_str(dtype):
-    """
-    dtype: Allo type
-    """
-    if dtype.startswith("int"):
-        return "s"
-    if dtype.startswith("uint"):
-        return "u"
-    return "_"
-
-
-def get_kwarg(kwargs, name):
-    for keyword in kwargs:
-        if keyword.arg == name:
-            return keyword.value
-    raise RuntimeError(f"Keyword argument {name} not found")
-
-
-class Builder:
+class ASTBuilder(ASTVisitor):
     def __call__(self, ctx, node):
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
@@ -78,119 +69,7 @@ class Builder:
             return res
 
 
-class LoopScopeGuard:
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.ctx.loop_band_count += 1
-
-
-class ASTContext:
-    def __init__(self, global_vars, mlir_ctx, enable_tensor=False):
-        self.ip_stack = []
-        self.buffers = {}
-        self.top_func = None
-        self.global_vars = global_vars
-        self.mlir_ctx = mlir_ctx
-        hcl_d.register_dialect(mlir_ctx)
-        # map from function name to function arguments
-        self.func_args = {}
-        # used to avoid loop band naming conflict
-        self.loop_band_count = 0
-        # used for AffineExpr dim counting
-        self.dim_count = 0
-        self.unnamed_linalg_op_count = 0
-        self.affine_vars = []
-        self.enable_tensor = enable_tensor
-
-    def set_ip(self, ip):
-        if not isinstance(ip, InsertionPoint):
-            ip = InsertionPoint(ip)
-        self.ip_stack.append(ip)
-
-    def get_ip(self):
-        return self.ip_stack[-1]
-
-    def pop_ip(self):
-        return self.ip_stack.pop()
-
-    def loop_scope_guard(self):
-        return LoopScopeGuard(self)
-
-
-class MockOp:
-    def __init__(self):
-        pass
-
-
-class MockArg(MockOp):
-    def __init__(self, val):
-        self.val = val
-
-    @property
-    def result(self):
-        return self.val
-
-
-class MockBuffer(MockOp):
-    def __init__(self, path, op=None):
-        self.path = path
-        # Normally we do not use this attribute to avoid possible context conflicts
-        # only when we need to access the op directly, we set this attribute (e.g., compose)
-        self.op = op
-
-    def __repr__(self):
-        return f"MockBuffer({self.path})"
-
-
-class MockConstant(MockOp):
-    def __init__(self, val, ctx):
-        self.val = val
-        self.ctx = ctx
-
-    @property
-    def result(self):
-        # TODO: Support other types
-        if isinstance(self.val, int):
-            dtype = IntegerType.get_signless(32)
-            value_attr = IntegerAttr.get(dtype, self.val)
-        else:
-            dtype = F32Type.get()
-            value_attr = FloatAttr.get(dtype, self.val)
-        # pylint: disable=too-many-function-args
-        const_op = arith_d.ConstantOp(dtype, value_attr, ip=self.ctx.get_ip())
-        return const_op.result
-
-
-class MockScalar(MockOp):
-    def __init__(self, name, dtype, ctx):
-        self.name = name
-        self.ctx = ctx
-        shape = (1,)
-        ele_type = get_mlir_type(dtype)
-        memref_type = MemRefType.get(shape, ele_type)
-        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-        alloc_op.attributes["name"] = StringAttr.get(name)
-        self.op = alloc_op
-
-    @property
-    def result(self):
-        affine_map = AffineMap.get(
-            dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-        )
-        affine_attr = AffineMapAttr.get(affine_map)
-        load = affine_d.AffineLoadOp(
-            self.op.result, [], affine_attr, ip=self.ctx.get_ip()
-        )
-        load.attributes["from"] = StringAttr.get(self.name)
-        return load.result
-
-
-class ASTTransformer(Builder):
+class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
         if node.id in ctx.buffers:

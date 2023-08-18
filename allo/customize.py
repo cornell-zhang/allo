@@ -29,7 +29,9 @@ from hcl_mlir.exceptions import (
     HCLValueError,
 )
 
-from .ir.builder import ASTTransformer, ASTContext, MockArg, MockBuffer
+from .ir.visitor import ASTContext
+from .ir.utils import MockArg, MockBuffer
+from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .build_module import _mlir_lower_pipeline, lower_linalg_and_attach_names
