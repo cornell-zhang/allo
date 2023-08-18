@@ -900,9 +900,12 @@ class ASTTransformer(Builder):
 
     @staticmethod
     def build_Call(ctx, node):
-        if isinstance(node.func, ast.Name):
-            # pylint: disable=no-else-return
-            # Builtin functions
+        obj = ASTResolver.resolve(node.func, ctx.global_vars)
+        if obj is None:
+            # Python-Builtin functions
+            assert (
+                len(node.args) == 1
+            ), "Only support one argument for `float` and `int`"
             if node.func.id == "float":
                 if node.args[0].id in ctx.global_vars:
                     return MockConstant(float(ctx.global_vars[node.args[0].id]), ctx)
@@ -912,89 +915,84 @@ class ASTTransformer(Builder):
                     ctx.buffers[node.args[0].id].result,
                     ip=ctx.get_ip(),
                 )
-            elif node.func.id == "int":
+            if node.func.id == "int":
                 return MockConstant(int(ctx.global_vars[node.args[0].id]), ctx)
-            # User-defined functions
-            else:
-                # Build subfunction
-                func = ctx.global_vars[node.func.id]
-                if isinstance(func, func_d.FuncOp):
-                    # Has already been defined in the top-level scope
-                    stmts = [func]
-                else:
-                    src, _ = inspect.getsourcelines(func)
-                    src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-                    src = textwrap.dedent("\n".join(src))
-                    tree = ast.parse(src)
-                    # Create a new context to avoid name collision
-                    func_ctx = ASTContext(
-                        global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx
-                    )
-                    func_ctx.set_ip(ctx.top_func)
-                    stmts = build_stmts(func_ctx, tree.body)
-                    func_ctx.pop_ip()
-                    # Attach buffers to function
-                    # FIXME: Should create subschedule
-                    for name, buffer in func_ctx.buffers.items():
-                        if isinstance(buffer, (memref_d.AllocOp, MockArg)):
-                            # Intermediate buffers and function arguments
-                            setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
-                # Build call function in the top-level
-                new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-                call_op = func_d.CallOp(
-                    stmts[-1].type.results,
-                    FlatSymbolRefAttr.get(node.func.id),
-                    new_args,
-                    ip=ctx.get_ip(),
+            raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+
+        if obj.__module__.startswith("allo"):
+            # Allo library functions
+            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+            fn_name = obj.__name__
+            if isinstance(new_args[0].type, (F32Type, IntegerType)):
+                opcls = {
+                    "exp": math_d.ExpOp,
+                    "log": math_d.LogOp,
+                    "log2": math_d.Log2Op,
+                    "log10": math_d.Log10Op,
+                    "sqrt": math_d.SqrtOp,
+                    "sin": math_d.SinOp,
+                    "cos": math_d.CosOp,
+                    "tan": math_d.TanOp,
+                    "tanh": math_d.TanhOp,
+                    "power": math_d.PowFOp,
+                }.get(fn_name)
+                return opcls(*new_args, ip=ctx.get_ip())
+            if isinstance(
+                new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+            ) and fn_name in {
+                "matmul",
+                "bmm",
+                "softmax",
+                "exp",
+                "abs",
+                "log",
+                "add",
+                "sub",
+                "div",
+            }:
+                return ASTTransformer.build_linalg_op(
+                    ctx, node=node, op_name=fn_name, new_args=new_args
                 )
-                return call_op
-        if node.func.value.id != "allo":
-            raise RuntimeError("Only support allo functions for now")
-        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
-        if isinstance(new_args[0].type, (F32Type, IntegerType)):
-            opcls = {
-                "exp": math_d.ExpOp,
-                "log": math_d.LogOp,
-                "log2": math_d.Log2Op,
-                "log10": math_d.Log10Op,
-                "sqrt": math_d.SqrtOp,
-                "sin": math_d.SinOp,
-                "cos": math_d.CosOp,
-                "tan": math_d.TanOp,
-                "tanh": math_d.TanhOp,
-                "power": math_d.PowFOp,
-            }.get(node.func.attr)
-            return opcls(*new_args, ip=ctx.get_ip())
-        # TODO: Matrix arithmetic requires overloading.
-        if isinstance(
-            new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
-        ) and node.func.attr in {
-            "matmul",
-            "bmm",
-            "softmax",
-            "exp",
-            "abs",
-            "log",
-            "add",
-            "sub",
-            "div",
-        }:
-            return ASTTransformer.build_linalg_op(
-                ctx, node=node, op_name=None, new_args=new_args
+            raise RuntimeError(
+                f"Unsupported function {fn_name} with type {new_args[0].type}"
             )
-        raise RuntimeError(
-            f"Unsupported function {node.func.attr} with type {new_args[0].type}"
+
+        # User-defined subfunction
+        func = ctx.global_vars[node.func.id]
+        if isinstance(func, func_d.FuncOp):
+            # Has already been defined in the top-level scope
+            stmts = [func]
+        else:
+            src, _ = inspect.getsourcelines(func)
+            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
+            src = textwrap.dedent("\n".join(src))
+            tree = ast.parse(src)
+            # Create a new context to avoid name collision
+            func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)
+            func_ctx.set_ip(ctx.top_func)
+            stmts = build_stmts(func_ctx, tree.body)
+            func_ctx.pop_ip()
+            # Attach buffers to function
+            # FIXME: Should create subschedule
+            for name, buffer in func_ctx.buffers.items():
+                if isinstance(buffer, (memref_d.AllocOp, MockArg)):
+                    # Intermediate buffers and function arguments
+                    setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
+        # Build call function in the top-level
+        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+        call_op = func_d.CallOp(
+            stmts[-1].type.results,
+            FlatSymbolRefAttr.get(node.func.id),
+            new_args,
+            ip=ctx.get_ip(),
         )
+        return call_op
 
     @staticmethod
     def build_linalg_op(ctx, node, op_name, new_args):
         # +-/ and allo.add() are all supported
-        if node is not None:
-            attr = node.func.attr
-        elif op_name is not None:
-            attr = op_name
-        else:
-            raise RuntimeError("No attribute provided")
+        assert op_name is not None and op_name != ""
+        attr = op_name
         ip = ctx.get_ip()
         if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
             dtype = ShapedType(new_args[0].type).element_type
@@ -1100,10 +1098,6 @@ class ASTTransformer(Builder):
             if hasattr(node, "keywords") and len(node.keywords) > 0:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
                     f"{node.keywords[0].value.value}_init_zero"
-                )
-            elif node is not None:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.func.attr}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
             else:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(

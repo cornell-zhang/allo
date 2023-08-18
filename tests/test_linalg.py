@@ -14,15 +14,36 @@ def test_linalg_matmul():
     np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
     np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
 
-    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        C = allo.matmul(A, B)
-        return C
+    # Test different ways to call matmul in order to make sure
+    # the symbol resolver works correctly.
+    from allo import matmul
 
-    s = allo.customize(kernel, verbose=True)
+    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return matmul(A, B)
+
+    s = allo.customize(kernel)
     f = s.build()
     np_out = kernel(np_0, np_1)
     allo_out = f(np_0, np_1)
     np.testing.assert_array_equal(allo_out, np_out)
+    print(s.module)
+
+    def kernel2(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.matmul(A, B)
+
+    s = allo.customize(kernel2)
+    print(s.module)
+
+    def kernel3(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.matmul_error(A, B)
+
+    with pytest.raises(AssertionError):
+        s = allo.customize(kernel3)
+
+    def kernel4(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.dsl.matmul(A, B)
+
+    s = allo.customize(kernel4)
     print(s.module)
 
 
@@ -191,11 +212,4 @@ def test_linalg_softmax():
 
 
 if __name__ == "__main__":
-    test_linalg_matmul()
-    test_linalg_matmul_only2D()
-    test_linalg_matmul_nested()
-    test_linalg_batch_matmul()
-    test_linalg_batch_matmul_only3D()
-    test_linalg_batch_matmul_nested()
-    test_linalg_math()
-    test_linalg_softmax()
+    pytest.main([__file__])

@@ -49,6 +49,10 @@ def getsourcelines(obj):
 def _get_global_vars(_func):
     global_vars = {}
 
+    # Get global import
+    for name, var in inspect.stack()[-1][0].f_locals.items():
+        global_vars[name] = var
+
     # Get back to the outer-most scope (user-defined function)
     for name, var in inspect.stack()[2][0].f_locals.items():
         if isinstance(var, (int, float)) or inspect.isfunction(var):
