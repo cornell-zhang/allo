@@ -501,11 +501,12 @@ class ASTTransformer(Builder):
             type_=type_attr,
             sym_visibility=sym_visibility,
             initial_value=value_attr,
-            constant=True,
+            # TODO: Use dataflow analysis to determine whether some store ops
+            #       are operated on this tensor
+            constant=False,
             alignment=None,
             ip=InsertionPoint(ctx.top_func),
         )
-        const_tensor.attributes["constant"] = UnitAttr.get()
         return const_tensor
 
     @staticmethod
