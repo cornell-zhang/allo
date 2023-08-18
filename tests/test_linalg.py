@@ -197,18 +197,17 @@ def test_linalg_math():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-# TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
 def test_linalg_softmax():
+    # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
     M = 10
     K = 15
-    A = np.float32(np.random.uniform(size=(M, K)))
 
     def kernel(A: float32[M, K]) -> float32[M, K]:
         outs = allo.softmax(A)
         return outs
 
     with pytest.raises(AttributeError):
-        s = allo.customize(kernel)
+        allo.customize(kernel)
 
 
 if __name__ == "__main__":
