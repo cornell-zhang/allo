@@ -31,7 +31,7 @@ from hcl_mlir.exceptions import (
 
 from .ir.builder import ASTTransformer, ASTContext, MockArg, MockBuffer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
-from .build_module import _mlir_lower_pipeline
+from .build_module import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .module import LLVMModule, HLSModule
 
 
@@ -484,7 +484,7 @@ class Schedule:
         raise NotImplementedError(f"Target {target} is not supported")
 
 
-def customize(fn, verbose=False, enable_tensor=False):
+def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
     # Get Python AST
     src, _ = getsourcelines(fn)
     src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
@@ -503,6 +503,9 @@ def customize(fn, verbose=False, enable_tensor=False):
     ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
     ctx.enable_tensor = enable_tensor
     module = ASTTransformer()(ctx, tree)
+    if lower_linalg:
+        lower_linalg_and_attach_names(module)
+
     sch = Schedule(
         module,
         ctx.top_func,

@@ -113,27 +113,52 @@ def test_linalg_batch_matmul_only3D():
 
 
 def test_linalg_batch_matmul_nested():
-    M = 10
-    K = 20
-    N = 25
+    M = 16
+    K = 32
+    N = 64
     A = np.random.randint(0, 20, size=(M, N, K), dtype="int32")
     B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
 
-    def kernel(A: int32[M, N, K], B: int32[M, K, N]) -> int32[M, N, K]:
+    def bmm(A: int32[M, N, K], B: int32[M, K, N]) -> int32[M, N, K]:
         C: int32[M, N, K]
         for i, j, k in allo.grid(M, N, K):
             C[i, j, k] = A[i, j, k] + 1
-        D = allo.bmm(allo.bmm(A, B), C)
+        D = allo.bmm(allo.bmm(A, B, name="bmm1"), C, name="bmm2")
         return D
 
-    s = allo.customize(kernel)
-    print(s.module)
+    def top(A: int32[M, N, K], B: int32[M, K, N]) -> int32[M, N, K]:
+        D = bmm(A, B)
+        outputs = allo.bmm(allo.bmm(A, B, name="bmm3"), D, name="bmm4")
+        return outputs
+
+    s1 = allo.customize(bmm, lower_linalg=True)
+    print(s1.module)
+
+    loops = s1.get_loops()
+    s1.split(loops.bmm1.L_0, 8)
+    print(s1.module)
+
+    loops = s1.get_loops()
+    s1.reorder(loops.bmm1["L_0.outer"], loops.bmm1.L_1, loops.bmm1["L_0.inner"])
+    s1.unroll(loops.bmm2.L_2)
+    s1.fuse(loops.bmm1["L_0.outer"], loops.bmm1.L_1)
+    print(s1.module)
+
+    # Top-level
+    s = allo.customize(top, lower_linalg=True)
+    s.compose(s1)
+    loops_ = s.get_loops()
+    s.pipeline(loops_.bmm4.L_0)
     f = s.build()
+    print(s.module)
+    print(s.build("vhls"))
+
     outs = np.zeros((M, N, K), dtype="int32")
     outs = f(A, B)
     out_1 = np.einsum("ijk,ikn->ijn", A, B)
     out_2 = np.einsum("ijk,ikn->ijn", out_1, (A + 1))
-    np.testing.assert_allclose(outs, out_2, atol=1e-4)
+    out_3 = np.einsum("ijk,ikn->ijn", out_1, out_2)
+    np.testing.assert_allclose(outs, out_3, atol=1e-4)
 
 
 def test_linalg_math():
@@ -144,7 +169,7 @@ def test_linalg_math():
 
     def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
         D = allo.matmul(A, B)
-        C = (allo.exp(D) + allo.abs(D) - allo.log(D)) / D
+        C = (allo.add(allo.exp(D), allo.abs(D)) - allo.log(D)) / D
         return C
 
     s = allo.customize(kernel)
@@ -167,10 +192,8 @@ def test_linalg_softmax():
         outs = allo.softmax(A)
         return outs
 
-    s = allo.customize(kernel)
-    print(s.module)
-    with pytest.raises(RuntimeError):
-        f = s.build()
+    with pytest.raises(AttributeError):
+        s = allo.customize(kernel)
 
 
 if __name__ == "__main__":

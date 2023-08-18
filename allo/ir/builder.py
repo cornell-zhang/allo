@@ -102,6 +102,7 @@ class ASTContext:
         self.loop_band_count = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
+        self.unnamed_linalg_op_count = 0
         self.affine_vars = []
         self.enable_tensor = False
 
@@ -354,7 +355,9 @@ class ASTTransformer(Builder):
                 ast.Sub: "sub",
                 ast.Div: "div",
             }.get(type(node.op))
-            return ASTTransformer.build_linalgOp(ctx, attr, new_args)
+            return ASTTransformer.build_linalg_op(
+                ctx, node=None, op_name=attr, new_args=new_args
+            )
         if dtype.startswith("i"):
             op = opcls["int"]
         elif dtype.startswith("fixed"):
@@ -974,13 +977,22 @@ class ASTTransformer(Builder):
             "sub",
             "div",
         }:
-            return ASTTransformer.build_linalgOp(ctx, node.func.attr, new_args)
+            return ASTTransformer.build_linalg_op(
+                ctx, node=node, op_name=None, new_args=new_args
+            )
         raise RuntimeError(
             f"Unsupported function {node.func.attr} with type {new_args[0].type}"
         )
 
     @staticmethod
-    def build_linalgOp(ctx, attr, new_args):
+    def build_linalg_op(ctx, node, op_name, new_args):
+        # +-/ and allo.add() are all supported
+        if node is not None:
+            attr = node.func.attr
+        elif op_name is not None:
+            attr = op_name
+        else:
+            raise RuntimeError("No attribute provided")
         ip = ctx.get_ip()
         if attr in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
             dtype = ShapedType(new_args[0].type).element_type
@@ -1026,9 +1038,11 @@ class ASTTransformer(Builder):
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
                 alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
-            ASTTransformer.build_init_zero(ctx, alloc_op, dtype)
+            ASTTransformer.build_init_zero(
+                ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
+            )
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
-                {
+                op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
@@ -1036,16 +1050,14 @@ class ASTTransformer(Builder):
                     "div": linalg_d.div,
                 }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
             elif attr in {"exp", "log", "abs"}:
-                {
+                op = {
                     "exp": linalg_d.exp,
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
-                }.get(
-                    attr
-                )(new_args[0], outs=[alloc_op])
+                }.get(attr)(new_args[0], outs=[alloc_op])
             # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
             elif attr == "softmax":
-                linalg_d.SoftmaxOp(
+                op = linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
                     result=[],
@@ -1053,10 +1065,19 @@ class ASTTransformer(Builder):
                 )
             else:
                 raise RuntimeError("Unsupported operation")
+            if hasattr(node, "keywords") and len(node.keywords) > 0:
+                op.owner.attributes["op_name"] = StringAttr.get(
+                    node.keywords[0].value.value
+                )
+            else:
+                op.owner.attributes["op_name"] = StringAttr.get(
+                    f"{attr}_{ctx.unnamed_linalg_op_count}"
+                )
+                ctx.unnamed_linalg_op_count += 1
         return alloc_op
 
     @staticmethod
-    def build_init_zero(ctx, init_op, dtype):
+    def build_init_zero(ctx, node, op_name, init_op, dtype):
         # initialize data op
         with ctx.get_ip():
             if str(dtype) == "i32":
@@ -1072,7 +1093,20 @@ class ASTTransformer(Builder):
             else:
                 raise RuntimeError("Unsupported data type")
             # pylint: disable=unexpected-keyword-arg
-            linalg_d.fill(zero, outs=[init_op.result])
+            linalg_fill = linalg_d.fill(zero, outs=[init_op.result])
+            # add op name for init_zero
+            if hasattr(node, "keywords") and len(node.keywords) > 0:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{node.keywords[0].value.value}_init_zero"
+                )
+            elif node is not None:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{node.func.attr}_init_zero_{ctx.unnamed_linalg_op_count}"
+                )
+            else:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
+                )
 
     @staticmethod
     def build_Return(ctx, node):
