@@ -507,14 +507,14 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
     )
-    TypeInferer()(ctx_type_inf, tree)
+    tree = TypeInferer()(ctx_type_inf, tree)
     # Start building IR
-    ctx_ir_builder = ASTContext(
+    ctx = ASTContext(
         global_vars=_get_global_vars(fn),
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
     )
-    module = ASTTransformer()(ctx_ir_builder, tree)
+    module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
 

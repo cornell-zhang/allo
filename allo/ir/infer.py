@@ -14,6 +14,10 @@ class Visitor:
         return method(ctx, node)
 
 
+def print_node(node):
+    print(node.__class__.__name__, node.dtype, node.shape)
+
+
 class TypeInferer(Visitor):
     @staticmethod
     def visit_type_hint(node, ctx):
@@ -35,42 +39,43 @@ class TypeInferer(Visitor):
 
     @staticmethod
     def visit_Name(ctx, node):
-        pass
+        if node.id in ctx.buffers:
+            return ctx.buffers[node.id]
+        if node.id in ctx.global_vars:
+            return ctx.global_vars[node.id]
+        raise RuntimeError("Unsupported Name")
 
     @staticmethod
     def visit_Constant(ctx, node):
         pass
 
     @staticmethod
-    def visit_range_for(ctx, node):
-        pass
-
-    @staticmethod
-    def visit_grid_for(ctx, node):
-        pass
+    def visit_all_for(ctx, node):
+        return visit_stmts(ctx, node.body)
 
     @staticmethod
     def visit_For(ctx, node):
         if node.orelse:
             raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
         with ctx.loop_scope_guard():
-            if (
-                isinstance(node.iter, ast.Call)
-                and isinstance(node.iter.func, ast.Name)
-                and node.iter.func.id == "range"
-            ):
-                return TypeInferer.visit_range_for(ctx, node)
-            if (
-                isinstance(node.iter, ast.Call)
-                and isinstance(node.iter.func, ast.Attribute)
-                and (node.iter.func.attr in {"grid", "reduction"})
-            ):
-                return TypeInferer.visit_grid_for(ctx, node)
+            if isinstance(node.iter, ast.Call):
+                obj = ASTResolver.resolve(node.iter.func, ctx.global_vars)
+                if (
+                    obj is None
+                    and isinstance(node.iter.func, ast.Name)
+                    and node.iter.func.id == "range"
+                ) or (obj is not None and obj.__name__ in {"grid", "reduction"}):
+                    return TypeInferer.visit_all_for(ctx, node)
             raise RuntimeError("Unsupported for loop")
 
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
-        pass
+        # TODO: Add type casting
+        assert lhs.shape == rhs.shape, "Shape mismatch"
+        assert lhs.dtype == rhs.dtype, "Type mismatch"
+        node.dtype = lhs.dtype
+        node.shape = lhs.shape
+        return node
 
     @staticmethod
     def visit_UnaryOp(ctx, node):
@@ -78,23 +83,50 @@ class TypeInferer(Visitor):
 
     @staticmethod
     def visit_BinOp(ctx, node):
-        pass
+        lhs = visit_stmt(ctx, node.left)
+        rhs = visit_stmt(ctx, node.right)
+        return TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
 
+    @staticmethod
+    def visit_store(ctx, node, val):
+        if isinstance(node, ast.Subscript):
+            return ctx.buffers[node.value.id]
+        if isinstance(node, ast.Name):
+            return ctx.buffers[node.id]
+        raise RuntimeError("Unsupported store")
     @staticmethod
     def visit_Assign(ctx, node):
         pass
 
     @staticmethod
     def visit_AugAssign(ctx, node):
-        pass
+        # visit RHS
+        rhs = visit_stmt(ctx, node.value)
+        # load LHS
+        if isinstance(node.target, ast.Subscript):
+            lhs = visit_stmt(ctx, node.target)
+        elif isinstance(node.target, ast.Name):  # scalar
+            lhs = ctx.buffers[node.target.id]
+        else:
+            raise RuntimeError("Unsupported AugAssign")
+        # augment LHS
+        res = TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
+        # store LHS
+        TypeInferer.visit_store(ctx, node.target, res)
+        return node
 
     @staticmethod
     def visit_Subscript(ctx, node):
-        pass
+        # TODO: Suppose only load a single element, this is not true if tensor slicing is added
+        node.shape = []
+        node.dtype = ctx.buffers[node.value.id].dtype
+        return node
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        pass
+        node.dtype, node.shape = TypeInferer.visit_type_hint(node.annotation, ctx)
+        ctx.buffers[node.target.id] = node
+        return node
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
@@ -112,6 +144,7 @@ class TypeInferer(Visitor):
             ctx.buffers[node.name] = node
 
         visit_stmts(ctx, node.body)
+        return node
 
     @staticmethod
     def visit_Compare(ctx, node, is_affine=False):
@@ -125,18 +158,23 @@ class TypeInferer(Visitor):
     def visit_Module(ctx, node):
         for stmt in node.body:
             visit_stmt(ctx, stmt)
+        return node
 
     @staticmethod
     def visit_Return(ctx, node):
-        ret = visit_stmt(ctx, node.value)
+        res = visit_stmt(ctx, node.value)
+        node.dtype = res.dtype
+        node.shape = res.shape
+        return node
 
     @staticmethod
     def visit_Expr(ctx, node):
-        return visit_stmt(ctx, node.value)
+        visit_stmt(ctx, node.value)
+        return node
 
     @staticmethod
     def visit_Pass(ctx, node):
-        return None
+        pass
 
 
 visit_stmt = TypeInferer()
