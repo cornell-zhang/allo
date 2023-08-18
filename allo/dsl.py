@@ -4,11 +4,11 @@
 import numpy as np
 
 
-def grid(*args):
+def grid(*args, name=""):
     return np.ndindex(*args)
 
 
-def reduction(*args):
+def reduction(*args, name=""):
     return np.ndindex(*args)
 
 

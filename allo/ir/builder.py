@@ -204,32 +204,7 @@ class ASTTransformer(Builder):
         return MockConstant(node.value, ctx)
 
     @staticmethod
-    def build_range_for(ctx, node):
-        ip = ctx.get_ip()
-        grid = [
-            x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-            for x in node.iter.args
-        ]
-        names = [node.target.id]
-        # avoid name conflicts
-        names += [str(ctx.loop_band_count)]
-        for_loops = build_for_loops(grid, ip, names)
-        ivs = [loop.induction_variable for loop in for_loops]
-        for name, iv in zip(names, ivs):
-            ctx.buffers[name] = MockArg(iv)
-        ctx.set_ip(for_loops[-1].body.operations[0])
-        build_stmts(ctx, node.body)
-        # Remove loop variables
-        for name, iv in zip(names, ivs):
-            ctx.buffers.pop(name)
-        for_loops = None
-        # Not sure why the for loops will not be collected if we do not call gc.collect()
-        gc.collect()
-        ctx.pop_ip()
-
-    @staticmethod
-    def build_grid_for(ctx, node):
-        ip = ctx.get_ip()
+    def build_all_for(ctx, node):
         grid = [
             x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
             for x in node.iter.args
@@ -246,13 +221,16 @@ class ASTTransformer(Builder):
             stage_name = None
         else:
             stage_name = get_kwarg(node.iter.keywords, "name").value
-        for_loops = build_for_loops(grid, ip, names, stage_name)
+        for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
         build_stmts(ctx, node.body)
-        if node.iter.func.attr == "reduction":
+        if (
+            isinstance(node.iter.func, ast.Attribute)
+            and node.iter.func.attr == "reduction"
+        ):
             for loop in for_loops:
                 loop.attributes["reduction"] = UnitAttr.get()
         # Remove loop variables
@@ -268,18 +246,14 @@ class ASTTransformer(Builder):
         if node.orelse:
             raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
         with ctx.loop_scope_guard():
-            if (
-                isinstance(node.iter, ast.Call)
-                and isinstance(node.iter.func, ast.Name)
-                and node.iter.func.id == "range"
-            ):
-                return ASTTransformer.build_range_for(ctx, node)
-            if (
-                isinstance(node.iter, ast.Call)
-                and isinstance(node.iter.func, ast.Attribute)
-                and (node.iter.func.attr in {"grid", "reduction"})
-            ):
-                return ASTTransformer.build_grid_for(ctx, node)
+            if isinstance(node.iter, ast.Call):
+                obj = ASTResolver.resolve(node.iter.func, ctx.global_vars)
+                if (
+                    obj is None
+                    and isinstance(node.iter.func, ast.Name)
+                    and node.iter.func.id == "range"
+                ) or (obj is not None and obj.__name__ in {"grid", "reduction"}):
+                    return ASTTransformer.build_all_for(ctx, node)
             raise RuntimeError("Unsupported for loop")
 
     @staticmethod
