@@ -44,7 +44,6 @@ from hcl_mlir.dialects import (
     math as math_d,
     linalg as linalg_d,
 )
-from hcl_mlir import get_mlir_type
 from .transform import build_for_loops
 from .utils import (
     MockArg,

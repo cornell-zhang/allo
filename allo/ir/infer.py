@@ -5,6 +5,7 @@ import ast
 from .utils import MockConstant
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
+from .types import int32, float32
 
 
 class TypeInferer(ASTVisitor):
@@ -36,7 +37,12 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Constant(ctx, node):
-        pass
+        node.shape = []
+        if isinstance(node.value, int):
+            node.dtype = int32
+        if isinstance(node.value, float):
+            node.dtype = float32
+        return node
 
     @staticmethod
     def visit_all_for(ctx, node):
@@ -68,7 +74,12 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_UnaryOp(ctx, node):
-        pass
+        node.shape = []
+        if isinstance(node.operand.dtype, int):
+            node.dtype = int32
+        if isinstance(node.operand.dtype, float):
+            node.dtype = float32
+        return node
 
     @staticmethod
     def visit_BinOp(ctx, node):
@@ -86,7 +97,16 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Assign(ctx, node):
-        pass
+        # Compute RHS
+        if isinstance(node.value, ast.Name):  # scalar
+            rhs = ctx.buffers[node.value.id]
+        else:
+            rhs = visit_stmt(ctx, node.value)
+        # store LHS
+        lhs = TypeInferer.visit_store(ctx, node.targets[0], rhs)
+        node.dtype = lhs.dtype
+        node.shape = lhs.shape
+        return node
 
     @staticmethod
     def visit_AugAssign(ctx, node):
@@ -102,7 +122,9 @@ class TypeInferer(ASTVisitor):
         # augment LHS
         res = TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
         # store LHS
-        TypeInferer.visit_store(ctx, node.target, res)
+        lhs = TypeInferer.visit_store(ctx, node.target, res)
+        node.dtype = lhs.dtype
+        node.shape = lhs.shape
         return node
 
     @staticmethod
