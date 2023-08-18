@@ -91,6 +91,9 @@ class LLVMModule:
         """
         input_types = self.top_func_type.inputs
         new_args = []
+        assert len(args) == len(
+            input_types
+        ), f"# of input arguments mismatch, got {len(args)} but expected {len(input_types)}"
         for arg, in_type in zip(args, input_types):
             if not isinstance(arg, np.ndarray):
                 if isinstance(arg, int):

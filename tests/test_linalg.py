@@ -1,9 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int1, int32, float32, index
+from allo.ir.types import int32, float32
 
 
 def test_linalg_matmul():
@@ -13,15 +14,36 @@ def test_linalg_matmul():
     np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
     np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
 
+    # Test different ways to call matmul in order to make sure
+    # the symbol resolver works correctly.
+    from allo import matmul
+
     def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        C = allo.matmul(A, B)
-        return C
+        return matmul(A, B)
 
     s = allo.customize(kernel)
     f = s.build()
-    np_2 = np.zeros((M, N), dtype="int32")
-    np_2 = f(np_0, np_1)
-    np.testing.assert_array_equal(np_2, np.matmul(np_0, np_1))
+    np_out = kernel(np_0, np_1)
+    allo_out = f(np_0, np_1)
+    np.testing.assert_array_equal(allo_out, np_out)
+    print(s.module)
+
+    def kernel2(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.matmul(A, B)
+
+    s = allo.customize(kernel2)
+    print(s.module)
+
+    def kernel3(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.matmul_error(A, B)
+
+    with pytest.raises(AssertionError):
+        s = allo.customize(kernel3)
+
+    def kernel4(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        return allo.dsl.matmul(A, B)
+
+    s = allo.customize(kernel4)
     print(s.module)
 
 
@@ -43,15 +65,16 @@ def test_linalg_matmul_nested():
     K = 15
     A = np.random.uniform(size=(M, K))
     B = np.random.uniform(size=(K, M))
+    C = np.zeros((M, K), dtype="float32")
 
     def kernel() -> float32[M, K]:
         A1: float32[M, K] = A
         B1: float32[K, M] = B
-        C: float32[M, K]
+        C1: float32[M, K] = C
         D = allo.matmul(allo.matmul(A1, B1), A1)
         # GeLU of matrix D
         for i, j in allo.grid(M, K):
-            C[i, j] = (
+            C1[i, j] = (
                 0.5
                 * D[i, j]
                 * (
@@ -62,19 +85,13 @@ def test_linalg_matmul_nested():
                     )
                 )
             )
-        return C
+        return C1
 
     s = allo.customize(kernel)
     print(s.module)
     f = s.build()
-    outs = np.zeros((M, K), dtype="float32")
-    outs = f(A, B, A)
-    np_D = np.matmul(np.matmul(A, B), A)
-    np_GeLU = (
-        0.5
-        * np_D
-        * (1 + np.tanh(np.sqrt(2 / np.pi) * (np_D + 0.044715 * np.power(np_D, 3))))
-    )
+    outs = f()
+    np_GeLU = kernel()
     np.testing.assert_allclose(outs, np_GeLU, atol=1e-4)
 
 
@@ -95,7 +112,7 @@ def test_linalg_batch_matmul():
 
     outs = np.zeros((M, M, N), dtype="float32")
     outs = f(A, B)
-    bmm_outs = np.einsum("ijk,ikn->ijn", A, B)
+    bmm_outs = kernel(A, B)
     np.testing.assert_allclose(outs, bmm_outs, atol=1e-4)
 
 
@@ -175,33 +192,23 @@ def test_linalg_math():
     s = allo.customize(kernel)
     f = s.build()
     print(s.module)
-    outs = np.zeros((M, M), dtype="float32")
     outs = f(A, B)
-    np1 = np.matmul(A, B)
-    np_outs = (np.exp(np1) + np.abs(np1) - np.log(np1)) / np1
+    np_outs = kernel(A, B)
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-# TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
 def test_linalg_softmax():
+    # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
     M = 10
     K = 15
-    A = np.float32(np.random.uniform(size=(M, K)))
 
     def kernel(A: float32[M, K]) -> float32[M, K]:
         outs = allo.softmax(A)
         return outs
 
     with pytest.raises(AttributeError):
-        s = allo.customize(kernel)
+        allo.customize(kernel)
 
 
 if __name__ == "__main__":
-    test_linalg_matmul()
-    test_linalg_matmul_only2D()
-    test_linalg_matmul_nested()
-    test_linalg_batch_matmul()
-    test_linalg_batch_matmul_only3D()
-    test_linalg_batch_matmul_nested()
-    test_linalg_math()
-    test_linalg_softmax()
+    pytest.main([__file__])

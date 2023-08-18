@@ -47,14 +47,15 @@ def getsourcelines(obj):
 
 
 def _get_global_vars(_func):
-    global_vars = {}
+    # Discussions: https://github.com/taichi-dev/taichi/issues/282
+    global_vars = _func.__globals__.copy()
 
     # Get back to the outer-most scope (user-defined function)
+    # Mainly used to get the annotation definitions, which are probably not defined in __globals__
     for name, var in inspect.stack()[2][0].f_locals.items():
         if isinstance(var, (int, float)) or inspect.isfunction(var):
             global_vars[name] = var
 
-    # Discussions: https://github.com/taichi-dev/taichi/issues/282
     freevar_names = _func.__code__.co_freevars
     closure = _func.__closure__
     if closure:
