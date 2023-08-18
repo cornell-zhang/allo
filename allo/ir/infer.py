@@ -16,6 +16,24 @@ class Visitor:
 
 class TypeInferer(Visitor):
     @staticmethod
+    def visit_type_hint(node, ctx):
+        if isinstance(node, ast.Subscript):
+            dtype = ASTResolver.resolve(node.value, ctx.global_vars)
+            assert dtype is not None, f"Unsupported type {node.value.id}"
+            size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            elts = size.elts if isinstance(size, ast.Tuple) else [size]
+            shape = [
+                x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
+                for x in elts
+            ]
+            return dtype, shape
+        if isinstance(node, ast.Name):
+            dtype = ASTResolver.resolve(node, ctx.global_vars)
+            assert dtype is not None, f"Unsupported type {node.id}"
+            return dtype, []
+        raise RuntimeError("Unsupported function argument type")
+
+    @staticmethod
     def visit_Name(ctx, node):
         pass
 
@@ -80,35 +98,9 @@ class TypeInferer(Visitor):
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
-        print(ctx.global_vars)
-
-        def visit_type(arg, type_hint):
-            if isinstance(type_hint, ast.Subscript):
-                dtype = ASTResolver.resolve(type_hint.value, ctx.global_vars)
-                assert dtype is not None, f"Unsupported type {type_hint.value.id}"
-                arg.dtype = dtype
-                # pylint: disable=redefined-builtin
-                slice = (
-                    type_hint.slice.value
-                    if isinstance(type_hint.slice, ast.Index)
-                    else type_hint.slice
-                )
-                elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-                arg.shape = [
-                    x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                    for x in elts
-                ]
-            elif isinstance(type_hint, ast.Name):
-                dtype = ASTResolver.resolve(type_hint, ctx.global_vars)
-                assert dtype is not None, f"Unsupported type {type_hint.id}"
-                arg.dtype = dtype
-                arg.shape = []
-            else:
-                raise RuntimeError("Unsupported function argument type")
-
         # Input types
         for arg in node.args.args:
-            visit_type(arg, arg.annotation)
+            arg.dtype, arg.shape = TypeInferer.visit_type_hint(arg.annotation, ctx)
             ctx.buffers[arg.arg] = arg
 
         # Return type
@@ -116,7 +108,7 @@ class TypeInferer(Visitor):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            visit_type(node, node.returns)
+            node.dtype, node.shape = TypeInferer.visit_type_hint(node.returns, ctx)
             ctx.buffers[node.name] = node
 
         visit_stmts(ctx, node.body)
