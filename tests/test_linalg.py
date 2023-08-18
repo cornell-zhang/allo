@@ -1,9 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int1, int32, float32, index
+from allo.ir.types import int32, float32
 
 
 def test_linalg_matmul():
@@ -17,11 +18,11 @@ def test_linalg_matmul():
         C = allo.matmul(A, B)
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, verbose=True)
     f = s.build()
-    np_2 = np.zeros((M, N), dtype="int32")
-    np_2 = f(np_0, np_1)
-    np.testing.assert_array_equal(np_2, np.matmul(np_0, np_1))
+    np_out = kernel(np_0, np_1)
+    allo_out = f(np_0, np_1)
+    np.testing.assert_array_equal(allo_out, np_out)
     print(s.module)
 
 
@@ -43,15 +44,16 @@ def test_linalg_matmul_nested():
     K = 15
     A = np.random.uniform(size=(M, K))
     B = np.random.uniform(size=(K, M))
+    C = np.zeros((M, K), dtype="float32")
 
     def kernel() -> float32[M, K]:
         A1: float32[M, K] = A
         B1: float32[K, M] = B
-        C: float32[M, K]
+        C1: float32[M, K] = C
         D = allo.matmul(allo.matmul(A1, B1), A1)
         # GeLU of matrix D
         for i, j in allo.grid(M, K):
-            C[i, j] = (
+            C1[i, j] = (
                 0.5
                 * D[i, j]
                 * (
@@ -62,19 +64,13 @@ def test_linalg_matmul_nested():
                     )
                 )
             )
-        return C
+        return C1
 
     s = allo.customize(kernel)
     print(s.module)
     f = s.build()
-    outs = np.zeros((M, K), dtype="float32")
-    outs = f(A, B, A)
-    np_D = np.matmul(np.matmul(A, B), A)
-    np_GeLU = (
-        0.5
-        * np_D
-        * (1 + np.tanh(np.sqrt(2 / np.pi) * (np_D + 0.044715 * np.power(np_D, 3))))
-    )
+    outs = f()
+    np_GeLU = kernel()
     np.testing.assert_allclose(outs, np_GeLU, atol=1e-4)
 
 
@@ -95,7 +91,7 @@ def test_linalg_batch_matmul():
 
     outs = np.zeros((M, M, N), dtype="float32")
     outs = f(A, B)
-    bmm_outs = np.einsum("ijk,ikn->ijn", A, B)
+    bmm_outs = kernel(A, B)
     np.testing.assert_allclose(outs, bmm_outs, atol=1e-4)
 
 
@@ -175,10 +171,8 @@ def test_linalg_math():
     s = allo.customize(kernel)
     f = s.build()
     print(s.module)
-    outs = np.zeros((M, M), dtype="float32")
     outs = f(A, B)
-    np1 = np.matmul(A, B)
-    np_outs = (np.exp(np1) + np.abs(np1) - np.log(np1)) / np1
+    np_outs = kernel(A, B)
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 

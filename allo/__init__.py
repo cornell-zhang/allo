@@ -3,3 +3,4 @@
 
 from .customize import customize
 from .module import invoke_mlir_parser, LLVMModule
+from .dsl import *
