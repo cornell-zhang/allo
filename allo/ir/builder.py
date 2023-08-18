@@ -46,6 +46,7 @@ from hcl_mlir.dialects import (
 )
 from hcl_mlir import get_mlir_type
 from .transform import build_for_loops
+from .symbol_resolver import ASTResolver
 
 
 def get_extra_type_hints_from_str(dtype):
@@ -481,10 +482,10 @@ class ASTTransformer(Builder):
         else:
             raise RuntimeError("Unsupported type")
         np_values = np.asarray(values)
-        if np.all(np_values == np_values.astype(int)):
+        if np.issubdtype(np_values.dtype, np.integer):
             dtype = IntegerType.get_signless(32)
             np_values = np_values.astype(np.int32)
-        elif np.issubdtype(np_values.dtype, float):
+        elif np.issubdtype(np_values.dtype, np.floating):
             dtype = F32Type.get()
             np_values = np_values.astype(np.float32)
         else:
