@@ -90,7 +90,7 @@ class LoopScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars, mlir_ctx):
+    def __init__(self, global_vars, mlir_ctx, enable_tensor=False):
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None
@@ -105,7 +105,7 @@ class ASTContext:
         self.dim_count = 0
         self.unnamed_linalg_op_count = 0
         self.affine_vars = []
-        self.enable_tensor = False
+        self.enable_tensor = enable_tensor
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):

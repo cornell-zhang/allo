@@ -501,12 +501,20 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
-    ctx = ASTContext(global_vars=_get_global_vars(fn), mlir_ctx=Context())
-    ctx.enable_tensor = enable_tensor
     # Type construction
-    TypeInferer()(ctx, tree)
+    ctx_type_inf = ASTContext(
+        global_vars=_get_global_vars(fn),
+        mlir_ctx=Context(),
+        enable_tensor=enable_tensor,
+    )
+    TypeInferer()(ctx_type_inf, tree)
     # Start building IR
-    module = ASTTransformer()(ctx, tree)
+    ctx_ir_builder = ASTContext(
+        global_vars=_get_global_vars(fn),
+        mlir_ctx=Context(),
+        enable_tensor=enable_tensor,
+    )
+    module = ASTTransformer()(ctx_ir_builder, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
 
