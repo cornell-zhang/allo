@@ -555,7 +555,9 @@ class ASTTransformer(ASTBuilder):
         input_types = []
         input_typehints = []
         for arg in node.args.args:
-            input_types.append(build_shaped_type(arg.dtype, arg.shape))
+            input_types.append(
+                build_shaped_type(arg.dtype, arg.shape, ctx.enable_tensor)
+            )
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 
@@ -567,7 +569,9 @@ class ASTTransformer(ASTBuilder):
             or node.returns is None
         ):
             output_types.append(
-                build_shaped_type(node.returns.dtype, node.returns.shape)
+                build_shaped_type(
+                    node.returns.dtype, node.returns.shape, ctx.enable_tensor
+                )
             )
             output_typehints.append(get_extra_type_hints(node.returns.dtype))
 
