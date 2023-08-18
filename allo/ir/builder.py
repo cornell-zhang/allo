@@ -54,7 +54,7 @@ from .utils import (
     get_extra_type_hints_from_str,
     get_kwarg
 )
-from .visitor import ASTVisitor
+from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 
 
