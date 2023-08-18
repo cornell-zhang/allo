@@ -124,7 +124,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def build_constant_tensor(ctx, node):
+    def visit_constant_tensor(ctx, node):
         if isinstance(node.value, ast.Name):
             values = ctx.global_vars[node.value.id]
         elif isinstance(node.value, ast.List):
@@ -333,9 +333,9 @@ class TypeInferer(ASTVisitor):
             node.dtype = new_args[0].dtype
             return node
         if op_name in {"matmul", "bmm"}:
+            argAshape = new_args[0].shape
+            argBshape = new_args[1].shape
             if op_name == "matmul":
-                argAshape = new_args[0].shape
-                argBshape = new_args[1].shape
                 assert (
                     len(argAshape) == 2 and len(argBshape) == 2
                 ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"

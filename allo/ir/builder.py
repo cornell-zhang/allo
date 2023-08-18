@@ -337,7 +337,7 @@ class ASTTransformer(ASTBuilder):
         value_attr = DenseElementsAttr.get(np_values)
         sym_name = StringAttr.get(node.target.id)
         sym_visibility = StringAttr.get("private")
-        memref_type = MemRefType.get(np_values.shape, node.dtype)
+        memref_type = MemRefType.get(np_values.shape, node.dtype.build())
         type_attr = TypeAttr.get(memref_type)
         const_tensor = memref_d.GlobalOp(
             sym_name=sym_name,
@@ -814,10 +814,10 @@ class ASTTransformer(ASTBuilder):
         dtype, shape = node.dtype, node.shape
         with ip:
             if not ctx.enable_tensor:
-                memref_type = MemRefType.get(shape, dtype)
+                memref_type = MemRefType.get(shape, dtype.build())
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
-                alloc_op = tensor_d.EmptyOp(shape, dtype, ip=ip)
+                alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ip)
             ASTTransformer.build_init_zero(
                 ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
             )
@@ -863,12 +863,12 @@ class ASTTransformer(ASTBuilder):
             if str(dtype) == "int32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
-                    value=IntegerAttr.get(dtype, 0), result=dtype
+                    value=IntegerAttr.get(dtype.build(), 0), result=dtype.build()
                 ).result
             elif str(dtype) == "float32":
                 # pylint: disable=unexpected-keyword-arg
                 zero = arith_d.ConstantOp(
-                    value=FloatAttr.get(dtype, 0.0), result=dtype
+                    value=FloatAttr.get(dtype.build(), 0.0), result=dtype.build()
                 ).result
             else:
                 raise RuntimeError("Unsupported data type")
