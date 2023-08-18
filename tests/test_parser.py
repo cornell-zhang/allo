@@ -861,11 +861,11 @@ def test_copy_scalar():
 
 def test_copy_arg():
     M, N = 2, 2
-    
-    def kernel(inp: int32[M,N]) -> int32[M, N]:
+
+    def kernel(inp: int32[M, N]) -> int32[M, N]:
         outp: int32[M, N] = inp
         return outp
-    
+
     s = allo.customize(kernel)
     print(s.module)
     f = s.build(target="vhls")
@@ -876,14 +876,14 @@ def test_copy_arg():
     np_outp = mod(np_inp)
     assert np.array_equal(np_inp, np_outp)
 
-def test_copy_arg_scalar():
 
+def test_copy_arg_scalar():
     def kernel(inp: int32) -> int32:
         temp: int32 = inp
         outp: int32
         outp = temp * temp
         return outp
-    
+
     s = allo.customize(kernel)
     print(s.module)
     f = s.build(target="vhls")
