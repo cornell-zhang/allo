@@ -25,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: chhzh123/llvm-project:18.x
-      options: --user root
 
     steps:
     - uses: actions/checkout@v3

@@ -1,5 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+
+import pytest
 import allo
 from allo.ir.types import int32, float32
 import numpy as np
@@ -54,11 +56,8 @@ def test_outzero_scalar():
     print(s.module)
 
     mod = s.build()
-    assert mod(0) == 0
+    assert mod() == 0
 
 
 if __name__ == "__main__":
-    test_same()
-    test_same_scalar()
-    test_outzero()
-    test_outzero_scalar()
+    pytest.main([__file__])

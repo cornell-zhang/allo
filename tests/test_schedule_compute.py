@@ -226,12 +226,4 @@ def test_multi_stage():
 
 
 if __name__ == "__main__":
-    test_pipeline()
-    test_unroll()
-    test_fuse()
-    test_reorder()
-    test_split()
-    test_split_reorder()
-    test_compute_at()
-    test_compute_at_complex()
-    test_multi_stage()
+    pytest.main([__file__])
