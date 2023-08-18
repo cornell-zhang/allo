@@ -7,7 +7,6 @@ import inspect
 import textwrap
 import numpy as np
 
-from .utils import MockConstant
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from .types import int32, float32
