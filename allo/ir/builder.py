@@ -627,8 +627,7 @@ class ASTTransformer(Builder):
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
                         source_shape = ShapedType(rhs.result.type).shape
-                        if shape != source_shape:
-                            raise RuntimeError("Shapes are not equal!")
+                        assert shape == source_shape, "Shapes are not equal!"
                         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
@@ -676,10 +675,7 @@ class ASTTransformer(Builder):
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
             if rhs is not None:
-                if isinstance(rhs, (MockConstant, MockScalar, MockArg)):
-                    ASTTransformer.build_store(ctx, node.target, rhs)
-                else:
-                    raise RuntimeError("Unsupported data type")
+                ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
 
