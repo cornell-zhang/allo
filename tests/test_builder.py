@@ -199,7 +199,6 @@ def test_index_arg():
     print(s.module)
 
 
-@pytest.mark.skip(reason="Cannot pass type checking")
 def test_polymorphism():
     T = float32
     M, N, K = 32, 32, 32
@@ -328,5 +327,4 @@ def test_copy_arg_scalar():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_grid_for_gemm()
+    pytest.main([__file__])
