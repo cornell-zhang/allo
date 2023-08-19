@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+from collections import OrderedDict
+
 from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
 from hcl_mlir.dialects import hcl as hcl_d
 
@@ -73,6 +75,34 @@ class UFixed(AlloType):
 
     def build(self):
         raise hcl_d.UFixedType.get(self.bits, self.frac)
+
+
+class Struct(AlloType):
+    """A C-like struct
+
+    The struct members are defined with a Python dictionary
+    """
+
+    def __init__(self, dtype_dict):
+        self.bits = 0
+        for name, dtype in dtype_dict.items():
+            assert isinstance(dtype, AlloType), "dtype must be an AlloType"
+            dtype_dict[name] = dtype
+            self.bits += dtype.bits
+        self.dtype_dict = OrderedDict(dtype_dict)
+        super().__init__(self, self.bits, 0)
+
+    def __repr__(self):
+        return "Struct(" + str(self.dtype_dict) + ")"
+
+    def __getattr__(self, key):
+        try:
+            return self.dtype_dict[key]
+        except KeyError as exc:
+            raise RuntimeError(key + " is not in struct") from exc
+
+    def __getitem__(self, key):
+        return self.__getattr__(key)
 
 
 bool = Int(1, "bool")
