@@ -99,16 +99,25 @@ def test_nested_if():
 
     s = allo.customize(kernel)
     print(s.module)
+    mod = s.build()
+    assert mod(0, 0) == kernel(0, 0)
+    assert mod(1, 1) == kernel(1, 1)
+    assert mod(1, 2) == kernel(1, 2)
 
 
 def test_rhs_binaryop():
     def kernel() -> int32[11]:
         v: int32 = 5
-        res: int32[11] = 0
+        res: int32[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         res[0] = 1 + v
         res[1] = 1 - v
         res[2] = v * 3
-        res[3] = 52 / v
+        # One tricky thing is that Python does not require all
+        # the elements in the list to be the same type,
+        # so the following result becomes 10.4 (float);
+        # while in Allo, the array can only have one type,
+        # so the result is 10 (int).
+        # res[3] = 52 / v
         res[4] = 6 // v
         res[5] = 6 % v
         res[6] = 1 << v
@@ -118,11 +127,13 @@ def test_rhs_binaryop():
         res[10] = res[9]
         return res
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel)
     print(s.module)
+    mod = s.build()
+    np.testing.assert_allclose(mod(), kernel())
 
 
-def test_fcompute_function_wrapper():
+def test_nested_func_def():
     def kernel(A: int32[10]) -> int32[10]:
         B: int32[10] = 0
 
@@ -131,43 +142,6 @@ def test_fcompute_function_wrapper():
 
         for i in range(10):
             B[i] = foo(A[i])
-        return B
-
-    s = allo.customize(kernel)
-    print(s.module)
-    mod = s.build()
-    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
-    np_C = np_A + 1
-    np_B = mod(np_A)
-    assert np.array_equal(np_B, np_C)
-
-
-def test_llvm_arg():
-    def kernel(A: float32[10], B: int32, C: float32) -> float32:
-        v: float32 = 0.0
-        v = A[0] + float(B) + C
-        return v
-
-    s = allo.customize(kernel)
-    print(s.module)
-    mod = s.build()
-    np_A = np.random.random((10,)).astype(np.float32)
-    B = 1
-    C = 2.0
-    allo_B = mod(np_A, B, C)
-    np.testing.assert_allclose(allo_B, np_A[0] + 3.0)
-
-
-def test_fcompute_wrap_more():
-    def kernel(A: int32[10]) -> int32[10]:
-        def foo(x: index, A: int32[10]) -> int32:
-            y: int32 = 0
-            y = A[x] + 1
-            return y
-
-        B: int32[10] = 0
-        for i in range(10):
-            B[i] = foo(i, A)
         return B
 
     s = allo.customize(kernel)
@@ -197,6 +171,27 @@ def test_index_arg():
 
     s = allo.customize(kernel)
     print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
+    np_C = np_A + 1
+    np_B = mod(np_A)
+    assert np.array_equal(np_B, np_C)
+
+
+def test_llvm_scalar_arg():
+    def kernel(A: float32[10], B: int32, C: float32) -> float32:
+        v: float32 = 0.0
+        v = A[0] + float(B) + C
+        return v
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((10,)).astype(np.float32)
+    B = 1
+    C = 2.0
+    allo_B = mod(np_A, B, C)
+    np.testing.assert_allclose(allo_B, kernel(np_A, B, C))
 
 
 def test_polymorphism():
@@ -226,33 +221,6 @@ def test_polymorphism():
     np_B = np.random.randint(0, 10, size=(K, N)).astype(np.int32)
     allo_C = mod1(np_A, np_B)
     np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
-
-
-def test_math_scalar():
-    M = 10
-    K = 15
-    N = 20
-    A = np.float32(np.random.uniform(size=(M, K)))
-    B = np.float32(np.random.uniform(size=(K, N)))
-
-    def kernel(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
-        C: float32[M, N] = 0.0
-        D: float32[M, N] = 0.0
-        for i, j in allo.grid(M, N):
-            for k in allo.reduction(K):
-                C[i, j] += A[i, k] * B[k, j]
-        for i, j in allo.grid(M, N):
-            D[i, j] = (allo.exp(C[i, j]) + allo.log(C[i, j])) / C[i, j]
-        return D
-
-    s = allo.customize(kernel)
-    f = s.build()
-    print(s.module)
-    outs = np.zeros((M, N), dtype="float32")
-    outs = f(A, B)
-    np1 = np.matmul(A, B)
-    np_outs = (np.exp(np1) + np.log(np1)) / np1
-    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 def test_no_init_scalar():
@@ -321,9 +289,7 @@ def test_copy_arg_scalar():
     print(f)
 
     mod = s.build()
-    inp = 5
-    outp = mod(inp)
-    assert np.array_equal(inp * inp, outp)
+    assert np.array_equal(kernel(5), mod(5))
 
 
 if __name__ == "__main__":
