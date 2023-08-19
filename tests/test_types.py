@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int1, int32, float32, index
 
 
 def test_int32_float32():
@@ -29,6 +29,26 @@ def test_int32_float32_casting():
     print(s.module)
     mod = s.build()
     assert mod(1) == kernel(1)
+
+
+def test_bconv2D_nchw():
+    bs = 4
+    ic, oc = 6, 16
+    ih, iw = 8, 8
+    kh, kw = 3, 3
+    oh, ow = ih - kh + 1, iw - kw + 1
+
+    def bconv(
+        A: int1[bs, ic, ih, iw], F: int1[oc, ic, kh, kw]
+    ) -> int32[bs, oc, oh, ow]:
+        B: int32[bs, oc, oh, ow] = 0
+        for n, c, h, w in allo.grid(bs, oc, oh, ow):
+            for rc, rh, rw in allo.reduction(ic, kh, kw):
+                B[n, c, h, w] += A[n, rc, h + rh, w + rw] ^ F[c, rc, rh, rw]
+        return B
+
+    s = allo.customize(bconv)
+    print(s.module)
 
 
 def test_avgpool_nchw():
