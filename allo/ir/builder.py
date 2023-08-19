@@ -412,7 +412,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_store(ctx, node, val):
-        ip = ctx.get_ip()
         if isinstance(node, ast.Subscript):
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
@@ -437,7 +436,7 @@ class ASTTransformer(ASTBuilder):
                 target = ctx.buffers[node.value.id].result
             ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
             store_op = affine_d.AffineStoreOp(
-                val.result, target, ivs, affine_attr, ip=ip
+                val.result, target, ivs, affine_attr, ip=ctx.get_ip()
             )
             store_op.attributes["to"] = StringAttr.get(node.value.id)
             return store_op
@@ -451,7 +450,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 target = ctx.buffers[node.id].result
             store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ip
+                val.result, target, [], affine_attr, ip=ctx.get_ip()
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
@@ -460,10 +459,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Assign(ctx, node):
         # Compute RHS
-        if isinstance(node.value, ast.Name):  # scalar
-            rhs = ctx.buffers[node.value.id]
-        else:
-            rhs = build_stmt(ctx, node.value)
+        rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
@@ -475,6 +471,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.buffers[node.targets[0].id] = rhs
                 return rhs
         # Store LHS
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
         return store_op
 
@@ -683,6 +680,9 @@ class ASTTransformer(ASTBuilder):
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
             if rhs is not None:
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, rhs, node.value.dtype, node.dtype
+                )
                 ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")

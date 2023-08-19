@@ -123,10 +123,7 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Assign(ctx, node):
         # Compute RHS
-        if isinstance(node.value, ast.Name):  # scalar
-            rhs = ctx.buffers[node.value.id]
-        else:
-            rhs = visit_stmt(ctx, node.value)
+        rhs = visit_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, ast.Call) or len(rhs.shape) > 0:
