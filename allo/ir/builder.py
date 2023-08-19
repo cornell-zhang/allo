@@ -140,14 +140,14 @@ class ASTTransformer(ASTBuilder):
                     return ASTTransformer.build_all_for(ctx, node)
             raise RuntimeError("Unsupported for loop")
 
+    # pylint: disable=too-many-branches, inconsistent-return-statements
     @staticmethod
     def build_cast_op(ctx, op, src_type, res_type):
         # determine cast op
         CastOpClass = None
-        # pylint: disable=unidiomatic-typecheck
-        if type(res_type) == type(src_type) and res_type == src_type:
+        if type(res_type) is type(src_type) and res_type == src_type:
             return op
-        elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, Index):
+        if isinstance(src_type, (Int, UInt)) and isinstance(res_type, Index):
             CastOpClass = arith_d.IndexCastOp
         elif isinstance(src_type, Index) and isinstance(res_type, (Int, UInt)):
             CastOpClass = arith_d.IndexCastOp
@@ -170,6 +170,7 @@ class ASTTransformer(ASTBuilder):
             elif src_type.bits == res_type.bits:
                 return op
             else:  # src_type.bits < res_type.bits
+                # pylint: disable=else-if-used
                 if (
                     isinstance(
                         op, (hcl_d.GetIntBitOp, hcl_d.GetIntSliceOp, arith_d.ShLIOp)
@@ -205,8 +206,7 @@ class ASTTransformer(ASTBuilder):
         ):
             if src_type == res_type:
                 return op
-            else:
-                CastOpClass = hcl_d.FixedToFixedOp
+            CastOpClass = hcl_d.FixedToFixedOp
         elif isinstance(src_type, Struct) and isinstance(res_type, Struct):
             # We don't actually cast between struct types,
             # here we check if two structs are identical when all
@@ -265,6 +265,7 @@ class ASTTransformer(ASTBuilder):
                         bitwidth += get_struct_bitwidth(field)
                     else:
                         bitwidth += field.bits
+                return bitwidth
 
             total_width = get_struct_bitwidth(res_type)
             if total_width != src_type.bits:

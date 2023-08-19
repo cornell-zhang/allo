@@ -97,7 +97,7 @@ class Struct(AlloType):
             dtype_dict[name] = dtype
             self.bits += dtype.bits
         self.dtype_dict = OrderedDict(dtype_dict)
-        super().__init__(self, self.bits, 0)
+        super().__init__(self.bits, "struct")
 
     def __repr__(self):
         return "Struct(" + str(self.dtype_dict) + ")"
@@ -110,6 +110,9 @@ class Struct(AlloType):
 
     def __getitem__(self, key):
         return self.__getattr__(key)
+
+    def build(self):
+        raise NotImplementedError("TODO")
 
 
 bool = Int(1)

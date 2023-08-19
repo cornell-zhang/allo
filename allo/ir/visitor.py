@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, too-many-instance-attributes
 
 from hcl_mlir import InsertionPoint
 from hcl_mlir.dialects import hcl as hcl_d
