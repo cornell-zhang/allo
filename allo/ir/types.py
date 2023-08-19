@@ -67,21 +67,21 @@ class Float(AlloType):
 
 
 class Fixed(AlloType):
-    def __init__(self, bits, frac, name):
+    def __init__(self, bits, fracs, name):
         super().__init__(bits, name)
-        self.frac = frac
+        self.fracs = fracs
 
     def build(self):
-        raise hcl_d.FixedType.get(self.bits, self.frac)
+        raise hcl_d.FixedType.get(self.bits, self.fracs)
 
 
 class UFixed(AlloType):
-    def __init__(self, bits, frac, name):
+    def __init__(self, bits, fracs, name):
         super().__init__(bits, name)
-        self.frac = frac
+        self.fracs = fracs
 
     def build(self):
-        raise hcl_d.UFixedType.get(self.bits, self.frac)
+        raise hcl_d.UFixedType.get(self.bits, self.fracs)
 
 
 class Struct(AlloType):
