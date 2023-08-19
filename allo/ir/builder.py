@@ -611,12 +611,14 @@ class ASTTransformer(ASTBuilder):
         ip = ctx.get_ip()
         type_hint = node.annotation
         if node.value is not None:
-            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                rhs = ctx.buffers[node.value.id]
+            if (
+                isinstance(node.value, ast.Name)
+                and node.value.id in ctx.buffers
+                or isinstance(node.value, ast.Constant)
+            ):
+                rhs = build_stmt(ctx, node.value)
             elif isinstance(node.value, (ast.List, ast.Name)):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            elif isinstance(node.value, ast.Constant):
-                rhs = build_stmt(ctx, node.value)
             else:
                 raise RuntimeError("Unsupported data type")
         else:
