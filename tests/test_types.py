@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import pytest
+import numpy as np
 import allo
 from allo.ir.types import int32, float32, index
 
@@ -37,21 +39,24 @@ def test_avgpool_nchw():
     stride = 2
     oh, ow = (ih - kh) // stride + 1, (iw - kw) // stride + 1
 
-    def avgpool_nchw(A: float32[bs, ic, ih, iw]) -> float32[bs, oc, oh, ow]:
-        B: float32[bs, oc, oh, ow] = 0.0
+    def avgpool_nchw(A: float32[bs, ic, ih, iw], B: float32[bs, oc, oh, ow]):
         stride: index = 2
         for n, c, h, w in allo.grid(bs, oc, oh, ow):
             v: float32 = 0.0
             for rh, rw in allo.reduction(kh, kw):
                 v += A[n, c, h * stride + rh, w * stride + rw]
             B[n, c, h, w] = v / (kh * kw)
-        return B
 
     s = allo.customize(avgpool_nchw)
     print(s.module)
+    mod = s.build()
+    np_A = np.random.rand(bs, ic, ih, iw).astype(np.float32)
+    np_B = np.zeros((bs, oc, oh, ow), dtype=np.float32)
+    mod(np_A, np_B)
+    np_C = np.zeros((bs, oc, oh, ow), dtype=np.float32)
+    avgpool_nchw(np_A, np_C)
+    np.testing.assert_allclose(np_B, np_C, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":
-    # test_int32_float32()
-    # test_int32_float32_casting()
-    test_avgpool_nchw()
+    pytest.main([__file__])
