@@ -9,12 +9,16 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import int32, float32
+from .types import int1, int32, float32
+from .typing_rule import get_typing_rule
 
 
 class TypeInferer(ASTVisitor):
+    def print_verbose(self, ctx, node):
+        print(node.__class__.__name__, node.dtype, node.shape)
+
     @staticmethod
-    def visit_type_hint(node, ctx):
+    def visit_type_hint(ctx, node):
         if isinstance(node, ast.Subscript):
             dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             assert dtype is not None, f"Unsupported type {node.value.id}"
@@ -82,12 +86,12 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
-        # TODO: Add type casting
         assert (
             lhs.shape == rhs.shape
         ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
-        assert lhs.dtype == rhs.dtype, f"Type mismatch, got {lhs.dtype} and {rhs.dtype}"
-        node.dtype = lhs.dtype
+        typing_rule = get_typing_rule(type(node.op))
+        res_type = typing_rule(lhs.dtype, rhs.dtype)
+        node.dtype = res_type
         node.shape = lhs.shape
         return node
 
@@ -119,10 +123,7 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Assign(ctx, node):
         # Compute RHS
-        if isinstance(node.value, ast.Name):  # scalar
-            rhs = ctx.buffers[node.value.id]
-        else:
-            rhs = visit_stmt(ctx, node.value)
+        rhs = visit_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, ast.Call) or len(rhs.shape) > 0:
@@ -174,7 +175,7 @@ class TypeInferer(ASTVisitor):
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
-        TypeInferer.visit_general_binop(ctx, node.target, lhs, rhs)
+        TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
         # store LHS
         node.dtype = lhs.dtype
         node.shape = lhs.shape
@@ -189,28 +190,27 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        target_dtype, target_shape = TypeInferer.visit_type_hint(node.annotation, ctx)
+        target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
         if node.value is not None:
-            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                rhs = ctx.buffers[node.value.id]
-                assert (
-                    rhs.dtype == target_dtype
-                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
-                assert (
-                    rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
+            if (
+                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
+            ) or isinstance(node.value, (ast.Constant, ast.Call)):
+                # Examples:
+                # copied: int32 = a
+                # init: int32 = 0
+                # call: int32 = int(1)
+                rhs = visit_stmt(ctx, node.value)
             elif isinstance(node.value, (ast.List, ast.Name)):
                 rhs = TypeInferer.visit_constant_tensor(ctx, node)
-                assert (
-                    rhs.dtype == target_dtype
-                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
-                assert (
-                    rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
-            elif isinstance(node.value, ast.Constant):
-                rhs = visit_stmt(ctx, node.value)
             else:
                 raise RuntimeError("Unsupported data type")
+            # assert (
+            #     rhs.dtype == target_dtype
+            # ), f"Type mismatch, got {rhs.dtype} and {target_dtype} for {node.__class__.__name__} `{node.target.id}`"
+            if not isinstance(node.value, ast.Constant):
+                assert (
+                    rhs.shape == target_shape
+                ), f"Shape mismatch, got {rhs.shape} and {target_shape} for {node.__class__.__name__} `{node.target.id}`"
         else:
             rhs = None
         ctx.buffers[node.target.id] = node
@@ -228,12 +228,13 @@ class TypeInferer(ASTVisitor):
                 global_vars=ctx.global_vars,
                 mlir_ctx=old_ctx.mlir_ctx,
                 enable_tensor=old_ctx.enable_tensor,
+                verbose=old_ctx.verbose,
             )
         else:
             old_ctx = None
         # Input types
         for arg in node.args.args:
-            arg.dtype, arg.shape = TypeInferer.visit_type_hint(arg.annotation, ctx)
+            arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
             ctx.buffers[arg.arg] = arg
 
         # Return type
@@ -242,17 +243,20 @@ class TypeInferer(ASTVisitor):
             or node.returns is None
         ):
             node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
-                node.returns, ctx
+                ctx, node.returns
             )
             ctx.buffers[node.name] = node
 
-        stmts = visit_stmts(ctx, node.body)
-        if not isinstance(stmts[-1], ast.Return):
+        visit_stmts(ctx, node.body)
+        # Note that the result type may be different from the return type
+        if node.returns is None or (
+            isinstance(node.returns, ast.Constant) and node.returns.value is None
+        ):
             node.dtype = None
             node.shape = None
         else:
-            node.dtype = stmts[-1].dtype
-            node.shape = stmts[-1].shape
+            node.dtype = node.returns.dtype
+            node.shape = node.returns.shape
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
@@ -262,14 +266,17 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Compare(ctx, node):
-        # FIXME: Not supported yet
-        node.dtype = None
-        node.shape = None
+        visit_stmt(ctx, node.left)
+        visit_stmt(ctx, node.comparators[0])
+        node.dtype = int1
+        node.shape = tuple()
         return node
 
     @staticmethod
     def visit_If(ctx, node):
-        # FIXME: Not supported yet
+        visit_stmts(ctx, node.body)
+        if len(node.orelse) > 0:
+            visit_stmts(ctx, node.orelse)
         node.dtype = None
         node.shape = None
         return node
@@ -331,6 +338,7 @@ class TypeInferer(ASTVisitor):
                 global_vars=ctx.global_vars,
                 mlir_ctx=ctx.mlir_ctx,
                 enable_tensor=ctx.enable_tensor,
+                verbose=ctx.verbose,
             )
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST

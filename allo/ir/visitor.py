@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, too-many-instance-attributes
 
 from hcl_mlir import InsertionPoint
 from hcl_mlir.dialects import hcl as hcl_d
@@ -18,10 +18,11 @@ class LoopScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars, mlir_ctx, enable_tensor=False):
+    def __init__(self, global_vars, mlir_ctx, enable_tensor=False, verbose=False):
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None
+        self.top_func_tree = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
         hcl_d.register_dialect(mlir_ctx)
@@ -34,6 +35,7 @@ class ASTContext:
         self.unnamed_linalg_op_count = 0
         self.affine_vars = []
         self.enable_tensor = enable_tensor
+        self.verbose = verbose
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
@@ -56,4 +58,7 @@ class ASTVisitor:
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        return method(ctx, node)
+        res = method(ctx, node)
+        if ctx.verbose and hasattr(self, "print_verbose"):
+            self.print_verbose(ctx, node)
+        return res

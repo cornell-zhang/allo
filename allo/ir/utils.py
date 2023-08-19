@@ -18,7 +18,6 @@ from hcl_mlir.dialects import (
     affine as affine_d,
     arith as arith_d,
 )
-from hcl_mlir import get_mlir_type
 from .types import AlloType
 
 
@@ -35,10 +34,6 @@ def get_kwarg(kwargs, name):
         if keyword.arg == name:
             return keyword.value
     raise RuntimeError(f"Keyword argument {name} not found")
-
-
-def print_node(node):
-    print(node.__class__.__name__, node.dtype, node.shape)
 
 
 class MockOp:
@@ -86,12 +81,14 @@ class MockConstant(MockOp):
 
 
 class MockScalar(MockOp):
-    def __init__(self, name, dtype, ctx):
+    def __init__(self, name, dtype, ctx, value=None):
         self.name = name
         self.ctx = ctx
+        self.value = value
         shape = (1,)
-        ele_type = get_mlir_type(dtype)
-        memref_type = MemRefType.get(shape, ele_type)
+        assert isinstance(dtype, AlloType), f"Expect AlloType, got {dtype}"
+        self.dtype = dtype
+        memref_type = MemRefType.get(shape, dtype.build())
         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
         alloc_op.attributes["name"] = StringAttr.get(name)
         self.op = alloc_op

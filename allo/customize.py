@@ -508,6 +508,7 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
         global_vars=_get_global_vars(fn),
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
+        verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
     # Start building IR
@@ -515,6 +516,7 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
         global_vars=_get_global_vars(fn),
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
+        verbose=verbose,
     )
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:

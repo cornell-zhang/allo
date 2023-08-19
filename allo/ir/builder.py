@@ -40,6 +40,7 @@ from hcl_mlir.dialects import (
     math as math_d,
     linalg as linalg_d,
 )
+from hcl_mlir.exceptions import DTypeError
 from .transform import build_for_loops
 from .utils import (
     MockArg,
@@ -49,6 +50,7 @@ from .utils import (
     get_extra_type_hints,
     get_kwarg,
 )
+from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 
@@ -138,73 +140,228 @@ class ASTTransformer(ASTBuilder):
                     return ASTTransformer.build_all_for(ctx, node)
             raise RuntimeError("Unsupported for loop")
 
+    # pylint: disable=too-many-branches, inconsistent-return-statements
+    @staticmethod
+    def build_cast_op(ctx, op, src_type, res_type):
+        # determine cast op
+        CastOpClass = None
+        if type(res_type) is type(src_type) and res_type == src_type:
+            return op
+        if isinstance(src_type, (Int, UInt)) and isinstance(res_type, Index):
+            CastOpClass = arith_d.IndexCastOp
+        elif isinstance(src_type, Index) and isinstance(res_type, (Int, UInt)):
+            CastOpClass = arith_d.IndexCastOp
+        elif isinstance(src_type, Int) and isinstance(res_type, Float):
+            CastOpClass = arith_d.SIToFPOp
+        elif isinstance(src_type, UInt) and isinstance(res_type, Float):
+            CastOpClass = arith_d.UIToFPOp
+        elif isinstance(src_type, Float) and isinstance(res_type, Int):
+            CastOpClass = arith_d.FPToSIOp
+        elif isinstance(src_type, Float) and isinstance(res_type, Index):
+            # FP to Index is not supported in MLIR
+            # we need to cast to UInt first, then cast to Index
+            op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
+            CastOpClass = arith_d.IndexCastOp  # proceed to build cast to index
+        elif isinstance(src_type, Float) and isinstance(res_type, UInt):
+            CastOpClass = arith_d.FPToUIOp
+        elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
+            if src_type.bits > res_type.bits:
+                CastOpClass = arith_d.TruncIOp
+            elif src_type.bits == res_type.bits:
+                return op
+            else:  # src_type.bits < res_type.bits
+                # pylint: disable=else-if-used
+                if (
+                    isinstance(
+                        op, (hcl_d.GetIntBitOp, hcl_d.GetIntSliceOp, arith_d.ShLIOp)
+                    )
+                    or src_type.bits == 1
+                ):
+                    CastOpClass = arith_d.ExtUIOp
+                elif isinstance(src_type, UInt):
+                    CastOpClass = arith_d.ExtUIOp
+                else:
+                    CastOpClass = arith_d.ExtSIOp
+        elif isinstance(src_type, Float) and isinstance(res_type, Float):
+            if res_type.bits < src_type.bits:
+                CastOpClass = arith_d.TruncFOp
+            elif res_type.bits > src_type.bits:
+                CastOpClass = arith_d.ExtFOp
+            else:
+                return op
+        elif isinstance(src_type, Float) and isinstance(res_type, (Fixed, UFixed)):
+            CastOpClass = hcl_d.FloatToFixedOp
+        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Float):
+            CastOpClass = hcl_d.FixedToFloatOp
+        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(
+            res_type, (Int, UInt)
+        ):
+            CastOpClass = hcl_d.FixedToIntOp
+        elif isinstance(src_type, (Int, UInt)) and isinstance(
+            res_type, (Fixed, UFixed)
+        ):
+            CastOpClass = hcl_d.IntToFixedOp
+        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(
+            res_type, (Fixed, UFixed)
+        ):
+            if src_type == res_type:
+                return op
+            CastOpClass = hcl_d.FixedToFixedOp
+        elif isinstance(src_type, Struct) and isinstance(res_type, Struct):
+            # We don't actually cast between struct types,
+            # here we check if two structs are identical when all
+            # integer fields are signless.
+            if len(src_type.dtype_dict) != len(res_type.dtype_dict):
+                raise DTypeError(
+                    "Casting between structs with different number of fields. "
+                    + f"src type: {src_type}, dst type: {res_type}"
+                )
+            for res_ftype, src_ftype in zip(
+                res_type.dtype_dict.values(), src_type.dtype_dict.values()
+            ):
+                if isinstance(src_ftype, (Int, UInt)) and isinstance(
+                    res_ftype, (Int, UInt)
+                ):
+                    if src_ftype.width != res_ftype.width:
+                        raise DTypeError(
+                            "Casting between structs with different field width. "
+                            + f"src type: {src_type}, dst type: {res_type}"
+                        )
+                else:
+                    raise DTypeError(
+                        "Casting between structs with different field types. "
+                        + f"src type: {src_type}, dst type: {res_type}"
+                    )
+            op.result = op.expr.result
+            op.ir_op = op.expr.ir_op
+            return
+        elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, Struct):
+            # Int -> Struct Cast
+            def is_all_field_int(dtype):
+                """Check if a struct type has all integer fields
+                When it has nested struct field, recursively check
+                the nested struct field.
+                """
+                if not isinstance(dtype, Struct):
+                    return False
+                for field_type in dtype.dtype_dict.values():
+                    if isinstance(field_type, Struct):
+                        if not is_all_field_int(field_type):
+                            return False
+                    elif not isinstance(field_type, (Int, UInt)):
+                        return False
+                return True
+
+            if not is_all_field_int(res_type):
+                raise DTypeError(
+                    "Casting from integer to struct with non-integer fields. "
+                    + f"src type: {src_type}, dst type: {res_type}"
+                )
+
+            def get_struct_bitwidth(struct_type):
+                bitwidth = 0
+                for field in struct_type.dtype_dict.values():
+                    if isinstance(field, Struct):
+                        bitwidth += get_struct_bitwidth(field)
+                    else:
+                        bitwidth += field.bits
+                return bitwidth
+
+            total_width = get_struct_bitwidth(res_type)
+            if total_width != src_type.bits:
+                raise DTypeError(
+                    "Casting from integer to struct with different width. "
+                    + f"src type: {src_type}, dst type: {res_type}"
+                )
+            CastOpClass = hcl_d.IntToStructOp
+        elif isinstance(src_type, Struct) and isinstance(res_type, (Int, UInt)):
+            # Struct -> Int Cast
+            raise NotImplementedError(
+                "Struct -> Int Cast is not implemented yet. "
+                + "We plan to add an as_int() API for struct values."
+            )
+        else:
+            raise DTypeError(
+                "Casting between unsupported types. "
+                + f"src type: {src_type}, dst type: {res_type}"
+            )
+
+        # build the cast op
+        if isinstance(res_type, (Int, UInt, Struct)):
+            mlir_type = res_type.build()
+            cast_op = CastOpClass(mlir_type, op.result, ip=ctx.get_ip())
+            if isinstance(res_type, (UInt, Struct)):
+                cast_op.attributes["unsigned"] = UnitAttr.get()
+        else:
+            mlir_type = res_type.build()
+            cast_op = CastOpClass(mlir_type, op.result, ip=ctx.get_ip())
+        return cast_op
+
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
         opcls = {
             ast.Add: {
-                "float": arith_d.AddFOp,
-                "int": arith_d.AddIOp,
-                "fixed": hcl_d.AddFixedOp,
+                Float: arith_d.AddFOp,
+                Int: arith_d.AddIOp,
+                Fixed: hcl_d.AddFixedOp,
             },
             ast.Sub: {
-                "float": arith_d.SubFOp,
-                "int": arith_d.SubIOp,
-                "fixed": hcl_d.SubFixedOp,
+                Float: arith_d.SubFOp,
+                Int: arith_d.SubIOp,
+                Fixed: hcl_d.SubFixedOp,
             },
             ast.Mult: {
-                "float": arith_d.MulFOp,
-                "int": arith_d.MulIOp,
-                "fixed": hcl_d.MulFixedOp,
+                Float: arith_d.MulFOp,
+                Int: arith_d.MulIOp,
+                Fixed: hcl_d.MulFixedOp,
             },
             ast.Div: {
-                "float": arith_d.DivFOp,
-                "int": arith_d.DivSIOp,
-                "uint": arith_d.DivUIOp,
-                "fixed": hcl_d.DivFixedOp,
+                Float: arith_d.DivFOp,
+                Int: arith_d.DivSIOp,
+                UInt: arith_d.DivUIOp,
+                Fixed: hcl_d.DivFixedOp,
             },
             ast.FloorDiv: {
-                "float": RuntimeError,
-                "int": arith_d.FloorDivSIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.FloorDivSIOp,
+                UInt: RuntimeError,
             },
             ast.Mod: {
-                "float": arith_d.RemFOp,
-                "int": arith_d.RemSIOp,
-                "uint": arith_d.RemUIOp,
+                Float: arith_d.RemFOp,
+                Int: arith_d.RemSIOp,
+                UInt: arith_d.RemUIOp,
             },
             ast.Pow: {
-                "float": math_d.PowFOp,
-                "int": RuntimeError,
-                "uint": RuntimeError,
+                Float: math_d.PowFOp,
+                Int: RuntimeError,
+                UInt: RuntimeError,
             },
             ast.LShift: {
-                "float": RuntimeError,
-                "int": arith_d.ShLIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.ShLIOp,
+                UInt: RuntimeError,
             },
             ast.RShift: {
-                "float": RuntimeError,
-                "int": arith_d.ShRUIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.ShRUIOp,
+                UInt: RuntimeError,
             },
             ast.BitOr: {
-                "float": RuntimeError,
-                "int": arith_d.OrIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.OrIOp,
+                UInt: RuntimeError,
             },
             ast.BitXor: {
-                "float": RuntimeError,
-                "int": arith_d.XOrIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.XOrIOp,
+                UInt: RuntimeError,
             },
             ast.BitAnd: {
-                "float": RuntimeError,
-                "int": arith_d.AndIOp,
-                "uint": RuntimeError,
+                Float: RuntimeError,
+                Int: arith_d.AndIOp,
+                UInt: RuntimeError,
             },
         }.get(type(node.op))
-        dtype = str(node.dtype.build())
-        # FIXME: workaround to get the type
         if len(node.shape) > 0:
             new_args = [lhs.result, rhs.result]
             attr = {
@@ -215,15 +372,7 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_linalg_op(
                 ctx, node=node, op_name=attr, new_args=new_args
             )
-        if dtype.startswith("i"):
-            op = opcls["int"]
-        elif dtype.startswith("fixed"):
-            op = opcls["fixed"]
-        elif dtype.startswith("f"):
-            op = opcls["float"]
-        else:
-            raise RuntimeError(f"Unsupported types for binary op: {dtype}")
-        return op(lhs.result, rhs.result, ip=ctx.get_ip())
+        return opcls[type(node.dtype)](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
     def build_UnaryOp(ctx, node):
@@ -257,11 +406,13 @@ class ASTTransformer(ASTBuilder):
     def build_BinOp(ctx, node):
         lhs = build_stmt(ctx, node.left)
         rhs = build_stmt(ctx, node.right)
+        # Cast lhs and rhs to the same type
+        lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
     def build_store(ctx, node, val):
-        ip = ctx.get_ip()
         if isinstance(node, ast.Subscript):
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
@@ -286,7 +437,7 @@ class ASTTransformer(ASTBuilder):
                 target = ctx.buffers[node.value.id].result
             ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
             store_op = affine_d.AffineStoreOp(
-                val.result, target, ivs, affine_attr, ip=ip
+                val.result, target, ivs, affine_attr, ip=ctx.get_ip()
             )
             store_op.attributes["to"] = StringAttr.get(node.value.id)
             return store_op
@@ -300,7 +451,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 target = ctx.buffers[node.id].result
             store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ip
+                val.result, target, [], affine_attr, ip=ctx.get_ip()
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
@@ -309,10 +460,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Assign(ctx, node):
         # Compute RHS
-        if isinstance(node.value, ast.Name):  # scalar
-            rhs = ctx.buffers[node.value.id]
-        else:
-            rhs = build_stmt(ctx, node.value)
+        rhs = build_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, (func_d.CallOp, tensor_d.EmptyOp, memref_d.AllocOp)):
@@ -324,6 +472,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.buffers[node.targets[0].id] = rhs
                 return rhs
         # Store LHS
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
         return store_op
 
@@ -363,6 +512,8 @@ class ASTTransformer(ASTBuilder):
             lhs = ctx.buffers[node.target.id]
         else:
             raise RuntimeError("Unsupported AugAssign")
+        # Cast rhs to the target type
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         # Aug LHS
         res = ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
         # Store LHS
@@ -371,7 +522,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_affine_expr(ctx, node):
-        # pylint: disable=no-else-return
         if isinstance(node, ast.Name):
             if (
                 node.id in ctx.buffers
@@ -381,8 +531,13 @@ class ASTTransformer(ASTBuilder):
                 ctx.dim_count += 1
                 ctx.affine_vars.append(node.id)
                 return AffineExpr.get_dim(ctx.dim_count - 1)
-            else:
-                return None
+            if (
+                node.id in ctx.buffers
+                and isinstance(ctx.buffers[node.id], MockScalar)
+                and isinstance(ctx.buffers[node.id].dtype, Index)
+            ):
+                return ASTTransformer.build_affine_expr(ctx, ctx.buffers[node.id].value)
+            return None
         if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)
             rhs = ASTTransformer.build_affine_expr(ctx, node.right)
@@ -461,12 +616,16 @@ class ASTTransformer(ASTBuilder):
         ip = ctx.get_ip()
         type_hint = node.annotation
         if node.value is not None:
-            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                rhs = ctx.buffers[node.value.id]
+            if (
+                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
+            ) or isinstance(node.value, (ast.Constant, ast.Call)):
+                # Examples:
+                # copied: int32 = a
+                # init: int32 = 0
+                # call: int32 = int(1)
+                rhs = build_stmt(ctx, node.value)
             elif isinstance(node.value, (ast.List, ast.Name)):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            elif isinstance(node.value, ast.Constant):
-                rhs = build_stmt(ctx, node.value)
             else:
                 raise RuntimeError("Unsupported data type")
         else:
@@ -529,11 +688,20 @@ class ASTTransformer(ASTBuilder):
                 ctx.buffers[node.target.id] = tensorgen_op
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
+            # TODO: Support type variable
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
             # TODO: figure out why zero-shape cannot work
-            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
+            ctx.buffers[node.target.id] = MockScalar(
+                node.target.id,
+                node.dtype,
+                ctx,
+                value=node.value,
+            )
             if rhs is not None:
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, rhs, node.value.dtype, node.dtype
+                )
                 ASTTransformer.build_store(ctx, node.target, rhs)
         else:
             raise RuntimeError("Unsupported AnnAssign")
@@ -544,8 +712,13 @@ class ASTTransformer(ASTBuilder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx)
+            ctx = ASTContext(
+                global_vars=ctx.global_vars,
+                mlir_ctx=old_ctx.mlir_ctx,
+                verbose=old_ctx.verbose,
+            )
             ctx.set_ip(old_ctx.top_func)
+            ctx.top_func_tree = node
         else:
             old_ctx = None
 
@@ -581,6 +754,7 @@ class ASTTransformer(ASTBuilder):
         func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         ctx.top_func = func_op
+        ctx.top_func_tree = node
         for name, arg in zip(arg_names, func_op.arguments):
             ctx.buffers[name] = MockArg(arg)
         ctx.func_args[node.name] = arg_names
@@ -727,17 +901,21 @@ class ASTTransformer(ASTBuilder):
             assert (
                 len(node.args) == 1
             ), "Only support one argument for `float` and `int`"
+            new_arg = [stmt.result for stmt in build_stmts(ctx, node.args)][0]
             if node.func.id == "float":
-                if node.args[0].id in ctx.global_vars:
-                    return MockConstant(float(ctx.global_vars[node.args[0].id]), ctx)
                 # TODO: Support other types
                 return arith_d.SIToFPOp(
                     F32Type.get(),
-                    ctx.buffers[node.args[0].id].result,
+                    new_arg,
                     ip=ctx.get_ip(),
                 )
             if node.func.id == "int":
-                return MockConstant(int(ctx.global_vars[node.args[0].id]), ctx)
+                # TODO: Support other types
+                return arith_d.FPToSIOp(
+                    IntegerType.get_signless(32),
+                    new_arg,
+                    ip=ctx.get_ip(),
+                )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
@@ -785,7 +963,9 @@ class ASTTransformer(ASTBuilder):
             stmts = [func]
         else:
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)
+            func_ctx = ASTContext(
+                global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx, verbose=ctx.verbose
+            )
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
@@ -887,6 +1067,9 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Return(ctx, node):
         ret = build_stmt(ctx, node.value)
+        ret = ASTTransformer.build_cast_op(
+            ctx, ret, node.dtype, ctx.top_func_tree.dtype
+        )
         return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
     @staticmethod
