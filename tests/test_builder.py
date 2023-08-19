@@ -7,23 +7,49 @@ import allo
 from allo.ir.types import int32, float32, index
 
 
-def test_gemm_grid_for():
+def test_grid_for_gemm():
+    # This test is to make sure the whole flow works properly.
     def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
-        for i, j, k in allo.grid(32, 32, 32):
+        # Use grid_for with name annotation
+        for i, j, k in allo.grid(32, 32, 32, name="C"):
             C[i, j] += A[i, k] * B[k, j]
         return C
 
+    # 1. Create customization
     s = allo.customize(gemm)
-    # transformations are applied immediately
-    s.split("i", 8)
-    s.split("j", 8)
-    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
     print(s.module)
 
+    # 2. Apply transformations and make sure each step the module can be printed
+    s.split("i", 8)
+    print(s.module)
+    s.split("j", 8)
+    print(s.module)
+    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    print(s.module)
+    # Make sure the generated loops are correct and ordered
+    loops = s.get_loops()
+    expected = ["i.outer", "j.outer", "i.inner", "j.inner", "k"]
+    assert expected == list(loops.C.loops.keys())
 
-def test_gemm_range_for():
-    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+    # 3. Build and run
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+    np_C = np.matmul(np_A, np_B)
+    np_C_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+    # 4. Generate HLS module
+    mod = s.build(target="vhls")
+    hls_code = mod.hls_code
+    loop_labels = ["l_C_i_outer", "l_j_outer", "l_i_inner", "l_j_inner", "l_k"]
+    for label in loop_labels:
+        assert label in hls_code
+
+
+def test_all_gemm():
+    def range_for_gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
         for i in range(32):
             for j in range(32):
@@ -31,16 +57,10 @@ def test_gemm_range_for():
                     C[i, j] += A[i, k] * B[k, j]
         return C
 
-    s = allo.customize(gemm)
-    # transformations are applied immediately
-    s.split("i", 8)
-    s.split("j", 8)
-    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    s = allo.customize(range_for_gemm)
     print(s.module)
 
-
-def test_gemm_float():
-    def gemm(A: float32[32, 32], B: float32[32, 32]) -> float32[32, 32]:
+    def float_gemm(A: float32[32, 32], B: float32[32, 32]) -> float32[32, 32]:
         C: float32[32, 32] = 0.0
         for i in range(32):
             for j in range(32):
@@ -48,16 +68,10 @@ def test_gemm_float():
                     C[i, j] += A[i, k] * B[k, j]
         return C
 
-    s = allo.customize(gemm)
-    # transformations are applied immediately
-    s.split("i", 8)
-    s.split("j", 8)
-    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    s = allo.customize(float_gemm)
     print(s.module)
 
-
-def test_gemm_reduction_var():
-    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+    def reduction_gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
         for i, j in allo.grid(32, 32):
             v: int32 = 0
@@ -66,11 +80,7 @@ def test_gemm_reduction_var():
             C[i, j] = v
         return C
 
-    s = allo.customize(gemm)
-    # transformations are applied immediately
-    s.split("i", 8)
-    s.split("j", 8)
-    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    s = allo.customize(reduction_gemm)
     print(s.module)
 
 
@@ -318,4 +328,5 @@ def test_copy_arg_scalar():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_grid_for_gemm()
