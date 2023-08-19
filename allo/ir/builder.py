@@ -371,12 +371,7 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_linalg_op(
                 ctx, node=node, op_name=attr, new_args=new_args
             )
-        dtype = node.dtype
-        # Cast lhs and rhs to the same type
-        lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, dtype)
-        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, dtype)
-        op = opcls[type(dtype)]
-        return op(lhs.result, rhs.result, ip=ctx.get_ip())
+        return opcls[type(node.dtype)](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
     def build_UnaryOp(ctx, node):
@@ -410,6 +405,9 @@ class ASTTransformer(ASTBuilder):
     def build_BinOp(ctx, node):
         lhs = build_stmt(ctx, node.left)
         rhs = build_stmt(ctx, node.right)
+        # Cast lhs and rhs to the same type
+        lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
@@ -516,6 +514,8 @@ class ASTTransformer(ASTBuilder):
             lhs = ctx.buffers[node.target.id]
         else:
             raise RuntimeError("Unsupported AugAssign")
+        # Cast rhs to the target type
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         # Aug LHS
         res = ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
         # Store LHS

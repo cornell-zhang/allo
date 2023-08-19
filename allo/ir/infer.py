@@ -176,7 +176,7 @@ class TypeInferer(ASTVisitor):
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
-        TypeInferer.visit_general_binop(ctx, node.target, lhs, rhs)
+        TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
         # store LHS
         node.dtype = lhs.dtype
         node.shape = lhs.shape
@@ -200,9 +200,10 @@ class TypeInferer(ASTVisitor):
             assert (
                 rhs.dtype == target_dtype
             ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
-            assert (
-                rhs.shape == target_shape
-            ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
+            if not isinstance(node.value, ast.Constant):
+                assert (
+                    rhs.shape == target_shape
+                ), f"Shape mismatch, got {rhs.shape} and {target_shape} for `{node.target.id}`"
         else:
             rhs = None
         ctx.buffers[node.target.id] = node
