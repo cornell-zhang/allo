@@ -89,7 +89,6 @@ class TypeInferer(ASTVisitor):
         assert (
             lhs.shape == rhs.shape
         ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
-        # assert lhs.dtype == rhs.dtype, f"Type mismatch, got {lhs.dtype} and {rhs.dtype}"
         typing_rule = get_typing_rule(type(node.op))
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
@@ -202,11 +201,11 @@ class TypeInferer(ASTVisitor):
                 rhs = visit_stmt(ctx, node.value)
             assert (
                 rhs.dtype == target_dtype
-            ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
+            ), f"Type mismatch, got {rhs.dtype} and {target_dtype} for {node.__class__.__name__} `{node.target.id}`"
             if not isinstance(node.value, ast.Constant):
                 assert (
                     rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape} for `{node.target.id}`"
+                ), f"Shape mismatch, got {rhs.shape} and {target_shape} for {node.__class__.__name__} `{node.target.id}`"
         else:
             rhs = None
         ctx.buffers[node.target.id] = node

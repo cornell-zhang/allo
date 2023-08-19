@@ -41,7 +41,7 @@ def test_gemm_range_for():
 
 def test_gemm_float():
     def gemm(A: float32[32, 32], B: float32[32, 32]) -> float32[32, 32]:
-        C: float32[32, 32] = 0
+        C: float32[32, 32] = 0.0
         for i in range(32):
             for j in range(32):
                 for k in range(32):
