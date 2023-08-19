@@ -249,7 +249,9 @@ class TypeInferer(ASTVisitor):
 
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
-        if isinstance(node.returns, ast.Constant) and node.returns.value is None:
+        if node.returns is None or (
+            isinstance(node.returns, ast.Constant) and node.returns.value is None
+        ):
             node.dtype = None
             node.shape = None
         else:
