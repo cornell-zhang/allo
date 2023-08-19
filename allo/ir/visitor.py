@@ -22,6 +22,7 @@ class ASTContext:
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None
+        self.top_func_tree = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
         hcl_d.register_dialect(mlir_ctx)

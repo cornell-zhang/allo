@@ -699,6 +699,7 @@ class ASTTransformer(ASTBuilder):
                 verbose=old_ctx.verbose,
             )
             ctx.set_ip(old_ctx.top_func)
+            ctx.top_func_tree = node
         else:
             old_ctx = None
 
@@ -734,6 +735,7 @@ class ASTTransformer(ASTBuilder):
         func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         ctx.top_func = func_op
+        ctx.top_func_tree = node
         for name, arg in zip(arg_names, func_op.arguments):
             ctx.buffers[name] = MockArg(arg)
         ctx.func_args[node.name] = arg_names
@@ -1046,6 +1048,9 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Return(ctx, node):
         ret = build_stmt(ctx, node.value)
+        ret = ASTTransformer.build_cast_op(
+            ctx, ret, node.dtype, ctx.top_func_tree.dtype
+        )
         return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
     @staticmethod

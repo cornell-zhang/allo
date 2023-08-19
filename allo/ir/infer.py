@@ -239,13 +239,14 @@ class TypeInferer(ASTVisitor):
             )
             ctx.buffers[node.name] = node
 
-        stmts = visit_stmts(ctx, node.body)
-        if not isinstance(stmts[-1], ast.Return):
+        visit_stmts(ctx, node.body)
+        # Note that the result type may be different from the return type
+        if node.returns is None:
             node.dtype = None
             node.shape = None
         else:
-            node.dtype = stmts[-1].dtype
-            node.shape = stmts[-1].shape
+            node.dtype = node.returns.dtype
+            node.shape = node.returns.shape
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
