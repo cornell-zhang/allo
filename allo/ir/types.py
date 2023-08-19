@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
 from hcl_mlir.dialects import hcl as hcl_d
+from hcl_mlir.exceptions import DTypeError
 
 
 class AlloType:
@@ -34,20 +35,26 @@ class Index(AlloType):
 
 
 class Int(AlloType):
+    def __init__(self, bits):
+        super().__init__(bits, f"int{bits}")
+
     def build(self):
         return IntegerType.get_signless(self.bits)
 
 
 class UInt(AlloType):
+    def __init__(self, bits):
+        super().__init__(bits, f"uint{bits}")
+
     def build(self):
         return IntegerType.get_unsigned(self.bits)
 
 
 class Float(AlloType):
-    def __init__(self, bits, name):
+    def __init__(self, bits):
         if bits not in [16, 32, 64]:
             raise RuntimeError("Unsupported floating point type")
-        super().__init__(bits, name)
+        super().__init__(bits, f"float{bits}")
 
     # pylint: disable=inconsistent-return-statements
     def build(self):
@@ -99,19 +106,19 @@ class Struct(AlloType):
         try:
             return self.dtype_dict[key]
         except KeyError as exc:
-            raise RuntimeError(key + " is not in struct") from exc
+            raise DTypeError(key + " is not in struct") from exc
 
     def __getitem__(self, key):
         return self.__getattr__(key)
 
 
-bool = Int(1, "bool")
-int1 = Int(1, "int1")
-int8 = Int(8, "int8")
-int16 = Int(16, "int16")
-int32 = Int(32, "int32")
-int64 = Int(64, "int64")
+bool = Int(1)
+int1 = Int(1)
+int8 = Int(8)
+int16 = Int(16)
+int32 = Int(32)
+int64 = Int(64)
 index = Index()
-float16 = Float(16, "float16")
-float32 = Float(32, "float32")
-float64 = Float(64, "float64")
+float16 = Float(16)
+float32 = Float(32)
+float64 = Float(64)

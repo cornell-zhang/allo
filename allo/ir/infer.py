@@ -10,6 +10,7 @@ import numpy as np
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from .types import int32, float32
+from .typing_rule import get_typing_rule
 
 
 class TypeInferer(ASTVisitor):
@@ -82,12 +83,13 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
-        # TODO: Add type casting
         assert (
             lhs.shape == rhs.shape
         ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
-        assert lhs.dtype == rhs.dtype, f"Type mismatch, got {lhs.dtype} and {rhs.dtype}"
-        node.dtype = lhs.dtype
+        # assert lhs.dtype == rhs.dtype, f"Type mismatch, got {lhs.dtype} and {rhs.dtype}"
+        typing_rule = get_typing_rule(type(node.op))
+        res_type = typing_rule(lhs.dtype, rhs.dtype)
+        node.dtype = res_type
         node.shape = lhs.shape
         return node
 
