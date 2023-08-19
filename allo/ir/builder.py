@@ -613,10 +613,12 @@ class ASTTransformer(ASTBuilder):
         type_hint = node.annotation
         if node.value is not None:
             if (
-                isinstance(node.value, ast.Name)
-                and node.value.id in ctx.buffers
-                or isinstance(node.value, ast.Constant)
-            ):
+                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
+            ) or isinstance(node.value, (ast.Constant, ast.Call)):
+                # Examples:
+                # copied: int32 = a
+                # init: int32 = 0
+                # call: int32 = int(1)
                 rhs = build_stmt(ctx, node.value)
             elif isinstance(node.value, (ast.List, ast.Name)):
                 rhs = ASTTransformer.build_constant_tensor(ctx, node)
