@@ -18,7 +18,7 @@ class TypeInferer(ASTVisitor):
         print(node.__class__.__name__, node.dtype, node.shape)
 
     @staticmethod
-    def visit_type_hint(node, ctx):
+    def visit_type_hint(ctx, node):
         if isinstance(node, ast.Subscript):
             dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             assert dtype is not None, f"Unsupported type {node.value.id}"
@@ -190,7 +190,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        target_dtype, target_shape = TypeInferer.visit_type_hint(node.annotation, ctx)
+        target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
         if node.value is not None:
             if isinstance(node.value, (ast.List, ast.Name)):
                 rhs = TypeInferer.visit_constant_tensor(ctx, node)
@@ -226,7 +226,7 @@ class TypeInferer(ASTVisitor):
             old_ctx = None
         # Input types
         for arg in node.args.args:
-            arg.dtype, arg.shape = TypeInferer.visit_type_hint(arg.annotation, ctx)
+            arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
             ctx.buffers[arg.arg] = arg
 
         # Return type
@@ -235,7 +235,7 @@ class TypeInferer(ASTVisitor):
             or node.returns is None
         ):
             node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
-                node.returns, ctx
+                ctx, node.returns
             )
             ctx.buffers[node.name] = node
 
