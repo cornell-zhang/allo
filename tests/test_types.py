@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import int32, float32, index
 
 
 def test_int32_float32():
@@ -29,6 +29,29 @@ def test_int32_float32_casting():
     assert mod(1) == kernel(1)
 
 
+def test_avgpool_nchw():
+    bs = 4
+    ic, oc = 16, 16
+    ih, iw = 8, 8
+    kh, kw = 2, 2
+    stride = 2
+    oh, ow = (ih - kh) // stride + 1, (iw - kw) // stride + 1
+
+    def avgpool_nchw(A: float32[bs, ic, ih, iw]) -> float32[bs, oc, oh, ow]:
+        B: float32[bs, oc, oh, ow] = 0.0
+        stride: index = 2
+        for n, c, h, w in allo.grid(bs, oc, oh, ow):
+            v: float32 = 0.0
+            for rh, rw in allo.reduction(kh, kw):
+                v += A[n, c, h * stride + rh, w * stride + rw]
+            B[n, c, h, w] = v / (kh * kw)
+        return B
+
+    s = allo.customize(avgpool_nchw)
+    print(s.module)
+
+
 if __name__ == "__main__":
-    test_int32_float32()
-    test_int32_float32_casting()
+    # test_int32_float32()
+    # test_int32_float32_casting()
+    test_avgpool_nchw()

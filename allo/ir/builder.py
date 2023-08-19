@@ -522,7 +522,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_affine_expr(ctx, node):
-        # pylint: disable=no-else-return
         if isinstance(node, ast.Name):
             if (
                 node.id in ctx.buffers
@@ -532,8 +531,13 @@ class ASTTransformer(ASTBuilder):
                 ctx.dim_count += 1
                 ctx.affine_vars.append(node.id)
                 return AffineExpr.get_dim(ctx.dim_count - 1)
-            else:
-                return None
+            if (
+                node.id in ctx.buffers
+                and isinstance(ctx.buffers[node.id], MockScalar)
+                and isinstance(ctx.buffers[node.id].dtype, Index)
+            ):
+                return ASTTransformer.build_affine_expr(ctx, ctx.buffers[node.id].value)
+            return None
         if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)
             rhs = ASTTransformer.build_affine_expr(ctx, node.right)
@@ -684,10 +688,16 @@ class ASTTransformer(ASTBuilder):
                 ctx.buffers[node.target.id] = tensorgen_op
         elif isinstance(type_hint, ast.Name):
             type_str = type_hint.id
+            # TODO: Support type variable
             if type_str in ctx.global_vars:
                 type_str = str(ctx.global_vars[type_str])
             # TODO: figure out why zero-shape cannot work
-            ctx.buffers[node.target.id] = MockScalar(node.target.id, type_str, ctx)
+            ctx.buffers[node.target.id] = MockScalar(
+                node.target.id,
+                node.dtype,
+                ctx,
+                value=node.value,
+            )
             if rhs is not None:
                 rhs = ASTTransformer.build_cast_op(
                     ctx, rhs, node.value.dtype, node.dtype
