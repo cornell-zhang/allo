@@ -37,10 +37,6 @@ def get_kwarg(kwargs, name):
     raise RuntimeError(f"Keyword argument {name} not found")
 
 
-def print_node(node):
-    print(node.__class__.__name__, node.dtype, node.shape)
-
-
 class MockOp:
     def __init__(self):
         pass

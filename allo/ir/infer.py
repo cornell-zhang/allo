@@ -14,6 +14,9 @@ from .typing_rule import get_typing_rule
 
 
 class TypeInferer(ASTVisitor):
+    def print_verbose(self, ctx, node):
+        print(node.__class__.__name__, node.dtype, node.shape)
+
     @staticmethod
     def visit_type_hint(node, ctx):
         if isinstance(node, ast.Subscript):
@@ -221,6 +224,7 @@ class TypeInferer(ASTVisitor):
                 global_vars=ctx.global_vars,
                 mlir_ctx=old_ctx.mlir_ctx,
                 enable_tensor=old_ctx.enable_tensor,
+                verbose=old_ctx.verbose,
             )
         else:
             old_ctx = None
@@ -324,6 +328,7 @@ class TypeInferer(ASTVisitor):
                 global_vars=ctx.global_vars,
                 mlir_ctx=ctx.mlir_ctx,
                 enable_tensor=ctx.enable_tensor,
+                verbose=ctx.verbose,
             )
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST

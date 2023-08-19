@@ -693,7 +693,11 @@ class ASTTransformer(ASTBuilder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=old_ctx.mlir_ctx)
+            ctx = ASTContext(
+                global_vars=ctx.global_vars,
+                mlir_ctx=old_ctx.mlir_ctx,
+                verbose=old_ctx.verbose,
+            )
             ctx.set_ip(old_ctx.top_func)
         else:
             old_ctx = None
@@ -938,7 +942,9 @@ class ASTTransformer(ASTBuilder):
             stmts = [func]
         else:
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx)
+            func_ctx = ASTContext(
+                global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx, verbose=ctx.verbose
+            )
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()

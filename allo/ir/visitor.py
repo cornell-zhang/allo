@@ -18,7 +18,7 @@ class LoopScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars, mlir_ctx, enable_tensor=False):
+    def __init__(self, global_vars, mlir_ctx, enable_tensor=False, verbose=False):
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None
@@ -34,6 +34,7 @@ class ASTContext:
         self.unnamed_linalg_op_count = 0
         self.affine_vars = []
         self.enable_tensor = enable_tensor
+        self.verbose = verbose
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
@@ -56,4 +57,7 @@ class ASTVisitor:
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        return method(ctx, node)
+        res = method(ctx, node)
+        if ctx.verbose and hasattr(self, "print_verbose"):
+            self.print_verbose(ctx, node)
+        return res
