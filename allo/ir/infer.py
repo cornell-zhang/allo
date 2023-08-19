@@ -191,26 +191,16 @@ class TypeInferer(ASTVisitor):
     def visit_AnnAssign(ctx, node):
         target_dtype, target_shape = TypeInferer.visit_type_hint(node.annotation, ctx)
         if node.value is not None:
-            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                rhs = ctx.buffers[node.value.id]
-                assert (
-                    rhs.dtype == target_dtype
-                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
-                assert (
-                    rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
-            elif isinstance(node.value, (ast.List, ast.Name)):
+            if isinstance(node.value, (ast.List, ast.Name)):
                 rhs = TypeInferer.visit_constant_tensor(ctx, node)
-                assert (
-                    rhs.dtype == target_dtype
-                ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
-                assert (
-                    rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
-            elif isinstance(node.value, ast.Constant):
-                rhs = visit_stmt(ctx, node.value)
             else:
-                raise RuntimeError("Unsupported data type")
+                rhs = visit_stmt(ctx, node.value)
+            assert (
+                rhs.dtype == target_dtype
+            ), f"Type mismatch, got {rhs.dtype} and {target_dtype}"
+            assert (
+                rhs.shape == target_shape
+            ), f"Shape mismatch, got {rhs.shape} and {target_shape}"
         else:
             rhs = None
         ctx.buffers[node.target.id] = node
