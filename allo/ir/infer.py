@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import int32, float32
+from .types import int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -255,14 +255,17 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Compare(ctx, node):
-        # FIXME: Not supported yet
-        node.dtype = None
-        node.shape = None
+        visit_stmt(ctx, node.left)
+        visit_stmt(ctx, node.comparators[0])
+        node.dtype = int1
+        node.shape = tuple()
         return node
 
     @staticmethod
     def visit_If(ctx, node):
-        # FIXME: Not supported yet
+        visit_stmts(ctx, node.body)
+        if len(node.orelse) > 0:
+            visit_stmts(ctx, node.orelse)
         node.dtype = None
         node.shape = None
         return node
