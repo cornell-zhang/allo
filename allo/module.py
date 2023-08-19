@@ -124,8 +124,11 @@ class LLVMModule:
                 )
         # TODO: only support one return value for now
         result_types = self.top_func_type.results
-        if len(result_types) != 1:
+        if len(result_types) > 1:
             raise RuntimeError("Only support one return value for now")
+        if len(result_types) == 0:
+            self.execution_engine.invoke(self.top_func_name, *new_args)
+            return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
             shape = result_type.shape
