@@ -118,7 +118,7 @@ class Struct(AlloType):
             dtype_dict[name] = dtype
             self.bits += dtype.bits
         self.dtype_dict = OrderedDict(dtype_dict)
-        super().__init__(self.bits, "struct")
+        super().__init__(self.bits, 0, "struct")
 
     def __repr__(self):
         return "Struct(" + str(self.dtype_dict) + ")"
