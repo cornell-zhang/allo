@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import int1, int32, float32, index
+from allo.ir.types import Int, Float, int1, int32, float32, index
 
 
 def test_int32_float32():
@@ -29,6 +29,33 @@ def test_int32_float32_casting():
     print(s.module)
     mod = s.build()
     assert mod(1) == kernel(1)
+
+
+def test_load_type():
+    def kernel(A: allo.ir.types.Float(32)[32, 32]) -> Int(32)[32, 32]:
+        B: int32[32, 32] = 0
+        for i, j in allo.grid(32, 32):
+            B[i, j] = int(A[i, j])
+        return B
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.rand(32, 32).astype(np.float32)
+    np_B = mod(np_A)
+    np.testing.assert_allclose(np_B, np_A.astype(np.int32), rtol=1e-5, atol=1e-5)
+
+
+def test_load_type_scalar():
+    def kernel(a: allo.ir.types.Float(32)) -> Int(32):
+        b: Float(32) = float(int(1))
+        c: float32 = int(a)
+        return int(b + c)
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    assert mod(1.0) == kernel(1.0)
 
 
 def test_bconv2D_nchw():

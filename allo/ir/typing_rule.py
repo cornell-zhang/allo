@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Ported from heterocl/ast/type_rules.py
-# pylint: disable=no-value-for-parameter
 
 import ast
 import types as python_types

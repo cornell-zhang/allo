@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import int1, int32, float32
+from .types import Fixed, UFixed, int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -18,9 +18,27 @@ class TypeInferer(ASTVisitor):
         print(node.__class__.__name__, node.dtype, node.shape)
 
     @staticmethod
+    def visit_call_type(ctx, node):
+        ty_cls = ASTResolver.resolve(node.func, ctx.global_vars)
+        args = node.args
+        if ty_cls is Fixed or ty_cls is UFixed:
+            assert len(args) == 2
+            assert isinstance(args[0], ast.Constant)
+            assert isinstance(args[1], ast.Constant)
+            dtype = ty_cls(args[0].value, args[1].value)
+        else:
+            assert len(args) == 1
+            assert isinstance(args[0], ast.Constant)
+            dtype = ty_cls(args[0].value)
+        return dtype
+
+    @staticmethod
     def visit_type_hint(ctx, node):
         if isinstance(node, ast.Subscript):
-            dtype = ASTResolver.resolve(node.value, ctx.global_vars)
+            if isinstance(node.value, ast.Call):
+                dtype = TypeInferer.visit_call_type(ctx, node.value)
+            else:
+                dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             assert dtype is not None, f"Unsupported type {node.value.id}"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
@@ -32,6 +50,9 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type {node.id}"
+            return dtype, tuple()
+        if isinstance(node, ast.Call):
+            dtype = TypeInferer.visit_call_type(ctx, node)
             return dtype, tuple()
         raise RuntimeError("Unsupported function argument type")
 
@@ -297,6 +318,7 @@ class TypeInferer(ASTVisitor):
             assert (
                 len(node.args) == 1
             ), "Only support one argument for `float` and `int`"
+            new_args = visit_stmts(ctx, node.args)
             if node.func.id == "float":
                 node.dtype = float32
                 node.shape = tuple()

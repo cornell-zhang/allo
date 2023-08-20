@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=redefined-builtin, no-name-in-module
 
+import numbers
 from collections import OrderedDict
 
 from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
@@ -10,8 +11,17 @@ from hcl_mlir.exceptions import DTypeError
 
 
 class AlloType:
-    def __init__(self, bits, name):
+    def __init__(self, bits, fracs, name):
+        if not isinstance(bits, numbers.Integral):
+            raise DTypeError("Bitwidth must be an integer.")
+        if not isinstance(fracs, numbers.Integral):
+            raise DTypeError("Number of fractional bits must be an integer.")
+        if bits > 2047:
+            raise DTypeError("The maximum supported total bitwidth is 2047 bits.")
+        if fracs > 255:
+            raise DTypeError("The maximum supported fractional bitwidth is 255 bits.")
         self.bits = bits
+        self.fracs = fracs
         self.name = name
 
     def build(self):
@@ -25,10 +35,15 @@ class AlloType:
     def __repr__(self):
         return self.name
 
+    def __eq__(self, other):
+        if other is None or not isinstance(other, AlloType):
+            return False
+        return self.name == other.name
+
 
 class Index(AlloType):
     def __init__(self):
-        super().__init__(32, "index")
+        super().__init__(32, 0, "index")
 
     def build(self):
         return IndexType.get()
@@ -36,7 +51,7 @@ class Index(AlloType):
 
 class Int(AlloType):
     def __init__(self, bits):
-        super().__init__(bits, f"int{bits}")
+        super().__init__(bits, 0, f"int{bits}")
 
     def build(self):
         return IntegerType.get_signless(self.bits)
@@ -44,7 +59,7 @@ class Int(AlloType):
 
 class UInt(AlloType):
     def __init__(self, bits):
-        super().__init__(bits, f"uint{bits}")
+        super().__init__(bits, 0, f"uint{bits}")
 
     def build(self):
         return IntegerType.get_unsigned(self.bits)
@@ -52,9 +67,17 @@ class UInt(AlloType):
 
 class Float(AlloType):
     def __init__(self, bits):
-        if bits not in [16, 32, 64]:
-            raise RuntimeError("Unsupported floating point type")
-        super().__init__(bits, f"float{bits}")
+        if bits == 16:
+            super().__init__(16, 10, f"float{bits}")
+            self.exponent = 5
+        elif bits == 32:
+            super().__init__(32, 23, f"float{bits}")
+            self.exponent = 8
+        elif bits == 64:
+            super().__init__(64, 52, f"float{bits}")
+            self.exponent = 11
+        else:
+            raise DTypeError("Only support float16, float32 and float64")
 
     # pylint: disable=inconsistent-return-statements
     def build(self):
@@ -67,18 +90,16 @@ class Float(AlloType):
 
 
 class Fixed(AlloType):
-    def __init__(self, bits, fracs, name):
-        super().__init__(bits, name)
-        self.fracs = fracs
+    def __init__(self, bits, fracs):
+        super().__init__(bits, fracs, f"fixed({bits}, {fracs})")
 
     def build(self):
         raise hcl_d.FixedType.get(self.bits, self.fracs)
 
 
 class UFixed(AlloType):
-    def __init__(self, bits, fracs, name):
-        super().__init__(bits, name)
-        self.fracs = fracs
+    def __init__(self, bits, fracs):
+        super().__init__(bits, fracs, f"ufixed({bits}, {fracs})")
 
     def build(self):
         raise hcl_d.UFixedType.get(self.bits, self.fracs)
@@ -97,7 +118,7 @@ class Struct(AlloType):
             dtype_dict[name] = dtype
             self.bits += dtype.bits
         self.dtype_dict = OrderedDict(dtype_dict)
-        super().__init__(self.bits, "struct")
+        super().__init__(self.bits, 0, "struct")
 
     def __repr__(self):
         return "Struct(" + str(self.dtype_dict) + ")"
@@ -121,6 +142,37 @@ int8 = Int(8)
 int16 = Int(16)
 int32 = Int(32)
 int64 = Int(64)
+int2 = Int(2)
+int3 = Int(3)
+int4 = Int(4)
+int5 = Int(5)
+int6 = Int(6)
+int7 = Int(7)
+int9 = Int(9)
+int10 = Int(10)
+int11 = Int(11)
+int12 = Int(12)
+int13 = Int(13)
+int14 = Int(14)
+int15 = Int(15)
+uint1 = UInt(1)
+uint8 = UInt(8)
+uint16 = UInt(16)
+uint32 = UInt(32)
+uint64 = UInt(64)
+uint2 = UInt(2)
+uint3 = UInt(3)
+uint4 = UInt(4)
+uint5 = UInt(5)
+uint6 = UInt(6)
+uint7 = UInt(7)
+uint9 = UInt(9)
+uint10 = UInt(10)
+uint11 = UInt(11)
+uint12 = UInt(12)
+uint13 = UInt(13)
+uint14 = UInt(14)
+uint15 = UInt(15)
 index = Index()
 float16 = Float(16)
 float32 = Float(32)
