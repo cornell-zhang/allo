@@ -82,6 +82,7 @@ def make_anywidth_numpy_array(array, bitwidth):
         # This is done by taking the first several bytes of the uint8 array
         # "u1" means one unsigned byte, and "i1" means one signed byte
         # f0 is LSB, fn is MSB
+        # [[(f0, f1, ..., f7), (f0, f1, ..., f7)], ...]
         n_bytes = int(np.ceil(bitwidth / 8))
         new_dtype = np.dtype(
             {
@@ -92,12 +93,17 @@ def make_anywidth_numpy_array(array, bitwidth):
                 "itemsize": n_bytes,
             }
         )
+        # Take each byte as a separate array
+        # [f0  [f1  [f2
+        #  ..   ..   ..
+        #  f0]  f1]  f2]
+        _bytes = [array[f"f{i}"] for i in range(min(avail_bytes, n_bytes))]
         # sometimes the available bytes are not enough to represent the target bitwidth
         # so that we need to pad the array
-        _bytes = [array[f"f{i}"] for i in range(min(avail_bytes, n_bytes))]
         if avail_bytes < n_bytes:
             padding = np.where(sign_array, 0x00, 0xFF).astype(np.uint8)
             _bytes += [padding] * (n_bytes - avail_bytes)
+        # Stack them together
         # -> compose: 6*6*3*i8
         array = np.stack(_bytes, axis=-1)
         # -> flatten: 108*i8
@@ -109,7 +115,7 @@ def make_anywidth_numpy_array(array, bitwidth):
         return array
 
 
-def struct_np_array_to_int(array, dtype):
+def struct_array_to_int_array(array, dtype):
     """
     Converts a structured numpy array to back to an integer array.
     ----------------
@@ -123,36 +129,42 @@ def struct_np_array_to_int(array, dtype):
     numpy.ndarray
         numpy array in np.int64
     """
-    pylist = array.tolist()
-
-    # each element is a tuple
-    def to_int(x):
-        if isinstance(x, list):
-            return [to_int(y) for y in x]
-        signed = str(dtype).startswith("i")
-        # turn x from tuple to list
-        x = list(x)
-        # find MSB
-        byte_idx = (dtype.width - 1) // 8
-        bit_idx = (dtype.width - 1) % 8
-        msb = (x[byte_idx] & (1 << bit_idx)) > 0
-        # sign extension
-        if signed and msb:
-            x[byte_idx] |= (0xFF << bit_idx) & 0xFF
-            for i in range(byte_idx + 1, len(x)):
-                x[i] = 0xFF
-        # concatenate the tuple
-        # each element is a byte
-        byte_str = b""
-        for byte in x:
-            byte_str += byte.to_bytes(1, byteorder="little", signed=False)
-        value = int.from_bytes(byte_str, byteorder="little", signed=signed)
-        return value
-
-    pylist = to_int(pylist)
-    if dtype.width <= 64:
-        return np.array(pylist, dtype=np.int64)
-    return pylist
+    # TODO: Sometimes we need to use Python native list to do the conversion
+    #       since Numpy array cannot hold very long-bitwidth integer (>64)
+    #       See: https://github.com/cornell-zhang/heterocl/pull/493
+    # e.g., numpy input 6*6*i24
+    # 1. Take each byte as a separate array
+    # [f0  [f1  [f2
+    #  ..   ..   ..
+    #  f0]  f1]  f2]
+    # -> unflatten: 6*6*3*i8
+    bitwidth = dtype.width
+    shape = array.shape
+    signed = str(dtype).startswith("i")
+    n_bytes = int(np.ceil(bitwidth / 8))
+    if bitwidth > 64:
+        raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
+    target_bytes = 4 if bitwidth <= 32 else 8  # 32-bit or 64-bit
+    _bytes = [array[f"f{i}"] for i in range(n_bytes)]
+    # Take the negative sign part
+    sign_array = _bytes[-1] >= 0x80
+    for _ in range(len(_bytes), target_bytes):
+        if signed:
+            sign = np.zeros_like(_bytes[0], dtype=np.uint8)
+            sign[sign_array] = 0xFF
+            _bytes.append(sign)
+        else:
+            _bytes.append(np.zeros_like(_bytes[0], dtype=np.uint8))
+    # Stack them together
+    # compose: 6*6*4*i8
+    array = np.stack(_bytes, axis=-1)
+    # -> flatten: 144*i8
+    array = array.flatten()
+    # -> view: 36*i24
+    array = array.view(np.int32 if bitwidth <= 32 else np.int64)
+    # -> reshape: 6*6*i24
+    array = array.reshape(shape)
+    return array
 
 
 def invoke_mlir_parser(mod: str):
@@ -264,10 +276,10 @@ class LLVMModule:
             raise RuntimeError("Only support zero/one return value for now")
         if len(result_types) == 0:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
-            for arg, new_arg in zip(args, new_args):
+            for i, (arg, new_arg) in enumerate(zip(args, new_args)):
                 if isinstance(arg, np.ndarray):
-                    arg[:] = struct_np_array_to_int(
-                        new_arg, MemRefType(in_type).element_type
+                    arg[:] = struct_array_to_int_array(
+                        new_arg, MemRefType(input_types[i]).element_type
                     )
             return
         if MemRefType.isinstance(result_types[0]):
