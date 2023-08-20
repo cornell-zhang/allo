@@ -50,32 +50,6 @@ def test_pipeline():
     print(s.module)
 
 
-def test_unroll():
-    def unroll(A: int32[10, 20], B: int32[10, 20]) -> int32[10, 20]:
-        C: int32[10, 20] = 0
-        for i, j in allo.grid(10, 20):
-            C[i, j] = A[i, j] + B[i, j]
-        return C
-
-    s = allo.customize(unroll)
-    s.unroll("i", factor=4)
-    print(s.module)
-
-
-def test_fuse():
-    def fuse(
-        A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]
-    ) -> int32[10, 20, 30, 40]:
-        C: int32[10, 20, 30, 40] = 0
-        for i, j, k, l in allo.grid(10, 20, 30, 40):
-            C[i, j, k, l] = A[i, j, k, l] + B[i, j, k, l]
-        return C
-
-    s = allo.customize(fuse)
-    s.fuse("j", "k")
-    print(s.module)
-
-
 def test_reorder():
     def reorder(
         A: int32[10, 20, 30, 40], B: int32[10, 20, 30, 40]
@@ -120,6 +94,22 @@ def test_split():
 
     test_transform_mode_1()
     test_transform_mode_2()
+
+
+
+def test_split_imperfect():
+    def kernel(A: int32[10, 10]) -> int32[10]:
+        B: int32[10] = 0
+        for x in allo.grid(10):
+            v: int32 = 0
+            for r in allo.reduction(10):
+                v += A[x, r]
+            B[x] = v
+        return B
+
+    s = allo.customize(kernel)
+    s.split("x", 5)
+    print(s.module)
 
 
 def test_split_reorder():
@@ -241,21 +231,6 @@ def test_compute_at_complex():
     print(s.module)
 
 
-def test_multi_stage():
-    def multi_stage(A: int32[10, 10]) -> int32[10]:
-        B: int32[10] = 0
-        for x in allo.grid(10):
-            v: int32 = 0
-            for r in allo.reduction(10):
-                v += A[x, r]
-            B[x] = v
-        return B
-
-    s = allo.customize(multi_stage)
-    s.split("x", 5)
-    print(s.module)
-
-
 def test_multiband():
     def kernel(A: int32[32, 32]) -> int32[32, 32]:
         B: int32[32, 32] = 0
@@ -298,7 +273,7 @@ def test_compute_at():
     print(s2.build("vhls"))
 
 
-def test_imperfect_loops():
+def test_access_imperfect_loops():
     M, K, N = 32, 32, 32
 
     def gemm(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
