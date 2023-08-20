@@ -96,7 +96,6 @@ def test_split():
     test_transform_mode_2()
 
 
-
 def test_split_imperfect():
     def kernel(A: int32[10, 10]) -> int32[10]:
         B: int32[10] = 0
