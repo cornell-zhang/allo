@@ -220,17 +220,15 @@ class LLVMModule:
         for arg, in_type in zip(args, input_types):
             if not isinstance(arg, np.ndarray):  # scalar
                 if isinstance(arg, int):
-                    if str(in_type) != "i32":
-                        raise RuntimeError(
-                            f"Input type mismatch, expected i32, but got {str(in_type)}"
-                        )
+                    assert (
+                        str(in_type) == "i32"
+                    ), f"Input type mismatch, expected i32, but got {str(in_type)}"
                     c_int_p = ctypes.c_int * 1
                     arg_ptrs.append(c_int_p(arg))
                 elif isinstance(arg, float):
-                    if str(in_type) != "f32":
-                        raise RuntimeError(
-                            f"Input type mismatch, expected f32, but got {str(in_type)}"
-                        )
+                    assert (
+                        str(in_type) == "f32"
+                    ), f"Input type mismatch, expected f32, but got {str(in_type)}"
                     c_float_p = ctypes.c_float * 1
                     arg_ptrs.append(c_float_p(arg))
                 else:
@@ -244,10 +242,9 @@ class LLVMModule:
                     ).warn()
                 # TODO: Handle overflow
                 if target_type.startswith("i") or target_type.startswith("u"):
-                    target_type = IntegerType(MemRefType(in_type).element_type)
                     # Int or UInt type
-                    # Get the closest power of 2
-                    # .bit_length() is a Python method
+                    target_type = IntegerType(MemRefType(in_type).element_type)
+                    # Get the closest power of 2, .bit_length() is a Python method
                     bitwidth = 1 << (target_type.width - 1).bit_length()
                     bitwidth = max(bitwidth, 8)
                     # this is to be compliant with MLIR's anywidth int type alignment
@@ -258,18 +255,20 @@ class LLVMModule:
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
                     arg = make_anywidth_numpy_array(arg, bitwidth)
-                    new_args.append(arg)
                 arg_ptrs.append(
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))
                 )
-        # TODO: only support one return value for now
+            new_args.append(arg)
         result_types = self.top_func_type.results
         if len(result_types) > 1:
-            raise RuntimeError("Only support one return value for now")
+            raise RuntimeError("Only support zero/one return value for now")
         if len(result_types) == 0:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
             for arg, new_arg in zip(args, new_args):
-                arg[:] = struct_np_array_to_int(new_arg, MemRefType(in_type).element_type)
+                if isinstance(arg, np.ndarray):
+                    arg[:] = struct_np_array_to_int(
+                        new_arg, MemRefType(in_type).element_type
+                    )
             return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
@@ -295,8 +294,11 @@ class LLVMModule:
             elif str(result_type) == "i64":
                 dtype = ctypes.c_int64
             else:
-                raise RuntimeError("Unsupported return type, please wrap the scalar as an array")
+                raise RuntimeError(
+                    "Unsupported return type, please wrap the scalar as an array"
+                )
             dtype_p = dtype * 1
+            # -1 is a placeholder
             return_ptr = dtype_p(-1)
         elif F32Type.isinstance(result_types[0]):
             result_type = F32Type(result_types[0])
