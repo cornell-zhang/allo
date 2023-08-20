@@ -7,6 +7,33 @@ import allo
 from allo.ir.types import int32, float32
 
 
+def test_math_scalar():
+    M = 10
+    K = 15
+    N = 20
+    A = np.float32(np.random.uniform(size=(M, K)))
+    B = np.float32(np.random.uniform(size=(K, N)))
+
+    def kernel(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
+        C: float32[M, N] = 0.0
+        D: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N):
+            for k in allo.reduction(K):
+                C[i, j] += A[i, k] * B[k, j]
+        for i, j in allo.grid(M, N):
+            D[i, j] = (allo.exp(C[i, j]) + allo.log(C[i, j])) / C[i, j]
+        return D
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    outs = np.zeros((M, N), dtype="float32")
+    outs = f(A, B)
+    np1 = np.matmul(A, B)
+    np_outs = (np.exp(np1) + np.log(np1)) / np1
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
 def test_linalg_matmul():
     M = 10
     K = 15

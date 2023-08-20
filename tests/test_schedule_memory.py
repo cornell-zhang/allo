@@ -4,7 +4,7 @@
 import allo
 import numpy as np
 import pytest
-from allo.ir.types import int1, int32, float32, index
+from allo.ir.types import int32, float32, index
 
 
 def test_reuse_blur_x():
@@ -265,77 +265,47 @@ def test_conv2D_lb():
     print(s.module)
     mod = s.build()
 
-    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
-    np_C = np.zeros((8, 8), dtype="int")
 
-    for y in range(0, 8):
-        for x in range(0, 8):
-            for r in range(0, 3):
-                for c in range(0, 3):
-                    np_C[y][x] += np_A[y + r][x + c]
+def test_interleaving_acc():
+    # https://github.com/cornell-zhang/allo-dialect/blob/v0.1/test/Transforms/memory/buffer_gemm.mlir#L86
+    M, N, K = 1024, 1024, 1024
 
-    np_B = mod(np_A)
+    def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
+        C: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N):
+            for k in allo.reduction(K):
+                C[i, j] += A[i, k] * B[k, j]
+        return C
 
-    assert np.array_equal(np_B, np_C)
+    s = allo.customize(gemm)
+    print(s.module)
+    s.reorder("k", "j")
+    s.buffer_at(s.C, axis="i")
+    s.pipeline("j")
+    print(s.module)
+
+    # CPU simulation
+    mod = s.build()
+    np_A = np.random.random((M, K)).astype(np.float32)
+    np_B = np.random.random((K, N)).astype(np.float32)
+    np_C = np.matmul(np_A, np_B)
+    np_C_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+    print(s.build(target="vhls"))
 
 
-def test_conv2D_wb():
-    def conv2D_wb(A: int32[10, 10]) -> int32[8, 8]:
-        B: int32[8, 8] = 0
-        for y, x in allo.grid(8, 8):
-            v: int32 = 0
-            for r, c in allo.reduction(3, 3):
-                v += A[y + r, x + c]
-            B[y, x] = v
+def test_buffer_at():
+    M, N = 1024, 1024
+
+    def gemm(A: float32[M, N]) -> float32[M, N]:
+        B: float32[M, N] = 0.0
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1.0
         return B
 
-    s = allo.customize(conv2D_wb)
-    WB = s.reuse_at(s.A, "x")
+    s = allo.customize(gemm)
+    s.buffer_at(s.B, axis="i")
     print(s.module)
-    mod = s.build()
-
-    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
-    np_C = np.zeros((8, 8), dtype="int")
-
-    for y in range(0, 8):
-        for x in range(0, 8):
-            for r in range(0, 3):
-                for c in range(0, 3):
-                    np_C[y][x] += np_A[y + r][x + c]
-
-    np_B = mod(np_A)
-
-    assert np.array_equal(np_B, np_C)
-
-
-def test_conv2D_lb_wb():
-    def conv2D_lb_wb(A: int32[10, 10]) -> int32[8, 8]:
-        B: int32[8, 8] = 0
-        for y, x in allo.grid(8, 8):
-            v: int32 = 0
-            for r, c in allo.reduction(3, 3):
-                v += A[y + r, x + c]
-            B[y, x] = v
-        return B
-
-    s = allo.customize(conv2D_lb_wb)
-    LB = s.reuse_at(s.A, "y")
-    WB = s.reuse_at(LB, "x")
-    print(s.module)
-    mod = s.build()
-
-    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
-    np_C = np.zeros((8, 8), dtype="int")
-
-    for y in range(0, 8):
-        for x in range(0, 8):
-            for r in range(0, 3):
-                for c in range(0, 3):
-                    np_C[y][x] += np_A[y + r][x + c]
-
-    np_B = mod(np_A)
-
-    assert np.array_equal(np_B, np_C)
 
 
 def test_partition_basic():
@@ -529,6 +499,59 @@ def test_avgpool_nchw():
 
     np_B = mod(np_A)
     assert np.allclose(np_B, np_C)
+
+
+def test_call_partition():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp: int32[M, N]
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_addi(inp)
+        for i, j in allo.grid(M, N):
+            outp[i, j] = temp1[i, j] + temp2[i, j]
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.temp1)
+    s.partition(s.temp2)
+    print(s.module)
+
+
+def test_call_partition_nested():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    def matrix_add(A: int32[M, N], B: int32[M, N]) -> int32[M, N]:
+        C: int32[M, N]
+        for i, j in allo.grid(M, N):
+            C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp: int32[M, N]
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_addi(inp)
+        outp = matrix_add(temp1, temp2)
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.temp1)
+    print(s.module)
+
+    f = s.build(target="vhls")
+    print(f)
 
 
 if __name__ == "__main__":
