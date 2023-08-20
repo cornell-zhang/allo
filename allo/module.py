@@ -147,7 +147,12 @@ def struct_array_to_int_array(array, dtype):
     target_bytes = 4 if bitwidth <= 32 else 8  # 32-bit or 64-bit
     _bytes = [array[f"f{i}"] for i in range(n_bytes)]
     # Take the negative sign part
-    sign_array = _bytes[-1] >= 0x80
+    # Find the MSB
+    bit_idx = (bitwidth - 1) % 8
+    sign_array = (_bytes[-1] & (1 << bit_idx)) > 0
+    # Need to also set _bytes[-1]
+    if signed:
+        _bytes[-1][sign_array] |= (0xFF << bit_idx) & 0xFF
     for _ in range(len(_bytes), target_bytes):
         if signed:
             sign = np.zeros_like(_bytes[0], dtype=np.uint8)

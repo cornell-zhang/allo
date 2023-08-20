@@ -51,7 +51,7 @@ def test_load_type():
 def test_arbitrary_bitwidth_gemm():
     M, N, K = 4, 4, 4
     # This test is to make sure the whole flow works properly.
-    def gemm(A: Int(5)[M, K], B: Int(5)[K, N], C: int16[M, N]):
+    def gemm(A: Int(5)[M, K], B: Int(5)[K, N], C: Int(14)[M, N]):
         # Use grid_for with name annotation
         for i, j, k in allo.grid(M, N, K, name="C"):
             C[i, j] += A[i, k] * B[k, j]
