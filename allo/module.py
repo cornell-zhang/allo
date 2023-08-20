@@ -28,9 +28,131 @@ from hcl_mlir.runtime import (
     make_nd_memref_descriptor,
     ranked_memref_to_numpy,
 )
+from hcl_mlir.exceptions import DTypeWarning
 from .utils import np_type_to_str
 from .report import parse_xml
 from .runtime import run_process, copy_build_files
+
+
+def make_anywidth_numpy_array(array, bitwidth):
+    """
+    Converts a numpy array to any target bitwidth.
+    ----------------
+    Parameters:
+    array: numpy.ndarray
+        numpy array, can be any numpy native bitwidth, e.g. np.int64
+    bitwidth: int
+        target bitwidth e.g. 9, 31, 198
+    ----------------
+    Returns:
+    numpy.ndarray
+        numpy array with the target bitwidth
+    """
+    shape = array.shape
+    sign_array = array >= 0
+    avail_bytes = array.itemsize  # number of bytes of each element
+    # The following code has several steps to convert the numpy array to have
+    # the correct data type in order to create an MLIR constant tensor.
+    # Since MLIR-NumPy Python interface only supports byte-addressable data types,
+    # we need to change the data type of the array to have the minimum number of bytes
+    # that can represent the target bitwidth.
+    # e.g., hcl.const_tensor(arr, dtype=hcl.Int(20)) (6*6 array)
+    #       which requires 20 bits (3 bytes) to represent each element
+    # declaration: 6*6*i20
+    # numpy input: 6*6*i64
+    # 1. Decompose the original i32 or i64 array into a structured array of uint8
+    #  -> decompose: 6*6*8*i8
+    # pylint: disable=no-else-return
+    if bitwidth == 1:
+        return np.packbits(array, axis=None, bitorder="little")
+    else:
+        # Here we construct a customized NumPy dtype, "f0", "f1", "f2", etc.
+        # are the field names, and the entire data type is `op.values.dtype`.
+        # This can be viewed as a `union` type in C/C++.
+        # Please refer to the documentation for more details:
+        # https://numpy.org/doc/stable/reference/arrays.dtypes.html#specifying-and-constructing-data-types
+        decomposed_np_dtype = np.dtype(
+            (
+                array.dtype,
+                {f"f{i}": (np.uint8, i) for i in range(array.dtype.itemsize)},
+            )
+        )
+        array = array.view(decomposed_np_dtype)
+        # 2. Compose the uint8 array into a structured array of target bitwidth
+        # This is done by taking the first several bytes of the uint8 array
+        # "u1" means one unsigned byte, and "i1" means one signed byte
+        # f0 is LSB, fn is MSB
+        n_bytes = int(np.ceil(bitwidth / 8))
+        new_dtype = np.dtype(
+            {
+                "names": [f"f{i}" for i in range(n_bytes)],
+                # all set to unsigned byte
+                "formats": ["u1"] * n_bytes,
+                "offsets": list(range(n_bytes)),
+                "itemsize": n_bytes,
+            }
+        )
+        # sometimes the available bytes are not enough to represent the target bitwidth
+        # so that we need to pad the array
+        _bytes = [array[f"f{i}"] for i in range(min(avail_bytes, n_bytes))]
+        if avail_bytes < n_bytes:
+            padding = np.where(sign_array, 0x00, 0xFF).astype(np.uint8)
+            _bytes += [padding] * (n_bytes - avail_bytes)
+        # -> compose: 6*6*3*i8
+        array = np.stack(_bytes, axis=-1)
+        # -> flatten: 108*i8
+        array = array.flatten()
+        # -> view: 36*i24
+        array = array.view(np.dtype(new_dtype))
+        # -> reshape: 6*6*i24
+        array = array.reshape(shape)
+        return array
+
+
+def struct_np_array_to_int(array, dtype):
+    """
+    Converts a structured numpy array to back to an integer array.
+    ----------------
+    Parameters:
+    array: numpy.ndarray
+        A structured numpy array
+    dtype: mlir.types
+        The target MLIR element type
+    ----------------
+    Returns:
+    numpy.ndarray
+        numpy array in np.int64
+    """
+    pylist = array.tolist()
+
+    # each element is a tuple
+    def to_int(x):
+        if isinstance(x, list):
+            return [to_int(y) for y in x]
+        signed = str(dtype).startswith("i")
+        # turn x from tuple to list
+        x = list(x)
+        # find MSB
+        byte_idx = (dtype.width - 1) // 8
+        bit_idx = (dtype.width - 1) % 8
+        msb = (x[byte_idx] & (1 << bit_idx)) > 0
+        # sign extension
+        if signed and msb:
+            x[byte_idx] |= (0xFF << bit_idx) & 0xFF
+            for i in range(byte_idx + 1, len(x)):
+                x[i] = 0xFF
+        # concatenate the tuple
+        # each element is a byte
+        byte_str = b""
+        for byte in x:
+            byte_str += byte.to_bytes(1, byteorder="little", signed=False)
+        value = int.from_bytes(byte_str, byteorder="little", signed=signed)
+        return value
+
+    pylist = to_int(pylist)
+    if dtype.width <= 64:
+        return np.array(pylist, dtype=np.int64)
+    return pylist
 
 
 def invoke_mlir_parser(mod: str):
@@ -90,36 +212,54 @@ class LLVMModule:
         * https://github.com/llvm/llvm-project/blob/llvmorg-15.0.0/mlir/test/Integration/Dialect/SparseTensor/python/test_SpMM.py
         """
         input_types = self.top_func_type.inputs
+        arg_ptrs = []
         new_args = []
         assert len(args) == len(
             input_types
         ), f"# of input arguments mismatch, got {len(args)} but expected {len(input_types)}"
         for arg, in_type in zip(args, input_types):
-            if not isinstance(arg, np.ndarray):
+            if not isinstance(arg, np.ndarray):  # scalar
                 if isinstance(arg, int):
                     if str(in_type) != "i32":
                         raise RuntimeError(
                             f"Input type mismatch, expected i32, but got {str(in_type)}"
                         )
                     c_int_p = ctypes.c_int * 1
-                    new_args.append(c_int_p(arg))
+                    arg_ptrs.append(c_int_p(arg))
                 elif isinstance(arg, float):
                     if str(in_type) != "f32":
                         raise RuntimeError(
                             f"Input type mismatch, expected f32, but got {str(in_type)}"
                         )
                     c_float_p = ctypes.c_float * 1
-                    new_args.append(c_float_p(arg))
+                    arg_ptrs.append(c_float_p(arg))
                 else:
                     raise RuntimeError("Unsupported input type")
             else:
                 np_type = np_type_to_str(arg.dtype)
                 target_type = str(MemRefType(in_type).element_type)
                 if np_type != target_type:
-                    raise RuntimeError(
+                    DTypeWarning(
                         f"Input type mismatch: {np_type} vs {target_type}"
-                    )
-                new_args.append(
+                    ).warn()
+                # TODO: Handle overflow
+                if target_type.startswith("i") or target_type.startswith("u"):
+                    target_type = IntegerType(MemRefType(in_type).element_type)
+                    # Int or UInt type
+                    # Get the closest power of 2
+                    # .bit_length() is a Python method
+                    bitwidth = 1 << (target_type.width - 1).bit_length()
+                    bitwidth = max(bitwidth, 8)
+                    # this is to be compliant with MLIR's anywidth int type alignment
+                    # e.g. i1-i8 -> int8
+                    #      i9-i16 -> int16
+                    #      i17-i32 -> int32
+                    #      i33-i64 -> int64
+                    #      i65-i128 -> int128
+                    #      i129-i256 -> int256
+                    arg = make_anywidth_numpy_array(arg, bitwidth)
+                    new_args.append(arg)
+                arg_ptrs.append(
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))
                 )
         # TODO: only support one return value for now
@@ -127,7 +267,9 @@ class LLVMModule:
         if len(result_types) > 1:
             raise RuntimeError("Only support one return value for now")
         if len(result_types) == 0:
-            self.execution_engine.invoke(self.top_func_name, *new_args)
+            self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
+            for arg, new_arg in zip(args, new_args):
+                arg[:] = struct_np_array_to_int(new_arg, MemRefType(in_type).element_type)
             return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
@@ -143,8 +285,9 @@ class LLVMModule:
                 dtype = ctypes.c_int64
             else:
                 raise RuntimeError("Unsupported return type")
+            # Create an empty tensor
             return_desc = make_nd_memref_descriptor(len(shape), dtype)()
-            return_tensor = ctypes.pointer(ctypes.pointer(return_desc))
+            return_ptr = ctypes.pointer(ctypes.pointer(return_desc))
         elif IntegerType.isinstance(result_types[0]):
             result_type = IntegerType(result_types[0])
             if str(result_type) == "i32":
@@ -152,21 +295,21 @@ class LLVMModule:
             elif str(result_type) == "i64":
                 dtype = ctypes.c_int64
             else:
-                raise RuntimeError("Unsupported return type")
+                raise RuntimeError("Unsupported return type, please wrap the scalar as an array")
             dtype_p = dtype * 1
-            return_tensor = dtype_p(-1)
+            return_ptr = dtype_p(-1)
         elif F32Type.isinstance(result_types[0]):
             result_type = F32Type(result_types[0])
             dtype_p = ctypes.c_float * 1
-            return_tensor = dtype_p(-1.0)
+            return_ptr = dtype_p(-1.0)
         else:
             raise RuntimeError("Unsupported return type")
         if MemRefType.isinstance(result_types[0]):
-            self.execution_engine.invoke(self.top_func_name, return_tensor, *new_args)
-            ret = ranked_memref_to_numpy(return_tensor[0])
+            self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
+            ret = ranked_memref_to_numpy(return_ptr[0])
         else:
-            self.execution_engine.invoke(self.top_func_name, *new_args, return_tensor)
-            ret = return_tensor[0]
+            self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
+            ret = return_ptr[0]
         return ret
 
 
