@@ -613,8 +613,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_AnnAssign(ctx, node):
-        ip = ctx.get_ip()
-        type_hint = node.annotation
         if node.value is not None:
             if (
                 isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
@@ -630,26 +628,18 @@ class ASTTransformer(ASTBuilder):
                 raise RuntimeError("Unsupported data type")
         else:
             rhs = None
-        if isinstance(type_hint, ast.Subscript):
-            type_str = type_hint.value.id
-            if type_str in ctx.global_vars:
-                type_str = str(ctx.global_vars[type_str])
-            # pylint: disable=redefined-builtin
-            slice = (
-                type_hint.slice.value
-                if isinstance(type_hint.slice, ast.Index)
-                else type_hint.slice
-            )
-            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-            shape, dtype = node.shape, node.dtype
+        shape, dtype = node.shape, node.dtype
+        if len(shape) > 0:
             if not ctx.enable_tensor:
                 memref_type = build_shaped_type(dtype, shape, False)
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                        alloc_op = memref_d.AllocOp(
+                            memref_type, [], [], ip=ctx.get_ip()
+                        )
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                         ctx.buffers[node.target.id] = alloc_op
-                        with ip:
+                        with ctx.get_ip():
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.copy(
                                 rhs.result,
@@ -666,31 +656,26 @@ class ASTTransformer(ASTBuilder):
                     )
                     ctx.buffers[node.target.id] = rhs
                 elif isinstance(node.value, ast.Constant) or (node.value is None):
-                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
                     alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                     ctx.buffers[node.target.id] = alloc_op
                     if rhs is not None:
-                        with ip:
+                        with ctx.get_ip():
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
                 tensor_type = build_shaped_type(dtype, shape, True)
-                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ip)
+                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ctx.get_ip())
                 index_type = []
-                for _ in elts:
+                for _ in range(len(shape)):
                     index_type.append(IndexType.get())
                 ctx.set_ip(tensorgen_op.regions[0].blocks.append(*index_type))
-                ip = ctx.get_ip()
-                tensor_d.YieldOp(rhs.result, ip=ip)
-                ip = ctx.pop_ip()
+                tensor_d.YieldOp(rhs.result, ip=ctx.get_ip())
+                ctx.pop_ip()
                 ctx.buffers[node.target.id] = tensorgen_op
-        elif isinstance(type_hint, ast.Name):
-            type_str = type_hint.id
-            # TODO: Support type variable
-            if type_str in ctx.global_vars:
-                type_str = str(ctx.global_vars[type_str])
+        else:
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
@@ -703,8 +688,6 @@ class ASTTransformer(ASTBuilder):
                     ctx, rhs, node.value.dtype, node.dtype
                 )
                 ASTTransformer.build_store(ctx, node.target, rhs)
-        else:
-            raise RuntimeError("Unsupported AnnAssign")
 
     @staticmethod
     def build_FunctionDef(ctx, node):
@@ -901,20 +884,14 @@ class ASTTransformer(ASTBuilder):
             assert (
                 len(node.args) == 1
             ), "Only support one argument for `float` and `int`"
-            new_arg = [stmt.result for stmt in build_stmts(ctx, node.args)][0]
+            stmts = build_stmts(ctx, node.args)
             if node.func.id == "float":
-                # TODO: Support other types
-                return arith_d.SIToFPOp(
-                    F32Type.get(),
-                    new_arg,
-                    ip=ctx.get_ip(),
+                return ASTTransformer.build_cast_op(
+                    ctx, stmts[0], node.args[0].dtype, Float(32)
                 )
             if node.func.id == "int":
-                # TODO: Support other types
-                return arith_d.FPToSIOp(
-                    IntegerType.get_signless(32),
-                    new_arg,
-                    ip=ctx.get_ip(),
+                return ASTTransformer.build_cast_op(
+                    ctx, stmts[0], node.args[0].dtype, Int(32)
                 )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
