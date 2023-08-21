@@ -70,6 +70,28 @@ def test_arbitrary_bitwidth_gemm():
     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
 
 
+def test_arbitrary_bitwidth_gemm_alloc_output():
+    M, N, K = 4, 4, 4
+    # This test is to make sure the whole flow works properly.
+    def gemm(A: Int(5)[M, K], B: Int(5)[K, N]) -> int16[M, N]:
+        C: int16[M, N] = 0
+        for i, j, k in allo.grid(M, N, K, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    # 1. Create customization
+    s = allo.customize(gemm)
+    print(s.module)
+
+    # 3. Build and run
+    mod = s.build()
+    np_A = np.random.randint(-10, 10, size=(M, K)).astype(np.int32)
+    np_B = np.random.randint(-10, 10, size=(K, N)).astype(np.int32)
+    np_C = np.matmul(np_A, np_B)
+    np_C_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+
 def test_load_type_scalar():
     def kernel(a: allo.ir.types.Float(32)) -> Int(32):
         b: Float(32) = float(int(1))
@@ -131,4 +153,4 @@ def test_avgpool_nchw():
 
 if __name__ == "__main__":
     # pytest.main([__file__])
-    test_arbitrary_bitwidth_gemm()
+    test_arbitrary_bitwidth_gemm_alloc_output()

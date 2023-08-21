@@ -295,6 +295,10 @@ class LLVMModule:
                 dtype = ctypes.c_float
             elif str(result_type) == "f64":
                 dtype = ctypes.c_double
+            elif str(result_type) == "i8":
+                dtype = ctypes.c_int8
+            elif str(result_type) == "i16":
+                dtype = ctypes.c_int16
             elif str(result_type) == "i32":
                 dtype = ctypes.c_int32
             elif str(result_type) == "i64":
