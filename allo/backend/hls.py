@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, consider-using-with, inconsistent-return-statements
+# pylint: disable=consider-using-with
 
 import os
 import re
