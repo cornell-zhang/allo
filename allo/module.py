@@ -34,6 +34,19 @@ from .report import parse_xml
 from .runtime import run_process, copy_build_files
 
 
+def get_np_struct_type(bitwidth):
+    n_bytes = int(np.ceil(bitwidth / 8))
+    return np.dtype(
+        {
+            "names": [f"f{i}" for i in range(n_bytes)],
+            # all set to unsigned byte
+            "formats": ["u1"] * n_bytes,
+            "offsets": list(range(n_bytes)),
+            "itemsize": n_bytes,
+        }
+    )
+
+
 def make_anywidth_numpy_array(array, bitwidth):
     """
     Converts a numpy array to any target bitwidth.
@@ -84,15 +97,7 @@ def make_anywidth_numpy_array(array, bitwidth):
         # f0 is LSB, fn is MSB
         # [[(f0, f1, ..., f7), (f0, f1, ..., f7)], ...]
         n_bytes = int(np.ceil(bitwidth / 8))
-        new_dtype = np.dtype(
-            {
-                "names": [f"f{i}" for i in range(n_bytes)],
-                # all set to unsigned byte
-                "formats": ["u1"] * n_bytes,
-                "offsets": list(range(n_bytes)),
-                "itemsize": n_bytes,
-            }
-        )
+        new_dtype = get_np_struct_type(bitwidth)
         # Take each byte as a separate array
         # [f0  [f1  [f2
         #  ..   ..   ..
@@ -303,6 +308,10 @@ class LLVMModule:
                 dtype = ctypes.c_int32
             elif str(result_type) == "i64":
                 dtype = ctypes.c_int64
+            elif str(result_type).startswith("i"):
+                dtype = np.ctypeslib.as_ctypes_type(
+                    get_np_struct_type(result_type.width)
+                )
             else:
                 raise RuntimeError("Unsupported return type")
             # Create an empty tensor
@@ -330,6 +339,16 @@ class LLVMModule:
         if MemRefType.isinstance(result_types[0]):
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
             ret = ranked_memref_to_numpy(return_ptr[0])
+            result_type = MemRefType(result_types[0]).element_type
+            if str(result_type) not in [
+                "f32",
+                "f64",
+                "i8",
+                "i16",
+                "i32",
+                "i64",
+            ] and str(result_type).startswith("i"):
+                ret = struct_array_to_int_array(ret, result_type)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
             ret = return_ptr[0]

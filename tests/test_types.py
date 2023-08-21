@@ -72,9 +72,10 @@ def test_arbitrary_bitwidth_gemm():
 
 def test_arbitrary_bitwidth_gemm_alloc_output():
     M, N, K = 4, 4, 4
+    T_OUT = Int(14)
     # This test is to make sure the whole flow works properly.
-    def gemm(A: Int(5)[M, K], B: Int(5)[K, N]) -> int16[M, N]:
-        C: int16[M, N] = 0
+    def gemm(A: Int(5)[M, K], B: Int(5)[K, N]) -> T_OUT[M, N]:
+        C: T_OUT[M, N] = 0
         for i, j, k in allo.grid(M, N, K, name="C"):
             C[i, j] += A[i, k] * B[k, j]
         return C
@@ -89,7 +90,10 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
     np_B = np.random.randint(-10, 10, size=(K, N)).astype(np.int32)
     np_C = np.matmul(np_A, np_B)
     np_C_allo = mod(np_A, np_B)
+    print(np_C)
+    print(np_C_allo)
     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+    print("Passed!")
 
 
 def test_load_type_scalar():
