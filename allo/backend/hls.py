@@ -25,7 +25,7 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     # make the project folder and copy files
     os.makedirs(project, exist_ok=True)
     path = os.path.dirname(__file__)
-    path = os.path.join(path, "harness/")
+    path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls"}:
         os.system("cp " + path + "vivado/* " + project)
         if platform == "vitis_hls":
