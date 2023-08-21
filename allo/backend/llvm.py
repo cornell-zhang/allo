@@ -3,9 +3,6 @@
 # pylint: disable=no-name-in-module, consider-using-with, inconsistent-return-statements
 
 import os
-import io
-import subprocess
-import time
 import ctypes
 import numpy as np
 from hcl_mlir.ir import (
@@ -29,8 +26,6 @@ from hcl_mlir.runtime import (
     ranked_memref_to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
-from .report import parse_xml
-from .runtime import run_process, copy_build_files
 
 
 np_supported_types = {
@@ -238,7 +233,8 @@ class LLVMModule:
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
-                "builtin.module(one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},func.func(convert-linalg-to-affine-loops),lower-affine)"
+                "builtin.module(one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                "func.func(convert-linalg-to-affine-loops),lower-affine)"
             )
             pm.run(self.module.operation)
             # find top func op
@@ -409,69 +405,3 @@ class LLVMModule:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
             ret = return_ptr[0]
         return ret
-
-
-class HLSModule:
-    def __init__(self, mod, top_func_name, mode=None, project=None):
-        self.module = mod
-        self.top_func_name = top_func_name
-        self.mode = mode
-        self.project = project
-        buf = io.StringIO()
-        hcl_d.emit_vhls(self.module, buf)
-        buf.seek(0)
-        self.hls_code = buf.read()
-        if project is not None:
-            assert mode is not None, "mode must be specified when project is specified"
-            copy_build_files(self.top_func_name, project, mode)
-            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.hls_code)
-            with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write("")
-
-    def __repr__(self):
-        if self.mode is None:
-            return self.hls_code
-        return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
-
-    def __call__(self, shell=True):
-        platform = "vivado_hls"
-        if platform in {"vivado_hls", "vitis_hls"}:
-            assert (
-                os.system(f"which {platform} >> /dev/null") == 0
-            ), f"cannot find {platform} on system path"
-            ver = run_process("g++ --version", r"\d\.\d\.\d")[0].split(".")
-            assert (
-                int(ver[0]) * 10 + int(ver[1]) >= 48
-            ), f"g++ version too old {ver[0]}.{ver[1]}.{ver[2]}"
-
-            cmd = f"cd {self.project}; make "
-            if self.mode == "csim":
-                cmd += "csim"
-                out = run_process(cmd + " 2>&1")
-                runtime = [k for k in out.split("\n") if "seconds" in k][0]
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Simulation runtime {runtime}"
-                )
-
-            elif "csyn" in self.mode or self.mode == "custom" or self.mode == "debug":
-                cmd += platform
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
-                )
-                if shell:
-                    subprocess.Popen(cmd, shell=True).wait()
-                else:
-                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
-                if self.mode != "custom":
-                    out = parse_xml(
-                        self.project,
-                        "Vivado HLS",
-                        top=self.top_func_name,
-                        print_flag=True,
-                    )
-
-            else:
-                raise RuntimeError(f"{platform} does not support {self.mode} mode")
-        else:
-            raise RuntimeError("Not implemented")
