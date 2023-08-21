@@ -79,7 +79,7 @@ def get_np_struct_type(bitwidth):
 
 
 def is_anywidth_int_type_and_not_np(dtype):
-    return str(dtype) not in np_supported_types.keys() and (
+    return str(dtype) not in np_supported_types and (
         str(dtype).startswith("i") or str(dtype).startswith("u")
     )
 
@@ -315,6 +315,13 @@ class LLVMModule:
                     #      i129-i256 -> int256
                     bitwidth = max(get_clostest_pow2(target_type.width), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
+                elif str(target_type) in np_supported_types:
+                    arg = arg.astype(np_supported_types[str(target_type)])
+                else: # unsupported type (fixed type)
+                    raise RuntimeError(
+                        f"Unsupported input type: {str(target_type)}, "
+                        f"please use a supported type or wrap the scalar as an array"
+                    )
                 arg_ptrs.append(
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))
                 )

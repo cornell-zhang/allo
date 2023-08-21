@@ -88,6 +88,7 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
         (Int(4), Int(8)),
         (Int(5), Int(9)),
         (Int(7), Int(16)),
+        (Int(8), Int(16)),
     ]:
         s = allo.customize(gemm)
         mod = s.build()
@@ -104,8 +105,11 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
         (Int(5), Int(16)),
         (Int(6), Int(17)),
         (Int(9), Int(31)),
-        # (Int(8), Int(32)),
+        (Int(8), Int(32)),
         (Int(7), Int(33)),
+        (Int(15), Int(34)),
+        (Int(16), Int(32)),
+        (Int(17), Int(31)),
     ]:
         s = allo.customize(gemm)
         mod = s.build()
