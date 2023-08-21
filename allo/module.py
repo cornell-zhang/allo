@@ -341,6 +341,8 @@ class LLVMModule:
                     target_type = MemRefType(input_types[i]).element_type
                     if is_anywidth_int_type_and_not_np(target_type):
                         arg[:] = struct_array_to_int_array(new_arg, target_type)
+                    else:
+                        arg[:] = new_arg
             return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])

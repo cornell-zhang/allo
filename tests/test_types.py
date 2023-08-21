@@ -75,7 +75,6 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
     M, N, K = 4, 4, 4
     T_IN, T_OUT = Int(4), Int(16)
 
-    # This test is to make sure the whole flow works properly.
     def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
         C: T_OUT[M, N] = 0
         for i, j, k in allo.grid(M, N, K, name="C"):
