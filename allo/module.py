@@ -29,7 +29,6 @@ from hcl_mlir.runtime import (
     ranked_memref_to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
-from .utils import np_type_to_str
 from .report import parse_xml
 from .runtime import run_process, copy_build_files
 
@@ -46,6 +45,12 @@ np_supported_types = {
     "ui32": np.uint32,
     "ui64": np.uint64,
 }
+
+
+def np_type_to_str(dtype):
+    return list(np_supported_types.keys())[
+        list(np_supported_types.values()).index(dtype)
+    ]
 
 
 def get_clostest_pow2(n):
