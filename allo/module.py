@@ -301,7 +301,7 @@ class LLVMModule:
             else:
                 np_type = np_type_to_str(arg.dtype)
                 target_type = MemRefType(in_type).element_type
-                if np_type != target_type:
+                if np_type != str(target_type):
                     DTypeWarning(
                         f"Input type mismatch: {np_type} vs {str(target_type)}"
                     ).warn()
@@ -319,7 +319,10 @@ class LLVMModule:
                     bitwidth = max(get_clostest_pow2(target_type.width), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif str(target_type) in np_supported_types:
-                    arg = arg.astype(np_supported_types[str(target_type)])
+                    target_np_type = np_supported_types[str(target_type)]
+                    if arg.dtype != target_np_type:
+                        # avoid changing the address of the original array
+                        arg = arg.astype(target_np_type)
                 else:  # unsupported type (fixed type)
                     raise RuntimeError(
                         f"Unsupported input type: {str(target_type)}, "
@@ -331,6 +334,7 @@ class LLVMModule:
             new_args.append(arg)
 
         # 2. Construct return pointers
+        # Need to verify the return variable is not the same as the input
         result_types = self.top_func_type.results
         if len(result_types) > 1:
             raise RuntimeError("Only support zero/one return value for now")
@@ -384,6 +388,7 @@ class LLVMModule:
         elif F32Type.isinstance(result_types[0]):
             result_type = F32Type(result_types[0])
             dtype_p = ctypes.c_float * 1
+            # -1.0 is a placeholder
             return_ptr = dtype_p(-1.0)
         else:
             raise RuntimeError("Unsupported return type")

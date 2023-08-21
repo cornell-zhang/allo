@@ -15,7 +15,7 @@ def test_same():
     print(s.module)
 
     mod = s.build()
-    np_A = np.zeros((32, 32)).astype(np.int32)
+    np_A = np.zeros((32, 32)).astype(np.int32) + 1
     np_A_allo = mod(np_A)
     np.testing.assert_allclose(np_A, np_A_allo, rtol=1e-5)
 
