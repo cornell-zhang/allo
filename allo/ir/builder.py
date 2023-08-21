@@ -303,16 +303,19 @@ class ASTTransformer(ASTBuilder):
             ast.Add: {
                 Float: arith_d.AddFOp,
                 Int: arith_d.AddIOp,
+                UInt: arith_d.AddIOp,
                 Fixed: hcl_d.AddFixedOp,
             },
             ast.Sub: {
                 Float: arith_d.SubFOp,
                 Int: arith_d.SubIOp,
+                UInt: arith_d.SubIOp,
                 Fixed: hcl_d.SubFixedOp,
             },
             ast.Mult: {
                 Float: arith_d.MulFOp,
                 Int: arith_d.MulIOp,
+                UInt: arith_d.MulIOp,
                 Fixed: hcl_d.MulFixedOp,
             },
             ast.Div: {

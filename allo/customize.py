@@ -34,6 +34,7 @@ from .ir.utils import MockArg, MockBuffer
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
+from .ir.types import AlloType
 from .build_module import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .module import LLVMModule, HLSModule
 
@@ -54,9 +55,10 @@ def _get_global_vars(_func):
     global_vars = _func.__globals__.copy()
 
     # Get back to the outer-most scope (user-defined function)
-    # Mainly used to get the annotation definitions, which are probably not defined in __globals__
+    # Mainly used to get the annotation definitions (shape and type),
+    # which are probably not defined in __globals__
     for name, var in inspect.stack()[2][0].f_locals.items():
-        if isinstance(var, (int, float)) or inspect.isfunction(var):
+        if isinstance(var, (int, float, AlloType)) or inspect.isfunction(var):
             global_vars[name] = var
 
     freevar_names = _func.__code__.co_freevars

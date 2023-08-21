@@ -225,9 +225,6 @@ class TypeInferer(ASTVisitor):
                 rhs = TypeInferer.visit_constant_tensor(ctx, node)
             else:
                 raise RuntimeError("Unsupported data type")
-            # assert (
-            #     rhs.dtype == target_dtype
-            # ), f"Type mismatch, got {rhs.dtype} and {target_dtype} for {node.__class__.__name__} `{node.target.id}`"
             if not isinstance(node.value, ast.Constant):
                 assert (
                     rhs.shape == target_shape
