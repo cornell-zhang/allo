@@ -3,5 +3,6 @@
 # pylint: disable=redefined-builtin
 
 from .customize import customize
-from .module import invoke_mlir_parser, LLVMModule
+from .backend.llvm import invoke_mlir_parser, LLVMModule
+from .backend.hls import HLSModule
 from .dsl import *

@@ -35,8 +35,9 @@ from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .ir.types import AlloType
-from .build_module import _mlir_lower_pipeline, lower_linalg_and_attach_names
-from .module import LLVMModule, HLSModule
+from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
+from .backend.llvm import LLVMModule
+from .backend.hls import HLSModule
 
 
 def getsourcefile(obj):
