@@ -167,7 +167,10 @@ def struct_array_to_int_array(array, dtype):
     if bitwidth > 64:
         raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
     target_bytes = max(get_clostest_pow2(bitwidth), 8) // 8
-    _bytes = [array[f"f{i}"] for i in range(n_bytes)]
+    if n_bytes == 1:
+        _bytes = [array]
+    else:
+        _bytes = [array[f"f{i}"] for i in range(n_bytes)]
     # Take the negative sign part
     # Find the MSB
     bit_idx = (bitwidth - 1) % 8
@@ -251,6 +254,18 @@ class LLVMModule:
         * https://github.com/llvm/llvm-project/blob/llvmorg-15.0.0/mlir/test/Integration/Dialect/SparseTensor/python/test_SpMM.py
         """
         input_types = self.top_func_type.inputs
+        np_supported_types = [
+            "f32",
+            "f64",
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+            "ui8",
+            "ui16",
+            "ui32",
+            "ui64",
+        ]
         arg_ptrs = []
         new_args = []
         assert len(args) == len(
@@ -280,7 +295,9 @@ class LLVMModule:
                         f"Input type mismatch: {np_type} vs {target_type}"
                     ).warn()
                 # TODO: Handle overflow
-                if target_type.startswith("i") or target_type.startswith("u"):
+                if target_type not in np_supported_types and (
+                    target_type.startswith("i") or target_type.startswith("u")
+                ):
                     # Int or UInt type
                     target_type = IntegerType(MemRefType(in_type).element_type)
                     # This is to be compliant with MLIR's anywidth int type alignment
@@ -354,14 +371,9 @@ class LLVMModule:
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
             ret = ranked_memref_to_numpy(return_ptr[0])
             result_type = MemRefType(result_types[0]).element_type
-            if str(result_type) not in [
-                "f32",
-                "f64",
-                "i8",
-                "i16",
-                "i32",
-                "i64",
-            ] and str(result_type).startswith("i"):
+            if str(result_type) not in np_supported_types and (
+                str(result_type).startswith("i") or target_type.startswith("u")
+            ):
                 ret = struct_array_to_int_array(ret, result_type)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)

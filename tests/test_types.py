@@ -50,6 +50,7 @@ def test_load_type():
 
 def test_arbitrary_bitwidth_gemm():
     M, N, K = 4, 4, 4
+
     # This test is to make sure the whole flow works properly.
     def gemm(A: Int(5)[M, K], B: Int(5)[K, N], C: Int(14)[M, N]):
         # Use grid_for with name annotation
@@ -72,28 +73,48 @@ def test_arbitrary_bitwidth_gemm():
 
 def test_arbitrary_bitwidth_gemm_alloc_output():
     M, N, K = 4, 4, 4
-    T_OUT = Int(14)
+    T_IN, T_OUT = Int(4), Int(16)
+
     # This test is to make sure the whole flow works properly.
-    def gemm(A: Int(5)[M, K], B: Int(5)[K, N]) -> T_OUT[M, N]:
+    def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
         C: T_OUT[M, N] = 0
         for i, j, k in allo.grid(M, N, K, name="C"):
             C[i, j] += A[i, k] * B[k, j]
         return C
 
-    # 1. Create customization
-    s = allo.customize(gemm)
-    print(s.module)
+    M, N, K = 2, 2, 2
+    for T_IN, T_OUT in [
+        (Int(3), Int(7)),
+        (Int(4), Int(8)),
+        (Int(5), Int(9)),
+        (Int(7), Int(16)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.randint(-4, 4, size=(M, K)).astype(np.int32)
+        np_B = np.random.randint(-4, 4, size=(K, N)).astype(np.int32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        print(f"Passed {T_IN}, {T_OUT}!")
 
-    # 3. Build and run
-    mod = s.build()
-    np_A = np.random.randint(-10, 10, size=(M, K)).astype(np.int32)
-    np_B = np.random.randint(-10, 10, size=(K, N)).astype(np.int32)
-    np_C = np.matmul(np_A, np_B)
-    np_C_allo = mod(np_A, np_B)
-    print(np_C)
-    print(np_C_allo)
-    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
-    print("Passed!")
+    M, N, K = 4, 4, 4
+    for T_IN, T_OUT in [
+        (Int(4), Int(15)),
+        (Int(5), Int(16)),
+        (Int(6), Int(17)),
+        (Int(9), Int(31)),
+        (Int(8), Int(32)),
+        (Int(7), Int(33)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.randint(-8, 8, size=(M, K)).astype(np.int32)
+        np_B = np.random.randint(-8, 8, size=(K, N)).astype(np.int32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        print(f"Passed {T_IN}, {T_OUT}!")
 
 
 def test_load_type_scalar():
