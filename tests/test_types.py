@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, Float, int1, int16, int32, float32, index
+from allo.ir.types import Int, UInt, Float, int1, int32, float32, index
 import allo.ir.types as T
 
 
@@ -99,6 +99,23 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
         np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
         print(f"Passed {T_IN}, {T_OUT}!")
 
+    # Note: UInt is still not supported
+    # for T_IN, T_OUT in [
+    #     (UInt(3), UInt(7)),
+    #     (UInt(4), UInt(8)),
+    #     (UInt(5), UInt(9)),
+    #     (UInt(7), UInt(16)),
+    #     (UInt(8), UInt(16)),
+    # ]:
+    #     s = allo.customize(gemm)
+    #     mod = s.build()
+    #     np_A = np.random.randint(0, 8, size=(M, K)).astype(np.int32)
+    #     np_B = np.random.randint(0, 8, size=(K, N)).astype(np.int32)
+    #     np_C = np.matmul(np_A, np_B)
+    #     np_C_allo = mod(np_A, np_B)
+    #     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+    #     print(f"Passed {T_IN}, {T_OUT}!")
+
     M, N, K = 4, 4, 4
     for T_IN, T_OUT in [
         (Int(4), Int(15)),
@@ -181,5 +198,4 @@ def test_avgpool_nchw():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_arbitrary_bitwidth_gemm_alloc_output()
+    pytest.main([__file__])
