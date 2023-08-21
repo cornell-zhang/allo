@@ -267,6 +267,7 @@ class LLVMModule:
                 self.module, opt_level=3, shared_libs=shared_libs
             )
 
+    # pylint: disable=too-many-branches
     def __call__(self, *args):
         """
         Reference:
@@ -279,6 +280,8 @@ class LLVMModule:
         assert len(args) == len(
             input_types
         ), f"# of input arguments mismatch, got {len(args)} but expected {len(input_types)}"
+
+        # 1. Construct argument pointers
         for arg, in_type in zip(args, input_types):
             if not isinstance(arg, np.ndarray):  # scalar
                 if isinstance(arg, int):
@@ -317,7 +320,7 @@ class LLVMModule:
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif str(target_type) in np_supported_types:
                     arg = arg.astype(np_supported_types[str(target_type)])
-                else: # unsupported type (fixed type)
+                else:  # unsupported type (fixed type)
                     raise RuntimeError(
                         f"Unsupported input type: {str(target_type)}, "
                         f"please use a supported type or wrap the scalar as an array"
@@ -326,6 +329,8 @@ class LLVMModule:
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))
                 )
             new_args.append(arg)
+
+        # 2. Construct return pointers
         result_types = self.top_func_type.results
         if len(result_types) > 1:
             raise RuntimeError("Only support zero/one return value for now")
@@ -380,6 +385,8 @@ class LLVMModule:
             return_ptr = dtype_p(-1.0)
         else:
             raise RuntimeError("Unsupported return type")
+
+        # 3. Invoke the function and return the result
         if MemRefType.isinstance(result_types[0]):
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
             ret = ranked_memref_to_numpy(return_ptr[0])
