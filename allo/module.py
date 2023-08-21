@@ -34,6 +34,23 @@ from .report import parse_xml
 from .runtime import run_process, copy_build_files
 
 
+def get_clostest_pow2(n):
+    # .bit_length() is a Python method
+    return 1 << (n - 1).bit_length()
+
+
+def get_np_pow2_type(bitwidth, signed=True):
+    if bitwidth <= 8:
+        return np.int8 if signed else np.uint8
+    if bitwidth <= 16:
+        return np.int16 if signed else np.uint16
+    if bitwidth <= 32:
+        return np.int32 if signed else np.uint32
+    if bitwidth <= 64:
+        return np.int64 if signed else np.uint64
+    raise RuntimeError("Unsupported bitwidth")
+
+
 def get_np_struct_type(bitwidth):
     n_bytes = int(np.ceil(bitwidth / 8))
     return np.dtype(
@@ -149,7 +166,7 @@ def struct_array_to_int_array(array, dtype):
     n_bytes = int(np.ceil(bitwidth / 8))
     if bitwidth > 64:
         raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
-    target_bytes = 4 if bitwidth <= 32 else 8  # 32-bit or 64-bit
+    target_bytes = max(get_clostest_pow2(bitwidth), 8) // 8
     _bytes = [array[f"f{i}"] for i in range(n_bytes)]
     # Take the negative sign part
     # Find the MSB
@@ -170,9 +187,9 @@ def struct_array_to_int_array(array, dtype):
     array = np.stack(_bytes, axis=-1)
     # -> flatten: 144*i8
     array = array.flatten()
-    # -> view: 36*i24
-    array = array.view(np.int32 if bitwidth <= 32 else np.int64)
-    # -> reshape: 6*6*i24
+    # -> view: 36*i32
+    array = array.view(get_np_pow2_type(bitwidth))
+    # -> reshape: 6*6*i32
     array = array.reshape(shape)
     return array
 
@@ -266,16 +283,14 @@ class LLVMModule:
                 if target_type.startswith("i") or target_type.startswith("u"):
                     # Int or UInt type
                     target_type = IntegerType(MemRefType(in_type).element_type)
-                    # Get the closest power of 2, .bit_length() is a Python method
-                    bitwidth = 1 << (target_type.width - 1).bit_length()
-                    bitwidth = max(bitwidth, 8)
-                    # this is to be compliant with MLIR's anywidth int type alignment
+                    # This is to be compliant with MLIR's anywidth int type alignment
                     # e.g. i1-i8 -> int8
                     #      i9-i16 -> int16
                     #      i17-i32 -> int32
                     #      i33-i64 -> int64
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
+                    bitwidth = max(get_clostest_pow2(target_type.width), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 arg_ptrs.append(
                     ctypes.pointer(ctypes.pointer(get_ranked_memref_descriptor(arg)))
@@ -309,9 +324,8 @@ class LLVMModule:
             elif str(result_type) == "i64":
                 dtype = ctypes.c_int64
             elif str(result_type).startswith("i"):
-                dtype = np.ctypeslib.as_ctypes_type(
-                    get_np_struct_type(result_type.width)
-                )
+                bitwidth = max(get_clostest_pow2(result_type.width), 8)
+                dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
             else:
                 raise RuntimeError("Unsupported return type")
             # Create an empty tensor
