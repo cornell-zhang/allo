@@ -34,6 +34,20 @@ from .report import parse_xml
 from .runtime import run_process, copy_build_files
 
 
+np_supported_types = {
+    "f32": np.float32,
+    "f64": np.float64,
+    "i8": np.int8,
+    "i16": np.int16,
+    "i32": np.int32,
+    "i64": np.int64,
+    "ui8": np.uint8,
+    "ui16": np.uint16,
+    "ui32": np.uint32,
+    "ui64": np.uint64,
+}
+
+
 def get_clostest_pow2(n):
     # .bit_length() is a Python method
     return 1 << (n - 1).bit_length()
@@ -61,6 +75,12 @@ def get_np_struct_type(bitwidth):
             "offsets": list(range(n_bytes)),
             "itemsize": n_bytes,
         }
+    )
+
+
+def is_anywidth_int_type_and_not_np(dtype):
+    return str(dtype) not in np_supported_types.keys() and (
+        str(dtype).startswith("i") or str(dtype).startswith("u")
     )
 
 
@@ -168,7 +188,7 @@ def struct_array_to_int_array(array, dtype):
         raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
     target_bytes = max(get_clostest_pow2(bitwidth), 8) // 8
     if n_bytes == 1:
-        _bytes = [array]
+        _bytes = [array] if array.dtype == np.uint8 else [array["f0"]]
     else:
         _bytes = [array[f"f{i}"] for i in range(n_bytes)]
     # Take the negative sign part
@@ -254,18 +274,6 @@ class LLVMModule:
         * https://github.com/llvm/llvm-project/blob/llvmorg-15.0.0/mlir/test/Integration/Dialect/SparseTensor/python/test_SpMM.py
         """
         input_types = self.top_func_type.inputs
-        np_supported_types = [
-            "f32",
-            "f64",
-            "i8",
-            "i16",
-            "i32",
-            "i64",
-            "ui8",
-            "ui16",
-            "ui32",
-            "ui64",
-        ]
         arg_ptrs = []
         new_args = []
         assert len(args) == len(
@@ -289,15 +297,13 @@ class LLVMModule:
                     raise RuntimeError("Unsupported input type")
             else:
                 np_type = np_type_to_str(arg.dtype)
-                target_type = str(MemRefType(in_type).element_type)
+                target_type = MemRefType(in_type).element_type
                 if np_type != target_type:
                     DTypeWarning(
-                        f"Input type mismatch: {np_type} vs {target_type}"
+                        f"Input type mismatch: {np_type} vs {str(target_type)}"
                     ).warn()
                 # TODO: Handle overflow
-                if target_type not in np_supported_types and (
-                    target_type.startswith("i") or target_type.startswith("u")
-                ):
+                if is_anywidth_int_type_and_not_np(target_type):
                     # Int or UInt type
                     target_type = IntegerType(MemRefType(in_type).element_type)
                     # This is to be compliant with MLIR's anywidth int type alignment
@@ -320,9 +326,9 @@ class LLVMModule:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
             for i, (arg, new_arg) in enumerate(zip(args, new_args)):
                 if isinstance(arg, np.ndarray):
-                    arg[:] = struct_array_to_int_array(
-                        new_arg, MemRefType(input_types[i]).element_type
-                    )
+                    target_type = MemRefType(input_types[i]).element_type
+                    if is_anywidth_int_type_and_not_np(target_type):
+                        arg[:] = struct_array_to_int_array(new_arg, target_type)
             return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
@@ -371,9 +377,7 @@ class LLVMModule:
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
             ret = ranked_memref_to_numpy(return_ptr[0])
             result_type = MemRefType(result_types[0]).element_type
-            if str(result_type) not in np_supported_types and (
-                str(result_type).startswith("i") or target_type.startswith("u")
-            ):
+            if is_anywidth_int_type_and_not_np(result_type):
                 ret = struct_array_to_int_array(ret, result_type)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
