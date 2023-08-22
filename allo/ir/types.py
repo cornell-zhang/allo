@@ -98,7 +98,7 @@ class Fixed(AlloType):
         super().__init__(bits, fracs, f"fixed({bits}, {fracs})")
 
     def build(self):
-        raise hcl_d.FixedType.get(self.bits, self.fracs)
+        return hcl_d.FixedType.get(self.bits, self.fracs)
 
 
 class UFixed(AlloType):
@@ -106,7 +106,7 @@ class UFixed(AlloType):
         super().__init__(bits, fracs, f"ufixed({bits}, {fracs})")
 
     def build(self):
-        raise hcl_d.UFixedType.get(self.bits, self.fracs)
+        return hcl_d.UFixedType.get(self.bits, self.fracs)
 
 
 class Struct(AlloType):

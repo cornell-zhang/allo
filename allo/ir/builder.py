@@ -716,6 +716,9 @@ class ASTTransformer(ASTBuilder):
                     ctx.buffers[node.target.id] = alloc_op
                     if rhs is not None:
                         with ctx.get_ip():
+                            rhs = ASTTransformer.build_cast_op(
+                                ctx, rhs, node.value.dtype, node.dtype
+                            )
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
                 else:

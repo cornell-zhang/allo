@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, uint1, int32, float32, index
+from allo.ir.types import Int, UInt, Float, Fixed, uint1, int32, float32, index
 import allo.ir.types as T
 
 
@@ -218,6 +218,21 @@ def test_avgpool_nchw():
     np_C = np.zeros((bs, oc, oh, ow), dtype=np.float32)
     avgpool_nchw(np_A, np_C)
     np.testing.assert_allclose(np_B, np_C, rtol=1e-5, atol=1e-5)
+
+
+def test_fixed_gemm():
+    M, N, K = 4, 4, 4
+    T_IN, T_OUT = Fixed(12, 4), Fixed(20, 4)
+
+    def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
+        C: T_OUT[M, N] = 0
+        for i, j, k in allo.grid(M, N, K, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+    print(s.module)
+    print(s.build(target="vhls"))
 
 
 if __name__ == "__main__":
