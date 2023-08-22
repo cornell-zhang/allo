@@ -256,15 +256,15 @@ class LLVMModule:
                 )
             func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
             func.attributes["top"] = UnitAttr.get()
+            self.top_func_type = func.type
             self.type_hint = {
                 "itypes": func.attributes["itypes"].value
                 if "itypes" in func.attributes
-                else None,
+                else "_" * len(func.type.inputs),
                 "otypes": func.attributes["otypes"].value
                 if "otypes" in func.attributes
-                else None,
+                else "_" * len(func.type.results),
             }
-            self.top_func_type = func.type
             self.top_func_name = top_func_name
             hcl_d.lower_hcl_to_llvm(self.module, ctx)
             # Add shared library
