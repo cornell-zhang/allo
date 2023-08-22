@@ -1037,9 +1037,20 @@ class ASTTransformer(ASTBuilder):
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
                 alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ip)
-            ASTTransformer.build_init_zero(
-                ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
-            )
+            # init zero
+            zero = MockConstant(0, ctx)
+            zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+            linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+            # add op name for init_zero
+            if hasattr(node, "keywords") and len(node.keywords) > 0:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{node.keywords[0].value.value}_init_zero"
+                )
+            else:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
+                )
+            # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
                 op = {
                     "matmul": linalg_d.matmul,
@@ -1074,34 +1085,6 @@ class ASTTransformer(ASTBuilder):
                 )
                 ctx.unnamed_linalg_op_count += 1
         return alloc_op
-
-    @staticmethod
-    def build_init_zero(ctx, node, op_name, init_op, dtype):
-        # initialize data op
-        with ctx.get_ip():
-            if str(dtype) == "int32":
-                # pylint: disable=unexpected-keyword-arg
-                zero = arith_d.ConstantOp(
-                    value=IntegerAttr.get(dtype.build(), 0), result=dtype.build()
-                ).result
-            elif str(dtype) == "float32":
-                # pylint: disable=unexpected-keyword-arg
-                zero = arith_d.ConstantOp(
-                    value=FloatAttr.get(dtype.build(), 0.0), result=dtype.build()
-                ).result
-            else:
-                raise RuntimeError("Unsupported data type")
-            # pylint: disable=unexpected-keyword-arg
-            linalg_fill = linalg_d.fill(zero, outs=[init_op.result])
-            # add op name for init_zero
-            if hasattr(node, "keywords") and len(node.keywords) > 0:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.keywords[0].value.value}_init_zero"
-                )
-            else:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
-                )
 
     @staticmethod
     def build_Return(ctx, node):
