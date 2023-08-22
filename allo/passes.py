@@ -41,6 +41,7 @@ def lower_linalg_and_attach_names(module):
                 linalg_d.BatchMatmulOp,
                 linalg_d.MatmulOp,
                 linalg_d.SoftmaxOp,
+                linalg_d.GenericOp,
                 linalg_d.FillOp,
                 linalg_d.AddOp,
                 linalg_d.SubOp,
