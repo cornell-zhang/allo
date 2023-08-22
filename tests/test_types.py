@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, Fixed, uint1, int32, float32, index
+from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int32, float32, index
 import allo.ir.types as T
 
 
@@ -233,6 +233,33 @@ def test_fixed_gemm():
     s = allo.customize(gemm)
     print(s.module)
     print(s.build(target="vhls"))
+
+
+######################################################################
+# Legacy tests
+######################################################################
+
+
+def test_type_comparison():
+    # float type attributes
+    assert Float(32).fracs == 23
+    assert Float(32).exponent == 8
+    assert Float(32).bits == 32
+    assert Float(64).fracs == 52
+    assert Float(64).exponent == 11
+    assert Float(64).bits == 64
+    # type comparision
+    list_of_types = [Float(32), Float(64)]
+    list_of_types += [Int(i) for i in range(2, 66, 4)]
+    list_of_types += [UInt(i) for i in range(2, 66, 4)]
+    list_of_types += [Fixed(i, i - 2) for i in range(2, 66, 4)]
+    list_of_types += [UFixed(i, i - 2) for i in range(2, 66, 4)]
+    for i in range(len(list_of_types)):
+        for j in range(len(list_of_types)):
+            if i == j:
+                assert list_of_types[i] == list_of_types[j]
+            else:
+                assert list_of_types[i] != list_of_types[j]
 
 
 if __name__ == "__main__":
