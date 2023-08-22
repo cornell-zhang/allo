@@ -739,6 +739,10 @@ class ASTTransformer(ASTBuilder):
         func_type = FunctionType.get(input_types, output_types)
         func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
+        # attach type hints
+        func_op.attributes["otypes"] = StringAttr.get("".join(output_typehints))
+        func_op.attributes["itypes"] = StringAttr.get("".join(input_typehints))
+        # set context
         ctx.top_func = func_op
         ctx.top_func_tree = node
         for name, arg in zip(arg_names, func_op.arguments):
