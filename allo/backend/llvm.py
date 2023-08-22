@@ -376,9 +376,8 @@ class LLVMModule:
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
             shape = result_type.shape
-            width = result_type.element_type.width
             hint = self.type_hint["otypes"][0]
-            result_type = get_signed_type_by_hint(str(result_type.element_type), hint)
+            result_stype = get_signed_type_by_hint(str(result_type.element_type), hint)
             ctype_map = {
                 "f32": ctypes.c_float,
                 "f64": ctypes.c_double,
@@ -391,9 +390,10 @@ class LLVMModule:
                 "ui32": ctypes.c_uint32,
                 "ui64": ctypes.c_uint64,
             }
-            if result_type in ctype_map:
-                dtype = ctype_map[result_type]
-            elif str(result_type).startswith("i") or str(result_type).startswith("ui"):
+            if result_stype in ctype_map:
+                dtype = ctype_map[result_stype]
+            elif result_stype.startswith("i") or result_stype.startswith("ui"):
+                width = result_type.element_type.width
                 bitwidth = max(get_clostest_pow2(width), 8)
                 dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
             else:
