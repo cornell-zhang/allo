@@ -95,21 +95,20 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "T":
             ip = ctx.get_ip()
             shape = node.shape
-            arg = build_stmts(ctx, [node.value])
-            new_arg = arg[0].result
+            new_arg = build_stmt(ctx, node.value).result
             memref_type = MemRefType.get(shape, node.dtype.build())
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             index_exprs = []
             for dim in range(len(shape)):
                 index_exprs.append(AffineExpr.get_dim(dim))
-            affine_map0 = AffineMap.get(
+            affine_map_in = AffineMap.get(
                 dim_count=len(shape), symbol_count=0, exprs=index_exprs
             )
-            affine_map1 = AffineMap.get(
+            affine_map_out = AffineMap.get(
                 dim_count=len(shape), symbol_count=0, exprs=index_exprs[::-1]
             )
             indexing_maps_attr = ArrayAttr.get(
-                [AffineMapAttr.get(affine_map0), AffineMapAttr.get(affine_map1)]
+                [AffineMapAttr.get(affine_map_in), AffineMapAttr.get(affine_map_out)]
             )
             iterator_types_attr = ArrayAttr.get(
                 [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
@@ -122,7 +121,8 @@ class ASTTransformer(ASTBuilder):
                 result_tensors=[],
                 iterator_types=iterator_types_attr,
             )
-            block_arg_types = [node.dtype.build(), node.dtype.build()]
+            # input and output types
+            block_arg_types = [node.value.dtype.build(), node.dtype.build()]
             block = op.regions[0].blocks.append(*block_arg_types)
             ctx.set_ip(block)
             linalg_d.YieldOp([block.arguments[0]], ip=ctx.get_ip())

@@ -89,8 +89,7 @@ class TypeInferer(ASTVisitor):
         if node.attr == "T":
             res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
-            argshape = res.shape
-            node.shape = argshape[::-1]
+            node.shape = res.shape[::-1]
         return node
 
     @staticmethod
