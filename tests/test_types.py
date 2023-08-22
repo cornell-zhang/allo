@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, int1, int32, float32, index
+from allo.ir.types import Int, UInt, Float, uint1, int32, float32, index
 import allo.ir.types as T
 
 
@@ -99,21 +99,22 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
         print(f"Passed {T_IN}, {T_OUT}!")
 
     # Note: UInt is still not supported
-    # for T_IN, T_OUT in [
-    #     (UInt(3), UInt(7)),
-    #     (UInt(4), UInt(8)),
-    #     (UInt(5), UInt(9)),
-    #     (UInt(7), UInt(16)),
-    #     (UInt(8), UInt(16)),
-    # ]:
-    #     s = allo.customize(gemm)
-    #     mod = s.build()
-    #     np_A = np.random.randint(0, 8, size=(M, K)).astype(np.int32)
-    #     np_B = np.random.randint(0, 8, size=(K, N)).astype(np.int32)
-    #     np_C = np.matmul(np_A, np_B)
-    #     np_C_allo = mod(np_A, np_B)
-    #     np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
-    #     print(f"Passed {T_IN}, {T_OUT}!")
+    M, N, K = 2, 2, 2
+    for T_IN, T_OUT in [
+        (UInt(3), UInt(7)),
+        (UInt(4), UInt(8)),
+        (UInt(5), UInt(9)),
+        (UInt(7), UInt(16)),
+        (UInt(8), UInt(16)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.randint(0, 8, size=(M, K)).astype(np.int32)
+        np_B = np.random.randint(0, 8, size=(K, N)).astype(np.int32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        print(f"Passed {T_IN}, {T_OUT}!")
 
     M, N, K = 4, 4, 4
     for T_IN, T_OUT in [
@@ -155,18 +156,41 @@ def test_bconv2D_nchw():
     ih, iw = 8, 8
     kh, kw = 3, 3
     oh, ow = ih - kh + 1, iw - kw + 1
+    L = ic * kh * kw
 
     def bconv(
-        A: int1[bs, ic, ih, iw], F: int1[oc, ic, kh, kw]
+        A: uint1[bs, ic, ih, iw], F: uint1[oc, ic, kh, kw]
     ) -> int32[bs, oc, oh, ow]:
         B: int32[bs, oc, oh, ow] = 0
         for n, c, h, w in allo.grid(bs, oc, oh, ow):
+            # popcount
+            v: int32 = 0
             for rc, rh, rw in allo.reduction(ic, kh, kw):
-                B[n, c, h, w] += A[n, rc, h + rh, w + rw] ^ F[c, rc, rh, rw]
+                v += A[n, rc, h + rh, w + rw] ^ F[c, rc, rh, rw]
+            B[n, c, h, w] = L - (v << 1)
         return B
 
     s = allo.customize(bconv)
     print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 2, size=(bs, ic, ih, iw))
+    np_B = np.random.randint(0, 2, size=(oc, ic, kh, kw))
+    np_C = np.zeros((bs, oc, oh, ow), np.int32)
+
+    for n in range(0, bs):
+        for c in range(0, oc):
+            for y in range(0, oh):
+                for x in range(0, ow):
+                    for rc in range(0, ic):
+                        for rh in range(0, kh):
+                            for rw in range(0, kw):
+                                np_C[n][c][y][x] += 1 - 2 * (
+                                    np_A[n][rc][y + rh][x + rw] ^ np_B[c][rc][rh][rw]
+                                )
+
+    allo_C = mod(np_A, np_B)
+    assert np.array_equal(np_C, allo_C)
+    print("Passed!")
 
 
 def test_avgpool_nchw():

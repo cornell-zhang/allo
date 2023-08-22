@@ -13,6 +13,7 @@ from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
     F32Type,
+    F64Type,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -82,6 +83,12 @@ def is_anywidth_int_type_and_not_np(dtype):
     return str(dtype) not in np_supported_types and (
         str(dtype).startswith("i") or str(dtype).startswith("u")
     )
+
+
+def get_signed_type_by_hint(dtype, hint):
+    if hint == "u" and (dtype.startswith("i") or dtype.startswith("fixed")):
+        return "u" + dtype
+    return dtype
 
 
 def make_anywidth_numpy_array(array, bitwidth):
@@ -157,15 +164,17 @@ def make_anywidth_numpy_array(array, bitwidth):
         return array
 
 
-def struct_array_to_int_array(array, dtype):
+def struct_array_to_int_array(array, bitwidth, signed=True):
     """
     Converts a structured numpy array to back to an integer array.
     ----------------
     Parameters:
     array: numpy.ndarray
         A structured numpy array
-    dtype: mlir.types
-        The target MLIR element type
+    bitwidth: int
+        target bitwidth e.g. 9, 31, 198
+    signed: bool
+        whether the target type is signed or not
     ----------------
     Returns:
     numpy.ndarray
@@ -180,9 +189,7 @@ def struct_array_to_int_array(array, dtype):
     #  ..   ..   ..
     #  f0]  f1]  f2]
     # -> unflatten: 6*6*3*i8
-    bitwidth = dtype.width
     shape = array.shape
-    signed = str(dtype).startswith("i")
     n_bytes = int(np.ceil(bitwidth / 8))
     if bitwidth > 64:
         raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
@@ -250,6 +257,14 @@ class LLVMModule:
             func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
             func.attributes["top"] = UnitAttr.get()
             self.top_func_type = func.type
+            self.type_hint = {
+                "itypes": func.attributes["itypes"].value
+                if "itypes" in func.attributes
+                else "_" * len(func.type.inputs),
+                "otypes": func.attributes["otypes"].value
+                if "otypes" in func.attributes
+                else "_" * len(func.type.results),
+            }
             self.top_func_name = top_func_name
             hcl_d.lower_hcl_to_llvm(self.module, ctx)
             # Add shared library
@@ -283,7 +298,7 @@ class LLVMModule:
         ), f"# of input arguments mismatch, got {len(args)} but expected {len(input_types)}"
 
         # 1. Construct argument pointers
-        for arg, in_type in zip(args, input_types):
+        for arg, in_type, hint in zip(args, input_types, self.type_hint["itypes"]):
             if not isinstance(arg, np.ndarray):  # scalar
                 if isinstance(arg, int):
                     assert (
@@ -301,15 +316,19 @@ class LLVMModule:
                     raise RuntimeError("Unsupported input type")
             else:
                 np_type = np_type_to_str(arg.dtype)
-                target_type = MemRefType(in_type).element_type
-                if np_type != str(target_type):
+                target_type = get_signed_type_by_hint(
+                    str(MemRefType(in_type).element_type), hint
+                )
+                if np_type != target_type:
                     DTypeWarning(
-                        f"Input type mismatch: {np_type} vs {str(target_type)}"
+                        f"Input type mismatch: {np_type} vs {target_type}"
                     ).warn()
                 # TODO: Handle overflow
                 if is_anywidth_int_type_and_not_np(target_type):
-                    # Int or UInt type
-                    target_type = IntegerType(MemRefType(in_type).element_type)
+                    if target_type.startswith("u"):
+                        width = int(target_type[2:])  # e.g., ui3
+                    else:
+                        width = int(target_type[1:])  # e.g., i3
                     # This is to be compliant with MLIR's anywidth int type alignment
                     # e.g. i1-i8 -> int8
                     #      i9-i16 -> int16
@@ -317,16 +336,16 @@ class LLVMModule:
                     #      i33-i64 -> int64
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
-                    bitwidth = max(get_clostest_pow2(target_type.width), 8)
+                    bitwidth = max(get_clostest_pow2(width), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
-                elif str(target_type) in np_supported_types:
-                    target_np_type = np_supported_types[str(target_type)]
+                elif target_type in np_supported_types:
+                    target_np_type = np_supported_types[target_type]
                     if arg.dtype != target_np_type:
                         # avoid changing the address of the original array
                         arg = arg.astype(target_np_type)
                 else:  # unsupported type (fixed type)
                     raise RuntimeError(
-                        f"Unsupported input type: {str(target_type)}, "
+                        f"Unsupported input type: {target_type}, "
                         f"please use a supported type or wrap the scalar as an array"
                     )
                 arg_ptrs.append(
@@ -341,32 +360,40 @@ class LLVMModule:
             raise RuntimeError("Only support zero/one return value for now")
         if len(result_types) == 0:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
-            for i, (arg, new_arg) in enumerate(zip(args, new_args)):
+            for arg, new_arg, in_type, hint in zip(
+                args, new_args, input_types, self.type_hint["itypes"]
+            ):
                 if isinstance(arg, np.ndarray):
-                    target_type = MemRefType(input_types[i]).element_type
+                    target_type = MemRefType(in_type).element_type
                     if is_anywidth_int_type_and_not_np(target_type):
-                        arg[:] = struct_array_to_int_array(new_arg, target_type)
+                        arg[:] = struct_array_to_int_array(
+                            new_arg, target_type.width, hint != "u"
+                        )
                     else:
                         arg[:] = new_arg
             return
         if MemRefType.isinstance(result_types[0]):
             result_type = MemRefType(result_types[0])
             shape = result_type.shape
-            result_type = result_type.element_type
-            if str(result_type) == "f32":
-                dtype = ctypes.c_float
-            elif str(result_type) == "f64":
-                dtype = ctypes.c_double
-            elif str(result_type) == "i8":
-                dtype = ctypes.c_int8
-            elif str(result_type) == "i16":
-                dtype = ctypes.c_int16
-            elif str(result_type) == "i32":
-                dtype = ctypes.c_int32
-            elif str(result_type) == "i64":
-                dtype = ctypes.c_int64
-            elif str(result_type).startswith("i"):
-                bitwidth = max(get_clostest_pow2(result_type.width), 8)
+            hint = self.type_hint["otypes"][0]
+            result_stype = get_signed_type_by_hint(str(result_type.element_type), hint)
+            ctype_map = {
+                "f32": ctypes.c_float,
+                "f64": ctypes.c_double,
+                "i8": ctypes.c_int8,
+                "i16": ctypes.c_int16,
+                "i32": ctypes.c_int32,
+                "i64": ctypes.c_int64,
+                "ui8": ctypes.c_uint8,
+                "ui16": ctypes.c_uint16,
+                "ui32": ctypes.c_uint32,
+                "ui64": ctypes.c_uint64,
+            }
+            if result_stype in ctype_map:
+                dtype = ctype_map[result_stype]
+            elif result_stype.startswith("i") or result_stype.startswith("ui"):
+                width = result_type.element_type.width
+                bitwidth = max(get_clostest_pow2(width), 8)
                 dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
             else:
                 raise RuntimeError("Unsupported return type")
@@ -391,6 +418,11 @@ class LLVMModule:
             dtype_p = ctypes.c_float * 1
             # -1.0 is a placeholder
             return_ptr = dtype_p(-1.0)
+        elif F64Type.isinstance(result_types[0]):
+            result_type = F64Type(result_types[0])
+            dtype_p = ctypes.c_double * 1
+            # -1.0 is a placeholder
+            return_ptr = dtype_p(-1.0)
         else:
             raise RuntimeError("Unsupported return type")
 
@@ -400,7 +432,8 @@ class LLVMModule:
             ret = ranked_memref_to_numpy(return_ptr[0])
             result_type = MemRefType(result_types[0]).element_type
             if is_anywidth_int_type_and_not_np(result_type):
-                ret = struct_array_to_int_array(ret, result_type)
+                hint = self.type_hint["otypes"][0]
+                ret = struct_array_to_int_array(ret, result_type.width, hint != "u")
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
             ret = return_ptr[0]

@@ -62,7 +62,11 @@ class UInt(AlloType):
         super().__init__(bits, 0, f"uint{bits}")
 
     def build(self):
-        return IntegerType.get_unsigned(self.bits)
+        # A bit hacky here: Since the MLIR code dialect does not support
+        # unsigned integers as arguments, we use the signless integer type,
+        # label it in the IR with attributes, and then cast it to unsigned
+        # in the codegen.
+        return IntegerType.get_signless(self.bits)
 
 
 class Float(AlloType):
