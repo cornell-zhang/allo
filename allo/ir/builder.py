@@ -342,27 +342,27 @@ class ASTTransformer(ASTBuilder):
             ast.LShift: {
                 Float: RuntimeError,
                 Int: arith_d.ShLIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.ShLIOp,
             },
             ast.RShift: {
                 Float: RuntimeError,
-                Int: arith_d.ShRUIOp,
-                UInt: RuntimeError,
+                Int: arith_d.ShRSIOp,
+                UInt: arith_d.ShRUIOp,
             },
             ast.BitOr: {
                 Float: RuntimeError,
                 Int: arith_d.OrIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.OrIOp,
             },
             ast.BitXor: {
                 Float: RuntimeError,
                 Int: arith_d.XOrIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.XOrIOp,
             },
             ast.BitAnd: {
                 Float: RuntimeError,
                 Int: arith_d.AndIOp,
-                UInt: RuntimeError,
+                UInt: arith_d.AndIOp,
             },
         }.get(type(node.op))
         if len(node.shape) > 0:
