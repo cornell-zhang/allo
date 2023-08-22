@@ -86,10 +86,9 @@ def is_anywidth_int_type_and_not_np(dtype):
 
 
 def get_signed_type_by_hint(dtype, hint):
-    if hint == "u" and dtype.startswith("i") or dtype.startswith("fixed"):
+    if hint == "u" and (dtype.startswith("i") or dtype.startswith("fixed")):
         return "u" + dtype
-    else:
-        return dtype
+    return dtype
 
 
 def make_anywidth_numpy_array(array, bitwidth):
