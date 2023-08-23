@@ -26,7 +26,6 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
-    UnrankedTensorType,
     ArrayAttr,
     Attribute,
 )
@@ -975,7 +974,7 @@ class ASTTransformer(ASTBuilder):
                 }.get(fn_name)
                 return opcls(*new_args, ip=ctx.get_ip())
             if isinstance(
-                new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+                new_args[0].type, (MemRefType, RankedTensorType)
             ) and fn_name in {
                 "matmul",
                 "bmm",
