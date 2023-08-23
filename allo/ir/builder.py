@@ -17,7 +17,6 @@ from hcl_mlir.ir import (
     F32Type,
     UnitAttr,
     IntegerAttr,
-    FloatAttr,
     StringAttr,
     AffineExpr,
     AffineConstantExpr,

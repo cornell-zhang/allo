@@ -8,6 +8,7 @@ from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
+    func as func_d,
 )
 
 
@@ -170,3 +171,10 @@ def create_buffer(tensor, name, ip):
         )
     # TODO: Upgrade LLVM version and use the following code
     # tensor.replace_all_uses_with(alloc_op.result)
+
+
+def find_func_in_module(module, func_name):
+    for op in module.body.operations:
+        if isinstance(op, func_d.FuncOp) and op.name.value == func_name:
+            return op
+    return None

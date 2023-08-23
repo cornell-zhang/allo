@@ -15,10 +15,7 @@ from hcl_mlir.ir import (
     F32Type,
     F64Type,
 )
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
-    func as func_d,
-)
+from hcl_mlir.dialects import hcl as hcl_d
 from hcl_mlir.passmanager import PassManager
 from hcl_mlir.execution_engine import ExecutionEngine
 from hcl_mlir.runtime import (
@@ -27,6 +24,7 @@ from hcl_mlir.runtime import (
     ranked_memref_to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
+from ..ir.transform import find_func_in_module
 
 
 np_supported_types = {
@@ -235,7 +233,11 @@ class LLVMModule:
     def __init__(self, mod, top_func_name):
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
+            hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
+            func = find_func_in_module(self.module)
+            hcl_d.lower_fixed_to_int(self.module)
+            print(self.module)
             # Remove .partition() annotation
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
@@ -244,12 +246,7 @@ class LLVMModule:
                 "func.func(convert-linalg-to-affine-loops),lower-affine)"
             )
             pm.run(self.module.operation)
-            # find top func op
-            func = None
-            for op in self.module.body.operations:
-                if isinstance(op, func_d.FuncOp) and op.name.value == top_func_name:
-                    func = op
-                    break
+            func = find_func_in_module(self.module)
             if func is None:
                 raise RuntimeError(
                     "No top-level function found in the built MLIR module"
