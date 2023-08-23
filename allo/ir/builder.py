@@ -739,18 +739,16 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_AnnAssign(ctx, node):
         if node.value is not None:
-            if (
-                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
-            ) or isinstance(node.value, (ast.Constant, ast.Call)):
+            if isinstance(node.value, ast.List) or (
+                isinstance(node.value, ast.Name) and node.value.id not in ctx.buffers
+            ):
+                rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            else:
                 # Examples:
                 # copied: int32 = a
                 # init: int32 = 0
                 # call: int32 = int(1)
                 rhs = build_stmt(ctx, node.value)
-            elif isinstance(node.value, (ast.List, ast.Name)):
-                rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            else:
-                raise RuntimeError("Unsupported data type")
         else:
             rhs = None
         shape, dtype = node.shape, node.dtype
