@@ -231,8 +231,19 @@ class TypeInferer(ASTVisitor):
                     visit_stmt(ctx, node.slice)
                     node.shape = tuple()
                     node.dtype = uint1
+                elif isinstance(node.slice, ast.Slice):
+                    assert isinstance(
+                        node.slice.lower, ast.Constant
+                    ), "lower bound of bit slicing must be constant"
+                    assert isinstance(
+                        node.slice.upper, ast.Constant
+                    ), "upper bound of bit slicing must be constant"
+                    visit_stmt(ctx, node.slice.lower)
+                    visit_stmt(ctx, node.slice.upper)
+                    node.shape = tuple()
+                    node.dtype = UInt(node.slice.upper.value - node.slice.lower.value)
                 else:
-                    raise NotImplementedError
+                    raise RuntimeError("Unsupported bit operation")
             else:
                 raise RuntimeError("Can only access bit (slice) for integers")
         return node

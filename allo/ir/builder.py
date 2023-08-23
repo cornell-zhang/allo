@@ -699,6 +699,22 @@ class ASTTransformer(ASTBuilder):
                     return hcl_d.GetIntBitOp(
                         node.dtype.build(), value.result, index.result, ip=ctx.get_ip()
                     )
+                elif isinstance(node.slice, ast.Slice):
+                    lower = build_stmt(ctx, node.slice.lower)
+                    upper = build_stmt(ctx, node.slice.upper)
+                    lower = ASTTransformer.build_cast_op(
+                        ctx, lower, node.slice.lower.dtype, Index()
+                    )
+                    upper = ASTTransformer.build_cast_op(
+                        ctx, upper, node.slice.upper.dtype, Index()
+                    )
+                    return hcl_d.GetIntSliceOp(
+                        node.dtype.build(),
+                        value.result,
+                        upper.result,
+                        lower.result,
+                        ip=ctx.get_ip(),
+                    )
                 else:
                     raise NotImplementedError
             else:

@@ -14,12 +14,27 @@ def test_get_bit():
             B[i] = (A[i] + 1)[0]
         return B
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel)
     print(s.module)
     np_A = np.random.randint(10, size=(10,))
     mod = s.build()
     np.testing.assert_allclose(mod(np_A), (np_A + 1) & 1, rtol=1e-5, atol=1e-5)
 
 
+def test_get_bit_slice():
+    def kernel(A: int32[10]) -> int32[10]:
+        B: int32[10] = 0
+        for i in range(10):
+            B[i] = (A[i] + 1)[0:2]
+        return B
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    np_A = np.random.randint(10, size=(10,))
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A), (np_A + 1) & 0b11, rtol=1e-5, atol=1e-5)
+
+
 if __name__ == "__main__":
-    test_get_bit()
+    # test_get_bit()
+    test_get_bit_slice()
