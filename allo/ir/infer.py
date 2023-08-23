@@ -227,11 +227,11 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx, node):
         # TODO: Suppose only load a single element, this is not true if tensor slicing is added
-        if isinstance(node.value, ast.Name):
+        value = visit_stmt(ctx, node.value)
+        if len(value.shape) > 0:
             node.shape = tuple()
             node.dtype = ctx.buffers[node.value.id].dtype
         else:  # bit operation
-            value = visit_stmt(ctx, node.value)
             if len(value.shape) == 0 and isinstance(value.dtype, (Int, UInt)):
                 if isinstance(node.slice, ast.Index):
                     visit_stmt(ctx, node.slice)

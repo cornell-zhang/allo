@@ -642,7 +642,7 @@ class ASTTransformer(ASTBuilder):
         # pylint: disable=redefined-builtin
         slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-        if isinstance(node.value, ast.Name):
+        if len(node.value.shape) > 0:
             # Load op
             ctx.dim_count = 0
             ctx.affine_vars = []
