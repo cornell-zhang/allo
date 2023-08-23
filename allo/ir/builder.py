@@ -538,7 +538,7 @@ class ASTTransformer(ASTBuilder):
             )
             elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
             if isinstance(node.slice, ast.Index):
-                assert len(elts) == 1, "Only support single index for get_bit"
+                assert len(elts) == 1, "Only support single index for set_bit"
                 index = build_stmt(ctx, node.slice.value)
                 index = ASTTransformer.build_cast_op(
                     ctx, index, node.slice.value.dtype, Index()
@@ -555,8 +555,32 @@ class ASTTransformer(ASTBuilder):
                 # write the updated integer back to the scalar
                 store_op = ASTTransformer.build_store(ctx, node.value, set_bit_op)
                 return store_op
-            else:
-                raise NotImplementedError
+            elif isinstance(node.slice, ast.Slice):
+                assert len(elts) == 1, "Only support a single slice for set_slice"
+                # The backend implementation is different from the Python convention
+                # The lower bound is inclusive and the upper bound is also inclusive
+                node.slice.upper.value -= 1
+                start = build_stmt(ctx, node.slice.lower)
+                start = ASTTransformer.build_cast_op(
+                    ctx, start, node.slice.lower.dtype, Index()
+                )
+                end = build_stmt(ctx, node.slice.upper)
+                end = ASTTransformer.build_cast_op(
+                    ctx, end, node.slice.upper.dtype, Index()
+                )
+                value = build_stmt(ctx, node.value)
+                # TODO: Test if rhs has the correct bitwidth
+                set_slice_op = hcl_d.SetIntSliceOp(
+                    node.value.dtype.build(),
+                    value.result,
+                    end.result,
+                    start.result,
+                    val.result,
+                    ip=ctx.get_ip(),
+                )
+                # write the updated integer back to the scalar
+                store_op = ASTTransformer.build_store(ctx, node.value, set_slice_op)
+                return store_op
         raise RuntimeError("Unsupported store")
 
     @staticmethod

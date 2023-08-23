@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import uint1, int32, uint8
+from allo.ir.types import uint1, uint2, int32, uint8
 
 
 def test_scalar():
@@ -77,7 +77,7 @@ def test_set_bit_tensor():
             B[i][0] = A[i]
 
     for kernel in [kernel1, kernel2]:
-        s = allo.customize(kernel, verbose=True)
+        s = allo.customize(kernel)
         print(s.module)
         np_A = np.random.randint(2, size=(10,))
         np_B = np.random.randint(10, size=(10,))
@@ -85,6 +85,20 @@ def test_set_bit_tensor():
         mod = s.build()
         mod(np_A, np_B)
         assert np.array_equal(golden, np_B)
+
+
+def test_set_slice():
+    def kernel(A: uint2[10], B: int32[10]):
+        for i in range(10):
+            B[i][0:2] = A[i]
+
+    s = allo.customize(kernel)
+    np_A = np.random.randint(2, size=(10,))
+    np_B = np.random.randint(7, size=(10,))
+    golden = (np_B & 0b1100) | np_A
+    mod = s.build()
+    mod(np_A, np_B)
+    assert np.array_equal(golden, np_B)
 
 
 if __name__ == "__main__":
