@@ -635,54 +635,74 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Subscript(ctx, node):
-        # Load op
-        ctx.dim_count = 0
-        ctx.affine_vars = []
-        index_exprs = []
         # pylint: disable=redefined-builtin
         slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-        is_affine = True
-        for index in elts:
-            expr = ASTTransformer.build_affine_expr(ctx, index)
-            if expr is None:
-                is_affine = False
-                break
-            index_exprs.append(expr)
-        # pylint: disable=no-else-return
-        if is_affine:
-            if isinstance(node.ctx, ast.Load):
-                affine_map = AffineMap.get(
-                    dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
-                )
-                affine_attr = AffineMapAttr.get(affine_map)
-                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                load_op = affine_d.AffineLoadOp(
-                    ctx.buffers[node.value.id].result, ivs, affine_attr, ip=ctx.get_ip()
+        if isinstance(node.value, ast.Name):
+            # Load op
+            ctx.dim_count = 0
+            ctx.affine_vars = []
+            index_exprs = []
+            is_affine = True
+            for index in elts:
+                expr = ASTTransformer.build_affine_expr(ctx, index)
+                if expr is None:
+                    is_affine = False
+                    break
+                index_exprs.append(expr)
+            # pylint: disable=no-else-return
+            if is_affine:
+                if isinstance(node.ctx, ast.Load):
+                    affine_map = AffineMap.get(
+                        dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
+                    )
+                    affine_attr = AffineMapAttr.get(affine_map)
+                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                    load_op = affine_d.AffineLoadOp(
+                        ctx.buffers[node.value.id].result,
+                        ivs,
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                    load_op.attributes["from"] = StringAttr.get(node.value.id)
+                    return load_op
+                else:
+                    raise RuntimeError("Unsupported Subscript")
+            else:  # Not affine
+                new_indices = []
+                for index in elts:
+                    expr = build_stmt(ctx, index)
+                    # cast to index type
+                    expr_res = expr.result
+                    if str(expr_res.type) == "i32":
+                        expr = arith_d.IndexCastOp(
+                            IndexType.get(), expr_res, ip=ctx.get_ip()
+                        )
+                    else:
+                        raise RuntimeError(f"Unsupported index type, got {expr.type}")
+                    new_indices.append(expr)
+                # pylint: disable=redefined-variable-type
+                load_op = memref_d.LoadOp(
+                    ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
                 )
                 load_op.attributes["from"] = StringAttr.get(node.value.id)
                 return load_op
-            else:
-                raise RuntimeError("Unsupported Subscript")
-        else:  # Not affine
-            new_indices = []
-            for index in elts:
-                expr = build_stmt(ctx, index)
-                # cast to index type
-                expr_res = expr.result
-                if str(expr_res.type) == "i32":
-                    expr = arith_d.IndexCastOp(
-                        IndexType.get(), expr_res, ip=ctx.get_ip()
+        else:  # bit operation
+            value = build_stmt(ctx, node.value)
+            if len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt)):
+                if isinstance(node.slice, ast.Index):
+                    assert len(elts) == 1, "Only support single index for get_bit"
+                    index = build_stmt(ctx, elts[0])
+                    index = ASTTransformer.build_cast_op(
+                        ctx, index, node.slice.dtype, Index()
+                    )
+                    return hcl_d.GetIntBitOp(
+                        node.dtype.build(), value.result, index.result, ip=ctx.get_ip()
                     )
                 else:
-                    raise RuntimeError(f"Unsupported index type, got {expr.type}")
-                new_indices.append(expr)
-            # pylint: disable=redefined-variable-type
-            load_op = memref_d.LoadOp(
-                ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
-            )
-            load_op.attributes["from"] = StringAttr.get(node.value.id)
-            return load_op
+                    raise NotImplementedError
+            else:
+                raise RuntimeError("Can only access bit (slice) for integers")
 
     @staticmethod
     def build_AnnAssign(ctx, node):

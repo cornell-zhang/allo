@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import Fixed, UFixed, int1, int32, float32
+from .types import Int, UInt, Fixed, UFixed, uint1, int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -82,6 +82,13 @@ class TypeInferer(ASTVisitor):
             node.dtype = float32
         else:
             raise RuntimeError("Unsupported constant type")
+        return node
+
+    @staticmethod
+    def visit_Index(ctx, node):
+        value = visit_stmt(ctx, node.value)
+        node.shape = value.shape
+        node.dtype = value.dtype
         return node
 
     @staticmethod
@@ -214,8 +221,20 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx, node):
         # TODO: Suppose only load a single element, this is not true if tensor slicing is added
-        node.shape = tuple()
-        node.dtype = ctx.buffers[node.value.id].dtype
+        if isinstance(node.value, ast.Name):
+            node.shape = tuple()
+            node.dtype = ctx.buffers[node.value.id].dtype
+        else:  # bit operation
+            value = visit_stmt(ctx, node.value)
+            if len(value.shape) == 0 and isinstance(value.dtype, (Int, UInt)):
+                if isinstance(node.slice, ast.Index):
+                    visit_stmt(ctx, node.slice)
+                    node.shape = tuple()
+                    node.dtype = uint1
+                else:
+                    raise NotImplementedError
+            else:
+                raise RuntimeError("Can only access bit (slice) for integers")
         return node
 
     @staticmethod
