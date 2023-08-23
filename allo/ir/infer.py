@@ -255,10 +255,11 @@ class TypeInferer(ASTVisitor):
                     assert isinstance(
                         node.slice.upper, ast.Constant
                     ), "upper bound of bit slicing must be constant"
-                    visit_stmt(ctx, node.slice.lower)
-                    visit_stmt(ctx, node.slice.upper)
+                    lower = visit_stmt(ctx, node.slice.lower)
+                    upper = visit_stmt(ctx, node.slice.upper)
+                    assert upper.value > lower.value, "upper bound must be greater than lower bound"
                     node.shape = tuple()
-                    node.dtype = UInt(node.slice.upper.value - node.slice.lower.value)
+                    node.dtype = UInt(upper.value - lower.value)
                 else:
                     raise RuntimeError("Unsupported bit operation")
             else:

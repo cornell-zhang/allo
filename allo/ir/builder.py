@@ -713,6 +713,9 @@ class ASTTransformer(ASTBuilder):
                         node.dtype.build(), value.result, index.result, ip=ctx.get_ip()
                     )
                 elif isinstance(node.slice, ast.Slice):
+                    # The backend implementation is different from the Python convention
+                    # The lower bound is inclusive and the upper bound is also inclusive
+                    node.slice.upper.value -= 1
                     lower = build_stmt(ctx, node.slice.lower)
                     upper = build_stmt(ctx, node.slice.upper)
                     lower = ASTTransformer.build_cast_op(
