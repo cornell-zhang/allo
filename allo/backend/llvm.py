@@ -120,17 +120,27 @@ def get_dtype_and_shape_from_type(dtype):
     if MemRefType.isinstance(dtype):
         dtype = MemRefType(dtype)
         shape = dtype.shape
-        return str(dtype.element_type), shape
+        ele_type, _ = get_dtype_and_shape_from_type(dtype.element_type)
+        return ele_type, shape
     if RankedTensorType.isinstance(dtype):
         dtype = RankedTensorType(dtype)
         shape = dtype.shape
-        return str(dtype.element_type), shape
+        ele_type, _ = get_dtype_and_shape_from_type(dtype.element_type)
+        return ele_type, shape
     if IntegerType.isinstance(dtype):
         return str(IntegerType(dtype)), tuple()
     if F32Type.isinstance(dtype):
         return str(F32Type(dtype)), tuple()
     if F64Type.isinstance(dtype):
         return str(F64Type(dtype)), tuple()
+    if hcl_d.FixedType.isinstance(dtype):
+        dtype = hcl_d.FixedType(dtype)
+        width, frac = dtype.width, dtype.frac
+        return f"fixed({width}, {frac})", tuple()
+    if hcl_d.UFixedType.isinstance(dtype):
+        dtype = hcl_d.UFixedType(dtype)
+        width, frac = dtype.width, dtype.frac
+        return f"ufixed({width}, {frac})", tuple()
     raise RuntimeError("Unsupported type")
 
 
@@ -412,7 +422,9 @@ class LLVMModule:
         # Returns as arguments
         if len(result_types) == 0:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
-            for arg, new_arg, (target_in_type, shape) in zip(args, new_args, input_types):
+            for arg, new_arg, (target_in_type, shape) in zip(
+                args, new_args, input_types
+            ):
                 if len(shape) > 0:
                     if is_anywidth_int_type_and_not_np(target_in_type):
                         bitwidth = get_bitwidth_from_type(target_in_type)
