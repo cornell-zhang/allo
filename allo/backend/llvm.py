@@ -412,11 +412,21 @@ class LLVMModule:
                 elif target_in_type.startswith("fixed") or target_in_type.startswith(
                     "ufixed"
                 ):
-                    arg = arg.astype(np.float32)
+                    arg = arg.astype(np.float64)
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(target_in_type)
+                    # Handle overflow
+                    sb = 1 << bitwidth
+                    sb_limit = 1 << (bitwidth - 1)
                     arg = arg * (2**frac)
                     # Round to nearest integer towards zero
-                    arg = np.fix(arg).astype(np.int32)
+                    arg = np.fix(arg).astype(np.int64) % sb
+
+                    def cast_func(x):
+                        return x if x < sb_limit else x - sb
+
+                    vec_np_array = np.vectorize(cast_func)(arg)
+                    arg = vec_np_array.astype(np.uint64)
+
                     bitwidth = max(get_clostest_pow2(bitwidth), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 else:
@@ -482,8 +492,12 @@ class LLVMModule:
                 ret = struct_array_to_int_array(ret, bitwidth, result_type[0] == "i")
             elif result_type.startswith("fixed") or result_type.startswith("ufixed"):
                 bitwidth, frac = get_bitwidth_and_frac_from_fixed(result_type)
-                ret = struct_array_to_int_array(ret, bitwidth, result_type[0] == "i")
-                ret = ret.astype(np.float32) / (2**frac)
+                ret = struct_array_to_int_array(
+                    ret, bitwidth, result_type.startswith("fixed")
+                )
+                if result_type.startswith("fixed"):
+                    ret = ret.astype(np.int64)
+                ret = ret.astype(np.float64) / float(2**frac)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
             ret = return_ptr[0]
