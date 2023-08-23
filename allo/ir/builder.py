@@ -74,7 +74,6 @@ class ASTBuilder(ASTVisitor):
             return res
 
 
-# pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
@@ -518,7 +517,7 @@ class ASTTransformer(ASTBuilder):
             )
             store_op.attributes["to"] = StringAttr.get(node.value.id)
             return store_op
-        elif isinstance(node, ast.Name):  # scalar
+        if isinstance(node, ast.Name):  # scalar
             affine_map = AffineMap.get(
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
             )
@@ -532,7 +531,7 @@ class ASTTransformer(ASTBuilder):
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
-        elif isinstance(node, ast.Subscript):  # bit operation
+        if isinstance(node, ast.Subscript):  # bit operation
             slice = (
                 node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             )
@@ -555,7 +554,7 @@ class ASTTransformer(ASTBuilder):
                 # write the updated integer back to the scalar
                 store_op = ASTTransformer.build_store(ctx, node.value, set_bit_op)
                 return store_op
-            elif isinstance(node.slice, ast.Slice):
+            if isinstance(node.slice, ast.Slice):
                 assert len(elts) == 1, "Only support a single slice for set_slice"
                 # The backend implementation is different from the Python convention
                 # The lower bound is inclusive and the upper bound is also inclusive
@@ -1065,7 +1064,7 @@ class ASTTransformer(ASTBuilder):
                     len(node.args) == 0
                 ), "Only support zero argument for attribute methods"
                 return build_stmt(ctx, node.func)
-            elif node.func.id in {"float", "int"}:
+            if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 assert (
                     len(node.args) == 1
@@ -1079,8 +1078,7 @@ class ASTTransformer(ASTBuilder):
                     return ASTTransformer.build_cast_op(
                         ctx, stmts[0], node.args[0].dtype, Int(32)
                     )
-            else:
-                raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+            raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
             # Allo library functions

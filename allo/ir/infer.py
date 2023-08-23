@@ -111,7 +111,7 @@ class TypeInferer(ASTVisitor):
     def visit_all_for(ctx, node):
         # Set loop induction variables
         if isinstance(node.target, ast.Tuple):
-            ivs = [x for x in node.target.elts]
+            ivs = list(node.target.elts)
         else:
             ivs = [node.target]
         for iv in ivs:
@@ -243,30 +243,31 @@ class TypeInferer(ASTVisitor):
             node.shape = tuple()
             node.dtype = ctx.buffers[node.value.id].dtype
             visit_stmt(ctx, node.slice)
-        else:  # bit operation
-            if len(value.shape) == 0 and isinstance(value.dtype, (Int, UInt)):
-                if isinstance(node.slice, ast.Index):
-                    visit_stmt(ctx, node.slice)
-                    node.shape = tuple()
-                    node.dtype = uint1
-                elif isinstance(node.slice, ast.Slice):
-                    assert isinstance(
-                        node.slice.lower, ast.Constant
-                    ), "lower bound of bit slicing must be constant"
-                    assert isinstance(
-                        node.slice.upper, ast.Constant
-                    ), "upper bound of bit slicing must be constant"
-                    lower = visit_stmt(ctx, node.slice.lower)
-                    upper = visit_stmt(ctx, node.slice.upper)
-                    assert (
-                        upper.value > lower.value
-                    ), "upper bound must be greater than lower bound"
-                    node.shape = tuple()
-                    node.dtype = UInt(upper.value - lower.value)
-                else:
-                    raise RuntimeError("Unsupported bit operation")
+        elif len(value.shape) == 0 and isinstance(
+            value.dtype, (Int, UInt)
+        ):  # bit operation
+            if isinstance(node.slice, ast.Index):
+                visit_stmt(ctx, node.slice)
+                node.shape = tuple()
+                node.dtype = uint1
+            elif isinstance(node.slice, ast.Slice):
+                assert isinstance(
+                    node.slice.lower, ast.Constant
+                ), "lower bound of bit slicing must be constant"
+                assert isinstance(
+                    node.slice.upper, ast.Constant
+                ), "upper bound of bit slicing must be constant"
+                lower = visit_stmt(ctx, node.slice.lower)
+                upper = visit_stmt(ctx, node.slice.upper)
+                assert (
+                    upper.value > lower.value
+                ), "upper bound must be greater than lower bound"
+                node.shape = tuple()
+                node.dtype = UInt(upper.value - lower.value)
             else:
-                raise RuntimeError("Can only access bit (slice) for integers")
+                raise RuntimeError("Unsupported bit operation")
+        else:
+            raise RuntimeError("Can only access bit (slice) for integers")
         return node
 
     @staticmethod
