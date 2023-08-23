@@ -413,11 +413,15 @@ class LLVMModule:
                 ):
                     arg = arg.astype(np.float64)
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(target_in_type)
+                    if target_in_type.startswith("fixed"):
+                        np_dtype = np.int64
+                    else:
+                        np_dtype = np.uint64
                     # Handle overflow
                     sb = 1 << bitwidth
                     arg = arg * (2**frac)
                     # Round to nearest integer towards zero
-                    arg = np.fix(arg).astype(np.uint64) % sb
+                    arg = np.fix(arg).astype(np_dtype) % sb
 
                     if target_in_type.startswith("fixed"):
 
@@ -427,7 +431,7 @@ class LLVMModule:
                         sb_limit = 1 << (bitwidth - 1)
                         arg = np.vectorize(cast_func)(arg)
 
-                    arg = arg.astype(np.uint64)
+                    arg = arg.astype(np_dtype)
                     bitwidth = max(get_clostest_pow2(bitwidth), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 else:
@@ -498,6 +502,8 @@ class LLVMModule:
                 )
                 if result_type.startswith("fixed"):
                     ret = ret.astype(np.int64)
+                else:
+                    ret = ret.astype(np.uint64)
                 ret = ret.astype(np.float64) / float(2**frac)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)

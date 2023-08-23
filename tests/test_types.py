@@ -235,10 +235,21 @@ def test_fixed_gemm():
         (UFixed(25, 22), UFixed(29, 21)),
     ]:
         s = allo.customize(gemm)
-        print(s.module)
         mod = s.build()
         np_A = np.random.random((M, K)).astype(np.float32)
         np_B = np.random.random((K, N)).astype(np.float32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+    for T_IN, T_OUT in [
+        (Fixed(8, 3), Fixed(16, 2)),
+        (Fixed(7, 1), Fixed(15, 4)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.randint(-8, 8, (M, K)).astype(np.float32)
+        np_B = np.random.randint(-8, 8, (K, N)).astype(np.float32)
         np_C = np.matmul(np_A, np_B)
         np_C_allo = mod(np_A, np_B)
         np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
@@ -272,5 +283,4 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_fixed_gemm()
+    pytest.main([__file__])
