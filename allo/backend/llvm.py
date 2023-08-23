@@ -297,8 +297,7 @@ def handle_overflow(np_array, bitwidth, dtype):
             return x if x < sb_limit else x - sb
 
         return np.vectorize(cast_func)(np_array)
-    else:
-        return np_array
+    return np_array
 
 
 def invoke_mlir_parser(mod: str):
@@ -422,6 +421,7 @@ class LLVMModule:
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
                     bitwidth = max(get_clostest_pow2(width), 8)
+                    # pylint: disable=redefined-variable-type
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif target_in_type in np_supported_types:
                     target_np_type = np_supported_types[target_in_type]

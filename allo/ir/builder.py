@@ -1058,6 +1058,7 @@ class ASTTransformer(ASTBuilder):
             # init zero
             zero = MockConstant(0, ctx)
             zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+            # pylint: disable=unexpected-keyword-arg
             linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
             # add op name for init_zero
             if hasattr(node, "keywords") and len(node.keywords) > 0:
