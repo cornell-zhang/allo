@@ -71,7 +71,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = float32
             node.shape = tuple()
             return node
-        raise RuntimeError("Unsupported Name")
+        raise RuntimeError(f"Unsupported Name {node.id}")
 
     @staticmethod
     def visit_Constant(ctx, node):
@@ -109,7 +109,6 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_all_for(ctx, node):
-        visit_stmts(ctx, node.body)
         # Set loop induction variables
         if isinstance(node.target, ast.Tuple):
             ivs = [x for x in node.target.elts]
@@ -119,6 +118,7 @@ class TypeInferer(ASTVisitor):
             iv.shape = tuple()
             iv.dtype = Index()
             ctx.buffers[iv.id] = iv
+        visit_stmts(ctx, node.body)
         node.shape = None
         node.dtype = None
         return node
@@ -242,6 +242,7 @@ class TypeInferer(ASTVisitor):
         if len(value.shape) > 0:
             node.shape = tuple()
             node.dtype = ctx.buffers[node.value.id].dtype
+            visit_stmt(ctx, node.slice)
         else:  # bit operation
             if len(value.shape) == 0 and isinstance(value.dtype, (Int, UInt)):
                 if isinstance(node.slice, ast.Index):
@@ -287,6 +288,7 @@ class TypeInferer(ASTVisitor):
         ctx.buffers[node.target.id] = node
         node.dtype = target_dtype
         node.shape = target_shape
+        visit_stmt(ctx, node.target)
         return node
 
     @staticmethod
