@@ -1053,6 +1053,7 @@ class ASTTransformer(ASTBuilder):
                 }.get(attr)(new_args[0], outs=[alloc_op])
             # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
             elif attr == "softmax":
+                # TODO: it cannot generate affine for loops for softmax and only op.result has .owner
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
