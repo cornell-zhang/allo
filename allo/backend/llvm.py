@@ -94,7 +94,7 @@ def get_np_struct_type(bitwidth):
 
 def is_anywidth_int_type_and_not_np(dtype):
     return str(dtype) not in np_supported_types and (
-        str(dtype).startswith("i") or str(dtype).startswith("u")
+        str(dtype).startswith("i") or str(dtype).startswith("ui")
     )
 
 
@@ -319,7 +319,6 @@ class LLVMModule:
                 self.out_types.append((out_type, shape))
             # Resolve FixedType
             hcl_d.lower_fixed_to_int(self.module)
-            print(self.module)
             # Remove .partition() annotation
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
@@ -416,17 +415,19 @@ class LLVMModule:
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(target_in_type)
                     # Handle overflow
                     sb = 1 << bitwidth
-                    sb_limit = 1 << (bitwidth - 1)
                     arg = arg * (2**frac)
                     # Round to nearest integer towards zero
-                    arg = np.fix(arg).astype(np.int64) % sb
+                    arg = np.fix(arg).astype(np.uint64) % sb
 
-                    def cast_func(x):
-                        return x if x < sb_limit else x - sb
+                    if target_in_type.startswith("fixed"):
 
-                    vec_np_array = np.vectorize(cast_func)(arg)
-                    arg = vec_np_array.astype(np.uint64)
+                        def cast_func(x):
+                            return x if x < sb_limit else x - sb
 
+                        sb_limit = 1 << (bitwidth - 1)
+                        arg = np.vectorize(cast_func)(arg)
+
+                    arg = arg.astype(np.uint64)
                     bitwidth = max(get_clostest_pow2(bitwidth), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 else:

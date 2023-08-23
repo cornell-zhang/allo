@@ -222,7 +222,7 @@ def test_avgpool_nchw():
 
 def test_fixed_gemm():
     M, N, K = 4, 4, 4
-    T_IN, T_OUT = Fixed(12, 4), Fixed(16, 4)
+    T_IN, T_OUT = Fixed(26, 23), Fixed(30, 23)
 
     def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
         C: T_OUT[M, N] = 0
@@ -230,14 +230,18 @@ def test_fixed_gemm():
             C[i, j] += A[i, k] * B[k, j]
         return C
 
-    s = allo.customize(gemm)
-    print(s.module)
-    mod = s.build()
-    np_A = np.random.randint(-4, 4, size=(M, K)).astype(np.float32)
-    np_B = np.random.randint(-4, 4, size=(K, N)).astype(np.float32)
-    np_C = np.matmul(np_A, np_B)
-    np_C_allo = mod(np_A, np_B)
-    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+    for T_IN, T_OUT in [
+        (Fixed(26, 23), Fixed(30, 23)),
+        (UFixed(25, 22), UFixed(29, 21)),
+    ]:
+        s = allo.customize(gemm)
+        print(s.module)
+        mod = s.build()
+        np_A = np.random.random((M, K)).astype(np.float32)
+        np_B = np.random.random((K, N)).astype(np.float32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
 
 
 ######################################################################
