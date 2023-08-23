@@ -414,6 +414,7 @@ class TypeInferer(ASTVisitor):
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree
+        visit_stmts(ctx, node.args)
         if not isinstance(stmts[-1], ast.FunctionDef):
             node.dtype = None
             node.shape = None
