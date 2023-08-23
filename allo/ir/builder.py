@@ -17,7 +17,6 @@ from hcl_mlir.ir import (
     F32Type,
     UnitAttr,
     IntegerAttr,
-    FloatAttr,
     StringAttr,
     AffineExpr,
     AffineConstantExpr,
@@ -27,7 +26,6 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
-    UnrankedTensorType,
     ArrayAttr,
     Attribute,
 )
@@ -357,64 +355,84 @@ class ASTTransformer(ASTBuilder):
                 Int: arith_d.AddIOp,
                 UInt: arith_d.AddIOp,
                 Fixed: hcl_d.AddFixedOp,
+                UFixed: hcl_d.AddFixedOp,
             },
             ast.Sub: {
                 Float: arith_d.SubFOp,
                 Int: arith_d.SubIOp,
                 UInt: arith_d.SubIOp,
                 Fixed: hcl_d.SubFixedOp,
+                UFixed: hcl_d.SubFixedOp,
             },
             ast.Mult: {
                 Float: arith_d.MulFOp,
                 Int: arith_d.MulIOp,
                 UInt: arith_d.MulIOp,
                 Fixed: hcl_d.MulFixedOp,
+                UFixed: hcl_d.MulFixedOp,
             },
             ast.Div: {
                 Float: arith_d.DivFOp,
                 Int: arith_d.DivSIOp,
                 UInt: arith_d.DivUIOp,
                 Fixed: hcl_d.DivFixedOp,
+                UFixed: hcl_d.DivFixedOp,
             },
             ast.FloorDiv: {
                 Float: RuntimeError,
                 Int: arith_d.FloorDivSIOp,
                 UInt: RuntimeError,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.Mod: {
                 Float: arith_d.RemFOp,
                 Int: arith_d.RemSIOp,
                 UInt: arith_d.RemUIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.Pow: {
                 Float: math_d.PowFOp,
                 Int: RuntimeError,
                 UInt: RuntimeError,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.LShift: {
                 Float: RuntimeError,
                 Int: arith_d.ShLIOp,
                 UInt: arith_d.ShLIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.RShift: {
                 Float: RuntimeError,
                 Int: arith_d.ShRSIOp,
                 UInt: arith_d.ShRUIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.BitOr: {
                 Float: RuntimeError,
                 Int: arith_d.OrIOp,
                 UInt: arith_d.OrIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.BitXor: {
                 Float: RuntimeError,
                 Int: arith_d.XOrIOp,
                 UInt: arith_d.XOrIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
             ast.BitAnd: {
                 Float: RuntimeError,
                 Int: arith_d.AndIOp,
                 UInt: arith_d.AndIOp,
+                Fixed: RuntimeError,
+                UFixed: RuntimeError,
             },
         }.get(type(node.op))
         if len(node.shape) > 0:
@@ -716,6 +734,9 @@ class ASTTransformer(ASTBuilder):
                     ctx.buffers[node.target.id] = alloc_op
                     if rhs is not None:
                         with ctx.get_ip():
+                            rhs = ASTTransformer.build_cast_op(
+                                ctx, rhs, node.value.dtype, node.dtype
+                            )
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
                 else:
@@ -973,7 +994,7 @@ class ASTTransformer(ASTBuilder):
                 }.get(fn_name)
                 return opcls(*new_args, ip=ctx.get_ip())
             if isinstance(
-                new_args[0].type, (MemRefType, UnrankedTensorType, RankedTensorType)
+                new_args[0].type, (MemRefType, RankedTensorType)
             ) and fn_name in {
                 "matmul",
                 "bmm",
@@ -1034,9 +1055,21 @@ class ASTTransformer(ASTBuilder):
                 alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             else:
                 alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ip)
-            ASTTransformer.build_init_zero(
-                ctx, node=node, op_name=op_name, init_op=alloc_op, dtype=dtype
-            )
+            # init zero
+            zero = MockConstant(0, ctx)
+            zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+            # pylint: disable=unexpected-keyword-arg
+            linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+            # add op name for init_zero
+            if hasattr(node, "keywords") and len(node.keywords) > 0:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{node.keywords[0].value.value}_init_zero"
+                )
+            else:
+                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
+                )
+            # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
                 op = {
                     "matmul": linalg_d.matmul,
@@ -1071,34 +1104,6 @@ class ASTTransformer(ASTBuilder):
                 )
                 ctx.unnamed_linalg_op_count += 1
         return alloc_op
-
-    @staticmethod
-    def build_init_zero(ctx, node, op_name, init_op, dtype):
-        # initialize data op
-        with ctx.get_ip():
-            if str(dtype) == "int32":
-                # pylint: disable=unexpected-keyword-arg
-                zero = arith_d.ConstantOp(
-                    value=IntegerAttr.get(dtype.build(), 0), result=dtype.build()
-                ).result
-            elif str(dtype) == "float32":
-                # pylint: disable=unexpected-keyword-arg
-                zero = arith_d.ConstantOp(
-                    value=FloatAttr.get(dtype.build(), 0.0), result=dtype.build()
-                ).result
-            else:
-                raise RuntimeError("Unsupported data type")
-            # pylint: disable=unexpected-keyword-arg
-            linalg_fill = linalg_d.fill(zero, outs=[init_op.result])
-            # add op name for init_zero
-            if hasattr(node, "keywords") and len(node.keywords) > 0:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.keywords[0].value.value}_init_zero"
-                )
-            else:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
-                )
 
     @staticmethod
     def build_Return(ctx, node):

@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, uint1, int32, float32, index
+from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int32, float32, index
 import allo.ir.types as T
 
 
@@ -218,6 +218,68 @@ def test_avgpool_nchw():
     np_C = np.zeros((bs, oc, oh, ow), dtype=np.float32)
     avgpool_nchw(np_A, np_C)
     np.testing.assert_allclose(np_B, np_C, rtol=1e-5, atol=1e-5)
+
+
+def test_fixed_gemm():
+    M, N, K = 4, 4, 4
+    T_IN, T_OUT = Fixed(26, 23), Fixed(30, 23)
+
+    def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
+        C: T_OUT[M, N] = 0
+        for i, j, k in allo.grid(M, N, K, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    for T_IN, T_OUT in [
+        (Fixed(26, 23), Fixed(30, 23)),
+        (UFixed(25, 22), UFixed(29, 21)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.random((M, K)).astype(np.float32)
+        np_B = np.random.random((K, N)).astype(np.float32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+    for T_IN, T_OUT in [
+        (Fixed(8, 3), Fixed(16, 2)),
+        (Fixed(7, 1), Fixed(15, 4)),
+    ]:
+        s = allo.customize(gemm)
+        mod = s.build()
+        np_A = np.random.randint(-8, 8, (M, K)).astype(np.float32)
+        np_B = np.random.randint(-8, 8, (K, N)).astype(np.float32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = mod(np_A, np_B)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+
+
+######################################################################
+# Legacy tests
+######################################################################
+
+
+def test_type_comparison():
+    # float type attributes
+    assert Float(32).fracs == 23
+    assert Float(32).exponent == 8
+    assert Float(32).bits == 32
+    assert Float(64).fracs == 52
+    assert Float(64).exponent == 11
+    assert Float(64).bits == 64
+    # type comparision
+    list_of_types = [Float(32), Float(64)]
+    list_of_types += [Int(i) for i in range(2, 66, 4)]
+    list_of_types += [UInt(i) for i in range(2, 66, 4)]
+    list_of_types += [Fixed(i, i - 2) for i in range(2, 66, 4)]
+    list_of_types += [UFixed(i, i - 2) for i in range(2, 66, 4)]
+    for i in range(len(list_of_types)):
+        for j in range(len(list_of_types)):
+            if i == j:
+                assert list_of_types[i] == list_of_types[j]
+            else:
+                assert list_of_types[i] != list_of_types[j]
 
 
 if __name__ == "__main__":
