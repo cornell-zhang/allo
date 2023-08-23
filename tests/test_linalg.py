@@ -233,8 +233,61 @@ def test_linalg_softmax():
         outs = allo.softmax(A)
         return outs
 
-    with pytest.raises(AttributeError):
-        allo.customize(kernel)
+    s = allo.customize(kernel)
+    print(s.module)
+
+
+def test_linalg_Linear_layer():
+    inp_num = 12
+    inp_len = 768
+    Max_size = 12
+    inp = np.float32(np.random.uniform(size=(inp_num, inp_len)))
+    W = np.float32(np.random.uniform(size=(inp_len, inp_len)))
+    B = np.float32(np.random.uniform(size=(inp_num, inp_len)))
+
+    def Linear_layer(
+        inp: float32[inp_num, inp_len],
+        W: float32[inp_len, inp_len],
+        B: float32[inp_num, inp_len],
+    ) -> float32[inp_num, inp_len]:
+        out = allo.add(allo.matmul(inp, W.T, name="gemm"), B, name="bias")
+        return out
+
+    s_q = allo.customize(Linear_layer, lower_linalg=True)
+    print(s_q.module)
+    loops = s_q.get_loops()
+    s_q.pipeline(loops.bias.L_1)
+    s_q.split(loops.gemm.L_1, Max_size)
+    loops = s_q.get_loops()
+    s_q.reorder(
+        loops.gemm["L_1.outer"], loops.gemm.L_2, loops.gemm.L_0, loops.gemm["L_1.inner"]
+    )
+    s_q.pipeline(loops.gemm.L_2)
+    print(s_q.module)
+    print(s_q.build("vhls"))
+    f = s_q.build()
+    outs = f(inp, W, B)
+    np_outs = Linear_layer(inp, W, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def linalg_test_transpose_3D():
+    M = 32
+    K = 64
+    N = 128
+    A = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+    B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+
+    def kernel(A: int32[M, N, K], B: int32[N, K, M]) -> int32[N, N, M]:
+        C = allo.bmm(A, B.T).T
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_out = kernel(A, B)
+    allo_out = f(A, B)
+    np.testing.assert_array_equal(allo_out, np_out)
+    print(s.module)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ from hcl_mlir.ir import (
     DenseElementsAttr,
     TypeAttr,
     UnrankedTensorType,
+    ArrayAttr,
+    Attribute,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -74,6 +76,7 @@ class ASTBuilder(ASTVisitor):
             return res
 
 
+# pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
@@ -86,6 +89,55 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Constant(ctx, node):
         return MockConstant(node.value, ctx)
+
+    @staticmethod
+    def build_Attribute(ctx, node):
+        if node.attr == "T":
+            ip = ctx.get_ip()
+            shape = node.shape
+            new_arg = build_stmt(ctx, node.value).result
+            memref_type = MemRefType.get(shape, node.dtype.build())
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+            index_exprs = []
+            for dim in range(len(shape)):
+                index_exprs.append(AffineExpr.get_dim(dim))
+            affine_map_in = AffineMap.get(
+                dim_count=len(shape), symbol_count=0, exprs=index_exprs
+            )
+            affine_map_out = AffineMap.get(
+                dim_count=len(shape), symbol_count=0, exprs=index_exprs[::-1]
+            )
+            indexing_maps_attr = ArrayAttr.get(
+                [AffineMapAttr.get(affine_map_in), AffineMapAttr.get(affine_map_out)]
+            )
+            iterator_types_attr = ArrayAttr.get(
+                [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
+            )
+            op = linalg_d.GenericOp(
+                indexing_maps=indexing_maps_attr,
+                ip=ip,
+                inputs=[new_arg],
+                outputs=[alloc_op],
+                result_tensors=[],
+                iterator_types=iterator_types_attr,
+            )
+            # input and output types
+            block_arg_types = [node.value.dtype.build(), node.dtype.build()]
+            block = op.regions[0].blocks.append(*block_arg_types)
+            ctx.set_ip(block)
+            linalg_d.YieldOp([block.arguments[0]], ip=ctx.get_ip())
+            ctx.pop_ip()
+            if hasattr(node, "keywords") and len(node.keywords) > 0:
+                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
+                    node.keywords[0].value.value
+                )
+            else:
+                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
+                    f"transpose_{ctx.unnamed_linalg_op_count}"
+                )
+                ctx.unnamed_linalg_op_count += 1
+            return alloc_op
+        raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
     def build_all_for(ctx, node):
@@ -999,14 +1051,14 @@ class ASTTransformer(ASTBuilder):
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                 }.get(attr)(new_args[0], outs=[alloc_op])
-            # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
+            # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
             elif attr == "softmax":
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
                     result=[],
                     output=alloc_op,
-                )
+                ).result
             else:
                 raise RuntimeError("Unsupported operation")
             if hasattr(node, "keywords") and len(node.keywords) > 0:

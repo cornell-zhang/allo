@@ -13,6 +13,7 @@ from .types import Fixed, UFixed, int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
+# pylint: disable=too-many-public-methods
 class TypeInferer(ASTVisitor):
     def print_verbose(self, ctx, node):
         print(node.__class__.__name__, node.dtype, node.shape)
@@ -81,6 +82,14 @@ class TypeInferer(ASTVisitor):
             node.dtype = float32
         else:
             raise RuntimeError("Unsupported constant type")
+        return node
+
+    @staticmethod
+    def visit_Attribute(ctx, node):
+        if node.attr == "T":
+            res = visit_stmt(ctx, node.value)
+            node.dtype = res.dtype
+            node.shape = res.shape[::-1]
         return node
 
     @staticmethod
