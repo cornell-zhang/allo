@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import Int, UInt, Fixed, UFixed, uint1, int1, int32, float32
+from .types import Int, UInt, Fixed, UFixed, Index, uint1, int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -110,6 +110,15 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_all_for(ctx, node):
         visit_stmts(ctx, node.body)
+        # Set loop induction variables
+        if isinstance(node.target, ast.Tuple):
+            ivs = [x for x in node.target.elts]
+        else:
+            ivs = [node.target]
+        for iv in ivs:
+            iv.shape = tuple()
+            iv.dtype = Index()
+            ctx.buffers[iv.id] = iv
         node.shape = None
         node.dtype = None
         return node
