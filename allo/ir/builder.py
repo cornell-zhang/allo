@@ -135,6 +135,10 @@ class ASTTransformer(ASTBuilder):
                 )
                 ctx.unnamed_linalg_op_count += 1
             return alloc_op
+        if node.attr == "reverse":
+            value = build_stmt(ctx, node.value)
+            bit_reverse = hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
+            return bit_reverse
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
@@ -690,6 +694,15 @@ class ASTTransformer(ASTBuilder):
         else:  # bit operation
             value = build_stmt(ctx, node.value)
             if len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt)):
+                # Bit operations should follow the convention in
+                # https://github.com/cornell-zhang/heterocl/issues/443
+                # >>> a = 0xabcd0123
+                # >>> a[28:32] # containing the bit of 28, 29, 30, 31
+                # 0xa
+                # >>> a[4:24]
+                # 0xcd012
+                # >>> a[28:32].reverse()
+                # 0x5
                 if isinstance(node.slice, ast.Index):
                     assert len(elts) == 1, "Only support single index for get_bit"
                     index = build_stmt(ctx, elts[0])
@@ -996,20 +1009,24 @@ class ASTTransformer(ASTBuilder):
     def build_Call(ctx, node):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
-            # Python-Builtin functions
-            assert (
-                len(node.args) == 1
-            ), "Only support one argument for `float` and `int`"
-            stmts = build_stmts(ctx, node.args)
-            if node.func.id == "float":
-                return ASTTransformer.build_cast_op(
-                    ctx, stmts[0], node.args[0].dtype, Float(32)
-                )
-            if node.func.id == "int":
-                return ASTTransformer.build_cast_op(
-                    ctx, stmts[0], node.args[0].dtype, Int(32)
-                )
-            raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+            if isinstance(node.func, ast.Attribute):
+                return build_stmt(ctx, node.func)
+            elif node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                assert (
+                    len(node.args) == 1
+                ), "Only support one argument for `float` and `int`"
+                stmts = build_stmts(ctx, node.args)
+                if node.func.id == "float":
+                    return ASTTransformer.build_cast_op(
+                        ctx, stmts[0], node.args[0].dtype, Float(32)
+                    )
+                if node.func.id == "int":
+                    return ASTTransformer.build_cast_op(
+                        ctx, stmts[0], node.args[0].dtype, Int(32)
+                    )
+            else:
+                raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
             # Allo library functions

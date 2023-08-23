@@ -97,6 +97,12 @@ class TypeInferer(ASTVisitor):
             res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
+        elif node.attr == "reverse":
+            res = visit_stmt(ctx, node.value)
+            if not isinstance(res.dtype, (Int, UInt)):
+                raise RuntimeError("Can only reverse integers")
+            node.dtype = res.dtype
+            node.shape = res.shape
         return node
 
     @staticmethod
@@ -350,19 +356,20 @@ class TypeInferer(ASTVisitor):
     def visit_Call(ctx, node):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
-            # Python-Builtin functions
-            assert (
-                len(node.args) == 1
-            ), "Only support one argument for `float` and `int`"
-            new_args = visit_stmts(ctx, node.args)
-            if node.func.id == "float":
-                node.dtype = float32
+            if isinstance(node.func, ast.Attribute):
+                attr = visit_stmt(ctx, node.func)
+                node.shape = attr.shape
+                node.dtype = attr.dtype
+            elif node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                assert (
+                    len(node.args) == 1
+                ), "Only support one argument for `float` and `int`"
+                new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
-            elif node.func.id == "int":
-                node.dtype = int32
-                node.shape = tuple()
+                node.dtype = float32 if node.func.id == "float" else int32
             else:
-                raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+                raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
         if obj.__module__.startswith("allo"):
