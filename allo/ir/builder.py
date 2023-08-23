@@ -1010,6 +1010,10 @@ class ASTTransformer(ASTBuilder):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
             if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                assert (
+                    len(node.args) == 0
+                ), "Only support zero argument for attribute methods"
                 return build_stmt(ctx, node.func)
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions

@@ -97,13 +97,15 @@ class TypeInferer(ASTVisitor):
             res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
-        elif node.attr == "reverse":
+            return node
+        if node.attr == "reverse":
             res = visit_stmt(ctx, node.value)
             if not isinstance(res.dtype, (Int, UInt)):
                 raise RuntimeError("Can only reverse integers")
             node.dtype = res.dtype
             node.shape = res.shape
-        return node
+            return node
+        raise RuntimeError(f"Unsupported attribute `{node.attr}`")
 
     @staticmethod
     def visit_all_for(ctx, node):
@@ -357,6 +359,10 @@ class TypeInferer(ASTVisitor):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
             if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                assert (
+                    len(node.args) == 0
+                ), "Only support zero argument for attribute methods"
                 attr = visit_stmt(ctx, node.func)
                 node.shape = attr.shape
                 node.dtype = attr.dtype
