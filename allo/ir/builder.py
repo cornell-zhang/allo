@@ -490,7 +490,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_store(ctx, node, val):
-        if isinstance(node, ast.Subscript):
+        if isinstance(node, ast.Subscript) and len(node.value.shape) > 0:
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
@@ -518,7 +518,7 @@ class ASTTransformer(ASTBuilder):
             )
             store_op.attributes["to"] = StringAttr.get(node.value.id)
             return store_op
-        if isinstance(node, ast.Name):  # scalar
+        elif isinstance(node, ast.Name):  # scalar
             affine_map = AffineMap.get(
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
             )
@@ -532,6 +532,30 @@ class ASTTransformer(ASTBuilder):
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
+        elif isinstance(node, ast.Subscript):  # bit operation
+            slice = (
+                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            )
+            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+            if isinstance(node.slice, ast.Index):
+                assert len(elts) == 1, "Only support single index for get_bit"
+                index = build_stmt(ctx, node.slice.value)
+                index = ASTTransformer.build_cast_op(
+                    ctx, index, node.slice.value.dtype, Index()
+                )
+                # TODO: Test if rhs is uint1
+                set_bit_op = hcl_d.SetIntBitOp(
+                    node.value.dtype.build(),
+                    ctx.buffers[node.value.id].result,
+                    index.result,
+                    val.result,
+                    ip=ctx.get_ip(),
+                )
+                # write the updated integer back to the scalar
+                store_op = ASTTransformer.build_store(ctx, node.value, set_bit_op)
+                return store_op
+            else:
+                raise NotImplementedError
         raise RuntimeError("Unsupported store")
 
     @staticmethod
