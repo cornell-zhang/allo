@@ -116,6 +116,11 @@ def get_bitwidth_from_type(dtype):
     raise RuntimeError("Unsupported type")
 
 
+def get_bitwidth_and_frac_from_fixed(dtype):
+    bitwidth, frac = dtype.split("(")[-1][:-1].split(",")
+    return int(bitwidth), int(frac)
+
+
 def get_dtype_and_shape_from_type(dtype):
     if MemRefType.isinstance(dtype):
         dtype = MemRefType(dtype)
@@ -404,7 +409,17 @@ class LLVMModule:
                     if arg.dtype != target_np_type:
                         # avoid changing the address of the original array
                         arg = arg.astype(target_np_type)
-                else:  # unsupported type (fixed type)
+                elif target_in_type.startswith("fixed") or target_in_type.startswith(
+                    "ufixed"
+                ):
+                    arg = arg.astype(np.float32)
+                    bitwidth, frac = get_bitwidth_and_frac_from_fixed(target_in_type)
+                    arg = arg * (2**frac)
+                    # Round to nearest integer towards zero
+                    arg = np.fix(arg).astype(np.int32)
+                    bitwidth = max(get_clostest_pow2(bitwidth), 8)
+                    arg = make_anywidth_numpy_array(arg, bitwidth)
+                else:
                     raise RuntimeError(
                         f"Unsupported input type: {target_in_type}, "
                         f"please use a supported type or wrap the scalar as an array"
@@ -448,6 +463,10 @@ class LLVMModule:
                 width = get_bitwidth_from_type(result_type)
                 bitwidth = max(get_clostest_pow2(width), 8)
                 dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
+            elif result_type.startswith("fixed") or result_type.startswith("ufixed"):
+                bitwidth, _ = get_bitwidth_and_frac_from_fixed(result_type)
+                bitwidth = max(get_clostest_pow2(bitwidth), 8)
+                dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
             else:
                 raise RuntimeError("Unsupported return type")
             # Create an empty tensor
@@ -461,6 +480,10 @@ class LLVMModule:
             if is_anywidth_int_type_and_not_np(result_type):
                 bitwidth = get_bitwidth_from_type(result_type)
                 ret = struct_array_to_int_array(ret, bitwidth, result_type[0] == "i")
+            elif result_type.startswith("fixed") or result_type.startswith("ufixed"):
+                bitwidth, frac = get_bitwidth_and_frac_from_fixed(result_type)
+                ret = struct_array_to_int_array(ret, bitwidth, result_type[0] == "i")
+                ret = ret.astype(np.float32) / (2**frac)
         else:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
             ret = return_ptr[0]

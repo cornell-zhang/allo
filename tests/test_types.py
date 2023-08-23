@@ -222,7 +222,7 @@ def test_avgpool_nchw():
 
 def test_fixed_gemm():
     M, N, K = 4, 4, 4
-    T_IN, T_OUT = Fixed(12, 4), Fixed(20, 4)
+    T_IN, T_OUT = Fixed(12, 4), Fixed(16, 4)
 
     def gemm(A: T_IN[M, K], B: T_IN[K, N]) -> T_OUT[M, N]:
         C: T_OUT[M, N] = 0
@@ -232,7 +232,12 @@ def test_fixed_gemm():
 
     s = allo.customize(gemm)
     print(s.module)
-    print(s.build(target="vhls"))
+    mod = s.build()
+    np_A = np.random.randint(-4, 4, size=(M, K)).astype(np.float32)
+    np_B = np.random.randint(-4, 4, size=(K, N)).astype(np.float32)
+    np_C = np.matmul(np_A, np_B)
+    np_C_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
 
 
 ######################################################################
@@ -263,4 +268,5 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_fixed_gemm()
