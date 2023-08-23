@@ -66,21 +66,25 @@ def test_reverse():
 
 
 def test_set_bit_tensor():
-    def kernel(A: uint1[10], B: int32[10]):
+    def kernel1(A: uint1[10], B: int32[10]):
         for i in range(10):
             b: int32 = B[i]
             b[0] = A[i]
             B[i] = b
 
-    s = allo.customize(kernel, verbose=True)
-    print(s.module)
+    def kernel2(A: uint1[10], B: int32[10]):
+        for i in range(10):
+            B[i][0] = A[i]
 
-    np_A = np.random.randint(2, size=(10,))
-    np_B = np.random.randint(10, size=(10,))
-    golden = np_B & 0b1110 | np_A
-    mod = s.build()
-    mod(np_A, np_B)
-    assert np.array_equal(golden, np_B)
+    for kernel in [kernel1, kernel2]:
+        s = allo.customize(kernel, verbose=True)
+        print(s.module)
+        np_A = np.random.randint(2, size=(10,))
+        np_B = np.random.randint(10, size=(10,))
+        golden = np_B & 0b1110 | np_A
+        mod = s.build()
+        mod(np_A, np_B)
+        assert np.array_equal(golden, np_B)
 
 
 if __name__ == "__main__":

@@ -543,10 +543,11 @@ class ASTTransformer(ASTBuilder):
                 index = ASTTransformer.build_cast_op(
                     ctx, index, node.slice.value.dtype, Index()
                 )
+                value = build_stmt(ctx, node.value)
                 # TODO: Test if rhs is uint1
                 set_bit_op = hcl_d.SetIntBitOp(
                     node.value.dtype.build(),
-                    ctx.buffers[node.value.id].result,
+                    value.result,
                     index.result,
                     val.result,
                     ip=ctx.get_ip(),
