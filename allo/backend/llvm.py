@@ -391,8 +391,19 @@ class LLVMModule:
                     DTypeWarning(
                         f"Input type mismatch: {np_type} vs {target_in_type}"
                     ).warn()
-                # TODO: Handle overflow
                 if is_anywidth_int_type_and_not_np(target_in_type):
+                    width = get_bitwidth_from_type(target_in_type)
+                    # Handle overflow
+                    sb = 1 << width
+                    arg = arg % sb
+
+                    if target_in_type.startswith("i"):
+
+                        def cast_func(x):
+                            return x if x < sb_limit else x - sb
+
+                        sb_limit = 1 << (width - 1)
+                        arg = np.vectorize(cast_func)(arg)
                     # This is to be compliant with MLIR's anywidth int type alignment
                     # e.g. i1-i8 -> int8
                     #      i9-i16 -> int16
@@ -400,7 +411,6 @@ class LLVMModule:
                     #      i33-i64 -> int64
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
-                    width = get_bitwidth_from_type(target_in_type)
                     bitwidth = max(get_clostest_pow2(width), 8)
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif target_in_type in np_supported_types:
