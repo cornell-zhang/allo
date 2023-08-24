@@ -332,5 +332,4 @@ def test_copy_arg_scalar():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_logic_and_or()
+    pytest.main([__file__])
