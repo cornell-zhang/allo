@@ -390,20 +390,32 @@ class LLVMModule:
         for arg, (target_in_type, shape) in zip(args, input_types):
             if len(shape) == 0:  # scalar
                 if isinstance(arg, int):
-                    assert (
-                        target_in_type == "i32"
-                    ), f"Input type mismatch, expected i32, but got {target_in_type}"
-                    c_int_p = ctypes.c_int * 1
+                    if target_in_type != "i32":
+                        DTypeWarning(
+                            f"Input type mismatch: {target_in_type} vs i32. Please use NumPy array"
+                            "to wrap the data to avoid possible result mismatch"
+                        ).warn()
+                    bitwidth = get_bitwidth_from_type(target_in_type)
+                    pow2_width = max(get_clostest_pow2(bitwidth), 8)
+                    signed = "i" if target_in_type.startswith("i") else "ui"
+                    dtype = ctype_map[f"{signed}{pow2_width}"]
+                    c_int_p = dtype * 1
                     arg_ptrs.append(c_int_p(arg))
                 elif isinstance(arg, float):
-                    assert (
-                        target_in_type == "f32"
-                    ), f"Input type mismatch, expected f32, but got {target_in_type}"
-                    c_float_p = ctypes.c_float * 1
+                    if target_in_type != "f32":
+                        DTypeWarning(
+                            f"Input type mismatch: {target_in_type} vs f32. Please use NumPy array"
+                            "to wrap the data to avoid possible result mismatch"
+                        ).warn()
+                    if target_in_type == "f32":
+                        c_float_p = ctypes.c_float * 1
+                    else:  # f64
+                        c_float_p = ctypes.c_double * 1
                     arg_ptrs.append(c_float_p(arg))
                 else:
                     raise RuntimeError(
-                        "Unsupported input type. Please use NumPy array to wrap the data if other data types are needed as inputs."
+                        "Unsupported input type. Please use NumPy array to wrap the data if other"
+                        "data types are needed as inputs."
                     )
             else:
                 np_type = np_type_to_str(arg.dtype)
@@ -471,10 +483,22 @@ class LLVMModule:
         # Return inner variables
         result_type, shape = result_types[0]
         if len(shape) == 0:  # scalar
-            dtype = ctype_map[result_type]
+            if result_type in ctype_map:
+                dtype = ctype_map[result_type]
+            else:
+                if result_type.startswith("fixed") or result_type.startswith("ufixed"):
+                    raise RuntimeError("Not supported FixedType returns")
+                DTypeWarning(
+                    f"Return type {result_type} is not supported by native Python. "
+                    "Please change another return type or use Numpy array to wrap the return value"
+                ).warn()
+                signed = "i" if result_type.startswith("i") else "ui"
+                bitwidth = get_bitwidth_from_type(result_type)
+                pow2_width = max(get_clostest_pow2(bitwidth), 8)
+                dtype = ctype_map[f"{signed}{pow2_width}"]
             dtype_p = dtype * 1
             # -1/-1.0 is a placeholder
-            return_ptr = dtype_p(-1 if not result_type.startswith("f") else 1.0)
+            return_ptr = dtype_p(-1 if not result_type in {"f32", "f64"} else 1.0)
         else:
             if result_type in ctype_map:
                 dtype = ctype_map[result_type]
