@@ -1,14 +1,18 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import operator
+import inspect
+
 try:
-    import operator
     import torch
     from torch import fx
     from torch.nn import functional as F
-    import allo
 except ImportError:
     pass
+
+from ..ir import types
+from ..customize import customize
 
 
 def from_pytorch(model, example_inputs):
@@ -16,7 +20,10 @@ def from_pytorch(model, example_inputs):
     print(gm.graph)
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
-    print(code)
+    global_vars = {item[0]: item[1] for item in inspect.getmembers(types)}
+    print(global_vars)
+    s = customize(code, verbose=True, global_vars=global_vars)
+    return s.build()
 
 
 def get_var_name(node):
