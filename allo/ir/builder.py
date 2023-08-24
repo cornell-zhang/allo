@@ -966,10 +966,14 @@ class ASTTransformer(ASTBuilder):
                 ast.LtE: 3,
                 ast.Gt: 4,
                 ast.GtE: 5,
-                "ult": 6,
-                "ule": 7,
-                "ugt": 8,
-                "uge": 9,
+            },
+            "uint": {
+                ast.Eq: 0,
+                ast.NotEq: 1,
+                ast.Lt: 6,
+                ast.LtE: 7,
+                ast.Gt: 8,
+                ast.GtE: 9,
             },
             "float": {
                 "false": 0,
@@ -978,7 +982,13 @@ class ASTTransformer(ASTBuilder):
                 ast.GtE: 3,
                 ast.Lt: 4,
                 ast.LtE: 5,
-                "one": 6,
+                ast.NotEq: 6,
+                # The u prefix indicates unordered comparison, not unsigned comparison,
+                # so “une” means unordered or not equal.
+                # Unordered comparison of floating-point values refers to the comparison of
+                # floating-point numbers in a way that takes into account special cases like
+                # NaN (Not-a-Number) values and considers them as unordered
+                # with respect to other values
                 "ord": 7,
                 "ueq": 8,
                 "ugt": 9,
@@ -990,16 +1000,20 @@ class ASTTransformer(ASTBuilder):
                 "true": 15,
             },
             "fixed": {
-                "eq": 0,
-                "ne": 1,
-                "slt": 2,
-                "sle": 3,
-                "sgt": 4,
-                "sge": 5,
-                "ult": 6,
-                "ule": 7,
-                "ugt": 8,
-                "uge": 9,
+                ast.Eq: 0,
+                ast.NotEq: 1,
+                ast.Lt: 2,
+                ast.LtE: 3,
+                ast.Gt: 4,
+                ast.GtE: 5,
+            },
+            "ufixed": {
+                ast.Eq: 0,
+                ast.NotEq: 1,
+                ast.Lt: 6,
+                ast.LtE: 7,
+                ast.Gt: 8,
+                ast.GtE: 9,
             },
         }
         # pylint: disable=no-else-return
@@ -1028,18 +1042,22 @@ class ASTTransformer(ASTBuilder):
             # avoid rebuilding the same op
             rhs_res = rhs.result
             dtype = str(rhs_res.type)
-            if dtype.startswith("i"):
-                op = ATTR_MAP["int"][type(node.ops[0])]
-                op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpIOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
-            if dtype.startswith("fixed"):
-                op = ATTR_MAP["fixed"][type(node.ops[0])]
-                op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return hcl_d.CmpFixedOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
+            if dtype.startswith("i") or dtype.startswith("ui"):
+                op = ATTR_MAP["int" if dtype.startswith("i") else "uint"][
+                    type(node.ops[0])
+                ]
+                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+                return arith_d.CmpIOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
+            if dtype.startswith("!hcl.Fixed") or dtype.startswith("!hcl.UFixed"):
+                op = ATTR_MAP["fixed" if dtype.startswith("f") else "ufixed"][
+                    type(node.ops[0])
+                ]
+                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+                return hcl_d.CmpFixedOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
             if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
-                op = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return arith_d.CmpFOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
+                predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
+                return arith_d.CmpFOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
             raise RuntimeError(f"Unsupported types for binary op: {dtype}")
 
     @staticmethod
