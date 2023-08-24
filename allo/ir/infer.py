@@ -85,6 +85,13 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_Tuple(ctx, node):
+        visit_stmts(ctx, node.elts)
+        node.shape = [elt.shape for elt in node.elts]
+        node.dtype = [elt.dtype for elt in node.elts]
+        return node
+
+    @staticmethod
     def visit_Index(ctx, node):
         value = visit_stmt(ctx, node.value)
         node.shape = value.shape
