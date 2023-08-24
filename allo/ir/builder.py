@@ -1019,6 +1019,9 @@ class ASTTransformer(ASTBuilder):
         else:
             lhs = build_stmt(ctx, node.left)
             rhs = build_stmt(ctx, node.comparators[0])
+            # Cast lhs and rhs to the same type
+            lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
+            rhs = ASTTransformer.build_cast_op(ctx, rhs, node.comparators[0].dtype, node.dtype)
             # avoid rebuilding the same op
             rhs_res = rhs.result
             dtype = str(rhs_res.type)
