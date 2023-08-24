@@ -1037,6 +1037,15 @@ class ASTTransformer(ASTBuilder):
             raise RuntimeError(f"Unsupported types for binary op: {dtype}")
 
     @staticmethod
+    def build_BoolOp(ctx, node):
+        stmts = build_stmts(ctx, node.values)
+        opcls = {
+            ast.And: arith_d.AndIOp,
+            ast.Or: arith_d.OrIOp,
+        }.get(type(node.op))
+        return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
+
+    @staticmethod
     def build_If(ctx, node, is_affine=False):
         if is_affine:
             # Should build the condition on-the-fly

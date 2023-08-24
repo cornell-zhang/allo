@@ -124,6 +124,26 @@ def test_nested_if():
     assert mod(1, 2) == kernel(1, 2)
 
 
+def test_logic_and_or():
+    def kernel(A: int32[3], b: int32) -> int32:
+        r: int32 = 0
+        if A[0] > 0 and b < 0:
+            r = 1
+        elif A[1] == 1 or b == 1:
+            r = 2
+        else:
+            r = 3
+        return r
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    np_A = np.array([0, 1, 2], dtype=np.int32)
+    mod = s.build()
+    assert mod(np_A, 0) == kernel(np_A, 0)
+    assert mod(np_A, 1) == kernel(np_A, 1)
+    assert mod(np_A, 2) == kernel(np_A, 2)
+
+
 def test_rhs_binaryop():
     def kernel() -> int32[11]:
         v: int32 = 5
@@ -312,4 +332,5 @@ def test_copy_arg_scalar():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_logic_and_or()

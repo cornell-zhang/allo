@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import Int, UInt, Fixed, UFixed, Index, uint1, int1, int32, float32
+from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -351,13 +351,21 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Compare(ctx, node):
         visit_stmt(ctx, node.left)
-        visit_stmt(ctx, node.comparators[0])
-        node.dtype = int1
+        visit_stmts(ctx, node.comparators)
+        node.dtype = uint1
+        node.shape = tuple()
+        return node
+
+    @staticmethod
+    def visit_BoolOp(ctx, node):
+        visit_stmts(ctx, node.values)
+        node.dtype = uint1
         node.shape = tuple()
         return node
 
     @staticmethod
     def visit_If(ctx, node):
+        visit_stmt(ctx, node.test)
         visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
             visit_stmts(ctx, node.orelse)
