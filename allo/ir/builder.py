@@ -156,19 +156,24 @@ class ASTTransformer(ASTBuilder):
         else:
             stage_name = get_kwarg(node.iter.keywords, "name").value
         if attr in {"grid", "reduction"}:
-            grid = [
-                x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                for x in node.iter.args
-            ]
+            grid = [ASTResolver.resolve_constant(x, ctx) for x in node.iter.args]
             for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
         elif attr == "range":
-            low = 0 if len(node.iter.args) == 1 else node.iter.args[0].value
-            high = (
-                node.iter.args[1].value
-                if len(node.iter.args) > 1
-                else node.iter.args[0].value
+            low = (
+                0
+                if len(node.iter.args) == 1
+                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
             )
-            step = node.iter.args[2].value if len(node.iter.args) > 2 else 1
+            high = (
+                ASTResolver.resolve_constant(node.iter.args[1], ctx)
+                if len(node.iter.args) > 1
+                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
+            )
+            step = (
+                ASTResolver.resolve_constant(node.iter.args[2], ctx)
+                if len(node.iter.args) > 2
+                else 1
+            )
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
             with ctx.get_ip():

@@ -312,5 +312,4 @@ def test_copy_arg_scalar():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_range_for()
+    pytest.main([__file__])
