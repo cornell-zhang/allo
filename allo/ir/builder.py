@@ -75,6 +75,7 @@ class ASTBuilder(ASTVisitor):
             return res
 
 
+# pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
@@ -490,7 +491,7 @@ class ASTTransformer(ASTBuilder):
                 "fixed": RuntimeError,
             }
         else:
-            raise RuntimeError("Unsupported unary op")
+            raise RuntimeError(f"Unsupported unary op `{node.op}`")
         if not isinstance(node.operand, ast.Constant):
             raise RuntimeError("Only support constant for unary op")
         if isinstance(node.operand.value, int):
@@ -1019,6 +1020,11 @@ class ASTTransformer(ASTBuilder):
         else:
             lhs = build_stmt(ctx, node.left)
             rhs = build_stmt(ctx, node.comparators[0])
+            # Cast lhs and rhs to the same type
+            lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
+            rhs = ASTTransformer.build_cast_op(
+                ctx, rhs, node.comparators[0].dtype, node.dtype
+            )
             # avoid rebuilding the same op
             rhs_res = rhs.result
             dtype = str(rhs_res.type)
@@ -1035,6 +1041,15 @@ class ASTTransformer(ASTBuilder):
                 op = IntegerAttr.get(IntegerType.get_signless(64), op)
                 return arith_d.CmpFOp(op, lhs.result, rhs_res, ip=ctx.get_ip())
             raise RuntimeError(f"Unsupported types for binary op: {dtype}")
+
+    @staticmethod
+    def build_BoolOp(ctx, node):
+        stmts = build_stmts(ctx, node.values)
+        opcls = {
+            ast.And: arith_d.AndIOp,
+            ast.Or: arith_d.OrIOp,
+        }.get(type(node.op))
+        return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
 
     @staticmethod
     def build_If(ctx, node, is_affine=False):
