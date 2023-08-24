@@ -346,9 +346,12 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Compare(ctx, node):
-        visit_stmt(ctx, node.left)
-        visit_stmts(ctx, node.comparators)
-        node.dtype = uint1
+        lhs = visit_stmt(ctx, node.left)
+        assert len(node.comparators) == 1, "Only support one comparator for now"
+        rhs = visit_stmt(ctx, node.comparators[0])
+        typing_rule = get_typing_rule(type(node.ops[0]))
+        res_type = typing_rule(lhs.dtype, rhs.dtype)[0]
+        node.dtype = res_type
         node.shape = tuple()
         return node
 

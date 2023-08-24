@@ -144,6 +144,19 @@ def test_logic_and_or():
     assert mod(np_A, 2) == kernel(np_A, 2)
 
 
+def test_assign_logic():
+    def kernel(A: int32) -> int32:
+        B: int32 = 0
+        if A > B:
+            B = A
+        return B
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    mod = s.build()
+    assert mod(2) == kernel(2)
+
+
 def test_rhs_binaryop():
     def kernel() -> int32[11]:
         v: int32 = 5

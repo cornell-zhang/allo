@@ -150,6 +150,46 @@ def test_load_type_scalar():
     assert mod(1.0) == kernel(1.0)
 
 
+def test_compare_int_float():
+    Ty = Int(5)
+
+    def kernel(A: Ty) -> Ty:
+        B: Ty = 0
+        if A > B or A + 1 < 0.0:
+            B = A
+        return B
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    assert mod(2) == kernel(2)
+    assert mod(-3) == kernel(-3)
+
+    Ty = UInt(4)
+    s = allo.customize(kernel)
+    mod = s.build()
+    assert mod(2) == kernel(2)
+
+    Ty = Float(32)
+    s = allo.customize(kernel)
+    mod = s.build()
+    assert abs(mod(-1.3) - kernel(-1.3)) < 1e-6
+    print("Passed")
+
+
+def test_fixed_compare():
+    Ty = Fixed(8, 3)
+
+    def kernel(A: Ty) -> int32:
+        B: Ty = 0
+        if A > B and A > 0:
+            B = A
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    # FIXME: FixedType kernels cannot be lowered
+
+
 def test_bconv2D_nchw():
     bs = 4
     ic, oc = 6, 16

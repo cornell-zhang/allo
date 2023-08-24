@@ -18,13 +18,14 @@ from hcl_mlir.dialects import (
     affine as affine_d,
     arith as arith_d,
 )
-from .types import AlloType
+from .types import AlloType, Int, UInt, Fixed, UFixed
 
 
 def get_extra_type_hints(dtype: AlloType):
-    if str(dtype).startswith("int"):
+    assert isinstance(dtype, AlloType), f"Expect AlloType, got {dtype}"
+    if isinstance(dtype, (Int, Fixed)):
         return "s"
-    if str(dtype).startswith("uint"):
+    if isinstance(dtype, (UInt, UFixed)):
         return "u"
     return "_"
 
