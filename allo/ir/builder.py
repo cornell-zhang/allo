@@ -74,7 +74,6 @@ class ASTBuilder(ASTVisitor):
             return res
 
 
-# pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node):
@@ -135,6 +134,10 @@ class ASTTransformer(ASTBuilder):
                 )
                 ctx.unnamed_linalg_op_count += 1
             return alloc_op
+        if node.attr == "reverse":
+            value = build_stmt(ctx, node.value)
+            bit_reverse = hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
+            return bit_reverse
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
@@ -486,7 +489,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_store(ctx, node, val):
-        if isinstance(node, ast.Subscript):
+        if isinstance(node, ast.Subscript) and len(node.value.shape) > 0:
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
@@ -528,6 +531,55 @@ class ASTTransformer(ASTBuilder):
             )
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
+        if isinstance(node, ast.Subscript):  # bit operation
+            slice = (
+                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            )
+            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+            if isinstance(node.slice, ast.Index):
+                assert len(elts) == 1, "Only support single index for set_bit"
+                index = build_stmt(ctx, node.slice.value)
+                index = ASTTransformer.build_cast_op(
+                    ctx, index, node.slice.value.dtype, Index()
+                )
+                value = build_stmt(ctx, node.value)
+                # TODO: Test if rhs is uint1
+                set_bit_op = hcl_d.SetIntBitOp(
+                    node.value.dtype.build(),
+                    value.result,
+                    index.result,
+                    val.result,
+                    ip=ctx.get_ip(),
+                )
+                # write the updated integer back to the scalar
+                store_op = ASTTransformer.build_store(ctx, node.value, set_bit_op)
+                return store_op
+            if isinstance(node.slice, ast.Slice):
+                assert len(elts) == 1, "Only support a single slice for set_slice"
+                # The backend implementation is different from the Python convention
+                # The lower bound is inclusive and the upper bound is also inclusive
+                node.slice.upper.value -= 1
+                start = build_stmt(ctx, node.slice.lower)
+                start = ASTTransformer.build_cast_op(
+                    ctx, start, node.slice.lower.dtype, Index()
+                )
+                end = build_stmt(ctx, node.slice.upper)
+                end = ASTTransformer.build_cast_op(
+                    ctx, end, node.slice.upper.dtype, Index()
+                )
+                value = build_stmt(ctx, node.value)
+                # TODO: Test if rhs has the correct bitwidth
+                set_slice_op = hcl_d.SetIntSliceOp(
+                    node.value.dtype.build(),
+                    value.result,
+                    end.result,
+                    start.result,
+                    val.result,
+                    ip=ctx.get_ip(),
+                )
+                # write the updated integer back to the scalar
+                store_op = ASTTransformer.build_store(ctx, node.value, set_slice_op)
+                return store_op
         raise RuntimeError("Unsupported store")
 
     @staticmethod
@@ -635,70 +687,116 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Subscript(ctx, node):
-        # Load op
-        ctx.dim_count = 0
-        ctx.affine_vars = []
-        index_exprs = []
         # pylint: disable=redefined-builtin
         slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-        is_affine = True
-        for index in elts:
-            expr = ASTTransformer.build_affine_expr(ctx, index)
-            if expr is None:
-                is_affine = False
-                break
-            index_exprs.append(expr)
-        # pylint: disable=no-else-return
-        if is_affine:
-            if isinstance(node.ctx, ast.Load):
-                affine_map = AffineMap.get(
-                    dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
-                )
-                affine_attr = AffineMapAttr.get(affine_map)
-                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                load_op = affine_d.AffineLoadOp(
-                    ctx.buffers[node.value.id].result, ivs, affine_attr, ip=ctx.get_ip()
+        if len(node.value.shape) > 0:
+            # Load op
+            ctx.dim_count = 0
+            ctx.affine_vars = []
+            index_exprs = []
+            is_affine = True
+            for index in elts:
+                expr = ASTTransformer.build_affine_expr(ctx, index)
+                if expr is None:
+                    is_affine = False
+                    break
+                index_exprs.append(expr)
+            # pylint: disable=no-else-return
+            if is_affine:
+                if isinstance(node.ctx, ast.Load):
+                    affine_map = AffineMap.get(
+                        dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
+                    )
+                    affine_attr = AffineMapAttr.get(affine_map)
+                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                    load_op = affine_d.AffineLoadOp(
+                        ctx.buffers[node.value.id].result,
+                        ivs,
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                    load_op.attributes["from"] = StringAttr.get(node.value.id)
+                    return load_op
+                else:
+                    raise RuntimeError("Unsupported Subscript")
+            else:  # Not affine
+                new_indices = []
+                for index in elts:
+                    expr = build_stmt(ctx, index)
+                    # cast to index type
+                    expr_res = expr.result
+                    if str(expr_res.type) == "i32":
+                        expr = arith_d.IndexCastOp(
+                            IndexType.get(), expr_res, ip=ctx.get_ip()
+                        )
+                    else:
+                        raise RuntimeError(f"Unsupported index type, got {expr.type}")
+                    new_indices.append(expr)
+                # pylint: disable=redefined-variable-type
+                load_op = memref_d.LoadOp(
+                    ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
                 )
                 load_op.attributes["from"] = StringAttr.get(node.value.id)
                 return load_op
-            else:
-                raise RuntimeError("Unsupported Subscript")
-        else:  # Not affine
-            new_indices = []
-            for index in elts:
-                expr = build_stmt(ctx, index)
-                # cast to index type
-                expr_res = expr.result
-                if str(expr_res.type) == "i32":
-                    expr = arith_d.IndexCastOp(
-                        IndexType.get(), expr_res, ip=ctx.get_ip()
+        else:  # bit operation
+            value = build_stmt(ctx, node.value)
+            if len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt)):
+                # Bit operations should follow the convention in
+                # https://github.com/cornell-zhang/heterocl/issues/443
+                # >>> a = 0xabcd0123
+                # >>> a[28:32] # containing the bit of 28, 29, 30, 31
+                # 0xa
+                # >>> a[4:24]
+                # 0xcd012
+                # >>> a[28:32].reverse()
+                # 0x5
+                if isinstance(node.slice, ast.Index):
+                    assert len(elts) == 1, "Only support single index for get_bit"
+                    index = build_stmt(ctx, elts[0])
+                    index = ASTTransformer.build_cast_op(
+                        ctx, index, node.slice.dtype, Index()
+                    )
+                    return hcl_d.GetIntBitOp(
+                        node.dtype.build(), value.result, index.result, ip=ctx.get_ip()
+                    )
+                elif isinstance(node.slice, ast.Slice):
+                    # The backend implementation is different from the Python convention
+                    # The lower bound is inclusive and the upper bound is also inclusive
+                    node.slice.upper.value -= 1
+                    lower = build_stmt(ctx, node.slice.lower)
+                    upper = build_stmt(ctx, node.slice.upper)
+                    lower = ASTTransformer.build_cast_op(
+                        ctx, lower, node.slice.lower.dtype, Index()
+                    )
+                    upper = ASTTransformer.build_cast_op(
+                        ctx, upper, node.slice.upper.dtype, Index()
+                    )
+                    return hcl_d.GetIntSliceOp(
+                        node.dtype.build(),
+                        value.result,
+                        upper.result,
+                        lower.result,
+                        ip=ctx.get_ip(),
                     )
                 else:
-                    raise RuntimeError(f"Unsupported index type, got {expr.type}")
-                new_indices.append(expr)
-            # pylint: disable=redefined-variable-type
-            load_op = memref_d.LoadOp(
-                ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
-            )
-            load_op.attributes["from"] = StringAttr.get(node.value.id)
-            return load_op
+                    raise NotImplementedError
+            else:
+                raise RuntimeError("Can only access bit (slice) for integers")
 
     @staticmethod
     def build_AnnAssign(ctx, node):
         if node.value is not None:
-            if (
-                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
-            ) or isinstance(node.value, (ast.Constant, ast.Call)):
+            if isinstance(node.value, ast.List) or (
+                isinstance(node.value, ast.Name) and node.value.id not in ctx.buffers
+            ):
+                rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            else:
                 # Examples:
                 # copied: int32 = a
                 # init: int32 = 0
                 # call: int32 = int(1)
                 rhs = build_stmt(ctx, node.value)
-            elif isinstance(node.value, (ast.List, ast.Name)):
-                rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            else:
-                raise RuntimeError("Unsupported data type")
         else:
             rhs = None
         shape, dtype = node.shape, node.dtype
@@ -960,19 +1058,26 @@ class ASTTransformer(ASTBuilder):
     def build_Call(ctx, node):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
-            # Python-Builtin functions
-            assert (
-                len(node.args) == 1
-            ), "Only support one argument for `float` and `int`"
-            stmts = build_stmts(ctx, node.args)
-            if node.func.id == "float":
-                return ASTTransformer.build_cast_op(
-                    ctx, stmts[0], node.args[0].dtype, Float(32)
-                )
-            if node.func.id == "int":
-                return ASTTransformer.build_cast_op(
-                    ctx, stmts[0], node.args[0].dtype, Int(32)
-                )
+            if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                assert (
+                    len(node.args) == 0
+                ), "Only support zero argument for attribute methods"
+                return build_stmt(ctx, node.func)
+            if node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                assert (
+                    len(node.args) == 1
+                ), "Only support one argument for `float` and `int`"
+                stmts = build_stmts(ctx, node.args)
+                if node.func.id == "float":
+                    return ASTTransformer.build_cast_op(
+                        ctx, stmts[0], node.args[0].dtype, Float(32)
+                    )
+                if node.func.id == "int":
+                    return ASTTransformer.build_cast_op(
+                        ctx, stmts[0], node.args[0].dtype, Int(32)
+                    )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):

@@ -337,6 +337,7 @@ class LLVMModule:
                 self.out_types.append((out_type, shape))
             # Resolve FixedType
             hcl_d.lower_fixed_to_int(self.module)
+            hcl_d.lower_bit_ops(self.module)
             # Remove .partition() annotation
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes

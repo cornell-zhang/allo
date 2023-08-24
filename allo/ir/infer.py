@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
-from .types import Fixed, UFixed, int1, int32, float32
+from .types import Int, UInt, Fixed, UFixed, Index, uint1, int1, int32, float32
 from .typing_rule import get_typing_rule
 
 
@@ -71,7 +71,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = float32
             node.shape = tuple()
             return node
-        raise RuntimeError("Unsupported Name")
+        raise RuntimeError(f"Unsupported Name {node.id}")
 
     @staticmethod
     def visit_Constant(ctx, node):
@@ -85,15 +85,46 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_Tuple(ctx, node):
+        visit_stmts(ctx, node.elts)
+        node.shape = [elt.shape for elt in node.elts]
+        node.dtype = [elt.dtype for elt in node.elts]
+        return node
+
+    @staticmethod
+    def visit_Index(ctx, node):
+        value = visit_stmt(ctx, node.value)
+        node.shape = value.shape
+        node.dtype = value.dtype
+        return node
+
+    @staticmethod
     def visit_Attribute(ctx, node):
         if node.attr == "T":
             res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
-        return node
+            return node
+        if node.attr == "reverse":
+            res = visit_stmt(ctx, node.value)
+            if not isinstance(res.dtype, (Int, UInt)):
+                raise RuntimeError("Can only reverse integers")
+            node.dtype = res.dtype
+            node.shape = res.shape
+            return node
+        raise RuntimeError(f"Unsupported attribute `{node.attr}`")
 
     @staticmethod
     def visit_all_for(ctx, node):
+        # Set loop induction variables
+        if isinstance(node.target, ast.Tuple):
+            ivs = list(node.target.elts)
+        else:
+            ivs = [node.target]
+        for iv in ivs:
+            iv.shape = tuple()
+            iv.dtype = Index()
+            ctx.buffers[iv.id] = iv
         visit_stmts(ctx, node.body)
         node.shape = None
         node.dtype = None
@@ -214,26 +245,48 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx, node):
         # TODO: Suppose only load a single element, this is not true if tensor slicing is added
-        node.shape = tuple()
-        node.dtype = ctx.buffers[node.value.id].dtype
+        value = visit_stmt(ctx, node.value)
+        if len(value.shape) > 0:
+            node.shape = tuple()
+            node.dtype = ctx.buffers[node.value.id].dtype
+            visit_stmt(ctx, node.slice)
+        elif len(value.shape) == 0 and isinstance(
+            value.dtype, (Int, UInt)
+        ):  # bit operation
+            if isinstance(node.slice, ast.Index):
+                visit_stmt(ctx, node.slice)
+                node.shape = tuple()
+                node.dtype = uint1
+            elif isinstance(node.slice, ast.Slice):
+                assert isinstance(
+                    node.slice.lower, ast.Constant
+                ), "lower bound of bit slicing must be constant"
+                assert isinstance(
+                    node.slice.upper, ast.Constant
+                ), "upper bound of bit slicing must be constant"
+                lower = visit_stmt(ctx, node.slice.lower)
+                upper = visit_stmt(ctx, node.slice.upper)
+                assert (
+                    upper.value > lower.value
+                ), "upper bound must be greater than lower bound"
+                node.shape = tuple()
+                node.dtype = UInt(upper.value - lower.value)
+            else:
+                raise RuntimeError("Unsupported bit operation")
+        else:
+            raise RuntimeError("Can only access bit (slice) for integers")
         return node
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
         target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
         if node.value is not None:
-            if (
-                isinstance(node.value, ast.Name) and node.value.id in ctx.buffers
-            ) or isinstance(node.value, (ast.Constant, ast.Call)):
-                # Examples:
-                # copied: int32 = a
-                # init: int32 = 0
-                # call: int32 = int(1)
-                rhs = visit_stmt(ctx, node.value)
-            elif isinstance(node.value, (ast.List, ast.Name)):
+            if isinstance(node.value, ast.List) or (
+                isinstance(node.value, ast.Name) and node.value.id not in ctx.buffers
+            ):
                 rhs = TypeInferer.visit_constant_tensor(ctx, node)
             else:
-                raise RuntimeError("Unsupported data type")
+                rhs = visit_stmt(ctx, node.value)
             if not isinstance(node.value, ast.Constant):
                 assert (
                     rhs.shape == target_shape
@@ -243,6 +296,7 @@ class TypeInferer(ASTVisitor):
         ctx.buffers[node.target.id] = node
         node.dtype = target_dtype
         node.shape = target_shape
+        visit_stmt(ctx, node.target)
         return node
 
     @staticmethod
@@ -320,19 +374,24 @@ class TypeInferer(ASTVisitor):
     def visit_Call(ctx, node):
         obj = ASTResolver.resolve(node.func, ctx.global_vars)
         if obj is None:
-            # Python-Builtin functions
-            assert (
-                len(node.args) == 1
-            ), "Only support one argument for `float` and `int`"
-            new_args = visit_stmts(ctx, node.args)
-            if node.func.id == "float":
-                node.dtype = float32
+            if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                assert (
+                    len(node.args) == 0
+                ), "Only support zero argument for attribute methods"
+                attr = visit_stmt(ctx, node.func)
+                node.shape = attr.shape
+                node.dtype = attr.dtype
+            elif node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                assert (
+                    len(node.args) == 1
+                ), "Only support one argument for `float` and `int`"
+                new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
-            elif node.func.id == "int":
-                node.dtype = int32
-                node.shape = tuple()
+                node.dtype = float32 if node.func.id == "float" else int32
             else:
-                raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
+                raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
         if obj.__module__.startswith("allo"):
@@ -371,6 +430,7 @@ class TypeInferer(ASTVisitor):
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree
+        visit_stmts(ctx, node.args)
         if not isinstance(stmts[-1], ast.FunctionDef):
             node.dtype = None
             node.shape = None
