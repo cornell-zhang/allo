@@ -22,15 +22,22 @@ class TypeInferer(ASTVisitor):
     def visit_call_type(ctx, node):
         ty_cls = ASTResolver.resolve(node.func, ctx.global_vars)
         args = node.args
+
+        def resolve_constant(x):
+            if isinstance(x, ast.Constant):
+                return x.value
+            if isinstance(x, ast.Name) and x.id in ctx.global_vars:
+                return ctx.global_vars[x.id]
+            raise RuntimeError("Unsupported constant type in type annotation")
+
         if ty_cls is Fixed or ty_cls is UFixed:
             assert len(args) == 2
             assert isinstance(args[0], ast.Constant)
             assert isinstance(args[1], ast.Constant)
-            dtype = ty_cls(args[0].value, args[1].value)
+            dtype = ty_cls(resolve_constant(args[0]), resolve_constant(args[1]))
         else:
             assert len(args) == 1
-            assert isinstance(args[0], ast.Constant)
-            dtype = ty_cls(args[0].value)
+            dtype = ty_cls(resolve_constant(args[0]))
         return dtype
 
     @staticmethod
