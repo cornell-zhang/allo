@@ -54,3 +54,11 @@ class ASTResolver:
                 return None
         # The name ``scope`` here could be a bit confusing
         return scope
+
+    @staticmethod
+    def resolve_constant(node, ctx):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in ctx.global_vars:
+            return ctx.global_vars[node.id]
+        raise RuntimeError("Unsupported constant type")

@@ -84,6 +84,25 @@ def test_all_gemm():
     print(s.module)
 
 
+def test_range_for():
+    def kernel(A: int32[20]):
+        for i in range(10):
+            A[i] = i
+        for i in range(10, 20):
+            A[i] = i
+        for i in range(0, 20, 2):
+            A[i] = i * 2
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.zeros((20,), dtype=np.int32)
+    kernel(np_A)
+    np_B = np.zeros((20,), dtype=np.int32)
+    mod(np_B)
+    np.testing.assert_allclose(np_A, np_B)
+
+
 def test_nested_if():
     def kernel(a: int32, b: int32) -> int32:
         r: int32 = 0

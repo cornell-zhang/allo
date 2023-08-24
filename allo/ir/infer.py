@@ -22,15 +22,18 @@ class TypeInferer(ASTVisitor):
     def visit_call_type(ctx, node):
         ty_cls = ASTResolver.resolve(node.func, ctx.global_vars)
         args = node.args
+
         if ty_cls is Fixed or ty_cls is UFixed:
             assert len(args) == 2
             assert isinstance(args[0], ast.Constant)
             assert isinstance(args[1], ast.Constant)
-            dtype = ty_cls(args[0].value, args[1].value)
+            dtype = ty_cls(
+                ASTResolver.resolve_constant(args[0], ctx),
+                ASTResolver.resolve_constant(args[1], ctx),
+            )
         else:
             assert len(args) == 1
-            assert isinstance(args[0], ast.Constant)
-            dtype = ty_cls(args[0].value)
+            dtype = ty_cls(ASTResolver.resolve_constant(args[0], ctx))
         return dtype
 
     @staticmethod

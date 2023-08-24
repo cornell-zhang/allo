@@ -29,6 +29,7 @@ from hcl_mlir.ir import (
     ArrayAttr,
     Attribute,
 )
+import hcl_mlir
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -141,11 +142,7 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
-    def build_all_for(ctx, node):
-        grid = [
-            x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-            for x in node.iter.args
-        ]
+    def build_all_for(ctx, node, attr):
         # get loop names
         if isinstance(node.target, ast.Tuple):
             names = [x.id for x in node.target.elts]
@@ -158,7 +155,33 @@ class ASTTransformer(ASTBuilder):
             stage_name = None
         else:
             stage_name = get_kwarg(node.iter.keywords, "name").value
-        for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
+        if attr in {"grid", "reduction"}:
+            grid = [ASTResolver.resolve_constant(x, ctx) for x in node.iter.args]
+            for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
+        elif attr == "range":
+            low = (
+                0
+                if len(node.iter.args) == 1
+                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
+            )
+            high = (
+                ASTResolver.resolve_constant(node.iter.args[1], ctx)
+                if len(node.iter.args) > 1
+                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
+            )
+            step = (
+                ASTResolver.resolve_constant(node.iter.args[2], ctx)
+                if len(node.iter.args) > 2
+                else 1
+            )
+            if stage_name is None:
+                stage_name = "S_" + "_".join(names)
+            with ctx.get_ip():
+                for_loops = [
+                    hcl_mlir.make_for(
+                        low, high, step=step, name=names[0], stage=stage_name
+                    )
+                ]
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
             ctx.buffers[name] = MockArg(iv)
@@ -189,8 +212,10 @@ class ASTTransformer(ASTBuilder):
                     obj is None
                     and isinstance(node.iter.func, ast.Name)
                     and node.iter.func.id == "range"
-                ) or (obj is not None and obj.__name__ in {"grid", "reduction"}):
-                    return ASTTransformer.build_all_for(ctx, node)
+                ):
+                    return ASTTransformer.build_all_for(ctx, node, "range")
+                if obj is not None and obj.__name__ in {"grid", "reduction"}:
+                    return ASTTransformer.build_all_for(ctx, node, obj.__name__)
             raise RuntimeError("Unsupported for loop")
 
     # pylint: disable=too-many-branches, inconsistent-return-statements
