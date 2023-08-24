@@ -2,18 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 try:
+    import operator
     import torch
     from torch import fx
     from torch.nn import functional as F
-    import operator
+    import allo
 except ImportError:
     pass
 
 
-def from_pytorch(model):
+def from_pytorch(model, example_inputs):
     gm = fx.symbolic_trace(model)
     print(gm.graph)
-    builder = TorchBuilder(gm)
+    builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
     print(code)
 
@@ -26,15 +27,20 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm):
+    def __init__(self, gm, example_inputs):
         self.gm = gm
         self.code = []
         self.input_args = []
+        self.input_shapes = [x.shape for x in example_inputs]
 
     def build(self):
         for node in self.gm.graph.nodes:
             self(node)
-        res = "def forward({}):\n".format(", ".join(self.input_args))
+        args = [
+            f"{name}: float32[{','.join(map(str, shape))}]"
+            for name, shape in zip(self.input_args, self.input_shapes)
+        ]
+        res = "def forward({}):\n".format(", ".join(args))
         for line in self.code:
             res += f"  {line}\n"
         return res
@@ -68,7 +74,7 @@ class TorchBuilder:
         pass
 
     def build_output(self, node):
-        return f"return {node.name}"
+        return f"return {node.args[0]}"
 
     def build_add(self, node):
         lhs = get_var_name(node.args[0])

@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import allo
@@ -18,4 +19,4 @@ class Model(nn.Module):
 
 model = Model()
 model.eval()
-mod = allo.frontend.from_pytorch(model)
+mod = allo.frontend.from_pytorch(model, [torch.rand(1, 3, 32, 32)])
