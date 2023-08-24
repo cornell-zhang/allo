@@ -1241,7 +1241,6 @@ class ASTTransformer(ASTBuilder):
             elif attr == "relu":
                 # TODO: Need to better manage library call
                 memref_type = MemRefType.get(shape, dtype.build())
-                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                 zero_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                 # init zero
                 zero = MockConstant(0, ctx)

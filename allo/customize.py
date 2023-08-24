@@ -7,7 +7,8 @@ import textwrap
 import ast
 from dataclasses import dataclass
 from functools import wraps
-from typing import Union, Callable
+from typing import Union
+from collections.abc import Callable
 
 from hcl_mlir.ir import (
     Module,

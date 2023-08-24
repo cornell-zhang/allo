@@ -27,4 +27,4 @@ llvm_mod = allo.frontend.from_pytorch(
 golden = model(*example_inputs)
 np_inputs = [x.detach().numpy() for x in example_inputs]
 res = llvm_mod(*np_inputs)
-torch.testing.assert_allclose(res, golden.detach().numpy())
+torch.testing.assert_close(res, golden.detach().numpy())

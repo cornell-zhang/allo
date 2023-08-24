@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=unused-import
 
 import operator
 import inspect
@@ -23,7 +24,7 @@ def from_pytorch(model, example_inputs, verbose=False):
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
     global_vars = {}
-    for pymod in [types]:
+    for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
     global_vars.update({"dsl": dsl})
     s = customize(code, verbose=verbose, global_vars=global_vars)
@@ -33,10 +34,7 @@ def from_pytorch(model, example_inputs, verbose=False):
 
 
 def get_var_name(node):
-    if isinstance(node, fx.Node):
-        return node.name
-    else:
-        return node
+    return node.name if isinstance(node, fx.Node) else node
 
 
 class TorchBuilder:
@@ -50,14 +48,14 @@ class TorchBuilder:
         for node in self.gm.graph.nodes:
             self(node)
         args = [
-            f"{name}: float32[{','.join(map(str, shape))}]"
+            f"{name}: float32[{','.join([str(s) for s in shape])}]"
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
         # inputs
-        res = "def forward({})".format(", ".join(args))
+        res = f"def forward({', '.join(args)})".format()
         # outputs
         # FIXME: Update return type (can use shape propagation)
-        res += " -> float32[{}]:\n".format(",".join(map(str, self.input_shapes[0])))
+        res += f" -> float32[{','.join([str(s) for s in self.input_shapes[0]])}]:\n"
         # function body
         for line in self.code:
             res += f"  {line}\n"
