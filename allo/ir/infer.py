@@ -150,12 +150,15 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
-        assert (
-            lhs.shape == rhs.shape
-        ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
+        # assert (
+        #     lhs.shape == rhs.shape
+        # ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
+        # See the broadcasting rules in NumPy
+        # https://numpy.org/doc/stable/user/basics.broadcasting.html
         typing_rule = get_typing_rule(type(node.op))
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
+        # TODO: Fix the shape inference
         node.shape = lhs.shape
         return node
 

@@ -290,5 +290,24 @@ def linalg_test_transpose_3D():
     print(s.module)
 
 
+def test_linalg_broadcast():
+    M = 10
+    K = 15
+    A = np.random.uniform(size=(M, K)).astype(np.float32)
+    B = np.random.uniform(size=(K, M)).astype(np.float32)
+
+    def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
+        D = allo.matmul(A + 1, B)
+        return D
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_linalg_broadcast()

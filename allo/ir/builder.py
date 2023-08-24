@@ -377,6 +377,24 @@ class ASTTransformer(ASTBuilder):
         return cast_op
 
     @staticmethod
+    def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape):
+        if src_shape == dst_shape:
+            return op
+        if len(src_shape) == 0:
+            # Get zero-rank memref for constant
+            memref_type = MemRefType.get((), dtype.build())
+            in_cst = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            with ctx.get_ip():
+                linalg_d.fill(op.result, outs=[in_cst.result])
+        # target
+        memref_type = MemRefType.get(dst_shape, dtype.build())
+        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+        linalg_d.BroadcastOp(
+            inputs=[in_cst.result], outputs=[alloc_op.result], dimensions=[0,1], ip=ctx.get_ip()
+        )
+        return alloc_op
+
+    @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
         opcls = {
             ast.Add: {
@@ -511,6 +529,12 @@ class ASTTransformer(ASTBuilder):
         # Cast lhs and rhs to the same type
         lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
+        lhs = ASTTransformer.build_broadcast_op(
+            ctx, lhs, node.dtype, node.left.shape, node.shape
+        )
+        rhs = ASTTransformer.build_broadcast_op(
+            ctx, rhs, node.dtype, node.right.shape, node.shape
+        )
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
@@ -1235,6 +1259,7 @@ class ASTTransformer(ASTBuilder):
                 )
             # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
+                print(new_args)
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
