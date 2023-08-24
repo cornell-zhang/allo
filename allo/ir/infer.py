@@ -410,7 +410,7 @@ class TypeInferer(ASTVisitor):
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
                 return node
-            return TypeInferer.visit_linalg_op(
+            return TypeInferer.visit_library_op(
                 ctx, node=node, op_name=fn_name, new_args=new_args
             )
 
@@ -447,8 +447,8 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_linalg_op(ctx, node, op_name, new_args):
-        if op_name in {"exp", "softmax", "abs", "log", "add", "sub", "div"}:
+    def visit_library_op(ctx, node, op_name, new_args):
+        if op_name in {"exp", "softmax", "abs", "log", "add", "sub", "div", "relu"}:
             # Element-wise operation
             if op_name in {"add", "sub", "div"}:
                 assert (

@@ -549,10 +549,11 @@ def customize(
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,
     # which will cause conflicts of different buffers in different contexts.
-    for name, buffer in ctx.buffers.items():
-        if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
-            # Intermediate buffers and function arguments
-            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
+    if isinstance(fn, Callable):
+        for name, buffer in ctx.buffers.items():
+            if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
+                # Intermediate buffers and function arguments
+                setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
     # Check if there are memory leaks
     # All live operations = {top_func} + {top_func_ip}
     buffer = None

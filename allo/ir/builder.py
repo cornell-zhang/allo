@@ -471,7 +471,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Sub: "sub",
                 ast.Div: "div",
             }.get(type(node.op))
-            return ASTTransformer.build_linalg_op(
+            return ASTTransformer.build_library_op(
                 ctx, node=node, op_name=attr, new_args=new_args
             )
         return opcls[type(node.dtype)](lhs.result, rhs.result, ip=ctx.get_ip())
@@ -1150,8 +1150,9 @@ class ASTTransformer(ASTBuilder):
                 "add",
                 "sub",
                 "div",
+                "relu",
             }:
-                return ASTTransformer.build_linalg_op(
+                return ASTTransformer.build_library_op(
                     ctx, node=node, op_name=fn_name, new_args=new_args
                 )
             raise RuntimeError(
@@ -1188,7 +1189,7 @@ class ASTTransformer(ASTBuilder):
         return call_op
 
     @staticmethod
-    def build_linalg_op(ctx, node, op_name, new_args):
+    def build_library_op(ctx, node, op_name, new_args):
         # +-/ and allo.add() are all supported
         assert op_name is not None and op_name != ""
         attr = op_name
@@ -1229,14 +1230,24 @@ class ASTTransformer(ASTBuilder):
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                 }.get(attr)(new_args[0], outs=[alloc_op])
-            # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
             elif attr == "softmax":
+                # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0],
                     dimension=1,
                     result=[],
                     output=alloc_op,
                 ).result
+            elif attr == "relu":
+                # TODO: Need to better manage library call
+                memref_type = MemRefType.get(shape, dtype.build())
+                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                zero_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                # init zero
+                zero = MockConstant(0, ctx)
+                # pylint: disable=unexpected-keyword-arg
+                linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
+                op = linalg_d.max(new_args[0], zero_op.result, outs=[alloc_op])
             else:
                 raise RuntimeError("Unsupported operation")
             if hasattr(node, "keywords") and len(node.keywords) > 0:
