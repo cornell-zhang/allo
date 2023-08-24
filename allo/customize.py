@@ -7,6 +7,8 @@ import textwrap
 import ast
 from dataclasses import dataclass
 from functools import wraps
+from typing import Union
+from collections.abc import Callable
 
 from hcl_mlir.ir import (
     Module,
@@ -52,8 +54,11 @@ def getsourcelines(obj):
 
 
 def _get_global_vars(_func):
-    # Discussions: https://github.com/taichi-dev/taichi/issues/282
-    global_vars = _func.__globals__.copy()
+    if isinstance(_func, Callable):
+        # Discussions: https://github.com/taichi-dev/taichi/issues/282
+        global_vars = _func.__globals__.copy()
+    else:
+        global_vars = {}
 
     # Get back to the outer-most scope (user-defined function)
     # Mainly used to get the annotation definitions (shape and type),
@@ -62,12 +67,13 @@ def _get_global_vars(_func):
         if isinstance(var, (int, float, AlloType)) or inspect.isfunction(var):
             global_vars[name] = var
 
-    freevar_names = _func.__code__.co_freevars
-    closure = _func.__closure__
-    if closure:
-        freevar_values = [x.cell_contents for x in closure]
-        for name, value in zip(freevar_names, freevar_values):
-            global_vars[name] = value
+    if isinstance(_func, Callable):
+        freevar_names = _func.__code__.co_freevars
+        closure = _func.__closure__
+        if closure:
+            freevar_values = [x.cell_contents for x in closure]
+            for name, value in zip(freevar_names, freevar_values):
+                global_vars[name] = value
     return global_vars
 
 
@@ -491,11 +497,20 @@ class Schedule:
         raise NotImplementedError(f"Target {target} is not supported")
 
 
-def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
+def customize(
+    fn: Union[Callable, str],
+    verbose: bool = False,
+    enable_tensor: bool = False,
+    lower_linalg: bool = False,
+    global_vars: dict = None,
+):
     # Get Python AST
-    src, _ = getsourcelines(fn)
-    src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
-    src = textwrap.dedent("\n".join(src))
+    if isinstance(fn, str):
+        src = fn
+    else:
+        src, _ = getsourcelines(fn)
+        src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
+        src = textwrap.dedent("\n".join(src))
     if verbose:
         print(src)
     tree = ast.parse(src)
@@ -508,7 +523,7 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
             print(ast.dump(tree))
     # Type construction
     ctx_type_inf = ASTContext(
-        global_vars=_get_global_vars(fn),
+        global_vars=_get_global_vars(fn) if global_vars is None else global_vars,
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,
@@ -516,7 +531,7 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
     tree = TypeInferer()(ctx_type_inf, tree)
     # Start building IR
     ctx = ASTContext(
-        global_vars=_get_global_vars(fn),
+        global_vars=_get_global_vars(fn) if global_vars is None else global_vars,
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,
@@ -535,10 +550,11 @@ def customize(fn, verbose=False, enable_tensor=False, lower_linalg=False):
     # The reason why we do not attach buffers to function is that
     # we may have multiple schedules referring to the same function,
     # which will cause conflicts of different buffers in different contexts.
-    for name, buffer in ctx.buffers.items():
-        if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
-            # Intermediate buffers and function arguments
-            setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
+    if isinstance(fn, Callable):
+        for name, buffer in ctx.buffers.items():
+            if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
+                # Intermediate buffers and function arguments
+                setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
     # Check if there are memory leaks
     # All live operations = {top_func} + {top_func_ip}
     buffer = None

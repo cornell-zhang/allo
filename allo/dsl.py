@@ -80,3 +80,7 @@ def tanh(x, name=None):
 
 def power(x, y, name=None):
     return np.power(x, y)
+
+
+def relu(x, name=None):
+    return np.maximum(x, 0)
