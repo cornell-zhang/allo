@@ -490,7 +490,7 @@ class ASTTransformer(ASTBuilder):
                 "fixed": RuntimeError,
             }
         else:
-            raise RuntimeError("Unsupported unary op")
+            raise RuntimeError(f"Unsupported unary op `{node.op}`")
         if not isinstance(node.operand, ast.Constant):
             raise RuntimeError("Only support constant for unary op")
         if isinstance(node.operand.value, int):

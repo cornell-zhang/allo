@@ -131,7 +131,7 @@ def test_logic_and_or():
             r = 1
         elif A[1] * 2 <= 1 or b + 1 >= 1:
             r = 2
-        elif A[2] == 3:
+        elif A[2] != 3:
             r = 3
         return r
 

@@ -161,13 +161,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_UnaryOp(ctx, node):
-        node.shape = tuple()
-        if isinstance(node.operand.dtype, int):
-            node.dtype = int32
-        elif isinstance(node.operand.dtype, float):
-            node.dtype = float32
-        else:
-            raise RuntimeError("Unsupported constant type")
+        operand = visit_stmt(ctx, node.operand)
+        node.shape = operand.shape
+        node.dtype = operand.dtype
         return node
 
     @staticmethod
