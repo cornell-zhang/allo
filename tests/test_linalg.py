@@ -122,7 +122,8 @@ def test_linalg_matmul_nested():
     np.testing.assert_allclose(outs, np_GeLU, atol=1e-4)
 
 
-def test_linalg_batch_matmul():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linalg_batch_matmul(enable_tensor):
     M = 10
     K = 20
     N = 25
@@ -133,7 +134,7 @@ def test_linalg_batch_matmul():
         D = allo.bmm(A, B)
         return D
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     print(s.module)
     f = s.build()
 
@@ -205,7 +206,8 @@ def test_linalg_batch_matmul_nested():
     np.testing.assert_allclose(outs, out_3, atol=1e-4)
 
 
-def test_linalg_math():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linalg_math(enable_tensor):
     M = 10
     K = 15
     A = np.float32(np.random.uniform(size=(M, K)))
@@ -216,7 +218,7 @@ def test_linalg_math():
         C = (allo.add(allo.exp(D), allo.abs(D)) - allo.log(D)) / D
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     f = s.build()
     print(s.module)
     outs = f(A, B)
@@ -271,7 +273,8 @@ def test_linalg_Linear_layer():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def test_linalg_transpose_3D():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linalg_transpose_3D(enable_tensor):
     M = 32
     K = 64
     N = 128
@@ -282,7 +285,7 @@ def test_linalg_transpose_3D():
         C = allo.bmm(A, B.T).T
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     f = s.build()
     np_out = kernel(A, B)
     allo_out = f(A, B)
@@ -290,7 +293,8 @@ def test_linalg_transpose_3D():
     print(s.module)
 
 
-def test_linalg_broadcast_scalar():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linalg_broadcast_scalar(enable_tensor):
     M = 10
     K = 15
     A = np.random.uniform(size=(M, K)).astype(np.float32)
@@ -300,7 +304,7 @@ def test_linalg_broadcast_scalar():
         D = allo.matmul(A + 1, B)
         return D
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     print(s.module)
     f = s.build()
     outs = f(A, B)
@@ -308,7 +312,8 @@ def test_linalg_broadcast_scalar():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def test_linalg_broadcast_tensor():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linalg_broadcast_tensor(enable_tensor):
     M, K, N = 10, 15, 12
     X = np.random.uniform(size=(M, K)).astype(np.float32)
     A = np.random.uniform(size=(N, K)).astype(np.float32)
@@ -317,7 +322,7 @@ def test_linalg_broadcast_tensor():
     def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
         return (allo.matmul(X, A.T) + B) * 2
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     print(s.module)
     f = s.build()
     outs = f(X, A, B)
