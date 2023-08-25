@@ -433,7 +433,9 @@ class TypeInferer(ASTVisitor):
         visit_stmt(ctx, node.test)
         visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
-            raise RuntimeError("'else' clause for 'while' not supported in Allo kernels")
+            raise RuntimeError(
+                "'else' clause for 'while' not supported in Allo kernels"
+            )
         node.dtype = None
         node.shape = None
         return node

@@ -619,6 +619,7 @@ class ASTTransformer(ASTBuilder):
                 target = ctx.buffers[node.id].op.result
             else:
                 target = ctx.buffers[node.id].result
+            # pylint: disable=redefined-variable-type
             store_op = affine_d.AffineStoreOp(
                 val.result, target, [], affine_attr, ip=ctx.get_ip()
             )
