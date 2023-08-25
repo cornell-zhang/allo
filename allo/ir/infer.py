@@ -282,7 +282,7 @@ class TypeInferer(ASTVisitor):
         node.shape = tuple()
         node.dtype = None
         return node
-    
+
     @staticmethod
     def visit_Slice(ctx, node):
         if node.lower is not None:
@@ -294,7 +294,6 @@ class TypeInferer(ASTVisitor):
         node.shape = tuple()
         node.dtype = None
         return node
-
 
     @staticmethod
     def visit_AnnAssign(ctx, node):

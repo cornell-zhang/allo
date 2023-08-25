@@ -515,7 +515,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_store(ctx, node, val):
-        if isinstance(node, ast.Subscript) and len(node.value.shape) > 0:
+        if isinstance(node, ast.Subscript):
             if ctx.enable_tensor:
                 if isinstance(node.slice, ast.ExtSlice):
                     (
@@ -549,29 +549,32 @@ class ASTTransformer(ASTBuilder):
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
             # pylint: disable=redefined-builtin
-            slice = (
-                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
-            )
-            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-            ctx.dim_count = 0
-            ctx.affine_vars = []
-            index_exprs = []
-            for index in elts:
-                index_exprs.append(ASTTransformer.build_affine_expr(ctx, index))
-            affine_map = AffineMap.get(
-                dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
-            if isinstance(ctx.buffers[node.value.id], MockScalar):
-                target = ctx.buffers[node.value.id].op.result
-            else:
-                target = ctx.buffers[node.value.id].result
-            ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-            store_op = affine_d.AffineStoreOp(
-                val.result, target, ivs, affine_attr, ip=ctx.get_ip()
-            )
-            store_op.attributes["to"] = StringAttr.get(node.value.id)
-            return store_op
+            if len(node.value.shape) > 0:
+                slice = (
+                    node.slice.value
+                    if isinstance(node.slice, ast.Index)
+                    else node.slice
+                )
+                elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+                ctx.dim_count = 0
+                ctx.affine_vars = []
+                index_exprs = []
+                for index in elts:
+                    index_exprs.append(ASTTransformer.build_affine_expr(ctx, index))
+                affine_map = AffineMap.get(
+                    dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
+                )
+                affine_attr = AffineMapAttr.get(affine_map)
+                if isinstance(ctx.buffers[node.value.id], MockScalar):
+                    target = ctx.buffers[node.value.id].op.result
+                else:
+                    target = ctx.buffers[node.value.id].result
+                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                store_op = affine_d.AffineStoreOp(
+                    val.result, target, ivs, affine_attr, ip=ctx.get_ip()
+                )
+                store_op.attributes["to"] = StringAttr.get(node.value.id)
+                return store_op
         if isinstance(node, ast.Name):  # scalar
             affine_map = AffineMap.get(
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
@@ -654,6 +657,10 @@ class ASTTransformer(ASTBuilder):
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
+        # Since `tensor_d.InsertOp` returns a copy of the original tensor,
+        # we need to also update the buffer
+        if isinstance(store_op, (tensor_d.InsertOp, tensor_d.InsertSliceOp)):
+            ctx.buffers[node.targets[0].value.id] = store_op
         return store_op
 
     @staticmethod
@@ -740,7 +747,6 @@ class ASTTransformer(ASTBuilder):
             return AffineConstantExpr.get(node.value)
         raise RuntimeError("Unsupported affine expression")
 
-    
     @staticmethod
     def build_ExtSlice(ctx, node):
         # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
@@ -791,7 +797,6 @@ class ASTTransformer(ASTBuilder):
             ).result
             index_exprs.append(expr)
         return index_exprs
-    
 
     @staticmethod
     def build_Subscript(ctx, node):

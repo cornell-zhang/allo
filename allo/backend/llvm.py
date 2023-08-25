@@ -23,7 +23,7 @@ from hcl_mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
     # ranked_memref_to_numpy,
-    to_numpy
+    to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
