@@ -366,7 +366,6 @@ class LLVMModule:
                 "func.func(convert-linalg-to-affine-loops),lower-affine)"
             )
             pm.run(self.module.operation)
-            print(self.module)
             # Attach necessary attributes
             func = find_func_in_module(self.module, top_func_name)
             if func is None:

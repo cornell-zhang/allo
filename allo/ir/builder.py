@@ -756,10 +756,10 @@ class ASTTransformer(ASTBuilder):
         static_offsets = []
         static_sizes = []
         static_strides = []
-        for index, shape in zip(slices, in_shape):
+        for index, size in zip(slices, in_shape):
             if isinstance(index, ast.Slice):
                 lower = 0 if index.lower is None else index.lower.value
-                upper = shape if index.upper is None else index.upper.value
+                upper = size if index.upper is None else index.upper.value
                 if index.step is None:
                     step = 1
                 elif isinstance(index.step, ast.Constant):
@@ -772,7 +772,7 @@ class ASTTransformer(ASTBuilder):
                 step = 1
             if lower < 0 or upper < 0:
                 raise RuntimeError("Unsupported negative index")
-            if lower > shape or upper > shape:
+            if lower > size or upper > size:
                 raise RuntimeError("Index out of range")
             if step <= 0:
                 raise RuntimeError("Unsupported negative step")
@@ -836,6 +836,7 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return extract_op
+                raise RuntimeError("Unsupported Subscript")
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)

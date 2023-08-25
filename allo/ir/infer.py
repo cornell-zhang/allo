@@ -278,9 +278,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_ExtSlice(ctx, node):
-        visit_stmts(ctx, node.dims)
+        stmts = visit_stmts(ctx, node.dims)
         node.shape = tuple()
-        node.dtype = None
+        node.dtype = [stmt.dtype for stmt in stmts]
         return node
 
     @staticmethod
@@ -292,7 +292,7 @@ class TypeInferer(ASTVisitor):
         if node.step is not None:
             visit_stmt(ctx, node.step)
         node.shape = tuple()
-        node.dtype = None
+        node.dtype = (Index(), Index(), Index())
         return node
 
     @staticmethod
