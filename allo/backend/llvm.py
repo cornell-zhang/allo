@@ -22,10 +22,29 @@ from hcl_mlir.execution_engine import ExecutionEngine
 from hcl_mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
-    ranked_memref_to_numpy,
+    # ranked_memref_to_numpy,
+    to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
+
+
+def ranked_memref_to_numpy(ranked_memref):
+    """Converts ranked memrefs to numpy arrays."""
+    # A temporary workaround for issue
+    # https://discourse.llvm.org/t/setting-memref-elements-in-python-callback/72759
+    contentPtr = ctypes.cast(
+        ctypes.addressof(ranked_memref[0].aligned.contents)
+        + ranked_memref[0].offset * ctypes.sizeof(ranked_memref[0].aligned.contents),
+        type(ranked_memref[0].aligned),
+    )
+    np_arr = np.ctypeslib.as_array(contentPtr, shape=ranked_memref[0].shape)
+    strided_arr = np.lib.stride_tricks.as_strided(
+        np_arr,
+        np.ctypeslib.as_array(ranked_memref[0].shape),
+        np.ctypeslib.as_array(ranked_memref[0].strides) * np_arr.itemsize,
+    )
+    return to_numpy(strided_arr)
 
 
 np_supported_types = {
@@ -343,6 +362,7 @@ class LLVMModule:
             # Run through lowering passes
             pm = PassManager.parse(
                 "builtin.module(one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                "expand-strided-metadata,"
                 "func.func(convert-linalg-to-affine-loops),lower-affine)"
             )
             pm.run(self.module.operation)
