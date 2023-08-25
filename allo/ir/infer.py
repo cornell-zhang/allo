@@ -277,6 +277,26 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_ExtSlice(ctx, node):
+        visit_stmts(ctx, node.dims)
+        node.shape = tuple()
+        node.dtype = None
+        return node
+    
+    @staticmethod
+    def visit_Slice(ctx, node):
+        if node.lower is not None:
+            visit_stmt(ctx, node.lower)
+        if node.upper is not None:
+            visit_stmt(ctx, node.upper)
+        if node.step is not None:
+            visit_stmt(ctx, node.step)
+        node.shape = tuple()
+        node.dtype = None
+        return node
+
+
+    @staticmethod
     def visit_AnnAssign(ctx, node):
         target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
         if node.value is not None:

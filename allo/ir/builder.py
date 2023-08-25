@@ -516,6 +516,35 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_store(ctx, node, val):
         if isinstance(node, ast.Subscript) and len(node.value.shape) > 0:
+            if ctx.enable_tensor:
+                if isinstance(node.slice, ast.ExtSlice):
+                    (
+                        static_offsets,
+                        static_sizes,
+                        static_strides,
+                        _,
+                    ) = ASTTransformer.build_ExtSlice(ctx, node)
+                    insertslice_op = tensor_d.InsertSliceOp(
+                        source=val.result,
+                        dest=ctx.buffers[node.value.id].result,
+                        static_offsets=static_offsets,
+                        static_sizes=static_sizes,
+                        static_strides=static_strides,
+                        offsets=[],
+                        sizes=[],
+                        strides=[],
+                        ip=ctx.get_ip(),
+                    )
+                    return insertslice_op
+                if isinstance(node.slice, ast.Index):
+                    index_exprs = ASTTransformer.build_Index(ctx, node)
+                    insert_op = tensor_d.InsertOp(
+                        scalar=val.result,
+                        dest=ctx.buffers[node.value.id].result,
+                        indices=index_exprs,
+                        ip=ctx.get_ip(),
+                    )
+                    return insert_op
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
@@ -711,6 +740,59 @@ class ASTTransformer(ASTBuilder):
             return AffineConstantExpr.get(node.value)
         raise RuntimeError("Unsupported affine expression")
 
+    
+    @staticmethod
+    def build_ExtSlice(ctx, node):
+        # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
+        dtype = RankedTensorType(ctx.buffers[node.value.id].result.type).element_type
+        in_shape = RankedTensorType(ctx.buffers[node.value.id].result.type).shape
+        slices = node.slice.dims
+        static_offsets = []
+        static_sizes = []
+        static_strides = []
+        for index, shape in zip(slices, in_shape):
+            if isinstance(index, ast.Slice):
+                lower = 0 if index.lower is None else index.lower.value
+                upper = shape if index.upper is None else index.upper.value
+                if index.step is None:
+                    step = 1
+                elif isinstance(index.step, ast.Constant):
+                    step = index.step.value
+                else:
+                    raise RuntimeError("Unsupported step type")
+            elif isinstance(index, ast.Index):
+                lower = index.value.value
+                upper = lower + 1
+                step = 1
+            if lower < 0 or upper < 0:
+                raise RuntimeError("Unsupported negative index")
+            if lower > shape or upper > shape:
+                raise RuntimeError("Index out of range")
+            if step <= 0:
+                raise RuntimeError("Unsupported negative step")
+            if step > upper - lower:
+                raise RuntimeError("Step larger than range")
+            static_offsets.append(lower)
+            static_sizes.append((upper - lower) // step)
+            static_strides.append(step)
+        result = RankedTensorType.get(static_sizes, dtype)
+        return static_offsets, static_sizes, static_strides, result
+
+    @staticmethod
+    def build_Index(ctx, node):
+        # get index values for Extract and Insert
+        index_exprs = []
+        index = node.slice.value
+        elts = index.elts if isinstance(index, ast.Tuple) else [slice]
+        for elt in elts:
+            # pylint: disable=too-many-function-args
+            expr = arith_d.ConstantOp(
+                IndexType.get(), elt.value, ip=ctx.get_ip()
+            ).result
+            index_exprs.append(expr)
+        return index_exprs
+    
+
     @staticmethod
     def build_Subscript(ctx, node):
         # pylint: disable=redefined-builtin
@@ -721,6 +803,34 @@ class ASTTransformer(ASTBuilder):
             ctx.dim_count = 0
             ctx.affine_vars = []
             index_exprs = []
+            if ctx.enable_tensor:
+                if isinstance(node.slice, ast.ExtSlice):
+                    (
+                        static_offsets,
+                        static_sizes,
+                        static_strides,
+                        result,
+                    ) = ASTTransformer.build_ExtSlice(ctx, node)
+                    extractslice_op = tensor_d.ExtractSliceOp(
+                        result=result,
+                        source=ctx.buffers[node.value.id].result,
+                        static_sizes=static_sizes,
+                        static_strides=static_strides,
+                        static_offsets=static_offsets,
+                        offsets=[],
+                        sizes=[],
+                        strides=[],
+                        ip=ctx.get_ip(),
+                    )
+                    return extractslice_op
+                if isinstance(node.slice, ast.Index):
+                    index_exprs = ASTTransformer.build_Index(ctx, node)
+                    extract_op = tensor_d.ExtractOp(
+                        tensor=ctx.buffers[node.value.id].result,
+                        indices=index_exprs,
+                        ip=ctx.get_ip(),
+                    )
+                    return extract_op
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
