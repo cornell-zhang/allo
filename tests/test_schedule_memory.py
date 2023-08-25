@@ -470,7 +470,6 @@ def test_avgpool_nchw():
 
     def avgpool_nchw(A: dtype[bs, ic, ih, iw]) -> dtype[bs, oc, oh, ow]:
         B: dtype[bs, oc, oh, ow] = 0.0
-        stride: index = 1
         for n, c, h, w in allo.grid(bs, oc, oh, ow):
             v: dtype = 0.0
             for rh, rw in allo.reduction(kh, kw):

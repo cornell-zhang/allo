@@ -758,7 +758,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.affine_vars.append(node.id)
                 return AffineExpr.get_dim(ctx.dim_count - 1)
             if (
-                # Note: Variables may be changed inside a loop,
+                # Note: Variables may be changed inside a loop (or a non-top-down structure),
                 # so we cannot safely take its value as a constant
                 # e.g.,
                 # x = 0
@@ -771,6 +771,10 @@ class ASTTransformer(ASTBuilder):
                 and isinstance(ctx.buffers[node.id].dtype, Index)
             ):
                 return ASTTransformer.build_affine_expr(ctx, ctx.buffers[node.id].value)
+            if node.id in ctx.global_vars and isinstance(ctx.global_vars[node.id], int):
+                return ASTTransformer.build_affine_expr(
+                    ctx, ast.Constant(ctx.global_vars[node.id])
+                )
             return None
         if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)

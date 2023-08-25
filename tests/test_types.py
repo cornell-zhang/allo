@@ -242,7 +242,6 @@ def test_avgpool_nchw():
     oh, ow = (ih - kh) // stride + 1, (iw - kw) // stride + 1
 
     def avgpool_nchw(A: float32[bs, ic, ih, iw], B: float32[bs, oc, oh, ow]):
-        stride: index = 2
         for n, c, h, w in allo.grid(bs, oc, oh, ow):
             v: float32 = 0.0
             for rh, rw in allo.reduction(kh, kw):
