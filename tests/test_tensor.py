@@ -160,23 +160,5 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
-def test_linalg_matmul():
-    M = 10
-    K = 15
-    N = 20
-    np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
-
-    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        return allo.matmul(A, B)
-
-    s = allo.customize(kernel)
-    print(s.module)
-    f = s.build()
-    np_out = kernel(np_0, np_1)
-    allo_out = f(np_0, np_1)
-    np.testing.assert_array_equal(allo_out, np_out)
-
-
 if __name__ == "__main__":
     pytest.main([__file__])

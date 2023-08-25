@@ -50,6 +50,10 @@ class MockArg(MockOp):
     def result(self):
         return self.val
 
+    @property
+    def results(self):
+        return [self.result]
+
 
 class MockBuffer(MockOp):
     def __init__(self, path, op=None):
@@ -80,6 +84,10 @@ class MockConstant(MockOp):
         const_op = arith_d.ConstantOp(dtype, value_attr, ip=self.ctx.get_ip())
         return const_op.result
 
+    @property
+    def results(self):
+        return [self.result]
+
 
 class MockScalar(MockOp):
     def __init__(self, name, dtype, ctx, value=None):
@@ -105,3 +113,7 @@ class MockScalar(MockOp):
         )
         load.attributes["from"] = StringAttr.get(self.name)
         return load.result
+
+    @property
+    def results(self):
+        return [self.result]
