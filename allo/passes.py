@@ -49,6 +49,8 @@ def lower_linalg_and_attach_names(module):
                 linalg_d.ExpOp,
                 linalg_d.LogOp,
                 linalg_d.AbsOp,
+                linalg_d.TransposeOp,
+                linalg_d.BroadcastOp,
             ),
         )
 

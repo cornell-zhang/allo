@@ -94,44 +94,18 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "T":
             ip = ctx.get_ip()
             shape = node.shape
-            new_arg = build_stmt(ctx, node.value).result
+            new_arg = build_stmt(ctx, node.value)
             memref_type = MemRefType.get(shape, node.dtype.build())
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            index_exprs = []
-            for dim in range(len(shape)):
-                index_exprs.append(AffineExpr.get_dim(dim))
-            affine_map_in = AffineMap.get(
-                dim_count=len(shape), symbol_count=0, exprs=index_exprs
+            op = linalg_d.TransposeOp(
+                inputs=[new_arg.result], outputs=[alloc_op.result], permutation=list(range(len(shape)))[::-1], ip=ctx.get_ip()
             )
-            affine_map_out = AffineMap.get(
-                dim_count=len(shape), symbol_count=0, exprs=index_exprs[::-1]
-            )
-            indexing_maps_attr = ArrayAttr.get(
-                [AffineMapAttr.get(affine_map_in), AffineMapAttr.get(affine_map_out)]
-            )
-            iterator_types_attr = ArrayAttr.get(
-                [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
-            )
-            op = linalg_d.GenericOp(
-                indexing_maps=indexing_maps_attr,
-                ip=ip,
-                inputs=[new_arg],
-                outputs=[alloc_op],
-                result_tensors=[],
-                iterator_types=iterator_types_attr,
-            )
-            # input and output types
-            block_arg_types = [node.value.dtype.build(), node.dtype.build()]
-            block = op.regions[0].blocks.append(*block_arg_types)
-            ctx.set_ip(block)
-            linalg_d.YieldOp([block.arguments[0]], ip=ctx.get_ip())
-            ctx.pop_ip()
             if hasattr(node, "keywords") and len(node.keywords) > 0:
-                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
+                op.attributes["op_name"] = StringAttr.get(
                     node.keywords[0].value.value
                 )
             else:
-                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
+                op.attributes["op_name"] = StringAttr.get(
                     f"transpose_{ctx.unnamed_linalg_op_count}"
                 )
                 ctx.unnamed_linalg_op_count += 1
@@ -1259,7 +1233,6 @@ class ASTTransformer(ASTBuilder):
                 )
             # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "div"}:
-                print(new_args)
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,

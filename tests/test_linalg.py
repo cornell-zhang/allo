@@ -271,12 +271,12 @@ def test_linalg_Linear_layer():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def linalg_test_transpose_3D():
+def test_linalg_transpose_3D():
     M = 32
     K = 64
     N = 128
-    A = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
-    B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+    A = np.random.randint(0, 20, size=(M, N, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(N, K, M), dtype="int32")
 
     def kernel(A: int32[M, N, K], B: int32[N, K, M]) -> int32[N, N, M]:
         C = allo.bmm(A, B.T).T
@@ -309,5 +309,4 @@ def test_linalg_broadcast():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_linalg_broadcast()
+    pytest.main([__file__])
