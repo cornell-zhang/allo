@@ -167,7 +167,8 @@ def test_linalg_linear():
     B = np.random.uniform(size=(N,)).astype(np.float32)
 
     def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
-        return (allo.matmul(X, A.T) + B) * 2
+        D = (allo.matmul(X, A.T) + B) * 2
+        return D
 
     s = allo.customize(kernel, verbose=True, enable_tensor=True)
     print(s.module)
