@@ -133,28 +133,32 @@ class ASTTransformer(ASTBuilder):
             names = [node.target.id]
         # avoid name conflicts
         names += [str(ctx.loop_band_count)]
+
         # get stage name
         if len(node.iter.keywords) == 0:
             stage_name = None
         else:
             stage_name = get_kwarg(node.iter.keywords, "name").value
+
+        # build for loops
+        iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
-            grid = [ASTResolver.resolve_constant(x, ctx) for x in node.iter.args]
+            grid = [ASTResolver.resolve_constant(x, ctx) for x in iter_args]
             for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
         elif attr == "range":
             low = (
                 0
-                if len(node.iter.args) == 1
-                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
+                if len(iter_args) == 1
+                else ASTResolver.resolve_constant(iter_args[0], ctx)
             )
             high = (
-                ASTResolver.resolve_constant(node.iter.args[1], ctx)
-                if len(node.iter.args) > 1
-                else ASTResolver.resolve_constant(node.iter.args[0], ctx)
+                ASTResolver.resolve_constant(iter_args[1], ctx)
+                if len(iter_args) > 1
+                else ASTResolver.resolve_constant(iter_args[0], ctx)
             )
             step = (
-                ASTResolver.resolve_constant(node.iter.args[2], ctx)
-                if len(node.iter.args) > 2
+                ASTResolver.resolve_constant(iter_args[2], ctx)
+                if len(iter_args) > 2
                 else 1
             )
             if stage_name is None:
@@ -169,13 +173,18 @@ class ASTTransformer(ASTBuilder):
         for name, iv in zip(names, ivs):
             ctx.buffers[name] = MockArg(iv)
         ctx.set_ip(for_loops[-1].body.operations[0])
+
+        # build loop body
         build_stmts(ctx, node.body)
+
+        # attach necessary attributes
         if (
             isinstance(node.iter.func, ast.Attribute)
             and node.iter.func.attr == "reduction"
         ):
             for loop in for_loops:
                 loop.attributes["reduction"] = UnitAttr.get()
+
         # Remove loop variables
         for name, iv in zip(names, ivs):
             ctx.buffers.pop(name)
