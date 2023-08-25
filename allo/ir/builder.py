@@ -663,7 +663,7 @@ class ASTTransformer(ASTBuilder):
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, (func_d.CallOp, memref_d.AllocOp)) or (
-            len(rhs.results) > 0 and isinstance(rhs.result.type, RankedTensorType)
+            len(rhs.results) > 0 and isinstance(rhs.results[0].type, RankedTensorType)
         ):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
@@ -678,7 +678,7 @@ class ASTTransformer(ASTBuilder):
         # Since `tensor_d.InsertOp` returns a copy of the original tensor,
         # we need to also update the buffer
         if len(store_op.results) > 0 and isinstance(
-            store_op.result.type, RankedTensorType
+            store_op.results[0].type, RankedTensorType
         ):
             ctx.buffers[node.targets[0].value.id] = store_op
         return store_op
