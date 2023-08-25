@@ -115,8 +115,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.unnamed_linalg_op_count += 1
             if ctx.enable_tensor:
                 return op
-            else:
-                return alloc_op
+            return alloc_op
         if node.attr == "reverse":
             value = build_stmt(ctx, node.value)
             bit_reverse = hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
@@ -383,8 +382,7 @@ class ASTTransformer(ASTBuilder):
         )
         if ctx.enable_tensor:
             return broadcast_op
-        else:
-            return alloc_op
+        return alloc_op
 
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
