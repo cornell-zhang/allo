@@ -483,7 +483,8 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_library_op(
                 ctx, node=node, op_name=attr, new_args=new_args
             )
-        return opcls[type(node.dtype)](lhs.result, rhs.result, ip=ctx.get_ip())
+        ty_cls = Int if isinstance(node.dtype, Index) else type(node.dtype)
+        return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
     def build_UnaryOp(ctx, node):
@@ -575,20 +576,38 @@ class ASTTransformer(ASTBuilder):
                 ctx.dim_count = 0
                 ctx.affine_vars = []
                 index_exprs = []
+                is_affine = True
                 for index in elts:
-                    index_exprs.append(ASTTransformer.build_affine_expr(ctx, index))
-                affine_map = AffineMap.get(
-                    dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
-                )
-                affine_attr = AffineMapAttr.get(affine_map)
-                if isinstance(ctx.buffers[node.value.id], MockScalar):
-                    target = ctx.buffers[node.value.id].op.result
-                else:
-                    target = ctx.buffers[node.value.id].result
-                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                store_op = affine_d.AffineStoreOp(
-                    val.result, target, ivs, affine_attr, ip=ctx.get_ip()
-                )
+                    expr = ASTTransformer.build_affine_expr(ctx, index)
+                    if expr is None:
+                        is_affine = False
+                        break
+                    index_exprs.append(expr)
+                if is_affine:
+                    affine_map = AffineMap.get(
+                        dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
+                    )
+                    affine_attr = AffineMapAttr.get(affine_map)
+                    if isinstance(ctx.buffers[node.value.id], MockScalar):
+                        target = ctx.buffers[node.value.id].op.result
+                    else:
+                        target = ctx.buffers[node.value.id].result
+                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                    store_op = affine_d.AffineStoreOp(
+                        val.result, target, ivs, affine_attr, ip=ctx.get_ip()
+                    )
+                else:  # Not affine
+                    new_indices = []
+                    for index in elts:
+                        expr = build_stmt(ctx, index)
+                        ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
+                        new_indices.append(expr.result)
+                    store_op = memref_d.StoreOp(
+                        val.result,
+                        ctx.buffers[node.value.id].result,
+                        new_indices,
+                        ip=ctx.get_ip(),
+                    )
                 store_op.attributes["to"] = StringAttr.get(node.value.id)
                 return store_op
         if isinstance(node, ast.Name):  # scalar
@@ -600,6 +619,7 @@ class ASTTransformer(ASTBuilder):
                 target = ctx.buffers[node.id].op.result
             else:
                 target = ctx.buffers[node.id].result
+            # pylint: disable=redefined-variable-type
             store_op = affine_d.AffineStoreOp(
                 val.result, target, [], affine_attr, ip=ctx.get_ip()
             )
@@ -739,11 +759,23 @@ class ASTTransformer(ASTBuilder):
                 ctx.affine_vars.append(node.id)
                 return AffineExpr.get_dim(ctx.dim_count - 1)
             if (
-                node.id in ctx.buffers
+                # Note: Variables may be changed inside a loop (or a non-top-down structure),
+                # so we cannot safely take its value as a constant
+                # e.g.,
+                # x = 0
+                # for i in range(10):
+                #     A[x] = 1
+                #     x = x + 1
+                ctx.nested_loops == 0
+                and node.id in ctx.buffers
                 and isinstance(ctx.buffers[node.id], MockScalar)
                 and isinstance(ctx.buffers[node.id].dtype, Index)
             ):
                 return ASTTransformer.build_affine_expr(ctx, ctx.buffers[node.id].value)
+            if node.id in ctx.global_vars and isinstance(ctx.global_vars[node.id], int):
+                return ASTTransformer.build_affine_expr(
+                    ctx, ast.Constant(ctx.global_vars[node.id])
+                )
             return None
         if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)
@@ -886,15 +918,8 @@ class ASTTransformer(ASTBuilder):
                 new_indices = []
                 for index in elts:
                     expr = build_stmt(ctx, index)
-                    # cast to index type
-                    expr_res = expr.result
-                    if str(expr_res.type) == "i32":
-                        expr = arith_d.IndexCastOp(
-                            IndexType.get(), expr_res, ip=ctx.get_ip()
-                        )
-                    else:
-                        raise RuntimeError(f"Unsupported index type, got {expr.type}")
-                    new_indices.append(expr)
+                    ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
+                    new_indices.append(expr.result)
                 # pylint: disable=redefined-variable-type
                 load_op = memref_d.LoadOp(
                     ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
@@ -1237,6 +1262,40 @@ class ASTTransformer(ASTBuilder):
             else:
                 scf_d.YieldOp([], ip=ctx.get_ip())
             ctx.pop_ip()
+
+    @staticmethod
+    def build_While(ctx, node):
+        """
+        Example: https://mlir.llvm.org/docs/Dialects/SCFDialect/#scfwhile-scfwhileop
+        %res = scf.while (%arg1 = %init1) : (f32) -> f32 {
+            // "Before" region.
+            // In a "while" loop, this region computes the condition.
+            %condition = call @evaluate_condition(%arg1) : (f32) -> i1
+            // Forward the argument (as result or "after" region argument).
+            scf.condition(%condition) %arg1 : f32
+        } do {
+        ^bb0(%arg2: f32):
+            // "After" region.
+            // In a "while" loop, this region is the loop body.
+            %next = call @payload(%arg2) : (f32) -> f32
+            // Forward the new value to the "before" region.
+            // The operand types must match the types of the `scf.while` operands.
+            scf.yield %next : f32
+        }
+        """
+        while_op = scf_d.WhileOp([], [], ip=ctx.get_ip())
+        while_op.before.blocks.append(*[])
+        while_op.after.blocks.append(*[])
+        with ctx.loop_scope_guard():
+            ctx.set_ip(while_op.before.blocks[0])
+            cond = build_stmt(ctx, node.test)
+            scf_d.ConditionOp(cond.result, [], ip=ctx.get_ip())
+            ctx.pop_ip()
+            ctx.set_ip(while_op.after.blocks[0])
+            build_stmts(ctx, node.body)
+            scf_d.YieldOp([], ip=ctx.get_ip())
+            ctx.pop_ip()
+        return while_op
 
     @staticmethod
     def build_Module(ctx, node):

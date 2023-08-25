@@ -429,6 +429,18 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_While(ctx, node):
+        visit_stmt(ctx, node.test)
+        visit_stmts(ctx, node.body)
+        if len(node.orelse) > 0:
+            raise RuntimeError(
+                "'else' clause for 'while' not supported in Allo kernels"
+            )
+        node.dtype = None
+        node.shape = None
+        return node
+
+    @staticmethod
     def visit_Module(ctx, node):
         for stmt in node.body:
             visit_stmt(ctx, stmt)
