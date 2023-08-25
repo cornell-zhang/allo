@@ -545,6 +545,7 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return insert_op
+                raise RuntimeError("Unsupported store subscript")
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
@@ -836,7 +837,7 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return extract_op
-                raise RuntimeError("Unsupported Subscript")
+                raise RuntimeError("Unsupported load subscript")
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
