@@ -94,31 +94,34 @@ class ASTTransformer(ASTBuilder):
         return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
 
     @staticmethod
+    def attach_op_name(ctx, node, op, name):
+        if hasattr(node, "keywords") and len(node.keywords) > 0:
+            op.attributes["op_name"] = StringAttr.get(node.keywords[0].value.value)
+        else:
+            op.attributes["op_name"] = StringAttr.get(
+                f"{name}_{ctx.unnamed_linalg_op_count}"
+            )
+            ctx.unnamed_linalg_op_count += 1
+
+    @staticmethod
     def build_Attribute(ctx, node):
-        if node.attr == "T":
+        value = build_stmt(ctx, node.value)
+
+        if node.attr == "T":  # transpose
             shape = node.shape
-            new_arg = build_stmt(ctx, node.value)
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, shape)
-            op = linalg_d.TransposeOp(
-                inputs=[new_arg.result],
+            transpose_op = linalg_d.TransposeOp(
+                inputs=[value.result],
                 outputs=[alloc_op.result],
                 permutation=list(range(len(shape)))[::-1],
                 ip=ctx.get_ip(),
             )
-            if hasattr(node, "keywords") and len(node.keywords) > 0:
-                op.attributes["op_name"] = StringAttr.get(node.keywords[0].value.value)
-            else:
-                op.attributes["op_name"] = StringAttr.get(
-                    f"transpose_{ctx.unnamed_linalg_op_count}"
-                )
-                ctx.unnamed_linalg_op_count += 1
-            if ctx.enable_tensor:
-                return op
-            return alloc_op
+            ASTTransformer.attach_op_name(ctx, node, transpose_op, "transpose")
+            return transpose_op if ctx.enable_tensor else alloc_op
+
         if node.attr == "reverse":
-            value = build_stmt(ctx, node.value)
-            bit_reverse = hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
-            return bit_reverse
+            return hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
+
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
