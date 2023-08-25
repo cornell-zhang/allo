@@ -159,9 +159,9 @@ def test_assign_logic():
 
 def test_while_basic():
     def kernel(A: int32[10]):
-        i: int32 = 0
+        i: index = 0
         while i < 10:
-            # A[i] = i
+            A[i] = i
             i += 1
 
     s = allo.customize(kernel, verbose=True)
