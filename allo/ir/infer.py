@@ -150,13 +150,50 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_general_binop(ctx, node, lhs, rhs):
-        assert (
-            lhs.shape == rhs.shape
-        ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}"
         typing_rule = get_typing_rule(type(node.op))
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
-        node.shape = lhs.shape
+        # See the broadcasting rules in NumPy
+        # https://numpy.org/doc/stable/user/basics.broadcasting.html
+        # When operating on two arrays, NumPy compares their shapes element-wise.
+        # It starts with the trailing (i.e. rightmost) dimension and works its way left.
+        # Two dimensions are compatible when
+        # 1. they are equal, or
+        # 2. one of them is 1.
+        tmp_lhs_shape = list(lhs.shape)
+        tmp_rhs_shape = list(rhs.shape)
+        # match larger shape
+        if len(tmp_lhs_shape) < len(tmp_rhs_shape):
+            tmp_lhs_shape = [1] * (
+                len(tmp_rhs_shape) - len(tmp_lhs_shape)
+            ) + tmp_lhs_shape
+        elif len(tmp_lhs_shape) > len(tmp_rhs_shape):
+            tmp_rhs_shape = [1] * (
+                len(tmp_lhs_shape) - len(tmp_rhs_shape)
+            ) + tmp_rhs_shape
+        # match shape
+        lhs_dims, rhs_dims = [], []
+        # pylint: disable=consider-using-enumerate
+        for i in range(len(tmp_lhs_shape)):
+            if tmp_lhs_shape[i] == 1:
+                tmp_lhs_shape[i] = tmp_rhs_shape[i]
+                if tmp_rhs_shape[i] != 1:
+                    lhs_dims.append(i)
+            elif tmp_rhs_shape[i] == 1:
+                tmp_rhs_shape[i] = tmp_lhs_shape[i]
+                if tmp_lhs_shape[i] != 1:
+                    rhs_dims.append(i)
+            else:
+                assert (
+                    tmp_lhs_shape[i] == tmp_rhs_shape[i]
+                ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}, and cannot be broadcasted"
+        assert tmp_lhs_shape == tmp_rhs_shape
+        node.shape = tuple(tmp_lhs_shape)
+        node.dims = (lhs_dims, rhs_dims)
+        if ctx.verbose:
+            print(
+                f"Broadcasted shape {lhs.shape} x {rhs.shape} -> {node.shape} for dims: {lhs_dims} & {rhs_dims}"
+            )
         return node
 
     @staticmethod

@@ -26,8 +26,6 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
-    ArrayAttr,
-    Attribute,
 )
 import hcl_mlir
 from hcl_mlir.dialects import (
@@ -94,44 +92,19 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "T":
             ip = ctx.get_ip()
             shape = node.shape
-            new_arg = build_stmt(ctx, node.value).result
+            new_arg = build_stmt(ctx, node.value)
             memref_type = MemRefType.get(shape, node.dtype.build())
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            index_exprs = []
-            for dim in range(len(shape)):
-                index_exprs.append(AffineExpr.get_dim(dim))
-            affine_map_in = AffineMap.get(
-                dim_count=len(shape), symbol_count=0, exprs=index_exprs
+            op = linalg_d.TransposeOp(
+                inputs=[new_arg.result],
+                outputs=[alloc_op.result],
+                permutation=list(range(len(shape)))[::-1],
+                ip=ctx.get_ip(),
             )
-            affine_map_out = AffineMap.get(
-                dim_count=len(shape), symbol_count=0, exprs=index_exprs[::-1]
-            )
-            indexing_maps_attr = ArrayAttr.get(
-                [AffineMapAttr.get(affine_map_in), AffineMapAttr.get(affine_map_out)]
-            )
-            iterator_types_attr = ArrayAttr.get(
-                [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
-            )
-            op = linalg_d.GenericOp(
-                indexing_maps=indexing_maps_attr,
-                ip=ip,
-                inputs=[new_arg],
-                outputs=[alloc_op],
-                result_tensors=[],
-                iterator_types=iterator_types_attr,
-            )
-            # input and output types
-            block_arg_types = [node.value.dtype.build(), node.dtype.build()]
-            block = op.regions[0].blocks.append(*block_arg_types)
-            ctx.set_ip(block)
-            linalg_d.YieldOp([block.arguments[0]], ip=ctx.get_ip())
-            ctx.pop_ip()
             if hasattr(node, "keywords") and len(node.keywords) > 0:
-                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
-                    node.keywords[0].value.value
-                )
+                op.attributes["op_name"] = StringAttr.get(node.keywords[0].value.value)
             else:
-                op.result_tensors.owner.attributes["op_name"] = StringAttr.get(
+                op.attributes["op_name"] = StringAttr.get(
                     f"transpose_{ctx.unnamed_linalg_op_count}"
                 )
                 ctx.unnamed_linalg_op_count += 1
@@ -377,6 +350,31 @@ class ASTTransformer(ASTBuilder):
         return cast_op
 
     @staticmethod
+    def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape, dims):
+        # No shape checking in this function, since it has been done in
+        # type inference pass in infer.py
+        if src_shape == dst_shape:
+            return op
+        if len(src_shape) == 0:
+            # Get zero-rank memref for constant
+            memref_type = MemRefType.get((), dtype.build())
+            in_cst = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            with ctx.get_ip():
+                # pylint: disable=unexpected-keyword-arg
+                linalg_d.fill(op.result, outs=[in_cst.result])
+            op = in_cst
+        # target
+        memref_type = MemRefType.get(dst_shape, dtype.build())
+        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+        linalg_d.BroadcastOp(
+            inputs=[op.result],
+            outputs=[alloc_op.result],
+            dimensions=dims,
+            ip=ctx.get_ip(),
+        )
+        return alloc_op
+
+    @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
         opcls = {
             ast.Add: {
@@ -469,6 +467,7 @@ class ASTTransformer(ASTBuilder):
             attr = {
                 ast.Add: "add",
                 ast.Sub: "sub",
+                ast.Mult: "mul",
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_library_op(
@@ -511,6 +510,12 @@ class ASTTransformer(ASTBuilder):
         # Cast lhs and rhs to the same type
         lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
+        lhs = ASTTransformer.build_broadcast_op(
+            ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
+        )
+        rhs = ASTTransformer.build_broadcast_op(
+            ctx, rhs, node.dtype, node.right.shape, node.shape, node.dims[1]
+        )
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
@@ -1355,12 +1360,13 @@ class ASTTransformer(ASTBuilder):
                     f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
             # build linalg op
-            if attr in {"matmul", "bmm", "add", "sub", "div"}:
+            if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
+                    "mul": linalg_d.mul,
                     "div": linalg_d.div,
                 }.get(attr)(new_args[0], new_args[1], outs=[result_tensor])
             elif attr in {"exp", "log", "abs"}:

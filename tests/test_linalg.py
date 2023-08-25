@@ -271,12 +271,12 @@ def test_linalg_Linear_layer():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def linalg_test_transpose_3D():
+def test_linalg_transpose_3D():
     M = 32
     K = 64
     N = 128
-    A = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
-    B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+    A = np.random.randint(0, 20, size=(M, N, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(N, K, M), dtype="int32")
 
     def kernel(A: int32[M, N, K], B: int32[N, K, M]) -> int32[N, N, M]:
         C = allo.bmm(A, B.T).T
@@ -288,6 +288,41 @@ def linalg_test_transpose_3D():
     allo_out = f(A, B)
     np.testing.assert_array_equal(allo_out, np_out)
     print(s.module)
+
+
+def test_linalg_broadcast_scalar():
+    M = 10
+    K = 15
+    A = np.random.uniform(size=(M, K)).astype(np.float32)
+    B = np.random.uniform(size=(K, M)).astype(np.float32)
+
+    def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
+        D = allo.matmul(A + 1, B)
+        return D
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_broadcast_tensor():
+    M, K, N = 10, 15, 12
+    X = np.random.uniform(size=(M, K)).astype(np.float32)
+    A = np.random.uniform(size=(N, K)).astype(np.float32)
+    B = np.random.uniform(size=(N,)).astype(np.float32)
+
+    def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
+        return (allo.matmul(X, A.T) + B) * 2
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    f = s.build()
+    outs = f(X, A, B)
+    np_outs = kernel(X, A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 if __name__ == "__main__":
