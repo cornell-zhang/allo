@@ -468,6 +468,7 @@ class ASTTransformer(ASTBuilder):
             attr = {
                 ast.Add: "add",
                 ast.Sub: "sub",
+                ast.Mult: "mul",
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_library_op(
@@ -1239,12 +1240,13 @@ class ASTTransformer(ASTBuilder):
                     f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
             # build linalg op
-            if attr in {"matmul", "bmm", "add", "sub", "div"}:
+            if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
+                    "mul": linalg_d.mul,
                     "div": linalg_d.div,
                 }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
             elif attr in {"exp", "log", "abs"}:
