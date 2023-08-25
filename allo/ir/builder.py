@@ -1239,6 +1239,39 @@ class ASTTransformer(ASTBuilder):
             ctx.pop_ip()
 
     @staticmethod
+    def build_While(ctx, node):
+        """
+        Example: https://mlir.llvm.org/docs/Dialects/SCFDialect/#scfwhile-scfwhileop
+        %res = scf.while (%arg1 = %init1) : (f32) -> f32 {
+            // "Before" region.
+            // In a "while" loop, this region computes the condition.
+            %condition = call @evaluate_condition(%arg1) : (f32) -> i1
+            // Forward the argument (as result or "after" region argument).
+            scf.condition(%condition) %arg1 : f32
+        } do {
+        ^bb0(%arg2: f32):
+            // "After" region.
+            // In a "while" loop, this region is the loop body.
+            %next = call @payload(%arg2) : (f32) -> f32
+            // Forward the new value to the "before" region.
+            // The operand types must match the types of the `scf.while` operands.
+            scf.yield %next : f32
+        }
+        """
+        while_op = scf_d.WhileOp([], [], ip=ctx.get_ip())
+        while_op.before.blocks.append(*[])
+        while_op.after.blocks.append(*[])
+        ctx.set_ip(while_op.before.blocks[0])
+        cond = build_stmt(ctx, node.test)
+        scf_d.ConditionOp(cond.result, [], ip=ctx.get_ip())
+        ctx.pop_ip()
+        ctx.set_ip(while_op.after.blocks[0])
+        build_stmts(ctx, node.body)
+        scf_d.YieldOp([], ip=ctx.get_ip())
+        ctx.pop_ip()
+        return while_op
+
+    @staticmethod
     def build_Module(ctx, node):
         with ctx.mlir_ctx:
             module = Module.create(loc=Location.unknown())
