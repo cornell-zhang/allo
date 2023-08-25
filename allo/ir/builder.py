@@ -545,6 +545,7 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return insert_op
+                raise RuntimeError("Unsupported store subscript")
             # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
             #       3.10 directly flattens the Index node and removes all the None attributes
             #       inside the node
@@ -836,7 +837,7 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return extract_op
-                raise RuntimeError("Unsupported Subscript")
+                raise RuntimeError("Unsupported load subscript")
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
@@ -1340,6 +1341,10 @@ class ASTTransformer(ASTBuilder):
             zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
             # pylint: disable=unexpected-keyword-arg
             linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+            if ctx.enable_tensor:
+                result_tensor = linalg_fill
+            else:
+                result_tensor = alloc_op
             # add op name for init_zero
             if hasattr(node, "keywords") and len(node.keywords) > 0:
                 linalg_fill.owner.attributes["op_name"] = StringAttr.get(
@@ -1357,13 +1362,13 @@ class ASTTransformer(ASTBuilder):
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
                     "div": linalg_d.div,
-                }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
+                }.get(attr)(new_args[0], new_args[1], outs=[result_tensor])
             elif attr in {"exp", "log", "abs"}:
                 op = {
                     "exp": linalg_d.exp,
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
-                }.get(attr)(new_args[0], outs=[alloc_op])
+                }.get(attr)(new_args[0], outs=[result_tensor])
             elif attr == "softmax":
                 # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 op = linalg_d.SoftmaxOp(
@@ -1378,9 +1383,10 @@ class ASTTransformer(ASTBuilder):
                 zero_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                 # init zero
                 zero = MockConstant(0, ctx)
+                # TODO: support tensor
                 # pylint: disable=unexpected-keyword-arg
                 linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
-                op = linalg_d.max(new_args[0], zero_op.result, outs=[alloc_op])
+                op = linalg_d.max(new_args[0], zero_op.result, outs=[result_tensor])
             else:
                 raise RuntimeError("Unsupported operation")
             if hasattr(node, "keywords") and len(node.keywords) > 0:
@@ -1392,7 +1398,11 @@ class ASTTransformer(ASTBuilder):
                     f"{attr}_{ctx.unnamed_linalg_op_count}"
                 )
                 ctx.unnamed_linalg_op_count += 1
-        return alloc_op
+        # pylint: disable=no-else-return
+        if ctx.enable_tensor:
+            return op.owner
+        else:
+            return result_tensor
 
     @staticmethod
     def build_Return(ctx, node):

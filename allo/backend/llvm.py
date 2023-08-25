@@ -361,9 +361,16 @@ class LLVMModule:
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
-                "builtin.module(one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                "builtin.module("
+                # used for lowering tensor.empty
+                "empty-tensor-to-alloc-tensor,"
+                # translate tensor dialect (virtual) to memref dialect (physical)
+                "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                # used for lowering memref.subview
                 "expand-strided-metadata,"
-                "func.func(convert-linalg-to-affine-loops),lower-affine)"
+                # common lowering passes
+                "func.func(convert-linalg-to-affine-loops),lower-affine"
+                ")"
             )
             pm.run(self.module.operation)
             # Attach necessary attributes
