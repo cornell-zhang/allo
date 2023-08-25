@@ -1382,6 +1382,7 @@ class ASTTransformer(ASTBuilder):
                 zero_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
                 # init zero
                 zero = MockConstant(0, ctx)
+                # TODO: support tensor
                 # pylint: disable=unexpected-keyword-arg
                 linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
                 op = linalg_d.max(new_args[0], zero_op.result, outs=[result_tensor])
@@ -1396,6 +1397,7 @@ class ASTTransformer(ASTBuilder):
                     f"{attr}_{ctx.unnamed_linalg_op_count}"
                 )
                 ctx.unnamed_linalg_op_count += 1
+        # pylint: disable=no-else-return
         if ctx.enable_tensor:
             return op.owner
         else:

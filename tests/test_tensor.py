@@ -166,9 +166,11 @@ def test_linalg_matmul():
     N = 20
     np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
     np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
+
     def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
         return allo.matmul(A, B)
-    s = allo.customize(kernel, enable_tensor=True)
+
+    s = allo.customize(kernel)
     print(s.module)
     f = s.build()
     np_out = kernel(np_0, np_1)
