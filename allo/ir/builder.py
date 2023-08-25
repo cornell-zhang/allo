@@ -1001,7 +1001,14 @@ class ASTTransformer(ASTBuilder):
                     raise RuntimeError("Unsupported data type")
             else:
                 alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                ctx.buffers[node.target.id] = alloc_op
+                if rhs is not None:
+                    with ctx.get_ip():
+                        rhs = ASTTransformer.build_cast_op(
+                            ctx, rhs, node.value.dtype, node.dtype
+                        )
+                        # pylint: disable=unexpected-keyword-arg
+                        fill = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                ctx.buffers[node.target.id] = fill.owner
         else:
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(
