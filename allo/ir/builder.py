@@ -88,13 +88,18 @@ class ASTTransformer(ASTBuilder):
         return MockConstant(node.value, ctx)
 
     @staticmethod
+    def build_array(ctx, dtype, shape):
+        if not ctx.enable_tensor:
+            memref_type = MemRefType.get(shape, dtype.build())
+            return memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+        return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
+
+    @staticmethod
     def build_Attribute(ctx, node):
         if node.attr == "T":
-            ip = ctx.get_ip()
             shape = node.shape
             new_arg = build_stmt(ctx, node.value)
-            memref_type = MemRefType.get(shape, node.dtype.build())
-            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+            alloc_op = ASTTransformer.build_array(ctx, node.dtype, shape)
             op = linalg_d.TransposeOp(
                 inputs=[new_arg.result],
                 outputs=[alloc_op.result],
@@ -108,7 +113,10 @@ class ASTTransformer(ASTBuilder):
                     f"transpose_{ctx.unnamed_linalg_op_count}"
                 )
                 ctx.unnamed_linalg_op_count += 1
-            return alloc_op
+            if ctx.enable_tensor:
+                return op
+            else:
+                return alloc_op
         if node.attr == "reverse":
             value = build_stmt(ctx, node.value)
             bit_reverse = hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
@@ -357,22 +365,26 @@ class ASTTransformer(ASTBuilder):
             return op
         if len(src_shape) == 0:
             # Get zero-rank memref for constant
-            memref_type = MemRefType.get((), dtype.build())
-            in_cst = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
                 # pylint: disable=unexpected-keyword-arg
-                linalg_d.fill(op.result, outs=[in_cst.result])
-            op = in_cst
+                fill = linalg_d.fill(op.result, outs=[in_cst.result])
+            if ctx.enable_tensor:
+                op = fill.owner
+            else:
+                op = in_cst
         # target
-        memref_type = MemRefType.get(dst_shape, dtype.build())
-        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-        linalg_d.BroadcastOp(
+        alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
+        broadcast_op = linalg_d.BroadcastOp(
             inputs=[op.result],
             outputs=[alloc_op.result],
             dimensions=dims,
             ip=ctx.get_ip(),
         )
-        return alloc_op
+        if ctx.enable_tensor:
+            return broadcast_op
+        else:
+            return alloc_op
 
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
@@ -988,15 +1000,8 @@ class ASTTransformer(ASTBuilder):
                 else:
                     raise RuntimeError("Unsupported data type")
             else:
-                tensor_type = build_shaped_type(dtype, shape, True)
-                tensorgen_op = tensor_d.GenerateOp(tensor_type, [], ip=ctx.get_ip())
-                index_type = []
-                for _ in range(len(shape)):
-                    index_type.append(IndexType.get())
-                ctx.set_ip(tensorgen_op.regions[0].blocks.append(*index_type))
-                tensor_d.YieldOp(rhs.result, ip=ctx.get_ip())
-                ctx.pop_ip()
-                ctx.buffers[node.target.id] = tensorgen_op
+                alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                ctx.buffers[node.target.id] = alloc_op
         else:
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(
@@ -1336,11 +1341,7 @@ class ASTTransformer(ASTBuilder):
         ip = ctx.get_ip()
         dtype, shape = node.dtype, node.shape
         with ip:
-            if not ctx.enable_tensor:
-                memref_type = MemRefType.get(shape, dtype.build())
-                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
-            else:
-                alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ip)
+            alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             # init zero
             zero = MockConstant(0, ctx)
             zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
@@ -1385,8 +1386,7 @@ class ASTTransformer(ASTBuilder):
                 ).result
             elif attr == "relu":
                 # TODO: Need to better manage library call
-                memref_type = MemRefType.get(shape, dtype.build())
-                zero_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
+                zero_op = ASTTransformer.build_array(ctx, dtype, shape)
                 # init zero
                 zero = MockConstant(0, ctx)
                 # TODO: support tensor

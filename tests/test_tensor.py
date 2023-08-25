@@ -160,22 +160,21 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
-def test_linalg_matmul():
-    M = 10
-    K = 15
-    N = 20
-    np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
+def test_linalg_linear():
+    M, K, N = 10, 15, 12
+    X = np.random.uniform(size=(M, K)).astype(np.float32)
+    A = np.random.uniform(size=(N, K)).astype(np.float32)
+    B = np.random.uniform(size=(N,)).astype(np.float32)
 
-    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        return allo.matmul(A, B)
+    def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
+        return (allo.matmul(X, A.T) + B) * 2
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
     print(s.module)
     f = s.build()
-    np_out = kernel(np_0, np_1)
-    allo_out = f(np_0, np_1)
-    np.testing.assert_array_equal(allo_out, np_out)
+    outs = f(X, A, B)
+    np_outs = kernel(X, A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 if __name__ == "__main__":
