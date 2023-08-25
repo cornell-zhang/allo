@@ -98,12 +98,13 @@ class ASTTransformer(ASTBuilder):
             memref_type = MemRefType.get(shape, node.dtype.build())
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ip)
             op = linalg_d.TransposeOp(
-                inputs=[new_arg.result], outputs=[alloc_op.result], permutation=list(range(len(shape)))[::-1], ip=ctx.get_ip()
+                inputs=[new_arg.result],
+                outputs=[alloc_op.result],
+                permutation=list(range(len(shape)))[::-1],
+                ip=ctx.get_ip(),
             )
             if hasattr(node, "keywords") and len(node.keywords) > 0:
-                op.attributes["op_name"] = StringAttr.get(
-                    node.keywords[0].value.value
-                )
+                op.attributes["op_name"] = StringAttr.get(node.keywords[0].value.value)
             else:
                 op.attributes["op_name"] = StringAttr.get(
                     f"transpose_{ctx.unnamed_linalg_op_count}"
@@ -351,7 +352,9 @@ class ASTTransformer(ASTBuilder):
         return cast_op
 
     @staticmethod
-    def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape):
+    def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape, dims):
+        # No shape checking in this function, since it has been done in
+        # type inference pass in infer.py
         if src_shape == dst_shape:
             return op
         if len(src_shape) == 0:
@@ -360,11 +363,15 @@ class ASTTransformer(ASTBuilder):
             in_cst = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
             with ctx.get_ip():
                 linalg_d.fill(op.result, outs=[in_cst.result])
+            op = in_cst
         # target
         memref_type = MemRefType.get(dst_shape, dtype.build())
         alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
         linalg_d.BroadcastOp(
-            inputs=[in_cst.result], outputs=[alloc_op.result], dimensions=[0,1], ip=ctx.get_ip()
+            inputs=[op.result],
+            outputs=[alloc_op.result],
+            dimensions=dims,
+            ip=ctx.get_ip(),
         )
         return alloc_op
 
@@ -504,10 +511,10 @@ class ASTTransformer(ASTBuilder):
         lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
         lhs = ASTTransformer.build_broadcast_op(
-            ctx, lhs, node.dtype, node.left.shape, node.shape
+            ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
         )
         rhs = ASTTransformer.build_broadcast_op(
-            ctx, rhs, node.dtype, node.right.shape, node.shape
+            ctx, rhs, node.dtype, node.right.shape, node.shape, node.dims[1]
         )
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 

@@ -290,7 +290,7 @@ def test_linalg_transpose_3D():
     print(s.module)
 
 
-def test_linalg_broadcast():
+def test_linalg_broadcast_scalar():
     M = 10
     K = 15
     A = np.random.uniform(size=(M, K)).astype(np.float32)
@@ -305,6 +305,23 @@ def test_linalg_broadcast():
     f = s.build()
     outs = f(A, B)
     np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_broadcast_tensor():
+    M, K, N = 10, 15, 12
+    X = np.random.uniform(size=(M, K)).astype(np.float32)
+    A = np.random.uniform(size=(N, K)).astype(np.float32)
+    B = np.random.uniform(size=(N,)).astype(np.float32)
+
+    def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
+        return allo.matmul(X, A.T) + B
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    f = s.build()
+    outs = f(X, A, B)
+    np_outs = kernel(X, A, B)
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
