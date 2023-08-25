@@ -54,14 +54,6 @@ from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 
 
-def build_shaped_type(dtype, shape, enable_tensor=False):
-    if len(shape) == 0:
-        return dtype.build()
-    if not enable_tensor:
-        return MemRefType.get(shape, dtype.build())
-    return RankedTensorType.get(shape, dtype.build())
-
-
 class ASTBuilder(ASTVisitor):
     def __call__(self, ctx, node):
         method = getattr(self, "build_" + node.__class__.__name__, None)
@@ -86,6 +78,13 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Constant(ctx, node):
         return MockConstant(node.value, ctx)
+
+    def build_shaped_type(ctx, dtype, shape):
+        if len(shape) == 0:
+            return dtype.build()
+        if not ctx.enable_tensor:
+            return MemRefType.get(shape, dtype.build())
+        return RankedTensorType.get(shape, dtype.build())
 
     @staticmethod
     def build_array(ctx, dtype, shape):
@@ -291,9 +290,7 @@ class ASTTransformer(ASTBuilder):
                         "Casting between structs with different field types. "
                         + f"src type: {src_type}, dst type: {res_type}"
                     )
-            op.result = op.expr.result
-            op.ir_op = op.expr.ir_op
-            return
+            return op
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, Struct):
             # Int -> Struct Cast
             def is_all_field_int(dtype):
@@ -683,7 +680,9 @@ class ASTTransformer(ASTBuilder):
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
         if isinstance(rhs, (func_d.CallOp, memref_d.AllocOp)) or (
-            len(rhs.results) > 0 and isinstance(rhs.results[0].type, RankedTensorType)
+            len(rhs.results) > 0
+            and rhs.results[0] is not None
+            and isinstance(rhs.results[0].type, RankedTensorType)
         ):
             if len(node.targets) > 1:
                 raise RuntimeError("Cannot support multiple results yet")
@@ -697,8 +696,10 @@ class ASTTransformer(ASTBuilder):
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
         # Since `tensor_d.InsertOp` returns a copy of the original tensor,
         # we need to also update the buffer
-        if len(store_op.results) > 0 and isinstance(
-            store_op.results[0].type, RankedTensorType
+        if (
+            len(store_op.results) > 0
+            and store_op.results[0] is not None
+            and isinstance(store_op.results[0].type, RankedTensorType)
         ):
             ctx.buffers[node.targets[0].value.id] = store_op
         return store_op
@@ -1077,7 +1078,7 @@ class ASTTransformer(ASTBuilder):
         input_typehints = []
         for arg in node.args.args:
             input_types.append(
-                build_shaped_type(arg.dtype, arg.shape, ctx.enable_tensor)
+                ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
             )
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
@@ -1090,8 +1091,8 @@ class ASTTransformer(ASTBuilder):
             or node.returns is None
         ):
             output_types.append(
-                build_shaped_type(
-                    node.returns.dtype, node.returns.shape, ctx.enable_tensor
+                ASTTransformer.build_shaped_type(
+                    ctx, node.returns.dtype, node.returns.shape
                 )
             )
             output_typehints.append(get_extra_type_hints(node.returns.dtype))

@@ -86,7 +86,8 @@ class MockConstant(MockOp):
 
     @property
     def results(self):
-        return [self.result]
+        # DO NOT USE THIS METHOD FOR ACCESSING RESULT!
+        return [None]
 
 
 class MockScalar(MockOp):
@@ -116,4 +117,5 @@ class MockScalar(MockOp):
 
     @property
     def results(self):
-        return [self.result]
+        # DO NOT USE THIS METHOD FOR ACCESSING RESULT!
+        return [None]
