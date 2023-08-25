@@ -26,8 +26,6 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
-    ArrayAttr,
-    Attribute,
 )
 import hcl_mlir
 from hcl_mlir.dialects import (
@@ -362,6 +360,7 @@ class ASTTransformer(ASTBuilder):
             memref_type = MemRefType.get((), dtype.build())
             in_cst = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
             with ctx.get_ip():
+                # pylint: disable=unexpected-keyword-arg
                 linalg_d.fill(op.result, outs=[in_cst.result])
             op = in_cst
         # target

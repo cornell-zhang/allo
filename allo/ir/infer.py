@@ -173,6 +173,7 @@ class TypeInferer(ASTVisitor):
             ) + tmp_rhs_shape
         # match shape
         lhs_dims, rhs_dims = [], []
+        # pylint: disable=consider-using-enumerate
         for i in range(len(tmp_lhs_shape)):
             if tmp_lhs_shape[i] == 1:
                 tmp_lhs_shape[i] = tmp_rhs_shape[i]
