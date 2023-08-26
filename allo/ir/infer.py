@@ -519,7 +519,17 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_library_op(ctx, node, op_name, new_args):
-        if op_name in {"exp", "softmax", "abs", "log", "add", "sub", "div", "relu"}:
+        if op_name in {
+            "exp",
+            "softmax",
+            "abs",
+            "log",
+            "add",
+            "sub",
+            "div",
+            "relu",
+            "copy",
+        }:
             # Element-wise operation
             if op_name in {"add", "sub", "div"}:
                 assert (

@@ -160,5 +160,58 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
+def test_copy_arg_tensor():
+    M, N = 2, 2
+
+    def kernel(inp: float32[M, N]) -> float32[M, N]:
+        A = allo.copy(inp)
+        C = allo.copy(A)
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    inp = np.ones((M, N)).astype(np.float32)
+    outp = mod(inp)
+    np.testing.assert_allclose(inp, outp, rtol=1e-5)
+
+
+def test_copy_const_tensor():
+    M, N = 2, 2
+
+    def kernel() -> float32[M, N]:
+        A: float32[M, N] = 1.0
+        C = allo.copy(A)
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    inp = np.ones((M, N)).astype(np.float32)
+    outp = mod()
+    np.testing.assert_allclose(inp, outp, rtol=1e-5)
+
+
+def test_linalg_math_tensor():
+    M = 10
+    K = 15
+    A = np.float32(np.random.uniform(size=(M, K)))
+    B = np.float32(np.random.uniform(size=(K, M)))
+
+    def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
+        D = allo.matmul(A, B)
+        C = (allo.add(allo.exp(D), allo.abs(D)) - allo.log(D)) / D
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    f = s.build()
+    print(s.module)
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

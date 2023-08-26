@@ -33,6 +33,10 @@ def div(lhs, rhs, name=None):
     return lhs / rhs
 
 
+def copy(x, name=None):
+    return np.copy(x)
+
+
 def exp(x, name=None):
     return np.exp(x)
 
