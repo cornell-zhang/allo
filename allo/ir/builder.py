@@ -580,20 +580,12 @@ class ASTTransformer(ASTBuilder):
     def build_Assign(ctx, node):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
-        if len(node.targets) > 1:
-            raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, (func_d.CallOp, memref_d.AllocOp)) or (
-            len(rhs.results) > 0
-            and rhs.results[0] is not None
-            and isinstance(rhs.results[0].type, RankedTensorType)
-        ):
-            if len(node.targets) > 1:
-                raise RuntimeError("Cannot support multiple results yet")
-            if isinstance(node.targets[0], ast.Name):
-                if isinstance(rhs, func_d.CallOp):
-                    rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
-                ctx.buffers[node.targets[0].id] = rhs
-                return rhs
+        if (
+            isinstance(node.value, ast.Call) or len(node.value.shape) > 0
+        ) and isinstance(node.targets[0], ast.Name):
+            rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
+            ctx.buffers[node.targets[0].id] = rhs
+            return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
@@ -632,16 +624,9 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        if isinstance(node.target, ast.Subscript):
-            # pylint: disable=redefined-variable-type
-            node.target.ctx = ast.Load()
-            lhs = build_stmt(ctx, node.target)
-            node.target.ctx = ast.Store()
-            lhs.attributes["from"] = StringAttr.get(node.target.value.id)
-        elif isinstance(node.target, ast.Name):  # scalar
-            lhs = ctx.buffers[node.target.id]
-        else:
-            raise RuntimeError("Unsupported AugAssign")
+        node.target.ctx = ast.Load()
+        lhs = build_stmt(ctx, node.target)
+        node.target.ctx = ast.Store()
         # Cast rhs to the target type
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         # Aug LHS
@@ -703,7 +688,7 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported affine expression")
 
     @staticmethod
-    def build_ExtSlice(ctx, node):
+    def build_slices(ctx, node):
         # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
         dtype = RankedTensorType(ctx.buffers[node.value.id].result.type).element_type
         in_shape = RankedTensorType(ctx.buffers[node.value.id].result.type).shape
@@ -747,7 +732,7 @@ class ASTTransformer(ASTBuilder):
                 static_sizes,
                 static_strides,
                 result,
-            ) = ASTTransformer.build_ExtSlice(ctx, node)
+            ) = ASTTransformer.build_slices(ctx, node)
             if isinstance(node.ctx, ast.Load):
                 return tensor_d.ExtractSliceOp(
                     result=result,
