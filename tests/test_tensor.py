@@ -160,5 +160,39 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
+def test_copy_arg_tensor():
+    M, N = 2, 2
+
+    def kernel(inp: float32[M, N]) -> float32[M, N]:
+        A: float32[M, N] = inp
+        C: float32[M, N] = A
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    inp = np.ones((M, N)).astype(np.float32)
+    outp = mod(inp)
+    np.testing.assert_allclose(inp, outp, rtol=1e-5)
+
+
+def test_copy_const_tensor():
+    M, N = 2, 2
+
+    def kernel() -> float32[M, N]:
+        A: float32[M, N] = 1.0
+        C: float32[M, N] = A
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    inp = np.ones((M, N)).astype(np.float32)
+    outp = mod()
+    np.testing.assert_allclose(inp, outp, rtol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
