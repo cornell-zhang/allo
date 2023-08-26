@@ -530,6 +530,30 @@ class ASTTransformer(ASTBuilder):
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
+    def build_indices(ctx, node):
+        slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+        elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+        ctx.dim_count = 0
+        ctx.affine_vars = []
+        new_indices = []
+        is_affine = True
+        for index in elts:
+            expr = ASTTransformer.build_affine_expr(ctx, index)
+            if expr is None:
+                is_affine = False
+                break
+            new_indices.append(expr)
+        if is_affine:
+            return new_indices, True
+        # not affine
+        new_indices = []
+        for index in elts:
+            expr = build_stmt(ctx, index)
+            ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
+            new_indices.append(expr.result)
+        return new_indices, False
+
+    @staticmethod
     def build_store(ctx, node, val):
         if isinstance(node, ast.Subscript):
             if ctx.enable_tensor:
@@ -567,44 +591,26 @@ class ASTTransformer(ASTBuilder):
             #       inside the node
             # pylint: disable=redefined-builtin
             if len(node.value.shape) > 0:
-                slice = (
-                    node.slice.value
-                    if isinstance(node.slice, ast.Index)
-                    else node.slice
-                )
-                elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-                ctx.dim_count = 0
-                ctx.affine_vars = []
-                index_exprs = []
-                is_affine = True
-                for index in elts:
-                    expr = ASTTransformer.build_affine_expr(ctx, index)
-                    if expr is None:
-                        is_affine = False
-                        break
-                    index_exprs.append(expr)
+                new_indices, is_affine = ASTTransformer.build_indices(ctx, node)
+                buffer = ctx.buffers[node.value.id]
                 if is_affine:
                     affine_map = AffineMap.get(
-                        dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
+                        dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
                     )
                     affine_attr = AffineMapAttr.get(affine_map)
-                    if isinstance(ctx.buffers[node.value.id], MockScalar):
-                        target = ctx.buffers[node.value.id].op.result
-                    else:
-                        target = ctx.buffers[node.value.id].result
+                    target = (
+                        buffer.op.result
+                        if isinstance(buffer, MockScalar)
+                        else buffer.result
+                    )
                     ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
                     store_op = affine_d.AffineStoreOp(
                         val.result, target, ivs, affine_attr, ip=ctx.get_ip()
                     )
                 else:  # Not affine
-                    new_indices = []
-                    for index in elts:
-                        expr = build_stmt(ctx, index)
-                        ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
-                        new_indices.append(expr.result)
                     store_op = memref_d.StoreOp(
                         val.result,
-                        ctx.buffers[node.value.id].result,
+                        buffer.result,
                         new_indices,
                         ip=ctx.get_ip(),
                     )
@@ -615,10 +621,10 @@ class ASTTransformer(ASTBuilder):
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
             )
             affine_attr = AffineMapAttr.get(affine_map)
-            if isinstance(ctx.buffers[node.id], MockScalar):
-                target = ctx.buffers[node.id].op.result
-            else:
-                target = ctx.buffers[node.id].result
+            buffer = ctx.buffers[node.id]
+            target = (
+                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
+            )
             # pylint: disable=redefined-variable-type
             store_op = affine_d.AffineStoreOp(
                 val.result, target, [], affine_attr, ip=ctx.get_ip()
