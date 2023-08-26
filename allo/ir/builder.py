@@ -530,26 +530,27 @@ class ASTTransformer(ASTBuilder):
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def build_indices(ctx, node):
-        slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+    def build_indices(ctx, node, use_affine=True):
+        slice = node.value if isinstance(node, ast.Index) else node
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
         ctx.dim_count = 0
         ctx.affine_vars = []
         new_indices = []
-        is_affine = True
-        for index in elts:
-            expr = ASTTransformer.build_affine_expr(ctx, index)
-            if expr is None:
-                is_affine = False
-                break
-            new_indices.append(expr)
-        if is_affine:
-            return new_indices, True
+        if use_affine:
+            is_affine = True
+            for index in elts:
+                expr = ASTTransformer.build_affine_expr(ctx, index)
+                if expr is None:
+                    is_affine = False
+                    break
+                new_indices.append(expr)
+            if is_affine:
+                return new_indices, True
         # not affine
         new_indices = []
         for index in elts:
             expr = build_stmt(ctx, index)
-            ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
+            expr = ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
             new_indices.append(expr.result)
         return new_indices, False
 
@@ -577,7 +578,9 @@ class ASTTransformer(ASTBuilder):
                     )
                     return insertslice_op
                 if isinstance(node.slice, ast.Index):
-                    index_exprs = ASTTransformer.build_Index(ctx, node)
+                    index_exprs, _ = ASTTransformer.build_indices(
+                        ctx, node.slice, use_affine=False
+                    )
                     insert_op = tensor_d.InsertOp(
                         scalar=val.result,
                         dest=ctx.buffers[node.value.id].result,
@@ -591,7 +594,7 @@ class ASTTransformer(ASTBuilder):
             #       inside the node
             # pylint: disable=redefined-builtin
             if len(node.value.shape) > 0:
-                new_indices, is_affine = ASTTransformer.build_indices(ctx, node)
+                new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
                 buffer = ctx.buffers[node.value.id]
                 if is_affine:
                     affine_map = AffineMap.get(
@@ -703,8 +706,7 @@ class ASTTransformer(ASTBuilder):
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
-        # Since `tensor_d.InsertOp` returns a copy of the original tensor,
-        # we need to also update the buffer
+        # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
             len(store_op.results) > 0
             and store_op.results[0] is not None
@@ -847,20 +849,6 @@ class ASTTransformer(ASTBuilder):
         return static_offsets, static_sizes, static_strides, result
 
     @staticmethod
-    def build_Index(ctx, node):
-        # get index values for Extract and Insert
-        index_exprs = []
-        index = node.slice.value
-        elts = index.elts if isinstance(index, ast.Tuple) else [slice]
-        for elt in elts:
-            # pylint: disable=too-many-function-args
-            expr = arith_d.ConstantOp(
-                IndexType.get(), elt.value, ip=ctx.get_ip()
-            ).result
-            index_exprs.append(expr)
-        return index_exprs
-
-    @staticmethod
     def build_Subscript(ctx, node):
         # pylint: disable=redefined-builtin
         slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
@@ -891,7 +879,9 @@ class ASTTransformer(ASTBuilder):
                     )
                     return extractslice_op
                 if isinstance(node.slice, ast.Index):
-                    index_exprs = ASTTransformer.build_Index(ctx, node)
+                    index_exprs, _ = ASTTransformer.build_indices(
+                        ctx, node.slice, use_affine=False
+                    )
                     extract_op = tensor_d.ExtractOp(
                         tensor=ctx.buffers[node.value.id].result,
                         indices=index_exprs,
@@ -1051,7 +1041,7 @@ class ASTTransformer(ASTBuilder):
                 # please use allo.copy() to duplicate a tensor
                 raise RuntimeError("Unsupported data type")
         else:
-            # TODO: figure out why zero-shape cannot work
+            # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
                 node.dtype,
