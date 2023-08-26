@@ -74,7 +74,7 @@ class TypeInferer(ASTVisitor):
             elif isinstance(ctx.global_vars[node.id], float):
                 node.dtype = float32
                 node.shape = tuple()
-            elif isinstance(ctx.global_vars[node.id], np.array):
+            elif isinstance(ctx.global_vars[node.id], np.ndarray):
                 TypeInferer.visit_constant_tensor(ctx, node, ctx.global_vars[node.id])
             return node
         raise RuntimeError(f"Unsupported Name {node.id}")

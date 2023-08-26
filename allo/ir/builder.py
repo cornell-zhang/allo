@@ -116,9 +116,11 @@ class ASTTransformer(ASTBuilder):
         return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
 
     @staticmethod
-    def attach_op_name(ctx, node, op, name):
+    def attach_op_name(ctx, node, op, name, postfix=""):
         if hasattr(node, "keywords") and len(node.keywords) > 0:
-            op.attributes["op_name"] = StringAttr.get(node.keywords[0].value.value)
+            op.attributes["op_name"] = StringAttr.get(
+                f"{node.keywords[0].value.value}{postfix}"
+            )
         else:
             op.attributes["op_name"] = StringAttr.get(
                 f"{name}_{ctx.unnamed_linalg_op_count}"
@@ -1341,27 +1343,19 @@ class ASTTransformer(ASTBuilder):
         dtype, shape = node.dtype, node.shape
         with ip:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-            if attr in {"matmul", "bmm"}:
-                # init zero
-                zero = MockConstant(0, ctx)
-                zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-                # pylint: disable=unexpected-keyword-arg
-                linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
-                if ctx.enable_tensor:
-                    result_tensor = linalg_fill
-                else:
-                    result_tensor = alloc_op
-                # add op name for init_zero
-                if hasattr(node, "keywords") and len(node.keywords) > 0:
-                    linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                        f"{node.keywords[0].value.value}_init_zero"
-                    )
-                else:
-                    linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                        f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
-                    )
-            else:
-                result_tensor = alloc_op
+            # init zero
+            zero = MockConstant(0, ctx)
+            zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+            # pylint: disable=unexpected-keyword-arg
+            linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+            result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
+            ASTTransformer.attach_op_name(
+                ctx,
+                node,
+                linalg_fill.owner,
+                f"{op_name}_init_zero",
+                postfix="init_zero",
+            )
             # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
                 op = {
@@ -1398,20 +1392,8 @@ class ASTTransformer(ASTBuilder):
                 op = linalg_d.max(new_args[0], zero_op.result, outs=[result_tensor])
             else:
                 raise RuntimeError("Unsupported operation")
-            if hasattr(node, "keywords") and len(node.keywords) > 0:
-                op.owner.attributes["op_name"] = StringAttr.get(
-                    node.keywords[0].value.value
-                )
-            else:
-                op.owner.attributes["op_name"] = StringAttr.get(
-                    f"{attr}_{ctx.unnamed_linalg_op_count}"
-                )
-                ctx.unnamed_linalg_op_count += 1
-        # pylint: disable=no-else-return
-        if ctx.enable_tensor:
-            return op.owner
-        else:
-            return result_tensor
+            ASTTransformer.attach_op_name(ctx, node, op.owner, attr)
+        return op.owner if ctx.enable_tensor else result_tensor
 
     @staticmethod
     def build_Return(ctx, node):
