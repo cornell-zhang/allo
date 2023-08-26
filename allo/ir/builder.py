@@ -140,6 +140,10 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "reverse":
             return hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
 
+        if node.attr == "copy":
+            return ASTTransformer.build_library_op(
+                ctx, node=node, attr="copy", new_args=[value.result]
+            )
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod

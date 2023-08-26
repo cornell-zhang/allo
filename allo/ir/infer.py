@@ -104,15 +104,18 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Attribute(ctx, node):
+        res = visit_stmt(ctx, node.value)
         if node.attr == "T":
-            res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
             return node
         if node.attr == "reverse":
-            res = visit_stmt(ctx, node.value)
             if not isinstance(res.dtype, (Int, UInt)):
                 raise RuntimeError("Can only reverse integers")
+            node.dtype = res.dtype
+            node.shape = res.shape
+            return node
+        if node.attr == "copy":
             node.dtype = res.dtype
             node.shape = res.shape
             return node
