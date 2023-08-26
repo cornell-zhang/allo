@@ -39,7 +39,6 @@ from hcl_mlir.dialects import (
     arith as arith_d,
     math as math_d,
     linalg as linalg_d,
-    bufferization as buf_d,
 )
 from hcl_mlir.exceptions import DTypeError
 from .transform import build_for_loops
