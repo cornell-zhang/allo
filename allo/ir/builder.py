@@ -688,10 +688,8 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported affine expression")
 
     @staticmethod
-    def build_slices(ctx, node):
+    def build_slices(ctx, node, in_shape):
         # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
-        dtype = RankedTensorType(ctx.buffers[node.value.id].result.type).element_type
-        in_shape = RankedTensorType(ctx.buffers[node.value.id].result.type).shape
         slices = node.slice.dims
         static_offsets = []
         static_sizes = []
@@ -721,22 +719,24 @@ class ASTTransformer(ASTBuilder):
             static_offsets.append(lower)
             static_sizes.append((upper - lower) // step)
             static_strides.append(step)
-        result = RankedTensorType.get(static_sizes, dtype)
-        return static_offsets, static_sizes, static_strides, result
+        return static_offsets, static_sizes, static_strides
 
     @staticmethod
     def build_tensor_access(ctx, node, val=None):
+        value = build_stmt(ctx, node.value)
+        dtype = RankedTensorType(value.result.type).element_type
+        in_shape = RankedTensorType(value.result.type).shape
         if isinstance(node.slice, ast.ExtSlice):
             (
                 static_offsets,
                 static_sizes,
                 static_strides,
-                result,
-            ) = ASTTransformer.build_slices(ctx, node)
+            ) = ASTTransformer.build_slices(ctx, node, in_shape)
+            result = RankedTensorType.get(static_sizes, dtype)
             if isinstance(node.ctx, ast.Load):
                 return tensor_d.ExtractSliceOp(
                     result=result,
-                    source=ctx.buffers[node.value.id].result,
+                    source=value.result,
                     static_sizes=static_sizes,
                     static_strides=static_strides,
                     static_offsets=static_offsets,
@@ -748,7 +748,7 @@ class ASTTransformer(ASTBuilder):
             else:  # ast.Store
                 return tensor_d.InsertSliceOp(
                     source=val.result,
-                    dest=ctx.buffers[node.value.id].result,
+                    dest=value.result,
                     static_offsets=static_offsets,
                     static_sizes=static_sizes,
                     static_strides=static_strides,
@@ -761,14 +761,14 @@ class ASTTransformer(ASTBuilder):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             if isinstance(node.ctx, ast.Load):
                 return tensor_d.ExtractOp(
-                    tensor=ctx.buffers[node.value.id].result,
+                    tensor=value.result,
                     indices=index_exprs,
                     ip=ctx.get_ip(),
                 )
             else:  # ast.Store
                 return tensor_d.InsertOp(
                     scalar=val.result,
-                    dest=ctx.buffers[node.value.id].result,
+                    dest=value.result,
                     indices=index_exprs,
                     ip=ctx.get_ip(),
                 )
@@ -812,7 +812,9 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_bit_operation(ctx, node, val=None):
-        if not (len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt))):
+        if not (
+            len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt))
+        ):
             raise RuntimeError("Can only access bit (slice) for integers")
         # Bit operations should follow the convention in
         # https://github.com/cornell-zhang/heterocl/issues/443
