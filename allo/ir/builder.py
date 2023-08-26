@@ -125,6 +125,14 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
+    def build_Index(ctx, node):
+        return build_stmt(ctx, node.value)
+
+    @staticmethod
+    def build_Tuple(ctx, node):
+        return build_stmts(ctx, node.elts)
+
+    @staticmethod
     def build_all_for(ctx, node, attr):
         # get loop names
         if isinstance(node.target, ast.Tuple):
@@ -530,13 +538,13 @@ class ASTTransformer(ASTBuilder):
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def build_indices(ctx, node, use_affine=True):
+    def build_indices(ctx, node):
         slice = node.value if isinstance(node, ast.Index) else node
         elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
         ctx.dim_count = 0
         ctx.affine_vars = []
         new_indices = []
-        if use_affine:
+        if not ctx.enable_tensor:
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
@@ -553,137 +561,6 @@ class ASTTransformer(ASTBuilder):
             expr = ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
             new_indices.append(expr.result)
         return new_indices, False
-
-    @staticmethod
-    def build_store(ctx, node, val):
-        if isinstance(node, ast.Subscript):
-            if ctx.enable_tensor:
-                if isinstance(node.slice, ast.ExtSlice):
-                    (
-                        static_offsets,
-                        static_sizes,
-                        static_strides,
-                        _,
-                    ) = ASTTransformer.build_ExtSlice(ctx, node)
-                    insertslice_op = tensor_d.InsertSliceOp(
-                        source=val.result,
-                        dest=ctx.buffers[node.value.id].result,
-                        static_offsets=static_offsets,
-                        static_sizes=static_sizes,
-                        static_strides=static_strides,
-                        offsets=[],
-                        sizes=[],
-                        strides=[],
-                        ip=ctx.get_ip(),
-                    )
-                    return insertslice_op
-                if isinstance(node.slice, ast.Index):
-                    index_exprs, _ = ASTTransformer.build_indices(
-                        ctx, node.slice, use_affine=False
-                    )
-                    insert_op = tensor_d.InsertOp(
-                        scalar=val.result,
-                        dest=ctx.buffers[node.value.id].result,
-                        indices=index_exprs,
-                        ip=ctx.get_ip(),
-                    )
-                    return insert_op
-                raise RuntimeError("Unsupported store subscript")
-            # Note: Python 3.10 will generate different AST for Subscript compared to Python 3.8
-            #       3.10 directly flattens the Index node and removes all the None attributes
-            #       inside the node
-            # pylint: disable=redefined-builtin
-            if len(node.value.shape) > 0:
-                new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
-                buffer = ctx.buffers[node.value.id]
-                if is_affine:
-                    affine_map = AffineMap.get(
-                        dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
-                    )
-                    affine_attr = AffineMapAttr.get(affine_map)
-                    target = (
-                        buffer.op.result
-                        if isinstance(buffer, MockScalar)
-                        else buffer.result
-                    )
-                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                    store_op = affine_d.AffineStoreOp(
-                        val.result, target, ivs, affine_attr, ip=ctx.get_ip()
-                    )
-                else:  # Not affine
-                    store_op = memref_d.StoreOp(
-                        val.result,
-                        buffer.result,
-                        new_indices,
-                        ip=ctx.get_ip(),
-                    )
-                store_op.attributes["to"] = StringAttr.get(node.value.id)
-                return store_op
-        if isinstance(node, ast.Name):  # scalar
-            affine_map = AffineMap.get(
-                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
-            buffer = ctx.buffers[node.id]
-            target = (
-                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
-            )
-            # pylint: disable=redefined-variable-type
-            store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ctx.get_ip()
-            )
-            store_op.attributes["to"] = StringAttr.get(node.id)
-            return store_op
-        if isinstance(node, ast.Subscript):  # bit operation
-            slice = (
-                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
-            )
-            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
-            if isinstance(node.slice, ast.Index):
-                assert len(elts) == 1, "Only support single index for set_bit"
-                index = build_stmt(ctx, node.slice.value)
-                index = ASTTransformer.build_cast_op(
-                    ctx, index, node.slice.value.dtype, Index()
-                )
-                value = build_stmt(ctx, node.value)
-                # TODO: Test if rhs is uint1
-                set_bit_op = hcl_d.SetIntBitOp(
-                    node.value.dtype.build(),
-                    value.result,
-                    index.result,
-                    val.result,
-                    ip=ctx.get_ip(),
-                )
-                # write the updated integer back to the scalar
-                store_op = ASTTransformer.build_store(ctx, node.value, set_bit_op)
-                return store_op
-            if isinstance(node.slice, ast.Slice):
-                assert len(elts) == 1, "Only support a single slice for set_slice"
-                # The backend implementation is different from the Python convention
-                # The lower bound is inclusive and the upper bound is also inclusive
-                node.slice.upper.value -= 1
-                start = build_stmt(ctx, node.slice.lower)
-                start = ASTTransformer.build_cast_op(
-                    ctx, start, node.slice.lower.dtype, Index()
-                )
-                end = build_stmt(ctx, node.slice.upper)
-                end = ASTTransformer.build_cast_op(
-                    ctx, end, node.slice.upper.dtype, Index()
-                )
-                value = build_stmt(ctx, node.value)
-                # TODO: Test if rhs has the correct bitwidth
-                set_slice_op = hcl_d.SetIntSliceOp(
-                    node.value.dtype.build(),
-                    value.result,
-                    end.result,
-                    start.result,
-                    val.result,
-                    ip=ctx.get_ip(),
-                )
-                # write the updated integer back to the scalar
-                store_op = ASTTransformer.build_store(ctx, node.value, set_slice_op)
-                return store_op
-        raise RuntimeError("Unsupported store")
 
     @staticmethod
     def build_Assign(ctx, node):
@@ -705,7 +582,7 @@ class ASTTransformer(ASTBuilder):
                 return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
-        store_op = ASTTransformer.build_store(ctx, node.targets[0], rhs)
+        store_op = ASTTransformer.build_Subscript(ctx, node.targets[0], rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
             len(store_op.results) > 0
@@ -756,7 +633,7 @@ class ASTTransformer(ASTBuilder):
         # Aug LHS
         res = ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
         # Store LHS
-        store_op = ASTTransformer.build_store(ctx, node.target, res)
+        store_op = ASTTransformer.build_Subscript(ctx, node.target, res)
         return store_op
 
     @staticmethod
@@ -849,15 +726,24 @@ class ASTTransformer(ASTBuilder):
         return static_offsets, static_sizes, static_strides, result
 
     @staticmethod
-    def build_Subscript(ctx, node):
-        # pylint: disable=redefined-builtin
-        slice = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
-        elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+    def build_Subscript(ctx, node, val=None):
+        if isinstance(node, ast.Name):  # scalar
+            affine_map = AffineMap.get(
+                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+            )
+            affine_attr = AffineMapAttr.get(affine_map)
+            buffer = ctx.buffers[node.id]
+            target = (
+                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
+            )
+            # pylint: disable=redefined-variable-type
+            store_op = affine_d.AffineStoreOp(
+                val.result, target, [], affine_attr, ip=ctx.get_ip()
+            )
+            store_op.attributes["to"] = StringAttr.get(node.id)
+            return store_op
         if len(node.value.shape) > 0:
             # Load op
-            ctx.dim_count = 0
-            ctx.affine_vars = []
-            index_exprs = []
             if ctx.enable_tensor:
                 if isinstance(node.slice, ast.ExtSlice):
                     (
@@ -866,28 +752,45 @@ class ASTTransformer(ASTBuilder):
                         static_strides,
                         result,
                     ) = ASTTransformer.build_ExtSlice(ctx, node)
-                    extractslice_op = tensor_d.ExtractSliceOp(
-                        result=result,
-                        source=ctx.buffers[node.value.id].result,
-                        static_sizes=static_sizes,
-                        static_strides=static_strides,
-                        static_offsets=static_offsets,
-                        offsets=[],
-                        sizes=[],
-                        strides=[],
-                        ip=ctx.get_ip(),
-                    )
-                    return extractslice_op
+                    if isinstance(node.ctx, ast.Load):
+                        return tensor_d.ExtractSliceOp(
+                            result=result,
+                            source=ctx.buffers[node.value.id].result,
+                            static_sizes=static_sizes,
+                            static_strides=static_strides,
+                            static_offsets=static_offsets,
+                            offsets=[],
+                            sizes=[],
+                            strides=[],
+                            ip=ctx.get_ip(),
+                        )
+                    else:  # ast.Store
+                        return tensor_d.InsertSliceOp(
+                            source=val.result,
+                            dest=ctx.buffers[node.value.id].result,
+                            static_offsets=static_offsets,
+                            static_sizes=static_sizes,
+                            static_strides=static_strides,
+                            offsets=[],
+                            sizes=[],
+                            strides=[],
+                            ip=ctx.get_ip(),
+                        )
                 if isinstance(node.slice, ast.Index):
-                    index_exprs, _ = ASTTransformer.build_indices(
-                        ctx, node.slice, use_affine=False
-                    )
-                    extract_op = tensor_d.ExtractOp(
-                        tensor=ctx.buffers[node.value.id].result,
-                        indices=index_exprs,
-                        ip=ctx.get_ip(),
-                    )
-                    return extract_op
+                    index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
+                    if isinstance(node.ctx, ast.Load):
+                        return tensor_d.ExtractOp(
+                            tensor=ctx.buffers[node.value.id].result,
+                            indices=index_exprs,
+                            ip=ctx.get_ip(),
+                        )
+                    else:  # ast.Store
+                        return tensor_d.InsertOp(
+                            scalar=val.result,
+                            dest=ctx.buffers[node.value.id].result,
+                            indices=index_exprs,
+                            ip=ctx.get_ip(),
+                        )
                 raise RuntimeError("Unsupported load subscript")
             new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
             if is_affine:
@@ -896,22 +799,47 @@ class ASTTransformer(ASTBuilder):
                 )
                 affine_attr = AffineMapAttr.get(affine_map)
                 ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                load_op = affine_d.AffineLoadOp(
-                    ctx.buffers[node.value.id].result,
-                    ivs,
-                    affine_attr,
-                    ip=ctx.get_ip(),
-                )
-                load_op.attributes["from"] = StringAttr.get(node.value.id)
+                if isinstance(node.ctx, ast.Load):
+                    op = affine_d.AffineLoadOp(
+                        ctx.buffers[node.value.id].result,
+                        ivs,
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                else:  # ast.Store
+                    buffer = ctx.buffers[node.value.id]
+                    target = (
+                        buffer.op.result
+                        if isinstance(buffer, MockScalar)
+                        else buffer.result
+                    )
+                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                    op = affine_d.AffineStoreOp(
+                        val.result, target, ivs, affine_attr, ip=ctx.get_ip()
+                    )
             else:  # Not affine
                 # pylint: disable=redefined-variable-type
-                load_op = memref_d.LoadOp(
-                    ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
-                )
-            load_op.attributes["from"] = StringAttr.get(node.value.id)
-            return load_op
+                if isinstance(node.ctx, ast.Load):
+                    op = memref_d.LoadOp(
+                        ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
+                    )
+                else:  # ast.Store
+                    buffer = ctx.buffers[node.value.id]
+                    op = memref_d.StoreOp(
+                        val.result,
+                        buffer.result,
+                        new_indices,
+                        ip=ctx.get_ip(),
+                    )
+            attr = "from" if isinstance(node.ctx, ast.Load) else "to"
+            op.attributes[attr] = StringAttr.get(node.value.id)
+            return op
         else:  # bit operation
             value = build_stmt(ctx, node.value)
+            slice = (
+                node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            )
+            elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
             if len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt)):
                 # Bit operations should follow the convention in
                 # https://github.com/cornell-zhang/heterocl/issues/443
@@ -923,14 +851,38 @@ class ASTTransformer(ASTBuilder):
                 # >>> a[28:32].reverse()
                 # 0x5
                 if isinstance(node.slice, ast.Index):
-                    assert len(elts) == 1, "Only support single index for get_bit"
-                    index = build_stmt(ctx, elts[0])
-                    index = ASTTransformer.build_cast_op(
-                        ctx, index, node.slice.dtype, Index()
-                    )
-                    return hcl_d.GetIntBitOp(
-                        node.dtype.build(), value.result, index.result, ip=ctx.get_ip()
-                    )
+                    if isinstance(node.ctx, ast.Load):
+                        assert len(elts) == 1, "Only support single index for get_bit"
+                        index = build_stmt(ctx, elts[0])
+                        index = ASTTransformer.build_cast_op(
+                            ctx, index, node.slice.dtype, Index()
+                        )
+                        return hcl_d.GetIntBitOp(
+                            node.dtype.build(),
+                            value.result,
+                            index.result,
+                            ip=ctx.get_ip(),
+                        )
+                    else:
+                        assert len(elts) == 1, "Only support single index for set_bit"
+                        index = build_stmt(ctx, node.slice.value)
+                        index = ASTTransformer.build_cast_op(
+                            ctx, index, node.slice.value.dtype, Index()
+                        )
+                        # TODO: Test if rhs is uint1
+                        set_bit_op = hcl_d.SetIntBitOp(
+                            node.value.dtype.build(),
+                            value.result,
+                            index.result,
+                            val.result,
+                            ip=ctx.get_ip(),
+                        )
+                        # write the updated integer back to the scalar
+                        node.value.ctx = ast.Store()
+                        store_op = ASTTransformer.build_Subscript(
+                            ctx, node.value, set_bit_op
+                        )
+                        return store_op
                 elif isinstance(node.slice, ast.Slice):
                     # The backend implementation is different from the Python convention
                     # The lower bound is inclusive and the upper bound is also inclusive
@@ -943,13 +895,29 @@ class ASTTransformer(ASTBuilder):
                     upper = ASTTransformer.build_cast_op(
                         ctx, upper, node.slice.upper.dtype, Index()
                     )
-                    return hcl_d.GetIntSliceOp(
-                        node.dtype.build(),
-                        value.result,
-                        upper.result,
-                        lower.result,
-                        ip=ctx.get_ip(),
-                    )
+                    if isinstance(node.ctx, ast.Load):
+                        return hcl_d.GetIntSliceOp(
+                            node.dtype.build(),
+                            value.result,
+                            upper.result,
+                            lower.result,
+                            ip=ctx.get_ip(),
+                        )
+                    else:  # ast.Store
+                        set_slice_op = hcl_d.SetIntSliceOp(
+                            node.value.dtype.build(),
+                            value.result,
+                            upper.result,
+                            lower.result,
+                            val.result,
+                            ip=ctx.get_ip(),
+                        )
+                        # write the updated integer back to the scalar
+                        node.value.ctx = ast.Store()
+                        store_op = ASTTransformer.build_Subscript(
+                            ctx, node.value, set_slice_op
+                        )
+                        return store_op
                 else:
                     raise NotImplementedError
             else:
@@ -1036,7 +1004,7 @@ class ASTTransformer(ASTBuilder):
                 rhs = ASTTransformer.build_cast_op(
                     ctx, rhs, node.value.dtype, node.dtype
                 )
-                ASTTransformer.build_store(ctx, node.target, rhs)
+                ASTTransformer.build_Subscript(ctx, node.target, rhs)
 
     @staticmethod
     def build_FunctionDef(ctx, node):

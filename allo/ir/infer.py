@@ -212,14 +212,6 @@ class TypeInferer(ASTVisitor):
         return TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def visit_store(ctx, node, val):
-        if isinstance(node, ast.Subscript):
-            return ctx.buffers[node.value.id]
-        if isinstance(node, ast.Name):
-            return ctx.buffers[node.id]
-        raise RuntimeError("Unsupported store")
-
-    @staticmethod
     def visit_Assign(ctx, node):
         # Compute RHS
         rhs = visit_stmt(ctx, node.value)
