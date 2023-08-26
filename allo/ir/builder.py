@@ -1245,24 +1245,16 @@ class ASTTransformer(ASTBuilder):
         if obj is None:
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
-                assert (
-                    len(node.args) == 0
-                ), "Only support zero argument for attribute methods"
                 return build_stmt(ctx, node.func)
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
-                assert (
-                    len(node.args) == 1
-                ), "Only support one argument for `float` and `int`"
                 stmts = build_stmts(ctx, node.args)
-                if node.func.id == "float":
-                    return ASTTransformer.build_cast_op(
-                        ctx, stmts[0], node.args[0].dtype, Float(32)
-                    )
-                if node.func.id == "int":
-                    return ASTTransformer.build_cast_op(
-                        ctx, stmts[0], node.args[0].dtype, Int(32)
-                    )
+                return ASTTransformer.build_cast_op(
+                    ctx,
+                    stmts[0],
+                    node.args[0].dtype,
+                    Int(32) if node.func.id == "int" else Float(32),
+                )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if obj.__module__.startswith("allo"):
@@ -1324,6 +1316,7 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
                     setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
+
         # Build call function in the top-level
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         call_op = func_d.CallOp(
@@ -1335,10 +1328,8 @@ class ASTTransformer(ASTBuilder):
         return call_op
 
     @staticmethod
-    def build_library_op(ctx, node, op_name, new_args):
-        # +-/ and allo.add() are all supported
-        assert op_name is not None and op_name != ""
-        attr = op_name
+    def build_library_op(ctx, node, attr, new_args):
+        assert attr is not None and attr != ""
         ip = ctx.get_ip()
         dtype, shape = node.dtype, node.shape
         with ip:
@@ -1353,7 +1344,7 @@ class ASTTransformer(ASTBuilder):
                 ctx,
                 node,
                 linalg_fill.owner,
-                f"{op_name}_init_zero",
+                f"{attr}_init_zero",
                 postfix="init_zero",
             )
             # build linalg op
