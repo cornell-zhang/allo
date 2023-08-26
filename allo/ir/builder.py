@@ -251,13 +251,18 @@ class ASTTransformer(ASTBuilder):
             (UFixed, Fixed): hcl_d.FixedToFixedOp,
             (UFixed, UFixed): hcl_d.FixedToFixedOp,
         }
-        if (src_type, res_type) in cast_map:
-            opcls = cast_map[(src_type, res_type)]
+        if (type(src_type), type(res_type)) in cast_map:
+            opcls = cast_map[(type(src_type), type(res_type))]
         elif isinstance(src_type, Float) and isinstance(res_type, Index):
             # FP to Index is not supported in MLIR
             # we need to cast to UInt first, then cast to Index
             op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
+        elif isinstance(src_type, Index) and isinstance(res_type, Float):
+            op = arith_d.IndexCastOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
+            opcls = arith_d.SIToFPOp  # proceed to build cast to float
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
                 opcls = arith_d.TruncIOp
