@@ -26,6 +26,7 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
+    OpResult,
 )
 import hcl_mlir
 from hcl_mlir.dialects import (
@@ -38,6 +39,7 @@ from hcl_mlir.dialects import (
     arith as arith_d,
     math as math_d,
     linalg as linalg_d,
+    bufferization as buf_d,
 )
 from hcl_mlir.exceptions import DTypeError
 from .transform import build_for_loops
@@ -988,45 +990,42 @@ class ASTTransformer(ASTBuilder):
             rhs = None
         shape, dtype = node.shape, node.dtype
         if len(shape) > 0:
-            if not ctx.enable_tensor:
-                memref_type = build_shaped_type(dtype, shape, False)
-                if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        alloc_op = memref_d.AllocOp(
-                            memref_type, [], [], ip=ctx.get_ip()
+            if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
+                if not ctx.enable_tensor and isinstance(
+                    rhs, (memref_d.AllocOp, MockArg)
+                ):
+                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                    with ctx.get_ip():
+                        # pylint: disable=unexpected-keyword-arg
+                        result_op = linalg_d.copy(
+                            rhs.result,
+                            outs=[alloc_op],
                         )
-                        alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                        ctx.buffers[node.target.id] = alloc_op
-                        with ctx.get_ip():
-                            # pylint: disable=unexpected-keyword-arg
-                            linalg_d.copy(
-                                rhs.result,
-                                outs=[alloc_op],
-                            )
-                    else:
-                        raise RuntimeError("Unsupported data type")
-                elif isinstance(node.value, (ast.List, ast.Name)):
-                    # pylint: disable=redefined-variable-type
-                    rhs = memref_d.GetGlobalOp(
-                        memref_type,
-                        FlatSymbolRefAttr.get(node.target.id),
-                        ip=ctx.get_ip(),
-                    )
-                    ctx.buffers[node.target.id] = rhs
-                elif isinstance(node.value, ast.Constant) or (node.value is None):
-                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                    alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                     ctx.buffers[node.target.id] = alloc_op
-                    if rhs is not None:
-                        with ctx.get_ip():
-                            rhs = ASTTransformer.build_cast_op(
-                                ctx, rhs, node.value.dtype, node.dtype
-                            )
-                            # pylint: disable=unexpected-keyword-arg
-                            linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                elif ctx.enable_tensor and isinstance(
+                    rhs, (tensor_d.EmptyOp, MockArg, OpResult)
+                ):
+                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                    with ctx.get_ip():
+                        copy_obj = rhs if isinstance(rhs, OpResult) else rhs.result
+                        # pylint: disable=unexpected-keyword-arg
+                        result_op = linalg_d.copy(
+                            copy_obj,
+                            outs=[alloc_op],
+                        )
+                    ctx.buffers[node.target.id] = result_op
                 else:
                     raise RuntimeError("Unsupported data type")
-            else:
+            elif isinstance(node.value, (ast.List, ast.Name)) and not ctx.enable_tensor:
+                # pylint: disable=redefined-variable-type
+                memref_type = build_shaped_type(dtype, shape, False)
+                rhs = memref_d.GetGlobalOp(
+                    memref_type,
+                    FlatSymbolRefAttr.get(node.target.id),
+                    ip=ctx.get_ip(),
+                )
+                ctx.buffers[node.target.id] = rhs
+            elif isinstance(node.value, ast.Constant) or (node.value is None):
                 alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
                 if rhs is not None:
                     with ctx.get_ip():
@@ -1034,8 +1033,10 @@ class ASTTransformer(ASTBuilder):
                             ctx, rhs, node.value.dtype, node.dtype
                         )
                         # pylint: disable=unexpected-keyword-arg
-                        fill = linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                ctx.buffers[node.target.id] = fill.owner
+                        result_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                    ctx.buffers[node.target.id] = (
+                        alloc_op if not ctx.enable_tensor else result_op
+                    )
         else:
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(
@@ -1484,7 +1485,8 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype
         )
-        return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
+        result_op = ret if isinstance(ret, OpResult) else ret.result
+        return func_d.ReturnOp([result_op], ip=ctx.pop_ip())
 
     @staticmethod
     def build_Expr(ctx, node):
