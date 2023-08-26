@@ -889,43 +889,27 @@ class ASTTransformer(ASTBuilder):
                     )
                     return extract_op
                 raise RuntimeError("Unsupported load subscript")
-            is_affine = True
-            for index in elts:
-                expr = ASTTransformer.build_affine_expr(ctx, index)
-                if expr is None:
-                    is_affine = False
-                    break
-                index_exprs.append(expr)
-            # pylint: disable=no-else-return
+            new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
             if is_affine:
-                if isinstance(node.ctx, ast.Load):
-                    affine_map = AffineMap.get(
-                        dim_count=ctx.dim_count, symbol_count=0, exprs=index_exprs
-                    )
-                    affine_attr = AffineMapAttr.get(affine_map)
-                    ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-                    load_op = affine_d.AffineLoadOp(
-                        ctx.buffers[node.value.id].result,
-                        ivs,
-                        affine_attr,
-                        ip=ctx.get_ip(),
-                    )
-                    load_op.attributes["from"] = StringAttr.get(node.value.id)
-                    return load_op
-                else:
-                    raise RuntimeError("Unsupported Subscript")
+                affine_map = AffineMap.get(
+                    dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
+                )
+                affine_attr = AffineMapAttr.get(affine_map)
+                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                load_op = affine_d.AffineLoadOp(
+                    ctx.buffers[node.value.id].result,
+                    ivs,
+                    affine_attr,
+                    ip=ctx.get_ip(),
+                )
+                load_op.attributes["from"] = StringAttr.get(node.value.id)
             else:  # Not affine
-                new_indices = []
-                for index in elts:
-                    expr = build_stmt(ctx, index)
-                    ASTTransformer.build_cast_op(ctx, expr, index.dtype, Index())
-                    new_indices.append(expr.result)
                 # pylint: disable=redefined-variable-type
                 load_op = memref_d.LoadOp(
                     ctx.buffers[node.value.id].result, new_indices, ip=ctx.get_ip()
                 )
-                load_op.attributes["from"] = StringAttr.get(node.value.id)
-                return load_op
+            load_op.attributes["from"] = StringAttr.get(node.value.id)
+            return load_op
         else:  # bit operation
             value = build_stmt(ctx, node.value)
             if len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt)):
