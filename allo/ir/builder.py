@@ -927,23 +927,25 @@ class ASTTransformer(ASTBuilder):
                 FlatSymbolRefAttr.get(node.target.id),
                 ip=ctx.get_ip(),
             )
+            ctx.buffers[node.target.id] = rhs
+            return
         else:
             rhs = build_stmt(ctx, node.value)
+            if rhs is not None:
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, rhs, node.value.dtype, node.dtype
+                )
         # Store LHS
         if len(shape) > 0:
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-            if rhs is not None:
-                with ctx.get_ip():
-                    rhs = ASTTransformer.build_cast_op(
-                        ctx, rhs, node.value.dtype, node.dtype
-                    )
-                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        # pylint: disable=unexpected-keyword-arg
-                        linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
-                    else:
-                        linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            with ctx.get_ip():
+                if isinstance(rhs, (memref_d.AllocOp, MockArg)):
+                    # pylint: disable=unexpected-keyword-arg
+                    linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
+                elif rhs is not None:
+                    linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
@@ -956,9 +958,6 @@ class ASTTransformer(ASTBuilder):
                 value=node.value,
             )
             if rhs is not None:
-                rhs = ASTTransformer.build_cast_op(
-                    ctx, rhs, node.value.dtype, node.dtype
-                )
                 build_stmt(ctx, node.target, val=rhs)
 
     @staticmethod
