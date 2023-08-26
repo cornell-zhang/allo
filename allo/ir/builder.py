@@ -56,6 +56,8 @@ from .symbol_resolver import ASTResolver
 
 class ASTBuilder(ASTVisitor):
     def __call__(self, ctx, node, **kwargs):
+        if node is None:
+            return None
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
@@ -87,11 +89,17 @@ class ASTTransformer(ASTBuilder):
             return ctx.buffers[node.id]
         if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
+        if node.id not in ctx.buffers and hasattr(node, "np_values"):
+            return ASTTransformer.build_constant_tensor(ctx, node)
         raise RuntimeError("Unsupported Name")
 
     @staticmethod
     def build_Constant(ctx, node):
         return MockConstant(node.value, ctx)
+
+    @staticmethod
+    def build_List(ctx, node):
+        return ASTTransformer.build_constant_tensor(ctx, node)
 
     def build_shaped_type(ctx, dtype, shape):
         if len(shape) == 0:
@@ -900,19 +908,10 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_AnnAssign(ctx, node):
-        if node.value is not None:
-            if isinstance(node.value, ast.List) or (
-                isinstance(node.value, ast.Name) and node.value.id not in ctx.buffers
-            ):
-                rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            else:
-                # Examples:
-                # copied: int32 = a
-                # init: int32 = 0
-                # call: int32 = int(1)
-                rhs = build_stmt(ctx, node.value)
+        if isinstance(node.value, ast.List):
+            rhs = ASTTransformer.build_constant_tensor(ctx, node)
         else:
-            rhs = None
+            rhs = build_stmt(ctx, node.value)
         shape, dtype = node.shape, node.dtype
         if len(shape) > 0:
             if not ctx.enable_tensor:
