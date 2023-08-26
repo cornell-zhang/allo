@@ -210,33 +210,57 @@ class ASTTransformer(ASTBuilder):
                     return ASTTransformer.build_all_for(ctx, node, obj.__name__)
             raise RuntimeError("Unsupported for loop")
 
-    # pylint: disable=too-many-branches, inconsistent-return-statements
+    # pylint: inconsistent-return-statements
     @staticmethod
     def build_cast_op(ctx, op, src_type, res_type):
-        # determine cast op
-        CastOpClass = None
+        # No need to cast
         if type(res_type) is type(src_type) and res_type == src_type:
             return op
-        if isinstance(src_type, (Int, UInt)) and isinstance(res_type, Index):
-            CastOpClass = arith_d.IndexCastOp
-        elif isinstance(src_type, Index) and isinstance(res_type, (Int, UInt)):
-            CastOpClass = arith_d.IndexCastOp
-        elif isinstance(src_type, Int) and isinstance(res_type, Float):
-            CastOpClass = arith_d.SIToFPOp
-        elif isinstance(src_type, UInt) and isinstance(res_type, Float):
-            CastOpClass = arith_d.UIToFPOp
-        elif isinstance(src_type, Float) and isinstance(res_type, Int):
-            CastOpClass = arith_d.FPToSIOp
+
+        cast_map = {
+            # Index <-> UInt/Int
+            (Int, Index): arith_d.IndexCastOp,
+            (UInt, Index): arith_d.IndexCastOp,
+            (Index, Int): arith_d.IndexCastOp,
+            (Index, UInt): arith_d.IndexCastOp,
+            # UInt/Int <-> Float
+            (Int, Float): arith_d.SIToFPOp,
+            (UInt, Float): arith_d.UIToFPOp,
+            (Float, Int): arith_d.FPToSIOp,
+            (Float, UInt): arith_d.FPToUIOp,
+            # FP to Index is not supported in MLIR
+            # (Float, Index): RuntimeError,
+            # (Index, Float): RuntimeError,
+            # Float <-> Fixed/UFixed
+            (Float, Fixed): hcl_d.FloatToFixedOp,
+            (Float, UFixed): hcl_d.FloatToFixedOp,
+            (Fixed, Float): hcl_d.FixedToFloatOp,
+            (UFixed, Float): hcl_d.FixedToFloatOp,
+            # Int/UInt <-> Fixed/UFixed
+            (Fixed, Int): hcl_d.FixedToIntOp,
+            (Fixed, UInt): hcl_d.FixedToIntOp,
+            (UFixed, Int): hcl_d.FixedToIntOp,
+            (UFixed, UInt): hcl_d.FixedToIntOp,
+            (Int, Fixed): hcl_d.IntToFixedOp,
+            (Int, UFixed): hcl_d.IntToFixedOp,
+            (UInt, Fixed): hcl_d.IntToFixedOp,
+            (UInt, UFixed): hcl_d.IntToFixedOp,
+            # Fixed/UFixed <-> Fixed/UFixed
+            (Fixed, Fixed): hcl_d.FixedToFixedOp,
+            (Fixed, UFixed): hcl_d.FixedToFixedOp,
+            (UFixed, Fixed): hcl_d.FixedToFixedOp,
+            (UFixed, UFixed): hcl_d.FixedToFixedOp,
+        }
+        if (src_type, res_type) in cast_map:
+            opcls = cast_map[(src_type, res_type)]
         elif isinstance(src_type, Float) and isinstance(res_type, Index):
             # FP to Index is not supported in MLIR
             # we need to cast to UInt first, then cast to Index
             op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
-            CastOpClass = arith_d.IndexCastOp  # proceed to build cast to index
-        elif isinstance(src_type, Float) and isinstance(res_type, UInt):
-            CastOpClass = arith_d.FPToUIOp
+            opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
-                CastOpClass = arith_d.TruncIOp
+                opcls = arith_d.TruncIOp
             elif src_type.bits == res_type.bits:
                 return op
             else:  # src_type.bits < res_type.bits
@@ -247,36 +271,18 @@ class ASTTransformer(ASTBuilder):
                     )
                     or src_type.bits == 1
                 ):
-                    CastOpClass = arith_d.ExtUIOp
+                    opcls = arith_d.ExtUIOp
                 elif isinstance(src_type, UInt):
-                    CastOpClass = arith_d.ExtUIOp
+                    opcls = arith_d.ExtUIOp
                 else:
-                    CastOpClass = arith_d.ExtSIOp
+                    opcls = arith_d.ExtSIOp
         elif isinstance(src_type, Float) and isinstance(res_type, Float):
             if res_type.bits < src_type.bits:
-                CastOpClass = arith_d.TruncFOp
+                opcls = arith_d.TruncFOp
             elif res_type.bits > src_type.bits:
-                CastOpClass = arith_d.ExtFOp
+                opcls = arith_d.ExtFOp
             else:
                 return op
-        elif isinstance(src_type, Float) and isinstance(res_type, (Fixed, UFixed)):
-            CastOpClass = hcl_d.FloatToFixedOp
-        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Float):
-            CastOpClass = hcl_d.FixedToFloatOp
-        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(
-            res_type, (Int, UInt)
-        ):
-            CastOpClass = hcl_d.FixedToIntOp
-        elif isinstance(src_type, (Int, UInt)) and isinstance(
-            res_type, (Fixed, UFixed)
-        ):
-            CastOpClass = hcl_d.IntToFixedOp
-        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(
-            res_type, (Fixed, UFixed)
-        ):
-            if src_type == res_type:
-                return op
-            CastOpClass = hcl_d.FixedToFixedOp
         elif isinstance(src_type, Struct) and isinstance(res_type, Struct):
             # We don't actually cast between struct types,
             # here we check if two structs are identical when all
@@ -341,7 +347,7 @@ class ASTTransformer(ASTBuilder):
                     "Casting from integer to struct with different width. "
                     + f"src type: {src_type}, dst type: {res_type}"
                 )
-            CastOpClass = hcl_d.IntToStructOp
+            opcls = hcl_d.IntToStructOp
         elif isinstance(src_type, Struct) and isinstance(res_type, (Int, UInt)):
             # Struct -> Int Cast
             raise NotImplementedError(
@@ -357,12 +363,12 @@ class ASTTransformer(ASTBuilder):
         # build the cast op
         if isinstance(res_type, (Int, UInt, Struct)):
             mlir_type = res_type.build()
-            cast_op = CastOpClass(mlir_type, op.result, ip=ctx.get_ip())
+            cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
             if isinstance(res_type, (UInt, Struct)):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
             mlir_type = res_type.build()
-            cast_op = CastOpClass(mlir_type, op.result, ip=ctx.get_ip())
+            cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
         return cast_op
 
     @staticmethod
