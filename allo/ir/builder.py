@@ -55,20 +55,34 @@ from .symbol_resolver import ASTResolver
 
 
 class ASTBuilder(ASTVisitor):
-    def __call__(self, ctx, node):
+    def __call__(self, ctx, node, **kwargs):
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
         with ctx.mlir_ctx, Location.unknown():
-            res = method(ctx, node)
+            res = method(ctx, node, **kwargs)
             return res
 
 
 # pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
-    def build_Name(ctx, node):
+    def build_Name(ctx, node, val=None):
+        if val is not None:
+            affine_map = AffineMap.get(
+                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+            )
+            affine_attr = AffineMapAttr.get(affine_map)
+            buffer = ctx.buffers[node.id]
+            target = (
+                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
+            )
+            store_op = affine_d.AffineStoreOp(
+                val.result, target, [], affine_attr, ip=ctx.get_ip()
+            )
+            store_op.attributes["to"] = StringAttr.get(node.id)
+            return store_op
         if node.id in ctx.buffers:
             return ctx.buffers[node.id]
         if node.id in ctx.global_vars:
@@ -582,7 +596,7 @@ class ASTTransformer(ASTBuilder):
                 return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
-        store_op = ASTTransformer.build_Subscript(ctx, node.targets[0], rhs)
+        store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
             len(store_op.results) > 0
@@ -633,7 +647,7 @@ class ASTTransformer(ASTBuilder):
         # Aug LHS
         res = ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
         # Store LHS
-        store_op = ASTTransformer.build_Subscript(ctx, node.target, res)
+        store_op = build_stmt(ctx, node.target, val=res)
         return store_op
 
     @staticmethod
@@ -864,9 +878,7 @@ class ASTTransformer(ASTBuilder):
                     )
                     # write the updated integer back to the scalar
                     node.value.ctx = ast.Store()
-                    store_op = ASTTransformer.build_Subscript(
-                        ctx, node.value, set_bit_op
-                    )
+                    store_op = build_stmt(ctx, node.value, val=set_bit_op)
                     return store_op
             elif isinstance(node.slice, ast.Slice):
                 # The backend implementation is different from the Python convention
@@ -899,9 +911,7 @@ class ASTTransformer(ASTBuilder):
                     )
                     # write the updated integer back to the scalar
                     node.value.ctx = ast.Store()
-                    store_op = ASTTransformer.build_Subscript(
-                        ctx, node.value, set_slice_op
-                    )
+                    store_op = build_stmt(ctx, node.value, val=set_slice_op)
                     return store_op
             else:
                 raise NotImplementedError
@@ -910,21 +920,6 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Subscript(ctx, node, val=None):
-        if isinstance(node, ast.Name):  # scalar
-            affine_map = AffineMap.get(
-                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
-            buffer = ctx.buffers[node.id]
-            target = (
-                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
-            )
-            # pylint: disable=redefined-variable-type
-            store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ctx.get_ip()
-            )
-            store_op.attributes["to"] = StringAttr.get(node.id)
-            return store_op
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
             return ASTTransformer.build_memory_access(ctx, node, val=val)
         elif ctx.enable_tensor:
@@ -1013,7 +1008,7 @@ class ASTTransformer(ASTBuilder):
                 rhs = ASTTransformer.build_cast_op(
                     ctx, rhs, node.value.dtype, node.dtype
                 )
-                ASTTransformer.build_Subscript(ctx, node.target, rhs)
+                build_stmt(ctx, node.target, val=rhs)
 
     @staticmethod
     def build_FunctionDef(ctx, node):
