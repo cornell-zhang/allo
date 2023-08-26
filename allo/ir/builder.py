@@ -89,24 +89,11 @@ class ASTTransformer(ASTBuilder):
             return ctx.buffers[node.id]
         if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
-        if node.id not in ctx.buffers and hasattr(node, "np_values"):
-            ASTTransformer.build_constant_tensor(ctx, node)
-            shape, dtype = node.shape, node.dtype
-            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
-            return memref_d.GetGlobalOp(
-                memref_type,
-                FlatSymbolRefAttr.get(node.target.id),
-                ip=ctx.get_ip(),
-            )
         raise RuntimeError("Unsupported Name")
 
     @staticmethod
     def build_Constant(ctx, node):
         return MockConstant(node.value, ctx)
-
-    @staticmethod
-    def build_List(ctx, node):
-        return ASTTransformer.build_constant_tensor(ctx, node)
 
     def build_shaped_type(ctx, dtype, shape):
         if len(shape) == 0:
@@ -919,7 +906,7 @@ class ASTTransformer(ASTBuilder):
     def build_AnnAssign(ctx, node):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
-        if isinstance(node.value, ast.List):
+        if hasattr(node, "np_values"):
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
             rhs = memref_d.GetGlobalOp(
@@ -929,12 +916,10 @@ class ASTTransformer(ASTBuilder):
             )
             ctx.buffers[node.target.id] = rhs
             return
-        else:
-            rhs = build_stmt(ctx, node.value)
-            if rhs is not None:
-                rhs = ASTTransformer.build_cast_op(
-                    ctx, rhs, node.value.dtype, node.dtype
-                )
+        # Not constant tensor
+        rhs = build_stmt(ctx, node.value)
+        if rhs is not None:
+            rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         # Store LHS
         if len(shape) > 0:
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
