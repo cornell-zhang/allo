@@ -989,24 +989,22 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         if len(shape) > 0:
             if not ctx.enable_tensor:
-                memref_type = build_shaped_type(dtype, shape, False)
                 if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        alloc_op = memref_d.AllocOp(
-                            memref_type, [], [], ip=ctx.get_ip()
-                        )
+                        alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
                         alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                        ctx.buffers[node.target.id] = alloc_op
                         with ctx.get_ip():
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.copy(
                                 rhs.result,
                                 outs=[alloc_op],
                             )
+                        ctx.buffers[node.target.id] = alloc_op
                     else:
                         raise RuntimeError("Unsupported data type")
                 elif isinstance(node.value, (ast.List, ast.Name)):
                     # pylint: disable=redefined-variable-type
+                    memref_type = build_shaped_type(dtype, shape, False)
                     rhs = memref_d.GetGlobalOp(
                         memref_type,
                         FlatSymbolRefAttr.get(node.target.id),
@@ -1014,9 +1012,8 @@ class ASTTransformer(ASTBuilder):
                     )
                     ctx.buffers[node.target.id] = rhs
                 elif isinstance(node.value, ast.Constant) or (node.value is None):
-                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
                     alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                    ctx.buffers[node.target.id] = alloc_op
                     if rhs is not None:
                         with ctx.get_ip():
                             rhs = ASTTransformer.build_cast_op(
@@ -1024,18 +1021,25 @@ class ASTTransformer(ASTBuilder):
                             )
                             # pylint: disable=unexpected-keyword-arg
                             linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                    ctx.buffers[node.target.id] = alloc_op
                 else:
                     raise RuntimeError("Unsupported data type")
-            else:
+            elif isinstance(node.value, ast.Constant) or (node.value is None):
                 alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                alloc_op.attributes["name"] = StringAttr.get(node.target.id)
                 if rhs is not None:
                     with ctx.get_ip():
                         rhs = ASTTransformer.build_cast_op(
                             ctx, rhs, node.value.dtype, node.dtype
                         )
                         # pylint: disable=unexpected-keyword-arg
-                        fill = linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                ctx.buffers[node.target.id] = fill.owner
+                        fill_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                    ctx.buffers[node.target.id] = fill_op.owner
+                else:
+                    ctx.buffers[node.target.id] = alloc_op
+            else:
+                # please use allo.copy() to duplicate a tensor
+                raise RuntimeError("Unsupported data type")
         else:
             # TODO: figure out why zero-shape cannot work
             ctx.buffers[node.target.id] = MockScalar(
@@ -1364,6 +1368,7 @@ class ASTTransformer(ASTBuilder):
                 "sub",
                 "div",
                 "relu",
+                "copy",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, op_name=fn_name, new_args=new_args
@@ -1410,24 +1415,27 @@ class ASTTransformer(ASTBuilder):
         dtype, shape = node.dtype, node.shape
         with ip:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-            # init zero
-            zero = MockConstant(0, ctx)
-            zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-            # pylint: disable=unexpected-keyword-arg
-            linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
-            if ctx.enable_tensor:
-                result_tensor = linalg_fill
+            if attr in {"matmul", "bmm"}:
+                # init zero
+                zero = MockConstant(0, ctx)
+                zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+                # pylint: disable=unexpected-keyword-arg
+                linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+                if ctx.enable_tensor:
+                    result_tensor = linalg_fill
+                else:
+                    result_tensor = alloc_op
+                # add op name for init_zero
+                if hasattr(node, "keywords") and len(node.keywords) > 0:
+                    linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                        f"{node.keywords[0].value.value}_init_zero"
+                    )
+                else:
+                    linalg_fill.owner.attributes["op_name"] = StringAttr.get(
+                        f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
+                    )
             else:
                 result_tensor = alloc_op
-            # add op name for init_zero
-            if hasattr(node, "keywords") and len(node.keywords) > 0:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{node.keywords[0].value.value}_init_zero"
-                )
-            else:
-                linalg_fill.owner.attributes["op_name"] = StringAttr.get(
-                    f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
-                )
             # build linalg op
             if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
                 op = {
@@ -1438,11 +1446,12 @@ class ASTTransformer(ASTBuilder):
                     "mul": linalg_d.mul,
                     "div": linalg_d.div,
                 }.get(attr)(new_args[0], new_args[1], outs=[result_tensor])
-            elif attr in {"exp", "log", "abs"}:
+            elif attr in {"exp", "log", "abs", "copy"}:
                 op = {
                     "exp": linalg_d.exp,
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
+                    "copy": linalg_d.copy,
                 }.get(attr)(new_args[0], outs=[result_tensor])
             elif attr == "softmax":
                 # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
