@@ -90,7 +90,14 @@ class ASTTransformer(ASTBuilder):
         if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
         if node.id not in ctx.buffers and hasattr(node, "np_values"):
-            return ASTTransformer.build_constant_tensor(ctx, node)
+            ASTTransformer.build_constant_tensor(ctx, node)
+            shape, dtype = node.shape, node.dtype
+            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
+            return memref_d.GetGlobalOp(
+                memref_type,
+                FlatSymbolRefAttr.get(node.target.id),
+                ip=ctx.get_ip(),
+            )
         raise RuntimeError("Unsupported Name")
 
     @staticmethod
@@ -442,7 +449,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_library_op(
-                ctx, node=node, op_name=attr, new_args=new_args
+                ctx, node=node, attr=attr, new_args=new_args
             )
 
         # scalar operations
@@ -910,64 +917,36 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_AnnAssign(ctx, node):
+        shape, dtype = node.shape, node.dtype
+        # Compute RHS
         if isinstance(node.value, ast.List):
+            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            rhs = memref_d.GetGlobalOp(
+                memref_type,
+                FlatSymbolRefAttr.get(node.target.id),
+                ip=ctx.get_ip(),
+            )
         else:
             rhs = build_stmt(ctx, node.value)
-        shape, dtype = node.shape, node.dtype
+        # Store LHS
         if len(shape) > 0:
-            if not ctx.enable_tensor:
-                if isinstance(node.value, ast.Name) and node.value.id in ctx.buffers:
-                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                        alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                        with ctx.get_ip():
-                            # pylint: disable=unexpected-keyword-arg
-                            linalg_d.copy(
-                                rhs.result,
-                                outs=[alloc_op],
-                            )
-                        ctx.buffers[node.target.id] = alloc_op
-                    else:
-                        raise RuntimeError("Unsupported data type")
-                elif isinstance(node.value, (ast.List, ast.Name)):
-                    # pylint: disable=redefined-variable-type
-                    memref_type = build_shaped_type(dtype, shape, False)
-                    rhs = memref_d.GetGlobalOp(
-                        memref_type,
-                        FlatSymbolRefAttr.get(node.target.id),
-                        ip=ctx.get_ip(),
+            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
+            alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+            alloc_op.attributes["name"] = StringAttr.get(node.target.id)
+            if rhs is not None:
+                with ctx.get_ip():
+                    rhs = ASTTransformer.build_cast_op(
+                        ctx, rhs, node.value.dtype, node.dtype
                     )
-                    ctx.buffers[node.target.id] = rhs
-                elif isinstance(node.value, ast.Constant) or (node.value is None):
-                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                    alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                    if rhs is not None:
-                        with ctx.get_ip():
-                            rhs = ASTTransformer.build_cast_op(
-                                ctx, rhs, node.value.dtype, node.dtype
-                            )
-                            # pylint: disable=unexpected-keyword-arg
-                            linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                    ctx.buffers[node.target.id] = alloc_op
-                else:
-                    raise RuntimeError("Unsupported data type")
-            elif isinstance(node.value, ast.Constant) or (node.value is None):
-                alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-                if rhs is not None:
-                    with ctx.get_ip():
-                        rhs = ASTTransformer.build_cast_op(
-                            ctx, rhs, node.value.dtype, node.dtype
-                        )
+                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
                         # pylint: disable=unexpected-keyword-arg
-                        fill_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                    ctx.buffers[node.target.id] = fill_op.owner
-                else:
-                    ctx.buffers[node.target.id] = alloc_op
-            else:
-                # please use allo.copy() to duplicate a tensor
-                raise RuntimeError("Unsupported data type")
+                        linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
+                    else:
+                        linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+            ctx.buffers[node.target.id] = (
+                linalg_op.owner if ctx.enable_tensor else alloc_op
+            )
         else:
             # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
@@ -1291,7 +1270,7 @@ class ASTTransformer(ASTBuilder):
                 "copy",
             }:
                 return ASTTransformer.build_library_op(
-                    ctx, node=node, op_name=fn_name, new_args=new_args
+                    ctx, node=node, attr=fn_name, new_args=new_args
                 )
             raise RuntimeError(
                 f"Unsupported function {fn_name} with type {new_args[0].type}"
