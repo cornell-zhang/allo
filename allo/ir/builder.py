@@ -388,10 +388,7 @@ class ASTTransformer(ASTBuilder):
             with ctx.get_ip():
                 # pylint: disable=unexpected-keyword-arg
                 fill = linalg_d.fill(op.result, outs=[in_cst.result])
-            if ctx.enable_tensor:
-                op = fill.owner
-            else:
-                op = in_cst
+            op = fill.owner if ctx.enable_tensor else in_cst
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
         broadcast_op = linalg_d.BroadcastOp(
@@ -400,12 +397,23 @@ class ASTTransformer(ASTBuilder):
             dimensions=dims,
             ip=ctx.get_ip(),
         )
-        if ctx.enable_tensor:
-            return broadcast_op
-        return alloc_op
+        return broadcast_op if ctx.enable_tensor else alloc_op
 
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
+        if len(node.shape) > 0:
+            new_args = [lhs.result, rhs.result]
+            attr = {
+                ast.Add: "add",
+                ast.Sub: "sub",
+                ast.Mult: "mul",
+                ast.Div: "div",
+            }.get(type(node.op))
+            return ASTTransformer.build_library_op(
+                ctx, node=node, op_name=attr, new_args=new_args
+            )
+
+        # scalar operations
         opcls = {
             ast.Add: {
                 Float: arith_d.AddFOp,
@@ -492,47 +500,19 @@ class ASTTransformer(ASTBuilder):
                 UFixed: RuntimeError,
             },
         }.get(type(node.op))
-        if len(node.shape) > 0:
-            new_args = [lhs.result, rhs.result]
-            attr = {
-                ast.Add: "add",
-                ast.Sub: "sub",
-                ast.Mult: "mul",
-                ast.Div: "div",
-            }.get(type(node.op))
-            return ASTTransformer.build_library_op(
-                ctx, node=node, op_name=attr, new_args=new_args
-            )
         ty_cls = Int if isinstance(node.dtype, Index) else type(node.dtype)
         return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
     def build_UnaryOp(ctx, node):
+        value = build_stmt(ctx, node.operand)
         if isinstance(node.op, ast.USub):
-            opcls = {
-                "float": arith_d.NegFOp,
-                "int": RuntimeError,
-                "fixed": RuntimeError,
-            }
-        elif isinstance(node.op, ast.UAdd):
-            opcls = {
-                "float": RuntimeError,
-                "int": RuntimeError,
-                "fixed": RuntimeError,
-            }
-        else:
-            raise RuntimeError(f"Unsupported unary op `{node.op}`")
-        if not isinstance(node.operand, ast.Constant):
-            raise RuntimeError("Only support constant for unary op")
-        if isinstance(node.operand.value, int):
-            op = opcls["int"]
-        elif isinstance(node.operand.value, float):
-            op = opcls["float"]
-        else:
-            raise RuntimeError(
-                f"Unsupported types for unary op: {type(node.operand.value)}"
+            value = ASTTransformer.build_cast_op(
+                ctx, value, node.operand.dtype, node.dtype
             )
-        return op(MockConstant(node.operand.value, ctx).result, ip=ctx.get_ip())
+            return arith_d.NegFOp(value.result, ip=ctx.get_ip())
+        # ast.UAdd
+        return value
 
     @staticmethod
     def build_BinOp(ctx, node):
