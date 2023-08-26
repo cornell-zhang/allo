@@ -95,6 +95,7 @@ class ASTTransformer(ASTBuilder):
     def build_Constant(ctx, node):
         return MockConstant(node.value, ctx)
 
+    @staticmethod
     def build_shaped_type(ctx, dtype, shape):
         if len(shape) == 0:
             return dtype.build()
@@ -240,7 +241,7 @@ class ASTTransformer(ASTBuilder):
                     return ASTTransformer.build_all_for(ctx, node, obj.__name__)
             raise RuntimeError("Unsupported for loop")
 
-    # pylint: inconsistent-return-statements
+    # pylint: disable=too-many-branches
     @staticmethod
     def build_cast_op(ctx, op, src_type, res_type):
         # No need to cast
@@ -561,8 +562,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_indices(ctx, node):
-        slice = node.value if isinstance(node, ast.Index) else node
-        elts = slice.elts if isinstance(slice, ast.Tuple) else [slice]
+        indices = node.value if isinstance(node, ast.Index) else node
+        elts = indices.elts if isinstance(indices, ast.Tuple) else [indices]
         ctx.dim_count = 0
         ctx.affine_vars = []
         new_indices = []
@@ -632,6 +633,7 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
+        # pylint: disable=redefined-variable-type
         node.target.ctx = ast.Load()
         lhs = build_stmt(ctx, node.target)
         node.target.ctx = ast.Store()
@@ -741,6 +743,7 @@ class ASTTransformer(ASTBuilder):
                 static_strides,
             ) = ASTTransformer.build_slices(ctx, node, in_shape)
             result = RankedTensorType.get(static_sizes, dtype)
+            # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
                 return tensor_d.ExtractSliceOp(
                     result=result,
@@ -767,6 +770,7 @@ class ASTTransformer(ASTBuilder):
                 )
         if isinstance(node.slice, ast.Index):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
+            # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
                 return tensor_d.ExtractOp(
                     tensor=value.result,
@@ -804,8 +808,9 @@ class ASTTransformer(ASTBuilder):
                     val.result, value.result, ivs, affine_attr, ip=ctx.get_ip()
                 )
         else:  # Not affine
-            # pylint: disable=redefined-variable-type
+            # pylint: disable=else-if-used
             if isinstance(node.ctx, ast.Load):
+                # pylint: disable=redefined-variable-type
                 op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
             else:  # ast.Store
                 op = memref_d.StoreOp(
@@ -818,6 +823,7 @@ class ASTTransformer(ASTBuilder):
         op.attributes[attr] = StringAttr.get(node.value.id)
         return op
 
+    # pylint: disable=inconsistent-return-statements
     @staticmethod
     def build_bit_operation(ctx, node, val=None):
         if not (
@@ -836,6 +842,7 @@ class ASTTransformer(ASTBuilder):
         value = build_stmt(ctx, node.value)
         if isinstance(node.slice, ast.Index):
             index = build_stmt(ctx, node.slice)
+            # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
                 index = ASTTransformer.build_cast_op(
                     ctx, index, node.slice.dtype, Index()
@@ -875,6 +882,7 @@ class ASTTransformer(ASTBuilder):
             upper = ASTTransformer.build_cast_op(
                 ctx, upper, node.slice.upper.dtype, Index()
             )
+            # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
                 return hcl_d.GetIntSliceOp(
                     node.dtype.build(),
@@ -899,6 +907,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Subscript(ctx, node, val=None):
+        # pylint: disable=no-else-return
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
             return ASTTransformer.build_memory_access(ctx, node, val=val)
         elif ctx.enable_tensor:
@@ -913,6 +922,7 @@ class ASTTransformer(ASTBuilder):
         if hasattr(node, "np_values"):
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            # pylint: disable=redefined-variable-type
             rhs = memref_d.GetGlobalOp(
                 memref_type,
                 FlatSymbolRefAttr.get(node.target.id),
@@ -934,6 +944,7 @@ class ASTTransformer(ASTBuilder):
                     # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
                 elif rhs is not None:
+                    # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
