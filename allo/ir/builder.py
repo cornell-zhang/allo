@@ -1236,7 +1236,7 @@ class ASTTransformer(ASTBuilder):
 
         if obj.__module__.startswith("allo"):
             # Allo library functions
-            new_args = [stmt for stmt in build_stmts(ctx, node.args)]
+            new_args = build_stmts(ctx, node.args)
             fn_name = obj.__name__
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
