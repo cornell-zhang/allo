@@ -551,6 +551,27 @@ class TypeInferer(ASTVisitor):
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
                 node.dtype = new_args[0].dtype
             return node
+        if op_name in {"transpose"}:
+            assert (
+                len(new_args) <= 2
+            ), f"Only support zero/one extra argument for {op_name}"
+            if len(new_args) == 1:
+                node.shape = new_args[0].shape[::-1]
+                node.dtype = new_args[0].dtype
+            else:
+                shape = new_args[0].shape
+                axes = compile(ast.Expression(new_args[1]), "", "eval")
+                # pylint: disable=eval-used
+                axes = eval(axes)
+                assert len(shape) == len(
+                    axes
+                ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
+                new_shape = []
+                for new_dim in axes:
+                    new_shape.append(shape[new_dim])
+                node.shape = tuple(new_shape)
+                node.dtype = new_args[0].dtype
+            return node
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 
     @staticmethod

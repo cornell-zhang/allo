@@ -330,6 +330,19 @@ def test_linalg_broadcast_tensor(enable_tensor):
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
+def test_linalg_transpose():
+    M, K, N = 10, 15, 12
+    X = np.random.uniform(size=(M, K, N)).astype(np.float32)
+
+    def kernel(X: float32[M, K, N]) -> float32[N, M, K]:
+        return allo.transpose(X.T, (0, 2, 1))
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    np.testing.assert_allclose(f(X), kernel(X), atol=1e-3)
+
+
 def test_copy_arg():
     M, N = 2, 2
 
