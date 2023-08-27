@@ -1334,6 +1334,7 @@ class ASTTransformer(ASTBuilder):
                 }.get(attr)(
                     new_args[0].result, new_args[1].result, outs=[result_tensor]
                 )
+                op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:
                 op = {
                     "exp": linalg_d.exp,
@@ -1341,14 +1342,15 @@ class ASTTransformer(ASTBuilder):
                     "abs": linalg_d.abs,
                     "copy": linalg_d.copy,
                 }.get(attr)(new_args[0].result, outs=[result_tensor])
+                op = op.owner
             elif attr == "softmax":
-                # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
+                # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0].result,
                     dimension=1,
                     result=[],
                     output=alloc_op,
-                ).result
+                )
             elif attr == "relu":
                 # TODO: Need to better manage library call
                 zero_op = ASTTransformer.build_array(ctx, dtype, shape)
@@ -1360,17 +1362,20 @@ class ASTTransformer(ASTBuilder):
                 op = linalg_d.max(
                     new_args[0].result, zero_op.result, outs=[result_tensor]
                 )
+                op = op.owner
             elif attr == "transpose":
                 op = linalg_d.TransposeOp(
                     inputs=[new_args[0].result],
-                    outputs=[alloc_op.result],
+                    outputs=[
+                        result_tensor if ctx.enable_tensor else result_tensor.result
+                    ],
                     permutation=tuple(x.val for x in new_args[1]),
                     ip=ctx.get_ip(),
-                ).result
+                )
             else:
                 raise RuntimeError("Unsupported operation")
-            ASTTransformer.attach_op_name(ctx, node, op.owner, attr)
-        return op.owner if ctx.enable_tensor else result_tensor
+            ASTTransformer.attach_op_name(ctx, node, op, attr)
+        return op if ctx.enable_tensor else result_tensor
 
     @staticmethod
     def build_Return(ctx, node):
