@@ -175,6 +175,19 @@ def test_while_basic():
     assert np.array_equal(np_A, np_A_copy)
 
 
+def test_unary():
+    def kernel() -> int32:
+        v: int32 = 5
+        vi: int32 = -(v + 1)
+        vf: float32 = -(v + 1.0)
+        return +(vi + vf)
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np.testing.assert_allclose(mod(), kernel())
+
+
 def test_rhs_binaryop():
     def kernel() -> int32[11]:
         v: int32 = 5

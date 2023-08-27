@@ -165,16 +165,14 @@ def test_copy_arg_tensor():
 
     def kernel(inp: float32[M, N]) -> float32[M, N]:
         A = allo.copy(inp)
-        C = allo.copy(A)
-        return C
+        return A.copy()
 
     s = allo.customize(kernel, enable_tensor=True)
     print(s.module)
 
     mod = s.build()
     inp = np.ones((M, N)).astype(np.float32)
-    outp = mod(inp)
-    np.testing.assert_allclose(inp, outp, rtol=1e-5)
+    np.testing.assert_allclose(kernel(inp), mod(inp), rtol=1e-5)
 
 
 def test_copy_const_tensor():

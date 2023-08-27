@@ -57,6 +57,8 @@ class ASTContext:
 
 class ASTVisitor:
     def __call__(self, ctx, node):
+        if node is None:
+            return None
         method = getattr(self, "visit_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'

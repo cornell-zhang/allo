@@ -70,9 +70,10 @@ class TypeInferer(ASTVisitor):
         if node.id in ctx.global_vars:
             if isinstance(ctx.global_vars[node.id], int):
                 node.dtype = int32
+                node.shape = tuple()
             elif isinstance(ctx.global_vars[node.id], float):
                 node.dtype = float32
-            node.shape = tuple()
+                node.shape = tuple()
             return node
         raise RuntimeError(f"Unsupported Name {node.id}")
 
@@ -103,15 +104,18 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Attribute(ctx, node):
+        res = visit_stmt(ctx, node.value)
         if node.attr == "T":
-            res = visit_stmt(ctx, node.value)
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
             return node
         if node.attr == "reverse":
-            res = visit_stmt(ctx, node.value)
             if not isinstance(res.dtype, (Int, UInt)):
                 raise RuntimeError("Can only reverse integers")
+            node.dtype = res.dtype
+            node.shape = res.shape
+            return node
+        if node.attr == "copy":
             node.dtype = res.dtype
             node.shape = res.shape
             return node
@@ -200,7 +204,9 @@ class TypeInferer(ASTVisitor):
     def visit_UnaryOp(ctx, node):
         operand = visit_stmt(ctx, node.operand)
         node.shape = operand.shape
-        node.dtype = operand.dtype
+        # A bit tricky here, since MLIR only has arith.negf op but not arith.negi
+        # https://mlir.llvm.org/docs/Dialects/ArithOps/#arithnegf-arithnegfop
+        node.dtype = float32
         return node
 
     @staticmethod
@@ -210,27 +216,18 @@ class TypeInferer(ASTVisitor):
         return TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def visit_store(ctx, node, val):
-        if isinstance(node, ast.Subscript):
-            return ctx.buffers[node.value.id]
-        if isinstance(node, ast.Name):
-            return ctx.buffers[node.id]
-        raise RuntimeError("Unsupported store")
-
-    @staticmethod
     def visit_Assign(ctx, node):
         # Compute RHS
         rhs = visit_stmt(ctx, node.value)
         if len(node.targets) > 1:
             raise RuntimeError("Cannot assign to multiple targets")
-        if isinstance(rhs, ast.Call) or len(rhs.shape) > 0:
-            if len(node.targets) > 1:
-                raise RuntimeError("Cannot support multiple results yet")
-            if isinstance(node.targets[0], ast.Name):
-                ctx.buffers[node.targets[0].id] = rhs
-                node.dtype = rhs.dtype
-                node.shape = rhs.shape
-                return rhs
+        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and isinstance(
+            node.targets[0], ast.Name
+        ):
+            ctx.buffers[node.targets[0].id] = rhs
+            node.dtype = rhs.dtype
+            node.shape = rhs.shape
+            return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
         node.dtype = lhs.dtype
@@ -238,16 +235,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_constant_tensor(ctx, node):
-        if isinstance(node.value, ast.Name):
-            values = ctx.global_vars[node.value.id]
-        elif isinstance(node.value, ast.List):
-            values = compile(ast.Expression(node.value), "", "eval")
-            # pylint: disable=eval-used
-            values = eval(values)
-        else:
-            raise RuntimeError("Unsupported type")
-        np_values = np.asarray(values)
+    def visit_constant_tensor(ctx, node, np_values):
         if np.issubdtype(np_values.dtype, np.integer):
             node.dtype = int32
             np_values = np_values.astype(np.int32)
@@ -335,19 +323,19 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_AnnAssign(ctx, node):
         target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
-        if node.value is not None:
-            if isinstance(node.value, ast.List) or (
-                isinstance(node.value, ast.Name) and node.value.id not in ctx.buffers
-            ):
-                rhs = TypeInferer.visit_constant_tensor(ctx, node)
-            else:
-                rhs = visit_stmt(ctx, node.value)
-            if not isinstance(node.value, ast.Constant):
-                assert (
-                    rhs.shape == target_shape
-                ), f"Shape mismatch, got {rhs.shape} and {target_shape} for {node.__class__.__name__} `{node.target.id}`"
+        if isinstance(node.value, ast.List):
+            values = compile(ast.Expression(node.value), "", "eval")
+            # pylint: disable=eval-used
+            values = eval(values)
+            TypeInferer.visit_constant_tensor(ctx, node, np.array(values))
+        elif (
+            isinstance(node.value, ast.Name)
+            and node.value.id in ctx.global_vars
+            and isinstance(ctx.global_vars[node.value.id], np.ndarray)
+        ):
+            TypeInferer.visit_constant_tensor(ctx, node, ctx.global_vars[node.value.id])
         else:
-            rhs = None
+            visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
         node.dtype = target_dtype
         node.shape = target_shape
