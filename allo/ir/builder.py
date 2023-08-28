@@ -1266,6 +1266,7 @@ class ASTTransformer(ASTBuilder):
                 "relu",
                 "copy",
                 "transpose",
+                "linear",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
@@ -1303,10 +1304,11 @@ class ASTTransformer(ASTBuilder):
         return call_op
 
     @staticmethod
-    def build_library_op(ctx, node, attr, new_args):
+    def build_library_op(ctx, node, attr, new_args, dtype=None, shape=None):
         assert attr is not None and attr != ""
         ip = ctx.get_ip()
-        dtype, shape = node.dtype, node.shape
+        dtype = dtype if dtype is not None else node.dtype
+        shape = shape if shape is not None else node.shape
         with ip:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             # init zero
@@ -1372,6 +1374,23 @@ class ASTTransformer(ASTBuilder):
                     permutation=tuple(x.val for x in new_args[1]),
                     ip=ctx.get_ip(),
                 )
+            elif attr == "linear":  # X @ A.T + B
+                permutation = [MockConstant(val, ctx) for val in (1, 0)]
+                A_T = ASTTransformer.build_library_op(
+                    ctx,
+                    node,
+                    "transpose",
+                    [new_args[1], permutation],
+                    shape=node.args[1].shape[::-1],
+                )
+                matmul = ASTTransformer.build_library_op(
+                    ctx, node, "matmul", [new_args[0], A_T]
+                )
+                bias = ASTTransformer.build_broadcast_op(
+                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, [0]
+                )
+                add = ASTTransformer.build_library_op(ctx, node, "add", [matmul, bias])
+                return add
             else:
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
