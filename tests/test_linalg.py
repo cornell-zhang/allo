@@ -344,6 +344,24 @@ def test_linalg_transpose(enable_tensor):
     np.testing.assert_allclose(f(X), kernel(X), atol=1e-3)
 
 
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_linear_library_call(enable_tensor):
+    M, K, N = 10, 15, 12
+    X = np.random.uniform(size=(M, K)).astype(np.float32)
+    A = np.random.uniform(size=(N, K)).astype(np.float32)
+    B = np.random.uniform(size=(N,)).astype(np.float32)
+
+    def kernel(X: float32[M, K], A: float32[N, K], B: float32[N]) -> float32[M, N]:
+        return allo.linear(X, A, B)
+
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
+    print(s.module)
+    f = s.build()
+    outs = f(X, A, B)
+    np_outs = kernel(X, A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
 def test_copy_arg():
     M, N = 2, 2
 

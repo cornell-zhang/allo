@@ -526,9 +526,10 @@ class TypeInferer(ASTVisitor):
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"matmul", "bmm"}:
+        if op_name in {"matmul", "bmm", "linear"}:
             argAshape = new_args[0].shape
             argBshape = new_args[1].shape
+            node.dtype = new_args[0].dtype
             if op_name == "matmul":
                 assert (
                     len(argAshape) == 2 and len(argBshape) == 2
@@ -537,7 +538,6 @@ class TypeInferer(ASTVisitor):
                     argAshape[1] == argBshape[0]
                 ), f"The second dimension of the first input and the first dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argBshape[1])
-                node.dtype = new_args[0].dtype
             if op_name == "bmm":
                 assert (
                     len(argAshape) == 3 and len(argBshape) == 3
@@ -549,7 +549,10 @@ class TypeInferer(ASTVisitor):
                     argAshape[0] == argBshape[0]
                 ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
-                node.dtype = new_args[0].dtype
+            if op_name == "linear":
+                assert new_args[0].shape[1] == new_args[1].shape[1]
+                assert new_args[1].shape[0] == new_args[2].shape[0]
+                node.shape = (new_args[0].shape[0], new_args[1].shape[0])
             return node
         if op_name in {"transpose"}:
             assert (

@@ -92,3 +92,8 @@ def power(x, y, name=None):
 
 def relu(x, name=None):
     return np.maximum(x, 0)
+
+
+def linear(X, A, B, name=None):
+    # TODO: Handle bias=None
+    return matmul(X, A.T) + B
