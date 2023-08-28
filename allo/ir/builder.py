@@ -1291,6 +1291,9 @@ class ASTTransformer(ASTBuilder):
                 "sub",
                 "div",
                 "relu",
+                "conv2d",
+                "maxpool",
+                "sumpool",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, op_name=fn_name, new_args=new_args
@@ -1360,15 +1363,26 @@ class ASTTransformer(ASTBuilder):
                     f"{op_name}_init_zero_{ctx.unnamed_linalg_op_count}"
                 )
             # build linalg op
-            if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
+            if attr in {
+                "matmul",
+                "bmm",
+                "add",
+                "sub",
+                "div",
+                "conv2d",
+                "maxpool",
+                "sumpool",
+            }:
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
-                    "mul": linalg_d.mul,
                     "div": linalg_d.div,
-                }.get(attr)(new_args[0], new_args[1], outs=[result_tensor])
+                    "conv2d": linalg_d.conv_2d_nchw_fchw,
+                    "maxpool": linalg_d.pooling_nchw_max,
+                    "sumpool": linalg_d.pooling_nchw_sum,
+                }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
             elif attr in {"exp", "log", "abs"}:
                 op = {
                     "exp": linalg_d.exp,

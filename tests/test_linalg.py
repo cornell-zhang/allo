@@ -325,5 +325,112 @@ def test_linalg_broadcast_tensor():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
+def test_linalg_conv2d_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 2, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 2, size=(F, C, FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[F, C, FH, FW]) -> int32[N, F, OH, OW]:
+        C = allo.conv2d(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
+    np_2 = f(np_0, np_1)
+    print("0", np_0)
+    print("1", np_1)
+    print("2", np_2)
+    print(s.module)
+
+
+def test_linalg_maxpool_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 20000, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(F, C, FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
+        C = allo.maxpool(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
+    np_2 = f(np_0, np_1)
+    print("0", np_0)
+    print("1", np_1)
+    print("2", np_2)
+    print(s.module)
+
+
+def test_linalg_sumpool_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 3, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(F, C, FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
+        C = allo.maxpool(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
+    np_2 = f(np_0, np_1)
+    print("0", np_0)
+    print("1", np_1)
+    print("2", np_2)
+    print(s.module)
+
+
+def test_linalg_sumpool_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 3, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(F, C, FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
+        C = allo.sumpool(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
+    np_2 = f(np_0, np_1)
+    print(np_0)
+    print(np_2)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

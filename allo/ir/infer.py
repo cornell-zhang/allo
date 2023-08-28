@@ -516,10 +516,26 @@ class TypeInferer(ASTVisitor):
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"matmul", "bmm"}:
+        if op_name in {"matmul", "bmm", "conv2d", "sumpool", "maxpool"}:
             argAshape = new_args[0].shape
             argBshape = new_args[1].shape
-            if op_name == "matmul":
+            if op_name == "conv2d":
+                node.shape = (
+                    argAshape[0],
+                    argBshape[0],
+                    argAshape[2] - argBshape[2] + 1,
+                    argAshape[3] - argBshape[3] + 1,
+                )
+                node.dtype = new_args[0].dtype
+            elif op_name in {"maxpool", "sumpool"}:
+                node.shape = (
+                    argAshape[0],
+                    argAshape[1],
+                    argAshape[2] - argBshape[0] + 1,
+                    argAshape[3] - argBshape[1] + 1,
+                )
+                node.dtype = new_args[0].dtype
+            elif op_name == "matmul":
                 assert (
                     len(argAshape) == 2 and len(argBshape) == 2
                 ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"
