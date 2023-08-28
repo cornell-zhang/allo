@@ -143,7 +143,7 @@ class ASTTransformer(ASTBuilder):
 
         if node.attr == "copy":
             return ASTTransformer.build_library_op(
-                ctx, node=node, attr="copy", new_args=[value.result]
+                ctx, node=node, attr="copy", new_args=[value]
             )
         raise RuntimeError("Unsupported Attribute")
 
@@ -433,7 +433,6 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_general_binop(ctx, node, lhs, rhs):
         if len(node.shape) > 0:
-            new_args = [lhs.result, rhs.result]
             attr = {
                 ast.Add: "add",
                 ast.Sub: "sub",
@@ -441,7 +440,7 @@ class ASTTransformer(ASTBuilder):
                 ast.Div: "div",
             }.get(type(node.op))
             return ASTTransformer.build_library_op(
-                ctx, node=node, attr=attr, new_args=new_args
+                ctx, node=node, attr=attr, new_args=[lhs, rhs]
             )
 
         # scalar operations
@@ -600,9 +599,9 @@ class ASTTransformer(ASTBuilder):
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
-            len(store_op.results) > 0
-            and store_op.results[0] is not None
-            and isinstance(store_op.results[0].type, RankedTensorType)
+            not isinstance(store_op, (MockScalar, MockConstant))
+            and len(store_op.results) > 0
+            and isinstance(store_op.result.type, RankedTensorType)
         ):
             ctx.buffers[node.targets[0].value.id] = store_op
         return store_op
@@ -1237,9 +1236,10 @@ class ASTTransformer(ASTBuilder):
 
         if obj.__module__.startswith("allo"):
             # Allo library functions
-            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+            new_args = build_stmts(ctx, node.args)
             fn_name = obj.__name__
-            if isinstance(new_args[0].type, (F32Type, IntegerType)):
+            arg_type = new_args[0].result.type
+            if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
                     "exp": math_d.ExpOp,
                     "log": math_d.LogOp,
@@ -1252,10 +1252,8 @@ class ASTTransformer(ASTBuilder):
                     "tanh": math_d.TanhOp,
                     "power": math_d.PowFOp,
                 }.get(fn_name)
-                return opcls(*new_args, ip=ctx.get_ip())
-            if isinstance(
-                new_args[0].type, (MemRefType, RankedTensorType)
-            ) and fn_name in {
+                return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
+            if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {
                 "matmul",
                 "bmm",
                 "softmax",
@@ -1267,13 +1265,12 @@ class ASTTransformer(ASTBuilder):
                 "div",
                 "relu",
                 "copy",
+                "transpose",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
                 )
-            raise RuntimeError(
-                f"Unsupported function {fn_name} with type {new_args[0].type}"
-            )
+            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
 
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]
@@ -1334,22 +1331,26 @@ class ASTTransformer(ASTBuilder):
                     "sub": linalg_d.sub,
                     "mul": linalg_d.mul,
                     "div": linalg_d.div,
-                }.get(attr)(new_args[0], new_args[1], outs=[result_tensor])
+                }.get(attr)(
+                    new_args[0].result, new_args[1].result, outs=[result_tensor]
+                )
+                op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:
                 op = {
                     "exp": linalg_d.exp,
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                     "copy": linalg_d.copy,
-                }.get(attr)(new_args[0], outs=[result_tensor])
+                }.get(attr)(new_args[0].result, outs=[result_tensor])
+                op = op.owner
             elif attr == "softmax":
-                # TODO: only op.result has .owner and it failed to lower to LLVM, see https://reviews.llvm.org/D153422
+                # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 op = linalg_d.SoftmaxOp(
-                    input=new_args[0],
+                    input=new_args[0].result,
                     dimension=1,
                     result=[],
                     output=alloc_op,
-                ).result
+                )
             elif attr == "relu":
                 # TODO: Need to better manage library call
                 zero_op = ASTTransformer.build_array(ctx, dtype, shape)
@@ -1358,11 +1359,23 @@ class ASTTransformer(ASTBuilder):
                 # TODO: support tensor
                 # pylint: disable=unexpected-keyword-arg
                 linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
-                op = linalg_d.max(new_args[0], zero_op.result, outs=[result_tensor])
+                op = linalg_d.max(
+                    new_args[0].result, zero_op.result, outs=[result_tensor]
+                )
+                op = op.owner
+            elif attr == "transpose":
+                op = linalg_d.TransposeOp(
+                    inputs=[new_args[0].result],
+                    outputs=[
+                        result_tensor if ctx.enable_tensor else result_tensor.result
+                    ],
+                    permutation=tuple(x.val for x in new_args[1]),
+                    ip=ctx.get_ip(),
+                )
             else:
                 raise RuntimeError("Unsupported operation")
-            ASTTransformer.attach_op_name(ctx, node, op.owner, attr)
-        return op.owner if ctx.enable_tensor else result_tensor
+            ASTTransformer.attach_op_name(ctx, node, op, attr)
+        return op if ctx.enable_tensor else result_tensor
 
     @staticmethod
     def build_Return(ctx, node):

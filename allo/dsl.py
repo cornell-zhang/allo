@@ -37,6 +37,10 @@ def copy(x, name=None):
     return np.copy(x)
 
 
+def transpose(x, axes, name=None):
+    return np.transpose(x, axes)
+
+
 def exp(x, name=None):
     return np.exp(x)
 
