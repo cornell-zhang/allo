@@ -1368,6 +1368,7 @@ class ASTTransformer(ASTBuilder):
                 "bmm",
                 "add",
                 "sub",
+                "mul"
                 "div",
                 "conv2d",
                 "maxpool",
@@ -1378,6 +1379,7 @@ class ASTTransformer(ASTBuilder):
                     "bmm": linalg_d.batch_matmul,
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
+                    "mul": linalg_d.mul,
                     "div": linalg_d.div,
                     "conv2d": linalg_d.conv_2d_nchw_fchw,
                     "maxpool": linalg_d.pooling_nchw_max,
