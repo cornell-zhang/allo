@@ -1375,7 +1375,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             elif attr == "linear":  # X @ A.T + B
-                permutation = [MockConstant(val, ctx) for val in [1, 0]]
+                permutation = [MockConstant(val, ctx) for val in (1, 0)]
                 A_T = ASTTransformer.build_library_op(
                     ctx,
                     node,
