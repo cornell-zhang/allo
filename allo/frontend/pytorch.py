@@ -1,6 +1,5 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-import
 
 import operator
 import inspect
@@ -21,12 +20,16 @@ def from_pytorch(model, example_inputs, verbose=False):
     gm = fx.symbolic_trace(model)
     if verbose:
         print(gm.graph)
-    builder = TorchBuilder(gm, example_inputs)
-    code = builder.build()
     global_vars = {}
     for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
     global_vars.update({"dsl": dsl})
+    for name, param in gm.named_parameters():
+        new_name = name.replace(".", "_")
+        global_vars.update({new_name: param.data.numpy()})
+
+    builder = TorchBuilder(gm, example_inputs)
+    code = builder.build()
     s = customize(code, verbose=verbose, global_vars=global_vars)
     if verbose:
         print(s.module)
@@ -43,6 +46,7 @@ class TorchBuilder:
         self.code = []
         self.input_args = []
         self.input_shapes = [x.shape for x in example_inputs]
+        self.named_params = gm.named_parameters()
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -56,6 +60,11 @@ class TorchBuilder:
         # outputs
         # FIXME: Update return type (can use shape propagation)
         res += f" -> float32[{','.join([str(s) for s in self.input_shapes[0]])}]:\n"
+        # global parameters
+        if self.named_params:
+            for name, param in self.named_params:
+                new_name = name.replace(".", "_")
+                res += f"  {new_name}: float32[{','.join([str(s) for s in param.shape])}] = {new_name}\n"
         # function body
         for line in self.code:
             res += f"  {line}\n"
@@ -68,6 +77,9 @@ class TorchBuilder:
             self.code.append(ret)
         return ret
 
+    def get_module(self, name):
+        return dict(self.gm.named_modules())[name]
+
     def build_placeholder(self, node):
         self.input_args.append(node.name)
 
@@ -75,7 +87,9 @@ class TorchBuilder:
         pass
 
     def build_call_module(self, node):
-        pass
+        if isinstance(self.get_module(node.target), torch.nn.Linear):
+            op = "linear"
+        return getattr(TorchBuilder, "build_" + op)(self, node)
 
     def build_call_function(self, node):
         opcls = {
@@ -100,3 +114,9 @@ class TorchBuilder:
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.relu({inp})"
+
+    def build_linear(self, node):
+        inp = get_var_name(node.args[0])
+        weight = get_var_name(node.target + "_weight")
+        bias = get_var_name(node.target + "_bias")
+        return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
