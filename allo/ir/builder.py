@@ -1368,7 +1368,7 @@ class ASTTransformer(ASTBuilder):
                 "bmm",
                 "add",
                 "sub",
-                "mul"
+                "mul",
                 "div",
                 "conv2d",
                 "maxpool",
