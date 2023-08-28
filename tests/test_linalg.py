@@ -362,7 +362,8 @@ def test_linear_library_call(enable_tensor):
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def test_copy_arg():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_copy_arg(enable_tensor):
     M, N = 2, 2
 
     def kernel(inp: float32[M, N]) -> float32[M, N]:
@@ -370,7 +371,7 @@ def test_copy_arg():
         C = allo.copy(A)
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     print(s.module)
 
     mod = s.build()
@@ -379,7 +380,8 @@ def test_copy_arg():
     np.testing.assert_allclose(inp, outp, rtol=1e-5)
 
 
-def test_copy_const():
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_copy_const(enable_tensor):
     M, N = 2, 2
 
     def kernel() -> float32[M, N]:
@@ -387,7 +389,7 @@ def test_copy_const():
         C = allo.copy(A)
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
     print(s.module)
 
     mod = s.build()
