@@ -7,19 +7,22 @@ import torch.nn as nn
 import allo
 
 
-class Model(nn.Module):
+class MLP(nn.Module):
     def __init__(self):
-        super(Model, self).__init__()
+        super().__init__()
+        self.linear1 = torch.nn.Linear(30, 30)
+        self.linear2 = torch.nn.Linear(30, 30)
 
-    def forward(self, x, y):
-        x = x + y
-        x = F.relu(x)
-        return x
+    def forward(self, data):
+        out = self.linear1(data)
+        out = self.linear2(out)
+        out = F.relu(out)
+        return out
 
 
-model = Model()
+model = MLP()
 model.eval()
-example_inputs = [torch.rand(1, 3, 10, 10), torch.rand(1, 3, 10, 10)]
+example_inputs = [torch.rand(30, 30)]
 llvm_mod = allo.frontend.from_pytorch(
     model, example_inputs=example_inputs, verbose=True
 )

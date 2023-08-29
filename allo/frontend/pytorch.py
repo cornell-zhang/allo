@@ -25,8 +25,8 @@ def from_pytorch(model, example_inputs, verbose=False):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
     global_vars.update({"dsl": dsl})
     for name, param in gm.named_parameters():
-        new_name = name.replace(".", "_")
-        global_vars.update({new_name: param.data.numpy()})
+        new_name = "g_" + name.replace(".", "_")
+        global_vars.update({new_name: param.detach().numpy()})
 
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
@@ -52,19 +52,19 @@ class TorchBuilder:
         for node in self.gm.graph.nodes:
             self(node)
         args = [
-            f"{name}: float32[{','.join([str(s) for s in shape])}]"
+            f"{name}: float32[{', '.join([str(s) for s in shape])}]"
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
         # inputs
         res = f"def forward({', '.join(args)})".format()
         # outputs
         # FIXME: Update return type (can use shape propagation)
-        res += f" -> float32[{','.join([str(s) for s in self.input_shapes[0]])}]:\n"
+        res += f" -> float32[{', '.join([str(s) for s in self.input_shapes[0]])}]:\n"
         # global parameters
         if self.named_params:
             for name, param in self.named_params:
                 new_name = name.replace(".", "_")
-                res += f"  {new_name}: float32[{','.join([str(s) for s in param.shape])}] = {new_name}\n"
+                res += f"  {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
         # function body
         for line in self.code:
             res += f"  {line}\n"
@@ -89,7 +89,7 @@ class TorchBuilder:
     def build_call_module(self, node):
         if isinstance(self.get_module(node.target), torch.nn.Linear):
             op = "linear"
-        return getattr(TorchBuilder, "build_" + op)(self, node)
+        return getattr(self, f"build_{op}")(node)
 
     def build_call_function(self, node):
         opcls = {
@@ -98,7 +98,7 @@ class TorchBuilder:
             operator.mul: "mul",
             F.relu: "relu",
         }.get(node.target)
-        return getattr(TorchBuilder, "build_" + opcls)(self, node)
+        return getattr(self, f"build_{opcls}")(node)
 
     def build_call_method(self, node):
         pass
