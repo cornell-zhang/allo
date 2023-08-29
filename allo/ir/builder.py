@@ -1264,6 +1264,9 @@ class ASTTransformer(ASTBuilder):
                 "sub",
                 "div",
                 "relu",
+                "conv2d",
+                "maxpool",
+                "sumpool",
                 "copy",
                 "transpose",
                 "linear",
@@ -1325,7 +1328,17 @@ class ASTTransformer(ASTBuilder):
                 postfix="init_zero",
             )
             # build linalg op
-            if attr in {"matmul", "bmm", "add", "sub", "mul", "div"}:
+            if attr in {
+                "matmul",
+                "bmm",
+                "add",
+                "sub",
+                "mul",
+                "div",
+                "conv2d",
+                "maxpool",
+                "sumpool",
+            }:
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
@@ -1333,6 +1346,9 @@ class ASTTransformer(ASTBuilder):
                     "sub": linalg_d.sub,
                     "mul": linalg_d.mul,
                     "div": linalg_d.div,
+                    "conv2d": linalg_d.conv_2d_nchw_fchw,
+                    "maxpool": linalg_d.pooling_nchw_max,
+                    "sumpool": linalg_d.pooling_nchw_sum,
                 }.get(attr)(
                     new_args[0].result, new_args[1].result, outs=[result_tensor]
                 )

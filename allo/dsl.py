@@ -94,6 +94,39 @@ def relu(x, name=None):
     return np.maximum(x, 0)
 
 
+def conv2d(inp, filter, name=None):
+    view_shape = (
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape[2:]) + 1)
+        + filter.shape[2:]
+    )
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.einsum("fcij,nchwij->nfhw", filter, sub_matrices)
+
+
+def maxpool(inp, filter, name=None):
+    view_shape = (
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape) + 1)
+        + filter.shape
+    )
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.max(sub_matrices, axis=(4, 5))
+
+
+def sumpool(inp, filter, name=None):
+    view_shape = (
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape) + 1)
+        + filter.shape
+    )
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.sum(sub_matrices, axis=(4, 5))
+
+
 def linear(X, A, B, name=None):
     # TODO: Handle bias=None
     return matmul(X, A.T) + B

@@ -362,6 +362,80 @@ def test_linear_library_call(enable_tensor):
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
+def test_linalg_conv2d_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 2, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 2, size=(F, C, FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[F, C, FH, FW]) -> int32[N, F, OH, OW]:
+        C = allo.conv2d(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    outs = kernel(np_0, np_1)
+    np_outs = f(np_0, np_1)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_maxpool_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 1000, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
+        C = allo.maxpool(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    np_outs = kernel(np_0, np_1)
+    outs = f(np_0, np_1)
+    print(np_outs)
+    print(outs)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_sumpool_nchw():
+    N = 1
+    C = 1
+    H = 7
+    W = 7
+    F = 1
+    FH = 3
+    FW = 3
+    OH = H - FH + 1
+    OW = W - FW + 1
+    np_0 = np.random.randint(0, 3, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(FH, FW), dtype="int32")
+
+    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
+        C = allo.sumpool(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    outs = kernel(np_0, np_1)
+    np_outs = f(np_0, np_1)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
 @pytest.mark.parametrize("enable_tensor", [True, False])
 def test_copy_arg(enable_tensor):
     M, N = 2, 2
