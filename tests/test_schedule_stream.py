@@ -81,8 +81,43 @@ def test_nested_function():
     s = allo.customize(top)
     s.to(s.B, "func2", fifo_depth=1)
     print(s.module)
-    code = s.build(target="vhls")
-    print(code)
+    code = s.build(target="vhls").hls_code
+    assert "#pragma HLS stream variable=B1 depth=1" in code
+
+
+def test_fork_join_function():
+    T = int32
+
+    def func1(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] + 1
+
+    def func2(A: T[10, 20], B: T[10, 20]):
+        B: T[10, 20]
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] * 2
+
+    def func3(A: T[10, 20], B: T[10, 20], C: T[10, 20]):
+        C: T[10, 20]
+        for i, j in allo.grid(10, 20):
+            C[i, j] = A[i, j] + B[i, j]
+
+    def top(A: T[10, 20]) -> T[10, 20]:
+        B: T[10, 20]
+        C: T[10, 20]
+        D: T[10, 20]
+        func1(A, B)
+        func2(A, C)
+        func3(B, C, D)
+        return D
+
+    s = allo.customize(top)
+    s.to(s.B, "func3")
+    s.to(s.C, "func3")
+    print(s.module)
+    code = s.build(target="vhls").hls_code
+    assert "#pragma HLS stream variable=B1 depth=200" in code
+    assert "#pragma HLS stream variable=C1 depth=200" in code
 
 
 if __name__ == "__main__":
