@@ -33,6 +33,14 @@ def div(lhs, rhs, name=None):
     return lhs / rhs
 
 
+def copy(x, name=None):
+    return np.copy(x)
+
+
+def transpose(x, axes, name=None):
+    return np.transpose(x, axes)
+
+
 def exp(x, name=None):
     return np.exp(x)
 
@@ -86,6 +94,7 @@ def relu(x, name=None):
     return np.maximum(x, 0)
 
 
+
 def conv2d(inp, filter, name=None):
     view_shape = (
         tuple(inp.shape[:2])
@@ -117,3 +126,8 @@ def sumpool(inp, filter, name=None):
     strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
     sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
     return np.sum(sub_matrices, axis=(4, 5))
+
+def linear(X, A, B, name=None):
+    # TODO: Handle bias=None
+    return matmul(X, A.T) + B
+

@@ -11,9 +11,10 @@ class LoopScopeGuard:
         self.ctx = ctx
 
     def __enter__(self):
-        pass
+        self.ctx.nested_loops += 1
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ctx.nested_loops -= 1
         self.ctx.loop_band_count += 1
 
 
@@ -28,6 +29,8 @@ class ASTContext:
         hcl_d.register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {}
+        # used to count nested loops in a band
+        self.nested_loops = 0
         # used to avoid loop band naming conflict
         self.loop_band_count = 0
         # used for AffineExpr dim counting
@@ -54,6 +57,8 @@ class ASTContext:
 
 class ASTVisitor:
     def __call__(self, ctx, node):
+        if node is None:
+            return None
         method = getattr(self, "visit_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'

@@ -157,6 +157,37 @@ def test_assign_logic():
     assert mod(2) == kernel(2)
 
 
+def test_while_basic():
+    def kernel(A: int32[10]):
+        i: index = 0
+        while i < 10:
+            A[i] = i
+            i += 1
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    mod = s.build()
+
+    np_A = np.random.randint(10, size=(10,))
+    np_A_copy = np_A.copy()
+    kernel(np_A)
+    mod(np_A_copy)
+    assert np.array_equal(np_A, np_A_copy)
+
+
+def test_unary():
+    def kernel() -> int32:
+        v: int32 = 5
+        vi: int32 = -(v + 1)
+        vf: float32 = -(v + 1.0)
+        return +(vi + vf)
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np.testing.assert_allclose(mod(), kernel())
+
+
 def test_rhs_binaryop():
     def kernel() -> int32[11]:
         v: int32 = 5

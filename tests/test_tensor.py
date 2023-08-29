@@ -160,22 +160,23 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
-def test_linalg_matmul():
+def test_linalg_math_tensor():
     M = 10
     K = 15
-    N = 20
-    np_0 = np.random.randint(0, 20, size=(M, K), dtype="int32")
-    np_1 = np.random.randint(0, 20, size=(K, N), dtype="int32")
+    A = np.float32(np.random.uniform(size=(M, K)))
+    B = np.float32(np.random.uniform(size=(K, M)))
 
-    def kernel(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
-        return allo.matmul(A, B)
+    def kernel(A: float32[M, K], B: float32[K, M]) -> float32[M, M]:
+        D = allo.matmul(A, B)
+        C = (allo.add(allo.exp(D), allo.abs(D)) - allo.log(D)) / D
+        return C
 
-    s = allo.customize(kernel)
-    print(s.module)
+    s = allo.customize(kernel, enable_tensor=True)
     f = s.build()
-    np_out = kernel(np_0, np_1)
-    allo_out = f(np_0, np_1)
-    np.testing.assert_array_equal(allo_out, np_out)
+    print(s.module)
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 if __name__ == "__main__":
