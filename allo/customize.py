@@ -16,6 +16,7 @@ from hcl_mlir.ir import (
     Location,
     InsertionPoint,
     StringAttr,
+    UnitAttr,
     IntegerType,
     IntegerAttr,
     F32Type,
@@ -399,6 +400,17 @@ class Schedule:
             raise RuntimeError("Reuse buffer not found")
         return MockBuffer(
             f"{self.top_func_name}.{StringAttr(new_reuse_buffers[0].attributes['name']).value}"
+        )
+
+    @wrapped_apply
+    def to(self, target, dst, fifo_depth=-1):
+        _, target = self._find_target(target)
+        op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
+        i32 = IntegerType.get_signless(32)
+        fifo_depth = IntegerAttr.get(i32, fifo_depth)
+        self.top_func.attributes["dataflow"] = UnitAttr.get()
+        hcl_d.InterKernelToOp(
+            target.result, op_hdl.result, fifo_depth=fifo_depth, ip=self.ip
         )
 
     @wrapped_apply
