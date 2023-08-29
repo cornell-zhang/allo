@@ -1349,7 +1349,10 @@ class ASTTransformer(ASTBuilder):
                     "conv2d": linalg_d.conv_2d_nchw_fchw,
                     "maxpool": linalg_d.pooling_nchw_max,
                     "sumpool": linalg_d.pooling_nchw_sum,
-                }.get(attr)(new_args[0], new_args[1], outs=[alloc_op])
+                }.get(attr)(
+                    new_args[0].result, new_args[1].result, outs=[result_tensor]
+                )
+                op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:
                 op = {
                     "exp": linalg_d.exp,
