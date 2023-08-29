@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Union
 from collections.abc import Callable
+import numpy as np
 
 from hcl_mlir.ir import (
     Module,
@@ -409,10 +410,12 @@ class Schedule:
         _, target = self._find_target(target)
         op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
         i32 = IntegerType.get_signless(32)
-        fifo_depth = IntegerAttr.get(i32, fifo_depth)
         self.top_func.attributes["dataflow"] = UnitAttr.get()
         hcl_d.InterKernelToOp(
-            target.result, op_hdl.result, fifo_depth=fifo_depth, ip=self.ip
+            target.result,
+            op_hdl.result,
+            fifo_depth=IntegerAttr.get(i32, fifo_depth),
+            ip=self.ip,
         )
         # Find target in the top function
         target_arr = {}
@@ -430,19 +433,18 @@ class Schedule:
                 idx = target_arr[func.name.value]
                 arg = func.arguments[idx]
                 memref = MemRefType(arg.type)
+                if fifo_depth == -1:
+                    fifo_depth = int(np.prod(memref.shape))
                 new_memref = MemRefType.get(
                     memref.shape,
                     memref.element_type,
                     memref.layout,
-                    StringAttr.get("stream:1"),
+                    StringAttr.get(f"stream:{fifo_depth}"),
                 )
                 arg.set_type(new_memref)
                 new_in_types = []
                 for i, in_type in enumerate(in_types):
-                    if i == idx:
-                        new_in_types.append(new_memref)
-                    else:
-                        new_in_types.append(in_type)
+                    new_in_types.append(new_memref if i == idx else in_type)
                 func_type = FunctionType.get(new_in_types, out_types)
                 func.attributes["function_type"] = TypeAttr.get(func_type)
 

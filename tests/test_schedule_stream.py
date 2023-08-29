@@ -22,7 +22,7 @@ def test_two_bands():
     s = allo.customize(kernel)
     s.to(s.B, "C")
     print(s.module)
-    code = s.build(target="vhls")
+    code = s.build(target="vhls").hls_code
     assert "B.write" in code
     assert "B.read" in code
 
@@ -51,7 +51,7 @@ def test_fork_join():
     s.to(s.D, "F")
     s.to(s.E, "F")
     print(s.module)
-    code = s.build(target="vhls")
+    code = s.build(target="vhls").hls_code
     assert "C.write" in code
     assert "D.write" in code
     assert "E.write" in code
