@@ -526,7 +526,7 @@ class TypeInferer(ASTVisitor):
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"matmul", "bmm", "linear","conv2d", "sumpool", "maxpool"}:
+        if op_name in {"matmul", "bmm", "linear", "conv2d", "sumpool", "maxpool"}:
             argAshape = new_args[0].shape
             argBshape = new_args[1].shape
             node.dtype = new_args[0].dtype

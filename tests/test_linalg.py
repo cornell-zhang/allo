@@ -435,7 +435,7 @@ def test_linalg_sumpool_nchw():
     np_outs = f(np_0, np_1)
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
-    
+
 @pytest.mark.parametrize("enable_tensor", [True, False])
 def test_copy_arg(enable_tensor):
     M, N = 2, 2
@@ -470,7 +470,6 @@ def test_copy_const(enable_tensor):
     inp = np.ones((M, N)).astype(np.float32)
     outp = mod()
     np.testing.assert_allclose(inp, outp, rtol=1e-5)
-
 
 
 if __name__ == "__main__":
