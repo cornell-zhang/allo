@@ -344,12 +344,9 @@ def test_linalg_conv2d_nchw():
 
     s = allo.customize(kernel)
     f = s.build()
-    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
-    np_2 = f(np_0, np_1)
-    print("0", np_0)
-    print("1", np_1)
-    print("2", np_2)
-    print(s.module)
+    outs = kernel(np_0, np_1)
+    np_outs = f(np_0, np_1)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 def test_linalg_maxpool_nchw():
@@ -362,8 +359,8 @@ def test_linalg_maxpool_nchw():
     FW = 3
     OH = H - FH + 1
     OW = W - FW + 1
-    np_0 = np.random.randint(0, 20000, size=(N, C, H, W), dtype="int32")
-    np_1 = np.random.randint(0, 10, size=(F, C, FH, FW), dtype="int32")
+    np_0 = np.random.randint(0, 1000, size=(N, C, H, W), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(FH, FW), dtype="int32")
 
     def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
         C = allo.maxpool(A, B)
@@ -371,12 +368,11 @@ def test_linalg_maxpool_nchw():
 
     s = allo.customize(kernel)
     f = s.build()
-    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
-    np_2 = f(np_0, np_1)
-    print("0", np_0)
-    print("1", np_1)
-    print("2", np_2)
-    print(s.module)
+    np_outs = kernel(np_0, np_1)
+    outs = f(np_0, np_1)
+    print(np_outs)
+    print(outs)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 def test_linalg_sumpool_nchw():
@@ -390,7 +386,7 @@ def test_linalg_sumpool_nchw():
     OH = H - FH + 1
     OW = W - FW + 1
     np_0 = np.random.randint(0, 3, size=(N, C, H, W), dtype="int32")
-    np_1 = np.random.randint(0, 10, size=(F, C, FH, FW), dtype="int32")
+    np_1 = np.random.randint(0, 10, size=(FH, FW), dtype="int32")
 
     def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
         C = allo.sumpool(A, B)
@@ -398,11 +394,9 @@ def test_linalg_sumpool_nchw():
 
     s = allo.customize(kernel)
     f = s.build()
-    np_2 = np.zeros((N, F, H - FH + 1, W - FW + 1), dtype="int32")
-    np_2 = f(np_0, np_1)
-    print(np_0)
-    print(np_2)
-    print(s.module)
+    outs = kernel(np_0, np_1)
+    np_outs = f(np_0, np_1)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 if __name__ == "__main__":

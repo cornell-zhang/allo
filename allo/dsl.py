@@ -86,34 +86,34 @@ def relu(x, name=None):
     return np.maximum(x, 0)
 
 
-def conv2d(i, f, name=None):
+def conv2d(inp, filter, name=None):
     view_shape = (
-        tuple(i.shape[:2])
-        + tuple(np.subtract(i.shape[2:], f.shape[2:]) + 1)
-        + f.shape[2:]
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape[2:]) + 1)
+        + filter.shape[2:]
     )
-    strides = i.strides[:2] + i.strides[2:] + i.strides[2:]
-    sub_matrices = np.lib.stride_tricks.as_strided(i, view_shape, strides)
-    return np.einsum("fcij,nchwij->nfhw", f, sub_matrices)
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.einsum("fcij,nchwij->nfhw", filter, sub_matrices)
 
 
-def maxpool(i, f, name=None):
+def maxpool(inp, filter, name=None):
     view_shape = (
-        tuple(i.shape[:2])
-        + tuple(np.subtract(i.shape[2:], f.shape[2:]) + 1)
-        + f.shape[2:]
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape) + 1)
+        + filter.shape
     )
-    strides = i.strides[:2] + i.strides[2:] + i.strides[2:]
-    sub_matrices = np.lib.stride_tricks.as_strided(i, view_shape, strides)
-    return np.max(sub_matrices, axis=(2, 3))
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.max(sub_matrices, axis=(4, 5))
 
 
-def sumpool(i, f, name=None):
+def sumpool(inp, filter, name=None):
     view_shape = (
-        tuple(i.shape[:2])
-        + tuple(np.subtract(i.shape[2:], f.shape[2:]) + 1)
-        + f.shape[2:]
+        tuple(inp.shape[:2])
+        + tuple(np.subtract(inp.shape[2:], filter.shape) + 1)
+        + filter.shape
     )
-    strides = i.strides[:2] + i.strides[2:] + i.strides[2:]
-    sub_matrices = np.lib.stride_tricks.as_strided(i, view_shape, strides)
-    return np.sum(sub_matrices, axis=(2, 3))
+    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
+    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
+    return np.sum(sub_matrices, axis=(4, 5))
