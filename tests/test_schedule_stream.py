@@ -3,7 +3,7 @@
 
 import allo
 import pytest
-from allo.ir.types import Fixed
+from allo.ir.types import Fixed, int32
 
 
 def test_two_bands():
@@ -22,7 +22,9 @@ def test_two_bands():
     s = allo.customize(kernel)
     s.to(s.B, "C")
     print(s.module)
-    print(s.build(target="vhls"))
+    code = s.build(target="vhls")
+    assert "B.write" in code
+    assert "B.read" in code
 
 
 def test_fork_join():
@@ -49,7 +51,38 @@ def test_fork_join():
     s.to(s.D, "F")
     s.to(s.E, "F")
     print(s.module)
-    print(s.build(target="vhls"))
+    code = s.build(target="vhls")
+    assert "C.write" in code
+    assert "D.write" in code
+    assert "E.write" in code
+    assert "D.read" in code
+    assert "E.read" in code
+
+
+def test_nested_function():
+    T = int32
+
+    def func1(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] + 1
+
+    def func2(A: T[10, 20], B: T[10, 20]):
+        B: T[10, 20]
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] * 2
+
+    def top(A: T[10, 20]) -> T[10, 20]:
+        B: T[10, 20]
+        C: T[10, 20]
+        func1(A, B)
+        func2(B, C)
+        return C
+
+    s = allo.customize(top)
+    s.to(s.B, "func2", fifo_depth=1)
+    print(s.module)
+    code = s.build(target="vhls")
+    print(code)
 
 
 if __name__ == "__main__":

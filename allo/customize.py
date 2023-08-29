@@ -19,6 +19,8 @@ from hcl_mlir.ir import (
     UnitAttr,
     IntegerType,
     IntegerAttr,
+    TypeAttr,
+    FunctionType,
     F32Type,
     MemRefType,
     FlatSymbolRefAttr,
@@ -412,6 +414,37 @@ class Schedule:
         hcl_d.InterKernelToOp(
             target.result, op_hdl.result, fifo_depth=fifo_depth, ip=self.ip
         )
+        # Find target in the top function
+        target_arr = {}
+        for op in self.top_func.entry_block.operations:
+            if isinstance(op, func_d.CallOp):
+                for idx, arg in enumerate(op.operands):
+                    if arg.owner == target:
+                        target_arr[
+                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                        ] = idx
+        for func in self.module.body.operations:
+            if isinstance(func, func_d.FuncOp) and func.name.value in target_arr:
+                in_types = func.attributes["function_type"].value.inputs
+                out_types = func.attributes["function_type"].value.results
+                idx = target_arr[func.name.value]
+                arg = func.arguments[idx]
+                memref = MemRefType(arg.type)
+                new_memref = MemRefType.get(
+                    memref.shape,
+                    memref.element_type,
+                    memref.layout,
+                    StringAttr.get("stream:1"),
+                )
+                arg.set_type(new_memref)
+                new_in_types = []
+                for i, in_type in enumerate(in_types):
+                    if i == idx:
+                        new_in_types.append(new_memref)
+                    else:
+                        new_in_types.append(in_type)
+                func_type = FunctionType.get(new_in_types, out_types)
+                func.attributes["function_type"] = TypeAttr.get(func_type)
 
     @wrapped_apply
     def compose(self, *schs):
