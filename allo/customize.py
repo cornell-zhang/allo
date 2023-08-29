@@ -628,10 +628,11 @@ class Schedule:
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(self.module, top_func_name=self.top_func_name)
-        if target == "vhls":
+        if target in {"vhls", "vivado_hls", "vitis_hls"}:
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
+                platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
                 mode=mode,
                 project=project,
             )

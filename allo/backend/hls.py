@@ -35,7 +35,7 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     path = os.path.dirname(__file__)
     path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls"}:
-        os.system("cp " + path + "vivado/* " + project)
+        os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "vitis_hls":
             os.system("cp " + path + "vitis/run.tcl " + project)
         os.system("cp " + path + "harness.mk " + project)
@@ -75,10 +75,13 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
 
 
 class HLSModule:
-    def __init__(self, mod, top_func_name, mode=None, project=None):
+    def __init__(
+        self, mod, top_func_name, platform="vivado_hls", mode=None, project=None
+    ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
+        self.platform = platform
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -104,7 +107,7 @@ class HLSModule:
         self.hls_code = buf.read()
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
-            copy_build_files(self.top_func_name, project, mode)
+            copy_build_files(self.top_func_name, project, mode, platform=platform)
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
             if self.mode == "vitis":
@@ -125,11 +128,10 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, shell=True):
-        platform = "vivado_hls"
-        if platform in {"vivado_hls", "vitis_hls"}:
+        if self.platform in {"vivado_hls", "vitis_hls"}:
             assert (
-                os.system(f"which {platform} >> /dev/null") == 0
-            ), f"cannot find {platform} on system path"
+                os.system(f"which {self.platform} >> /dev/null") == 0
+            ), f"cannot find {self.platform} on system path"
             ver = run_process("g++ --version", r"\d\.\d\.\d")[0].split(".")
             assert (
                 int(ver[0]) * 10 + int(ver[1]) >= 48
@@ -145,7 +147,7 @@ class HLSModule:
                 )
 
             elif "csyn" in self.mode or self.mode == "custom" or self.mode == "debug":
-                cmd += platform
+                cmd += self.platform
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
@@ -162,6 +164,6 @@ class HLSModule:
                     )
 
             else:
-                raise RuntimeError(f"{platform} does not support {self.mode} mode")
+                raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
         else:
             raise RuntimeError("Not implemented")
