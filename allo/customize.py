@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import re
 import inspect
 import textwrap
 import ast
@@ -18,6 +19,7 @@ from hcl_mlir.ir import (
     InsertionPoint,
     StringAttr,
     UnitAttr,
+    IndexType,
     IntegerType,
     IntegerAttr,
     TypeAttr,
@@ -29,6 +31,8 @@ from hcl_mlir.ir import (
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
+    affine as affine_d,
+    arith as arith_d,
     func as func_d,
 )
 from hcl_mlir.exceptions import (
@@ -447,6 +451,44 @@ class Schedule:
                     new_in_types.append(new_memref if i == idx else in_type)
                 func_type = FunctionType.get(new_in_types, out_types)
                 func.attributes["function_type"] = TypeAttr.get(func_type)
+
+    @wrapped_apply
+    def unfold(self, band, axes=[0]):
+        target_outer = None
+        inner_loop = None
+        for op in self.top_func.entry_block.operations:
+            if (
+                isinstance(op, affine_d.AffineForOp)
+                and StringAttr(op.attributes["op_name"]).value == band
+            ):
+                target_outer = op
+                for i, in_op in enumerate(op.body.operations):
+                    if (
+                        not isinstance(
+                            in_op, (affine_d.AffineForOp, affine_d.AffineYieldOp)
+                        )
+                        or i >= 2
+                    ):
+                        raise RuntimeError("Cannot support nested loops")
+                    elif isinstance(in_op, affine_d.AffineForOp):
+                        inner_loop = in_op
+        if inner_loop is None:
+            raise RuntimeError(f"Band {band} not found")
+        upper_bound = inner_loop.attributes["upper_bound"]
+        upper_bound = int(
+            re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
+        )
+        ip = InsertionPoint(target_outer)
+        for idx in range(upper_bound):
+            cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
+            new_op = target_outer.operation.clone(ip)
+            new_op.induction_variable.replace_all_uses_with(cst_op.result)
+            new_op.body.operations[0].attributes["op_name"] = StringAttr.get(
+                f"{band}.{idx}"
+            )
+            new_op.body.operations[0].move_before(target_outer)
+            new_op.operation.erase()
+        target_outer.operation.erase()
 
     @wrapped_apply
     def compose(self, *schs):
