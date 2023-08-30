@@ -607,7 +607,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Pass(ctx, node):
-        pass
+        node.dtype = None
+        node.shape = None
+        return node
 
 
 visit_stmt = TypeInferer()

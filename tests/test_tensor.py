@@ -160,6 +160,23 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
+def test_rank_reducing():
+    M, K, N = 6, 3, 6
+    def kernel(A: int32[M, N]) -> int32[M, K, N]:
+        B: int32[M, K, N] = 2
+        B[:M, 0, :N] = A[:M, :N]
+        return B
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(M, N)).astype(np.int32)
+    np_B = np.zeros((M, K, N)).astype(np.int32) + 2
+    np_B[:M, 0, :N] = np_A
+    mod = s.build()
+    np.testing.assert_allclose(np_B, mod(np_A), rtol=1e-5)
+
+
 def test_linalg_math_tensor():
     M = 10
     K = 15

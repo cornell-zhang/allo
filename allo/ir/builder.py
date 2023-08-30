@@ -705,8 +705,10 @@ class ASTTransformer(ASTBuilder):
         static_strides = []
         for index, size in zip(slices, in_shape):
             if isinstance(index, ast.Slice):
-                lower = 0 if index.lower is None else index.lower.value
-                upper = size if index.upper is None else index.upper.value
+                lower = 0 if index.lower is None else build_stmt(ctx, index.lower).val
+                upper = (
+                    size if index.upper is None else build_stmt(ctx, index.upper).val
+                )
                 if index.step is None:
                     step = 1
                 elif isinstance(index.step, ast.Constant):
@@ -945,6 +947,8 @@ class ASTTransformer(ASTBuilder):
                 elif rhs is not None:
                     # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                else:
+                    linalg_op = alloc_op.result
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
@@ -968,6 +972,7 @@ class ASTTransformer(ASTBuilder):
             ctx = ASTContext(
                 global_vars=ctx.global_vars,
                 mlir_ctx=old_ctx.mlir_ctx,
+                enable_tensor=ctx.enable_tensor,
                 verbose=old_ctx.verbose,
             )
             ctx.set_ip(old_ctx.top_func)
@@ -1284,7 +1289,10 @@ class ASTTransformer(ASTBuilder):
         else:
             # Create a new context to avoid name collision
             func_ctx = ASTContext(
-                global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx, verbose=ctx.verbose
+                global_vars=ctx.global_vars,
+                mlir_ctx=ctx.mlir_ctx,
+                enable_tensor=ctx.enable_tensor,
+                verbose=ctx.verbose,
             )
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
