@@ -129,6 +129,12 @@ class Schedule:
     def get_loops(self):
         return get_affine_loop_nests(self.top_func)
 
+    def _find_band(self, band):
+        loops = self.get_loops()
+        if band in loops.loops:
+            return loops[band]
+        raise RuntimeError(f"Band {band} not found")
+
     @wrapped_apply
     def split(self, axis, factor):
         band_name, axis = find_loop_in_bands(self.top_func, axis)
@@ -454,24 +460,16 @@ class Schedule:
 
     @wrapped_apply
     def unfold(self, band, axes=[0]):
-        target_outer = None
+        target_outer = self._find_band(band).get_outer_most()
         inner_loop = None
-        for op in self.top_func.entry_block.operations:
+        for i, in_op in enumerate(target_outer.body.operations):
             if (
-                isinstance(op, affine_d.AffineForOp)
-                and StringAttr(op.attributes["op_name"]).value == band
+                not isinstance(in_op, (affine_d.AffineForOp, affine_d.AffineYieldOp))
+                or i >= 2
             ):
-                target_outer = op
-                for i, in_op in enumerate(op.body.operations):
-                    if (
-                        not isinstance(
-                            in_op, (affine_d.AffineForOp, affine_d.AffineYieldOp)
-                        )
-                        or i >= 2
-                    ):
-                        raise RuntimeError("Cannot support nested loops")
-                    elif isinstance(in_op, affine_d.AffineForOp):
-                        inner_loop = in_op
+                raise RuntimeError("Cannot support nested loops")
+            elif isinstance(in_op, affine_d.AffineForOp):
+                inner_loop = in_op
         if inner_loop is None:
             raise RuntimeError(f"Band {band} not found")
         upper_bound = inner_loop.attributes["upper_bound"]

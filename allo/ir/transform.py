@@ -36,6 +36,9 @@ class LoopBand:
         self.loops[name] = loop
         setattr(self, name, loop)
 
+    def get_outer_most(self):
+        return self.loops.values().__iter__().__next__().loop
+
     def __repr__(self):
         return f"LoopBand({list(self.loops.keys())})"
 
