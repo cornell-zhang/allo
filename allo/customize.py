@@ -465,11 +465,12 @@ class Schedule:
                 func.attributes["function_type"] = TypeAttr.get(func_type)
 
     @wrapped_apply
-    def unfold(self, band_name, axes=[0]):
+    def unfold(self, band_name, axes):
+        assert isinstance(axes, list), "Axes must be a list"
         axes.sort()
-        assert axes == [
-            i for i in range(axes[0], axes[0] + len(axes))
-        ], "Axes must be consecutive"
+        assert axes == list(
+            range(axes[0], axes[0] + len(axes))
+        ), "Axes must be consecutive"
         # start from the inner most loop
         for axis in axes[::-1]:
             # Need to recompute the loop nests due to the MLIR bug:
@@ -497,6 +498,7 @@ class Schedule:
 
             def update_operand(op, old, new):
                 if isinstance(op, affine_d.AffineForOp):
+                    # pylint: disable=cell-var-from-loop
                     for in_op in op.body.operations:
                         update_operand(in_op, old, new)
                 else:
@@ -504,6 +506,7 @@ class Schedule:
 
             # unfold the body `upper_bound` times
             for idx in range(upper_bound):
+                # pylint: disable=too-many-function-args
                 cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
                 # Directly duplicate the loop itself
                 # (to preserve a scope for replacing the induction variable),
