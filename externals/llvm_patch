@@ -1,5 +1,19 @@
+diff --git a/mlir/include/mlir-c/IR.h b/mlir/include/mlir-c/IR.h
+index 5312db0..67975a0 100644
+--- a/mlir/include/mlir-c/IR.h
++++ b/mlir/include/mlir-c/IR.h
+@@ -826,6 +826,9 @@ MLIR_CAPI_EXPORTED MlirOpOperand mlirValueGetFirstUse(MlirValue value);
+ MLIR_CAPI_EXPORTED void mlirValueReplaceAllUsesOfWith(MlirValue of,
+                                                       MlirValue with);
+ 
++MLIR_CAPI_EXPORTED void
++mlirValueReplaceUsesOfWith(MlirOperation value, MlirValue of, MlirValue with);
++
+ //===----------------------------------------------------------------------===//
+ // OpOperand API.
+ //===----------------------------------------------------------------------===//
 diff --git a/mlir/lib/Bindings/Python/IRCore.cpp b/mlir/lib/Bindings/Python/IRCore.cpp
-index 971d281..9686476 100644
+index 971d281..693d432 100644
 --- a/mlir/lib/Bindings/Python/IRCore.cpp
 +++ b/mlir/lib/Bindings/Python/IRCore.cpp
 @@ -2277,6 +2277,9 @@ public:
@@ -12,3 +26,32 @@ index 971d281..9686476 100644
    }
  
  private:
+@@ -2907,7 +2910,11 @@ void mlir::python::populateIRCore(py::module &m) {
+             return self.getContext().getObject();
+           },
+           "Context that owns the Operation")
+-      .def_property_readonly("opview", &PyOperation::createOpView);
++      .def_property_readonly("opview", &PyOperation::createOpView)
++      .def("replace_uses_of_with",
++           [](PyOperation &self, PyValue &from, PyValue &to) {
++             mlirValueReplaceUsesOfWith(self.get(), from.get(), to.get());
++           });
+ 
+   auto opViewClass =
+       py::class_<PyOpView, PyOperationBase>(m, "OpView", py::module_local())
+diff --git a/mlir/lib/CAPI/IR/IR.cpp b/mlir/lib/CAPI/IR/IR.cpp
+index 5231fe5..e1ac4fd 100644
+--- a/mlir/lib/CAPI/IR/IR.cpp
++++ b/mlir/lib/CAPI/IR/IR.cpp
+@@ -852,6 +852,11 @@ void mlirValueReplaceAllUsesOfWith(MlirValue oldValue, MlirValue newValue) {
+   unwrap(oldValue).replaceAllUsesWith(unwrap(newValue));
+ }
+ 
++void mlirValueReplaceUsesOfWith(MlirOperation value, MlirValue oldValue,
++                                MlirValue newValue) {
++  unwrap(value)->replaceUsesOfWith(unwrap(oldValue), unwrap(newValue));
++}
++
+ //===----------------------------------------------------------------------===//
+ // OpOperand API.
+ //===----------------------------------------------------------------------===//

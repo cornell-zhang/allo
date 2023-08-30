@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import re
 import inspect
 import textwrap
 import ast
@@ -18,6 +19,7 @@ from hcl_mlir.ir import (
     InsertionPoint,
     StringAttr,
     UnitAttr,
+    IndexType,
     IntegerType,
     IntegerAttr,
     TypeAttr,
@@ -29,6 +31,8 @@ from hcl_mlir.ir import (
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
+    affine as affine_d,
+    arith as arith_d,
     func as func_d,
 )
 from hcl_mlir.exceptions import (
@@ -124,6 +128,18 @@ class Schedule:
 
     def get_loops(self):
         return get_affine_loop_nests(self.top_func)
+
+    def _find_band(self, band):
+        loops = self.get_loops()
+        if band in loops.loops:
+            return loops[band]
+        raise RuntimeError(f"Band {band} not found")
+
+    def _find_function(self, name):
+        for func in self.module.body.operations:
+            if isinstance(func, func_d.FuncOp) and func.name.value == name:
+                return func
+        raise RuntimeError(f"Function {name} not found")
 
     @wrapped_apply
     def split(self, axis, factor):
@@ -447,6 +463,87 @@ class Schedule:
                     new_in_types.append(new_memref if i == idx else in_type)
                 func_type = FunctionType.get(new_in_types, out_types)
                 func.attributes["function_type"] = TypeAttr.get(func_type)
+
+    @wrapped_apply
+    def unfold(self, band_name, axes):
+        assert isinstance(axes, list), "Axes must be a list"
+        axes.sort()
+        assert axes == list(
+            range(axes[0], axes[0] + len(axes))
+        ), "Axes must be consecutive"
+        # start from the inner most loop
+        for axis in axes[::-1]:
+            # Need to recompute the loop nests due to the MLIR bug:
+            # https://reviews.llvm.org/D101422
+            # Otherwise, it may hit invalid operations
+            band = self._find_band(band_name)
+            target_outer = band.get_outer_most()
+            loops = list(band)
+            op_to_remove = []
+            _, loop_wrapper = loops[axis]
+            loop = loop_wrapper.loop
+            lower_bound = loop.attributes["lower_bound"]
+            assert str(lower_bound) == "affine_map<() -> (0)>", "Lower bound must be 0"
+            upper_bound = loop.attributes["upper_bound"]
+            upper_bound = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
+            )
+            if axis > 0:
+                ip = InsertionPoint.at_block_terminator(loops[axis - 1][1].loop.body)
+            else:
+                ip = InsertionPoint(target_outer)
+            for op in loop.body.operations:
+                if isinstance(op, affine_d.AffineYieldOp):
+                    break
+
+            def update_operand(op, old, new):
+                if isinstance(op, affine_d.AffineForOp):
+                    # pylint: disable=cell-var-from-loop
+                    for in_op in op.body.operations:
+                        update_operand(in_op, old, new)
+                else:
+                    op.operation.replace_uses_of_with(old, new)
+
+            # unfold the body `upper_bound` times
+            for idx in range(upper_bound):
+                # pylint: disable=too-many-function-args
+                cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
+                # Directly duplicate the loop itself
+                # (to preserve a scope for replacing the induction variable),
+                # and replace the induction variable with the constant
+                new_loop = loop.operation.clone(ip)
+                for op in new_loop.body.operations:
+                    if isinstance(op, affine_d.AffineYieldOp):
+                        break
+                    update_operand(op, new_loop.induction_variable, cst_op.result)
+                    op.move_before(new_loop)
+                    if isinstance(op, affine_d.AffineForOp):
+                        new_name = (
+                            f"{band_name}_{idx}"
+                            if "op_name" not in op.attributes
+                            else f"{op.attributes['op_name'].value}_{idx}"
+                        )
+                        op.attributes["op_name"] = StringAttr.get(new_name)
+                    if isinstance(op, func_d.CallOp):
+                        # Also need to duplicate the function outside the top function
+                        old_func = self._find_function(
+                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                        )
+                        dup_func = old_func.operation.clone(
+                            InsertionPoint(self.top_func)
+                        )
+                        new_name = (
+                            f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
+                        )
+                        dup_func.attributes["sym_name"] = StringAttr.get(new_name)
+                        op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
+                        if old_func not in op_to_remove:
+                            op_to_remove.append(old_func)
+                op_to_remove.append(new_loop)
+            # need to erase at the end
+            for op in op_to_remove:
+                op.operation.erase()
+            loop.operation.erase()
 
     @wrapped_apply
     def compose(self, *schs):
