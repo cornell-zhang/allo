@@ -544,7 +544,6 @@ class Schedule:
             for op in op_to_remove:
                 op.operation.erase()
             loop.operation.erase()
-            print(self.module)
 
     @wrapped_apply
     def compose(self, *schs):
