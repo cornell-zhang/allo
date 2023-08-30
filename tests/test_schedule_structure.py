@@ -8,7 +8,7 @@ from allo.ir.types import index, int32
 
 
 @pytest.mark.parametrize("axes", [[0], [1], [0, 1]])
-def test_systolic_array(axes):
+def test_matrix_add(axes):
     M, N = 2, 2
 
     def matrix_add(A: int32[M, N]) -> int32[M, N]:
@@ -31,7 +31,7 @@ def test_systolic_array(axes):
 
 
 @pytest.mark.parametrize("axes", [[0], [1], [0, 1]])
-def test_nested_function(axes):
+def test_matrix_add_function(axes):
     M, N = 2, 2
 
     def kernel(A: int32[M, N], B: int32[M, N], i: index, j: index):
@@ -53,6 +53,31 @@ def test_nested_function(axes):
     mod = s.build()
     res_allo = mod(np_A)
     np.testing.assert_allclose(res_allo, np_B)
+
+
+@pytest.mark.parametrize("axes", [[0], [1], [0, 1]])
+def test_matmul(axes):
+    M, N, K = 2, 2, 2
+
+    def matmul(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
+        C: int32[M, N] = 0
+        for i, j in allo.grid(M, N, name="PE"):
+            for k in range(K):
+                C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(matmul)
+    print(s.module)
+    s.unfold("PE", axes=axes)
+    assert str(s.module).count('from = "A"') == len(axes) * M
+    assert str(s.module).count('from = "B"') == len(axes) * M
+    assert str(s.module).count('to = "C"') == len(axes) * M
+    print(s.module)
+    np_A = np.random.randint(0, 10, size=(M, K))
+    np_B = np.random.randint(0, 10, size=(K, N))
+    mod = s.build()
+    res_allo = mod(np_A, np_B)
+    np.testing.assert_allclose(res_allo, np_A @ np_B)
 
 
 if __name__ == "__main__":

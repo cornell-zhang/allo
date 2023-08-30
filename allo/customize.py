@@ -459,16 +459,17 @@ class Schedule:
                 func.attributes["function_type"] = TypeAttr.get(func_type)
 
     @wrapped_apply
-    def unfold(self, band, axes=[0]):
-        band = self._find_band(band)
-        target_outer = band.get_outer_most()
+    def unfold(self, band_name, axes=[0]):
         axes.sort()
         assert axes == [
             i for i in range(axes[0], axes[0] + len(axes))
         ], "Axes must be consecutive"
-        loops = list(band)
         # start from the inner most loop
         for idx in axes[::-1]:
+            band = self._find_band(band_name)
+            target_outer = band.get_outer_most()
+            loops = list(band)
+            op_to_remove = []
             _, loop_wrapper = loops[idx]
             loop = loop_wrapper.loop
             lower_bound = loop.attributes["lower_bound"]
@@ -492,6 +493,7 @@ class Schedule:
                 else:
                     op.operation.replace_uses_of_with(old, new)
 
+            # unfold the body `upper_bound` times
             for idx in range(upper_bound):
                 cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
                 # Directly duplicate the loop itself
@@ -503,7 +505,10 @@ class Schedule:
                         break
                     update_operand(op, new_loop.induction_variable, cst_op.result)
                     op.move_before(new_loop)
-                new_loop.operation.erase()
+                op_to_remove.append(new_loop)
+            # need to erase at the end
+            for op in op_to_remove:
+                op.operation.erase()
             loop.operation.erase()
 
     @wrapped_apply
