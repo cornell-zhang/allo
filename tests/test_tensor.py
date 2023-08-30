@@ -183,11 +183,11 @@ def test_const_tensor():
     M = 10
     A = np.random.uniform(size=(M, M)).astype(np.float32)
 
-    def kernal() -> float32[M, M]:
+    def kernel() -> float32[M, M]:
         A1: float32[M, M] = A
         return A1
 
-    s = allo.customize(kernal, verbose=True, enable_tensor=True)
+    s = allo.customize(kernel, enable_tensor=True)
     print(s.module)
     f = s.build()
     outs = f()
