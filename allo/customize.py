@@ -484,17 +484,24 @@ class Schedule:
             for op in loop.body.operations:
                 if isinstance(op, affine_d.AffineYieldOp):
                     break
+
+            def update_operand(op, old, new):
+                if isinstance(op, affine_d.AffineForOp):
+                    for in_op in op.body.operations:
+                        update_operand(in_op, old, new)
+                else:
+                    op.operation.replace_uses_of_with(old, new)
+
             for idx in range(upper_bound):
                 cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
-                # Directly duplicate the loop itself,
+                # Directly duplicate the loop itself
+                # (to preserve a scope for replacing the induction variable),
                 # and replace the induction variable with the constant
                 new_loop = loop.operation.clone(ip)
                 for op in new_loop.body.operations:
                     if isinstance(op, affine_d.AffineYieldOp):
                         break
-                    op.operation.replace_uses_of_with(
-                        new_loop.induction_variable, cst_op.result
-                    )
+                    update_operand(op, new_loop.induction_variable, cst_op.result)
                     op.move_before(new_loop)
                 new_loop.operation.erase()
             loop.operation.erase()

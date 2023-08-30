@@ -7,7 +7,7 @@ import allo
 from allo.ir.types import int32
 
 
-def test_nested_functions():
+def test_systolic_array():
     M, N = 2, 2
 
     def matrix_add(A: int32[M, N]) -> int32[M, N]:
