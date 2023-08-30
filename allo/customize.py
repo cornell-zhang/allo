@@ -460,33 +460,44 @@ class Schedule:
 
     @wrapped_apply
     def unfold(self, band, axes=[0]):
-        target_outer = self._find_band(band).get_outer_most()
-        inner_loop = None
-        for i, in_op in enumerate(target_outer.body.operations):
-            if (
-                not isinstance(in_op, (affine_d.AffineForOp, affine_d.AffineYieldOp))
-                or i >= 2
-            ):
-                raise RuntimeError("Cannot support nested loops")
-            elif isinstance(in_op, affine_d.AffineForOp):
-                inner_loop = in_op
-        if inner_loop is None:
-            raise RuntimeError(f"Band {band} not found")
-        upper_bound = inner_loop.attributes["upper_bound"]
-        upper_bound = int(
-            re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
-        )
-        ip = InsertionPoint(target_outer)
-        for idx in range(upper_bound):
-            cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
-            new_op = target_outer.operation.clone(ip)
-            new_op.induction_variable.replace_all_uses_with(cst_op.result)
-            new_op.body.operations[0].attributes["op_name"] = StringAttr.get(
-                f"{band}.{idx}"
+        band = self._find_band(band)
+        target_outer = band.get_outer_most()
+        axes.sort()
+        assert axes == [
+            i for i in range(axes[0], axes[0] + len(axes))
+        ], "Axes must be consecutive"
+        loops = list(band)
+        # start from the inner most loop
+        for idx in axes[::-1]:
+            _, loop_wrapper = loops[idx]
+            loop = loop_wrapper.loop
+            lower_bound = loop.attributes["lower_bound"]
+            assert str(lower_bound) == "affine_map<() -> (0)>", "Lower bound must be 0"
+            upper_bound = loop.attributes["upper_bound"]
+            upper_bound = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
             )
-            new_op.body.operations[0].move_before(target_outer)
-            new_op.operation.erase()
-        target_outer.operation.erase()
+            if idx > 0:
+                ip = InsertionPoint.at_block_terminator(loops[idx - 1][1].loop.body)
+            else:
+                ip = InsertionPoint(target_outer)
+            for op in loop.body.operations:
+                if isinstance(op, affine_d.AffineYieldOp):
+                    break
+            for idx in range(upper_bound):
+                cst_op = arith_d.ConstantOp(IndexType.get(), idx, ip=ip)
+                # Directly duplicate the loop itself,
+                # and replace the induction variable with the constant
+                new_loop = loop.operation.clone(ip)
+                for op in new_loop.body.operations:
+                    if isinstance(op, affine_d.AffineYieldOp):
+                        break
+                    op.operation.replace_uses_of_with(
+                        new_loop.induction_variable, cst_op.result
+                    )
+                    op.move_before(new_loop)
+                new_loop.operation.erase()
+            loop.operation.erase()
 
     @wrapped_apply
     def compose(self, *schs):

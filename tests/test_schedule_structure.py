@@ -17,7 +17,8 @@ def test_nested_functions():
         return B
 
     s = allo.customize(matrix_add)
-    s.unfold("PE", axes=[0])
+    print(s.module)
+    s.unfold("PE", axes=[1])
     print(s.module)
     np_A = np.random.randint(0, 10, size=(M, N))
     np_B = np_A + 1
