@@ -7,7 +7,8 @@ import allo
 from allo.ir.types import int32
 
 
-def test_systolic_array():
+@pytest.mark.parametrize("axes", [[0], [1], [0, 1]])
+def test_systolic_array(axes):
     M, N = 2, 2
 
     def matrix_add(A: int32[M, N]) -> int32[M, N]:
@@ -18,7 +19,9 @@ def test_systolic_array():
 
     s = allo.customize(matrix_add)
     print(s.module)
-    s.unfold("PE", axes=[1])
+    s.unfold("PE", axes=axes)
+    assert str(s.module).count('from = "A"') == len(axes) * M
+    assert str(s.module).count('to = "B"') == len(axes) * M
     print(s.module)
     np_A = np.random.randint(0, 10, size=(M, N))
     np_B = np_A + 1
