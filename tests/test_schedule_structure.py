@@ -46,8 +46,15 @@ def test_matrix_add_function(axes):
     s = allo.customize(matrix_add)
     print(s.module)
     s.unfold("PE", axes=axes)
-    assert str(s.module).count("func.call @kernel") == len(axes) * M
     print(s.module)
+    if axes == [0]:
+        target_str = ["kernel"]
+    elif axes == [1]:
+        target_str = ["kernel_0", "kernel_1"]
+    else:
+        target_str = ["kernel_0_0", "kernel_0_1", "kernel_1_0", "kernel_1_1"]
+    for t in target_str:
+        assert f"call @{t}" in str(s.module)
     np_A = np.random.randint(0, 10, size=(M, N))
     np_B = np_A + 1
     mod = s.build()
@@ -69,10 +76,10 @@ def test_matmul(axes):
     s = allo.customize(matmul)
     print(s.module)
     s.unfold("PE", axes=axes)
+    print(s.module)
     assert str(s.module).count('from = "A"') == len(axes) * M
     assert str(s.module).count('from = "B"') == len(axes) * M
     assert str(s.module).count('to = "C"') == len(axes) * M
-    print(s.module)
     np_A = np.random.randint(0, 10, size=(M, K))
     np_B = np.random.randint(0, 10, size=(K, N))
     mod = s.build()

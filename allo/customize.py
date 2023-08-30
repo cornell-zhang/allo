@@ -135,6 +135,12 @@ class Schedule:
             return loops[band]
         raise RuntimeError(f"Band {band} not found")
 
+    def _find_function(self, name):
+        for func in self.module.body.operations:
+            if isinstance(func, func_d.FuncOp) and func.name.value == name:
+                return func
+        raise RuntimeError(f"Function {name} not found")
+
     @wrapped_apply
     def split(self, axis, factor):
         band_name, axis = find_loop_in_bands(self.top_func, axis)
@@ -466,6 +472,9 @@ class Schedule:
         ], "Axes must be consecutive"
         # start from the inner most loop
         for idx in axes[::-1]:
+            # Need to recompute the loop nests due to the MLIR bug:
+            # https://reviews.llvm.org/D101422
+            # Otherwise, it may hit invalid operations
             band = self._find_band(band_name)
             target_outer = band.get_outer_most()
             loops = list(band)
@@ -505,6 +514,21 @@ class Schedule:
                         break
                     update_operand(op, new_loop.induction_variable, cst_op.result)
                     op.move_before(new_loop)
+                    if isinstance(op, func_d.CallOp):
+                        # Also need to duplicate the function outside the top function
+                        old_func = self._find_function(
+                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                        )
+                        dup_func = old_func.operation.clone(
+                            InsertionPoint(self.top_func)
+                        )
+                        new_name = (
+                            f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
+                        )
+                        dup_func.attributes["sym_name"] = StringAttr.get(new_name)
+                        op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
+                        if old_func not in op_to_remove:
+                            op_to_remove.append(old_func)
                 op_to_remove.append(new_loop)
             # need to erase at the end
             for op in op_to_remove:
