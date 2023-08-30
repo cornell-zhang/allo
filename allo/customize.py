@@ -471,7 +471,7 @@ class Schedule:
             i for i in range(axes[0], axes[0] + len(axes))
         ], "Axes must be consecutive"
         # start from the inner most loop
-        for idx in axes[::-1]:
+        for axis in axes[::-1]:
             # Need to recompute the loop nests due to the MLIR bug:
             # https://reviews.llvm.org/D101422
             # Otherwise, it may hit invalid operations
@@ -479,7 +479,7 @@ class Schedule:
             target_outer = band.get_outer_most()
             loops = list(band)
             op_to_remove = []
-            _, loop_wrapper = loops[idx]
+            _, loop_wrapper = loops[axis]
             loop = loop_wrapper.loop
             lower_bound = loop.attributes["lower_bound"]
             assert str(lower_bound) == "affine_map<() -> (0)>", "Lower bound must be 0"
@@ -487,8 +487,8 @@ class Schedule:
             upper_bound = int(
                 re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
             )
-            if idx > 0:
-                ip = InsertionPoint.at_block_terminator(loops[idx - 1][1].loop.body)
+            if axis > 0:
+                ip = InsertionPoint.at_block_terminator(loops[axis - 1][1].loop.body)
             else:
                 ip = InsertionPoint(target_outer)
             for op in loop.body.operations:
@@ -514,6 +514,13 @@ class Schedule:
                         break
                     update_operand(op, new_loop.induction_variable, cst_op.result)
                     op.move_before(new_loop)
+                    if isinstance(op, affine_d.AffineForOp):
+                        new_name = (
+                            f"{band_name}_{idx}"
+                            if "op_name" not in op.attributes
+                            else f"{op.attributes['op_name'].value}_{idx}"
+                        )
+                        op.attributes["op_name"] = StringAttr.get(new_name)
                     if isinstance(op, func_d.CallOp):
                         # Also need to duplicate the function outside the top function
                         old_func = self._find_function(
@@ -534,6 +541,7 @@ class Schedule:
             for op in op_to_remove:
                 op.operation.erase()
             loop.operation.erase()
+            print(self.module)
 
     @wrapped_apply
     def compose(self, *schs):
