@@ -179,5 +179,99 @@ def test_linalg_math_tensor():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
+def test_const_tensor():
+    M = 10
+    A = np.random.uniform(size=(M, M)).astype(np.float32)
+    def kernal() -> float32[M, M]:
+        A1: float32[M, M] = A
+        return A1
+    s = allo.customize(kernal, verbose = True, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    outs = f()
+    np.testing.assert_allclose(outs, A, atol=1e-4)
+
+
+def test_linalg_matmul_nested():
+    M = 10
+    K = 15
+    A = np.random.uniform(size=(M, K))
+    B = np.random.uniform(size=(K, M))
+    C = np.zeros((M, K), dtype="float32")
+
+    def kernel() -> float32[M, K]:
+        A1: float32[M, K] = A
+        B1: float32[K, M] = B
+        C1: float32[M, K] = C
+        D = allo.matmul(allo.matmul(A1, B1), A1)
+        # GeLU of matrix D
+        # for i, j in allo.grid(M, K):
+        #     C1[i, j] = (
+        #         0.5
+        #         * D[i, j]
+        #         * (
+        #             1.0
+        #             + allo.tanh(
+        #                 allo.sqrt(2.0 / 3.1415926)
+        #                 * (D[i, j] + 0.044715 * allo.power(D[i, j], 3.0))
+        #             )
+        #         )
+        #     )
+        return D
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    outs = f()
+    np_GeLU = kernel()
+    np.testing.assert_allclose(outs, np_GeLU, atol=1e-4)
+
+
+def test_for_loop():
+    def for_loop() -> int32[10]:
+        A: int32[10] = 0
+        for i in range(10):
+            A[i] = i
+        return A
+    
+    s = allo.customize(for_loop, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    np_A = np.zeros(10).astype(np.int32)
+    for i in range(10):
+        np_A[i] = i
+    np.testing.assert_allclose(f(), np_A, atol=1e-4)
+
+
+def test_for_loop_mlir():
+    test = """
+    #map = affine_map<() -> (0)>
+    #map1 = affine_map<() -> (10)>
+    "builtin.module"() ({
+    "func.func"() <{function_type = () -> tensor<10xi32>, sym_name = "for_loop"}> ({
+        %0 = "tensor.empty"() {name = "A"} : () -> tensor<10xi32>
+        %1 = "arith.constant"() <{value = 0 : i32}> : () -> i32
+        %2 = "linalg.fill"(%1, %0) <{odsOperandSegmentSizes = array<i32: 1, 1>}> ({
+        ^bb0(%arg0: i32, %arg1: i32):
+        "linalg.yield"(%arg0) : (i32) -> ()
+        }) : (i32, tensor<10xi32>) -> tensor<10xi32>
+        "affine.for"(%arg0) ({
+        ^bb0(%arg0: index):
+        %3 = "arith.index_cast"(%arg0) : (index) -> i32
+        %4 = "tensor.insert"(%3, %2, %arg0) : (i32, tensor<10xi32>, index) -> tensor<10xi32>
+        "affine.yield"(%4) : (tensor<10xi32>) -> ()
+        }) {loop_name = "i", lower_bound = #map, op_name = "S_i_0", step = 1 : i32, upper_bound = #map1} : (index) -> ()
+        "func.return"(%0) : (tensor<10xi32>) -> ()
+    }) {itypes = "", otypes = "s"} : () -> ()
+    }) : () -> ()
+"""
+
+    mod = allo.invoke_mlir_parser(test)
+    print(mod)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    # test_const_tensor()
+    test_linalg_matmul_nested()
+    # test_for_loop_mlir()

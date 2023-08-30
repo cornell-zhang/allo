@@ -921,6 +921,12 @@ class ASTTransformer(ASTBuilder):
         if hasattr(node, "np_values"):
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            if ctx.enable_tensor:
+                type = RankedTensorType.get(shape, dtype.build())
+                dense_attr = DenseElementsAttr.get(node.np_values, type=dtype.build())
+                rhs = arith_d.ConstantOp(type, dense_attr, ip=ctx.get_ip())
+                ctx.buffers[node.target.id] = rhs
+                return
             # pylint: disable=redefined-variable-type
             rhs = memref_d.GetGlobalOp(
                 memref_type,
