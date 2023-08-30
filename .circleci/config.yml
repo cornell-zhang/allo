@@ -23,6 +23,8 @@ jobs:
             cp externals/llvm_patch /root/llvm-project
             cd /root/llvm-project
             git apply llvm_patch
+            cd build
+            make -j4
       - run:
           name: Build HCL-MLIR
           command: |
