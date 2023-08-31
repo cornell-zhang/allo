@@ -610,21 +610,28 @@ class ASTTransformer(ASTBuilder):
     def build_constant_tensor(ctx, node):
         np_values = node.np_values
         value_attr = DenseElementsAttr.get(np_values)
-        sym_name = StringAttr.get(node.target.id)
-        sym_visibility = StringAttr.get("private")
-        memref_type = MemRefType.get(np_values.shape, node.dtype.build())
-        type_attr = TypeAttr.get(memref_type)
-        const_tensor = memref_d.GlobalOp(
-            sym_name=sym_name,
-            type_=type_attr,
-            sym_visibility=sym_visibility,
-            initial_value=value_attr,
-            # TODO: Use dataflow analysis to determine whether some store ops
-            #       are operated on this tensor
-            constant=False,
-            alignment=None,
-            ip=InsertionPoint(ctx.top_func),
-        )
+        if ctx.enable_tensor:
+            shape, dtype = node.shape, node.dtype
+            tensor_type = RankedTensorType.get(shape, dtype.build())
+            dense_attr = DenseElementsAttr.get(node.np_values, type=dtype.build())
+            # pylint: disable=too-many-function-args
+            const_tensor = arith_d.ConstantOp(tensor_type, dense_attr, ip=ctx.get_ip())
+        else:
+            sym_name = StringAttr.get(node.target.id)
+            sym_visibility = StringAttr.get("private")
+            memref_type = MemRefType.get(np_values.shape, node.dtype.build())
+            type_attr = TypeAttr.get(memref_type)
+            const_tensor = memref_d.GlobalOp(
+                sym_name=sym_name,
+                type_=type_attr,
+                sym_visibility=sym_visibility,
+                initial_value=value_attr,
+                # TODO: Use dataflow analysis to determine whether some store ops
+                #       are operated on this tensor
+                constant=False,
+                alignment=None,
+                ip=InsertionPoint(ctx.top_func),
+            )
         return const_tensor
 
     @staticmethod
@@ -921,19 +928,13 @@ class ASTTransformer(ASTBuilder):
         if hasattr(node, "np_values"):
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            if ctx.enable_tensor:
-                tensor_type = RankedTensorType.get(shape, dtype.build())
-                dense_attr = DenseElementsAttr.get(node.np_values, type=dtype.build())
-                # pylint: disable=too-many-function-args
-                rhs = arith_d.ConstantOp(tensor_type, dense_attr, ip=ctx.get_ip())
-                ctx.buffers[node.target.id] = rhs
-                return
-            # pylint: disable=redefined-variable-type
-            rhs = memref_d.GetGlobalOp(
-                memref_type,
-                FlatSymbolRefAttr.get(node.target.id),
-                ip=ctx.get_ip(),
-            )
+            if not ctx.enable_tensor:
+                # pylint: disable=redefined-variable-type
+                rhs = memref_d.GetGlobalOp(
+                    memref_type,
+                    FlatSymbolRefAttr.get(node.target.id),
+                    ip=ctx.get_ip(),
+                )
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor
