@@ -63,15 +63,14 @@ class TypeInferer(ASTVisitor):
             var = ctx.buffers[node.id]
             node.dtype = var.dtype
             node.shape = var.shape
-            node.val = None
             return node
         if node.id in ctx.global_vars:
             if isinstance(ctx.global_vars[node.id], int):
                 node.dtype = int32
+                node.shape = tuple()
             elif isinstance(ctx.global_vars[node.id], float):
                 node.dtype = float32
-            node.shape = tuple()
-            node.val = ctx.global_vars[node.id]
+                node.shape = tuple()
             return node
         raise RuntimeError(f"Unsupported Name {node.id}")
 
@@ -84,7 +83,6 @@ class TypeInferer(ASTVisitor):
             node.dtype = float32
         else:
             raise RuntimeError("Unsupported constant type")
-        node.val = node.value
         return node
 
     @staticmethod
@@ -92,7 +90,6 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.elts)
         node.shape = [elt.shape for elt in node.elts]
         node.dtype = [elt.dtype for elt in node.elts]
-        node.val = [elt.val for elt in node.elts]
         return node
 
     @staticmethod
@@ -100,7 +97,6 @@ class TypeInferer(ASTVisitor):
         value = visit_stmt(ctx, node.value)
         node.shape = value.shape
         node.dtype = value.dtype
-        node.val = value.val
         return node
 
     @staticmethod
@@ -109,19 +105,16 @@ class TypeInferer(ASTVisitor):
         if node.attr == "T":
             node.dtype = res.dtype
             node.shape = res.shape[::-1]
-            node.val = None
             return node
         if node.attr == "reverse":
             if not isinstance(res.dtype, (Int, UInt)):
                 raise RuntimeError("Can only reverse integers")
             node.dtype = res.dtype
             node.shape = res.shape
-            node.val = None
             return node
         if node.attr == "copy":
             node.dtype = res.dtype
             node.shape = res.shape
-            node.val = None
             return node
         raise RuntimeError(f"Unsupported attribute `{node.attr}`")
 
@@ -139,7 +132,6 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.body)
         node.shape = None
         node.dtype = None
-        node.val = None
         return node
 
     @staticmethod
@@ -199,7 +191,6 @@ class TypeInferer(ASTVisitor):
         assert tmp_lhs_shape == tmp_rhs_shape
         node.shape = tuple(tmp_lhs_shape)
         node.dims = (lhs_dims, rhs_dims)
-        node.val = None
         if ctx.verbose:
             print(
                 f"Broadcasted shape {lhs.shape} x {rhs.shape} -> {node.shape} for dims: {lhs_dims} & {rhs_dims}"
@@ -213,7 +204,6 @@ class TypeInferer(ASTVisitor):
         # A bit tricky here, since MLIR only has arith.negf op but not arith.negi
         # https://mlir.llvm.org/docs/Dialects/ArithOps/#arithnegf-arithnegfop
         node.dtype = float32
-        node.val = None
         return node
 
     @staticmethod
@@ -234,13 +224,11 @@ class TypeInferer(ASTVisitor):
             ctx.buffers[node.targets[0].id] = rhs
             node.dtype = rhs.dtype
             node.shape = rhs.shape
-            node.val = None
             return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
         node.dtype = lhs.dtype
         node.shape = lhs.shape
-        node.val = None
         return node
 
     @staticmethod
@@ -273,27 +261,16 @@ class TypeInferer(ASTVisitor):
         # store LHS
         node.dtype = lhs.dtype
         node.shape = lhs.shape
-        node.val = None
         return node
 
     @staticmethod
     def visit_Subscript(ctx, node):
+        # TODO: Suppose only load a single element, this is not true if tensor slicing is added
         value = visit_stmt(ctx, node.value)
         if len(value.shape) > 0:
+            node.shape = tuple()
+            node.dtype = ctx.buffers[node.value.id].dtype
             visit_stmt(ctx, node.slice)
-            # calculate tensor slicing
-            shape = []
-            # e.g., A[:5, 0, 1:3] -> [(0,5,1),0,(1,3,1)]
-            if node.slice.val is not None and isinstance(node.slice.val, (list, tuple)):
-                for index in node.slice.val:
-                    if isinstance(index, (list, tuple)):
-                        shape.append((index[1] - index[0]) // index[-1])
-                    else:  # scalar
-                        shape.append(1)
-                node.shape = tuple(shape)
-            else:
-                node.shape = tuple()
-            node.dtype = ctx.buffers[ASTResolver.resolve_name(node, ctx)].dtype
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
@@ -319,7 +296,6 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError("Unsupported bit operation")
         else:
             raise RuntimeError("Can only access bit (slice) for integers")
-        node.val = None
         return node
 
     @staticmethod
@@ -327,29 +303,18 @@ class TypeInferer(ASTVisitor):
         stmts = visit_stmts(ctx, node.dims)
         node.shape = tuple()
         node.dtype = [stmt.dtype for stmt in stmts]
-        node.val = [stmt.val for stmt in stmts]
         return node
 
     @staticmethod
     def visit_Slice(ctx, node):
         if node.lower is not None:
             visit_stmt(ctx, node.lower)
-            lower = node.lower.val
-        else:
-            lower = 0
         if node.upper is not None:
             visit_stmt(ctx, node.upper)
-            upper = node.upper.val
-        else:
-            upper = None
         if node.step is not None:
             visit_stmt(ctx, node.step)
-            step = node.step.val
-        else:
-            step = 1
         node.shape = tuple()
         node.dtype = (Index(), Index(), Index())
-        node.val = (lower, upper, step)
         return node
 
     @staticmethod
@@ -371,7 +336,6 @@ class TypeInferer(ASTVisitor):
         ctx.buffers[node.target.id] = node
         node.dtype = target_dtype
         node.shape = target_shape
-        node.val = None
         visit_stmt(ctx, node.target)
         return node
 
@@ -411,11 +375,9 @@ class TypeInferer(ASTVisitor):
         ):
             node.dtype = None
             node.shape = None
-            node.val = None
         else:
             node.dtype = node.returns.dtype
             node.shape = node.returns.shape
-            node.val = None
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
@@ -432,7 +394,6 @@ class TypeInferer(ASTVisitor):
         res_type = typing_rule(lhs.dtype, rhs.dtype)[0]
         node.dtype = res_type
         node.shape = tuple()
-        node.val = None
         return node
 
     @staticmethod
@@ -440,7 +401,6 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.values)
         node.dtype = uint1
         node.shape = tuple()
-        node.val = None
         return node
 
     @staticmethod
@@ -451,7 +411,6 @@ class TypeInferer(ASTVisitor):
             visit_stmts(ctx, node.orelse)
         node.dtype = None
         node.shape = None
-        node.val = None
         return node
 
     @staticmethod
@@ -464,7 +423,6 @@ class TypeInferer(ASTVisitor):
             )
         node.dtype = None
         node.shape = None
-        node.val = None
         return node
 
     @staticmethod
@@ -473,7 +431,6 @@ class TypeInferer(ASTVisitor):
             visit_stmt(ctx, stmt)
         node.dtype = None
         node.shape = None
-        node.val = None
         return node
 
     @staticmethod
@@ -496,7 +453,6 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
                 node.dtype = float32 if node.func.id == "float" else int32
-                node.val = None
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
@@ -509,7 +465,6 @@ class TypeInferer(ASTVisitor):
                 # element-wise operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
-                node.val = None
                 return node
             return TypeInferer.visit_library_op(
                 ctx, node=node, op_name=fn_name, new_args=new_args
@@ -542,11 +497,9 @@ class TypeInferer(ASTVisitor):
         if not isinstance(stmts[-1], ast.FunctionDef):
             node.dtype = None
             node.shape = None
-            node.val = None
         else:
             node.dtype = stmts[-1].dtype
             node.shape = stmts[-1].shape
-            node.val = None
         return node
 
     @staticmethod
@@ -611,7 +564,6 @@ class TypeInferer(ASTVisitor):
                 assert new_args[0].shape[1] == new_args[1].shape[1]
                 assert new_args[1].shape[0] == new_args[2].shape[0]
                 node.shape = (new_args[0].shape[0], new_args[1].shape[0])
-            node.val = None
             return node
         if op_name in {"transpose"}:
             assert (
@@ -633,7 +585,6 @@ class TypeInferer(ASTVisitor):
                     new_shape.append(shape[new_dim])
                 node.shape = tuple(new_shape)
                 node.dtype = new_args[0].dtype
-            node.val = None
             return node
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 
@@ -642,7 +593,6 @@ class TypeInferer(ASTVisitor):
         res = visit_stmt(ctx, node.value)
         node.dtype = res.dtype
         node.shape = res.shape
-        node.val = None
         return node
 
     @staticmethod
@@ -650,15 +600,11 @@ class TypeInferer(ASTVisitor):
         visit_stmt(ctx, node.value)
         node.dtype = None
         node.shape = None
-        node.val = None
         return node
 
     @staticmethod
     def visit_Pass(ctx, node):
-        node.dtype = None
-        node.shape = None
-        node.val = None
-        return node
+        pass
 
 
 visit_stmt = TypeInferer()
