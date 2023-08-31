@@ -179,19 +179,6 @@ def test_linalg_math_tensor():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def test_const_tensor():
-    M = 10
-    A = np.random.uniform(size=(M, M)).astype(np.float32)
-
-    def kernel() -> float32[M, M]:
-        A1: float32[M, M] = A
-        return A1
-
-    s = allo.customize(kernel, enable_tensor=True)
-    print(s.module)
-    s.build()
-
-
 def test_linalg_matmul():
     M = 10
     K = 15

@@ -613,9 +613,8 @@ class ASTTransformer(ASTBuilder):
         if ctx.enable_tensor:
             shape, dtype = node.shape, node.dtype
             tensor_type = RankedTensorType.get(shape, dtype.build())
-            dense_attr = DenseElementsAttr.get(node.np_values, type=dtype.build())
             # pylint: disable=too-many-function-args
-            const_tensor = arith_d.ConstantOp(tensor_type, dense_attr, ip=ctx.get_ip())
+            const_tensor = arith_d.ConstantOp(tensor_type, value_attr, ip=ctx.get_ip())
         else:
             sym_name = StringAttr.get(node.target.id)
             sym_visibility = StringAttr.get("private")
@@ -631,6 +630,11 @@ class ASTTransformer(ASTBuilder):
                 constant=False,
                 alignment=None,
                 ip=InsertionPoint(ctx.top_func),
+            )
+            const_tensor = memref_d.GetGlobalOp(
+                    memref_type,
+                    FlatSymbolRefAttr.get(node.target.id),
+                    ip=ctx.get_ip(),
             )
         return const_tensor
 
@@ -928,13 +932,6 @@ class ASTTransformer(ASTBuilder):
         if hasattr(node, "np_values"):
             memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
-            if not ctx.enable_tensor:
-                # pylint: disable=redefined-variable-type
-                rhs = memref_d.GetGlobalOp(
-                    memref_type,
-                    FlatSymbolRefAttr.get(node.target.id),
-                    ip=ctx.get_ip(),
-                )
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor
