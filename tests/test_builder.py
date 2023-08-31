@@ -375,5 +375,21 @@ def test_copy_arg_scalar():
     assert np.array_equal(kernel(5), mod(5))
 
 
+def test_constexpr():
+    M = 10
+
+    def kernel(A: int32[((M + 1) * 2) // 2]) -> float32[M + 1]:
+        res: float32[M + 1] = 0
+        for i in range(M + 1):
+            res[i] = A[i] + 1
+        return res
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=((M + 1) * 2) // 2).astype(np.int32)
+    np_res = mod(np_A)
+    np.testing.assert_allclose(np_res, np_A + 1)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

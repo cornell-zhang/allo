@@ -196,5 +196,25 @@ def test_linalg_math_tensor():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
+def test_linalg_matmul():
+    M = 10
+    K = 15
+    A = np.random.uniform(size=(M, K))
+    B = np.random.uniform(size=(K, M))
+    C = np.zeros((M, K), dtype="float32")
+
+    def kernel() -> float32[M, K]:
+        A1: float32[M, K] = A
+        B1: float32[K, M] = B
+        C1: float32[M, K] = C
+        D = allo.matmul(allo.matmul(A1, B1), A1)
+        return D
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    np.testing.assert_allclose(f(), kernel(), atol=1e-4)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

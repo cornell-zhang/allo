@@ -46,10 +46,7 @@ class TypeInferer(ASTVisitor):
             assert dtype is not None, f"Unsupported type {node.value.id}"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
-            shape = tuple(
-                x.value if isinstance(x, ast.Constant) else ctx.global_vars[x.id]
-                for x in elts
-            )
+            shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
             return dtype, shape
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
