@@ -620,6 +620,7 @@ class ASTTransformer(ASTBuilder):
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(np_values.shape, node.dtype.build())
             type_attr = TypeAttr.get(memref_type)
+            # pylint: disable=redefined-variable-type
             const_tensor = memref_d.GlobalOp(
                 sym_name=sym_name,
                 type_=type_attr,
@@ -632,9 +633,9 @@ class ASTTransformer(ASTBuilder):
                 ip=InsertionPoint(ctx.top_func),
             )
             const_tensor = memref_d.GetGlobalOp(
-                    memref_type,
-                    FlatSymbolRefAttr.get(node.target.id),
-                    ip=ctx.get_ip(),
+                memref_type,
+                FlatSymbolRefAttr.get(node.target.id),
+                ip=ctx.get_ip(),
             )
         return const_tensor
 
@@ -930,7 +931,6 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
         if hasattr(node, "np_values"):
-            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             rhs = ASTTransformer.build_constant_tensor(ctx, node)
             ctx.buffers[node.target.id] = rhs
             return
