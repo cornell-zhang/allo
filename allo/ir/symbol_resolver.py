@@ -57,8 +57,5 @@ class ASTResolver:
 
     @staticmethod
     def resolve_constant(node, ctx):
-        if isinstance(node, ast.Constant):
-            return node.value
-        if isinstance(node, ast.Name) and node.id in ctx.global_vars:
-            return ctx.global_vars[node.id]
-        raise RuntimeError("Unsupported constant type")
+        # pylint: disable=eval-used
+        return eval(compile(ast.Expression(node), "", "eval"), ctx.global_vars)
