@@ -940,7 +940,6 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
         # Store LHS
         if len(shape) > 0:
-            memref_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             with ctx.get_ip():
