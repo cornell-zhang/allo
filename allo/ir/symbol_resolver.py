@@ -56,6 +56,14 @@ class ASTResolver:
         return scope
 
     @staticmethod
+    def resolve_name(node, ctx):
+        if isinstance(node.value, ast.Name):
+            return node.value.id
+        if isinstance(node.value, ast.Subscript):
+            return ASTResolver.resolve_name(node.value, ctx)
+        raise RuntimeError("Unsupported name type")
+
+    @staticmethod
     def resolve_constant(node, ctx):
         if isinstance(node, ast.Constant):
             return node.value

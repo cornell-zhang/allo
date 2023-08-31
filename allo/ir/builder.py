@@ -735,9 +735,9 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_tensor_access(ctx, node, val=None):
         value = build_stmt(ctx, node.value)
-        dtype = RankedTensorType(value.result.type).element_type
-        in_shape = RankedTensorType(value.result.type).shape
-        if isinstance(node.slice, ast.ExtSlice):
+        if len(node.shape) > 1:
+            dtype = RankedTensorType(value.result.type).element_type
+            in_shape = RankedTensorType(value.result.type).shape
             (
                 static_offsets,
                 static_sizes,
