@@ -162,6 +162,7 @@ def test_slice():
 
 def test_rank_reducing():
     M, K, N = 6, 3, 6
+
     def kernel(A: int32[M, N]) -> int32[M, K, N]:
         B: int32[M, K, N] = 2
         B[:M, 0, :N] = A[:M, :N]
@@ -175,6 +176,24 @@ def test_rank_reducing():
     np_B[:M, 0, :N] = np_A
     mod = s.build()
     np.testing.assert_allclose(np_B, mod(np_A), rtol=1e-5)
+
+
+def test_nested_func_slicing_arg():
+    M, N = 6, 6
+
+    def foo(A: int32[3, 3]) -> int32[2, 2]:
+        return A[1:3, 1:3]
+
+    def kernel(A: int32[M, N]) -> int32[2, 2]:
+        B = foo(A[2:5, 1:4])
+        return B
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(M, N)).astype(np.int32)
+    mod = s.build()
+    np.testing.assert_allclose(kernel(np_A), mod(np_A), rtol=1e-5)
 
 
 def test_linalg_math_tensor():

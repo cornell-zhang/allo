@@ -56,14 +56,20 @@ class ASTResolver:
         return scope
 
     @staticmethod
-    def resolve_name(node, ctx):
-        if isinstance(node.value, ast.Name):
-            return node.value.id
-        if isinstance(node.value, ast.Subscript):
-            return ASTResolver.resolve_name(node.value, ctx)
-        raise RuntimeError("Unsupported name type")
+    def resolve_slice(node, ctx):
+        if isinstance(node, ast.ExtSlice):
+            return list(ASTResolver.resolve_slice(s, ctx) for s in node.dims)
+        if isinstance(node, ast.Slice):
+            return tuple(
+                (ASTResolver.resolve_constant(node.lower, ctx),
+                ASTResolver.resolve_constant(node.upper, ctx),
+                ASTResolver.resolve_constant(node.step, ctx))
+            )
+        return None
 
     @staticmethod
     def resolve_constant(node, ctx):
+        if node is None:
+            return None
         # pylint: disable=eval-used
         return eval(compile(ast.Expression(node), "", "eval"), ctx.global_vars)
