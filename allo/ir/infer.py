@@ -300,8 +300,10 @@ class TypeInferer(ASTVisitor):
                     )
                     step = index[2] if index[2] is not None else 1
                     shape.append((upper - lower) // step)
-                else:  # scalar
+                elif index is not None:  # scalar
                     shape.append(1)
+                else:  # None, reduced rank, should be 0
+                    pass
             node.shape = tuple(shape)
             node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(
@@ -377,6 +379,8 @@ class TypeInferer(ASTVisitor):
         else:
             visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
+        node.dtype = target_dtype
+        node.shape = target_shape
         visit_stmt(ctx, node.target)
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx, node.target, node.value, match_lhs=True
@@ -384,8 +388,6 @@ class TypeInferer(ASTVisitor):
         assert (
             final_shape == target_shape
         ), f"Shape mismatch, got {final_shape} and {target_shape}"
-        node.dtype = target_dtype
-        node.shape = target_shape
         node.dims = (lhs_dims, rhs_dims)
         return node
 
