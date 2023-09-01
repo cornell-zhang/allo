@@ -150,10 +150,7 @@ class TypeInferer(ASTVisitor):
             raise RuntimeError("Unsupported for loop")
 
     @staticmethod
-    def visit_general_binop(ctx, node, lhs, rhs):
-        typing_rule = get_typing_rule(type(node.op))
-        res_type = typing_rule(lhs.dtype, rhs.dtype)
-        node.dtype = res_type
+    def visit_broadcast(ctx, lhs, rhs, match_lhs=False):
         # See the broadcasting rules in NumPy
         # https://numpy.org/doc/stable/user/basics.broadcasting.html
         # When operating on two arrays, NumPy compares their shapes element-wise.
@@ -161,35 +158,51 @@ class TypeInferer(ASTVisitor):
         # Two dimensions are compatible when
         # 1. they are equal, or
         # 2. one of them is 1.
+        if rhs is None:
+            return lhs.shape, [], []
         tmp_lhs_shape = list(lhs.shape)
         tmp_rhs_shape = list(rhs.shape)
+        if match_lhs and len(tmp_lhs_shape) < len(tmp_rhs_shape):
+            raise RuntimeError(f"Cannot broadcast {rhs.shape} to {lhs.shape}")
         # match larger shape
+        lhs_dims, rhs_dims = set(), set()
         if len(tmp_lhs_shape) < len(tmp_rhs_shape):
-            tmp_lhs_shape = [1] * (
-                len(tmp_rhs_shape) - len(tmp_lhs_shape)
-            ) + tmp_lhs_shape
+            padded_dim = len(tmp_rhs_shape) - len(tmp_lhs_shape)
+            tmp_lhs_shape = [1] * padded_dim + tmp_lhs_shape
+            lhs_dims = set(range(padded_dim))
         elif len(tmp_lhs_shape) > len(tmp_rhs_shape):
-            tmp_rhs_shape = [1] * (
-                len(tmp_lhs_shape) - len(tmp_rhs_shape)
-            ) + tmp_rhs_shape
+            padded_dim = len(tmp_lhs_shape) - len(tmp_rhs_shape)
+            tmp_rhs_shape = [1] * padded_dim + tmp_rhs_shape
+            rhs_dims = set(range(padded_dim))
         # match shape
-        lhs_dims, rhs_dims = [], []
         # pylint: disable=consider-using-enumerate
         for i in range(len(tmp_lhs_shape)):
             if tmp_lhs_shape[i] == 1:
                 tmp_lhs_shape[i] = tmp_rhs_shape[i]
                 if tmp_rhs_shape[i] != 1:
-                    lhs_dims.append(i)
+                    if match_lhs:
+                        raise RuntimeError(
+                            f"Cannot broadcast {rhs.shape} to {lhs.shape}"
+                        )
+                    lhs_dims.add(i)
             elif tmp_rhs_shape[i] == 1:
                 tmp_rhs_shape[i] = tmp_lhs_shape[i]
                 if tmp_lhs_shape[i] != 1:
-                    rhs_dims.append(i)
+                    rhs_dims.add(i)
             else:
                 assert (
                     tmp_lhs_shape[i] == tmp_rhs_shape[i]
                 ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}, and cannot be broadcasted"
         assert tmp_lhs_shape == tmp_rhs_shape
-        node.shape = tuple(tmp_lhs_shape)
+        return tuple(tmp_lhs_shape), list(lhs_dims), list(rhs_dims)
+
+    @staticmethod
+    def visit_general_binop(ctx, node, lhs, rhs):
+        typing_rule = get_typing_rule(type(node.op))
+        res_type = typing_rule(lhs.dtype, rhs.dtype)
+        node.dtype = res_type
+        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(ctx, lhs, rhs)
+        node.shape = final_shape
         node.dims = (lhs_dims, rhs_dims)
         if ctx.verbose:
             print(
@@ -227,8 +240,15 @@ class TypeInferer(ASTVisitor):
             return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
+        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+            ctx, node.targets[0], node.value, match_lhs=True
+        )
+        assert (
+            final_shape == lhs.shape
+        ), f"Shape mismatch, got {final_shape} and {lhs.shape}"
         node.dtype = lhs.dtype
         node.shape = lhs.shape
+        node.dims = (lhs_dims, rhs_dims)
         return node
 
     @staticmethod
@@ -265,12 +285,34 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Subscript(ctx, node):
-        # TODO: Suppose only load a single element, this is not true if tensor slicing is added
         value = visit_stmt(ctx, node.value)
         if len(value.shape) > 0:
-            node.shape = tuple()
-            node.dtype = ctx.buffers[node.value.id].dtype
             visit_stmt(ctx, node.slice)
+            # calculate tensor slicing
+            shape = []
+            # e.g., A[:5, 0, 1:3] -> [(0,5,1),0,(1,3,1)]
+            indices = ASTResolver.resolve_slice(node.slice, ctx)
+            if isinstance(indices, tuple):  # Slice
+                indices = [indices]
+            if isinstance(indices, list):  # ExtSlice
+                for dim, index in enumerate(indices):
+                    if isinstance(index, (list, tuple)):
+                        lower = index[0] if index[0] is not None else 0
+                        upper = (
+                            index[1]
+                            if index[1] is not None
+                            else ctx.buffers[node.value.id].shape[dim]
+                        )
+                        step = (
+                            index[2] if (len(index) > 2 and index[2] is not None) else 1
+                        )
+                        size = (upper - lower) // step
+                        if size > 0:
+                            shape.append(size)
+            if sum(shape) == len(shape):  # all ones
+                shape = tuple()
+            node.shape = tuple(shape)
+            node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
@@ -323,20 +365,37 @@ class TypeInferer(ASTVisitor):
         if isinstance(node.value, ast.List):
             values = compile(ast.Expression(node.value), "", "eval")
             # pylint: disable=eval-used
-            values = eval(values)
-            TypeInferer.visit_constant_tensor(ctx, node, np.array(values))
+            values = np.array(eval(values))
+            assert (
+                target_shape == values.shape
+            ), f"Shape mismatch, got {target_shape} and {values.shape}"
+            TypeInferer.visit_constant_tensor(ctx, node, values)
+            node.value.shape = values.shape
+            node.value.dtype = target_dtype
         elif (
             isinstance(node.value, ast.Name)
             and node.value.id in ctx.global_vars
             and isinstance(ctx.global_vars[node.value.id], np.ndarray)
         ):
+            assert (
+                ctx.global_vars[node.value.id].shape == target_shape
+            ), f"Shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
             TypeInferer.visit_constant_tensor(ctx, node, ctx.global_vars[node.value.id])
+            node.value.shape = node.np_values.shape
+            node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
         node.dtype = target_dtype
         node.shape = target_shape
         visit_stmt(ctx, node.target)
+        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+            ctx, node.target, node.value, match_lhs=True
+        )
+        assert (
+            final_shape == target_shape
+        ), f"Shape mismatch, got {final_shape} and {target_shape}"
+        node.dims = (lhs_dims, rhs_dims)
         return node
 
     @staticmethod

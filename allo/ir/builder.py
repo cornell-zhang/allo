@@ -71,18 +71,28 @@ class ASTBuilder(ASTVisitor):
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node, val=None):
-        if val is not None:
-            affine_map = AffineMap.get(
-                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
+        if val is not None and isinstance(node.ctx, ast.Store):
             buffer = ctx.buffers[node.id]
             target = (
                 buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
             )
-            store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ctx.get_ip()
-            )
+            if not ctx.enable_tensor:
+                affine_map = AffineMap.get(
+                    dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+                )
+                affine_attr = AffineMapAttr.get(affine_map)
+                store_op = affine_d.AffineStoreOp(
+                    val.result, target, [], affine_attr, ip=ctx.get_ip()
+                )
+            else:
+                store_op = tensor_d.InsertOp(
+                    scalar=val.result,
+                    dest=target,
+                    indices=[],
+                    ip=ctx.get_ip(),
+                )
+                # update StoreOp
+                ctx.buffers[node.id].op = store_op
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
         if node.id in ctx.buffers:
@@ -596,6 +606,9 @@ class ASTTransformer(ASTBuilder):
             return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
+        rhs = ASTTransformer.build_broadcast_op(
+            ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
+        )
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
@@ -717,8 +730,10 @@ class ASTTransformer(ASTBuilder):
         static_strides = []
         for index, size in zip(slices, in_shape):
             if isinstance(index, ast.Slice):
-                lower = 0 if index.lower is None else index.lower.value
-                upper = size if index.upper is None else index.upper.value
+                lower = 0 if index.lower is None else build_stmt(ctx, index.lower).val
+                upper = (
+                    size if index.upper is None else build_stmt(ctx, index.upper).val
+                )
                 if index.step is None:
                     step = 1
                 elif isinstance(index.step, ast.Constant):
@@ -745,9 +760,9 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_tensor_access(ctx, node, val=None):
         value = build_stmt(ctx, node.value)
-        dtype = RankedTensorType(value.result.type).element_type
-        in_shape = RankedTensorType(value.result.type).shape
-        if isinstance(node.slice, ast.ExtSlice):
+        if len(node.shape) > 1:
+            dtype = RankedTensorType(value.result.type).element_type
+            in_shape = RankedTensorType(value.result.type).shape
             (
                 static_offsets,
                 static_sizes,
@@ -949,6 +964,8 @@ class ASTTransformer(ASTBuilder):
                 elif rhs is not None:
                     # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                else:
+                    linalg_op = alloc_op.result
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
@@ -961,6 +978,14 @@ class ASTTransformer(ASTBuilder):
                 value=node.value,
             )
             if rhs is not None:
+                rhs = ASTTransformer.build_broadcast_op(
+                    ctx,
+                    rhs,
+                    node.dtype,
+                    node.value.shape,
+                    node.target.shape,
+                    node.dims[1],  # rhs
+                )
                 build_stmt(ctx, node.target, val=rhs)
 
     @staticmethod
@@ -972,6 +997,7 @@ class ASTTransformer(ASTBuilder):
             ctx = ASTContext(
                 global_vars=ctx.global_vars,
                 mlir_ctx=old_ctx.mlir_ctx,
+                enable_tensor=ctx.enable_tensor,
                 verbose=old_ctx.verbose,
             )
             ctx.set_ip(old_ctx.top_func)
@@ -1288,7 +1314,10 @@ class ASTTransformer(ASTBuilder):
         else:
             # Create a new context to avoid name collision
             func_ctx = ASTContext(
-                global_vars=ctx.global_vars, mlir_ctx=ctx.mlir_ctx, verbose=ctx.verbose
+                global_vars=ctx.global_vars,
+                mlir_ctx=ctx.mlir_ctx,
+                enable_tensor=ctx.enable_tensor,
+                verbose=ctx.verbose,
             )
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)

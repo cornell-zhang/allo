@@ -160,6 +160,60 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
+def test_rank_reducing():
+    M, K, N = 6, 3, 6
+
+    def kernel(A: int32[M, N]) -> int32[M, K, N]:
+        B: int32[M, K, N] = 2
+        B[:M, 0, :N] = A[:M, :N]
+        return B
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(M, N)).astype(np.int32)
+    np_B = np.zeros((M, K, N)).astype(np.int32) + 2
+    np_B[:M, 0, :N] = np_A
+    mod = s.build()
+    np.testing.assert_allclose(np_B, mod(np_A), rtol=1e-5)
+
+
+def test_nested_func_slicing_arg():
+    M, N = 6, 6
+
+    def foo(A: int32[3, 3]) -> int32[2, 2]:
+        return A[1:3, 1:3]
+
+    def kernel(A: int32[M, N]) -> int32[2, 2]:
+        B = foo(A[2:5, 1:4])
+        return B
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(M, N)).astype(np.int32)
+    mod = s.build()
+    np.testing.assert_allclose(kernel(np_A), mod(np_A), rtol=1e-5)
+
+
+def test_slicing_broadcast():
+    M, N = 6, 6
+
+    np_A = np.zeros((M, N, M, N, M, N)).astype(np.int32)
+
+    def kernel() -> int32[M, N - 1, 2, 2, 1, 1]:
+        A: int32[M, N, M, N, M, N] = np_A
+        A[:, 1:, :2, 1:3, 0, 2:4:2] = 2
+        return A[:, 1:, :2, 1:3, 0, 2:4:2]
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    golden = np.zeros((M, N - 1, 2, 2, 1, 1)).astype(np.int32) + 2
+    np.testing.assert_allclose(mod(), golden, rtol=1e-5)
+
+
 def test_linalg_math_tensor():
     M = 10
     K = 15
@@ -184,12 +238,10 @@ def test_linalg_matmul():
     K = 15
     A = np.random.uniform(size=(M, K))
     B = np.random.uniform(size=(K, M))
-    C = np.zeros((M, K), dtype="float32")
 
     def kernel() -> float32[M, K]:
         A1: float32[M, K] = A
         B1: float32[K, M] = B
-        C1: float32[M, K] = C
         D = allo.matmul(allo.matmul(A1, B1), A1)
         return D
 

@@ -17,6 +17,7 @@ from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     arith as arith_d,
+    tensor as tensor_d,
 )
 from .types import AlloType, Int, UInt, Fixed, UFixed
 
@@ -98,22 +99,33 @@ class MockScalar(MockOp):
         shape = (1,)
         assert isinstance(dtype, AlloType), f"Expect AlloType, got {dtype}"
         self.dtype = dtype
-        memref_type = MemRefType.get(shape, dtype.build())
-        alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-        alloc_op.attributes["name"] = StringAttr.get(name)
+        if not ctx.enable_tensor:
+            memref_type = MemRefType.get(shape, dtype.build())
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            alloc_op.attributes["name"] = StringAttr.get(name)
+        else:
+            alloc_op = tensor_d.EmptyOp(tuple(), dtype.build(), ip=ctx.get_ip())
         self.op = alloc_op
 
     @property
     def result(self):
-        affine_map = AffineMap.get(
-            dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-        )
-        affine_attr = AffineMapAttr.get(affine_map)
-        load = affine_d.AffineLoadOp(
-            self.op.result, [], affine_attr, ip=self.ctx.get_ip()
-        )
-        load.attributes["from"] = StringAttr.get(self.name)
-        return load.result
+        # pylint: disable=no-else-return
+        if not self.ctx.enable_tensor:
+            affine_map = AffineMap.get(
+                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+            )
+            affine_attr = AffineMapAttr.get(affine_map)
+            load = affine_d.AffineLoadOp(
+                self.op.result, [], affine_attr, ip=self.ctx.get_ip()
+            )
+            load.attributes["from"] = StringAttr.get(self.name)
+            return load.result
+        else:
+            return tensor_d.ExtractOp(
+                tensor=self.op.result,
+                indices=[],
+                ip=self.ctx.get_ip(),
+            ).result
 
     @property
     def results(self):
