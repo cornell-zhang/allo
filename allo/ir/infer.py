@@ -158,7 +158,7 @@ class TypeInferer(ASTVisitor):
         # Two dimensions are compatible when
         # 1. they are equal, or
         # 2. one of them is 1.
-        if not ctx.enable_tensor:
+        if rhs is None:
             return lhs.shape, list(), list()
         tmp_lhs_shape = list(lhs.shape)
         tmp_rhs_shape = list(rhs.shape)
