@@ -61,9 +61,11 @@ class ASTResolver:
             return list(ASTResolver.resolve_slice(s, ctx) for s in node.dims)
         if isinstance(node, ast.Slice):
             return tuple(
-                (ASTResolver.resolve_constant(node.lower, ctx),
-                ASTResolver.resolve_constant(node.upper, ctx),
-                ASTResolver.resolve_constant(node.step, ctx))
+                (
+                    ASTResolver.resolve_constant(node.lower, ctx),
+                    ASTResolver.resolve_constant(node.upper, ctx),
+                    ASTResolver.resolve_constant(node.step, ctx),
+                )
             )
         if isinstance(node, ast.Index):
             return ASTResolver.resolve_constant(node.value, ctx)
@@ -76,5 +78,6 @@ class ASTResolver:
         try:
             # pylint: disable=eval-used
             return eval(compile(ast.Expression(node), "", "eval"), ctx.global_vars)
-        except:
+        # pylint: disable=broad-exception-caught
+        except Exception:
             return None

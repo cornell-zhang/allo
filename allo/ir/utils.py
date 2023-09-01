@@ -5,7 +5,6 @@
 from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
-    IndexType,
     F32Type,
     IntegerAttr,
     FloatAttr,
@@ -110,6 +109,7 @@ class MockScalar(MockOp):
 
     @property
     def result(self):
+        # pylint: disable=no-else-return
         if not self.ctx.enable_tensor:
             affine_map = AffineMap.get(
                 dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
