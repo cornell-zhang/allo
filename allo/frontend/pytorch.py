@@ -3,11 +3,13 @@
 
 import operator
 import inspect
+import math
 
 try:
     import torch
     from torch import fx
     from torch.nn import functional as F
+    from torch.fx.passes.shape_prop import ShapeProp
 except ImportError:
     pass
 
@@ -18,6 +20,7 @@ from ..customize import customize
 
 def from_pytorch(model, example_inputs, verbose=False):
     gm = fx.symbolic_trace(model)
+    ShapeProp(gm).propagate(*example_inputs)
     if verbose:
         print(gm.graph)
     global_vars = {}
@@ -96,12 +99,23 @@ class TorchBuilder:
             operator.add: "add",
             operator.sub: "sub",
             operator.mul: "mul",
+            operator.truediv: "div",
+            torch.matmul: "matmul",
+            math.sqrt: "sqrt",
+            F.softmax: "softmax",
+            F.dropout: "dropout",
             F.relu: "relu",
         }.get(node.target)
-        return getattr(self, f"build_{opcls}")(node)
+        return (
+            getattr(self, f"build_{opcls}")(node)
+            if "tensor_meta" in node.meta
+            else None
+        )
 
     def build_call_method(self, node):
-        pass
+        if node.target == "reshape":
+            node.target = "view"
+        return getattr(self, f"build_{node.target}")(node)
 
     def build_output(self, node):
         return f"return {node.args[0]}"
@@ -110,6 +124,23 @@ class TorchBuilder:
         lhs = get_var_name(node.args[0])
         rhs = get_var_name(node.args[1])
         return f"{node.name} = {lhs} + {rhs}"
+
+    def build_matmul(self, node):
+        lhs = get_var_name(node.args[0])
+        rhs = get_var_name(node.args[1])
+        return f"{node.name} = dsl.matmul({lhs}, {rhs})"
+
+    def build_div(self, node):
+        lhs = get_var_name(node.args[0])
+        rhs = get_var_name(node.args[1])
+        return f"{node.name} = {lhs} / {rhs}"
+
+    def build_softmax(self, node):
+        inp = get_var_name(node.args[0])
+        return f"{node.name} = dsl.softmax({inp})"
+
+    def build_dropout(self, node):
+        pass
 
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
@@ -120,3 +151,18 @@ class TorchBuilder:
         weight = get_var_name(node.target + "_weight")
         bias = get_var_name(node.target + "_bias")
         return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
+
+    def build_view(self, node):
+        inp = get_var_name(node.args[0])
+        shape = tuple(node.meta["tensor_meta"].shape)
+        return f"{node.name} = dsl.view({inp}, {shape})"
+
+    def build_permute(self, node):
+        inp = get_var_name(node.args[0])
+        permutation = node.args[1:]
+        return f"{node.name} = dsl.transpose({inp}, {permutation})"
+
+    def build_transpose(self, node):
+        inp = get_var_name(node.args[0])
+        permutation = node.args[1:]
+        return f"{node.name} = dsl.transpose({inp}, {permutation})"

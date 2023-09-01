@@ -330,7 +330,7 @@ class LLVMModule:
             else:
                 shared_libs = None
             self.execution_engine = ExecutionEngine(
-                self.module, opt_level=3, shared_libs=shared_libs
+                self.module, opt_level=0, shared_libs=shared_libs
             )
 
     # pylint: disable=too-many-branches
