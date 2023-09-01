@@ -196,6 +196,24 @@ def test_nested_func_slicing_arg():
     np.testing.assert_allclose(kernel(np_A), mod(np_A), rtol=1e-5)
 
 
+def test_slicing_broadcast():
+    M, N = 6, 6
+
+    np_A = np.zeros((M, N, M, N, M, N)).astype(np.int32)
+
+    def kernel() -> int32[M, N - 1, 2, 2, 1, 1]:
+        A: int32[M, N, M, N, M, N] = np_A
+        A[:, 1:, :2, 1:3, 0, 2:4:2] = 2
+        return A[:, 1:, :2, 1:3, 0, 2:4:2]
+
+    s = allo.customize(kernel, verbose=True, enable_tensor=True)
+    print(s.module)
+
+    mod = s.build()
+    golden = np.zeros((M, N - 1, 2, 2, 1, 1)).astype(np.int32) + 2
+    np.testing.assert_allclose(mod(), golden, rtol=1e-5)
+
+
 def test_linalg_math_tensor():
     M = 10
     K = 15

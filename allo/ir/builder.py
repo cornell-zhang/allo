@@ -596,6 +596,9 @@ class ASTTransformer(ASTBuilder):
             return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
+        rhs = ASTTransformer.build_broadcast_op(
+            ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
+        )
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
@@ -965,6 +968,14 @@ class ASTTransformer(ASTBuilder):
                 value=node.value,
             )
             if rhs is not None:
+                rhs = ASTTransformer.build_broadcast_op(
+                    ctx,
+                    rhs,
+                    node.dtype,
+                    node.value.shape,
+                    node.target.shape,
+                    node.dims[1],  # rhs
+                )
                 build_stmt(ctx, node.target, val=rhs)
 
     @staticmethod
