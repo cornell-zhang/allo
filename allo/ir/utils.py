@@ -5,6 +5,7 @@
 from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
+    IndexType,
     F32Type,
     IntegerAttr,
     FloatAttr,
@@ -104,7 +105,7 @@ class MockScalar(MockOp):
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
             alloc_op.attributes["name"] = StringAttr.get(name)
         else:
-            alloc_op = tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
+            alloc_op = tensor_d.EmptyOp(tuple(), dtype.build(), ip=ctx.get_ip())
         self.op = alloc_op
 
     @property
@@ -122,7 +123,7 @@ class MockScalar(MockOp):
         else:
             return tensor_d.ExtractOp(
                 tensor=self.op.result,
-                indices=[MockConstant(0, self.ctx).result],
+                indices=[],
                 ip=self.ctx.get_ip(),
             ).result
 

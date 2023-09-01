@@ -71,18 +71,28 @@ class ASTBuilder(ASTVisitor):
 class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Name(ctx, node, val=None):
-        if val is not None:
-            affine_map = AffineMap.get(
-                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
+        if val is not None and isinstance(node.ctx, ast.Store):
             buffer = ctx.buffers[node.id]
             target = (
                 buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
             )
-            store_op = affine_d.AffineStoreOp(
-                val.result, target, [], affine_attr, ip=ctx.get_ip()
-            )
+            if not ctx.enable_tensor:
+                affine_map = AffineMap.get(
+                    dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+                )
+                affine_attr = AffineMapAttr.get(affine_map)
+                store_op = affine_d.AffineStoreOp(
+                    val.result, target, [], affine_attr, ip=ctx.get_ip()
+                )
+            else:
+                store_op = tensor_d.InsertOp(
+                    scalar=val.result,
+                    dest=target,
+                    indices=[],
+                    ip=ctx.get_ip(),
+                )
+                # update StoreOp
+                ctx.buffers[node.id].op = store_op
             store_op.attributes["to"] = StringAttr.get(node.id)
             return store_op
         if node.id in ctx.buffers:
