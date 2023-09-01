@@ -1,6 +1,5 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
 
 import os
 import importlib
@@ -24,6 +23,7 @@ class IPModule:
         return getattr(self.lib, f"{self.top}")(*args)
 
 
+# pylint: disable=dangerous-default-value
 def load_hls(top, headers, impls, signature, include_paths=[], link_hls=True):
     lib_name = f"py{top}"
     pybind_impl_name = f"/tmp/{lib_name}.cpp"
@@ -32,6 +32,7 @@ def load_hls(top, headers, impls, signature, include_paths=[], link_hls=True):
     for arg_type in arg_types:
         arg_type = arg_type.strip()
         ele_type = arg_type.split("[")[0].strip()
+        # pylint: disable=eval-used
         shape = eval(f'({arg_type.split("[")[1].split("]")[0].strip()})')
         args.append((ele_type, shape))
     # Generate pybind11 wrapper
@@ -73,7 +74,7 @@ def load_hls(top, headers, impls, signature, include_paths=[], link_hls=True):
     out_str += f"\nPYBIND11_MODULE({lib_name}, m) {{\n"
     out_str += f'  m.def("{top}", &py{top}, "{top} wrapper");\n'
     out_str += "}\n"
-    with open(pybind_impl_name, "w") as f:
+    with open(pybind_impl_name, "w", encoding="utf-8") as f:
         f.write(out_str)
 
     # Compilation

@@ -23,4 +23,4 @@ def test_gemm():
 
 
 if __name__ == "__main__":
-    test_gemm()
+    pytest.main([__file__])
