@@ -303,8 +303,14 @@ class TypeInferer(ASTVisitor):
                             if index[1] is not None
                             else ctx.buffers[node.value.id].shape[dim]
                         )
-                        step = index[2] if index[2] is not None else 1
-                        shape.append((upper - lower) // step)
+                        step = (
+                            index[2] if (len(index) > 2 and index[2] is not None) else 1
+                        )
+                        size = (upper - lower) // step
+                        if size > 0:
+                            shape.append(size)
+            if sum(shape) == len(shape):  # all ones
+                shape = tuple()
             node.shape = tuple(shape)
             node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(
