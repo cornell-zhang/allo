@@ -627,11 +627,8 @@ class Schedule:
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"
-            _mlir_lower_pipeline(self.module, lower_linalg=True)
             return LLVMModule(self.module, top_func_name=self.top_func_name)
         if target == "vhls":
-            # FIXME: Handle linalg.fill
-            _mlir_lower_pipeline(self.module, lower_linalg=True)
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,

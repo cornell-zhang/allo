@@ -27,6 +27,7 @@ from hcl_mlir.runtime import (
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
+from ..passes import _mlir_lower_pipeline
 
 
 def ranked_memref_to_numpy(ranked_memref):
@@ -334,6 +335,7 @@ class LLVMModule:
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
+            # Get input/output types
             self.in_types = []
             in_hints = (
                 func.attributes["itypes"].value
@@ -354,11 +356,13 @@ class LLVMModule:
                 dtype, shape = get_dtype_and_shape_from_type(out_type)
                 out_type = get_signed_type_by_hint(dtype, out_hint)
                 self.out_types.append((out_type, shape))
+            # Start lowering
+            _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
+            # Remove .partition() annotation
+            hcl_d.remove_stride_map(self.module)
             # Resolve FixedType
             hcl_d.lower_fixed_to_int(self.module)
             hcl_d.lower_bit_ops(self.module)
-            # Remove .partition() annotation
-            hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
                 "builtin.module("

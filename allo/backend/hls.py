@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with
+# pylint: disable=consider-using-with, no-name-in-module
 
 import os
 import re
@@ -8,7 +8,14 @@ import io
 import subprocess
 import time
 from hcl_mlir.dialects import hcl as hcl_d
+from hcl_mlir.ir import (
+    Context,
+    Module,
+)
+from hcl_mlir.passmanager import PassManager
+
 from .report import parse_xml
+from ..passes import _mlir_lower_pipeline
 
 
 def run_process(cmd, pattern=None):
@@ -68,10 +75,28 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
 
 class HLSModule:
     def __init__(self, mod, top_func_name, mode=None, project=None):
-        self.module = mod
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
+        with Context() as ctx:
+            hcl_d.register_dialect(ctx)
+            self.module = Module.parse(str(mod), ctx)
+            _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
+            # Run through lowering passes
+            pm = PassManager.parse(
+                "builtin.module("
+                # used for lowering tensor.empty
+                "empty-tensor-to-alloc-tensor,"
+                # translate tensor dialect (virtual) to memref dialect (physical)
+                "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                # used for lowering memref.subview
+                "expand-strided-metadata,"
+                # common lowering passes
+                "func.func(convert-linalg-to-affine-loops)"
+                # DO NOT LOWER AFFINE DIALECT
+                ")"
+            )
+            pm.run(self.module.operation)
         buf = io.StringIO()
         hcl_d.emit_vhls(self.module, buf)
         buf.seek(0)
