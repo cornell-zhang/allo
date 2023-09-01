@@ -300,10 +300,6 @@ class TypeInferer(ASTVisitor):
                     )
                     step = index[2] if index[2] is not None else 1
                     shape.append((upper - lower) // step)
-                elif index is not None:  # scalar
-                    shape.append(1)
-                else:  # None, reduced rank, should be 0
-                    pass
             node.shape = tuple(shape)
             node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(

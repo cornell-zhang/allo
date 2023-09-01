@@ -65,6 +65,8 @@ class ASTResolver:
                 ASTResolver.resolve_constant(node.upper, ctx),
                 ASTResolver.resolve_constant(node.step, ctx))
             )
+        if isinstance(node, ast.Index):
+            return ASTResolver.resolve_constant(node.value, ctx)
         return None
 
     @staticmethod
