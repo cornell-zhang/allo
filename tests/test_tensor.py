@@ -238,12 +238,10 @@ def test_linalg_matmul():
     K = 15
     A = np.random.uniform(size=(M, K))
     B = np.random.uniform(size=(K, M))
-    C = np.zeros((M, K), dtype="float32")
 
     def kernel() -> float32[M, K]:
         A1: float32[M, K] = A
         B1: float32[K, M] = B
-        C1: float32[M, K] = C
         D = allo.matmul(allo.matmul(A1, B1), A1)
         return D
 
