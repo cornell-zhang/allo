@@ -56,10 +56,7 @@ batch_size = 2
 seq_len = 512
 
 model = SelfAttention(hidden_size, n_heads).eval()
-gm = torch.fx.symbolic_trace(model)
-print(gm.graph)
 example_inputs = [torch.rand(batch_size, seq_len, hidden_size)]
-mod = model(example_inputs[0])
 llvm_mod = allo.frontend.from_pytorch(
     model, example_inputs=example_inputs, verbose=True
 )
