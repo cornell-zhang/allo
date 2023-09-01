@@ -73,5 +73,8 @@ class ASTResolver:
     def resolve_constant(node, ctx):
         if node is None:
             return None
-        # pylint: disable=eval-used
-        return eval(compile(ast.Expression(node), "", "eval"), ctx.global_vars)
+        try:
+            # pylint: disable=eval-used
+            return eval(compile(ast.Expression(node), "", "eval"), ctx.global_vars)
+        except:
+            return None

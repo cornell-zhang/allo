@@ -158,6 +158,8 @@ class TypeInferer(ASTVisitor):
         # Two dimensions are compatible when
         # 1. they are equal, or
         # 2. one of them is 1.
+        if not ctx.enable_tensor:
+            return lhs.shape, list(), list()
         tmp_lhs_shape = list(lhs.shape)
         tmp_rhs_shape = list(rhs.shape)
         if match_lhs and len(tmp_lhs_shape) < len(tmp_rhs_shape):
@@ -290,16 +292,19 @@ class TypeInferer(ASTVisitor):
             shape = []
             # e.g., A[:5, 0, 1:3] -> [(0,5,1),0,(1,3,1)]
             indices = ASTResolver.resolve_slice(node.slice, ctx)
-            for dim, index in enumerate(indices):
-                if isinstance(index, (list, tuple)):
-                    lower = index[0] if index[0] is not None else 0
-                    upper = (
-                        index[1]
-                        if index[1] is not None
-                        else ctx.buffers[node.value.id].shape[dim]
-                    )
-                    step = index[2] if index[2] is not None else 1
-                    shape.append((upper - lower) // step)
+            if isinstance(indices, tuple):  # Slice
+                indices = [indices]
+            if isinstance(indices, list):  # ExtSlice
+                for dim, index in enumerate(indices):
+                    if isinstance(index, (list, tuple)):
+                        lower = index[0] if index[0] is not None else 0
+                        upper = (
+                            index[1]
+                            if index[1] is not None
+                            else ctx.buffers[node.value.id].shape[dim]
+                        )
+                        step = index[2] if index[2] is not None else 1
+                        shape.append((upper - lower) // step)
             node.shape = tuple(shape)
             node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(
