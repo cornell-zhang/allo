@@ -354,9 +354,6 @@ class LLVMModule:
                 dtype, shape = get_dtype_and_shape_from_type(out_type)
                 out_type = get_signed_type_by_hint(dtype, out_hint)
                 self.out_types.append((out_type, shape))
-            # Resolve FixedType
-            hcl_d.lower_fixed_to_int(self.module)
-            hcl_d.lower_bit_ops(self.module)
             # Remove .partition() annotation
             hcl_d.remove_stride_map(self.module)
             # Run through lowering passes
@@ -373,6 +370,9 @@ class LLVMModule:
                 ")"
             )
             pm.run(self.module.operation)
+            # Resolve FixedType
+            hcl_d.lower_fixed_to_int(self.module)
+            hcl_d.lower_bit_ops(self.module)
             # Attach necessary attributes
             func = find_func_in_module(self.module, top_func_name)
             if func is None:
