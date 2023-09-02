@@ -110,12 +110,10 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            if self.mode == "vitis":
+            if self.platform == "vitis_hls":
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
-                    f"{project}/host.cpp",
-                    f"{project}/kernel.cpp",
                 )
             else:
                 self.host_code = ""
