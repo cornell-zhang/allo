@@ -746,7 +746,7 @@ def generate_makefile(desc_file, path):
     if "match_makefile" in data and data["match_makefile"] == "false":
         print("Info:: Makefile Manually Edited:: AutoMakefile Generator Skipped")
     else:
-        print("Generating Auto-Makefile for %s" % data["name"])
+        # print("Generating Auto-Makefile for %s" % data["name"])
         target = open(os.path.join(path, "makefile_zynqmp.mk"), "w")
         create_mk(target, data)
 

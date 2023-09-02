@@ -534,17 +534,17 @@ def generate_makefile(desc_file, path):
         print("Info:: xrt.ini File Manually Edited:: Auto-file Generator Skipped")
         err = False
     else:
-        print("Generating xrt.ini file for %s" % data["name"])
+        # print("Generating xrt.ini file for %s" % data["name"])
         target = open(os.path.join(path, "xrt.ini"), "w+")
         profile_report(target)
 
     if "match_makefile" in data and data["match_makefile"] == "false":
         print("Info:: Makefile Manually Edited:: AutoMakefile Generator Skipped")
     else:
-        print("Generating Auto-Makefile for %s" % data["name"])
+        # print("Generating Auto-Makefile for %s" % data["name"])
         target = open(os.path.join(path, "Makefile"), "w")
         create_mk(target, data, desc_file, path)
-        print("Generating utils.mk file for %s" % data["name"])
+        # print("Generating utils.mk file for %s" % data["name"])
         target = open(os.path.join(path, "utils.mk"), "w+")
         create_utils(target, data)
 
