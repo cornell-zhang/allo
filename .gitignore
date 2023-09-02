@@ -31,6 +31,7 @@ rapidjson
 *.pdf
 *.dot
 *.egg-info
+*.so
 
 docs/source/gallery
 log
