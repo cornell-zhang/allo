@@ -17,9 +17,8 @@ def test_vitis_gemm():
     s = allo.customize(gemm)
     print(s.module)
 
-    # 4. Generate HLS module
     mod = s.build(target="vitis_hls", mode="debug", project="gemm_vitis.prj")
-    print(mod)
+    print(mod.hls_code)
 
 
 if __name__ == "__main__":

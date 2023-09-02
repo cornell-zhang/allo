@@ -19,6 +19,7 @@ from .report import parse_xml
 from ..passes import _mlir_lower_pipeline
 from ..harness.makefile_gen.makegen import generate_makefile
 
+
 def run_process(cmd, pattern=None):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
     out, err = p.communicate()
@@ -38,9 +39,13 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "vitis_hls":
             # generate description file
-            desc = open(path + "makefile_gen/description.json", "r").read()
+            desc = open(
+                path + "makefile_gen/description.json", "r", encoding="utf-8"
+            ).read()
             desc = desc.replace("top", top)
-            with open(os.path.join(project, "description.json"), "w") as outfile:
+            with open(
+                os.path.join(project, "description.json"), "w", encoding="utf-8"
+            ) as outfile:
                 outfile.write(desc)
             # generate Makefile
             generate_makefile(os.path.join(project, "description.json"), project)

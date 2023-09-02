@@ -1,6 +1,5 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
 
 import textwrap
 
@@ -64,8 +63,7 @@ ctype_map = {
 def format_str(s, indent=4, strip=True):
     if strip:
         return textwrap.indent(textwrap.dedent(s).strip("\n"), " " * indent)
-    else:
-        return textwrap.indent(textwrap.dedent(s), " " * indent)
+    return textwrap.indent(textwrap.dedent(s), " " * indent)
 
 
 def codegen_host(top, module):

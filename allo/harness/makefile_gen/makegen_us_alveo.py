@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/tree/master/common/utility/makefile_gen
+# pylint: skip-file
 
 import json
 import os
