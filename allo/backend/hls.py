@@ -17,7 +17,7 @@ from hcl_mlir.passmanager import PassManager
 from .vitis import codegen_host
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline
-
+from ..harness.makefile_gen.makegen import generate_makefile
 
 def run_process(cmd, pattern=None):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
@@ -37,7 +37,14 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     if platform in {"vivado_hls", "vitis_hls"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "vitis_hls":
-            os.system("cp " + path + "vitis/run.tcl " + project)
+            # generate description file
+            desc = open(path + "makefile_gen/description.json", "r").read()
+            desc = desc.replace("top", top)
+            print("top func name", top)
+            with open(os.path.join(project, "description.json"), "w") as outfile:
+                outfile.write(desc)
+            # generate Makefile
+            generate_makefile(os.path.join(project, "description.json"), project)
         if mode == "debug":
             mode = "csyn"
         if mode != "custom":

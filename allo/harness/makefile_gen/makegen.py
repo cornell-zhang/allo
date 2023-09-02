@@ -5,6 +5,10 @@ import glob
 import os
 import re
 import subprocess
+from .makegen_us_alveo import generate_makefile as gen_us_alveo
+from .makegen_versal_alveo import generate_makefile as gen_versal_alveo
+from .makegen_versal_ps import generate_makefile as gen_versal_ps
+from .makegen_zynqmp import generate_makefile as gen_zynqmp
 
 #ini flags
 config_file = 0
@@ -97,7 +101,7 @@ def deprecated_check(target, data):
     target.write("\tmake host\n")
     target.write("\n")
 
-def mk_run(target, data):
+def mk_run(target, data, desc_file, path):
     if "targets" in data:
         target.write("ifneq ($(TARGET),$(findstring $(TARGET),")
         args = data["targets"]
@@ -140,9 +144,15 @@ def mk_run(target, data):
       if "makegen_versal_alveo.py" in makefile_lst : makefile_lst.remove("makegen_versal_alveo.py")
       makefile_lst.remove("makegen_us_alveo.py")
 
+    gen_func = {
+        "makegen_us_alveo.py": gen_us_alveo,
+        "makegen_versal_alveo.py": gen_versal_alveo,
+        "makegen_versal_ps.py": gen_versal_ps,
+        "makegen_zynqmp.py": gen_zynqmp
+    }
+
     for i in makefile_lst:
-      os.system("cd " + os.getcwd())
-      os.system(cur_dir + "/../makefile_gen/" + i + " " + desc_file)
+        gen_func[i](desc_file, path)
     
     if ("platform_type" in data and data["platform_type"] == "pcie") and ("vck" in blocklist):
       target.write("include makefile_us_alveo.mk\n")
@@ -377,14 +387,14 @@ def readme_gen(target):
     target.write("docs: README.rst\n")
     target.write("\n")
     target.write("README.rst: description.json\n")
-    target.write("\t$(XF_PROJ_ROOT)/../readme_gen/readme_gen.py description.json")
+    target.write("\t$(XF_PROJ_ROOT)/allo/harness/readme_gen/readme_gen.py description.json")
     target.write("\n")   
 
     
-def create_mk(target, data):
+def create_mk(target, data, desc_file, path):
     mk_copyright(target)
     create_params(target,data)
-    mk_run(target, data)
+    mk_run(target, data, desc_file, path)
     mk_help(target)
     return 
 
@@ -397,44 +407,45 @@ def create_utils(target, data):
     readme_gen(target)
     return
 
-script, desc_file = argv
-desc = open(desc_file, 'r')
-data = json.load(desc)
-desc.close()
+def generate_makefile(desc_file, path):
+    global data, init_cur_dir, cur_dir
+    desc = open(desc_file, 'r')
+    data = json.load(desc)
+    desc.close()
 
-file_name = "LICENSE.txt" # file to be searched
-cur_dir = os.getcwd()      # Dir from where search starts can be replaced with any path
-init_cur_dir = cur_dir
+    file_name = "LICENSE.txt" # file to be searched
+    cur_dir = os.getcwd()      # Dir from where search starts can be replaced with any path
+    init_cur_dir = cur_dir
 
-# while True:
-#     file_list = os.listdir(cur_dir)
-#     parent_dir = os.path.dirname(cur_dir)
-#     if file_name in file_list:
-#         break
-#     else:
-#         if cur_dir == parent_dir:         # if dir is root dir
-#             print ("LICENSE.txt file not found")
-#             break
-#         else:
-#             cur_dir = parent_dir
+    # while True:
+    #     file_list = os.listdir(cur_dir)
+    #     parent_dir = os.path.dirname(cur_dir)
+    #     if file_name in file_list:
+    #         break
+    #     else:
+    #         if cur_dir == parent_dir:         # if dir is root dir
+    #             print ("LICENSE.txt file not found")
+    #             break
+    #         else:
+    #             cur_dir = parent_dir
 
-if "match_ini" in data and data["match_ini"] == "false":
-    print("Info:: xrt.ini File Manually Edited:: Auto-file Generator Skipped")
-    err = False
-else:
-    print("Generating xrt.ini file for %s" %data["name"])
-    target = open("xrt.ini","w+")
-    profile_report(target)
+    if "match_ini" in data and data["match_ini"] == "false":
+        print("Info:: xrt.ini File Manually Edited:: Auto-file Generator Skipped")
+        err = False
+    else:
+        print("Generating xrt.ini file for %s" %data["name"])
+        target = open(os.path.join(path, "xrt.ini"),"w+")
+        profile_report(target)
 
-if "match_makefile" in data and data["match_makefile"] == "false":
-    print("Info:: Makefile Manually Edited:: AutoMakefile Generator Skipped")
-else:
-    print("Generating Auto-Makefile for %s" %data["name"])
-    target = open("Makefile", "w")
-    create_mk(target, data)
-    print("Generating utils.mk file for %s" %data["name"])
-    target = open("utils.mk", "w+")    
-    create_utils(target, data)
+    if "match_makefile" in data and data["match_makefile"] == "false":
+        print("Info:: Makefile Manually Edited:: AutoMakefile Generator Skipped")
+    else:
+        print("Generating Auto-Makefile for %s" %data["name"])
+        target = open(os.path.join(path, "Makefile"), "w")
+        create_mk(target, data, desc_file, path)
+        print("Generating utils.mk file for %s" %data["name"])
+        target = open(os.path.join(path, "utils.mk"), "w+")    
+        create_utils(target, data)
 
-if target:
-    target.close
+    if target:
+        target.close
