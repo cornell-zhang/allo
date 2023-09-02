@@ -1,8 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=consider-using-with
 
 import os
+import sys
 import importlib
+import inspect
+import subprocess
 
 type_map = {
     "float32": "float",
@@ -17,6 +21,7 @@ type_map = {
 class IPModule:
     def __init__(self, top):
         self.top = top
+        sys.path.append("/tmp/allo")
         self.lib = importlib.import_module(f"py{top}")
 
     def __call__(self, *args):
@@ -26,7 +31,8 @@ class IPModule:
 # pylint: disable=dangerous-default-value
 def load_hls(top, headers, impls, signature, include_paths=[], link_hls=True):
     lib_name = f"py{top}"
-    pybind_impl_name = f"/tmp/{lib_name}.cpp"
+    os.makedirs("/tmp/allo", exist_ok=True)
+    pybind_impl_name = f"/tmp/allo/{lib_name}.cpp"
     arg_types = signature.split("],")
     args = []
     for arg_type in arg_types:
@@ -86,11 +92,15 @@ def load_hls(top, headers, impls, signature, include_paths=[], link_hls=True):
         )
     cmd = "g++ -shared -std=c++11 -fPIC"
     cmd += " `python3 -m pybind11 --includes`"
-    if len(include_paths) > 0:
-        cmd += " -I" + " ".join(include_paths)
-    srcs = impls + [pybind_impl_name]
+    abs_path = os.path.dirname(os.path.abspath(inspect.stack()[1][1]))
+    include_paths += [abs_path]
+    cmd += " -I" + " -I".join(include_paths)
+    abs_impls = []
+    for impl in impls:
+        abs_impls.append(os.path.join(abs_path, impl))
+    srcs = abs_impls + [pybind_impl_name]
     cmd += " " + " ".join(srcs)
-    cmd += f" -o py{top}`python3-config --extension-suffix`"
+    cmd += f" -o /tmp/allo/py{top}`python3-config --extension-suffix`"
     print(cmd)
-    os.system(cmd)
+    subprocess.Popen(cmd, shell=True).wait()
     return IPModule(top)
