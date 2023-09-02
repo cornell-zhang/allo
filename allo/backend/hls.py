@@ -14,6 +14,7 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
+from .vitis import codegen_host
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline
 
@@ -106,8 +107,17 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode)
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
+            if self.mode == "vitis":
+                self.host_code = codegen_host(
+                    self.top_func_name,
+                    self.module,
+                    f"{project}/host.cpp",
+                    f"{project}/kernel.cpp",
+                )
+            else:
+                self.host_code = ""
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write("")
+                outfile.write(self.host_code)
 
     def __repr__(self):
         if self.mode is None:
