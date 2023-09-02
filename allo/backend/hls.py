@@ -40,7 +40,6 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
             # generate description file
             desc = open(path + "makefile_gen/description.json", "r").read()
             desc = desc.replace("top", top)
-            print("top func name", top)
             with open(os.path.join(project, "description.json"), "w") as outfile:
                 outfile.write(desc)
             # generate Makefile

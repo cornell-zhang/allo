@@ -650,21 +650,21 @@ def generate_makefile(desc_file, path):
     data = json.load(desc)
     desc.close()
 
-    # file_name = "LICENSE.txt" # file to be searched
-    # cur_dir = os.getcwd()      # Dir from where search starts can be replaced with any path
-    # init_cur_dir = cur_dir
+    file_name = "LICENSE"  # file to be searched
+    cur_dir = os.getcwd()  # Dir from where search starts can be replaced with any path
+    init_cur_dir = cur_dir
 
-    # while True:
-    #     file_list = os.listdir(cur_dir)
-    #     parent_dir = os.path.dirname(cur_dir)
-    #     if file_name in file_list:
-    #         break
-    #     else:
-    #         if cur_dir == parent_dir:         # if dir is root dir
-    #             print ("LICENSE.txt file not found")
-    #             break
-    #         else:
-    #             cur_dir = parent_dir
+    while True:
+        file_list = os.listdir(cur_dir)
+        parent_dir = os.path.dirname(cur_dir)
+        if file_name in file_list:
+            break
+        else:
+            if cur_dir == parent_dir:  # if dir is root dir
+                print("LICENSE file not found")
+                break
+            else:
+                cur_dir = parent_dir
 
     if "match_makefile" in data and data["match_makefile"] == "false":
         print("Info:: Makefile Manually Edited:: AutoMakefile Generator Skipped")
