@@ -38,7 +38,6 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "vitis_hls":
             os.system("cp " + path + "vitis/run.tcl " + project)
-        os.system("cp " + path + "harness.mk " + project)
         if mode == "debug":
             mode = "csyn"
         if mode != "custom":
