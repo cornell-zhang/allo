@@ -30,7 +30,7 @@
             "accelerators": [
                 {
                     "name": "top", 
-                    "location": "top.cpp"
+                    "location": "kernel.cpp"
                 }
             ], 
             "name": "top"

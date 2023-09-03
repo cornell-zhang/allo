@@ -181,7 +181,9 @@ def codegen_host(top, module):
     out_str += format_str("// Copy input data to device global memory\n", strip=False)
     buf_str = ", ".join([f"buffer_in{i}" for i in range(len(inputs))])
     out_str += format_str(
-        f"OCL_CHECK(err, err = q.enqueueMigrateMemObjects({buf_str}, 0 /* 0 means from host*/));\n",
+        "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+        + buf_str
+        + "}, 0 /* 0 means from host*/));\n",
         strip=False,
     )
     out_str += "\n"
@@ -206,7 +208,9 @@ def codegen_host(top, module):
     )
     buf_str = ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
     out_str += format_str(
-        f"OCL_CHECK(err, err = q.enqueueMigrateMemObjects({buf_str}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+        "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+        + buf_str
+        + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
         strip=False,
     )
     out_str += format_str("q.finish();\n", strip=False)
