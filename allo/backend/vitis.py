@@ -171,7 +171,8 @@ def codegen_host(top, module):
     # Set kernel arguments
     for i in range(len(inputs)):
         out_str += format_str(
-            f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n", strip=False
+            f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
+            strip=False,
         )
     for i in range(len(outputs)):
         out_str += format_str(
@@ -200,7 +201,8 @@ def codegen_host(top, module):
     # Launch kernel
     out_str += format_str("// Launch the Kernel\n", strip=False)
     out_str += format_str(
-        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}, nullptr, &event));\n", strip=False
+        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}, nullptr, &event));\n",
+        strip=False,
     )
     out_str += "\n"
     out_str += format_str(
@@ -248,4 +250,28 @@ def codegen_host(top, module):
     out_str += "\n"
     out_str += format_str("return EXIT_SUCCESS;\n", strip=False)
     out_str += "}\n"
+    return out_str
+
+
+def postprocess_hls_code(hls_code):
+    out_str = ""
+    func_decl = False
+    for line in hls_code.split("\n"):
+        if line == "using namespace std;":
+            out_str += line + "\n"
+            # Add external function declaration
+            out_str += '\nextern "C" {\n\n'
+        elif line.startswith("void"):
+            func_decl = True
+            out_str += line + "\n"
+        elif func_decl and line.startswith(") {"):
+            func_decl = False
+            out_str += line + "\n"
+        elif func_decl:
+            dtype, var = line.strip().split(" ")
+            var = var.split("[")[0]
+            out_str += "  " + dtype + " *" + var + ";\n"
+        else:
+            out_str += line + "\n"
+    out_str += '} // extern "C"\n'
     return out_str

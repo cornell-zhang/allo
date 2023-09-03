@@ -14,7 +14,7 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
-from .vitis import codegen_host
+from .vitis import codegen_host, postprocess_hls_code
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
 from ..harness.makefile_gen.makegen import generate_makefile
@@ -96,9 +96,9 @@ class HLSModule:
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
+            self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
-                func = find_func_in_module(self.module, top_func_name)
-                generate_input_output_buffers(func)
+                generate_input_output_buffers(self.func)
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(
@@ -122,15 +122,16 @@ class HLSModule:
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
-            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.hls_code)
             if self.platform == "vitis_hls":
+                self.hls_code = postprocess_hls_code(self.hls_code)
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
                 )
             else:
                 self.host_code = ""
+            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
+                outfile.write(self.hls_code)
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.host_code)
 
