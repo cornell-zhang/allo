@@ -16,8 +16,9 @@ from hcl_mlir.passmanager import PassManager
 
 from .vitis import codegen_host
 from .report import parse_xml
-from ..passes import _mlir_lower_pipeline
+from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
 from ..harness.makefile_gen.makegen import generate_makefile
+from ..ir.transform import find_func_in_module
 
 
 def run_process(cmd, pattern=None):
@@ -95,6 +96,9 @@ class HLSModule:
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
+            if platform == "vitis_hls":
+                func = find_func_in_module(self.module, top_func_name)
+                generate_input_output_buffers(func)
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(

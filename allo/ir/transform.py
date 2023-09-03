@@ -158,11 +158,13 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
     return for_loops
 
 
-def create_buffer(tensor, name, ip):
-    with InsertionPoint(ip):
+def create_buffer(tensor, name, ip, alloc_ip=None):
+    with InsertionPoint(ip if alloc_ip is None else alloc_ip):
         alloc_op = memref_d.AllocOp(tensor.type, [], [])
         alloc_op.attributes["name"] = StringAttr.get(name)
         shape = MemRefType(tensor.type).shape
+    if alloc_ip is None:  # load
+        tensor.replace_all_uses_with(alloc_op.result)
     for_loops = build_for_loops(shape, ip, name)
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
@@ -172,8 +174,7 @@ def create_buffer(tensor, name, ip):
             alloc_op.result,
             induction_vars,
         )
-    # TODO: Upgrade LLVM version and use the following code
-    # tensor.replace_all_uses_with(alloc_op.result)
+    return alloc_op
 
 
 def find_func_in_module(module, func_name):

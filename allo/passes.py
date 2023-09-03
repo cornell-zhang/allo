@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+from hcl_mlir.ir import Location
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -10,6 +11,7 @@ from hcl_mlir.dialects import (
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
+from .ir.transform import create_buffer
 
 
 def _mlir_lower_pipeline(module, **kwargs):
@@ -82,3 +84,18 @@ def lower_linalg_and_attach_names(module):
                     annotate_affine_for(op_)
                     if isinstance(op_, affine_d.AffineForOp):
                         cnt_loop_nests += 1
+
+
+def generate_input_output_buffers(top_func):
+    with top_func.context, Location.unknown():
+        first_op = top_func.entry_block.operations[0]
+        for i, arg in enumerate(top_func.arguments):
+            create_buffer(arg, f"buf{i}", ip=first_op)
+        # find return op
+        for op in top_func.entry_block.operations:
+            if isinstance(op, func_d.ReturnOp):
+                for i, arg in enumerate(op.operands):
+                    buf = create_buffer(arg, f"result{i+len(top_func.arguments)}", ip=op, alloc_ip=first_op)
+                    # update returnop
+                    op.operation.replace_uses_of_with(arg, buf.result)
+                break
