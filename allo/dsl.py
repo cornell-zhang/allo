@@ -38,13 +38,6 @@ def copy(x, name=None):
 
 
 def transpose(x, axes, name=None):
-    if len(axes) == 2 and len(axes) < len(x.shape):
-        new_axes = []
-        for i in range(len(x.shape)):
-            new_axes.append(i)
-        new_axes[axes[0]] = axes[1] if axes[1] >= 0 else len(x.shape) + axes[1]
-        new_axes[axes[1]] = axes[0] if axes[0] >= 0 else len(x.shape) + axes[0]
-        axes = new_axes
     return np.transpose(x, axes)
 
 
