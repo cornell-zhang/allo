@@ -39,6 +39,7 @@ class ASTContext:
         self.affine_vars = []
         self.enable_tensor = enable_tensor
         self.verbose = verbose
+        # used for shape inference counting
         self.shape_buffers = 0
 
     def set_ip(self, ip):

@@ -31,7 +31,7 @@ class SelfAttention(nn.Module):
         )
         # (bs, head, seq, seq)
         attn_probs = F.softmax(attn_score, dim=-1)
-        # attn_probs = F.dropout(attn_probs, 0.1)
+        attn_probs = F.dropout(attn_probs, 0.1)
         # (bs, head, seq, hs // head)
         attn = torch.matmul(attn_probs, v)
         return attn

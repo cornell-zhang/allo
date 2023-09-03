@@ -622,15 +622,13 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_constant_tensor(
-        ctx, node, shape=None, dtype=None, constant=False, np_values=None
+        ctx, node, np_values, shape=None, dtype=None, constant=False
     ):
-        if np_values is None:
-            np_values = node.np_values
         value_attr = DenseElementsAttr.get(np_values)
-        dtype = dtype if dtype is not None else node.dtype.build()
+        dtype = dtype if dtype is not None else node.dtype
         shape = shape if shape is not None else node.shape
         if ctx.enable_tensor:
-            tensor_type = RankedTensorType.get(shape, dtype)
+            tensor_type = RankedTensorType.get(shape, dtype.build())
             # pylint: disable=too-many-function-args
             const_tensor = arith_d.ConstantOp(tensor_type, value_attr, ip=ctx.get_ip())
         else:
@@ -641,7 +639,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.shape_buffers += 1
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
-            memref_type = MemRefType.get(shape, dtype)
+            memref_type = MemRefType.get(shape, dtype.build())
             type_attr = TypeAttr.get(memref_type)
             # pylint: disable=redefined-variable-type
             const_tensor = memref_d.GlobalOp(
@@ -956,7 +954,7 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
         if hasattr(node, "np_values"):
-            rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            rhs = ASTTransformer.build_constant_tensor(ctx, node, node.np_values)
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor
@@ -1383,42 +1381,10 @@ class ASTTransformer(ASTBuilder):
                 "maxpool",
                 "sumpool",
             }:
-                # Now we only support matmul with the same dimension, like (M, N, L, K) @（M, N, K, V)
-                # and (M, N, K) @ (K, L) for linear op
-                if attr == "matmul" and len(shape) >= 3:
-                    if len(node.f_shapes[0]) == len(node.f_shapes[1]):
-                        for i in range(2):
-                            new_args[i] = ASTTransformer.build_library_op(
-                                ctx,
-                                node,
-                                "view",
-                                [new_args[i], node.f_shapes[i]],
-                                shape=node.f_shapes[i],
-                            )
-                    elif len(node.f_shapes[0]) > len(node.f_shapes[1]):
-                        new_args[1] = ASTTransformer.build_broadcast_op(
-                            ctx,
-                            new_args[1],
-                            dtype,
-                            node.f_shapes[1],
-                            [node.f_shapes[0][0]] + node.f_shapes[1],
-                            [0],
-                        )
-                        node.f_shapes[1] = [node.f_shapes[0][0]] + node.f_shapes[1]
-                    else:
-                        raise RuntimeError("Unsupported this matmul shape")
-                    result = ASTTransformer.build_library_op(
-                        ctx,
-                        node,
-                        "bmm",
-                        new_args,
-                        shape=node.f_shapes[0][:-1] + node.f_shapes[1][-1:],
+                if len(shape) >= 3 and attr in {"matmul", "linear"}:
+                    return ASTTransformer.build_flattened_tensor(
+                        ctx, node, new_args, dtype, shape
                     )
-                    # TODO: Need to create a branch which don't need to view
-                    op = ASTTransformer.build_library_op(
-                        ctx, node, "view", [result, node.shape]
-                    )
-                    return op
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
@@ -1467,13 +1433,14 @@ class ASTTransformer(ASTBuilder):
                     outputs=[
                         result_tensor if ctx.enable_tensor else result_tensor.result
                     ],
-                    permutation=node.perm,
+                    permutation=tuple(x.val for x in new_args[1]),
                     ip=ctx.get_ip(),
                 )
             elif attr == "view":
                 view_op = (
                     tensor_d.ReshapeOp if ctx.enable_tensor else memref_d.ReshapeOp
                 )
+                # Check if new shape values are MockConstant.
                 if MockConstant not in [type(x) for x in new_args[1]]:
                     value = np.array(new_args[1])
                 else:
@@ -1482,7 +1449,7 @@ class ASTTransformer(ASTBuilder):
                     ctx,
                     node,
                     shape=value.shape,
-                    dtype=IntegerType.get_signless(64),
+                    dtype=Int(64),
                     np_values=value,
                     constant=True,
                 )
@@ -1495,19 +1462,18 @@ class ASTTransformer(ASTBuilder):
                 )
                 return op
             elif attr == "linear":  # X @ A.T + B
+                permutation = [MockConstant(val, ctx) for val in (1, 0)]
                 A_T = ASTTransformer.build_library_op(
                     ctx,
                     node,
                     "transpose",
-                    [new_args[1]],
+                    [new_args[1], permutation],
                     shape=node.args[1].shape[::-1],
                 )
                 matmul = ASTTransformer.build_library_op(
                     ctx, node, "matmul", [new_args[0], A_T]
                 )
-                dim = []
-                for i in range(len(node.shape) - 1):
-                    dim.append(i)
+                dim = list(range(len(node.shape) - 1))
                 bias = ASTTransformer.build_broadcast_op(
                     ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dim
                 )
@@ -1517,6 +1483,49 @@ class ASTTransformer(ASTBuilder):
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
         return op if ctx.enable_tensor else result_tensor
+
+    @staticmethod
+    def build_flattened_tensor(ctx, node, new_args, dtype, shape):
+        # Only support:
+        # 1. flatten two matrices with the last two dimensions same and all other dimensions same.
+        # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
+        f_shapes = [[], []]
+        for i in range(2):
+            f_shapes[i] = [
+                np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
+                node.args[i].shape[-2],
+                node.args[i].shape[-1],
+            ]
+        if node.func.attr == "linear":
+            f_shapes[1] = list(node.args[1].shape[::-1])
+            new_args[1] = ASTTransformer.build_broadcast_op(
+                ctx,
+                new_args[1],
+                dtype,
+                f_shapes[1],
+                [f_shapes[0][0]] + f_shapes[1],
+                [0],
+            )
+            f_shapes[1] = [f_shapes[0][0]] + f_shapes[1]
+        elif node.func.attr == "matmul":
+            for i in range(2):
+                new_args[i] = ASTTransformer.build_library_op(
+                    ctx,
+                    node,
+                    "view",
+                    [new_args[i], f_shapes[i]],
+                    shape=f_shapes[i],
+                )
+        op = ASTTransformer.build_library_op(
+            ctx,
+            node,
+            "bmm",
+            new_args,
+            shape=f_shapes[0][:-1] + f_shapes[1][-1:],
+        )
+        if tuple(f_shapes[0][:-1] + f_shapes[1][-1:]) != shape:
+            op = ASTTransformer.build_library_op(ctx, node, "view", [op, shape])
+        return op
 
     @staticmethod
     def build_Return(ctx, node):

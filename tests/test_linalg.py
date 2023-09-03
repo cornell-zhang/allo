@@ -479,10 +479,7 @@ def test_copy_const(enable_tensor):
 
 @pytest.mark.parametrize("enable_tensor", [True, False])
 def test_library_higher_dimension_ops(enable_tensor):
-    M = 5
-    N = 4
-    K = 3
-    L = 2
+    M, N, K, L = 5, 4, 3, 2
     A = np.random.uniform(size=(M, K, L)).astype(np.float32)
     B = np.random.uniform(size=(N, K)).astype(np.float32)
     C = np.random.uniform(size=(N,)).astype(np.float32)
@@ -490,7 +487,7 @@ def test_library_higher_dimension_ops(enable_tensor):
     def kernel(
         A: float32[M, K, L], B: float32[N, K], C: float32[N]
     ) -> float32[M, L * N]:
-        output1 = allo.transpose(A, (-1, -2))
+        output1 = allo.transpose(A, (0, 2, 1))
         output2 = allo.linear(output1, B, C)
         output = allo.view(output2, (5, 8))
         return output

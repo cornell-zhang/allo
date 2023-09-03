@@ -103,9 +103,11 @@ class TorchBuilder:
             torch.matmul: "matmul",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
-            F.dropout: "dropout",
             F.relu: "relu",
+            # Now do not support following ops.
+            F.dropout: "identity",
         }.get(node.target)
+        # Only nodes with shape need to be built.
         return (
             getattr(self, f"build_{opcls}")(node)
             if "tensor_meta" in node.meta
@@ -113,8 +115,6 @@ class TorchBuilder:
         )
 
     def build_call_method(self, node):
-        if node.target == "reshape":
-            node.target = "view"
         return getattr(self, f"build_{node.target}")(node)
 
     def build_output(self, node):
@@ -139,9 +139,6 @@ class TorchBuilder:
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.softmax({inp})"
 
-    def build_dropout(self, node):
-        pass
-
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.relu({inp})"
@@ -157,6 +154,9 @@ class TorchBuilder:
         shape = tuple(node.meta["tensor_meta"].shape)
         return f"{node.name} = dsl.view({inp}, {shape})"
 
+    def build_reshape(self, node):
+        return self.build_view(node)
+
     def build_permute(self, node):
         inp = get_var_name(node.args[0])
         permutation = node.args[1:]
@@ -164,5 +164,16 @@ class TorchBuilder:
 
     def build_transpose(self, node):
         inp = get_var_name(node.args[0])
-        permutation = node.args[1:]
-        return f"{node.name} = dsl.transpose({inp}, {permutation})"
+        shape_len = len(node.meta["tensor_meta"].shape)
+        permutation = list(range(shape_len))
+        permutation[node.args[1]] = (
+            node.args[2] if node.args[2] >= 0 else node.args[2] + shape_len
+        )
+        permutation[node.args[2]] = (
+            node.args[1] if node.args[1] >= 0 else node.args[1] + shape_len
+        )
+        return f"{node.name} = dsl.transpose({inp}, {tuple(permutation)})"
+
+    def build_identity(self, node):
+        inp = get_var_name(node.args[0])
+        return f"{node.name} = {inp}"

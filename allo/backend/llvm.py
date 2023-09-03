@@ -329,6 +329,8 @@ class LLVMModule:
                 ]
             else:
                 shared_libs = None
+            # opt_level should be set to 2 to avoid the following issue
+            # https://github.com/cornell-zhang/allo/issues/72
             self.execution_engine = ExecutionEngine(
                 self.module, opt_level=2, shared_libs=shared_libs
             )

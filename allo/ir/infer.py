@@ -604,19 +604,7 @@ class TypeInferer(ASTVisitor):
                 assert (
                     argAshape[-1] == argBshape[-2]
                 ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
-                if len(argAshape) == 2 and len(argBshape) == 2:
-                    node.shape = (argAshape[0], argBshape[1])
-                if len(argAshape) >= 3 or len(argBshape) >= 3:
-                    node.shape = argAshape[:-1] + argBshape[-1:]
-                    f_shapes = [[], []]
-                    for j in range(2):
-                        i = 1
-                        for dim in new_args[j].shape[0:-2]:
-                            i *= dim
-                        f_shapes[j].append(i)
-                        f_shapes[j].append(new_args[j].shape[-2])
-                        f_shapes[j].append(new_args[j].shape[-1])
-                    node.f_shapes = f_shapes
+                node.shape = tuple(argAshape[:-1] + argBshape[-1:])
             elif op_name == "bmm":
                 assert (
                     len(argAshape) == 3 and len(argBshape) == 3
@@ -629,29 +617,9 @@ class TypeInferer(ASTVisitor):
                 ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
             elif op_name == "linear":
-                if len(argBshape) == 2:
-                    node.perm = [1, 0]
-                else:
-                    permutation = []
-                    for i in range(len(argBshape) - 2):
-                        permutation.append(i)
-                    permutation.append(len(argBshape) - 1)
-                    permutation.append(len(argBshape) - 2)
-                    node.perm = permutation
                 assert argAshape[-1] == argBshape[-1]
                 assert argBshape[0] == new_args[2].shape[0]
                 node.shape = argAshape[:-1] + argBshape[:-1]
-                if len(argAshape) >= 3 or len(argBshape) >= 3:
-                    f_shapes = [[], []]
-                    i = 1
-                    for dim in new_args[0].shape[0:-2]:
-                        i *= dim
-                    f_shapes[0].append(i)
-                    f_shapes[0].append(new_args[0].shape[-2])
-                    f_shapes[0].append(new_args[0].shape[-1])
-                    f_shapes[1] = list(node.args[1].shape[::-1])
-                    node.f_shapes = f_shapes
-                node.argshapes = [argAshape, argBshape]
             return node
         if op_name in {"transpose"}:
             assert (
@@ -665,24 +633,10 @@ class TypeInferer(ASTVisitor):
                 axes = compile(ast.Expression(new_args[1]), "", "eval")
                 # pylint: disable=eval-used
                 axes = eval(axes)
-                if len(axes) == 2 and len(axes) < len(shape):
-                    new_axes = []
-                    for i in range(len(shape)):
-                        new_axes.append(i)
-                    new_axes[axes[0]] = (
-                        axes[1] if axes[1] >= 0 else len(shape) + axes[1]
-                    )
-                    new_axes[axes[1]] = (
-                        axes[0] if axes[0] >= 0 else len(shape) + axes[0]
-                    )
-                    axes = new_axes
                 assert len(shape) == len(
                     axes
                 ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
-                new_shape = []
-                for new_dim in axes:
-                    new_shape.append(shape[new_dim])
-                node.perm = axes
+                new_shape = [shape[new_dim] for new_dim in axes]
                 node.shape = tuple(new_shape)
                 node.dtype = new_args[0].dtype
             return node
