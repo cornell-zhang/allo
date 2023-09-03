@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
-from hcl_mlir.ir import Location
+import numpy as np
+
+from hcl_mlir.ir import Location, MemRefType, FunctionType, TypeAttr
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -86,16 +88,37 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
-def generate_input_output_buffers(top_func):
+def generate_input_output_buffers(top_func, flatten=False):
     with top_func.context, Location.unknown():
         first_op = top_func.entry_block.operations[0]
+        new_in_types = []
         for i, arg in enumerate(top_func.arguments):
-            create_buffer(arg, f"buf{i}", ip=first_op)
+            create_buffer(arg, f"buf{i}", ip=first_op, flatten=flatten)
+            if flatten:
+                old_memref = MemRefType(arg.type)
+                new_memref = MemRefType.get(
+                    (np.prod(old_memref.shape),),
+                    old_memref.element_type,
+                )
+                arg.set_type(new_memref)
+                new_in_types.append(new_memref)
+            else:
+                new_in_types.append(arg.type)
         # find return op
+        new_out_types = []
         for op in top_func.entry_block.operations:
             if isinstance(op, func_d.ReturnOp):
                 for i, arg in enumerate(op.operands):
-                    buf = create_buffer(arg, f"result{i+len(top_func.arguments)}", ip=op, alloc_ip=first_op)
+                    buf = create_buffer(
+                        arg,
+                        f"result{i+len(top_func.arguments)}",
+                        ip=op,
+                        alloc_ip=first_op,
+                        flatten=flatten,
+                    )
                     # update returnop
                     op.operation.replace_uses_of_with(arg, buf.result)
+                    new_out_types.append(buf.result.type)
                 break
+        func_type = FunctionType.get(new_in_types, new_out_types)
+        top_func.attributes["function_type"] = TypeAttr.get(func_type)

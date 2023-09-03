@@ -98,7 +98,7 @@ class HLSModule:
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
-                generate_input_output_buffers(self.func)
+                generate_input_output_buffers(self.func, flatten=True)
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(
