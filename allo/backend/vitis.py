@@ -269,8 +269,9 @@ def postprocess_hls_code(hls_code):
             out_str += line + "\n"
         elif func_decl:
             dtype, var = line.strip().split(" ")
+            comma = "," if var[-1] == "," else ""
             var = var.split("[")[0]
-            out_str += "  " + dtype + " *" + var + ";\n"
+            out_str += "  " + dtype + " *" + var + f"{comma}\n"
         else:
             out_str += line + "\n"
     out_str += '} // extern "C"\n'
