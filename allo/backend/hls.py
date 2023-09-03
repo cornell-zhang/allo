@@ -14,8 +14,11 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
+from .vitis import codegen_host, postprocess_hls_code
 from .report import parse_xml
-from ..passes import _mlir_lower_pipeline
+from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
+from ..harness.makefile_gen.makegen import generate_makefile
+from ..ir.transform import find_func_in_module
 
 
 def run_process(cmd, pattern=None):
@@ -34,10 +37,19 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     path = os.path.dirname(__file__)
     path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls"}:
-        os.system("cp " + path + "vivado/* " + project)
+        os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "vitis_hls":
-            os.system("cp " + path + "vitis/run.tcl " + project)
-        os.system("cp " + path + "harness.mk " + project)
+            # generate description file
+            desc = open(
+                path + "makefile_gen/description.json", "r", encoding="utf-8"
+            ).read()
+            desc = desc.replace("top", top)
+            with open(
+                os.path.join(project, "description.json"), "w", encoding="utf-8"
+            ) as outfile:
+                outfile.write(desc)
+            # generate Makefile
+            generate_makefile(os.path.join(project, "description.json"), project)
         if mode == "debug":
             mode = "csyn"
         if mode != "custom":
@@ -74,13 +86,19 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
 
 
 class HLSModule:
-    def __init__(self, mod, top_func_name, mode=None, project=None):
+    def __init__(
+        self, mod, top_func_name, platform="vivado_hls", mode=None, project=None
+    ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
+        self.platform = platform
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
+            self.func = find_func_in_module(self.module, top_func_name)
+            if platform == "vitis_hls":
+                generate_input_output_buffers(self.func, flatten=True)
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(
@@ -103,11 +121,19 @@ class HLSModule:
         self.hls_code = buf.read()
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
-            copy_build_files(self.top_func_name, project, mode)
+            copy_build_files(self.top_func_name, project, mode, platform=platform)
+            if self.platform == "vitis_hls":
+                self.hls_code = postprocess_hls_code(self.hls_code)
+                self.host_code = codegen_host(
+                    self.top_func_name,
+                    self.module,
+                )
+            else:
+                self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write("")
+                outfile.write(self.host_code)
 
     def __repr__(self):
         if self.mode is None:
@@ -115,11 +141,10 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, shell=True):
-        platform = "vivado_hls"
-        if platform in {"vivado_hls", "vitis_hls"}:
+        if self.platform in {"vivado_hls", "vitis_hls"}:
             assert (
-                os.system(f"which {platform} >> /dev/null") == 0
-            ), f"cannot find {platform} on system path"
+                os.system(f"which {self.platform} >> /dev/null") == 0
+            ), f"cannot find {self.platform} on system path"
             ver = run_process("g++ --version", r"\d\.\d\.\d")[0].split(".")
             assert (
                 int(ver[0]) * 10 + int(ver[1]) >= 48
@@ -135,7 +160,7 @@ class HLSModule:
                 )
 
             elif "csyn" in self.mode or self.mode == "custom" or self.mode == "debug":
-                cmd += platform
+                cmd += self.platform
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
@@ -152,6 +177,6 @@ class HLSModule:
                     )
 
             else:
-                raise RuntimeError(f"{platform} does not support {self.mode} mode")
+                raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
         else:
             raise RuntimeError("Not implemented")

@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import numpy as np
+
 import hcl_mlir
-from hcl_mlir import UnitAttr, StringAttr, InsertionPoint, MemRefType
+from hcl_mlir.ir import UnitAttr, StringAttr, InsertionPoint, MemRefType, AffineMapAttr
 from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
@@ -158,22 +160,70 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
     return for_loops
 
 
-def create_buffer(tensor, name, ip):
-    with InsertionPoint(ip):
-        alloc_op = memref_d.AllocOp(tensor.type, [], [])
-        alloc_op.attributes["name"] = StringAttr.get(name)
+def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
+    with InsertionPoint(ip if alloc_ip is None else alloc_ip):
         shape = MemRefType(tensor.type).shape
+        if not flatten or alloc_ip is None:
+            alloc_op = memref_d.AllocOp(tensor.type, [], [])
+        else:  # store back to results
+            alloc_op = memref_d.AllocOp(
+                MemRefType.get((np.prod(shape),), MemRefType(tensor.type).element_type),
+                [],
+                [],
+            )
+        alloc_op.attributes["name"] = StringAttr.get(name)
+    if alloc_ip is None:  # load
+        tensor.replace_all_uses_with(alloc_op.result)
     for_loops = build_for_loops(shape, ip, name)
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
-        load = memref_d.LoadOp(tensor, induction_vars)
-        memref_d.StoreOp(
-            load.result,
-            alloc_op.result,
-            induction_vars,
-        )
-    # TODO: Upgrade LLVM version and use the following code
-    # tensor.replace_all_uses_with(alloc_op.result)
+        if not flatten:
+            var_str = ", ".join([f"d{i}" for i in range(len(shape))])
+            affine_attr = AffineMapAttr.parse(f"affine_map<({var_str})->({var_str})>")
+            load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+            affine_d.AffineStoreOp(
+                load.result,
+                alloc_op.result,
+                induction_vars,
+                affine_attr,
+            )
+        else:
+            in_str = ", ".join([f"d{i}" for i in range(len(shape))])
+            out_str = ""
+            reversed_shape = list(shape)[::-1]
+            for i in range(len(shape)):
+                s_str = " * ".join([str(s) for s in reversed_shape[:i]])
+                if s_str != "":
+                    out_str = s_str + f" * d{len(shape) - i - 1}" + out_str
+                else:
+                    out_str = f" d{len(shape) - i - 1}" + out_str
+                if i != len(shape) - 1:
+                    out_str = " + " + out_str
+            if alloc_ip is None:  # load from inputs
+                affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+                affine_d.AffineStoreOp(
+                    load.result,
+                    alloc_op.result,
+                    induction_vars,
+                    affine_attr,
+                )
+            else:  # store back results to outputs
+                affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+                affine_d.AffineStoreOp(
+                    load.result,
+                    alloc_op.result,
+                    induction_vars,
+                    affine_attr,
+                )
+    return alloc_op
 
 
 def find_func_in_module(module, func_name):
