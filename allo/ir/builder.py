@@ -635,8 +635,7 @@ class ASTTransformer(ASTBuilder):
             if hasattr(node, "target"):
                 name = node.target.id
             else:
-                name = f"const_{ctx.shape_buffers}"
-                ctx.shape_buffers += 1
+                name = f"const_{hash(str(node) + str(np_values))}"
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(shape, dtype.build())
@@ -1381,10 +1380,36 @@ class ASTTransformer(ASTBuilder):
                 "maxpool",
                 "sumpool",
             }:
-                if len(shape) >= 3 and attr in {"matmul", "linear"}:
-                    return ASTTransformer.build_flattened_tensor(
+                if len(shape) > 3 and attr == "matmul":
+                    flattened_shapes = ASTTransformer.build_flattened_tensor(
                         ctx, node, new_args, dtype, shape
                     )
+                    for i, arg in enumerate(new_args):
+                        new_args[i] = ASTTransformer.build_library_op(
+                            ctx,
+                            node,
+                            "view",
+                            [arg, flattened_shapes[i]],
+                            shape=flattened_shapes[i],
+                        )
+                    inner_shape = flattened_shapes[0][:-1] + flattened_shapes[1][-1:]
+                    op = ASTTransformer.build_library_op(
+                        ctx,
+                        node,
+                        "bmm",
+                        new_args,
+                        dtype,
+                        inner_shape,
+                    )
+                    if tuple(inner_shape) != shape:
+                        op = ASTTransformer.build_library_op(
+                            ctx,
+                            node,
+                            "view",
+                            [op, shape],
+                            shape=shape,
+                        )
+                    return op
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
@@ -1440,7 +1465,7 @@ class ASTTransformer(ASTBuilder):
                 view_op = (
                     tensor_d.ReshapeOp if ctx.enable_tensor else memref_d.ReshapeOp
                 )
-                # Check if new shape values are MockConstant.
+                # When the input shape is a list of constants, we can get the values directly
                 if MockConstant not in [type(x) for x in new_args[1]]:
                     value = np.array(new_args[1])
                 else:
@@ -1470,12 +1495,26 @@ class ASTTransformer(ASTBuilder):
                     [new_args[1], permutation],
                     shape=node.args[1].shape[::-1],
                 )
+                inner_attr = "matmul"
+                if len(shape) >= 3:
+                    flattened_shapes = ASTTransformer.build_flattened_tensor(
+                        ctx, node, new_args, dtype, shape
+                    )
+                    A_T = ASTTransformer.build_broadcast_op(
+                        ctx,
+                        A_T,
+                        dtype,
+                        list(node.args[1].shape[::-1]),
+                        flattened_shapes[1],
+                        [0],
+                    )
+                    inner_attr = "bmm"
                 matmul = ASTTransformer.build_library_op(
-                    ctx, node, "matmul", [new_args[0], A_T]
+                    ctx, node, inner_attr, [new_args[0], A_T]
                 )
-                dim = list(range(len(node.shape) - 1))
+                dims = list(range(len(node.shape) - 1))
                 bias = ASTTransformer.build_broadcast_op(
-                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dim
+                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dims
                 )
                 add = ASTTransformer.build_library_op(ctx, node, "add", [matmul, bias])
                 return add
@@ -1487,45 +1526,24 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_flattened_tensor(ctx, node, new_args, dtype, shape):
         # Only support:
-        # 1. flatten two matrices with the last two dimensions same and all other dimensions same.
+        # 1. flatten two matrices that
+        #    the last two dimensions must conform to two-dimensional matrix multiplication,
+        #    while the shapes of the remaining dimensions should be identical.
         # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
-        f_shapes = [[], []]
-        for i in range(2):
-            f_shapes[i] = [
-                np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
-                node.args[i].shape[-2],
-                node.args[i].shape[-1],
-            ]
+        flattened_shapes = [[], []]
+        if node.func.attr == "matmul":
+            for i in range(len(new_args)):
+                flattened_shapes[i] = [
+                    np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
+                    node.args[i].shape[-2],
+                    node.args[i].shape[-1],
+                ]
         if node.func.attr == "linear":
-            f_shapes[1] = list(node.args[1].shape[::-1])
-            new_args[1] = ASTTransformer.build_broadcast_op(
-                ctx,
-                new_args[1],
-                dtype,
-                f_shapes[1],
-                [f_shapes[0][0]] + f_shapes[1],
-                [0],
+            flattened_shapes[0] = node.args[0].shape
+            flattened_shapes[1] = [flattened_shapes[0][0]] + list(
+                node.args[1].shape[::-1]
             )
-            f_shapes[1] = [f_shapes[0][0]] + f_shapes[1]
-        elif node.func.attr == "matmul":
-            for i in range(2):
-                new_args[i] = ASTTransformer.build_library_op(
-                    ctx,
-                    node,
-                    "view",
-                    [new_args[i], f_shapes[i]],
-                    shape=f_shapes[i],
-                )
-        op = ASTTransformer.build_library_op(
-            ctx,
-            node,
-            "bmm",
-            new_args,
-            shape=f_shapes[0][:-1] + f_shapes[1][-1:],
-        )
-        if tuple(f_shapes[0][:-1] + f_shapes[1][-1:]) != shape:
-            op = ASTTransformer.build_library_op(ctx, node, "view", [op, shape])
-        return op
+        return flattened_shapes
 
     @staticmethod
     def build_Return(ctx, node):

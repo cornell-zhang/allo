@@ -74,19 +74,22 @@ def test_linalg_matmul():
     print(s.module)
 
 
-def test_linalg_matmul_4D():
+def test_linalg_matmul_5D():
     M = 10
     K = 15
     N = 20
-    A = np.random.randint(0, 20, size=(M, K, M, K), dtype="int32")
-    B = np.random.randint(0, 20, size=(M, K, K, N), dtype="int32")
+    A = np.random.randint(0, 20, size=(N, M, K, M, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(N, M, K, K, N), dtype="int32")
 
-    def kernel(A: int32[M, K, M, K], B: int32[M, K, K, N]) -> int32[M, K, M, N]:
+    def kernel(
+        A: int32[N, M, K, M, K], B: int32[N, M, K, K, N]
+    ) -> int32[N, M, K, M, N]:
         C = allo.matmul(A, B)
         return C
 
     s = allo.customize(kernel)
     f = s.build()
+    print(s.module)
     np_out = kernel(A, B)
     allo_out = f(A, B)
     np.testing.assert_array_equal(allo_out, np_out)

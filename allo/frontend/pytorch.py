@@ -104,7 +104,6 @@ class TorchBuilder:
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.relu: "relu",
-            # Now do not support following ops.
             F.dropout: "identity",
         }.get(node.target)
         # Only nodes with shape need to be built.
@@ -165,13 +164,15 @@ class TorchBuilder:
     def build_transpose(self, node):
         inp = get_var_name(node.args[0])
         shape_len = len(node.meta["tensor_meta"].shape)
+        sorted_args = sorted(
+            [
+                node.args[1] if node.args[1] >= 0 else node.args[1] + shape_len,
+                node.args[2] if node.args[2] >= 0 else node.args[2] + shape_len,
+            ]
+        )
         permutation = list(range(shape_len))
-        permutation[node.args[1]] = (
-            node.args[2] if node.args[2] >= 0 else node.args[2] + shape_len
-        )
-        permutation[node.args[2]] = (
-            node.args[1] if node.args[1] >= 0 else node.args[1] + shape_len
-        )
+        permutation[sorted_args[0]] = sorted_args[1]
+        permutation[sorted_args[1]] = sorted_args[0]
         return f"{node.name} = dsl.transpose({inp}, {tuple(permutation)})"
 
     def build_identity(self, node):
