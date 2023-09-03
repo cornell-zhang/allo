@@ -171,7 +171,7 @@ def codegen_host(top, module):
     # Set kernel arguments
     for i in range(len(inputs)):
         out_str += format_str(
-            f"OCL_CHECK(err, err = krnl_{top}.setArg(0, buffer_in{i}));\n", strip=False
+            f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n", strip=False
         )
     for i in range(len(outputs)):
         out_str += format_str(
@@ -200,7 +200,7 @@ def codegen_host(top, module):
     # Launch kernel
     out_str += format_str("// Launch the Kernel\n", strip=False)
     out_str += format_str(
-        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}));\n", strip=False
+        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}, nullptr, &event));\n", strip=False
     )
     out_str += "\n"
     out_str += format_str(
@@ -227,7 +227,7 @@ def codegen_host(top, module):
     )
     out_str += "\n"
     out_str += format_str(
-        f'std::cout << "| " << std::left << std::setw(24) << "{top}: \\n"\n',
+        f'std::cout << "| " << std::left << std::setw(24) << "{top}: "\n',
         strip=False,
     )
     out_str += format_str(
