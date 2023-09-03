@@ -3,7 +3,7 @@
 # pylint: disable=no-name-in-module
 
 import hcl_mlir
-from hcl_mlir import UnitAttr, StringAttr, InsertionPoint, MemRefType
+from hcl_mlir.ir import UnitAttr, StringAttr, InsertionPoint, MemRefType, AffineMapAttr
 from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
@@ -168,11 +168,14 @@ def create_buffer(tensor, name, ip, alloc_ip=None):
     for_loops = build_for_loops(shape, ip, name)
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
-        load = memref_d.LoadOp(tensor, induction_vars)
-        memref_d.StoreOp(
+        var_str = ", ".join([f"d{i}" for i in range(len(shape))])
+        affine_attr = AffineMapAttr.parse(f"affine_map<({var_str})->({var_str})>")
+        load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+        affine_d.AffineStoreOp(
             load.result,
             alloc_op.result,
             induction_vars,
+            affine_attr,
         )
     return alloc_op
 
