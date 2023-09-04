@@ -161,9 +161,9 @@ class TorchBuilder:
         permutation = node.args[1:]
         return f"{node.name} = dsl.transpose({inp}, {permutation})"
 
-    # PyTorch only supports transposing two dimensions,
-    # https://pytorch.org/docs/stable/generated/torch.transpose.html
     def build_transpose(self, node):
+        # PyTorch only supports transposing two dimensions,
+        # https://pytorch.org/docs/stable/generated/torch.transpose.html
         inp = get_var_name(node.args[0])
         shape_len = len(node.meta["tensor_meta"].shape)
         sorted_args = sorted(

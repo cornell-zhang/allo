@@ -1534,7 +1534,7 @@ class ASTTransformer(ASTBuilder):
         # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
         flattened_shapes = []
         if node.func.attr == "matmul":
-            for i, _ in enumerate(new_args):
+            for i in range(len(new_args)):
                 flattened_shapes.append(
                     [
                         np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),

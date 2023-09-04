@@ -616,9 +616,9 @@ class TypeInferer(ASTVisitor):
                     argAshape[0] == argBshape[0]
                 ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
-            # According to torch.nn.Linear, the second input should be 2D:
-            # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
             elif op_name == "linear":
+                # The weight parameter (i.e., `new_args[1]`) should be 2D, see:
+                # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
                 assert len(argBshape) == 2
                 assert argAshape[-1] == argBshape[-1]
                 assert argBshape[0] == new_args[2].shape[0]
