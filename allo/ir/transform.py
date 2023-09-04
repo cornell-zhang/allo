@@ -5,7 +5,15 @@
 import numpy as np
 
 import hcl_mlir
-from hcl_mlir.ir import UnitAttr, StringAttr, InsertionPoint, MemRefType, AffineMapAttr
+from hcl_mlir.ir import (
+    UnitAttr,
+    StringAttr,
+    InsertionPoint,
+    MemRefType,
+    AffineMapAttr,
+    IntegerAttr,
+    IntegerType,
+)
 from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
@@ -175,6 +183,9 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
     if alloc_ip is None:  # load
         tensor.replace_all_uses_with(alloc_op.result)
     for_loops = build_for_loops(shape, ip, name)
+    for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
+        IntegerType.get_unsigned(32), 1
+    )
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
         if not flatten:

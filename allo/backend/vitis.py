@@ -253,7 +253,7 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code):
+def postprocess_hls_code(hls_code, top):
     out_str = ""
     func_decl = False
     for line in hls_code.split("\n"):
@@ -261,7 +261,7 @@ def postprocess_hls_code(hls_code):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
-        elif line.startswith("void"):
+        elif line.startswith(f"void {top}"):
             func_decl = True
             out_str += line + "\n"
         elif func_decl and line.startswith(") {"):
