@@ -130,3 +130,7 @@ def sumpool(inp, filter, name=None):
 def linear(X, A, B, name=None):
     # TODO: Handle bias=None
     return matmul(X, A.T) + B
+
+
+def view(x, shape, name=None):
+    return np.reshape(x, shape)

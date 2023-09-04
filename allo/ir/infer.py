@@ -602,13 +602,10 @@ class TypeInferer(ASTVisitor):
                 )
             elif op_name == "matmul":
                 assert (
-                    len(argAshape) == 2 and len(argBshape) == 2
-                ), f"Only support matrix multiplication of two 2D inputs, got {len(argAshape)} and {len(argBshape)}"
-                assert (
-                    argAshape[1] == argBshape[0]
-                ), f"The second dimension of the first input and the first dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
-                node.shape = (argAshape[0], argBshape[1])
-            if op_name == "bmm":
+                    argAshape[-1] == argBshape[-2]
+                ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
+                node.shape = tuple(argAshape[:-1] + argBshape[-1:])
+            elif op_name == "bmm":
                 assert (
                     len(argAshape) == 3 and len(argBshape) == 3
                 ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
@@ -619,10 +616,13 @@ class TypeInferer(ASTVisitor):
                     argAshape[0] == argBshape[0]
                 ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
-            if op_name == "linear":
-                assert new_args[0].shape[1] == new_args[1].shape[1]
-                assert new_args[1].shape[0] == new_args[2].shape[0]
-                node.shape = (new_args[0].shape[0], new_args[1].shape[0])
+            elif op_name == "linear":
+                # The weight parameter (i.e., `new_args[1]`) should be 2D, see:
+                # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
+                assert len(argBshape) == 2
+                assert argAshape[-1] == argBshape[-1]
+                assert argBshape[0] == new_args[2].shape[0]
+                node.shape = argAshape[:-1] + argBshape[:-1]
             return node
         if op_name in {"transpose"}:
             assert (
@@ -639,11 +639,16 @@ class TypeInferer(ASTVisitor):
                 assert len(shape) == len(
                     axes
                 ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
-                new_shape = []
-                for new_dim in axes:
-                    new_shape.append(shape[new_dim])
+                new_shape = [shape[new_dim] for new_dim in axes]
                 node.shape = tuple(new_shape)
                 node.dtype = new_args[0].dtype
+            return node
+        if op_name in {"view"}:
+            axes = compile(ast.Expression(new_args[1]), "", "eval")
+            # pylint: disable=eval-used
+            axes = eval(axes)
+            node.shape = axes
+            node.dtype = new_args[0].dtype
             return node
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 

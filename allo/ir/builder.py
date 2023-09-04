@@ -5,6 +5,7 @@
 
 import gc
 import ast
+import numpy as np
 from hcl_mlir.ir import (
     Module,
     Location,
@@ -620,18 +621,24 @@ class ASTTransformer(ASTBuilder):
         return store_op
 
     @staticmethod
-    def build_constant_tensor(ctx, node):
-        np_values = node.np_values
+    def build_constant_tensor(
+        ctx, node, np_values, shape=None, dtype=None, constant=False
+    ):
         value_attr = DenseElementsAttr.get(np_values)
+        dtype = dtype if dtype is not None else node.dtype
+        shape = shape if shape is not None else node.shape
         if ctx.enable_tensor:
-            shape, dtype = node.shape, node.dtype
             tensor_type = RankedTensorType.get(shape, dtype.build())
             # pylint: disable=too-many-function-args
             const_tensor = arith_d.ConstantOp(tensor_type, value_attr, ip=ctx.get_ip())
         else:
-            sym_name = StringAttr.get(node.target.id)
+            if hasattr(node, "target"):
+                name = node.target.id
+            else:
+                name = f"const_{hash(str(node) + str(np_values))}"
+            sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
-            memref_type = MemRefType.get(np_values.shape, node.dtype.build())
+            memref_type = MemRefType.get(shape, dtype.build())
             type_attr = TypeAttr.get(memref_type)
             # pylint: disable=redefined-variable-type
             const_tensor = memref_d.GlobalOp(
@@ -641,13 +648,13 @@ class ASTTransformer(ASTBuilder):
                 initial_value=value_attr,
                 # TODO: Use dataflow analysis to determine whether some store ops
                 #       are operated on this tensor
-                constant=False,
+                constant=constant,
                 alignment=None,
                 ip=InsertionPoint(ctx.top_func),
             )
             const_tensor = memref_d.GetGlobalOp(
                 memref_type,
-                FlatSymbolRefAttr.get(node.target.id),
+                FlatSymbolRefAttr.get(name),
                 ip=ctx.get_ip(),
             )
         return const_tensor
@@ -946,7 +953,7 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
         if hasattr(node, "np_values"):
-            rhs = ASTTransformer.build_constant_tensor(ctx, node)
+            rhs = ASTTransformer.build_constant_tensor(ctx, node, node.np_values)
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor
@@ -1300,6 +1307,7 @@ class ASTTransformer(ASTBuilder):
                 "copy",
                 "transpose",
                 "linear",
+                "view",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
@@ -1372,6 +1380,38 @@ class ASTTransformer(ASTBuilder):
                 "maxpool",
                 "sumpool",
             }:
+                # Since MLIR does not natively support matrix multiplication for matrices with more than 2 dimensions,
+                # we must first flatten the leading dimensions, utilize bmm for computation, and subsequently restore the original shape.
+                if len(shape) > 3 and attr == "matmul":
+                    flattened_shapes = ASTTransformer.build_flattened_shapes(
+                        node, new_args
+                    )
+                    for i, arg in enumerate(new_args):
+                        new_args[i] = ASTTransformer.build_library_op(
+                            ctx,
+                            node,
+                            "view",
+                            [arg, flattened_shapes[i]],
+                            shape=flattened_shapes[i],
+                        )
+                    inner_shape = flattened_shapes[0][:-1] + flattened_shapes[1][-1:]
+                    op = ASTTransformer.build_library_op(
+                        ctx,
+                        node,
+                        "bmm",
+                        new_args,
+                        dtype,
+                        inner_shape,
+                    )
+                    if tuple(inner_shape) != shape:
+                        op = ASTTransformer.build_library_op(
+                            ctx,
+                            node,
+                            "view",
+                            [op, shape],
+                            shape=shape,
+                        )
+                    return op
                 op = {
                     "matmul": linalg_d.matmul,
                     "bmm": linalg_d.batch_matmul,
@@ -1423,6 +1463,31 @@ class ASTTransformer(ASTBuilder):
                     permutation=tuple(x.val for x in new_args[1]),
                     ip=ctx.get_ip(),
                 )
+            elif attr == "view":
+                view_op = (
+                    tensor_d.ReshapeOp if ctx.enable_tensor else memref_d.ReshapeOp
+                )
+                # When the input shape is a list of constants, we can get the values directly
+                if MockConstant not in [type(x) for x in new_args[1]]:
+                    value = np.array(new_args[1])
+                else:
+                    value = np.array(tuple(x.val for x in new_args[1]))
+                shape_value = ASTTransformer.build_constant_tensor(
+                    ctx,
+                    node,
+                    shape=value.shape,
+                    dtype=Int(64),
+                    np_values=value,
+                    constant=True,
+                )
+                shaped_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
+                op = view_op(
+                    source=new_args[0].result,
+                    result=shaped_type,
+                    shape=shape_value.result,
+                    ip=ctx.get_ip(),
+                )
+                return op
             elif attr == "linear":  # X @ A.T + B
                 permutation = [MockConstant(val, ctx) for val in (1, 0)]
                 A_T = ASTTransformer.build_library_op(
@@ -1432,11 +1497,26 @@ class ASTTransformer(ASTBuilder):
                     [new_args[1], permutation],
                     shape=node.args[1].shape[::-1],
                 )
+                inner_attr = "matmul"
+                if len(shape) >= 3:
+                    flattened_shapes = ASTTransformer.build_flattened_shapes(
+                        node, new_args
+                    )
+                    A_T = ASTTransformer.build_broadcast_op(
+                        ctx,
+                        A_T,
+                        dtype,
+                        list(node.args[1].shape[::-1]),
+                        flattened_shapes[1],
+                        [0],
+                    )
+                    inner_attr = "bmm"
                 matmul = ASTTransformer.build_library_op(
-                    ctx, node, "matmul", [new_args[0], A_T]
+                    ctx, node, inner_attr, [new_args[0], A_T]
                 )
+                dims = list(range(len(node.shape) - 1))
                 bias = ASTTransformer.build_broadcast_op(
-                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, [0]
+                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dims
                 )
                 add = ASTTransformer.build_library_op(ctx, node, "add", [matmul, bias])
                 return add
@@ -1444,6 +1524,30 @@ class ASTTransformer(ASTBuilder):
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
         return op if ctx.enable_tensor else result_tensor
+
+    @staticmethod
+    def build_flattened_shapes(node, new_args):
+        # Only support:
+        # 1. flatten two matrices that
+        #    the last two dimensions must conform to two-dimensional matrix multiplication,
+        #    while the shapes of the remaining dimensions should be identical.
+        # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
+        flattened_shapes = []
+        if node.func.attr == "matmul":
+            for i in range(len(new_args)):
+                flattened_shapes.append(
+                    [
+                        np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
+                        node.args[i].shape[-2],
+                        node.args[i].shape[-1],
+                    ]
+                )
+        if node.func.attr == "linear":
+            flattened_shapes.append(node.args[0].shape)
+            flattened_shapes.append(
+                [flattened_shapes[0][0]] + list(node.args[1].shape[::-1])
+            )
+        return flattened_shapes
 
     @staticmethod
     def build_Return(ctx, node):

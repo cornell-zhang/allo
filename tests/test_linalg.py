@@ -74,17 +74,25 @@ def test_linalg_matmul():
     print(s.module)
 
 
-def test_linalg_matmul_only2D():
+def test_linalg_matmul_5D():
     M = 10
     K = 15
     N = 20
+    A = np.random.randint(0, 20, size=(N, M, K, M, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(N, M, K, K, N), dtype="int32")
 
-    def kernel(A: int32[M, K, M, K], B: int32[M, K, K, N]) -> int32[M, K, M, N]:
+    def kernel(
+        A: int32[N, M, K, M, K], B: int32[N, M, K, K, N]
+    ) -> int32[N, M, K, M, N]:
         C = allo.matmul(A, B)
         return C
 
-    with pytest.raises(AssertionError):
-        allo.customize(kernel)
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    np_out = kernel(A, B)
+    allo_out = f(A, B)
+    np.testing.assert_array_equal(allo_out, np_out)
 
 
 def test_linalg_matmul_nested():
@@ -470,6 +478,29 @@ def test_copy_const(enable_tensor):
     inp = np.ones((M, N)).astype(np.float32)
     outp = mod()
     np.testing.assert_allclose(inp, outp, rtol=1e-5)
+
+
+@pytest.mark.parametrize("enable_tensor", [True, False])
+def test_library_higher_dimension_ops(enable_tensor):
+    M, N, K, L = 5, 4, 3, 2
+    A = np.random.uniform(size=(M, K, L)).astype(np.float32)
+    B = np.random.uniform(size=(N, K)).astype(np.float32)
+    C = np.random.uniform(size=(N,)).astype(np.float32)
+
+    def kernel(
+        A: float32[M, K, L], B: float32[N, K], C: float32[N]
+    ) -> float32[M, L * N]:
+        output1 = allo.transpose(A, (0, 2, 1))
+        output2 = allo.linear(output1, B, C)
+        output = allo.view(output2, (5, 8))
+        return output
+
+    s = allo.customize(kernel, enable_tensor=enable_tensor)
+    print(s.module)
+    mod = s.build()
+    outp = mod(A, B, C)
+    np_outp = kernel(A, B, C)
+    np.testing.assert_allclose(outp, np_outp, rtol=1e-5)
 
 
 if __name__ == "__main__":
