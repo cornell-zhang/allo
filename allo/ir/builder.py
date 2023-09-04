@@ -1380,9 +1380,11 @@ class ASTTransformer(ASTBuilder):
                 "maxpool",
                 "sumpool",
             }:
+                # Since MLIR does not natively support matrix multiplication for matrices with more than 2 dimensions,
+                # we must first flatten the leading dimensions, utilize bmm for computation, and subsequently restore the original shape.
                 if len(shape) > 3 and attr == "matmul":
-                    flattened_shapes = ASTTransformer.build_flattened_tensor(
-                        ctx, node, new_args, dtype, shape
+                    flattened_shapes = ASTTransformer.build_flattened_shapes(
+                        node, new_args
                     )
                     for i, arg in enumerate(new_args):
                         new_args[i] = ASTTransformer.build_library_op(
@@ -1497,8 +1499,8 @@ class ASTTransformer(ASTBuilder):
                 )
                 inner_attr = "matmul"
                 if len(shape) >= 3:
-                    flattened_shapes = ASTTransformer.build_flattened_tensor(
-                        ctx, node, new_args, dtype, shape
+                    flattened_shapes = ASTTransformer.build_flattened_shapes(
+                        node, new_args
                     )
                     A_T = ASTTransformer.build_broadcast_op(
                         ctx,
@@ -1524,24 +1526,26 @@ class ASTTransformer(ASTBuilder):
         return op if ctx.enable_tensor else result_tensor
 
     @staticmethod
-    def build_flattened_tensor(ctx, node, new_args, dtype, shape):
+    def build_flattened_shapes(node, new_args):
         # Only support:
         # 1. flatten two matrices that
         #    the last two dimensions must conform to two-dimensional matrix multiplication,
         #    while the shapes of the remaining dimensions should be identical.
         # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
-        flattened_shapes = [[], []]
+        flattened_shapes = []
         if node.func.attr == "matmul":
-            for i in range(len(new_args)):
-                flattened_shapes[i] = [
-                    np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
-                    node.args[i].shape[-2],
-                    node.args[i].shape[-1],
-                ]
+            for i, _ in enumerate(new_args):
+                flattened_shapes.append(
+                    [
+                        np.prod(node.args[i].shape[:-2], dtype=np.int64).tolist(),
+                        node.args[i].shape[-2],
+                        node.args[i].shape[-1],
+                    ]
+                )
         if node.func.attr == "linear":
-            flattened_shapes[0] = node.args[0].shape
-            flattened_shapes[1] = [flattened_shapes[0][0]] + list(
-                node.args[1].shape[::-1]
+            flattened_shapes.append(node.args[0].shape)
+            flattened_shapes.append(
+                [flattened_shapes[0][0]] + list(node.args[1].shape[::-1])
             )
         return flattened_shapes
 
