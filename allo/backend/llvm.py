@@ -27,6 +27,7 @@ from ..utils import (
     get_func_inputs_outputs,
     get_bitwidth_from_type,
     get_bitwidth_and_frac_from_fixed,
+    get_clostest_pow2,
 )
 
 
@@ -80,11 +81,6 @@ def np_type_to_str(dtype):
     return list(np_supported_types.keys())[
         list(np_supported_types.values()).index(dtype)
     ]
-
-
-def get_clostest_pow2(n):
-    # .bit_length() is a Python method
-    return 1 << (n - 1).bit_length()
 
 
 def get_np_pow2_type(bitwidth, signed=True):
