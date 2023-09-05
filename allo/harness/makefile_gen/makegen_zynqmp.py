@@ -350,7 +350,7 @@ def building_kernel(target, data):
                         target.write(" --temp_dir ")
                         target.write("$(TEMP_DIR) ")
                         target.write(" -I'$(<D)'")
-                        target.write(" -o'$@' '$<'\n")
+                        target.write(" -o'$@' $^\n")
         target.write("\n")
         target.write("$(LINK_OUTPUT):")
         for con in data["containers"]:
