@@ -33,7 +33,8 @@
                     "location": "kernel.cpp"
                 }
             ], 
-            "name": "top"
+            "name": "top",
+            "ldclflags": "--optimize 3"
         }
     ],
     "launch": [

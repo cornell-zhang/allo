@@ -4,7 +4,7 @@
 import textwrap
 
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs
+from ..utils import get_func_inputs_outputs, get_clostest_pow2
 
 header = """
 //=============================================================================
@@ -53,10 +53,10 @@ ctype_map = {
     "i16": "short",
     "i32": "int",
     "i64": "long",
-    "u8": "unsigned char",
-    "u16": "unsigned short",
-    "u32": "unsigned int",
-    "u64": "unsigned long",
+    "ui8": "unsigned char",
+    "ui16": "unsigned short",
+    "ui32": "unsigned int",
+    "ui64": "unsigned long",
 }
 
 
@@ -86,7 +86,16 @@ def codegen_host(top, module):
     out_str += "\n"
     # Generate in/out buffers
     for i, (in_dtype, in_shape) in enumerate(inputs):
-        in_dtype = ctype_map[in_dtype]
+        if in_dtype in ctype_map:
+            in_dtype = ctype_map[in_dtype]
+        elif in_dtype.startswith("i") or in_dtype.startswith("ui"):
+            prefix, bitwidth = in_dtype.split("i")
+            new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
+            in_dtype = ctype_map[new_int_type]
+        elif in_dtype.startswith("fixed") or in_dtype.startswith("ufixed"):
+            in_dtype = "float"
+        else:
+            raise ValueError(f"Unsupported input type: {in_dtype}")
         in_shape = [str(i) for i in in_shape]
         out_str += format_str(
             f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
@@ -97,7 +106,16 @@ def codegen_host(top, module):
             strip=False,
         )
     for i, (out_dtype, out_shape) in enumerate(outputs):
-        out_dtype = ctype_map[out_dtype]
+        if out_dtype in ctype_map:
+            out_dtype = ctype_map[out_dtype]
+        elif out_dtype.startswith("i") or out_dtype.startswith("ui"):
+            prefix, bitwidth = out_dtype.split("i")
+            new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
+            out_dtype = ctype_map[new_int_type]
+        elif out_dtype.startswith("fixed") or out_dtype.startswith("ufixed"):
+            out_dtype = "float"
+        else:
+            raise ValueError(f"Unsupported input type: {out_dtype}")
         out_shape = [str(i) for i in out_shape]
         out_str += format_str(
             f"size_t size_bytes_out{i} = sizeof({out_dtype}) * {' * '.join(out_shape)};\n",
@@ -253,7 +271,7 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code):
+def postprocess_hls_code(hls_code, top):
     out_str = ""
     func_decl = False
     for line in hls_code.split("\n"):
@@ -261,14 +279,14 @@ def postprocess_hls_code(hls_code):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
-        elif line.startswith("void"):
+        elif line.startswith(f"void {top}"):
             func_decl = True
             out_str += line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
         elif func_decl:
-            dtype, var = line.strip().split(" ")
+            dtype, var = line.strip().rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
             var = var.split("[")[0]
             out_str += "  " + dtype + " *" + var + f"{comma}\n"

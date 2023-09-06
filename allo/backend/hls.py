@@ -123,7 +123,7 @@ class HLSModule:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             if self.platform == "vitis_hls":
-                self.hls_code = postprocess_hls_code(self.hls_code)
+                self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,

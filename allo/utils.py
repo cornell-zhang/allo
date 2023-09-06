@@ -12,6 +12,11 @@ from hcl_mlir.ir import (
 from hcl_mlir.dialects import hcl as hcl_d
 
 
+def get_clostest_pow2(n):
+    # .bit_length() is a Python method
+    return 1 << (n - 1).bit_length()
+
+
 def get_bitwidth_from_type(dtype):
     if dtype.startswith("i"):
         return int(dtype[1:])
