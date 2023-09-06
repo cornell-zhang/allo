@@ -1284,7 +1284,7 @@ class ASTTransformer(ASTBuilder):
                 input_types = [memref]
                 func_type = FunctionType.get(input_types, [])
                 func_op = func_d.FuncOp(
-                    name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
+                    name=obj.lib_name, type=func_type, ip=InsertionPoint(ctx.top_func)
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 ptr_args = []
@@ -1293,7 +1293,7 @@ class ASTTransformer(ASTBuilder):
                     ptr_args.append(cast.result)
                 call_op = func_d.CallOp(
                     [],
-                    FlatSymbolRefAttr.get(obj.top),
+                    FlatSymbolRefAttr.get(obj.lib_name),
                     ptr_args,
                     ip=ctx.get_ip(),
                 )
