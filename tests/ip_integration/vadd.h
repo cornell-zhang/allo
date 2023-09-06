@@ -5,6 +5,6 @@
 
 #ifndef VADD_H
 
-void vadd(int A[32]);
+void vadd(int A[32], int B[32], int C[32]);
 
 #endif // VADD_H

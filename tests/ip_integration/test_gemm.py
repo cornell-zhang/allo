@@ -28,20 +28,22 @@ def test_shared_lib():
         top="vadd",
         headers=["vadd.h"],
         impls=["vadd.cpp"],
-        signature="int32[32]",
+        signature="int32[32], int32[32], int32[32]",
         link_hls=False,
     )
 
-    def kernel(A: int32[32]):
-        mod(A)
+    def kernel(A: int32[32], B: int32[32]) -> int32[32]:
+        C: int32[32] = 0
+        mod(A, B, C)
+        return C
 
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
     np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
-    np_A_copied = np_A.copy()
-    mod(np_A_copied)
-    np.testing.assert_allclose(np_A + 1, np_A_copied, atol=1e-6)
+    np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
+    allo_C = mod(np_A, np_B)
+    np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
     print("Passed!")
 
 

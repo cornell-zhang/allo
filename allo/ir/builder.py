@@ -55,6 +55,7 @@ from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
+from ..utils import get_mlir_dtype_from_str
 
 
 class ASTBuilder(ASTVisitor):
@@ -1280,8 +1281,11 @@ class ASTTransformer(ASTBuilder):
                 # Build shared library
                 ctx.shared_libs += [obj.compile_shared_lib()]
                 # HLS IP, suppose it does not have any return values
-                memref = UnrankedMemRefType.get(IntegerType.get_signless(32), None)
-                input_types = [memref]
+                input_types = []
+                for arg_type, _ in obj.args:
+                    ele_type = get_mlir_dtype_from_str(arg_type)
+                    memref = UnrankedMemRefType.get(ele_type, None)
+                    input_types.append(memref)
                 func_type = FunctionType.get(input_types, [])
                 func_op = func_d.FuncOp(
                     name=obj.lib_name, type=func_type, ip=InsertionPoint(ctx.top_func)

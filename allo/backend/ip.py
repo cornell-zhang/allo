@@ -112,10 +112,14 @@ class IPModule:
         for header in self.headers:
             out_str += f'#include "{header}"\n'
         out_str += "\n"
-        out_str += f'extern "C" void {self.lib_name}(int64_t rank, void *ptr) {{\n'
+        # Generate function interface
+        unranked_memrefs = ", ".join(
+            [f"int64_t rank_{i}, void *ptr_{i}" for i in range(len(self.args))]
+        )
+        out_str += f'extern "C" void {self.lib_name}({unranked_memrefs}) {{\n'
         for i, (arg_type, _) in enumerate(self.args):
             resolved_type = type_map.get(arg_type)
-            out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank, ptr}};\n"
+            out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank_{i}, ptr_{i}}};\n"
             out_str += f"  DynamicMemRefType<{resolved_type}> ranked_in{i}(in{i});\n"
             out_str += f"  {resolved_type} *in{i}_ptr = ({resolved_type} *)ranked_in{i}.data;\n"
         # Call library function
