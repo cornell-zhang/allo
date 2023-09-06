@@ -23,8 +23,11 @@ class IPModule:
         self.top = top
         self.headers = headers
         os.makedirs("/tmp/allo", exist_ok=True)
-        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
-        self.impls = impls
+        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[-1][1]))
+        abs_impls = []
+        for impl in impls:
+            abs_impls.append(os.path.join(abs_path, impl))
+        self.impls = abs_impls
         self.include_paths = include_paths + [abs_path]
         self.signature = signature
         self.link_hls = link_hls
@@ -95,11 +98,7 @@ class IPModule:
         cmd = "g++ -shared -std=c++11 -fPIC"
         cmd += " `python3 -m pybind11 --includes`"
         cmd += " -I" + " -I".join(self.include_paths)
-        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
-        abs_impls = []
-        for impl in self.impls:
-            abs_impls.append(os.path.join(abs_path, impl))
-        srcs = abs_impls + [self.c_wrapper_file]
+        srcs = self.impls + [self.c_wrapper_file]
         cmd += " " + " ".join(srcs)
         cmd += f" -o /tmp/allo/{self.lib_name}`python3-config --extension-suffix`"
         print(cmd)
@@ -114,11 +113,14 @@ class IPModule:
             out_str += f'#include "{header}"\n'
         out_str += "\n"
         out_str += f'extern "C" void {self.lib_name}(int64_t rank, void *ptr) {{\n'
-        out_str += "  UnrankedMemRefType<int> inA = {rank, ptr};\n"
-        out_str += "  DynamicMemRefType<int> A(inA);\n"
-        out_str += "  int *A_ptr = (int *)A.data;\n"
+        for i, (arg_type, _) in enumerate(self.args):
+            resolved_type = type_map.get(arg_type)
+            out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank, ptr}};\n"
+            out_str += f"  DynamicMemRefType<{resolved_type}> ranked_in{i}(in{i});\n"
+            out_str += f"  {resolved_type} *in{i}_ptr = ({resolved_type} *)ranked_in{i}.data;\n"
         # Call library function
-        out_str += f"  {self.top}(A_ptr);\n"
+        call_args = [f"in{i}_ptr" for i in range(len(self.args))]
+        out_str += f"  {self.top}({', '.join(call_args)});\n"
         out_str += "}\n"
         with open(self.c_wrapper_file, "w", encoding="utf-8") as f:
             f.write(out_str)
@@ -137,10 +139,6 @@ class IPModule:
             + "/mlir/include"
         )
         cmd += " -I" + " -I".join(self.include_paths)
-        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
-        abs_impls = []
-        for impl in self.impls:
-            abs_impls.append(os.path.join(abs_path, impl))
         srcs = self.impls + [self.c_wrapper_file]
         obj_files = []
         for src in srcs:
