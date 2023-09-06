@@ -24,10 +24,7 @@ class IPModule:
         self.headers = headers
         os.makedirs("/tmp/allo", exist_ok=True)
         abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
-        abs_impls = []
-        for impl in impls:
-            abs_impls.append(os.path.join(abs_path, impl))
-        self.impls = abs_impls
+        self.impls = impls
         self.include_paths = include_paths + [abs_path]
         self.signature = signature
         self.link_hls = link_hls
@@ -98,7 +95,11 @@ class IPModule:
         cmd = "g++ -shared -std=c++11 -fPIC"
         cmd += " `python3 -m pybind11 --includes`"
         cmd += " -I" + " -I".join(self.include_paths)
-        srcs = self.impls + [self.c_wrapper_file]
+        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
+        abs_impls = []
+        for impl in self.impls:
+            abs_impls.append(os.path.join(abs_path, impl))
+        srcs = abs_impls + [self.c_wrapper_file]
         cmd += " " + " ".join(srcs)
         cmd += f" -o /tmp/allo/{self.lib_name}`python3-config --extension-suffix`"
         print(cmd)
@@ -136,6 +137,10 @@ class IPModule:
             + "/mlir/include"
         )
         cmd += " -I" + " -I".join(self.include_paths)
+        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
+        abs_impls = []
+        for impl in self.impls:
+            abs_impls.append(os.path.join(abs_path, impl))
         srcs = self.impls + [self.c_wrapper_file]
         obj_files = []
         for src in srcs:

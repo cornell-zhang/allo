@@ -46,5 +46,4 @@ def test_shared_lib():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_shared_lib()
+    pytest.main([__file__])
