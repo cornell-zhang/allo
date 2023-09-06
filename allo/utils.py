@@ -40,6 +40,29 @@ def get_signed_type_by_hint(dtype, hint):
     return dtype
 
 
+def get_mlir_dtype_from_str(dtype):
+    if dtype.startswith("i"):
+        bitwidth = get_bitwidth_from_type("i" + dtype[3:])
+        return IntegerType.get_signless(bitwidth)
+    if dtype.startswith("ui"):
+        bitwidth = get_bitwidth_from_type("ui" + dtype[3:])
+        return IntegerType.get_unsigned(bitwidth)
+    if dtype.startswith("fixed"):
+        bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
+        return hcl_d.FixedType.get(bitwidth, frac)
+    if dtype.startswith("ufixed"):
+        bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
+        return hcl_d.UFixedType.get(bitwidth, frac)
+    if dtype.startswith("f"):
+        bitwidth = get_bitwidth_from_type("f" + dtype[5:])
+        if bitwidth == 32:
+            return F32Type.get()
+        if bitwidth == 64:
+            return F64Type.get()
+        raise RuntimeError("Unsupported type")
+    raise RuntimeError("Unsupported type")
+
+
 def get_dtype_and_shape_from_type(dtype):
     if MemRefType.isinstance(dtype):
         dtype = MemRefType(dtype)

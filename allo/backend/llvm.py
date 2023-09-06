@@ -273,7 +273,7 @@ def invoke_mlir_parser(mod: str):
 
 
 class LLVMModule:
-    def __init__(self, mod, top_func_name):
+    def __init__(self, mod, top_func_name, ext_libs=None):
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
@@ -324,7 +324,8 @@ class LLVMModule:
                     ),
                 ]
             else:
-                shared_libs = None
+                shared_libs = []
+            shared_libs += ext_libs if ext_libs is not None else []
             # opt_level should be set to 2 to avoid the following issue
             # https://github.com/cornell-zhang/allo/issues/72
             self.execution_engine = ExecutionEngine(

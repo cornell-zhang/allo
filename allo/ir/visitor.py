@@ -39,6 +39,8 @@ class ASTContext:
         self.affine_vars = []
         self.enable_tensor = enable_tensor
         self.verbose = verbose
+        # shared libraries for external IPs
+        self.shared_libs = []
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
