@@ -35,6 +35,10 @@ def test_load_ip_in_kernel():
         mod(A)
     s = allo.customize(kernel)
     print(s.module)
+    mod = s.build()
+    a = np.random.randint(0, 100, (32,)).astype(np.int32)
+    mod(a)
+    print("golden", a)
 
 
 if __name__ == "__main__":
