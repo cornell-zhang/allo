@@ -59,6 +59,7 @@ def test_lib_gemm():
     def kernel(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
         C: float32[16, 16] = 0
         gemm(A, B, C)
+        C = C + 1
         return C
 
     s = allo.customize(kernel)
@@ -67,7 +68,7 @@ def test_lib_gemm():
     a = np.random.random((16, 16)).astype(np.float32)
     b = np.random.random((16, 16)).astype(np.float32)
     c = mod(a, b)
-    np.testing.assert_allclose(np.matmul(a, b), c, atol=1e-6)
+    np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-6)
     print("Passed!")
 
 
