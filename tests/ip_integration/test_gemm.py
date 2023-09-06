@@ -8,7 +8,7 @@ from allo.ir.types import int32
 
 
 def test_gemm():
-    mod = allo.backend.ip.load_hls(
+    mod = allo.IPModule(
         top="gemm",
         headers=["gemm.h"],
         impls=["gemm.cpp"],
@@ -24,7 +24,7 @@ def test_gemm():
 
 
 def test_load_ip_in_kernel():
-    mod = allo.backend.ip.load_hls(
+    mod = allo.IPModule(
         top="vadd",
         headers=[],
         impls=["vadd.cpp"],
@@ -36,9 +36,10 @@ def test_load_ip_in_kernel():
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
-    a = np.random.randint(0, 100, (32,)).astype(np.int32)
-    mod(a)
-    print("golden", a)
+    np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
+    np_A_copied = np_A.copy()
+    mod(np_A_copied)
+    np.testing.assert_allclose(np_A + 1, np_A_copied, atol=1e-6)
 
 
 if __name__ == "__main__":

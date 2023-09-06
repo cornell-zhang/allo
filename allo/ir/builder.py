@@ -1277,6 +1277,8 @@ class ASTTransformer(ASTBuilder):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
+                # Build shared library
+                ctx.shared_libs += [obj.compile_shared_lib()]
                 # HLS IP, suppose it does not have any return values
                 memref = UnrankedMemRefType.get(IntegerType.get_signless(32), None)
                 input_types = [memref]
