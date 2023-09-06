@@ -7,7 +7,7 @@ import allo
 from allo.ir.types import int32
 
 
-def test_gemm():
+def test_pybind11():
     mod = allo.IPModule(
         top="gemm",
         headers=["gemm.h"],
@@ -23,16 +23,18 @@ def test_gemm():
     print("Passed!")
 
 
-def test_load_ip_in_kernel():
+def test_shared_lib():
     mod = allo.IPModule(
         top="vadd",
-        headers=[],
+        headers=["vadd.h"],
         impls=["vadd.cpp"],
         signature="int32[32]",
         link_hls=False,
     )
+
     def kernel(A: int32[32]):
         mod(A)
+
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
@@ -40,8 +42,9 @@ def test_load_ip_in_kernel():
     np_A_copied = np_A.copy()
     mod(np_A_copied)
     np.testing.assert_allclose(np_A + 1, np_A_copied, atol=1e-6)
+    print("Passed!")
 
 
 if __name__ == "__main__":
     # pytest.main([__file__])
-    test_load_ip_in_kernel()
+    test_shared_lib()
