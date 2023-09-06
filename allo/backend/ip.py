@@ -4,8 +4,8 @@
 import os
 import sys
 import importlib
-import inspect
 import subprocess
+import traceback
 
 type_map = {
     "float32": "float",
@@ -24,7 +24,7 @@ class IPModule:
         self.top = top
         self.headers = headers
         os.makedirs("/tmp/allo", exist_ok=True)
-        abs_path = os.path.dirname(os.path.abspath(inspect.stack()[-1][1]))
+        abs_path = os.path.dirname(traceback.extract_stack()[-2].filename)
         abs_impls = []
         for impl in impls:
             abs_impls.append(os.path.join(abs_path, impl))
