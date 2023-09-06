@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import os
 import numpy as np
-
 import hcl_mlir
 from hcl_mlir.ir import (
     UnitAttr,
@@ -13,12 +13,20 @@ from hcl_mlir.ir import (
     AffineMapAttr,
     IntegerAttr,
     IntegerType,
+    FlatSymbolRefAttr,
+    Location,
+    Module,
+    FunctionType,
+    TypeAttr,
+    ArrayAttr,
+    Attribute,
 )
 from hcl_mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
     func as func_d,
+    linalg as linalg_d,
 )
 
 
@@ -242,3 +250,99 @@ def find_func_in_module(module, func_name):
         if isinstance(op, func_d.FuncOp) and op.name.value == func_name:
             return op
     return None
+
+
+def softmax_implement(module):
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    file_path = os.path.join(current_directory, "softmax_impl.mlir")
+    with open(file_path, "r", encoding="utf-8") as f:
+        softmax_module = f.read()
+    with module.context, Location.unknown():
+        # get all functions from origin module and find the function to replace
+        # pylint: disable=too-many-nested-blocks
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp):
+                # put softmax function into the module
+                for body_op in op.entry_block.operations:
+                    if isinstance(body_op, linalg_d.SoftmaxOp):
+                        # get softmax function
+                        softmax_mod = Module.parse(softmax_module)
+                        softmax_func = softmax_mod.body.operations[0]
+                        softmax_func.attributes["sym_name"] = StringAttr.get(
+                            f"softmax_{hash(body_op)}"
+                        )
+                        args = softmax_func.arguments
+                        args[0].set_type(body_op.input.type)
+                        args[1].set_type(body_op.output.type)
+                        in_types = [args[0].type, args[1].type]
+                        out_types = [args[1].type]
+                        func_type = FunctionType.get(in_types, out_types)
+                        softmax_func.attributes["function_type"] = TypeAttr.get(
+                            func_type
+                        )
+                        softmax_func.move_before(op)
+                        func_d.CallOp(
+                            [body_op.output.type],
+                            FlatSymbolRefAttr.get(f"softmax_{hash(body_op)}"),
+                            [body_op.input, body_op.output],
+                            ip=InsertionPoint(body_op),
+                        )
+                        shape = MemRefType(in_types[0]).shape
+
+                        for softmax_op in softmax_func.entry_block.operations:
+                            if isinstance(softmax_op, memref_d.AllocOp):
+                                alloc_op = memref_d.AllocOp(
+                                    MemRefType.get(
+                                        shape[:-1], MemRefType(in_types[0]).element_type
+                                    ),
+                                    [],
+                                    [],
+                                    ip=InsertionPoint(softmax_op),
+                                )
+                                softmax_op.result.replace_all_uses_with(alloc_op.result)
+                                softmax_op.operation.erase()
+                            elif isinstance(softmax_op, linalg_d.GenericOp):
+                                var_str_0 = ", ".join(
+                                    [f"d{i}" for i in range(len(shape))]
+                                )
+                                var_str_1 = ", ".join(
+                                    [f"d{i}" for i in range(len(shape) - 1)]
+                                )
+                                affine_map_0 = AffineMapAttr.parse(
+                                    f"affine_map<({var_str_0})->({var_str_0})>"
+                                )
+                                affine_map_1 = AffineMapAttr.parse(
+                                    f"affine_map<({var_str_0})->({var_str_1})>"
+                                )
+                                iter_types_0 = [
+                                    Attribute.parse("#linalg.iterator_type<parallel>")
+                                ] * (len(shape) - 1) + [
+                                    Attribute.parse("#linalg.iterator_type<reduction>")
+                                ]
+                                iter_types_1 = [
+                                    Attribute.parse("#linalg.iterator_type<parallel>")
+                                ] * len(shape)
+                                if (
+                                    str(softmax_op.attributes["iterator_types"])
+                                    == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<reduction>]"
+                                ):
+                                    softmax_op.attributes[
+                                        "indexing_maps"
+                                    ] = ArrayAttr.get([affine_map_0, affine_map_1])
+                                    softmax_op.attributes[
+                                        "iterator_types"
+                                    ] = ArrayAttr.get(iter_types_0)
+                                elif (
+                                    str(softmax_op.attributes["iterator_types"])
+                                    == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>]"
+                                ):
+                                    softmax_op.attributes[
+                                        "indexing_maps"
+                                    ] = ArrayAttr.get(
+                                        [affine_map_0, affine_map_1, affine_map_0]
+                                    )
+                                    softmax_op.attributes[
+                                        "iterator_types"
+                                    ] = ArrayAttr.get(iter_types_1)
+                        body_op.operation.erase()
+        return module

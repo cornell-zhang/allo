@@ -236,15 +236,20 @@ def test_linalg_math(enable_tensor):
 
 def test_linalg_softmax():
     # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
-    M = 10
-    K = 15
+    # Now, we use MLIR transformation implementation to lower softmax
+    M = 8
+    K = 16
+    N = 32
 
-    def kernel(A: float32[M, K]) -> float32[M, K]:
+    def kernel(A: float32[M, K, N]) -> float32[M, K, N]:
         outs = allo.softmax(A)
         return outs
 
     s = allo.customize(kernel)
     print(s.module)
+    f = s.build()
+    A = np.random.uniform(size=(M, K, N)).astype(np.float32)
+    np.testing.assert_allclose(f(A), kernel(A), atol=1e-3)
 
 
 def test_linalg_Linear_layer():

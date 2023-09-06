@@ -1436,11 +1436,13 @@ class ASTTransformer(ASTBuilder):
                 op = op.owner
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
+                # Now, we use MLIR transformation implementation to lower softmax
+                shaped_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0].result,
-                    dimension=1,
-                    result=[],
-                    output=alloc_op,
+                    dimension=0,
+                    result=[shaped_type],
+                    output=result_tensor if ctx.enable_tensor else result_tensor.result,
                 )
             elif attr == "relu":
                 # TODO: Need to better manage library call
