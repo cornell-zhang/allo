@@ -12,7 +12,7 @@ def test_pybind11():
         top="gemm",
         headers=["gemm.h"],
         impls=["gemm.cpp"],
-        signature="float32[16, 16], float32[16, 16], float32[16, 16]",
+        signature=["float32[16, 16]", "float32[16, 16]", "float32[16, 16]"],
         link_hls=False,
     )
     a = np.random.random((16, 16)).astype(np.float32)
@@ -28,7 +28,7 @@ def test_shared_lib():
         top="vadd",
         headers=["vadd.h"],
         impls=["vadd.cpp"],
-        signature="int32[32], int32[32], int32[32]",
+        signature=["int32[32]", "int32[32]", "int32[32]"],
         link_hls=False,
     )
 
@@ -52,7 +52,7 @@ def test_lib_gemm():
         top="gemm",
         headers=["gemm.h"],
         impls=["gemm.cpp"],
-        signature="float32[16, 16], float32[16, 16], float32[16, 16]",
+        signature=["float32[16, 16]", "float32[16, 16]", "float32[16, 16]"],
         link_hls=False,
     )
 

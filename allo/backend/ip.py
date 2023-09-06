@@ -29,10 +29,9 @@ class IPModule:
             abs_impls.append(os.path.join(abs_path, impl))
         self.impls = abs_impls
         self.include_paths = include_paths + [abs_path]
-        self.signature = signature
         self.link_hls = link_hls
         # Parse signature
-        arg_types = signature.split("],")
+        arg_types = signature
         self.args = []
         for arg_type in arg_types:
             arg_type = arg_type.strip()
