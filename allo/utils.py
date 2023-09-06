@@ -49,7 +49,7 @@ def get_mlir_dtype_from_str(dtype):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
         return hcl_d.UFixedType.get(bitwidth, frac)
     if dtype.startswith("f"):
-        bitwidth = get_bitwidth_from_type(dtype[5:])
+        bitwidth = get_bitwidth_from_type("f" + dtype[5:])
         if bitwidth == 32:
             return F32Type.get()
         if bitwidth == 64:

@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import int32
+from allo.ir.types import int32, float32
 
 
 def test_pybind11():
@@ -24,7 +24,7 @@ def test_pybind11():
 
 
 def test_shared_lib():
-    mod = allo.IPModule(
+    vadd = allo.IPModule(
         top="vadd",
         headers=["vadd.h"],
         impls=["vadd.cpp"],
@@ -34,7 +34,7 @@ def test_shared_lib():
 
     def kernel(A: int32[32], B: int32[32]) -> int32[32]:
         C: int32[32] = 0
-        mod(A, B, C)
+        vadd(A, B, C)
         return C
 
     s = allo.customize(kernel)
@@ -44,6 +44,30 @@ def test_shared_lib():
     np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
+    print("Passed!")
+
+
+def test_lib_gemm():
+    gemm = allo.IPModule(
+        top="gemm",
+        headers=["gemm.h"],
+        impls=["gemm.cpp"],
+        signature="float32[16, 16], float32[16, 16], float32[16, 16]",
+        link_hls=False,
+    )
+
+    def kernel(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
+        C: float32[16, 16] = 0
+        gemm(A, B, C)
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    a = np.random.random((16, 16)).astype(np.float32)
+    b = np.random.random((16, 16)).astype(np.float32)
+    c = mod(a, b)
+    np.testing.assert_allclose(np.matmul(a, b), c, atol=1e-6)
     print("Passed!")
 
 
