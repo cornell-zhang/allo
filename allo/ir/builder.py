@@ -12,6 +12,7 @@ from hcl_mlir.ir import (
     InsertionPoint,
     FunctionType,
     MemRefType,
+    UnrankedMemRefType,
     RankedTensorType,
     IntegerType,
     IndexType,
@@ -53,6 +54,7 @@ from .utils import (
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
+from ..backend.ip import IPModule
 
 
 class ASTBuilder(ASTVisitor):
@@ -1274,6 +1276,26 @@ class ASTTransformer(ASTBuilder):
         if obj.__module__.startswith("allo"):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
+            if isinstance(obj, IPModule):
+                # HLS IP, suppose it does not have any return values
+                memref = UnrankedMemRefType.get(IntegerType.get_signless(32), None)
+                input_types = [memref]
+                func_type = FunctionType.get(input_types, [])
+                func_op = func_d.FuncOp(
+                    name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
+                )
+                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                ptr_args = []
+                for arg in new_args:
+                    cast = memref_d.CastOp(memref, arg.result, ip=ctx.get_ip())
+                    ptr_args.append(cast.result)
+                call_op = func_d.CallOp(
+                    [],
+                    FlatSymbolRefAttr.get(obj.top),
+                    ptr_args,
+                    ip=ctx.get_ip(),
+                )
+                return
             fn_name = obj.__name__
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):

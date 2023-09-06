@@ -4,6 +4,7 @@
 import pytest
 import numpy as np
 import allo
+from allo.ir.types import int32
 
 
 def test_gemm():
@@ -22,5 +23,20 @@ def test_gemm():
     print("Passed!")
 
 
+def test_load_ip_in_kernel():
+    mod = allo.backend.ip.load_hls(
+        top="vadd",
+        headers=[],
+        impls=["vadd.cpp"],
+        signature="int32[32]",
+        link_hls=False,
+    )
+    def kernel(A: int32[32]):
+        mod(A)
+    s = allo.customize(kernel)
+    print(s.module)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_load_ip_in_kernel()
