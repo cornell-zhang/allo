@@ -145,7 +145,9 @@ def decompose_softmax(module):
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
         for op in module.body.operations:
-            if isinstance(op, func_d.FuncOp) and hasattr(op, "entry_block"):
+            if isinstance(op, func_d.FuncOp) and hasattr(
+                getattr(op, "entry_block"), "operations"
+            ):
                 # put softmax function into the module
                 for body_op in op.entry_block.operations:
                     if isinstance(body_op, linalg_d.SoftmaxOp):
