@@ -11,6 +11,7 @@ from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
+from ..backend.ip import IPModule
 
 
 # pylint: disable=too-many-public-methods
@@ -519,6 +520,12 @@ class TypeInferer(ASTVisitor):
         if obj.__module__.startswith("allo"):
             # Allo library functions
             new_args = visit_stmts(ctx, node.args)
+            if isinstance(obj, IPModule):
+                # HLS IP, suppose it does not have return values
+                # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                node.shape = None
+                node.dtype = None
+                return node
             fn_name = obj.__name__
             if len(new_args[0].shape) == 0:
                 # element-wise operation

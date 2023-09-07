@@ -118,13 +118,16 @@ class Partition:
 
 
 class Schedule:
-    def __init__(self, module, top_func, func_args, ip):
+    def __init__(self, module, top_func, func_args, ip, shared_libs=None):
         self.module = module
         self.top_func = top_func
         self.top_func_name = top_func.name.value
         self.func_args = func_args  # only store names here
         self.ip = ip
         self.primitive_sequences = []
+        if shared_libs is None:
+            shared_libs = []
+        self.shared_libs = shared_libs
 
     def get_loops(self):
         return get_affine_loop_nests(self.top_func)
@@ -627,7 +630,11 @@ class Schedule:
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"
-            return LLVMModule(self.module, top_func_name=self.top_func_name)
+            return LLVMModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                ext_libs=self.shared_libs,
+            )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
             return HLSModule(
                 self.module,
@@ -687,6 +694,7 @@ def customize(
         ctx.top_func,
         ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
+        shared_libs=ctx.shared_libs,
     )
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that

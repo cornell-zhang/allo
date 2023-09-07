@@ -6,4 +6,5 @@ from . import frontend, backend, ir, passes
 from .customize import customize
 from .backend.llvm import invoke_mlir_parser, LLVMModule
 from .backend.hls import HLSModule
+from .backend.ip import IPModule
 from .dsl import *

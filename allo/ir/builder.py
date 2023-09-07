@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter
 
 import gc
 import ast
@@ -12,6 +12,7 @@ from hcl_mlir.ir import (
     InsertionPoint,
     FunctionType,
     MemRefType,
+    UnrankedMemRefType,
     RankedTensorType,
     IntegerType,
     IndexType,
@@ -53,6 +54,8 @@ from .utils import (
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
+from ..backend.ip import IPModule
+from ..utils import get_mlir_dtype_from_str
 
 
 class ASTBuilder(ASTVisitor):
@@ -1274,6 +1277,31 @@ class ASTTransformer(ASTBuilder):
         if obj.__module__.startswith("allo"):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
+            if isinstance(obj, IPModule):
+                # Build shared library
+                ctx.shared_libs += [obj.compile_shared_lib()]
+                # HLS IP, suppose it does not have any return values
+                input_types = []
+                for arg_type, _ in obj.args:
+                    ele_type = get_mlir_dtype_from_str(arg_type)
+                    memref = UnrankedMemRefType.get(ele_type, None)
+                    input_types.append(memref)
+                func_type = FunctionType.get(input_types, [])
+                func_op = func_d.FuncOp(
+                    name=obj.lib_name, type=func_type, ip=InsertionPoint(ctx.top_func)
+                )
+                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                ptr_args = []
+                for arg in new_args:
+                    cast = memref_d.CastOp(memref, arg.result, ip=ctx.get_ip())
+                    ptr_args.append(cast.result)
+                call_op = func_d.CallOp(
+                    [],
+                    FlatSymbolRefAttr.get(obj.lib_name),
+                    ptr_args,
+                    ip=ctx.get_ip(),
+                )
+                return
             fn_name = obj.__name__
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
