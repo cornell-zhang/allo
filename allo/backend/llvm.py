@@ -22,7 +22,7 @@ from hcl_mlir.runtime import (
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
-from ..passes import _mlir_lower_pipeline
+from ..passes import _mlir_lower_pipeline, decompose_softmax
 from ..utils import (
     get_func_inputs_outputs,
     get_bitwidth_from_type,
@@ -277,6 +277,8 @@ class LLVMModule:
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
+            # Decompose softmax
+            mod = decompose_softmax(mod)
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)

@@ -31,7 +31,7 @@ class SelfAttention(nn.Module):
         )
         # (bs, head, seq, seq)
         attn_probs = F.softmax(attn_score, dim=-1)
-        attn_probs = F.dropout(attn_probs, 0.1)
+        attn_probs = F.dropout(attn_probs, 0)
         # (bs, head, seq, hs // head)
         attn = torch.matmul(attn_probs, v)
         return attn
@@ -60,3 +60,8 @@ example_inputs = [torch.rand(batch_size, seq_len, hidden_size)]
 llvm_mod = allo.frontend.from_pytorch(
     model, example_inputs=example_inputs, verbose=True
 )
+
+golden = model(*example_inputs)
+np_inputs = [x.detach().numpy() for x in example_inputs]
+res = llvm_mod(*np_inputs)
+torch.testing.assert_close(res, golden.detach().numpy(), rtol=1e-3, atol=1e-3)

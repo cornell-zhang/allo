@@ -43,7 +43,7 @@ from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
-from .ir.transform import get_affine_loop_nests, find_loop_in_bands, softmax_implement
+from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .ir.types import AlloType
 from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .backend.llvm import LLVMModule
@@ -688,7 +688,6 @@ def customize(
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
-    module = softmax_implement(module)
     sch = Schedule(
         module,
         ctx.top_func,

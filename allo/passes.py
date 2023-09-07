@@ -2,13 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import os
 import numpy as np
-
-from hcl_mlir.ir import Location, MemRefType, FunctionType, TypeAttr
+from hcl_mlir.ir import (
+    Location,
+    MemRefType,
+    FunctionType,
+    TypeAttr,
+    FlatSymbolRefAttr,
+    ArrayAttr,
+    Attribute,
+    AffineMapAttr,
+    InsertionPoint,
+    Module,
+)
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
     affine as affine_d,
+    memref as memref_d,
     linalg as linalg_d,
 )
 from hcl_mlir.ir import StringAttr
@@ -122,3 +134,100 @@ def generate_input_output_buffers(top_func, flatten=False):
                 break
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
+
+
+def decompose_softmax(module):
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    file_path = os.path.join(current_directory, "ir/template/softmax_impl.mlir")
+    with open(file_path, "r", encoding="utf-8") as f:
+        softmax_module = f.read()
+    with module.context, Location.unknown():
+        # get all functions from origin module and find the function to replace
+        body_op_to_remove = []
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp) and hasattr(op, "entry_block"):
+                # put softmax function into the module
+                for body_op in op.entry_block.operations:
+                    if isinstance(body_op, linalg_d.SoftmaxOp):
+                        generate_softmax(softmax_module, body_op, op)
+                        body_op_to_remove.append(body_op)
+        # need to erase at the end
+        for op in body_op_to_remove:
+            op.operation.erase()
+        return module
+
+
+def generate_softmax(module, body_op, init_op):
+    op_to_remove = []
+    # get softmax function
+    softmax_mod = Module.parse(module)
+    softmax_func = softmax_mod.body.operations[0]
+    softmax_func.attributes["sym_name"] = StringAttr.get(f"softmax_{hash(body_op)}")
+    args = softmax_func.arguments
+    args[0].set_type(body_op.input.type)
+    args[1].set_type(body_op.output.type)
+    in_types = [args[0].type, args[1].type]
+    out_types = [args[1].type]
+    func_type = FunctionType.get(in_types, out_types)
+    softmax_func.attributes["function_type"] = TypeAttr.get(func_type)
+    softmax_func.move_before(init_op)
+    func_d.CallOp(
+        [body_op.output.type],
+        FlatSymbolRefAttr.get(f"softmax_{hash(body_op)}"),
+        [body_op.input, body_op.output],
+        ip=InsertionPoint(body_op),
+    )
+    # Update memref shapes and dtypes in the softmax function
+    shape = MemRefType(in_types[0]).shape
+    for softmax_op in softmax_func.entry_block.operations:
+        if isinstance(softmax_op, memref_d.AllocOp):
+            alloc_op = memref_d.AllocOp(
+                MemRefType.get(
+                    shape[:-1],
+                    MemRefType(in_types[0]).element_type,
+                ),
+                [],
+                [],
+                ip=InsertionPoint(softmax_op),
+            )
+            softmax_op.result.replace_all_uses_with(alloc_op.result)
+            op_to_remove.append(softmax_op)
+
+        elif isinstance(softmax_op, linalg_d.GenericOp):
+            in_str = ", ".join([f"d{i}" for i in range(len(shape))])
+            out_str = ", ".join([f"d{i}" for i in range(len(shape) - 1)])
+
+            affine_map_in = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+            affine_map_out = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+            iter_types_0 = [Attribute.parse("#linalg.iterator_type<parallel>")] * (
+                len(shape) - 1
+            ) + [Attribute.parse("#linalg.iterator_type<reduction>")]
+            iter_types_1 = [Attribute.parse("#linalg.iterator_type<parallel>")] * len(
+                shape
+            )
+            # Replace indexing_maps and iterator_types of GenericOp in softmax_impl.mlir to match the shape of the input
+            if (
+                str(softmax_op.attributes["iterator_types"])
+                == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<reduction>]"
+            ):
+                softmax_op.attributes["indexing_maps"] = ArrayAttr.get(
+                    [affine_map_in, affine_map_out]
+                )
+                softmax_op.attributes["iterator_types"] = ArrayAttr.get(iter_types_0)
+            elif (
+                str(softmax_op.attributes["iterator_types"])
+                == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>]"
+            ):
+                softmax_op.attributes["indexing_maps"] = ArrayAttr.get(
+                    [
+                        affine_map_in,
+                        affine_map_out,
+                        affine_map_in,
+                    ]
+                )
+                softmax_op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
+            else:
+                raise NotImplementedError("Unsupported softmax shape")
+    # need to erase at the end
+    for op in op_to_remove:
+        op.operation.erase()

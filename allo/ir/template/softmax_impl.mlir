@@ -1,3 +1,7 @@
+// Copyright Allo authors. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/llvm/llvm-project/blob/main/mlir/test/Dialect/Linalg/transform-op-decompose.mlir
+
 func.func @softmax(%A: memref<2x16x32xf32>, %B: memref<2x16x32xf32>) -> memref<2x16x32xf32> {
         %0 = memref.alloc() : memref<2x16xf32>
         %C0_f32 = arith.constant 0xFF800000 : f32

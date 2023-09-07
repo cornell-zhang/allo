@@ -34,9 +34,10 @@ def from_pytorch(model, example_inputs, verbose=False):
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
     s = customize(code, verbose=verbose, global_vars=global_vars)
+    mod = s.build()
     if verbose:
         print(s.module)
-    return s.build()
+    return mod
 
 
 def get_var_name(node):
