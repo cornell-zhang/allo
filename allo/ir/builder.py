@@ -1465,11 +1465,10 @@ class ASTTransformer(ASTBuilder):
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 # We temporarily replace SoftmaxOp with a predefined lowered function to enable LLVM execution
-                shaped_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
                 op = linalg_d.SoftmaxOp(
                     input=new_args[0].result,
                     dimension=0,
-                    result=[shaped_type],
+                    result=[],
                     output=result_tensor if ctx.enable_tensor else result_tensor.result,
                 )
             elif attr == "relu":

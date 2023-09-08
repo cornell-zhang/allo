@@ -136,6 +136,8 @@ class TorchBuilder:
         return f"{node.name} = {lhs} / {rhs}"
 
     def build_softmax(self, node):
+        if node.kwargs.get("dim") != -1:
+            raise NotImplementedError("Only support softmax on the last dimension")
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.softmax({inp})"
 

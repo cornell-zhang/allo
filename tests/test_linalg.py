@@ -241,8 +241,11 @@ def test_linalg_softmax():
     K = 16
     N = 32
 
+    def foo(A: float32[M, K, N]) -> float32[M, K, N]:
+        return allo.softmax(A)
+
     def kernel(A: float32[M, K, N], B: float32[K, N]) -> float32[M, K, N]:
-        C = allo.softmax(A)
+        C = foo(A)
         D = allo.softmax(B)
         return C + D
 

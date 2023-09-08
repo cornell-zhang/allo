@@ -277,13 +277,12 @@ class LLVMModule:
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
-            # Decompose softmax
-            mod = decompose_softmax(mod)
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
+            self.module = decompose_softmax(self.module)
             # Start lowering
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Remove .partition() annotation
