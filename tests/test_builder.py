@@ -107,9 +107,10 @@ def test_variable_bound_for():
     def kernel(A: int32[10]):
         for i in range(10):
             for j in range(i + 1, 10):
-                A[j] += i
+                for k in range(j * 2, 10):
+                    A[k] += i - j
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
     np_A = np.zeros((10,), dtype=np.int32)
