@@ -34,9 +34,10 @@ def from_pytorch(model, example_inputs, verbose=False):
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
     s = customize(code, verbose=verbose, global_vars=global_vars)
+    mod = s.build()
     if verbose:
         print(s.module)
-    return s.build()
+    return mod
 
 
 def get_var_name(node):
@@ -92,6 +93,10 @@ class TorchBuilder:
     def build_call_module(self, node):
         if isinstance(self.get_module(node.target), torch.nn.Linear):
             op = "linear"
+        elif isinstance(self.get_module(node.target), torch.nn.Dropout):
+            op = "identity"
+        else:
+            raise NotImplementedError("Unsupported module")
         return getattr(self, f"build_{op}")(node)
 
     def build_call_function(self, node):
@@ -135,6 +140,8 @@ class TorchBuilder:
         return f"{node.name} = {lhs} / {rhs}"
 
     def build_softmax(self, node):
+        if node.kwargs.get("dim") != -1:
+            raise NotImplementedError("Only support softmax on the last dimension")
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.softmax({inp})"
 

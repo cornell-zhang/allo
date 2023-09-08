@@ -14,6 +14,7 @@ class SelfAttention(nn.Module):
         self.q_proj = nn.Linear(hidden_size, hidden_size)
         self.k_proj = nn.Linear(hidden_size, hidden_size)
         self.v_proj = nn.Linear(hidden_size, hidden_size)
+        self.dropout = nn.Dropout(0.1)
         self.n_heads = n_heads
         self.attention_head_size = int(hidden_size / n_heads)
 
@@ -31,7 +32,7 @@ class SelfAttention(nn.Module):
         )
         # (bs, head, seq, seq)
         attn_probs = F.softmax(attn_score, dim=-1)
-        attn_probs = F.dropout(attn_probs, 0.1)
+        attn_probs = self.dropout(attn_probs)
         # (bs, head, seq, hs // head)
         attn = torch.matmul(attn_probs, v)
         return attn
@@ -60,3 +61,8 @@ example_inputs = [torch.rand(batch_size, seq_len, hidden_size)]
 llvm_mod = allo.frontend.from_pytorch(
     model, example_inputs=example_inputs, verbose=True
 )
+
+golden = model(*example_inputs)
+np_inputs = [x.detach().numpy() for x in example_inputs]
+res = llvm_mod(*np_inputs)
+torch.testing.assert_close(res, golden.detach().numpy(), rtol=1e-5, atol=1e-5)

@@ -22,7 +22,7 @@ from hcl_mlir.runtime import (
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
-from ..passes import _mlir_lower_pipeline
+from ..passes import _mlir_lower_pipeline, decompose_softmax
 from ..utils import (
     get_func_inputs_outputs,
     get_bitwidth_from_type,
@@ -282,6 +282,7 @@ class LLVMModule:
             func = find_func_in_module(self.module, top_func_name)
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
+            self.module = decompose_softmax(self.module)
             # Start lowering
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
             # Remove .partition() annotation

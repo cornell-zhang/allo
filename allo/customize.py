@@ -688,7 +688,6 @@ def customize(
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
-
     sch = Schedule(
         module,
         ctx.top_func,

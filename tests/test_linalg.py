@@ -236,15 +236,25 @@ def test_linalg_math(enable_tensor):
 
 def test_linalg_softmax():
     # TODO: failed to lower to LLVM, see https://reviews.llvm.org/D153422
-    M = 10
-    K = 15
+    # We temporarily replace SoftmaxOp with a predefined lowered function to enable LLVM execution
+    M = 8
+    K = 16
+    N = 32
 
-    def kernel(A: float32[M, K]) -> float32[M, K]:
-        outs = allo.softmax(A)
-        return outs
+    def foo(A: float32[M, K, N]) -> float32[M, K, N]:
+        return allo.softmax(A)
+
+    def kernel(A: float32[M, K, N], B: float32[K, N]) -> float32[M, K, N]:
+        C = foo(A)
+        D = allo.softmax(B)
+        return C + D
 
     s = allo.customize(kernel)
+    f = s.build()
     print(s.module)
+    A = np.random.uniform(size=(M, K, N)).astype(np.float32)
+    B = np.random.uniform(size=(K, N)).astype(np.float32)
+    np.testing.assert_allclose(f(A, B), kernel(A, B), atol=1e-3)
 
 
 def test_linalg_Linear_layer():

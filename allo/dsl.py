@@ -62,8 +62,8 @@ def abs(x, name=None):
 
 
 def softmax(x, name=None):
-    e_x = np.exp(x - np.max(x))
-    return e_x / e_x.sum(axis=0)
+    exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
 
 
 def sqrt(x, name=None):
