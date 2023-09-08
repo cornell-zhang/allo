@@ -93,6 +93,10 @@ class TorchBuilder:
     def build_call_module(self, node):
         if isinstance(self.get_module(node.target), torch.nn.Linear):
             op = "linear"
+        elif isinstance(self.get_module(node.target), torch.nn.Dropout):
+            op = "identity"
+        else:
+            raise NotImplementedError("Unsupported module")
         return getattr(self, f"build_{op}")(node)
 
     def build_call_function(self, node):
