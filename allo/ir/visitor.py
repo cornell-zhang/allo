@@ -68,7 +68,7 @@ class ASTContext:
 
     def loop_scope_guard(self):
         return LoopScopeGuard(self)
-    
+
     def affine_scope_guard(self):
         return AffineScopeGuard(self)
 

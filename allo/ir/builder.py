@@ -222,19 +222,18 @@ class ASTTransformer(ASTBuilder):
                 and ub_map_attr is not None
                 and isinstance(step, int)
             ):
-                with ctx.get_ip():
-                    for_op = affine_d.AffineForOp(
-                        lb_expr[0] if len(lb_expr) > 0 else None,
-                        ub_expr[0] if len(ub_expr) > 0 else None,
-                        IntegerAttr.get(IntegerType.get_signless(32), step),
-                        lb_map_attr,
-                        ub_map_attr,
-                        name=StringAttr.get(names[0]),
-                        stage=StringAttr.get(stage_name),
-                        reduction=None,
-                        ip=ctx.get_ip(),
-                    )
-                    affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
+                for_op = affine_d.AffineForOp(
+                    lb_expr[0] if len(lb_expr) > 0 else None,
+                    ub_expr[0] if len(ub_expr) > 0 else None,
+                    IntegerAttr.get(IntegerType.get_signless(32), step),
+                    lb_map_attr,
+                    ub_map_attr,
+                    name=StringAttr.get(names[0]),
+                    stage=StringAttr.get(stage_name),
+                    reduction=None,
+                    ip=ctx.get_ip(),
+                )
+                affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
             else:
                 is_affine = False
                 lb_expr = build_stmt(
