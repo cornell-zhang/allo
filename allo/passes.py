@@ -137,10 +137,6 @@ def generate_input_output_buffers(top_func, flatten=False):
 
 
 def decompose_softmax(module):
-    current_directory = os.path.dirname(os.path.realpath(__file__))
-    file_path = os.path.join(current_directory, "ir/template/softmax_impl.mlir")
-    with open(file_path, "r", encoding="utf-8") as f:
-        softmax_module = f.read()
     with module.context, Location.unknown():
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
@@ -149,7 +145,7 @@ def decompose_softmax(module):
                 # put softmax function into the module
                 for body_op in op.entry_block.operations:
                     if isinstance(body_op, linalg_d.SoftmaxOp):
-                        generate_softmax(softmax_module, body_op, op)
+                        generate_softmax(body_op, op)
                         body_op_to_remove.append(body_op)
         # need to erase at the end
         for op in body_op_to_remove:
@@ -157,7 +153,11 @@ def decompose_softmax(module):
         return module
 
 
-def generate_softmax(template, target_op, func_op):
+def generate_softmax(target_op, func_op):
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    file_path = os.path.join(current_directory, "ir/template/softmax_impl.mlir")
+    with open(file_path, "r", encoding="utf-8") as f:
+        template = f.read()
     op_to_remove = []
     # Update arguments of softmax template function
     softmax_mod = Module.parse(template)
