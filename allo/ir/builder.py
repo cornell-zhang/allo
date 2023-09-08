@@ -474,8 +474,11 @@ class ASTTransformer(ASTBuilder):
         # build the cast op
         if isinstance(res_type, (Int, UInt, Struct)):
             mlir_type = res_type.build()
+            # use linalg.generic to cast tensors by element
             if ctx.enable_tensor and shape is not None and len(shape) > 0:
+                # create output tensor
                 tensor_op = tensor_d.EmptyOp(shape, mlir_type, ip=ctx.get_ip())
+                # get mapping from index to index
                 index_exprs = []
                 for dim in range(len(shape)):
                     index_exprs.append(AffineExpr.get_dim(dim))
@@ -498,9 +501,11 @@ class ASTTransformer(ASTBuilder):
                     result_tensors=[RankedTensorType.get(shape, res_type.build())],
                     iterator_types=iterator_types_attr,
                 )
+                # create block
                 block_arg_types = [src_type.build(), res_type.build()]
                 block = cast_op.regions[0].blocks.append(*block_arg_types)
                 ctx.set_ip(block)
+                # add cast op to block
                 yield_value = opcls(
                     res_type.build(), block.arguments[0], ip=ctx.get_ip()
                 )
