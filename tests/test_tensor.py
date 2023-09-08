@@ -253,9 +253,9 @@ def test_linalg_matmul():
 
 def test_broadcast_int():
     def kernel() -> int32[2, 2]:
-        A: int32[2, 2] = 0
+        A: int32[2, 2] = 1
         B = A + 1
-        C = B + 1
+        C = B - 3
         return C
 
     s = allo.customize(kernel, enable_tensor=True)
@@ -265,4 +265,5 @@ def test_broadcast_int():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_broadcast_int()
