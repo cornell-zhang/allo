@@ -251,5 +251,18 @@ def test_linalg_matmul():
     np.testing.assert_allclose(f(), kernel(), atol=1e-4)
 
 
+def test_broadcast_int():
+    def kernel() -> int32[2, 2]:
+        A: int32[2, 2] = 0
+        B = A + 1
+        C = B + 1
+        return C
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+    f = s.build()
+    np.testing.assert_allclose(f(), kernel(), atol=1e-4)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
