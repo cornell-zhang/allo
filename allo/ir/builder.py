@@ -191,29 +191,53 @@ class ASTTransformer(ASTBuilder):
             grid = [ASTResolver.resolve_constant(x, ctx) for x in iter_args]
             for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
         elif attr == "range":
-            low = (
-                0
-                if len(iter_args) == 1
-                else ASTResolver.resolve_constant(iter_args[0], ctx)
-            )
-            high = (
-                ASTResolver.resolve_constant(iter_args[1], ctx)
-                if len(iter_args) > 1
-                else ASTResolver.resolve_constant(iter_args[0], ctx)
-            )
-            step = (
-                ASTResolver.resolve_constant(iter_args[2], ctx)
-                if len(iter_args) > 2
-                else 1
-            )
+            if len(iter_args) == 1:
+                # e.g., for i in range(10)
+                lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(ctx, ast.Constant(value=0))
+                ub_expr, ub_map_attr = ASTTransformer.build_affine_map_attr(ctx, iter_args[0])
+                if ub_map_attr is None:
+                    high = build_stmt(ctx, iter_args[0]).result
+                step = 1
+            elif len(iter_args) < 4:
+                # e.g., for i in range(1, 10)
+                #       for i in range(1, 10, 2)
+                lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(ctx, iter_args[0])
+                if lb_map_attr is None:
+                    low = build_stmt(ctx, iter_args[0]).result
+                ub_expr, ub_map_attr = ASTTransformer.build_affine_map_attr(ctx, iter_args[1])
+                if ub_map_attr is None:
+                    high = build_stmt(ctx, iter_args[1]).result
+                if len(iter_args) == 3:
+                    step = ASTResolver.resolve_constant(iter_args[2], ctx)
+                    if step is None:
+                        step = build_stmt(ctx, iter_args[2]).result
+                else:
+                    step = 1
+            else:
+                raise RuntimeError("Unsupported range")
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
-            with ctx.get_ip():
-                for_loops = [
-                    hcl_mlir.make_for(
-                        low, high, step=step, name=names[0], stage=stage_name
+            if (
+                lb_map_attr is not None
+                and ub_map_attr is not None
+                and isinstance(step, int)
+            ):
+                with ctx.get_ip():
+                    for_op = affine_d.AffineForOp(
+                        lb_expr[0] if len(lb_expr) > 0 else None,
+                        ub_expr[0] if len(ub_expr) > 0 else None,
+                        IntegerAttr.get(IntegerType.get_signless(32), step),
+                        lb_map_attr,
+                        ub_map_attr,
+                        name=StringAttr.get(names[0]),
+                        stage=StringAttr.get(stage_name),
+                        reduction=None,
+                        ip=ctx.get_ip(),
                     )
-                ]
+                    affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
+            else:
+                raise NotImplementedError
+            for_loops = [for_op]
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
             ctx.buffers[name] = MockArg(iv)
@@ -678,6 +702,20 @@ class ASTTransformer(ASTBuilder):
         # Store LHS
         store_op = build_stmt(ctx, node.target, val=res)
         return store_op
+
+    @staticmethod
+    def build_affine_map_attr(ctx, node):
+        with ctx.affine_scope_guard():
+            expr = ASTTransformer.build_affine_expr(ctx, node)
+            if expr is not None:
+                variables = [ctx.buffers[x].result for x in ctx.affine_vars]
+                affine_map = AffineMap.get(
+                    dim_count=ctx.dim_count, symbol_count=0, exprs=[expr]
+                )
+                attr = AffineMapAttr.get(affine_map)
+            else:
+                variables, attr = [], None
+        return variables, attr
 
     @staticmethod
     def build_affine_expr(ctx, node):

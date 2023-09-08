@@ -18,6 +18,19 @@ class LoopScopeGuard:
         self.ctx.loop_band_count += 1
 
 
+class AffineScopeGuard:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        self.ctx.dim_count = 0
+        self.ctx.affine_vars = []
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ctx.dim_count = 0
+        self.ctx.affine_vars = []
+
+
 class ASTContext:
     def __init__(self, global_vars, mlir_ctx, enable_tensor=False, verbose=False):
         self.ip_stack = []
@@ -55,6 +68,9 @@ class ASTContext:
 
     def loop_scope_guard(self):
         return LoopScopeGuard(self)
+    
+    def affine_scope_guard(self):
+        return AffineScopeGuard(self)
 
 
 class ASTVisitor:
