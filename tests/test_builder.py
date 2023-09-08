@@ -103,6 +103,42 @@ def test_range_for():
     np.testing.assert_allclose(np_A, np_B)
 
 
+def test_variable_bound_for():
+    def kernel(A: int32[10]):
+        for i in range(10):
+            for j in range(i + 1, 10):
+                for k in range(j * 2, 10):
+                    A[k] += i - j
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.zeros((10,), dtype=np.int32)
+    kernel(np_A)
+    np_B = np.zeros((10,), dtype=np.int32)
+    mod(np_B)
+    np.testing.assert_allclose(np_A, np_B)
+
+
+def test_scf_for():
+    def kernel(A: int32[10], B: int32[10]):
+        for i in range(10):
+            for j in range(A[i], 10, A[i]):
+                for k in range(A[i] - 1, A[i] + 2):
+                    B[k] += i - j
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    mod = s.build()
+    np_A = np.zeros((10,), dtype=np.int32) + 1
+    np_B = np.zeros((10,), dtype=np.int32)
+    kernel(np_A, np_B)
+    np_C = np.zeros((10,), dtype=np.int32) + 1
+    np_D = np.zeros((10,), dtype=np.int32)
+    mod(np_C, np_D)
+    np.testing.assert_allclose(np_B, np_D)
+
+
 def test_nested_if():
     def kernel(a: int32, b: int32) -> int32:
         r: int32 = 0

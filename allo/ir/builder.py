@@ -29,7 +29,6 @@ from hcl_mlir.ir import (
     DenseElementsAttr,
     TypeAttr,
 )
-import hcl_mlir
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -186,37 +185,97 @@ class ASTTransformer(ASTBuilder):
             stage_name = get_kwarg(node.iter.keywords, "name").value
 
         # build for loops
+        is_affine = True
         iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
             grid = [ASTResolver.resolve_constant(x, ctx) for x in iter_args]
             for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
         elif attr == "range":
-            low = (
-                0
-                if len(iter_args) == 1
-                else ASTResolver.resolve_constant(iter_args[0], ctx)
-            )
-            high = (
-                ASTResolver.resolve_constant(iter_args[1], ctx)
-                if len(iter_args) > 1
-                else ASTResolver.resolve_constant(iter_args[0], ctx)
-            )
-            step = (
-                ASTResolver.resolve_constant(iter_args[2], ctx)
-                if len(iter_args) > 2
-                else 1
-            )
+            if len(iter_args) == 1:
+                # e.g., for i in range(10)
+                lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(
+                    ctx, ast.Constant(value=0)
+                )
+                ub_expr, ub_map_attr = ASTTransformer.build_affine_map_attr(
+                    ctx, iter_args[0]
+                )
+                step = 1
+            elif len(iter_args) < 4:
+                # e.g., for i in range(1, 10)
+                #       for i in range(1, 10, 2)
+                lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(
+                    ctx, iter_args[0]
+                )
+                ub_expr, ub_map_attr = ASTTransformer.build_affine_map_attr(
+                    ctx, iter_args[1]
+                )
+                if len(iter_args) == 3:
+                    step = ASTResolver.resolve_constant(iter_args[2], ctx)
+                else:
+                    step = 1
+            else:
+                raise RuntimeError("Unsupported range")
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
-            with ctx.get_ip():
-                for_loops = [
-                    hcl_mlir.make_for(
-                        low, high, step=step, name=names[0], stage=stage_name
-                    )
-                ]
+            if (
+                lb_map_attr is not None
+                and ub_map_attr is not None
+                and isinstance(step, int)
+            ):
+                for_op = affine_d.AffineForOp(
+                    lb_expr[0] if len(lb_expr) > 0 else None,
+                    ub_expr[0] if len(ub_expr) > 0 else None,
+                    IntegerAttr.get(IntegerType.get_signless(32), step),
+                    lb_map_attr,
+                    ub_map_attr,
+                    name=StringAttr.get(names[0]),
+                    stage=StringAttr.get(stage_name),
+                    reduction=None,
+                    ip=ctx.get_ip(),
+                )
+                affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
+            else:
+                is_affine = False
+                lb_expr = build_stmt(
+                    ctx, iter_args[0] if len(iter_args) >= 1 else ast.Constant(0)
+                )
+                ub_expr = build_stmt(
+                    ctx, iter_args[1] if len(iter_args) >= 2 else iter_args[0]
+                )
+                step = build_stmt(
+                    ctx, iter_args[2] if len(iter_args) >= 3 else ast.Constant(1)
+                )
+                lb_expr = ASTTransformer.build_cast_op(
+                    ctx,
+                    lb_expr,
+                    iter_args[0].dtype if len(iter_args) >= 1 else Int(32),
+                    Index(),
+                )
+                ub_expr = ASTTransformer.build_cast_op(
+                    ctx,
+                    ub_expr,
+                    iter_args[1].dtype if len(iter_args) >= 2 else iter_args[0].dtype,
+                    Index(),
+                )
+                step = ASTTransformer.build_cast_op(
+                    ctx,
+                    step,
+                    iter_args[2].dtype if len(iter_args) >= 3 else Int(32),
+                    Index(),
+                )
+                for_op = scf_d.ForOp(
+                    lb_expr.result,
+                    ub_expr.result,
+                    step.result,
+                    ip=ctx.get_ip(),
+                )
+                for_op.attributes["loop_name"] = StringAttr.get(names[0])
+                for_op.attributes["op_name"] = StringAttr.get(stage_name)
+                scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
+            for_loops = [for_op]
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
-            ctx.buffers[name] = MockArg(iv)
+            ctx.buffers[name] = MockArg(iv, is_affine)
         ctx.set_ip(for_loops[-1].body.operations[0])
 
         # build loop body
@@ -680,12 +739,27 @@ class ASTTransformer(ASTBuilder):
         return store_op
 
     @staticmethod
+    def build_affine_map_attr(ctx, node):
+        with ctx.affine_scope_guard():
+            expr = ASTTransformer.build_affine_expr(ctx, node)
+            if expr is not None:
+                variables = [ctx.buffers[x].result for x in ctx.affine_vars]
+                affine_map = AffineMap.get(
+                    dim_count=ctx.dim_count, symbol_count=0, exprs=[expr]
+                )
+                attr = AffineMapAttr.get(affine_map)
+            else:
+                variables, attr = [], None
+        return variables, attr
+
+    @staticmethod
     def build_affine_expr(ctx, node):
         if isinstance(node, ast.Name):
             if (
                 node.id in ctx.buffers
                 and isinstance(ctx.buffers[node.id], MockArg)
                 and str(ctx.buffers[node.id].result.type) == "index"
+                and ctx.buffers[node.id].is_affine
             ):
                 ctx.dim_count += 1
                 ctx.affine_vars.append(node.id)
@@ -712,6 +786,8 @@ class ASTTransformer(ASTBuilder):
         if isinstance(node, ast.BinOp):
             lhs = ASTTransformer.build_affine_expr(ctx, node.left)
             rhs = ASTTransformer.build_affine_expr(ctx, node.right)
+            if lhs is None or rhs is None:
+                return None
             op = {
                 ast.Add: lambda l, r: l + r,
                 ast.Sub: lambda l, r: l - r,
@@ -729,7 +805,7 @@ class ASTTransformer(ASTBuilder):
             return op(lhs, rhs)
         if isinstance(node, ast.Constant):
             return AffineConstantExpr.get(node.value)
-        raise RuntimeError("Unsupported affine expression")
+        return None
 
     @staticmethod
     def build_slices(ctx, node, in_shape):

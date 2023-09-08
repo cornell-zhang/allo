@@ -44,8 +44,9 @@ class MockOp:
 
 
 class MockArg(MockOp):
-    def __init__(self, val):
+    def __init__(self, val, is_affine=True):
         self.val = val
+        self.is_affine = is_affine
 
     @property
     def result(self):

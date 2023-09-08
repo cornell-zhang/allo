@@ -130,6 +130,7 @@ class TypeInferer(ASTVisitor):
             iv.shape = tuple()
             iv.dtype = Index()
             ctx.buffers[iv.id] = iv
+        visit_stmts(ctx, node.iter.args)
         visit_stmts(ctx, node.body)
         node.shape = None
         node.dtype = None
