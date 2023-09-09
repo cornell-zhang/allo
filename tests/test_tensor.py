@@ -5,6 +5,8 @@ import pytest
 import allo
 from allo.ir.types import int32, float32
 import numpy as np
+from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int32, float32, index
+import allo.ir.types as T
 
 
 def test_same():
@@ -252,18 +254,53 @@ def test_linalg_matmul():
 
 
 def test_broadcast_int():
-    def kernel() -> int32[2, 2]:
-        A: int32[2, 2] = 1
-        B = A + 1
-        C = B - 3
+    T_IN, T_OUT = Int(4), Int(15)
+
+    def kernel(A: T_IN[16, 16]) -> T_OUT[16, 16]:
+        B = A + 3
+        C = B - 5
         return C
 
-    s = allo.customize(kernel, enable_tensor=True)
-    print(s.module)
-    f = s.build()
-    np.testing.assert_allclose(f(), kernel(), atol=1e-4)
+    for T_IN, T_OUT in [
+        (Int(4), Int(15)),
+        (Int(5), Int(16)),
+        (Int(6), Int(17)),
+        (Int(9), Int(31)),
+        (Int(8), Int(32)),
+        (Int(7), Int(33)),
+        (Int(15), Int(34)),
+        (Int(16), Int(32)),
+        (Int(32), Int(17)),
+    ]:
+        s = allo.customize(kernel, enable_tensor=True)
+        print(s.module)
+        np_A = np.random.randint(-8, 8, size=(16, 16)).astype(np.int32)
+        f = s.build()
+        np.testing.assert_allclose(f(np_A), kernel(np_A), atol=1e-4)
+        print(f"Passed {T_IN}, {T_OUT}!")
+
+
+def test_broadcast_uint():
+    T_IN, T_OUT = UInt(3), UInt(7)
+
+    def kernel(A: T_IN[16, 16]) -> T_OUT[16, 16]:
+        B = A + 6
+        C = B - 4
+        return C
+
+    for T_IN, T_OUT in [
+        (UInt(3), UInt(7)),
+        (UInt(4), UInt(8)),
+        (UInt(5), UInt(9)),
+        (UInt(7), UInt(16)),
+        (UInt(16), UInt(8)),
+    ]:
+        s = allo.customize(kernel, enable_tensor=True)
+        np_A = np.random.randint(0, 8, size=(16, 16)).astype(np.int32)
+        f = s.build()
+        np.testing.assert_allclose(f(np_A), kernel(np_A), atol=1e-4)
+        print(f"Passed {T_IN}, {T_OUT}!")
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_broadcast_int()
+    pytest.main([__file__])

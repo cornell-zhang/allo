@@ -470,8 +470,6 @@ class ASTTransformer(ASTBuilder):
                 "Casting between unsupported types. "
                 + f"src type: {src_type}, dst type: {res_type}"
             )
-
-        # build the cast op
         if isinstance(res_type, (Int, UInt, Struct)):
             mlir_type = res_type.build()
             # use linalg.generic to cast tensors by element
