@@ -3,10 +3,8 @@
 
 import pytest
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import int32, float32, Int, UInt
 import numpy as np
-from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int32, float32, index
-import allo.ir.types as T
 
 
 def test_same():
