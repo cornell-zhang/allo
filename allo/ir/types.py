@@ -54,7 +54,7 @@ class Index(AlloType):
 
 class Int(AlloType):
     def __init__(self, bits):
-        super().__init__(bits, 0, f"int{bits}")
+        super().__init__(bits, 0, f"i{bits}")
 
     def build(self):
         return IntegerType.get_signless(self.bits)
@@ -62,7 +62,7 @@ class Int(AlloType):
 
 class UInt(AlloType):
     def __init__(self, bits):
-        super().__init__(bits, 0, f"uint{bits}")
+        super().__init__(bits, 0, f"ui{bits}")
 
     def build(self):
         # A bit hacky here: Since the MLIR code dialect does not support
@@ -75,13 +75,13 @@ class UInt(AlloType):
 class Float(AlloType):
     def __init__(self, bits):
         if bits == 16:
-            super().__init__(16, 10, f"float{bits}")
+            super().__init__(16, 10, f"f{bits}")
             self.exponent = 5
         elif bits == 32:
-            super().__init__(32, 23, f"float{bits}")
+            super().__init__(32, 23, f"f{bits}")
             self.exponent = 8
         elif bits == 64:
-            super().__init__(64, 52, f"float{bits}")
+            super().__init__(64, 52, f"f{bits}")
             self.exponent = 11
         else:
             raise DTypeError("Only support float16, float32 and float64")

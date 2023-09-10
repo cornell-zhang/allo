@@ -12,6 +12,13 @@ from .symbol_resolver import ASTResolver
 from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
+from ..utils import (
+    is_anywidth_int_type_and_not_np,
+    get_bitwidth_from_type,
+    handle_overflow,
+    make_anywidth_numpy_array,
+    np_supported_types,
+)
 
 
 # pylint: disable=too-many-public-methods
@@ -254,13 +261,17 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_constant_tensor(ctx, node, np_values):
-        if np.issubdtype(np_values.dtype, np.integer):
-            node.dtype = int32
-            np_values = np_values.astype(np.int32)
-        elif np.issubdtype(np_values.dtype, np.floating):
-            node.dtype = float32
-            np_values = np_values.astype(np.float32)
+    def visit_constant_tensor(ctx, node, np_values, dtype):
+        dtype = str(dtype)
+        if is_anywidth_int_type_and_not_np(dtype):
+            bitwidth = get_bitwidth_from_type(dtype)
+            np_arr = handle_overflow(np_values, bitwidth, dtype)
+            np_values = make_anywidth_numpy_array(np_arr, bitwidth)
+        elif dtype in np_supported_types:
+            target_np_type = np_supported_types[dtype]
+            if np_values.dtype != target_np_type:
+                # avoid changing the address of the original array
+                np_values = np_values.astype(target_np_type)
         else:
             raise RuntimeError("Unsupported constant tensor element type")
         node.np_values = np_values
@@ -371,7 +382,7 @@ class TypeInferer(ASTVisitor):
             assert (
                 target_shape == values.shape
             ), f"Shape mismatch, got {target_shape} and {values.shape}"
-            TypeInferer.visit_constant_tensor(ctx, node, values)
+            TypeInferer.visit_constant_tensor(ctx, node, values, dtype=target_dtype)
             node.value.shape = values.shape
             node.value.dtype = target_dtype
         elif (
@@ -382,7 +393,9 @@ class TypeInferer(ASTVisitor):
             assert (
                 ctx.global_vars[node.value.id].shape == target_shape
             ), f"Shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
-            TypeInferer.visit_constant_tensor(ctx, node, ctx.global_vars[node.value.id])
+            TypeInferer.visit_constant_tensor(
+                ctx, node, ctx.global_vars[node.value.id], dtype=target_dtype
+            )
             node.value.shape = node.np_values.shape
             node.value.dtype = target_dtype
         else:
