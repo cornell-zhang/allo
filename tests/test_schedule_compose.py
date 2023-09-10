@@ -7,6 +7,15 @@ import allo
 from allo.ir.types import int32, float32
 
 
+def test_use_def_chain():
+    def kernel(A: int32) -> int32:
+        B: int32 = A + 1
+        return B
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+
+
 def test_nested_functions():
     M, K, N = 32, 32, 32
 
@@ -208,4 +217,5 @@ def test_output_partition_compose():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_use_def_chain()
