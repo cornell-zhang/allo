@@ -134,3 +134,14 @@ def linear(X, A, B, name=None):
 
 def view(x, shape, name=None):
     return np.reshape(x, shape)
+
+
+def layernorm(x, g, b, eps: float = 1e-5):
+    mean = np.mean(x, axis=-1, keepdims=True)
+    variance = np.var(x, axis=-1, keepdims=True)
+    x = g * (x - mean) / np.sqrt(variance + eps) + b
+    return x
+
+
+def gelu(x):
+    return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))

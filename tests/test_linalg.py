@@ -513,5 +513,35 @@ def test_library_higher_dimension_ops(enable_tensor):
     np.testing.assert_allclose(outp, np_outp, rtol=1e-5)
 
 
+def test_layernorm_gelu_ops():
+    inp_num = 12
+    inp_len = 768
+    inp = np.random.uniform(size=(inp_num, inp_len, inp_len)).astype(np.float32)
+    gamma = np.random.uniform(size=(inp_len)).astype(np.float32)
+    beta = np.random.uniform(size=(inp_len)).astype(np.float32)
+
+    def foo(
+        inp: float32[inp_num, inp_len, inp_len]
+    ) -> float32[inp_num, inp_len, inp_len]:
+        outp = allo.gelu(inp)
+        return outp
+
+    def kernel(
+        inp: float32[inp_num, inp_len, inp_len],
+        gamma: float32[inp_len],
+        beta: float32[inp_len],
+    ) -> float32[inp_num, inp_len, inp_len]:
+        val = foo(inp)
+        A = allo.layernorm(val, gamma, beta)
+        B = allo.gelu(A)
+        return B
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    outp = mod(inp, gamma, beta)
+    np_outp = kernel(inp, gamma, beta)
+    np.testing.assert_allclose(outp, np_outp, atol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
