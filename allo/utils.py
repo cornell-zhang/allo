@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
-import numpy as np
 import ctypes
+import numpy as np
 from hcl_mlir.ir import (
     MemRefType,
     RankedTensorType,

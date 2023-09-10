@@ -1076,7 +1076,9 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
         if hasattr(node, "np_values"):
-            rhs = ASTTransformer.build_constant_tensor(ctx, node, node.np_values, dtype=dtype)
+            rhs = ASTTransformer.build_constant_tensor(
+                ctx, node, node.np_values, dtype=dtype
+            )
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor

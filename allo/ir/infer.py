@@ -265,8 +265,8 @@ class TypeInferer(ASTVisitor):
         dtype = str(dtype)
         if is_anywidth_int_type_and_not_np(dtype):
             bitwidth = get_bitwidth_from_type(dtype)
-            np_values = handle_overflow(np_values, bitwidth, dtype)
-            np_values = make_anywidth_numpy_array(np_values, bitwidth)
+            np_arr = handle_overflow(np_values, bitwidth, dtype)
+            np_values = make_anywidth_numpy_array(np_arr, bitwidth)
         elif dtype in np_supported_types:
             target_np_type = np_supported_types[dtype]
             if np_values.dtype != target_np_type:
