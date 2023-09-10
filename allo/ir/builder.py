@@ -28,6 +28,8 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     DenseElementsAttr,
     TypeAttr,
+    ArrayAttr,
+    Attribute,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -316,7 +318,7 @@ class ASTTransformer(ASTBuilder):
 
     # pylint: disable=too-many-branches
     @staticmethod
-    def build_cast_op(ctx, op, src_type, res_type):
+    def build_cast_op(ctx, op, src_type, res_type, shape=None):
         # No need to cast
         if type(res_type) is type(src_type) and res_type == src_type:
             return op
@@ -468,11 +470,47 @@ class ASTTransformer(ASTBuilder):
                 "Casting between unsupported types. "
                 + f"src type: {src_type}, dst type: {res_type}"
             )
-
-        # build the cast op
         if isinstance(res_type, (Int, UInt, Struct)):
             mlir_type = res_type.build()
-            cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
+            # use linalg.generic to cast tensors by element
+            if ctx.enable_tensor and shape is not None and len(shape) > 0:
+                # create output tensor
+                tensor_op = tensor_d.EmptyOp(shape, mlir_type, ip=ctx.get_ip())
+                # get mapping from index to index
+                index_exprs = []
+                for dim in range(len(shape)):
+                    index_exprs.append(AffineExpr.get_dim(dim))
+                affine_map = AffineMap.get(
+                    dim_count=len(shape),
+                    symbol_count=0,
+                    exprs=index_exprs,
+                )
+                indexing_maps_attr = ArrayAttr.get(
+                    [AffineMapAttr.get(affine_map), AffineMapAttr.get(affine_map)]
+                )
+                iterator_types_attr = ArrayAttr.get(
+                    [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
+                )
+                cast_op = linalg_d.GenericOp(
+                    indexing_maps=indexing_maps_attr,
+                    ip=ctx.get_ip(),
+                    inputs=[op.result],
+                    outputs=[tensor_op.result],
+                    result_tensors=[RankedTensorType.get(shape, res_type.build())],
+                    iterator_types=iterator_types_attr,
+                )
+                # create block
+                block_arg_types = [src_type.build(), res_type.build()]
+                block = cast_op.regions[0].blocks.append(*block_arg_types)
+                ctx.set_ip(block)
+                # add cast op to block
+                yield_value = opcls(
+                    res_type.build(), block.arguments[0], ip=ctx.get_ip()
+                )
+                linalg_d.YieldOp([yield_value], ip=ctx.get_ip())
+                ctx.pop_ip()
+            else:
+                cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
             if isinstance(res_type, (UInt, Struct)):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
@@ -622,8 +660,12 @@ class ASTTransformer(ASTBuilder):
         lhs = build_stmt(ctx, node.left)
         rhs = build_stmt(ctx, node.right)
         # Cast lhs and rhs to the same type
-        lhs = ASTTransformer.build_cast_op(ctx, lhs, node.left.dtype, node.dtype)
-        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.right.dtype, node.dtype)
+        lhs = ASTTransformer.build_cast_op(
+            ctx, lhs, node.left.dtype, node.dtype, node.left.shape
+        )
+        rhs = ASTTransformer.build_cast_op(
+            ctx, rhs, node.right.dtype, node.dtype, node.right.shape
+        )
         lhs = ASTTransformer.build_broadcast_op(
             ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
         )
@@ -668,7 +710,9 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[node.targets[0].id] = rhs
             return rhs
         # Store LHS
-        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
+        rhs = ASTTransformer.build_cast_op(
+            ctx, rhs, node.value.dtype, node.dtype, node.value.shape
+        )
         rhs = ASTTransformer.build_broadcast_op(
             ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
         )
@@ -1038,7 +1082,9 @@ class ASTTransformer(ASTBuilder):
         # Not constant tensor
         rhs = build_stmt(ctx, node.value)
         if rhs is not None:
-            rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
+            rhs = ASTTransformer.build_cast_op(
+                ctx, rhs, node.value.dtype, node.dtype, node.value.shape
+            )
         # Store LHS
         if len(shape) > 0:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
@@ -1658,7 +1704,7 @@ class ASTTransformer(ASTBuilder):
     def build_Return(ctx, node):
         ret = build_stmt(ctx, node.value)
         ret = ASTTransformer.build_cast_op(
-            ctx, ret, node.dtype, ctx.top_func_tree.dtype
+            ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
         return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
