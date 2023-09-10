@@ -470,12 +470,12 @@ class ASTTransformer(ASTBuilder):
                 "Casting between unsupported types. "
                 + f"src type: {src_type}, dst type: {res_type}"
             )
+        mlir_type = res_type.build()
         if isinstance(res_type, (Int, UInt, Struct)):
-            mlir_type = res_type.build()
             # use linalg.generic to cast tensors by element
-            if ctx.enable_tensor and shape is not None and len(shape) > 0:
+            if shape is not None and len(shape) > 0:
                 # create output tensor
-                tensor_op = tensor_d.EmptyOp(shape, mlir_type, ip=ctx.get_ip())
+                alloc_op = ASTTransformer.build_array(ctx, res_type, shape)
                 # get mapping from index to index
                 index_exprs = []
                 for dim in range(len(shape)):
@@ -495,26 +495,26 @@ class ASTTransformer(ASTBuilder):
                     indexing_maps=indexing_maps_attr,
                     ip=ctx.get_ip(),
                     inputs=[op.result],
-                    outputs=[tensor_op.result],
-                    result_tensors=[RankedTensorType.get(shape, res_type.build())],
+                    outputs=[alloc_op.result],
+                    result_tensors=[RankedTensorType.get(shape, mlir_type)]
+                    if ctx.enable_tensor
+                    else [],
                     iterator_types=iterator_types_attr,
                 )
                 # create block
-                block_arg_types = [src_type.build(), res_type.build()]
+                block_arg_types = [src_type.build(), mlir_type]
                 block = cast_op.regions[0].blocks.append(*block_arg_types)
                 ctx.set_ip(block)
                 # add cast op to block
-                yield_value = opcls(
-                    res_type.build(), block.arguments[0], ip=ctx.get_ip()
-                )
+                yield_value = opcls(mlir_type, block.arguments[0], ip=ctx.get_ip())
                 linalg_d.YieldOp([yield_value], ip=ctx.get_ip())
                 ctx.pop_ip()
+                cast_op = cast_op if ctx.enable_tensor else alloc_op
             else:
                 cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
             if isinstance(res_type, (UInt, Struct)):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
-            mlir_type = res_type.build()
             cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
         return cast_op
 
@@ -666,6 +666,8 @@ class ASTTransformer(ASTBuilder):
         rhs = ASTTransformer.build_cast_op(
             ctx, rhs, node.right.dtype, node.dtype, node.right.shape
         )
+        print(node.left.shape, node.left.dtype, node.dtype, lhs)
+        print(node.right.shape, node.right.dtype, node.dtype, rhs)
         lhs = ASTTransformer.build_broadcast_op(
             ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
         )

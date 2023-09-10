@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int32, float32, index
+from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int4, int32, float32
 import allo.ir.types as T
 
 
@@ -294,6 +294,23 @@ def test_fixed_gemm():
         np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
 
 
+def test_anywidth_int_constant():
+    np_A = np.random.randint(-8, 8, size=(4, 4)).astype(np.int8)
+    np_B = np.random.randint(-8, 8, size=(4, 4)).astype(np.int8)
+
+    def kernel() -> Int(8)[4, 4]:
+        A: Int(5)[4, 4] = np_A
+        B: Int(5)[4, 4] = np_B
+        C = A + B
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_C = mod()
+    np.testing.assert_allclose(np_C, np_A + np_B, rtol=1e-5)
+
+
 ######################################################################
 # Legacy tests
 ######################################################################
@@ -322,4 +339,5 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_anywidth_int_constant()
