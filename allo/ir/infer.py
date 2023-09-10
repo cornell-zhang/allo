@@ -658,6 +658,10 @@ class TypeInferer(ASTVisitor):
             node.shape = axes
             node.dtype = new_args[0].dtype
             return node
+        if op_name in {"layernorm", "gelu"}:
+            node.shape = new_args[0].shape
+            node.dtype = new_args[0].dtype
+            return node
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 
     @staticmethod

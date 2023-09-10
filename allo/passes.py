@@ -15,6 +15,8 @@ from hcl_mlir.ir import (
     AffineMapAttr,
     InsertionPoint,
     Module,
+    IntegerAttr,
+    IntegerType,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -22,6 +24,7 @@ from hcl_mlir.dialects import (
     affine as affine_d,
     memref as memref_d,
     linalg as linalg_d,
+    arith as arith_d,
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
@@ -136,98 +139,185 @@ def generate_input_output_buffers(top_func, flatten=False):
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
 
 
-def decompose_softmax(module):
+def decompose_library_function(module):
     with module.context, Location.unknown():
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
         for op in module.body.operations:
             if isinstance(op, func_d.FuncOp) and not op.is_external:
-                # put softmax function into the module
                 for body_op in op.entry_block.operations:
+                    # put function into the module
                     if isinstance(body_op, linalg_d.SoftmaxOp):
-                        generate_softmax(body_op, op)
+                        generate_call_module(body_op, op, "softmax")
                         body_op_to_remove.append(body_op)
+                    if isinstance(body_op, func_d.CallOp):
+                        callee_value = body_op.attributes["callee"].value
+                        if callee_value.startswith("gelu"):
+                            name = "gelu"
+                        elif callee_value.startswith("layernorm"):
+                            name = "layernorm"
+                        else:
+                            continue
+                        generate_call_module(body_op, op, name)
+                        body_op_to_remove.append(body_op)
+            elif op.attributes["sym_name"].value.startswith(("gelu", "layernorm")):
+                body_op_to_remove.append(op)
         # need to erase at the end
         for op in body_op_to_remove:
             op.operation.erase()
         return module
 
 
-def generate_softmax(target_op, func_op):
+def generate_call_module(target_op, func_op, name):
     current_directory = os.path.dirname(os.path.realpath(__file__))
-    file_path = os.path.join(current_directory, "ir/template/softmax_impl.mlir")
+    file_path = os.path.join(current_directory, f"ir/template/{name}_impl.mlir")
     with open(file_path, "r", encoding="utf-8") as f:
         template = f.read()
     op_to_remove = []
-    # Update arguments of softmax template function
-    softmax_mod = Module.parse(template)
-    softmax_func = softmax_mod.body.operations[0]
-    softmax_func.attributes["sym_name"] = StringAttr.get(f"softmax_{hash(target_op)}")
-    args = softmax_func.arguments
-    args[0].set_type(target_op.input.type)
-    args[1].set_type(target_op.output.type)
-    in_types = [args[0].type, args[1].type]
-    out_types = [args[1].type]
+    mod = Module.parse(template)
+    func = mod.body.operations[0]
+    if name == "softmax":
+        sym_name = f"{name}_{hash(target_op)}"
+        args = func.arguments
+        args[0].set_type(target_op.input.type)
+        args[1].set_type(target_op.output.type)
+        in_types = [args[0].type, args[1].type]
+        out_types = [args[1].type]
+        operands = [target_op.input, target_op.output]
+    elif name in {"gelu", "layernorm"}:
+        sym_name = target_op.attributes["callee"].value
+        in_types = [arg.type for arg in target_op.operands_]
+        for i, arg in enumerate(func.arguments):
+            arg.set_type(in_types[i])
+        out_types = [in_types[0]]
+        operands = target_op.operands_
+    func.attributes["sym_name"] = StringAttr.get(sym_name)
     func_type = FunctionType.get(in_types, out_types)
-    softmax_func.attributes["function_type"] = TypeAttr.get(func_type)
-    softmax_func.move_before(func_op)
-    func_d.CallOp(
-        [target_op.output.type],
-        FlatSymbolRefAttr.get(f"softmax_{hash(target_op)}"),
-        [target_op.input, target_op.output],
+    func.attributes["function_type"] = TypeAttr.get(func_type)
+    func.move_before(func_op)
+    call_op = func_d.CallOp(
+        out_types,
+        FlatSymbolRefAttr.get(sym_name),
+        operands,
         ip=InsertionPoint(target_op),
     )
-    # Update memref shapes and dtypes in the softmax function
-    shape = MemRefType(in_types[0]).shape
-    for op in softmax_func.entry_block.operations:
-        if isinstance(op, memref_d.AllocOp):
-            alloc_op = memref_d.AllocOp(
-                MemRefType.get(
-                    shape[:-1],
-                    MemRefType(in_types[0]).element_type,
-                ),
-                [],
-                [],
-                ip=InsertionPoint(op),
-            )
-            op.result.replace_all_uses_with(alloc_op.result)
-            op_to_remove.append(op)
+    if name in {"gelu", "layernorm"}:
+        target_op.result.replace_all_uses_with(call_op.result)
 
-        elif isinstance(op, linalg_d.GenericOp):
-            in_str = ", ".join([f"d{i}" for i in range(len(shape))])
-            out_str = ", ".join([f"d{i}" for i in range(len(shape) - 1)])
+    for op in func.entry_block.operations:
+        shape = MemRefType(out_types[0]).shape
+        if name == "softmax":
+            if isinstance(op, memref_d.AllocOp):
+                alloc_op = memref_d.AllocOp(
+                    MemRefType.get(
+                        shape[:-1],
+                        MemRefType(in_types[0]).element_type,
+                    ),
+                    [],
+                    [],
+                    ip=InsertionPoint(op),
+                )
+                op.result.replace_all_uses_with(alloc_op.result)
+                op_to_remove.append(op)
 
-            affine_map_in = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
-            affine_map_out = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
-            iter_types_0 = [Attribute.parse("#linalg.iterator_type<parallel>")] * (
-                len(shape) - 1
-            ) + [Attribute.parse("#linalg.iterator_type<reduction>")]
-            iter_types_1 = [Attribute.parse("#linalg.iterator_type<parallel>")] * len(
-                shape
-            )
-            # Replace indexing_maps and iterator_types of GenericOp in template mlir to match the shape of the input
-            if (
-                str(op.attributes["iterator_types"])
-                == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<reduction>]"
-            ):
-                op.attributes["indexing_maps"] = ArrayAttr.get(
-                    [affine_map_in, affine_map_out]
+            elif isinstance(op, linalg_d.GenericOp):
+                update_generic_op(op, name, shape)
+        elif name == "gelu":
+            if isinstance(op, memref_d.AllocOp):
+                alloc_op = memref_d.AllocOp(
+                    MemRefType(out_types[0]),
+                    [],
+                    [],
+                    ip=InsertionPoint(op),
                 )
-                op.attributes["iterator_types"] = ArrayAttr.get(iter_types_0)
-            elif (
-                str(op.attributes["iterator_types"])
-                == "[#linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>, #linalg.iterator_type<parallel>]"
-            ):
-                op.attributes["indexing_maps"] = ArrayAttr.get(
-                    [
-                        affine_map_in,
-                        affine_map_out,
-                        affine_map_in,
-                    ]
+                op.result.replace_all_uses_with(alloc_op.result)
+                op_to_remove.append(op)
+            elif isinstance(op, linalg_d.GenericOp):
+                update_generic_op(op, name, shape)
+        elif name == "layernorm":
+            if isinstance(op, memref_d.AllocOp):
+                if op.attributes["name"].value == "output":
+                    new_type = out_types[0]
+                elif op.attributes["name"].value in {"mean", "mean2", "var"}:
+                    new_type = MemRefType.get(
+                        shape[:-1],
+                        MemRefType(out_types[0]).element_type,
+                    )
+                alloc_op = memref_d.AllocOp(
+                    new_type,
+                    [],
+                    [],
+                    ip=InsertionPoint(op),
                 )
-                op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
-            else:
-                raise NotImplementedError("Unsupported softmax shape")
+                op.result.replace_all_uses_with(alloc_op.result)
+                op_to_remove.append(op)
+            elif isinstance(op, arith_d.ConstantOp):
+                if op.attributes["name"].value == "dimension":
+                    const_dtype = IntegerType.get_signless(32)
+                    const_value = IntegerAttr.get(const_dtype, shape[-1])
+                    # pylint: disable=too-many-function-args
+                    const_op = arith_d.ConstantOp(
+                        const_dtype,
+                        const_value,
+                        ip=InsertionPoint(op),
+                    )
+                    op.result.replace_all_uses_with(const_op.result)
+                    op_to_remove.append(op)
+
+            elif isinstance(op, linalg_d.GenericOp):
+                update_generic_op(op, name, shape)
     # need to erase at the end
     for op in op_to_remove:
         op.operation.erase()
+
+
+def update_generic_op(op, name, shape):
+    in_str = ", ".join([f"d{i}" for i in range(len(shape))])
+    out_str = ", ".join([f"d{i}" for i in range(len(shape) - 1)])
+    affine_map_in = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+    affine_map_out = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+    affine_map_out2 = AffineMapAttr.parse(f"affine_map<({out_str})->({out_str})>")
+    affine_map_out3 = AffineMapAttr.parse(f"affine_map<({in_str})->(d{len(shape)-1})>")
+    iter_types_0 = [Attribute.parse("#linalg.iterator_type<parallel>")] * (
+        len(shape) - 1
+    ) + [Attribute.parse("#linalg.iterator_type<reduction>")]
+    iter_types_1 = [Attribute.parse("#linalg.iterator_type<parallel>")] * len(shape)
+    if name == "gelu":
+        op.attributes["indexing_maps"] = ArrayAttr.get([affine_map_in, affine_map_in])
+        op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
+    elif name == "softmax":
+        if op.attributes["name"].value in {"max", "add"}:
+            op.attributes["indexing_maps"] = ArrayAttr.get(
+                [affine_map_in, affine_map_out]
+            )
+            op.attributes["iterator_types"] = ArrayAttr.get(iter_types_0)
+        elif op.attributes["name"].value in {"exp", "div"}:
+            op.attributes["indexing_maps"] = ArrayAttr.get(
+                [affine_map_in, affine_map_out, affine_map_in]
+            )
+            op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
+        else:
+            raise NotImplementedError("Unsupported softmax shape")
+    elif name == "layernorm":
+        if op.attributes["name"].value == "mean":
+            op.attributes["indexing_maps"] = ArrayAttr.get(
+                [affine_map_in] + [affine_map_out] * 4
+            )
+            op.attributes["iterator_types"] = ArrayAttr.get(iter_types_0)
+        elif op.attributes["name"].value == "var":
+            op.attributes["indexing_maps"] = ArrayAttr.get([affine_map_out2] * 5)
+            op.attributes["iterator_types"] = ArrayAttr.get(
+                [Attribute.parse("#linalg.iterator_type<parallel>")] * (len(shape) - 1)
+            )
+        elif op.attributes["name"].value == "output":
+            op.attributes["indexing_maps"] = ArrayAttr.get(
+                [affine_map_out] * 2
+                + [affine_map_in]
+                + [affine_map_out3] * 2
+                + [affine_map_in]
+            )
+            op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
+        else:
+            raise NotImplementedError("Unsupported gelu shape")
+    else:
+        raise NotImplementedError("Unsupported function")

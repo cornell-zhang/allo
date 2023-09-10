@@ -1462,6 +1462,23 @@ class ASTTransformer(ASTBuilder):
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
                 )
+            if fn_name in {"layernorm", "gelu"}:
+                arg_results = [arg.result for arg in new_args]
+                input_types = [arg.type for arg in arg_results]
+                output_types = [input_types[0]]
+                func_op = func_d.FuncOp(
+                    name=f"{fn_name}_{hash(node)}",
+                    type=FunctionType.get(input_types, output_types),
+                    ip=InsertionPoint(ctx.top_func),
+                )
+                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                call_op = func_d.CallOp(
+                    [arg_results[0].type],
+                    FlatSymbolRefAttr.get(f"{fn_name}_{hash(node)}"),
+                    arg_results,
+                    ip=ctx.get_ip(),
+                )
+                return call_op
             raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
 
         # User-defined subfunction
