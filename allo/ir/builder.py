@@ -728,9 +728,9 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_constant_tensor(
-        ctx, node, np_values, shape=None, dtype=None, constant=False
+        ctx, node, np_values, dtype=None, shape=None, constant=False
     ):
-        value_attr = DenseElementsAttr.get(np_values)
+        value_attr = DenseElementsAttr.get(np_values, type=dtype.build())
         dtype = dtype if dtype is not None else node.dtype
         shape = shape if shape is not None else node.shape
         if ctx.enable_tensor:
@@ -1076,7 +1076,7 @@ class ASTTransformer(ASTBuilder):
         shape, dtype = node.shape, node.dtype
         # Compute RHS
         if hasattr(node, "np_values"):
-            rhs = ASTTransformer.build_constant_tensor(ctx, node, node.np_values)
+            rhs = ASTTransformer.build_constant_tensor(ctx, node, node.np_values, dtype=dtype)
             ctx.buffers[node.target.id] = rhs
             return
         # Not constant tensor
@@ -1643,9 +1643,9 @@ class ASTTransformer(ASTBuilder):
                 shape_value = ASTTransformer.build_constant_tensor(
                     ctx,
                     node,
-                    shape=value.shape,
-                    dtype=Int(64),
                     np_values=value,
+                    dtype=Int(64),
+                    shape=value.shape,
                     constant=True,
                 )
                 shaped_type = ASTTransformer.build_shaped_type(ctx, dtype, shape)
