@@ -666,8 +666,6 @@ class ASTTransformer(ASTBuilder):
         rhs = ASTTransformer.build_cast_op(
             ctx, rhs, node.right.dtype, node.dtype, node.right.shape
         )
-        print(node.left.shape, node.left.dtype, node.dtype, lhs)
-        print(node.right.shape, node.right.dtype, node.dtype, rhs)
         lhs = ASTTransformer.build_broadcast_op(
             ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
         )

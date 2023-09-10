@@ -339,5 +339,4 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_anywidth_int_constant()
+    pytest.main([__file__])
