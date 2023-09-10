@@ -514,23 +514,24 @@ def test_library_higher_dimension_ops(enable_tensor):
 
 
 def test_layernorm_gelu_ops():
-    inp_num = 12
-    inp_len = 768
-    inp = np.random.uniform(size=(inp_num, inp_len, inp_len)).astype(np.float32)
-    gamma = np.random.uniform(size=(inp_len)).astype(np.float32)
-    beta = np.random.uniform(size=(inp_len)).astype(np.float32)
+    bs = 1
+    seq_len = 12
+    hidden_size = 768
+    inp = np.random.uniform(size=(bs, seq_len, hidden_size)).astype(np.float32)
+    gamma = np.random.uniform(size=(hidden_size)).astype(np.float32)
+    beta = np.random.uniform(size=(hidden_size)).astype(np.float32)
 
     def foo(
-        inp: float32[inp_num, inp_len, inp_len]
-    ) -> float32[inp_num, inp_len, inp_len]:
+        inp: float32[bs, seq_len, hidden_size]
+    ) -> float32[bs, seq_len, hidden_size]:
         outp = allo.gelu(inp)
         return outp
 
     def kernel(
-        inp: float32[inp_num, inp_len, inp_len],
-        gamma: float32[inp_len],
-        beta: float32[inp_len],
-    ) -> float32[inp_num, inp_len, inp_len]:
+        inp: float32[bs, seq_len, hidden_size],
+        gamma: float32[hidden_size],
+        beta: float32[hidden_size],
+    ) -> float32[bs, seq_len, hidden_size]:
         val = foo(inp)
         A = allo.layernorm(val, gamma, beta)
         B = allo.gelu(A)

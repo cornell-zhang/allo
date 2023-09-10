@@ -1463,8 +1463,8 @@ class ASTTransformer(ASTBuilder):
                     ctx, node=node, attr=fn_name, new_args=new_args
                 )
             if fn_name in {"layernorm", "gelu"}:
-                ptr_args = [arg.result for arg in new_args]
-                input_types = [arg.type for arg in ptr_args]
+                arg_results = [arg.result for arg in new_args]
+                input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
                 func_op = func_d.FuncOp(
                     name=f"{fn_name}_{hash(node)}",
@@ -1473,9 +1473,9 @@ class ASTTransformer(ASTBuilder):
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 call_op = func_d.CallOp(
-                    [ptr_args[0].type],
+                    [arg_results[0].type],
                     FlatSymbolRefAttr.get(f"{fn_name}_{hash(node)}"),
-                    ptr_args,
+                    arg_results,
                     ip=ctx.get_ip(),
                 )
                 return call_op

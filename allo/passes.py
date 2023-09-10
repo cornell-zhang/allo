@@ -139,7 +139,7 @@ def generate_input_output_buffers(top_func, flatten=False):
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
 
 
-def decompose_function(module):
+def decompose_library_function(module):
     with module.context, Location.unknown():
         # get all functions from origin module and find the function to replace
         body_op_to_remove = []
