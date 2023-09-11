@@ -24,7 +24,10 @@ from ..utils import (
 # pylint: disable=too-many-public-methods
 class TypeInferer(ASTVisitor):
     def print_verbose(self, ctx, node):
-        print(node.__class__.__name__, node.dtype, node.shape)
+        if isinstance(node, ast.Name):
+            print("Name:", node.id, node.dtype, node.shape)
+        else:
+            print(node.__class__.__name__, node.dtype, node.shape)
 
     @staticmethod
     def visit_call_type(ctx, node):
@@ -475,6 +478,17 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.values)
         node.dtype = uint1
         node.shape = tuple()
+        return node
+
+    @staticmethod
+    def visit_IfExp(ctx, node):
+        visit_stmt(ctx, node.test)
+        visit_stmt(ctx, node.body)
+        visit_stmt(ctx, node.orelse)
+        typing_rule = get_typing_rule(ast.IfExp)
+        res_type = typing_rule(node.body.dtype, node.orelse.dtype)
+        node.dtype = res_type
+        node.shape = node.body.shape
         return node
 
     @staticmethod

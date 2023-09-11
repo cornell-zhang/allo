@@ -734,4 +734,5 @@ registry = {
     ast.USub: intrin_rule(),
     ast.UAdd: intrin_rule(),
     ast.Invert: intrin_rule(),
+    ast.IfExp: select_rule(),
 }

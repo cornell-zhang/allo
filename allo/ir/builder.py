@@ -1304,6 +1304,21 @@ class ASTTransformer(ASTBuilder):
         return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
 
     @staticmethod
+    def build_IfExp(ctx, node):
+        cond = build_stmt(ctx, node.test)
+        true_val = build_stmt(ctx, node.body)
+        false_val = build_stmt(ctx, node.orelse)
+        true_val = ASTTransformer.build_cast_op(
+            ctx, true_val, node.body.dtype, node.dtype
+        )
+        false_val = ASTTransformer.build_cast_op(
+            ctx, false_val, node.orelse.dtype, node.dtype
+        )
+        return arith_d.SelectOp(
+            cond.result, true_val.result, false_val.result, ip=ctx.get_ip()
+        )
+
+    @staticmethod
     def build_If(ctx, node, is_affine=False):
         if is_affine:
             # Should build the condition on-the-fly
