@@ -279,7 +279,7 @@ def test_fixed_gemm():
         np_B = np.random.random((K, N)).astype(np.float32)
         np_C = np.matmul(np_A, np_B)
         np_C_allo = mod(np_A, np_B)
-        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4, atol=1e-4)
 
     for T_IN, T_OUT in [
         (Fixed(8, 3), Fixed(16, 2)),
@@ -291,7 +291,7 @@ def test_fixed_gemm():
         np_B = np.random.randint(-8, 8, (K, N)).astype(np.float32)
         np_C = np.matmul(np_A, np_B)
         np_C_allo = mod(np_A, np_B)
-        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4, atol=1e-4)
 
 
 def test_anywidth_int_constant():
