@@ -211,6 +211,38 @@ def test_while_basic():
     assert np.array_equal(np_A, np_A_copy)
 
 
+def test_select():
+    def kernel(A: int32[32]) -> int32[32]:
+        B: int32[32] = 0
+        for i in range(32):
+            B[i] = 1 if A[i] % 2 == 0 else 0
+        return B
+    
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(32,)).astype(np.int32)
+    np_B = mod(np_A)
+    np.testing.assert_allclose(np_B, np_A % 2 == 0)
+
+
+def test_select_cast():
+    def kernel(A: int32[32], B: int32[32]):
+        for i in range(32):
+            B[i] = (i * 2) if A[i] % 2 == 0 else 0
+        return B
+    
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(32,)).astype(np.int32)
+    np_B = np.zeros((32,), dtype=np.int32)
+    kernel(np_A, np_B)
+    np_C = np.zeros((32,), dtype=np.int32)
+    mod(np_A, np_C)
+    np.testing.assert_allclose(np_B, np_C)
+
+
 def test_unary():
     def kernel() -> int32:
         v: int32 = 5
@@ -428,4 +460,5 @@ def test_constexpr():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_select_cast()
