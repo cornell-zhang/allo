@@ -217,7 +217,7 @@ def test_select():
         for i in range(32):
             B[i] = 1 if A[i] % 2 == 0 else 0
         return B
-    
+
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
@@ -230,8 +230,7 @@ def test_select_cast():
     def kernel(A: int32[32], B: int32[32]):
         for i in range(32):
             B[i] = (i * 2) if A[i] % 2 == 0 else 0
-        return B
-    
+
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
