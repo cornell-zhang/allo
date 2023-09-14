@@ -26,16 +26,6 @@ def from_pytorch(model, example_inputs, concrete_args=None, verbose=False):
             args.append(item)
 
     gm = fx.symbolic_trace(model, concrete_args=concrete_args)
-
-    # Solution1: Removing assert nodes
-    nodes_to_remove = []
-    for n in gm.graph.nodes:
-        if n.name == "_assert":
-            nodes_to_remove.append(n)
-    nodes_to_remove.reverse()
-    for n in nodes_to_remove:
-        gm.graph.erase_node(n)
-
     ShapeProp(gm).propagate(*args)
     if verbose:
         print(gm.graph)
@@ -107,15 +97,14 @@ class TorchBuilder:
         pass
 
     def build_call_module(self, node):
-        if isinstance(self.get_module(node.target), torch.nn.Linear):
-            op = "linear"
-        elif isinstance(self.get_module(node.target), torch.nn.Dropout):
-            op = "identity"
-        elif isinstance(self.get_module(node.target), torch.nn.GELU):
-            op = "gelu"
-        elif isinstance(self.get_module(node.target), torch.nn.LayerNorm):
-            op = "layernorm"
-        else:
+        module = self.get_module(node.target)
+        op = {
+            torch.nn.Linear: "linear",
+            torch.nn.Dropout: "identity",
+            torch.nn.GELU: "gelu",
+            torch.nn.LayerNorm: "layernorm",
+        }.get(type(module), None)
+        if op is None:
             raise NotImplementedError("Unsupported module")
         return getattr(self, f"build_{op}")(node)
 
@@ -152,9 +141,14 @@ class TorchBuilder:
 
     def build_output(self, node):
         name = get_var_name(node.args[0])
-        # FIXME: Update "return (out_1, out_2)"
+        # FIXME: HuggingFace's outputs have different types: tuple, str, dict
         if isinstance(name, (tuple, str)):
             return f"return ({name[0] if isinstance(name, tuple) else name})"
+        if isinstance(name, dict):
+            items = []
+            for item in name.values():
+                items.append(item)
+            return f"return ({items[0]})"
         raise NotImplementedError("Unsupported output type")
 
     def build_add(self, node):

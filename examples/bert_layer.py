@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# https://github.com/chhzh123/ptc-tutorial/blob/master/tutorial.ipynb
 
 import torch
 import torch.nn.functional as F
@@ -13,6 +14,46 @@ n_heads = 12
 batch_size = 2
 intermediate_size = 3072
 seq_len = 512
+
+
+class TransformerLayer(nn.Module):
+    def __init__(self, hidden_size, intermediate_size, n_heads):
+        super().__init__()
+        self.attention = Attention(hidden_size, intermediate_size, n_heads)
+        self.ffn = FFN(hidden_size, intermediate_size)
+
+    def forward(self, hidden_states):
+        attention_output = self.attention(hidden_states)
+        ffn_output = self.ffn(attention_output)
+        return ffn_output
+
+
+class Attention(nn.Module):
+    def __init__(self, hidden_size, intermediate_size, n_heads):
+        super().__init__()
+        self.self_attn = SelfAttention(hidden_size, n_heads)
+        self.proj = Projection(hidden_size, hidden_size)
+
+    def forward(self, hidden_states):
+        self_output = self.self_attn(hidden_states)
+        attention_output = self.proj(self_output, hidden_states)
+        return attention_output
+
+
+class FFN(nn.Module):
+    """Feed forward network (FFN) with GELU activation"""
+
+    def __init__(self, hidden_size, intermediate_size):
+        super().__init__()
+        self.linear1 = nn.Linear(hidden_size, intermediate_size)
+        self.activation = nn.GELU()
+        self.projection = Projection(intermediate_size, hidden_size)
+
+    def forward(self, data):
+        out = self.linear1(data)
+        out = self.activation(out)
+        out = self.projection(out, data)
+        return out
 
 
 class SelfAttention(nn.Module):
@@ -70,46 +111,6 @@ class Projection(nn.Module):
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
-
-
-class Attention(nn.Module):
-    def __init__(self, hidden_size, intermediate_size, n_heads):
-        super().__init__()
-        self.self_attn = SelfAttention(hidden_size, n_heads)
-        self.proj = Projection(hidden_size, hidden_size)
-
-    def forward(self, hidden_states):
-        self_output = self.self_attn(hidden_states)
-        attention_output = self.proj(self_output, hidden_states)
-        return attention_output
-
-
-class FFN(nn.Module):
-    """Feed forward network (FFN) with GELU activation"""
-
-    def __init__(self, hidden_size, intermediate_size):
-        super().__init__()
-        self.linear1 = nn.Linear(hidden_size, intermediate_size)
-        self.activation = nn.GELU()
-        self.projection = Projection(intermediate_size, hidden_size)
-
-    def forward(self, data):
-        out = self.linear1(data)
-        out = self.activation(out)
-        out = self.projection(out, data)
-        return out
-
-
-class TransformerLayer(nn.Module):
-    def __init__(self, hidden_size, intermediate_size, n_heads):
-        super().__init__()
-        self.attention = Attention(hidden_size, intermediate_size, n_heads)
-        self.ffn = FFN(hidden_size, intermediate_size)
-
-    def forward(self, hidden_states):
-        attention_output = self.attention(hidden_states)
-        ffn_output = self.ffn(attention_output)
-        return ffn_output
 
 
 model = TransformerLayer(hidden_size, intermediate_size, n_heads).eval()
