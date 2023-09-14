@@ -18,12 +18,23 @@ from ..ir import types
 from ..customize import customize
 
 
-def from_pytorch(model, example_inputs, concrete_args=None, verbose=False):
+def from_pytorch(model, example_inputs, pipline_cuts=False, verbose=False):
     args = []
     args.append(*example_inputs)
-    if concrete_args is not None:
-        for item in concrete_args.values():
-            args.append(item)
+    # Cut pipeline stages.
+    if pipline_cuts:
+        input_names = [
+            "input_ids",
+        ]
+        sig = inspect.signature(model.forward)
+        concrete_args = {
+            p.name: p.default
+            for p in sig.parameters.values()
+            if p.name not in input_names and p.default is not inspect.Parameter.empty
+        }
+        if concrete_args is not None:
+            for item in concrete_args.values():
+                args.append(item)
 
     gm = fx.symbolic_trace(model, concrete_args=concrete_args)
     ShapeProp(gm).propagate(*args)

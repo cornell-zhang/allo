@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import inspect
 import torch
 import allo
 import pytest
@@ -21,20 +20,10 @@ def test_bert_module(module):
     hidden_size = 768
 
     example_inputs = [torch.rand(batch_size, seq_len, hidden_size)]
-    input_names = [
-        "input_ids",
-    ]
-    sig = inspect.signature(module.forward)
-    concrete_args = {
-        p.name: p.default
-        for p in sig.parameters.values()
-        if p.name not in input_names and p.default is not inspect.Parameter.empty
-    }
-
     llvm_mod = allo.frontend.from_pytorch(
         module,
         example_inputs=example_inputs,
-        concrete_args=concrete_args,
+        pipline_cuts=True,
         verbose=False,
     )
 
