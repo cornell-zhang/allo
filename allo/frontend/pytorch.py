@@ -18,23 +18,20 @@ from ..ir import types
 from ..customize import customize
 
 
-def from_pytorch(model, example_inputs, pipline_cuts=False, verbose=False):
+def from_pytorch(model, example_inputs, verbose=False):
+    sig = inspect.signature(model.forward)
+    input_names = [
+        p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
+    ]
+    concrete_args = {
+        p.name: p.default
+        for p in sig.parameters.values()
+        if p.name not in input_names and p.default is not inspect.Parameter.empty
+    }
     args = []
     args.append(*example_inputs)
-    # Cut pipeline stages.
-    if pipline_cuts:
-        input_names = [
-            "input_ids",
-        ]
-        sig = inspect.signature(model.forward)
-        concrete_args = {
-            p.name: p.default
-            for p in sig.parameters.values()
-            if p.name not in input_names and p.default is not inspect.Parameter.empty
-        }
-        if concrete_args is not None:
-            for item in concrete_args.values():
-                args.append(item)
+    for item in concrete_args.values():
+        args.append(item)
 
     gm = fx.symbolic_trace(model, concrete_args=concrete_args)
     ShapeProp(gm).propagate(*args)
@@ -152,7 +149,7 @@ class TorchBuilder:
 
     def build_output(self, node):
         name = get_var_name(node.args[0])
-        # FIXME: HuggingFace's outputs have different types: tuple, str, dict
+        # Currently we only support return a single value
         if isinstance(name, (tuple, str)):
             return f"return ({name[0] if isinstance(name, tuple) else name})"
         if isinstance(name, dict):

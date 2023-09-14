@@ -3,17 +3,11 @@
 
 import torch
 import allo
-import pytest
 import numpy as np
 from transformers import AutoConfig
 from transformers.models.bert.modeling_bert import BertLayer, BertEncoder
 
-config = AutoConfig.from_pretrained("bert-base-uncased")
-bert_layer_module = BertLayer(config).eval()
-bert_encoder_module = BertEncoder(config).eval()
 
-
-@pytest.mark.parametrize("module", [bert_layer_module, bert_encoder_module])
 def test_bert_module(module):
     batch_size = 2
     seq_len = 512
@@ -23,7 +17,6 @@ def test_bert_module(module):
     llvm_mod = allo.frontend.from_pytorch(
         module,
         example_inputs=example_inputs,
-        pipline_cuts=True,
         verbose=False,
     )
 
@@ -33,5 +26,8 @@ def test_bert_module(module):
     np.testing.assert_allclose(res, golden[0].detach().numpy(), atol=1e-3)
 
 
-if __name__ == "__main__":
-    pytest.main([__file__])
+config = AutoConfig.from_pretrained("bert-base-uncased")
+bert_layer_module = BertLayer(config).eval()
+bert_encoder_module = BertEncoder(config).eval()
+test_bert_module(bert_layer_module)
+test_bert_module(bert_encoder_module)
