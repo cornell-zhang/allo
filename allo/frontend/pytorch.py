@@ -19,8 +19,22 @@ from ..customize import customize
 
 
 def from_pytorch(model, example_inputs, verbose=False):
-    gm = fx.symbolic_trace(model)
-    ShapeProp(gm).propagate(*example_inputs)
+    sig = inspect.signature(model.forward)
+    input_names = [
+        p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
+    ]
+    concrete_args = {
+        p.name: p.default
+        for p in sig.parameters.values()
+        if p.name not in input_names and p.default is not inspect.Parameter.empty
+    }
+    args = []
+    args += example_inputs
+    for item in concrete_args.values():
+        args.append(item)
+
+    gm = fx.symbolic_trace(model, concrete_args=concrete_args)
+    ShapeProp(gm).propagate(*args)
     if verbose:
         print(gm.graph)
     global_vars = {}
@@ -91,11 +105,14 @@ class TorchBuilder:
         pass
 
     def build_call_module(self, node):
-        if isinstance(self.get_module(node.target), torch.nn.Linear):
-            op = "linear"
-        elif isinstance(self.get_module(node.target), torch.nn.Dropout):
-            op = "identity"
-        else:
+        module = self.get_module(node.target)
+        op = {
+            torch.nn.Linear: "linear",
+            torch.nn.Dropout: "identity",
+            torch.nn.GELU: "gelu",
+            torch.nn.LayerNorm: "layernorm",
+        }.get(type(module), None)
+        if op is None:
             raise NotImplementedError("Unsupported module")
         return getattr(self, f"build_{op}")(node)
 
@@ -108,6 +125,8 @@ class TorchBuilder:
             torch.matmul: "matmul",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
+            F.linear: "linear",
+            F.gelu: "gelu",
             F.relu: "relu",
             F.dropout: "identity",
         }.get(node.target)
@@ -119,10 +138,26 @@ class TorchBuilder:
         )
 
     def build_call_method(self, node):
-        return getattr(self, f"build_{node.target}")(node)
+        if node.target == "contiguous":
+            return self.build_identity(node)
+        # Only nodes with shape need to be built.
+        return (
+            getattr(self, f"build_{node.target}")(node)
+            if "tensor_meta" in node.meta
+            else None
+        )
 
     def build_output(self, node):
-        return f"return {node.args[0]}"
+        name = get_var_name(node.args[0])
+        # Currently we only support return a single value
+        if isinstance(name, (tuple, str)):
+            return f"return ({name[0] if isinstance(name, tuple) else name})"
+        if isinstance(name, dict):
+            items = []
+            for item in name.values():
+                items.append(item)
+            return f"return ({items[0]})"
+        raise NotImplementedError("Unsupported output type")
 
     def build_add(self, node):
         lhs = get_var_name(node.args[0])
@@ -150,10 +185,22 @@ class TorchBuilder:
         return f"{node.name} = dsl.relu({inp})"
 
     def build_linear(self, node):
+        target_name = node.target.replace(".", "_")
         inp = get_var_name(node.args[0])
-        weight = get_var_name(node.target + "_weight")
-        bias = get_var_name(node.target + "_bias")
+        weight = get_var_name(target_name + "_weight")
+        bias = get_var_name(target_name + "_bias")
         return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
+
+    def build_gelu(self, node):
+        inp = get_var_name(node.args[0])
+        return f"{node.name} = dsl.gelu({inp})"
+
+    def build_layernorm(self, node):
+        target_name = node.target.replace(".", "_")
+        inp = get_var_name(node.args[0])
+        weight = get_var_name(target_name + "_weight")
+        bias = get_var_name(target_name + "_bias")
+        return f"{node.name} = dsl.layernorm({inp}, {weight}, {bias})"
 
     def build_view(self, node):
         inp = get_var_name(node.args[0])
