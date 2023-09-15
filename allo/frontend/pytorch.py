@@ -29,7 +29,7 @@ def from_pytorch(model, example_inputs, verbose=False):
         if p.name not in input_names and p.default is not inspect.Parameter.empty
     }
     args = []
-    args.append(*example_inputs)
+    args += example_inputs
     for item in concrete_args.values():
         args.append(item)
 

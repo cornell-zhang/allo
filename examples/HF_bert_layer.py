@@ -28,6 +28,8 @@ def test_bert_module(module):
 
 config = AutoConfig.from_pretrained("bert-base-uncased")
 bert_layer_module = BertLayer(config).eval()
-bert_encoder_module = BertEncoder(config).eval()
 test_bert_module(bert_layer_module)
+del bert_layer_module
+bert_encoder_module = BertEncoder(config).eval()
 test_bert_module(bert_encoder_module)
+del bert_encoder_module
