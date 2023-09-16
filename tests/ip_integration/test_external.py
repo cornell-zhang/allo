@@ -57,13 +57,13 @@ def test_lib_gemm():
         link_hls=False,
     )
 
-    def kernel(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
+    def top(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
         C: float32[16, 16] = 0
         gemm(A, B, C)
         C = C + 1
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(top)
     print(s.module)
     mod = s.build()
     a = np.random.random((16, 16)).astype(np.float32)
@@ -80,8 +80,11 @@ def test_lib_gemm():
         print("Vivado HLS not found, skipping...")
 
     if os.system(f"which vitis_hls >> /dev/null") == 0:
-        hls_mod = s.build(target="vitis_hls", mode="debug", project="gemm_ext_vitis.prj")
+        hls_mod = s.build(
+            target="vitis_hls", mode="sw_emu", project="gemm_ext_vitis.prj"
+        )
         print(hls_mod)
+        hls_mod()
     else:
         print("Vitis HLS not found, skipping...")
 

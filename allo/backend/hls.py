@@ -40,6 +40,12 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if mode == "debug":
             mode = "csyn"
+        elif mode == "sw_emu":
+            mode = "csim"
+        elif mode == "hw_emu":
+            mode = "cosim"
+        else:
+            mode = "csyn"
         if mode != "custom":
             removed_mode = ["csyn", "csim", "cosim", "impl"]
             selected_mode = mode.split("|")
@@ -83,7 +89,9 @@ def copy_ext_libs(ext_libs, project):
             headers.append(header)
         for impl_path in ext_lib.impls:
             cpp_file = impl_path.split("/")[-1]
-            assert cpp_file != "kernel.cpp", "kernel.cpp is reserved for the top function"
+            assert (
+                cpp_file != "kernel.cpp"
+            ), "kernel.cpp is reserved for the top function"
             os.system(f"cp {impl_path} {project}/{cpp_file}")
             impls.append(cpp_file)
     # Update kernel.cpp
@@ -154,11 +162,16 @@ class HLSModule:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             if self.platform == "vitis_hls":
+                assert self.mode in {"sw_emu", "hw_emu", "hw"}, "Invalid mode"
+                assert self.top_func_name != "kernel", "kernel is a reserved keyword for vitis_hls"
                 path = os.path.dirname(__file__)
                 path = os.path.join(path, "../harness/")
                 dst_path = os.path.join(project, "description.json")
                 generate_description_file(
-                    self.top_func_name, path + "makefile_gen/description.json", dst_path, self.ext_libs
+                    self.top_func_name,
+                    path + "makefile_gen/description.json",
+                    dst_path,
+                    self.ext_libs,
                 )
                 generate_makefile(dst_path, project)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
@@ -181,7 +194,7 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, shell=True):
-        if self.platform in {"vivado_hls", "vitis_hls"}:
+        if self.platform == "vivado_hls":
             assert (
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
@@ -218,5 +231,16 @@ class HLSModule:
 
             else:
                 raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
+        elif self.platform == "vitis_hls":
+            assert (
+                os.system(f"which {self.platform} >> /dev/null") == 0
+            ), f"cannot find {self.platform} on system path"
+            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+            print(cmd)
+            if shell:
+                subprocess.Popen(cmd, shell=True).wait()
+            else:
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
         else:
             raise RuntimeError("Not implemented")
