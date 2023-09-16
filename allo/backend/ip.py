@@ -33,7 +33,13 @@ class IPModule:
         if include_paths is None:
             include_paths = []
         self.include_paths = include_paths + [abs_path]
-        self.link_hls = link_hls
+        if link_hls:
+            if os.system("which vivado_hls >> /dev/null") != 0:
+                raise RuntimeError("Please install Vivado HLS and add it to your PATH")
+            self.include_paths.append(
+                "/".join(os.popen("which vivado_hls").read().split("/")[:-2])
+                + "/include"
+            )
         # Parse signature
         arg_types = signature
         self.args = []
@@ -95,13 +101,6 @@ class IPModule:
 
     def compile_pybind11(self):
         self.generate_pybind11_wrapper()
-        if self.link_hls:
-            if os.system("which vivado_hls >> /dev/null") != 0:
-                raise RuntimeError("Please install Vivado HLS and add it to your PATH")
-            self.include_paths.append(
-                "/".join(os.popen("which vivado_hls").read().split("/")[:-2])
-                + "/include"
-            )
         cmd = "g++ -shared -std=c++11 -fPIC"
         cmd += " `python3 -m pybind11 --includes` "
         cmd += " ".join(
@@ -152,7 +151,6 @@ class IPModule:
         out_str += "}\n"
         with open(self.c_wrapper_file, "w", encoding="utf-8") as f:
             f.write(out_str)
-        print(out_str)
         return self.c_wrapper_file
 
     def compile_shared_lib(self):
