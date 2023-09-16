@@ -4,6 +4,7 @@
  */
 
 #ifndef GEMM_H
+#define GEMM_H
 
 void gemm(float v0[16][16], float v1[16][16], float v2[16][16]);
 

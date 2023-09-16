@@ -12,7 +12,6 @@ from hcl_mlir.ir import (
     InsertionPoint,
     FunctionType,
     MemRefType,
-    UnrankedMemRefType,
     RankedTensorType,
     IntegerType,
     IndexType,

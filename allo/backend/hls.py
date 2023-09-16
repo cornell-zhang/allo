@@ -188,34 +188,35 @@ class HLSModule:
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.host_code)
             if len(ext_libs) > 0:
-                # Update kernel.cpp
-                new_kernel = ""
-                with open(
-                    os.path.join(project, "kernel.cpp"), "r", encoding="utf-8"
-                ) as kernel:
-                    for line in kernel:
-                        new_kernel += line
-                        if "#include <stdint.h>" in line:
-                            for header in lib.headers:
-                                new_kernel += f'#include "{header}"\n'
-                with open(
-                    os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
-                ) as kernel:
-                    kernel.write(new_kernel)
-                # Update tcl file
-                new_tcl = ""
-                with open(
-                    os.path.join(project, "run.tcl"), "r", encoding="utf-8"
-                ) as tcl_file:
-                    for line in tcl_file:
-                        new_tcl += line
-                        if "# Add design and testbench files" in line:
-                            for impl in lib.impls:
-                                new_tcl += f"add_files {impl}\n"
-                with open(
-                    os.path.join(project, "run.tcl"), "w", encoding="utf-8"
-                ) as tcl_file:
-                    tcl_file.write(new_tcl)
+                for lib in ext_libs:
+                    # Update kernel.cpp
+                    new_kernel = ""
+                    with open(
+                        os.path.join(project, "kernel.cpp"), "r", encoding="utf-8"
+                    ) as kernel:
+                        for line in kernel:
+                            new_kernel += line
+                            if "#include <stdint.h>" in line:
+                                for header in lib.headers:
+                                    new_kernel += f'#include "{header}"\n'
+                    with open(
+                        os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
+                    ) as kernel:
+                        kernel.write(new_kernel)
+                    # Update tcl file
+                    new_tcl = ""
+                    with open(
+                        os.path.join(project, "run.tcl"), "r", encoding="utf-8"
+                    ) as tcl_file:
+                        for line in tcl_file:
+                            new_tcl += line
+                            if "# Add design and testbench files" in line:
+                                for impl in lib.impls:
+                                    new_tcl += f"add_files {impl}\n"
+                    with open(
+                        os.path.join(project, "run.tcl"), "w", encoding="utf-8"
+                    ) as tcl_file:
+                        tcl_file.write(new_tcl)
 
     def __repr__(self):
         if self.mode is None:
@@ -265,7 +266,11 @@ class HLSModule:
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE -j"
+            if len(self.ext_libs) > 0 and self.mode != "sw_emu":
+                raise RuntimeError(
+                    "External libraries are only supported in sw_emu mode"
+                )
+            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
             print(cmd)
             if shell:
                 subprocess.Popen(cmd, shell=True).wait()

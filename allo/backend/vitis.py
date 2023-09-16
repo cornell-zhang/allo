@@ -304,7 +304,8 @@ def postprocess_hls_code(hls_code, top=None):
 
 
 def generate_description_file(top, src_path, dst_path, ext_libs):
-    desc = open(src_path, "r", encoding="utf-8").read()
+    with open(src_path, "r", encoding="utf-8") as f:
+        desc = f.read()
     desc = desc.replace("top", top)
     desc = json.loads(desc)
     for lib in ext_libs:
