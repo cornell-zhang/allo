@@ -1417,27 +1417,23 @@ class ASTTransformer(ASTBuilder):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
-                # Build shared library
-                ctx.shared_libs += [obj.compile_shared_lib()]
-                # HLS IP, suppose it does not have any return values
+                # Add HLS IP as external library
+                ctx.ext_libs.append(obj)
+                # Suppose it does not have any return values
                 input_types = []
-                for arg_type, _ in obj.args:
+                for arg_type, shape in obj.args:
                     ele_type = get_mlir_dtype_from_str(arg_type)
-                    memref = UnrankedMemRefType.get(ele_type, None)
+                    memref = MemRefType.get(shape, ele_type)
                     input_types.append(memref)
                 func_type = FunctionType.get(input_types, [])
                 func_op = func_d.FuncOp(
-                    name=obj.lib_name, type=func_type, ip=InsertionPoint(ctx.top_func)
+                    name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
-                ptr_args = []
-                for arg in new_args:
-                    cast = memref_d.CastOp(memref, arg.result, ip=ctx.get_ip())
-                    ptr_args.append(cast.result)
                 call_op = func_d.CallOp(
                     [],
-                    FlatSymbolRefAttr.get(obj.lib_name),
-                    ptr_args,
+                    FlatSymbolRefAttr.get(obj.top),
+                    [arg.result for arg in new_args],
                     ip=ctx.get_ip(),
                 )
                 return
