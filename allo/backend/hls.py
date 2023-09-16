@@ -140,6 +140,7 @@ class HLSModule:
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
+            copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 assert self.mode in {"sw_emu", "hw_emu", "hw"}, "Invalid mode"
                 assert (
@@ -156,7 +157,6 @@ class HLSModule:
                 )
                 generate_makefile(dst_path, project)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
-                copy_ext_libs(ext_libs, project)
                 for lib in self.ext_libs:
                     for header in lib.headers:
                         with open(
@@ -212,7 +212,8 @@ class HLSModule:
                             new_tcl += line
                             if "# Add design and testbench files" in line:
                                 for impl in lib.impls:
-                                    new_tcl += f"add_files {impl}\n"
+                                    cpp_file = impl.split("/")[-1]
+                                    new_tcl += f"add_files {cpp_file}\n"
                     with open(
                         os.path.join(project, "run.tcl"), "w", encoding="utf-8"
                     ) as tcl_file:
