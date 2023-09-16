@@ -86,12 +86,37 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
 
 
 def copy_ext_libs(ext_libs, project):
+    impls = []
+    headers = []
     for ext_lib in ext_libs:
         for header in ext_lib.headers:
             header_path = os.path.join(ext_lib.abs_path, header)
             os.system(f"cp {header_path} {project}")
+            headers.append(header)
         for impl_path in ext_lib.impls:
             os.system(f"cp {impl_path} {project}/{ext_lib.top}.cpp")
+            impls.append(f"{ext_lib.top}.cpp")
+    # Update kernel.cpp
+    new_kernel = ""
+    with open(os.path.join(project, "kernel.cpp"), "r", encoding="utf-8") as kernel:
+        for line in kernel:
+            new_kernel += line
+            if "#include <stdint.h>" in line:
+                for header in headers:
+                    new_kernel += f'#include "{header}"\n'
+    print(new_kernel)
+    with open(os.path.join(project, "kernel.cpp"), "w", encoding="utf-8") as kernel:
+        kernel.write(new_kernel)
+    # Update tcl file
+    new_tcl = ""
+    with open(os.path.join(project, "run.tcl"), "r", encoding="utf-8") as tcl_file:
+        for line in tcl_file:
+            new_tcl += line
+            if "# Add design and testbench files" in line:
+                for impl in impls:
+                    new_tcl += f"add_files {impl}\n"
+    with open(os.path.join(project, "run.tcl"), "w", encoding="utf-8") as tcl_file:
+        tcl_file.write(new_tcl)
 
 
 class HLSModule:
@@ -138,8 +163,6 @@ class HLSModule:
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
-            if len(ext_libs) > 0:
-                copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 self.host_code = codegen_host(
@@ -152,6 +175,8 @@ class HLSModule:
                 outfile.write(self.hls_code)
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.host_code)
+            if len(ext_libs) > 0:
+                copy_ext_libs(ext_libs, project)
 
     def __repr__(self):
         if self.mode is None:

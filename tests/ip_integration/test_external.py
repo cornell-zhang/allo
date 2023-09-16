@@ -75,6 +75,7 @@ def test_lib_gemm():
     if os.system(f"which vivado_hls >> /dev/null") == 0:
         hls_mod = s.build(target="vivado_hls", mode="debug", project="gemm_ext.prj")
         print(hls_mod)
+        hls_mod()
 
 
 if __name__ == "__main__":
