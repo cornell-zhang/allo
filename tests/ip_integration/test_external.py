@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import pytest
 import numpy as np
 import allo
@@ -70,6 +71,10 @@ def test_lib_gemm():
     c = mod(a, b)
     np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-6)
     print("Passed!")
+
+    if os.system(f"which vivado_hls >> /dev/null") == 0:
+        hls_mod = s.build(target="vivado_hls", mode="debug", project="gemm_ext.prj")
+        print(hls_mod)
 
 
 if __name__ == "__main__":

@@ -85,14 +85,30 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     raise RuntimeError("Not implemented")
 
 
+def copy_ext_libs(ext_libs, project):
+    for ext_lib in ext_libs:
+        for header in ext_lib.headers:
+            header_path = os.path.join(ext_lib.abs_path, header)
+            os.system(f"cp {header_path} {project}")
+        for impl_path in ext_lib.impls:
+            os.system(f"cp {impl_path} {project}/{ext_lib.top}.cpp")
+
+
 class HLSModule:
     def __init__(
-        self, mod, top_func_name, platform="vivado_hls", mode=None, project=None
+        self,
+        mod,
+        top_func_name,
+        platform="vivado_hls",
+        mode=None,
+        project=None,
+        ext_libs=None,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
+        self.ext_libs = [] if ext_libs is None else ext_libs
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -122,6 +138,8 @@ class HLSModule:
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
+            if len(ext_libs) > 0:
+                copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 self.host_code = codegen_host(

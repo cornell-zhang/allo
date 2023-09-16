@@ -642,6 +642,7 @@ class Schedule:
                 platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
                 mode=mode,
                 project=project,
+                ext_libs=self.ext_libs,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 

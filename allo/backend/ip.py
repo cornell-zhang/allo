@@ -23,16 +23,16 @@ class IPModule:
     ):
         self.top = top
         self.headers = headers
-        abs_path = os.path.dirname(traceback.extract_stack()[-2].filename)
-        self.temp_path = os.path.join(abs_path, "_tmp")
+        self.abs_path = os.path.dirname(traceback.extract_stack()[-2].filename)
+        self.temp_path = os.path.join(self.abs_path, "_tmp")
         os.makedirs(self.temp_path, exist_ok=True)
         abs_impls = []
         for impl in impls:
-            abs_impls.append(os.path.join(abs_path, impl))
+            abs_impls.append(os.path.join(self.abs_path, impl))
         self.impls = abs_impls
         if include_paths is None:
             include_paths = []
-        self.include_paths = include_paths + [abs_path]
+        self.include_paths = include_paths + [self.abs_path]
         if link_hls:
             if os.system("which vivado_hls >> /dev/null") != 0:
                 raise RuntimeError("Please install Vivado HLS and add it to your PATH")
