@@ -4,6 +4,7 @@
  */
 
 #ifndef VADD_H
+#define VADD_H
 
 void vadd(int A[32], int B[32], int C[32]);
 

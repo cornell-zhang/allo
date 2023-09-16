@@ -118,16 +118,16 @@ class Partition:
 
 
 class Schedule:
-    def __init__(self, module, top_func, func_args, ip, shared_libs=None):
+    def __init__(self, module, top_func, func_args, ip, ext_libs=None):
         self.module = module
         self.top_func = top_func
         self.top_func_name = top_func.name.value
         self.func_args = func_args  # only store names here
         self.ip = ip
         self.primitive_sequences = []
-        if shared_libs is None:
-            shared_libs = []
-        self.shared_libs = shared_libs
+        if ext_libs is None:
+            ext_libs = []
+        self.ext_libs = ext_libs
 
     def get_loops(self):
         return get_affine_loop_nests(self.top_func)
@@ -633,7 +633,7 @@ class Schedule:
             return LLVMModule(
                 self.module,
                 top_func_name=self.top_func_name,
-                ext_libs=self.shared_libs,
+                ext_libs=self.ext_libs,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
             return HLSModule(
@@ -642,6 +642,7 @@ class Schedule:
                 platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
                 mode=mode,
                 project=project,
+                ext_libs=self.ext_libs,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
@@ -693,7 +694,7 @@ def customize(
         ctx.top_func,
         ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
-        shared_libs=ctx.shared_libs,
+        ext_libs=ctx.ext_libs,
     )
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that

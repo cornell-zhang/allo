@@ -42,7 +42,7 @@ def test_vitis_gemm():
 
     s = allo.customize(gemm)
     print(s.module)
-    mod = s.build(target="vitis_hls", mode="debug", project="gemm_vitis.prj")
+    mod = s.build(target="vitis_hls", mode="sw_emu", project="gemm_vitis.prj")
     print(mod.hls_code)
 
 

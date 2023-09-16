@@ -14,7 +14,7 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
-from .vitis import codegen_host, postprocess_hls_code
+from .vitis import codegen_host, postprocess_hls_code, generate_description_file
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
 from ..harness.makefile_gen.makegen import generate_makefile
@@ -38,19 +38,13 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
-        if platform == "vitis_hls":
-            # generate description file
-            desc = open(
-                path + "makefile_gen/description.json", "r", encoding="utf-8"
-            ).read()
-            desc = desc.replace("top", top)
-            with open(
-                os.path.join(project, "description.json"), "w", encoding="utf-8"
-            ) as outfile:
-                outfile.write(desc)
-            # generate Makefile
-            generate_makefile(os.path.join(project, "description.json"), project)
         if mode == "debug":
+            mode = "csyn"
+        elif mode == "sw_emu":
+            mode = "csim"
+        elif mode == "hw_emu":
+            mode = "cosim"
+        else:
             mode = "csyn"
         if mode != "custom":
             removed_mode = ["csyn", "csim", "cosim", "impl"]
@@ -85,14 +79,38 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     raise RuntimeError("Not implemented")
 
 
+def copy_ext_libs(ext_libs, project):
+    impls = []
+    headers = []
+    for ext_lib in ext_libs:
+        for header in ext_lib.headers:
+            header_path = os.path.join(ext_lib.abs_path, header)
+            os.system(f"cp {header_path} {project}")
+            headers.append(header)
+        for impl_path in ext_lib.impls:
+            cpp_file = impl_path.split("/")[-1]
+            assert (
+                cpp_file != "kernel.cpp"
+            ), "kernel.cpp is reserved for the top function"
+            os.system(f"cp {impl_path} {project}/{cpp_file}")
+            impls.append(cpp_file)
+
+
 class HLSModule:
     def __init__(
-        self, mod, top_func_name, platform="vivado_hls", mode=None, project=None
+        self,
+        mod,
+        top_func_name,
+        platform="vivado_hls",
+        mode=None,
+        project=None,
+        ext_libs=None,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
+        self.ext_libs = [] if ext_libs is None else ext_libs
         with Context() as ctx:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -122,8 +140,43 @@ class HLSModule:
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
+            copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
+                assert self.mode in {"sw_emu", "hw_emu", "hw"}, "Invalid mode"
+                assert (
+                    self.top_func_name != "kernel"
+                ), "kernel is a reserved keyword for vitis_hls"
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "../harness/")
+                dst_path = os.path.join(project, "description.json")
+                generate_description_file(
+                    self.top_func_name,
+                    path + "makefile_gen/description.json",
+                    dst_path,
+                    self.ext_libs,
+                )
+                generate_makefile(dst_path, project)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+                for lib in self.ext_libs:
+                    for header in lib.headers:
+                        with open(
+                            f"{project}/{header}", "r", encoding="utf-8"
+                        ) as infile:
+                            new_code = postprocess_hls_code(infile.read())
+                        with open(
+                            f"{project}/{header}", "w", encoding="utf-8"
+                        ) as outfile:
+                            outfile.write(new_code)
+                    for impl_path in lib.impls:
+                        cpp_file = impl_path.split("/")[-1]
+                        with open(
+                            f"{project}/{cpp_file}", "r", encoding="utf-8"
+                        ) as infile:
+                            new_code = postprocess_hls_code(infile.read())
+                        with open(
+                            f"{project}/{cpp_file}", "w", encoding="utf-8"
+                        ) as outfile:
+                            outfile.write(new_code)
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -134,6 +187,37 @@ class HLSModule:
                 outfile.write(self.hls_code)
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.host_code)
+            if len(ext_libs) > 0:
+                for lib in ext_libs:
+                    # Update kernel.cpp
+                    new_kernel = ""
+                    with open(
+                        os.path.join(project, "kernel.cpp"), "r", encoding="utf-8"
+                    ) as kernel:
+                        for line in kernel:
+                            new_kernel += line
+                            if "#include <stdint.h>" in line:
+                                for header in lib.headers:
+                                    new_kernel += f'#include "{header}"\n'
+                    with open(
+                        os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
+                    ) as kernel:
+                        kernel.write(new_kernel)
+                    # Update tcl file
+                    new_tcl = ""
+                    with open(
+                        os.path.join(project, "run.tcl"), "r", encoding="utf-8"
+                    ) as tcl_file:
+                        for line in tcl_file:
+                            new_tcl += line
+                            if "# Add design and testbench files" in line:
+                                for impl in lib.impls:
+                                    cpp_file = impl.split("/")[-1]
+                                    new_tcl += f"add_files {cpp_file}\n"
+                    with open(
+                        os.path.join(project, "run.tcl"), "w", encoding="utf-8"
+                    ) as tcl_file:
+                        tcl_file.write(new_tcl)
 
     def __repr__(self):
         if self.mode is None:
@@ -141,7 +225,7 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, shell=True):
-        if self.platform in {"vivado_hls", "vitis_hls"}:
+        if self.platform == "vivado_hls":
             assert (
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
@@ -178,5 +262,20 @@ class HLSModule:
 
             else:
                 raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
+        elif self.platform == "vitis_hls":
+            assert (
+                os.system(f"which {self.platform} >> /dev/null") == 0
+            ), f"cannot find {self.platform} on system path"
+            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            if len(self.ext_libs) > 0 and self.mode != "sw_emu":
+                raise RuntimeError(
+                    "External libraries are only supported in sw_emu mode"
+                )
+            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+            print(cmd)
+            if shell:
+                subprocess.Popen(cmd, shell=True).wait()
+            else:
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
         else:
             raise RuntimeError("Not implemented")

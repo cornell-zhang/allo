@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import textwrap
 
 from ..ir.transform import find_func_in_module
@@ -271,11 +272,12 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code, top):
+def postprocess_hls_code(hls_code, top=None):
     out_str = ""
     func_decl = False
+    has_endif = False
     for line in hls_code.split("\n"):
-        if line == "using namespace std;":
+        if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
@@ -290,7 +292,27 @@ def postprocess_hls_code(hls_code, top):
             comma = "," if var[-1] == "," else ""
             var = var.split("[")[0]
             out_str += "  " + dtype + " *" + var + f"{comma}\n"
+        elif line.startswith("#endif"):
+            out_str += '} // extern "C"\n\n'
+            out_str += line + "\n"
+            has_endif = True
         else:
             out_str += line + "\n"
-    out_str += '} // extern "C"\n'
+    if not has_endif:
+        out_str += '} // extern "C"\n'
     return out_str
+
+
+def generate_description_file(top, src_path, dst_path, ext_libs):
+    with open(src_path, "r", encoding="utf-8") as f:
+        desc = f.read()
+    desc = desc.replace("top", top)
+    desc = json.loads(desc)
+    for lib in ext_libs:
+        for impl_path in lib.impls:
+            cpp_file = impl_path.split("/")[-1]
+            desc["containers"][0]["accelerators"].append(
+                {"name": lib.top, "location": cpp_file}
+            )
+    with open(dst_path, "w", encoding="utf-8") as outfile:
+        json.dump(desc, outfile, indent=4)

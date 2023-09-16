@@ -1,12 +1,13 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import os
 import numpy as np
 from hcl_mlir.ir import (
     Location,
     MemRefType,
+    UnrankedMemRefType,
     FunctionType,
     TypeAttr,
     FlatSymbolRefAttr,
@@ -29,6 +30,7 @@ from hcl_mlir.dialects import (
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer
+from .utils import get_mlir_dtype_from_str
 
 
 def _mlir_lower_pipeline(module, **kwargs):
@@ -164,6 +166,55 @@ def decompose_library_function(module):
                 body_op_to_remove.append(op)
         # need to erase at the end
         for op in body_op_to_remove:
+            op.operation.erase()
+        return module
+
+
+def call_ext_libs_in_ptr(module, ext_libs):
+    lib_map = {lib.top: lib for lib in ext_libs}
+    with module.context, Location.unknown():
+        op_to_remove = []
+        for op in module.body.operations:
+            if (
+                isinstance(op, func_d.FuncOp)
+                and op.is_external
+                and op.attributes["sym_name"].value in lib_map
+            ):
+                obj = lib_map[op.attributes["sym_name"].value]
+                # external functions, reconstruct func type
+                input_types = []
+                for arg_type, _ in obj.args:
+                    ele_type = get_mlir_dtype_from_str(arg_type)
+                    memref = UnrankedMemRefType.get(ele_type, None)
+                    input_types.append(memref)
+                func_type = FunctionType.get(input_types, [])
+                func_op = func_d.FuncOp(
+                    name=obj.lib_name, type=func_type, ip=InsertionPoint(op)
+                )
+                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                op_to_remove.append(op)
+            elif isinstance(op, func_d.FuncOp):
+                for body_op in op.entry_block.operations:
+                    # update call function
+                    if (
+                        isinstance(body_op, func_d.CallOp)
+                        and body_op.attributes["callee"].value in lib_map
+                    ):
+                        obj = lib_map[body_op.attributes["callee"].value]
+                        for arg in body_op.operands:
+                            memref = UnrankedMemRefType.get(arg.type.element_type, None)
+                            cast = memref_d.CastOp(
+                                memref, arg, ip=InsertionPoint(body_op)
+                            )
+                            body_op.operation.replace_uses_of_with(arg, cast.result)
+                        # update callee name
+                        body_op.attributes["callee"] = FlatSymbolRefAttr.get(
+                            obj.lib_name
+                        )
+            elif op.attributes["sym_name"].value.startswith(("ext_libs")):
+                op_to_remove.append(op)
+        # need to erase at the end
+        for op in op_to_remove:
             op.operation.erase()
         return module
 

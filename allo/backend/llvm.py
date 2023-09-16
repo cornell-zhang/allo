@@ -22,7 +22,11 @@ from hcl_mlir.runtime import (
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
-from ..passes import _mlir_lower_pipeline, decompose_library_function
+from ..passes import (
+    _mlir_lower_pipeline,
+    decompose_library_function,
+    call_ext_libs_in_ptr,
+)
 from ..utils import (
     get_func_inputs_outputs,
     get_bitwidth_from_type,
@@ -72,11 +76,14 @@ class LLVMModule:
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
+            ext_libs = [] if ext_libs is None else ext_libs
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
             self.module = decompose_library_function(self.module)
             # Start lowering
             _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
+            if len(ext_libs) > 0:
+                call_ext_libs_in_ptr(self.module, ext_libs)
             # Remove .partition() annotation
             hcl_d.remove_stride_map(self.module)
             # Resolve FixedType
@@ -118,7 +125,7 @@ class LLVMModule:
                 ]
             else:
                 shared_libs = []
-            shared_libs += ext_libs if ext_libs is not None else []
+            shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
             # opt_level should be set to 2 to avoid the following issue
             # https://github.com/cornell-zhang/allo/issues/72
             self.execution_engine = ExecutionEngine(
