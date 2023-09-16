@@ -76,6 +76,14 @@ def test_lib_gemm():
         hls_mod = s.build(target="vivado_hls", mode="debug", project="gemm_ext.prj")
         print(hls_mod)
         hls_mod()
+    else:
+        print("Vivado HLS not found, skipping...")
+
+    if os.system(f"which vitis_hls >> /dev/null") == 0:
+        hls_mod = s.build(target="vitis_hls", mode="debug", project="gemm_ext_vitis.prj")
+        print(hls_mod)
+    else:
+        print("Vitis HLS not found, skipping...")
 
 
 if __name__ == "__main__":

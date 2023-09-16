@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import textwrap
 
 from ..ir.transform import find_func_in_module
@@ -294,3 +295,17 @@ def postprocess_hls_code(hls_code, top):
             out_str += line + "\n"
     out_str += '} // extern "C"\n'
     return out_str
+
+
+def generate_description_file(top, src_path, dst_path, ext_libs):
+    desc = open(src_path, "r", encoding="utf-8").read()
+    desc = desc.replace("top", top)
+    desc = json.loads(desc)
+    for lib in ext_libs:
+        for impl_path in lib.impls:
+            cpp_file = impl_path.split("/")[-1]
+            desc["containers"][0]["accelerators"].append(
+                {"name": lib.top, "location": cpp_file}
+            )
+    with open(dst_path, "w", encoding="utf-8") as outfile:
+        json.dump(desc, outfile, indent=4)

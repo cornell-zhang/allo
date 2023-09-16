@@ -14,7 +14,7 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
-from .vitis import codegen_host, postprocess_hls_code
+from .vitis import codegen_host, postprocess_hls_code, generate_description_file
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
 from ..harness.makefile_gen.makegen import generate_makefile
@@ -38,18 +38,6 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
-        if platform == "vitis_hls":
-            # generate description file
-            desc = open(
-                path + "makefile_gen/description.json", "r", encoding="utf-8"
-            ).read()
-            desc = desc.replace("top", top)
-            with open(
-                os.path.join(project, "description.json"), "w", encoding="utf-8"
-            ) as outfile:
-                outfile.write(desc)
-            # generate Makefile
-            generate_makefile(os.path.join(project, "description.json"), project)
         if mode == "debug":
             mode = "csyn"
         if mode != "custom":
@@ -94,8 +82,10 @@ def copy_ext_libs(ext_libs, project):
             os.system(f"cp {header_path} {project}")
             headers.append(header)
         for impl_path in ext_lib.impls:
-            os.system(f"cp {impl_path} {project}/{ext_lib.top}.cpp")
-            impls.append(f"{ext_lib.top}.cpp")
+            cpp_file = impl_path.split("/")[-1]
+            assert cpp_file != "kernel.cpp", "kernel.cpp is reserved for the top function"
+            os.system(f"cp {impl_path} {project}/{cpp_file}")
+            impls.append(cpp_file)
     # Update kernel.cpp
     new_kernel = ""
     with open(os.path.join(project, "kernel.cpp"), "r", encoding="utf-8") as kernel:
@@ -164,6 +154,13 @@ class HLSModule:
             assert mode is not None, "mode must be specified when project is specified"
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             if self.platform == "vitis_hls":
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "../harness/")
+                dst_path = os.path.join(project, "description.json")
+                generate_description_file(
+                    self.top_func_name, path + "makefile_gen/description.json", dst_path, self.ext_libs
+                )
+                generate_makefile(dst_path, project)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 self.host_code = codegen_host(
                     self.top_func_name,
