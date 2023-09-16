@@ -272,11 +272,12 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code, top):
+def postprocess_hls_code(hls_code, top=None):
     out_str = ""
     func_decl = False
+    has_endif = False
     for line in hls_code.split("\n"):
-        if line == "using namespace std;":
+        if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
@@ -291,9 +292,14 @@ def postprocess_hls_code(hls_code, top):
             comma = "," if var[-1] == "," else ""
             var = var.split("[")[0]
             out_str += "  " + dtype + " *" + var + f"{comma}\n"
+        elif line.startswith("#endif"):
+            out_str += '} // extern "C"\n\n'
+            out_str += line + "\n"
+            has_endif = True
         else:
             out_str += line + "\n"
-    out_str += '} // extern "C"\n'
+    if not has_endif:
+        out_str += '} // extern "C"\n'
     return out_str
 
 

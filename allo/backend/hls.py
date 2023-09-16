@@ -94,27 +94,6 @@ def copy_ext_libs(ext_libs, project):
             ), "kernel.cpp is reserved for the top function"
             os.system(f"cp {impl_path} {project}/{cpp_file}")
             impls.append(cpp_file)
-    # Update kernel.cpp
-    new_kernel = ""
-    with open(os.path.join(project, "kernel.cpp"), "r", encoding="utf-8") as kernel:
-        for line in kernel:
-            new_kernel += line
-            if "#include <stdint.h>" in line:
-                for header in headers:
-                    new_kernel += f'#include "{header}"\n'
-    print(new_kernel)
-    with open(os.path.join(project, "kernel.cpp"), "w", encoding="utf-8") as kernel:
-        kernel.write(new_kernel)
-    # Update tcl file
-    new_tcl = ""
-    with open(os.path.join(project, "run.tcl"), "r", encoding="utf-8") as tcl_file:
-        for line in tcl_file:
-            new_tcl += line
-            if "# Add design and testbench files" in line:
-                for impl in impls:
-                    new_tcl += f"add_files {impl}\n"
-    with open(os.path.join(project, "run.tcl"), "w", encoding="utf-8") as tcl_file:
-        tcl_file.write(new_tcl)
 
 
 class HLSModule:
@@ -163,7 +142,9 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             if self.platform == "vitis_hls":
                 assert self.mode in {"sw_emu", "hw_emu", "hw"}, "Invalid mode"
-                assert self.top_func_name != "kernel", "kernel is a reserved keyword for vitis_hls"
+                assert (
+                    self.top_func_name != "kernel"
+                ), "kernel is a reserved keyword for vitis_hls"
                 path = os.path.dirname(__file__)
                 path = os.path.join(path, "../harness/")
                 dst_path = os.path.join(project, "description.json")
@@ -175,6 +156,27 @@ class HLSModule:
                 )
                 generate_makefile(dst_path, project)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+                copy_ext_libs(ext_libs, project)
+                for lib in self.ext_libs:
+                    for header in lib.headers:
+                        with open(
+                            f"{project}/{header}", "r", encoding="utf-8"
+                        ) as infile:
+                            new_code = postprocess_hls_code(infile.read())
+                        with open(
+                            f"{project}/{header}", "w", encoding="utf-8"
+                        ) as outfile:
+                            outfile.write(new_code)
+                    for impl_path in lib.impls:
+                        cpp_file = impl_path.split("/")[-1]
+                        with open(
+                            f"{project}/{cpp_file}", "r", encoding="utf-8"
+                        ) as infile:
+                            new_code = postprocess_hls_code(infile.read())
+                        with open(
+                            f"{project}/{cpp_file}", "w", encoding="utf-8"
+                        ) as outfile:
+                            outfile.write(new_code)
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -186,7 +188,34 @@ class HLSModule:
             with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.host_code)
             if len(ext_libs) > 0:
-                copy_ext_libs(ext_libs, project)
+                # Update kernel.cpp
+                new_kernel = ""
+                with open(
+                    os.path.join(project, "kernel.cpp"), "r", encoding="utf-8"
+                ) as kernel:
+                    for line in kernel:
+                        new_kernel += line
+                        if "#include <stdint.h>" in line:
+                            for header in lib.headers:
+                                new_kernel += f'#include "{header}"\n'
+                with open(
+                    os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
+                ) as kernel:
+                    kernel.write(new_kernel)
+                # Update tcl file
+                new_tcl = ""
+                with open(
+                    os.path.join(project, "run.tcl"), "r", encoding="utf-8"
+                ) as tcl_file:
+                    for line in tcl_file:
+                        new_tcl += line
+                        if "# Add design and testbench files" in line:
+                            for impl in lib.impls:
+                                new_tcl += f"add_files {impl}\n"
+                with open(
+                    os.path.join(project, "run.tcl"), "w", encoding="utf-8"
+                ) as tcl_file:
+                    tcl_file.write(new_tcl)
 
     def __repr__(self):
         if self.mode is None:
@@ -236,7 +265,7 @@ class HLSModule:
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE -j"
             print(cmd)
             if shell:
                 subprocess.Popen(cmd, shell=True).wait()
