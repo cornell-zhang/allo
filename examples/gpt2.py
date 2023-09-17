@@ -32,6 +32,13 @@ class MultiHeadAttention(nn.Module):
 
         self.linear_out = nn.Linear(input_dim, input_dim)
 
+    def mask(self, x):
+        x_shape = x.size(0)
+        causal_mask = (
+            1 - torch.tril(torch.ones((x_shape, x_shape), dtype=x.dtype))
+        ) * -1e10
+        return causal_mask
+
     def split_heads(self, x):
         # x: (batch_size, seq_len, hidden_size)
         new_shape = (x.size(0), -1, self.num_heads, self.head_dim)
@@ -39,22 +46,24 @@ class MultiHeadAttention(nn.Module):
         # output: (bs, head, seq, hs // head)
         return x.permute(0, 2, 1, 3)
 
-    def scaled_dot_product(self, q, k, v):
+    def scaled_dot_product(self, q, k, v, x):
         # (bs, head, seq, hs // head)
-        attn_score = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn_score = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(
+            self.head_dim
+        ) + self.mask(x)
         # (bs, head, seq, seq)
         attn_probs = F.softmax(attn_score, dim=-1)
         # (bs, head, seq, hs // head)
         attn = torch.matmul(attn_probs, v)
         return attn
 
-    def forward(self, x, mask=None):
+    def forward(self, x):
         # qkv layers
         q = self.split_heads(self.linear_q(x))
         k = self.split_heads(self.linear_k(x))
         v = self.split_heads(self.linear_v(x))
         # core attention
-        output = self.scaled_dot_product(q, k, v)
+        output = self.scaled_dot_product(q, k, v, x)
         # output: (bs, seq, head, hs // head)
         output = output.permute(0, 2, 1, 3)
         output = output.reshape(output.shape[0], output.shape[1], -1)
@@ -86,7 +95,6 @@ class TransformerBlock(nn.Module):
 class GPT2(nn.Module):
     def __init__(self, vocab_size, d_model, nhead, num_layers):
         super(GPT2, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, d_model)
         self.transformer_blocks = nn.ModuleList(
             [TransformerBlock(d_model, nhead, d_model * 4) for _ in range(num_layers)]
         )
@@ -94,7 +102,6 @@ class GPT2(nn.Module):
         self.fc = nn.Linear(d_model, vocab_size)
 
     def forward(self, x):
-        x = self.embedding(x)
         for block in self.transformer_blocks:
             x = block(x)
         x = self.ln_f(x)
@@ -107,8 +114,9 @@ vocab_size = 10000  # Replace with your actual vocabulary size
 d_model = 512  # Replace with your desired model dimension
 nhead = 8  # Replace with the number of attention heads
 num_layers = 12  # Replace with the number of transformer layers
+n_seq = 10
 
 model = GPT2(vocab_size, d_model, nhead, num_layers)
-input_ids = torch.tensor([1, 2, 3, 4, 5])  # Replace with your input sequence
+input_ids = torch.rand(n_seq, n_seq, d_model)  # Replace with your input sequence
 output = model(input_ids)
-print(output)
+print(output.shape)
