@@ -544,5 +544,28 @@ def test_layernorm_gelu_ops():
     np.testing.assert_allclose(outp, np_outp, atol=1e-5)
 
 
+def test_triangular_matrix():
+    M = 10
+    N = 15
+    A = np.random.uniform(size=(M, N)).astype(np.float32)
+    B = np.random.uniform(size=(M, N)).astype(np.float32)
+
+    def foo(A: float32[M, N]) -> float32[M, N]:
+        outp = allo.tril(A)
+        return outp
+
+    def kernel(A: float32[M, N], B: float32[M, N]) -> float32[M, M]:
+        C = allo.ones((10, 15), dtype=float)
+        D = foo(B) + C
+        output = allo.matmul(A, D.T)
+        return output
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    outp = mod(A, B)
+    np_outp = kernel(A, B)
+    np.testing.assert_allclose(outp, np_outp, atol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

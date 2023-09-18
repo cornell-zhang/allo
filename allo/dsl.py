@@ -145,3 +145,11 @@ def layernorm(x, gamma, beta, eps: float = 1e-5):
 
 def gelu(x):
     return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))
+
+
+def ones(shape, dtype=None, order="C"):
+    return np.ones(shape, dtype=dtype, order=order)
+
+
+def tril(x):
+    return np.tril(x)

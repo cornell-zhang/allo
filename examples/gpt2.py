@@ -1,14 +1,20 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import allo
 import torch
+import math
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-import math
+
+from allo.frontend.leaf_module import OnesForFx
 
 
-# Define the Feed-Forward Network module
 class FFN(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, n_embd, hidden_dim, output_dim):
         super(FFN, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc1 = nn.Linear(n_embd, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
         self.activation = nn.GELU()
 
@@ -19,29 +25,28 @@ class FFN(nn.Module):
         return x
 
 
-# Define the Multi-Head Attention module
 class MultiHeadAttention(nn.Module):
-    def __init__(self, input_dim, num_heads):
+    def __init__(self, n_embd, num_heads):
         super(MultiHeadAttention, self).__init__()
         self.num_heads = num_heads
-        self.head_dim = input_dim // num_heads
+        self.head_dim = n_embd // num_heads
+        self.ones = OnesForFx()
 
-        self.linear_q = nn.Linear(input_dim, input_dim)
-        self.linear_k = nn.Linear(input_dim, input_dim)
-        self.linear_v = nn.Linear(input_dim, input_dim)
+        self.linear_q = nn.Linear(n_embd, n_embd)
+        self.linear_k = nn.Linear(n_embd, n_embd)
+        self.linear_v = nn.Linear(n_embd, n_embd)
 
-        self.linear_out = nn.Linear(input_dim, input_dim)
+        self.linear_out = nn.Linear(n_embd, n_embd)
 
     def mask(self, x):
-        x_shape = x.size(0)
-        causal_mask = (
-            1 - torch.tril(torch.ones((x_shape, x_shape), dtype=x.dtype))
-        ) * -1e10
+        ones_shape = (x.size(1), x.size(1))
+        ones = self.ones(ones_shape)
+        causal_mask = (1 - torch.tril(ones)) * -1e10
         return causal_mask
 
     def split_heads(self, x):
         # x: (batch_size, seq_len, hidden_size)
-        new_shape = (x.size(0), -1, self.num_heads, self.head_dim)
+        new_shape = x.shape[:-1] + (self.num_heads, -1)
         x = x.view(new_shape)
         # output: (bs, head, seq, hs // head)
         return x.permute(0, 2, 1, 3)
@@ -71,14 +76,13 @@ class MultiHeadAttention(nn.Module):
         return output
 
 
-# Define the Transformer Block module
 class TransformerBlock(nn.Module):
-    def __init__(self, input_dim, num_heads, ffn_hidden_dim):
+    def __init__(self, n_embd, num_heads, ffn_hidden_dim):
         super(TransformerBlock, self).__init__()
-        self.attention = MultiHeadAttention(input_dim, num_heads)
-        self.norm1 = nn.LayerNorm(input_dim)
-        self.ffn = FFN(input_dim, ffn_hidden_dim, input_dim)
-        self.norm2 = nn.LayerNorm(input_dim)
+        self.attention = MultiHeadAttention(n_embd, num_heads)
+        self.norm1 = nn.LayerNorm(n_embd)
+        self.ffn = FFN(n_embd, ffn_hidden_dim, n_embd)
+        self.norm2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
         attn_output = self.attention(x)
@@ -91,15 +95,14 @@ class TransformerBlock(nn.Module):
         return out2
 
 
-# Define the GPT2 model
 class GPT2(nn.Module):
-    def __init__(self, vocab_size, d_model, nhead, num_layers):
+    def __init__(self, vocab_size, n_embd, n_head, n_layers):
         super(GPT2, self).__init__()
         self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(d_model, nhead, d_model * 4) for _ in range(num_layers)]
+            [TransformerBlock(n_embd, n_head, n_embd * 4) for _ in range(n_layers)]
         )
-        self.ln_f = nn.LayerNorm(d_model)
-        self.fc = nn.Linear(d_model, vocab_size)
+        self.ln_f = nn.LayerNorm(n_embd)
+        self.fc = nn.Linear(n_embd, vocab_size)
 
     def forward(self, x):
         for block in self.transformer_blocks:
@@ -109,14 +112,23 @@ class GPT2(nn.Module):
         return x
 
 
-# Usage example
-vocab_size = 10000  # Replace with your actual vocabulary size
-d_model = 512  # Replace with your desired model dimension
-nhead = 8  # Replace with the number of attention heads
-num_layers = 12  # Replace with the number of transformer layers
-n_seq = 10
+vocab_size = 50257
+n_embd = 768
+n_head = 12
+n_layers = 12
+n_seq = 1024
+batch_size = 2
 
-model = GPT2(vocab_size, d_model, nhead, num_layers)
-input_ids = torch.rand(n_seq, n_seq, d_model)  # Replace with your input sequence
-output = model(input_ids)
-print(output.shape)
+module = GPT2(vocab_size, n_embd, n_head, n_layers).eval()
+example_inputs = [torch.rand(batch_size, n_seq, n_embd)]
+golden = module(*example_inputs)
+llvm_mod = allo.frontend.from_pytorch(
+    module,
+    example_inputs=example_inputs,
+    verbose=False,
+)
+
+golden = module(*example_inputs)
+np_inputs = [x.detach().numpy() for x in example_inputs]
+res = llvm_mod(*np_inputs)
+np.testing.assert_allclose(res, golden.detach().numpy(), atol=1e-3)
