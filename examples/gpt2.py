@@ -9,6 +9,42 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class GPT2(nn.Module):
+    def __init__(self, vocab_size, n_embd, n_head, n_layers):
+        super(GPT2, self).__init__()
+        self.transformer_blocks = nn.ModuleList(
+            [TransformerBlock(n_embd, n_head, n_embd * 4) for _ in range(n_layers)]
+        )
+        self.ln_f = nn.LayerNorm(n_embd)
+        self.fc = nn.Linear(n_embd, vocab_size)
+
+    def forward(self, x):
+        for block in self.transformer_blocks:
+            x = block(x)
+        x = self.ln_f(x)
+        x = self.fc(x)
+        return x
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, n_embd, num_heads, ffn_hidden_dim):
+        super(TransformerBlock, self).__init__()
+        self.attention = MultiHeadAttention(n_embd, num_heads)
+        self.norm1 = nn.LayerNorm(n_embd)
+        self.ffn = FFN(n_embd, ffn_hidden_dim, n_embd)
+        self.norm2 = nn.LayerNorm(n_embd)
+
+    def forward(self, x):
+        attn_output = self.attention(x)
+        out1 = x + attn_output
+        out1 = self.norm1(out1)
+
+        ffn_output = self.ffn(out1)
+        out2 = out1 + ffn_output
+        out2 = self.norm2(out2)
+        return out2
+
+
 class FFN(nn.Module):
     def __init__(self, n_embd, hidden_dim, output_dim):
         super(FFN, self).__init__()
@@ -70,42 +106,6 @@ class MultiHeadAttention(nn.Module):
         output = output.reshape(output.shape[0], output.shape[1], -1)
         output = self.linear_out(output)
         return output
-
-
-class TransformerBlock(nn.Module):
-    def __init__(self, n_embd, num_heads, ffn_hidden_dim):
-        super(TransformerBlock, self).__init__()
-        self.attention = MultiHeadAttention(n_embd, num_heads)
-        self.norm1 = nn.LayerNorm(n_embd)
-        self.ffn = FFN(n_embd, ffn_hidden_dim, n_embd)
-        self.norm2 = nn.LayerNorm(n_embd)
-
-    def forward(self, x):
-        attn_output = self.attention(x)
-        out1 = x + attn_output
-        out1 = self.norm1(out1)
-
-        ffn_output = self.ffn(out1)
-        out2 = out1 + ffn_output
-        out2 = self.norm2(out2)
-        return out2
-
-
-class GPT2(nn.Module):
-    def __init__(self, vocab_size, n_embd, n_head, n_layers):
-        super(GPT2, self).__init__()
-        self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(n_embd, n_head, n_embd * 4) for _ in range(n_layers)]
-        )
-        self.ln_f = nn.LayerNorm(n_embd)
-        self.fc = nn.Linear(n_embd, vocab_size)
-
-    def forward(self, x):
-        for block in self.transformer_blocks:
-            x = block(x)
-        x = self.ln_f(x)
-        x = self.fc(x)
-        return x
 
 
 vocab_size = 50257
