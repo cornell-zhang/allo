@@ -147,8 +147,8 @@ def gelu(x):
     return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))
 
 
-def ones(shape, dtype=None, order="C"):
-    return np.ones(shape, dtype=dtype, order=order)
+def ones(shape, dtype=None):
+    return np.ones(shape, dtype=dtype)
 
 
 def tril(x):

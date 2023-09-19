@@ -17,7 +17,7 @@ except ImportError:
 from .. import dsl
 from ..ir import types
 from ..customize import customize
-from .leaf_module import OnesForFx, CustomedTracer
+from .tracer import CustomedTracer
 
 
 def from_pytorch(model, example_inputs, verbose=False):
@@ -34,8 +34,9 @@ def from_pytorch(model, example_inputs, verbose=False):
     args += example_inputs
     for item in concrete_args.values():
         args.append(item)
-    tracer = CustomedTracer()
-    graph = tracer.trace(model, concrete_args=concrete_args)
+
+    tracer = CustomedTracer(model, concrete_args=concrete_args)
+    graph = tracer.trace()
     name = (
         model.__class__.__name__
         if isinstance(model, torch.nn.Module)
@@ -119,7 +120,6 @@ class TorchBuilder:
             torch.nn.Dropout: "identity",
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
-            OnesForFx: "ones",
         }.get(type(module), None)
         if op is None:
             raise NotImplementedError("Unsupported module")
@@ -132,6 +132,7 @@ class TorchBuilder:
             operator.mul: "mul",
             operator.truediv: "div",
             torch.matmul: "matmul",
+            torch.ones: "ones",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.linear: "linear",

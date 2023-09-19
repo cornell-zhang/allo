@@ -8,8 +8,6 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from allo.frontend.leaf_module import OnesForFx
-
 
 class FFN(nn.Module):
     def __init__(self, n_embd, hidden_dim, output_dim):
@@ -30,7 +28,6 @@ class MultiHeadAttention(nn.Module):
         super(MultiHeadAttention, self).__init__()
         self.num_heads = num_heads
         self.head_dim = n_embd // num_heads
-        self.ones = OnesForFx()
 
         self.linear_q = nn.Linear(n_embd, n_embd)
         self.linear_k = nn.Linear(n_embd, n_embd)
@@ -39,8 +36,7 @@ class MultiHeadAttention(nn.Module):
         self.linear_out = nn.Linear(n_embd, n_embd)
 
     def mask(self, x):
-        ones_shape = (x.size(1), x.size(1))
-        ones = self.ones(ones_shape)
+        ones = torch.ones(x.size(1), x.size(1))
         causal_mask = (1 - torch.tril(ones)) * -1e10
         return causal_mask
 

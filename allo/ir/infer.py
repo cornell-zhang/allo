@@ -698,9 +698,9 @@ class TypeInferer(ASTVisitor):
                 node.keywords[0].arg == "dtype"
             ), f"Only support `dtype` keyword argument for {op_name}"
             dtype = node.keywords[0].value.id
-            if dtype == "int":
+            if dtype.startswith("int"):
                 node.dtype = int32
-            elif dtype == "float":
+            elif dtype.startswith("float"):
                 node.dtype = float32
             else:
                 raise RuntimeError(f"Unsupported dtype {dtype}")
