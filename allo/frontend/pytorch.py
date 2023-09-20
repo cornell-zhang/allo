@@ -12,13 +12,13 @@ try:
     from torch.nn import functional as F
     from torch.fx.graph_module import GraphModule
     from torch.fx.passes.shape_prop import ShapeProp, TensorMetadata
+    from .tracer import AlloTracer
 except ImportError:
     pass
 
 from .. import dsl
 from ..ir import types
 from ..customize import customize
-from .tracer import AlloTracer
 
 
 def from_pytorch(model, example_inputs, verbose=False):
