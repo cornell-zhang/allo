@@ -2,8 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import functools
-import torch
-from torch.fx import Tracer, Proxy
+
+try:
+    import torch
+    from torch.fx import Tracer, Proxy
+except ImportError:
+    pass
 
 
 # https://github.com/huggingface/transformers/blob/main/src/transformers/utils/fx.py
