@@ -1437,6 +1437,17 @@ class ASTTransformer(ASTBuilder):
                 )
                 return
             fn_name = obj.__name__
+            if fn_name == "ones":
+                shape = node.shape
+                dtype = node.dtype
+                with ctx.get_ip():
+                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                    # init zero
+                    one = MockConstant(1, ctx)
+                    one = ASTTransformer.build_cast_op(ctx, one, Int(32), node.dtype)
+                    # pylint: disable=unexpected-keyword-arg
+                    ones = linalg_d.fill(one.result, outs=[alloc_op.result])
+                    return ones.owner if ctx.enable_tensor else alloc_op
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
@@ -1474,7 +1485,7 @@ class ASTTransformer(ASTBuilder):
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
                 )
-            if fn_name in {"layernorm", "gelu"}:
+            if fn_name in {"layernorm", "gelu", "tril"}:
                 arg_results = [arg.result for arg in new_args]
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]

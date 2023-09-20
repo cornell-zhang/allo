@@ -685,9 +685,25 @@ class TypeInferer(ASTVisitor):
             node.shape = axes
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"layernorm", "gelu"}:
+        if op_name in {"layernorm", "gelu", "tril"}:
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
+            return node
+        if op_name == "ones":
+            axes = compile(ast.Expression(new_args[0]), "", "eval")
+            # pylint: disable=eval-used
+            axes = eval(axes)
+            node.shape = axes
+            assert (
+                node.keywords[0].arg == "dtype"
+            ), f"Only support `dtype` keyword argument for {op_name}"
+            dtype = node.keywords[0].value.id
+            if dtype.startswith("int"):
+                node.dtype = int32
+            elif dtype.startswith("float"):
+                node.dtype = float32
+            else:
+                raise RuntimeError(f"Unsupported dtype {dtype}")
             return node
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 

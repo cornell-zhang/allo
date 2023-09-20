@@ -154,15 +154,15 @@ def decompose_library_function(module):
                         body_op_to_remove.append(body_op)
                     if isinstance(body_op, func_d.CallOp):
                         callee_value = body_op.attributes["callee"].value
-                        if callee_value.startswith("gelu"):
-                            name = "gelu"
-                        elif callee_value.startswith("layernorm"):
-                            name = "layernorm"
+                        if callee_value.startswith(("gelu", "layernorm", "tril")):
+                            name = callee_value.split("_")[0]
                         else:
                             continue
                         generate_call_module(body_op, op, name)
                         body_op_to_remove.append(body_op)
-            elif op.attributes["sym_name"].value.startswith(("gelu", "layernorm")):
+            elif op.attributes["sym_name"].value.startswith(
+                ("gelu", "layernorm", "tril")
+            ):
                 body_op_to_remove.append(op)
         # need to erase at the end
         for op in body_op_to_remove:
@@ -235,7 +235,7 @@ def generate_call_module(target_op, func_op, name):
         in_types = [args[0].type, args[1].type]
         out_types = [args[1].type]
         operands = [target_op.input, target_op.output]
-    elif name in {"gelu", "layernorm"}:
+    elif name in {"gelu", "layernorm", "tril"}:
         sym_name = target_op.attributes["callee"].value
         in_types = [arg.type for arg in target_op.operands_]
         for i, arg in enumerate(func.arguments):
@@ -252,7 +252,7 @@ def generate_call_module(target_op, func_op, name):
         operands,
         ip=InsertionPoint(target_op),
     )
-    if name in {"gelu", "layernorm"}:
+    if name in {"gelu", "layernorm", "tril"}:
         target_op.result.replace_all_uses_with(call_op.result)
 
     for op in func.entry_block.operations:
@@ -314,9 +314,21 @@ def generate_call_module(target_op, func_op, name):
                     )
                     op.result.replace_all_uses_with(const_op.result)
                     op_to_remove.append(op)
-
             elif isinstance(op, linalg_d.GenericOp):
                 update_generic_op(op, name, shape)
+        elif name == "tril":
+            if isinstance(op, memref_d.AllocOp):
+                alloc_op = memref_d.AllocOp(
+                    MemRefType.get(
+                        shape,
+                        MemRefType(in_types[0]).element_type,
+                    ),
+                    [],
+                    [],
+                    ip=InsertionPoint(op),
+                )
+                op.result.replace_all_uses_with(alloc_op.result)
+                op_to_remove.append(op)
     # need to erase at the end
     for op in op_to_remove:
         op.operation.erase()
