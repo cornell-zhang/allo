@@ -1,14 +1,34 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# https://github.com/huggingface/transformers/blob/main/src/transformers/utils/fx.py
 
+import functools
 import torch
-from torch.fx import Tracer
-from transformers.utils.fx import _gen_constructor_wrapper
+from torch.fx import Tracer, Proxy
+
+
+# https://github.com/huggingface/transformers/blob/main/src/transformers/utils/fx.py
+def _gen_constructor_wrapper(target):
+    @functools.wraps(target)
+    def wrapper(*args, **kwargs):
+        proxy = None
+
+        def check_has_proxy(v):
+            if isinstance(v, Proxy):
+                nonlocal proxy
+                proxy = v
+
+        torch.fx.node.map_aggregate(args, check_has_proxy)
+        torch.fx.node.map_aggregate(kwargs, check_has_proxy)
+
+        if proxy is not None:
+            return proxy.tracer.create_proxy("call_function", target, args, kwargs)
+        return target(*args, **kwargs)
+
+    return wrapper, target
 
 
 # https://github.com/pytorch/pytorch/issues/51803
-class CustomedTracer(Tracer):
+class AlloTracer(Tracer):
     _TORCH_METHODS_TO_PATCH = [
         "arange",
         "zeros",

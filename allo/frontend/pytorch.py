@@ -4,6 +4,7 @@
 import operator
 import inspect
 import math
+import warnings
 
 try:
     import torch
@@ -17,7 +18,7 @@ except ImportError:
 from .. import dsl
 from ..ir import types
 from ..customize import customize
-from .tracer import CustomedTracer
+from .tracer import AlloTracer
 
 
 def from_pytorch(model, example_inputs, verbose=False):
@@ -35,7 +36,7 @@ def from_pytorch(model, example_inputs, verbose=False):
     for item in concrete_args.values():
         args.append(item)
 
-    tracer = CustomedTracer(model, concrete_args=concrete_args)
+    tracer = AlloTracer(model, concrete_args=concrete_args)
     graph = tracer.trace()
     name = (
         model.__class__.__name__
@@ -159,7 +160,10 @@ class TorchBuilder:
         )
 
     def build_output(self, node):
-        # Currently we only support return a single value
+        if len(node.args) > 1:
+            warnings.warn(
+                "Currently we only support return a single value", RuntimeWarning
+            )
         if isinstance(node.meta["tensor_meta"], TensorMetadata):
             output_tensor_meta = node.meta["tensor_meta"]
         elif isinstance(node.meta["tensor_meta"], tuple):
