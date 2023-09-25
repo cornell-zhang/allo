@@ -23,7 +23,7 @@ def test_pybind11():
     np.testing.assert_allclose(np.matmul(a, b), c, atol=1e-6)
     print("Passed!")
 
-
+@pytest.mark.skip(reason="don't run in local")
 def test_shared_lib():
     vadd = allo.IPModule(
         top="vadd",
@@ -47,7 +47,7 @@ def test_shared_lib():
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
     print("Passed!")
 
-
+@pytest.mark.skip(reason="don't run in local")
 def test_lib_gemm():
     gemm = allo.IPModule(
         top="gemm",

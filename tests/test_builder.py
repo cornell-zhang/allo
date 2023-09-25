@@ -469,6 +469,12 @@ def test_multiple_returns():
         return res0, res1
 
     s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(M,)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(M,)).astype(np.int32)
+    np_res0, np_res1 = mod(np_A, np_B)
+    np.testing.assert_allclose(np_res0, np_A + 1)
+    np.testing.assert_allclose(np_res1, np_B + 1)
 
 
 if __name__ == "__main__":
