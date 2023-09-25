@@ -457,6 +457,20 @@ def test_constexpr():
     np_res = mod(np_A)
     np.testing.assert_allclose(np_res, np_A + 1)
 
+def test_multiple_returns():
+    M = 10
+    def kernel(A: int32[M], B: int32[M]) -> (int32[M], int32[M]):
+        res0: int32[M] = 0
+        res1: int32[M] = 0
+        for i in range(M):
+            res0[i] = A[i] + 1
+            res1[i] = B[i] + 1
+        return res0, res1
+
+    s = allo.customize(kernel)
+    print(s.module)
+
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_multiple_returns()
