@@ -458,7 +458,7 @@ def test_constexpr():
     np.testing.assert_allclose(np_res, np_A + 1)
 
 
-def test_multiple_returns():
+def test_multiple_returns_1D():
     M = 10
 
     def kernel(A: int32[M], B: int32[M]) -> (int32[M], int32[M]):
@@ -473,6 +473,31 @@ def test_multiple_returns():
     mod = s.build()
     np_A = np.random.randint(0, 10, size=(M,)).astype(np.int32)
     np_B = np.random.randint(0, 10, size=(M,)).astype(np.int32)
+    np_res0, np_res1 = mod(np_A, np_B)
+    np.testing.assert_allclose(np_res0, np_A + 1)
+    np.testing.assert_allclose(np_res1, np_B + 1)
+
+
+def test_multiple_returns_4D():
+    M = 10
+
+    def kernel(
+        A: float32[M, M, M, M], B: float32[M, M, M, M]
+    ) -> (float32[M, M, M, M], float32[M, M, M, M]):
+        res0: float32[M, M, M, M] = 0
+        res1: float32[M, M, M, M] = 0
+        for i in range(M):
+            for j in range(M):
+                for k in range(M):
+                    for l in range(M):
+                        res0[i, j, k, l] = A[i, j, k, l] + 1
+                        res1[i, j, k, l] = B[i, j, k, l] + 1
+        return res0, res1
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.random.random((M, M, M, M)).astype(np.float32)
+    np_B = np.random.random((M, M, M, M)).astype(np.float32)
     np_res0, np_res1 = mod(np_A, np_B)
     np.testing.assert_allclose(np_res0, np_A + 1)
     np.testing.assert_allclose(np_res1, np_B + 1)
