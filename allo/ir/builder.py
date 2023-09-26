@@ -1757,16 +1757,20 @@ class ASTTransformer(ASTBuilder):
             for i, n in enumerate(node.value.elts):
                 ret = build_stmt(ctx, n)
                 ret = ASTTransformer.build_cast_op(
-                    ctx, ret, n.dtype, ctx.top_func_tree.dtype[i], ctx.top_func_tree.shape[i]
+                    ctx,
+                    ret,
+                    n.dtype,
+                    ctx.top_func_tree.dtype[i],
+                    ctx.top_func_tree.shape[i],
                 )
                 rets.append(ret.result)
             return func_d.ReturnOp(rets, ip=ctx.pop_ip())
-        else:
-            ret = build_stmt(ctx, node.value)
-            ret = ASTTransformer.build_cast_op(
-                ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
-            )
-            return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
+        # return a single value or none
+        ret = build_stmt(ctx, node.value)
+        ret = ASTTransformer.build_cast_op(
+            ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
+        )
+        return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
     @staticmethod
     def build_Expr(ctx, node):

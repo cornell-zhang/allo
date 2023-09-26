@@ -460,6 +460,7 @@ def test_constexpr():
 
 def test_multiple_returns():
     M = 10
+
     def kernel(A: int32[M], B: int32[M]) -> (int32[M], int32[M]):
         res0: int32[M] = 0
         res1: int32[M] = 0

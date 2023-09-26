@@ -12,7 +12,6 @@ from hcl_mlir.ir import (
     F64Type,
 )
 from hcl_mlir.dialects import hcl as hcl_d
-from hcl_mlir.runtime import get_ranked_memref_descriptor
 
 
 np_supported_types = {
@@ -366,9 +365,7 @@ def to_numpy(array):
 
 def ranked_memref_descriptor_to_numpy(ranked_memref):
     """Converts ranked memrefs to numpy arrays."""
-    np_arr = np.ctypeslib.as_array(
-        ranked_memref.aligned, shape=ranked_memref.shape
-    )
+    np_arr = np.ctypeslib.as_array(ranked_memref.aligned, shape=ranked_memref.shape)
     strided_arr = np.lib.stride_tricks.as_strided(
         np_arr,
         np.ctypeslib.as_array(ranked_memref.shape),
@@ -377,11 +374,12 @@ def ranked_memref_descriptor_to_numpy(ranked_memref):
     return to_numpy(strided_arr)
 
 
-
 def create_output_struct(memref_descriptors):
-    fields = [(f"memref{i}", memref.__class__) for i, memref in enumerate(memref_descriptors)]
+    fields = [
+        (f"memref{i}", memref.__class__) for i, memref in enumerate(memref_descriptors)
+    ]
     # Dynamically create and return the new class
-    OutputStruct = type('OutputStruct', (ctypes.Structure,), {'_fields_': fields})
+    OutputStruct = type("OutputStruct", (ctypes.Structure,), {"_fields_": fields})
     out_struct = OutputStruct()
     for i, memref in enumerate(memref_descriptors):
         setattr(out_struct, f"memref{i}", memref)
@@ -391,5 +389,9 @@ def create_output_struct(memref_descriptors):
 def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
     out_np_arrays = []
     for i in range(num_output):
-        out_np_arrays.append(ranked_memref_descriptor_to_numpy(getattr(out_struct_ptr_ptr[0][0], f"memref{i}")))
+        out_np_arrays.append(
+            ranked_memref_descriptor_to_numpy(
+                getattr(out_struct_ptr_ptr[0][0], f"memref{i}")
+            )
+        )
     return out_np_arrays
