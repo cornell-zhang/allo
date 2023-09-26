@@ -11,6 +11,7 @@ from hcl_mlir.ir import (
     F32Type,
     F64Type,
 )
+from hcl_mlir.runtime import to_numpy
 from hcl_mlir.dialects import hcl as hcl_d
 
 
@@ -334,38 +335,16 @@ def handle_overflow(np_array, bitwidth, dtype):
     return np_array
 
 
-class C128(ctypes.Structure):
-    """A ctype representation for MLIR's Double Complex."""
-
-    _fields_ = [("real", ctypes.c_double), ("imag", ctypes.c_double)]
-
-
-class C64(ctypes.Structure):
-    """A ctype representation for MLIR's Float Complex."""
-
-    _fields_ = [("real", ctypes.c_float), ("imag", ctypes.c_float)]
-
-
-class F16(ctypes.Structure):
-    """A ctype representation for MLIR's Float16."""
-
-    _fields_ = [("f16", ctypes.c_int16)]
-
-
-def to_numpy(array):
-    """Converts ctypes array back to numpy dtype array."""
-    if array.dtype == C128:
-        return array.view("complex128")
-    if array.dtype == C64:
-        return array.view("complex64")
-    if array.dtype == F16:
-        return array.view("float16")
-    return array
-
-
-def ranked_memref_descriptor_to_numpy(ranked_memref):
+def ranked_memref_to_numpy(ranked_memref):
     """Converts ranked memrefs to numpy arrays."""
-    np_arr = np.ctypeslib.as_array(ranked_memref.aligned, shape=ranked_memref.shape)
+    # A temporary workaround for issue
+    # https://discourse.llvm.org/t/setting-memref-elements-in-python-callback/72759
+    contentPtr = ctypes.cast(
+        ctypes.addressof(ranked_memref.aligned.contents)
+        + ranked_memref.offset * ctypes.sizeof(ranked_memref.aligned.contents),
+        type(ranked_memref.aligned),
+    )
+    np_arr = np.ctypeslib.as_array(contentPtr, shape=ranked_memref.shape)
     strided_arr = np.lib.stride_tricks.as_strided(
         np_arr,
         np.ctypeslib.as_array(ranked_memref.shape),
@@ -390,8 +369,6 @@ def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
     out_np_arrays = []
     for i in range(num_output):
         out_np_arrays.append(
-            ranked_memref_descriptor_to_numpy(
-                getattr(out_struct_ptr_ptr[0][0], f"memref{i}")
-            )
+            ranked_memref_to_numpy(getattr(out_struct_ptr_ptr[0][0], f"memref{i}"))
         )
     return out_np_arrays

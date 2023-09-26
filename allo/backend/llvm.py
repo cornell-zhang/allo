@@ -17,8 +17,6 @@ from hcl_mlir.execution_engine import ExecutionEngine
 from hcl_mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
-    # ranked_memref_to_numpy,
-    to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
@@ -42,25 +40,8 @@ from ..utils import (
     get_np_struct_type,
     create_output_struct,
     extract_out_np_arrays_from_out_struct,
+    ranked_memref_to_numpy,
 )
-
-
-def ranked_memref_to_numpy(ranked_memref):
-    """Converts ranked memrefs to numpy arrays."""
-    # A temporary workaround for issue
-    # https://discourse.llvm.org/t/setting-memref-elements-in-python-callback/72759
-    contentPtr = ctypes.cast(
-        ctypes.addressof(ranked_memref[0].aligned.contents)
-        + ranked_memref[0].offset * ctypes.sizeof(ranked_memref[0].aligned.contents),
-        type(ranked_memref[0].aligned),
-    )
-    np_arr = np.ctypeslib.as_array(contentPtr, shape=ranked_memref[0].shape)
-    strided_arr = np.lib.stride_tricks.as_strided(
-        np_arr,
-        np.ctypeslib.as_array(ranked_memref[0].shape),
-        np.ctypeslib.as_array(ranked_memref[0].strides) * np_arr.itemsize,
-    )
-    return to_numpy(strided_arr)
 
 
 def invoke_mlir_parser(mod: str):
@@ -319,7 +300,7 @@ class LLVMModule:
             if len(shape) > 0:  # single return, memref
                 # INVOKE
                 self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
-                ret = ranked_memref_to_numpy(return_ptr[0])
+                ret = ranked_memref_to_numpy(return_ptr[0][0])
                 if is_anywidth_int_type_and_not_np(result_type):
                     bitwidth = get_bitwidth_from_type(result_type)
                     ret = struct_array_to_int_array(
