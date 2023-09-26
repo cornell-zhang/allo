@@ -440,9 +440,19 @@ class TypeInferer(ASTVisitor):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
-                ctx, node.returns
-            )
+            if isinstance(node.returns, ast.Tuple):
+                # Multiple return values
+                node.returns.shape = []
+                node.returns.dtype = []
+                for elt in node.returns.elts:
+                    elt.dtype, elt.shape = TypeInferer.visit_type_hint(ctx, elt)
+                    node.returns.dtype += [elt.dtype]
+                    node.returns.shape += [elt.shape]
+            else:
+                # Single return value
+                node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
+                    ctx, node.returns
+                )
             ctx.buffers[node.name] = node
 
         visit_stmts(ctx, node.body)

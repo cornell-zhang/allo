@@ -17,8 +17,6 @@ from hcl_mlir.execution_engine import ExecutionEngine
 from hcl_mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
-    # ranked_memref_to_numpy,
-    to_numpy,
 )
 from hcl_mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
@@ -40,25 +38,10 @@ from ..utils import (
     make_anywidth_numpy_array,
     struct_array_to_int_array,
     get_np_struct_type,
+    create_output_struct,
+    extract_out_np_arrays_from_out_struct,
+    ranked_memref_to_numpy,
 )
-
-
-def ranked_memref_to_numpy(ranked_memref):
-    """Converts ranked memrefs to numpy arrays."""
-    # A temporary workaround for issue
-    # https://discourse.llvm.org/t/setting-memref-elements-in-python-callback/72759
-    contentPtr = ctypes.cast(
-        ctypes.addressof(ranked_memref[0].aligned.contents)
-        + ranked_memref[0].offset * ctypes.sizeof(ranked_memref[0].aligned.contents),
-        type(ranked_memref[0].aligned),
-    )
-    np_arr = np.ctypeslib.as_array(contentPtr, shape=ranked_memref[0].shape)
-    strided_arr = np.lib.stride_tricks.as_strided(
-        np_arr,
-        np.ctypeslib.as_array(ranked_memref[0].shape),
-        np.ctypeslib.as_array(ranked_memref[0].strides) * np_arr.itemsize,
-    )
-    return to_numpy(strided_arr)
 
 
 def invoke_mlir_parser(mod: str):
@@ -177,7 +160,7 @@ class LLVMModule:
                         "Unsupported input type. Please use NumPy array to wrap the data if other"
                         "data types are needed as inputs."
                     )
-            else:
+            else:  # memref
                 np_type = np_type_to_str(arg.dtype)
                 if np_type != target_in_type:
                     DTypeWarning(
@@ -221,9 +204,7 @@ class LLVMModule:
         # 2. Construct return pointers
         # Need to verify the return variable is not the same as the input
         result_types = self.out_types
-        if len(result_types) > 1:
-            raise RuntimeError("Only support zero/one return value for now")
-        # Returns as arguments
+        # Returns as arguments: no return value from the top function
         if len(result_types) == 0:
             self.execution_engine.invoke(self.top_func_name, *arg_ptrs)
             for arg, new_arg, (target_in_type, shape) in zip(
@@ -238,60 +219,136 @@ class LLVMModule:
                     else:
                         arg[:] = new_arg
             return
-        # Return inner variables
-        result_type, shape = result_types[0]
-        if len(shape) == 0:  # scalar
-            if result_type in ctype_map:
-                dtype = ctype_map[result_type]
-            else:
-                if result_type.startswith("fixed") or result_type.startswith("ufixed"):
-                    raise RuntimeError("Not supported FixedType returns")
-                DTypeWarning(
-                    f"Return type {result_type} is not supported by native Python. "
-                    "Please change another return type or use Numpy array to wrap the return value"
-                ).warn()
-                signed = "i" if result_type.startswith("i") else "ui"
-                bitwidth = get_bitwidth_from_type(result_type)
-                pow2_width = max(get_clostest_pow2(bitwidth), 8)
-                dtype = ctype_map[f"{signed}{pow2_width}"]
-            dtype_p = dtype * 1
-            # -1/-1.0 is a placeholder
-            return_ptr = dtype_p(-1 if not result_type in {"f32", "f64"} else 1.0)
-        else:
-            if result_type in ctype_map:
-                dtype = ctype_map[result_type]
-            elif result_type.startswith("i") or result_type.startswith("ui"):
-                width = get_bitwidth_from_type(result_type)
-                bitwidth = max(get_clostest_pow2(width), 8)
-                dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
-            elif result_type.startswith("fixed") or result_type.startswith("ufixed"):
-                bitwidth, _ = get_bitwidth_and_frac_from_fixed(result_type)
-                bitwidth = max(get_clostest_pow2(bitwidth), 8)
-                dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
-            else:
-                raise RuntimeError("Unsupported return type")
-            # Create an empty tensor
-            return_desc = make_nd_memref_descriptor(len(shape), dtype)()
-            return_ptr = ctypes.pointer(ctypes.pointer(return_desc))
+        # Return inner variables: return one or more values allocated inside kernel
+        # For two or more return values, llvm.emit_c_interface will return a struct
+        # Therefore, for functions that return values, we need to separate two cases:
+        # 1. return one value: no need to create a struct
+        # 2. return two or more values: need to create a struct
+        # In any case, we prepare a pointer of pointer to the return object
+        # which is ready to be passed to the invoke function.
+        if len(result_types) == 1:  # exactly one return value
+            result_type, shape = result_types[0]
+            if len(shape) == 0:  # scalar
+                if result_type in ctype_map:
+                    dtype = ctype_map[result_type]
+                else:
+                    if result_type.startswith("fixed") or result_type.startswith(
+                        "ufixed"
+                    ):
+                        raise RuntimeError("Not supported FixedType returns")
+                    DTypeWarning(
+                        f"Return type {result_type} is not supported by native Python. "
+                        "Please change another return type or use Numpy array to wrap the return value"
+                    ).warn()
+                    signed = "i" if result_type.startswith("i") else "ui"
+                    bitwidth = get_bitwidth_from_type(result_type)
+                    pow2_width = max(get_clostest_pow2(bitwidth), 8)
+                    dtype = ctype_map[f"{signed}{pow2_width}"]
+                dtype_p = dtype * 1
+                # -1/-1.0 is a placeholder
+                return_ptr = dtype_p(-1 if not result_type in {"f32", "f64"} else 1.0)
+            else:  # memref
+                if result_type in ctype_map:
+                    dtype = ctype_map[result_type]
+                elif result_type.startswith("i") or result_type.startswith("ui"):
+                    width = get_bitwidth_from_type(result_type)
+                    bitwidth = max(get_clostest_pow2(width), 8)
+                    dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
+                elif result_type.startswith("fixed") or result_type.startswith(
+                    "ufixed"
+                ):
+                    bitwidth, _ = get_bitwidth_and_frac_from_fixed(result_type)
+                    bitwidth = max(get_clostest_pow2(bitwidth), 8)
+                    dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
+                else:
+                    raise RuntimeError("Unsupported return type")
+                # Create an empty tensor
+                return_desc = make_nd_memref_descriptor(len(shape), dtype)()
+                return_ptr = ctypes.pointer(ctypes.pointer(return_desc))
+        else:  # multiple return values
+            # we assume all return values are memrefs
+            out_memref_descs = []
+            for elt_res_type, elt_shape in result_types:
+                if len(elt_shape) == 0:
+                    raise RuntimeError(
+                        "When returning multiple values, we only support all tensors."
+                    )
+                if elt_res_type in ctype_map:
+                    dtype = ctype_map[elt_res_type]
+                elif elt_res_type.startswith("i") or elt_res_type.startswith("ui"):
+                    width = get_bitwidth_from_type(elt_res_type)
+                    bitwidth = max(get_clostest_pow2(width), 8)
+                    dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
+                elif elt_res_type.startswith("fixed") or elt_res_type.startswith(
+                    "ufixed"
+                ):
+                    bitwidth, _ = get_bitwidth_and_frac_from_fixed(elt_res_type)
+                    bitwidth = max(get_clostest_pow2(bitwidth), 8)
+                    dtype = np.ctypeslib.as_ctypes_type(get_np_struct_type(bitwidth))
+                else:
+                    raise RuntimeError("Unsupported return type")
+                # Create an empty tensor
+                return_desc = make_nd_memref_descriptor(len(elt_shape), dtype)()
+                out_memref_descs.append(return_desc)
+            # Create a struct
+            out_struct = create_output_struct(out_memref_descs)
+            return_ptr = ctypes.pointer(ctypes.pointer(out_struct))
 
         # 3. Invoke the function and return the result
-        if len(shape) > 0:
+        if len(result_types) == 1:
+            result_type, shape = result_types[0]
+            if len(shape) > 0:  # single return, memref
+                # INVOKE
+                self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
+                ret = ranked_memref_to_numpy(return_ptr[0][0])
+                if is_anywidth_int_type_and_not_np(result_type):
+                    bitwidth = get_bitwidth_from_type(result_type)
+                    ret = struct_array_to_int_array(
+                        ret, bitwidth, result_type[0] == "i"
+                    )
+                elif result_type.startswith("fixed") or result_type.startswith(
+                    "ufixed"
+                ):
+                    bitwidth, frac = get_bitwidth_and_frac_from_fixed(result_type)
+                    ret = struct_array_to_int_array(
+                        ret, bitwidth, result_type.startswith("fixed")
+                    )
+                    if result_type.startswith("fixed"):
+                        ret = ret.astype(np.int64)
+                    else:
+                        ret = ret.astype(np.uint64)
+                    ret = ret.astype(np.float64) / float(2**frac)
+            else:  # single return, scalar
+                # INVOKE
+                self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
+                ret = return_ptr[0]
+        else:  # multiple returns, assume all memref
+            # INVOKE
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
-            ret = ranked_memref_to_numpy(return_ptr[0])
-            if is_anywidth_int_type_and_not_np(result_type):
-                bitwidth = get_bitwidth_from_type(result_type)
-                ret = struct_array_to_int_array(ret, bitwidth, result_type[0] == "i")
-            elif result_type.startswith("fixed") or result_type.startswith("ufixed"):
-                bitwidth, frac = get_bitwidth_and_frac_from_fixed(result_type)
-                ret = struct_array_to_int_array(
-                    ret, bitwidth, result_type.startswith("fixed")
-                )
-                if result_type.startswith("fixed"):
-                    ret = ret.astype(np.int64)
+            ret_raw_np = extract_out_np_arrays_from_out_struct(
+                return_ptr, len(result_types)
+            )
+            # pylint: disable=redefined-variable-type
+            ret = []
+            for np_arr, res_type in zip(
+                ret_raw_np, [res_type for res_type, _ in result_types]
+            ):
+                if is_anywidth_int_type_and_not_np(res_type):
+                    bitwidth = get_bitwidth_from_type(res_type)
+                    ret_i = struct_array_to_int_array(
+                        np_arr, bitwidth, res_type[0] == "i"
+                    )
+                elif res_type.startswith("fixed") or res_type.startswith("ufixed"):
+                    bitwidth, frac = get_bitwidth_and_frac_from_fixed(res_type)
+                    ret_i = struct_array_to_int_array(
+                        np_arr, bitwidth, res_type.startswith("fixed")
+                    )
+                    if res_type.startswith("fixed"):
+                        ret_i = ret.astype(np.int64)
+                    else:
+                        ret_i = ret.astype(np.uint64)
+                    ret_i = ret_i.astype(np.float64) / float(2**frac)
                 else:
-                    ret = ret.astype(np.uint64)
-                ret = ret.astype(np.float64) / float(2**frac)
-        else:
-            self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
-            ret = return_ptr[0]
+                    ret_i = np_arr
+                ret.append(ret_i)
         return ret

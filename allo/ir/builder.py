@@ -1157,12 +1157,21 @@ class ASTTransformer(ASTBuilder):
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
             or node.returns is None
         ):
-            output_types.append(
-                ASTTransformer.build_shaped_type(
-                    ctx, node.returns.dtype, node.returns.shape
+            if isinstance(node.returns, ast.Tuple):
+                # Multiple returns
+                for ret in node.returns.elts:
+                    output_types.append(
+                        ASTTransformer.build_shaped_type(ctx, ret.dtype, ret.shape)
+                    )
+                    output_typehints.append(get_extra_type_hints(ret.dtype))
+            else:
+                # Single return
+                output_types.append(
+                    ASTTransformer.build_shaped_type(
+                        ctx, node.returns.dtype, node.returns.shape
+                    )
                 )
-            )
-            output_typehints.append(get_extra_type_hints(node.returns.dtype))
+                output_typehints.append(get_extra_type_hints(node.returns.dtype))
 
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
@@ -1742,6 +1751,21 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Return(ctx, node):
+        if isinstance(node.value, ast.Tuple):
+            # return multiple values
+            rets = []
+            for i, n in enumerate(node.value.elts):
+                ret = build_stmt(ctx, n)
+                ret = ASTTransformer.build_cast_op(
+                    ctx,
+                    ret,
+                    n.dtype,
+                    ctx.top_func_tree.dtype[i],
+                    ctx.top_func_tree.shape[i],
+                )
+                rets.append(ret.result)
+            return func_d.ReturnOp(rets, ip=ctx.pop_ip())
+        # return a single value or none
         ret = build_stmt(ctx, node.value)
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape

@@ -458,5 +458,52 @@ def test_constexpr():
     np.testing.assert_allclose(np_res, np_A + 1)
 
 
+def test_multiple_returns_1D():
+    M = 10
+
+    def kernel(A: int32[M], B: int32[M]) -> (int32[M], int32[M]):
+        res0: int32[M] = 0
+        res1: int32[M] = 0
+        for i in range(M):
+            res0[i] = A[i] + 1
+            res1[i] = B[i] + 1
+        return res0, res1
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(M,)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(M,)).astype(np.int32)
+    np_res0, np_res1 = mod(np_A, np_B)
+    np.testing.assert_allclose(np_res0, np_A + 1)
+    np.testing.assert_allclose(np_res1, np_B + 1)
+
+
+def test_multiple_returns_4D():
+    M = 10
+
+    def kernel(
+        A: float32[M, M, M, M], B: float32[M, M, M, M], C: float32[M, M]
+    ) -> (float32[M, M, M, M], float32[M, M, M, M], float32[M, M]):
+        res0: float32[M, M, M, M] = 0
+        res1: float32[M, M, M, M] = 0
+        for i, j, k, l in allo.grid(M, M, M, M):
+            res0[i, j, k, l] = A[i, j, k, l] + 1
+            res1[i, j, k, l] = B[i, j, k, l] + 1
+        res2: float32[M, M] = 0
+        for i, j in allo.grid(M, M):
+            res2[i, j] = C[i, j] + 1
+        return res0, res1, res2
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.random.random((M, M, M, M)).astype(np.float32)
+    np_B = np.random.random((M, M, M, M)).astype(np.float32)
+    np_C = np.random.random((M, M)).astype(np.float32)
+    np_res0, np_res1, np_res2 = mod(np_A, np_B, np_C)
+    np.testing.assert_allclose(np_res0, np_A + 1)
+    np.testing.assert_allclose(np_res1, np_B + 1)
+    np.testing.assert_allclose(np_res2, np_C + 1)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
