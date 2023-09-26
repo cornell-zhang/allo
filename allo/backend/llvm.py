@@ -195,6 +195,7 @@ class LLVMModule:
                     #      i33-i64 -> int64
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
+                    # pylint: disable=redefined-variable-type
                     arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif target_in_type in np_supported_types:
                     target_np_type = np_supported_types[target_in_type]
