@@ -27,9 +27,7 @@ def from_pytorch(model, example_inputs, verbose=False):
         p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
     ]
     concrete_args = {
-        p.name: p.default
-        for p in sig.parameters.values()
-        if p.name not in input_names and p.default is not inspect.Parameter.empty
+        p.name: p.default for p in sig.parameters.values() if p.name not in input_names
     }
     args = []
     args += example_inputs
@@ -124,6 +122,9 @@ class TorchBuilder:
         }.get(type(module), None)
         if op is None:
             raise NotImplementedError("Unsupported module")
+        if op == "linear":
+            bias = True if module.bias is not None else None
+            return getattr(self, "build_linear")(node, bias)
         return getattr(self, f"build_{op}")(node)
 
     def build_call_function(self, node):
@@ -218,12 +219,14 @@ class TorchBuilder:
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.relu({inp})"
 
-    def build_linear(self, node):
+    def build_linear(self, node, bias):
         target_name = node.target.replace(".", "_")
         inp = get_var_name(node.args[0])
         weight = get_var_name(target_name + "_weight")
-        bias = get_var_name(target_name + "_bias")
-        return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
+        if bias:
+            bias = get_var_name(target_name + "_bias")
+            return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
+        return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):
         inp = get_var_name(node.args[0])

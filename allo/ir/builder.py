@@ -29,6 +29,7 @@ from hcl_mlir.ir import (
     TypeAttr,
     ArrayAttr,
     Attribute,
+    Type,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -1451,7 +1452,6 @@ class ASTTransformer(ASTBuilder):
                 dtype = node.dtype
                 with ctx.get_ip():
                     alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                    # init zero
                     one = MockConstant(1, ctx)
                     one = ASTTransformer.build_cast_op(ctx, one, Int(32), node.dtype)
                     # pylint: disable=unexpected-keyword-arg
@@ -1490,6 +1490,7 @@ class ASTTransformer(ASTBuilder):
                 "transpose",
                 "linear",
                 "view",
+                "concat",
             }:
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
@@ -1554,6 +1555,90 @@ class ASTTransformer(ASTBuilder):
         shape = shape if shape is not None else node.shape
         with ip:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+            if attr == "concat":
+                axis = node.keywords[0].value.value
+                strides = [1] * len(shape)
+                offsets = [0] * len(shape)
+                new_offsets = offsets.copy()
+                new_offsets[axis] = node.args[0].shape[axis]
+                if ctx.enable_tensor:
+                    insert_op = tensor_d.InsertSliceOp(
+                        source=new_args[0].result,
+                        dest=alloc_op.result,
+                        static_offsets=offsets,
+                        static_sizes=list(node.args[0].shape),
+                        static_strides=strides,
+                        offsets=[],
+                        sizes=[],
+                        strides=[],
+                        ip=ctx.get_ip(),
+                    )
+                    # concanate the second tensor
+                    concat_op = tensor_d.InsertSliceOp(
+                        source=new_args[1].result,
+                        dest=insert_op.result,
+                        static_offsets=new_offsets,
+                        static_sizes=list(node.args[1].shape),
+                        static_strides=strides,
+                        offsets=[],
+                        sizes=[],
+                        strides=[],
+                        ip=ctx.get_ip(),
+                    )
+                    return concat_op
+
+                concat_shape = [node.args[0].shape, node.args[1].shape]
+                memref_strides = []
+                product = 1
+                memref_strides = []
+                for size in reversed(shape):
+                    memref_strides.append(product)
+                    product *= size
+                memref_strides.reverse()
+                memref_offsets = 1
+                for size in concat_shape[0][axis:]:
+                    memref_offsets *= size
+                result = [
+                    Type.parse(
+                        f"memref<{'x'.join([str(x) for x in concat_shape[0]])}x{dtype}, strided<{memref_strides}>>"
+                    ),
+                    Type.parse(
+                        f"memref<{'x'.join([str(x) for x in concat_shape[1]])}x{dtype}, strided<{memref_strides}, offset: {memref_offsets}>>"
+                    ),
+                ]
+                op_ = memref_d.SubViewOp(
+                    source=alloc_op,
+                    result=result[0],
+                    static_offsets=offsets,
+                    static_sizes=list(node.args[0].shape),
+                    static_strides=strides,
+                    offsets=[],
+                    sizes=[],
+                    strides=[],
+                    ip=ctx.get_ip(),
+                )
+                memref_d.CopyOp(
+                    new_args[0].result,
+                    op_,
+                    ip=ctx.get_ip(),
+                )
+                view_op = memref_d.SubViewOp(
+                    source=alloc_op,
+                    result=result[1],
+                    static_offsets=new_offsets,
+                    static_sizes=list(node.args[1].shape),
+                    static_strides=strides,
+                    offsets=[],
+                    sizes=[],
+                    strides=[],
+                    ip=ctx.get_ip(),
+                )
+                memref_d.CopyOp(
+                    new_args[1].result,
+                    view_op,
+                    ip=ctx.get_ip(),
+                )
+                return alloc_op
             # init zero
             zero = MockConstant(0, ctx)
             zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
@@ -1714,12 +1799,18 @@ class ASTTransformer(ASTBuilder):
                 matmul = ASTTransformer.build_library_op(
                     ctx, node, inner_attr, [new_args[0], A_T]
                 )
-                dims = list(range(len(node.shape) - 1))
-                bias = ASTTransformer.build_broadcast_op(
-                    ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dims
-                )
-                add = ASTTransformer.build_library_op(ctx, node, "add", [matmul, bias])
-                return add
+                # bias = True
+                if len(new_args) == 3:
+                    dims = list(range(len(node.shape) - 1))
+                    bias = ASTTransformer.build_broadcast_op(
+                        ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dims
+                    )
+                    add = ASTTransformer.build_library_op(
+                        ctx, node, "add", [matmul, bias]
+                    )
+                    return add
+                # bias = False
+                return matmul
             else:
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
