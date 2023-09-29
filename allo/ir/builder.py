@@ -1799,8 +1799,12 @@ class ASTTransformer(ASTBuilder):
                 matmul = ASTTransformer.build_library_op(
                     ctx, node, inner_attr, [new_args[0], A_T]
                 )
+
                 # bias = True
-                if len(new_args) == 3:
+                if len(new_args) == 3 and (
+                    not isinstance(node.args[2], ast.Constant)
+                    or node.args[2].value is not None
+                ):
                     dims = list(range(len(node.shape) - 1))
                     bias = ASTTransformer.build_broadcast_op(
                         ctx, new_args[2], node.dtype, node.shape[-1:], node.shape, dims

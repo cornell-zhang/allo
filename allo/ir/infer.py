@@ -92,6 +92,8 @@ class TypeInferer(ASTVisitor):
             node.dtype = int32
         elif isinstance(node.value, float):
             node.dtype = float32
+        elif node.value is None:
+            return ASTResolver.resolve_constant(node.value, ctx)
         else:
             raise RuntimeError("Unsupported constant type")
         return node
@@ -667,7 +669,7 @@ class TypeInferer(ASTVisitor):
                 assert len(argBshape) == 2
                 assert argAshape[-1] == argBshape[-1]
                 # bias = True
-                if len(new_args) == 3:
+                if len(new_args) == 3 and new_args[2] is not None:
                     assert argBshape[0] == new_args[2].shape[0]
                 node.shape = argAshape[:-1] + argBshape[:-1]
             return node
