@@ -29,8 +29,8 @@ from hcl_mlir.ir import (
     TypeAttr,
     ArrayAttr,
     Attribute,
-    Type,
 )
+from hcl_mlir.ir import Type as MLIRType
 from hcl_mlir.dialects import (
     hcl as hcl_d,
     func as func_d,
@@ -1599,10 +1599,10 @@ class ASTTransformer(ASTBuilder):
                 for size in concat_shape[0][axis:]:
                     memref_offsets *= size
                 result = [
-                    Type.parse(
+                    MLIRType.parse(
                         f"memref<{'x'.join([str(x) for x in concat_shape[0]])}x{dtype}, strided<{memref_strides}>>"
                     ),
-                    Type.parse(
+                    MLIRType.parse(
                         f"memref<{'x'.join([str(x) for x in concat_shape[1]])}x{dtype}, strided<{memref_strides}, offset: {memref_offsets}>>"
                     ),
                 ]
