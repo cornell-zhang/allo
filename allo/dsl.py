@@ -127,9 +127,10 @@ def sumpool(inp, filter, name=None):
     return np.sum(sub_matrices, axis=(4, 5))
 
 
-def linear(X, A, B, name=None):
-    # TODO: Handle bias=None
-    return matmul(X, A.T) + B
+def linear(X, A, bias=None, name=None):
+    if bias is None:
+        return matmul(X, A.T)
+    return matmul(X, A.T) + bias
 
 
 def view(x, shape, name=None):
@@ -153,3 +154,7 @@ def ones(shape, dtype=None):
 
 def tril(x):
     return np.tril(x)
+
+
+def concat(x, y, axis=0):
+    return np.concatenate((x, y), axis=axis)
