@@ -5,7 +5,11 @@
 import os
 import re
 import numpy as np
-from prettytable import PrettyTable
+
+try:
+    from prettytable import PrettyTable
+except ImportError:
+    pass
 from hcl_mlir.ir import (
     Location,
     MemRefType,
