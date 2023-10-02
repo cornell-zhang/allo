@@ -22,7 +22,9 @@ from ..customize import customize
 from ..passes import monitor_memory_usage
 
 
-def from_pytorch(model, example_inputs, verbose=False, enable_tensor=False, monitor_memory=False):
+def from_pytorch(
+    model, example_inputs, verbose=False, enable_tensor=False, monitor_memory=False
+):
     sig = inspect.signature(model.forward)
     input_names = [
         p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
@@ -56,11 +58,15 @@ def from_pytorch(model, example_inputs, verbose=False, enable_tensor=False, moni
 
     builder = TorchBuilder(gm, example_inputs)
     code = builder.build()
-    s = customize(code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor)
+    s = customize(
+        code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
+    )
     mod = s.build()
     if monitor_memory:
         print(s.module)
-        monitor_memory_table = monitor_memory_usage(s.module, mod.intermediate_module, enable_tensor)
+        monitor_memory_table = monitor_memory_usage(
+            s.module, mod.intermediate_module, enable_tensor
+        )
         print(monitor_memory_table)
     if verbose:
         print(s.module)

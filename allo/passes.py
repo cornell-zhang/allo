@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks
 
 import os
 import re
@@ -400,10 +400,11 @@ def monitor_memory_usage(module, intermediate_module=None, enable_tensor=False):
             memref_table = monitor_memref_usage(intermediate_module)
         else:
             raise NotImplementedError("No intermediate module found")
-        return str(tensor_table) + "\n" + str(memref_table)
+        result = str(tensor_table) + "\n" + str(memref_table)
     else:
         memref_table = monitor_memref_usage(module)
-        return str(memref_table)
+        result = str(memref_table)
+    return result
 
 
 def monitor_tensor_usage(module):
@@ -426,7 +427,7 @@ def monitor_tensor_usage(module):
                                 zero_const.append(name)
                     # record zero constants from casting
                     elif isinstance(body_op, arith_d.SIToFPOp):
-                        match = re.search(r'arith\.sitofp\s(.*?):',str(body_op))
+                        match = re.search(r"arith\.sitofp\s(.*?):", str(body_op))
                         extracted_str = match.group(1).strip()  # 去除首尾空格
                         if extracted_str in zero_const:
                             name = str(body_op).split("=", maxsplit=1)[0].strip()
@@ -468,7 +469,13 @@ def monitor_tensor_usage(module):
         table_data.append(
             [key, value[0][0], value[0][1], value[0][2], "\n".join(value[1:])]
         )
-    table.field_names = ["name(tensor)", "shape", "dtype", "store counts", "other names"]
+    table.field_names = [
+        "name(tensor)",
+        "shape",
+        "dtype",
+        "store counts",
+        "other names",
+    ]
     for row in table_data:
         table.add_row(row, divider=True)
     table.add_row(
@@ -484,7 +491,7 @@ def monitor_tensor_usage(module):
 
 
 # monitor memory usage
-def monitor_memref_usage(module, enable_tensor=False):
+def monitor_memref_usage(module):
     # find storeop in forop
     def find_storeop_in_forop(op):
         result = None
@@ -501,6 +508,7 @@ def monitor_memref_usage(module, enable_tensor=False):
                 elif result is not None and result_iter is not None:
                     raise NotImplementedError("Multiple storeops found")
         return result
+
     mem_alloc = {}
     zero_const = []
     table_data = []
