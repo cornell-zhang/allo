@@ -3,7 +3,9 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import os
+import re
 import numpy as np
+from prettytable import PrettyTable
 from hcl_mlir.ir import (
     Location,
     MemRefType,
@@ -18,6 +20,8 @@ from hcl_mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
+    F32Type,
+    IndexType,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -26,6 +30,8 @@ from hcl_mlir.dialects import (
     memref as memref_d,
     linalg as linalg_d,
     arith as arith_d,
+    scf as scf_d,
+    tensor as tensor_d,
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
@@ -384,3 +390,208 @@ def update_generic_op(op, name, shape):
             raise NotImplementedError("Unsupported gelu shape")
     else:
         raise NotImplementedError("Unsupported function")
+
+
+# monitor memory usage
+def monitor_memory_usage(module, intermediate_module=None, enable_tensor=False):
+    if enable_tensor:
+        tensor_table = monitor_tensor_usage(module)
+        if intermediate_module is not None:
+            memref_table = monitor_memref_usage(intermediate_module)
+        else:
+            raise NotImplementedError("No intermediate module found")
+        return str(tensor_table) + "\n" + str(memref_table)
+    else:
+        memref_table = monitor_memref_usage(module)
+        return str(memref_table)
+
+
+def monitor_tensor_usage(module):
+    tensor_empty = {}
+    zero_const = []
+    table_data = []
+    table = PrettyTable()
+    total_tensor_count = 0
+    for op in module.body.operations:
+        if isinstance(op, func_d.FuncOp):
+            if not op.is_external:
+                for body_op in op.entry_block.operations:
+                    # record zero constants
+                    if isinstance(body_op, arith_d.ConstantOp):
+                        dtype = body_op.type
+                        if isinstance(dtype, (IntegerType, F32Type)):
+                            value = body_op.literal_value
+                            if value == 0:
+                                name = str(body_op).split("=", maxsplit=1)[0].strip()
+                                zero_const.append(name)
+                    # record zero constants from casting
+                    elif isinstance(body_op, arith_d.SIToFPOp):
+                        match = re.search(r'arith\.sitofp\s(.*?):',str(body_op))
+                        extracted_str = match.group(1).strip()  # 去除首尾空格
+                        if extracted_str in zero_const:
+                            name = str(body_op).split("=", maxsplit=1)[0].strip()
+                            zero_const.append(name)
+                    # record tensor.empty
+                    elif isinstance(body_op, tensor_d.EmptyOp):
+                        tensor_name = str(body_op).split("=", maxsplit=1)[0].strip()
+                        tensor_empty[tensor_name] = []
+                        tensor_type = body_op.result.type
+                        tensor_shape = tensor_type.shape
+                        tensor_dtype = str(tensor_type.element_type)
+                        store_count = 0
+                        tensor_empty[tensor_name].append(
+                            [tensor_shape, tensor_dtype, store_count]
+                        )
+                        total_tensor_count += 1
+                    # record storage to tensor.empty
+                    elif str(body_op).find("linalg") != -1:
+                        result = str(body_op).split("=", maxsplit=1)[0].strip()
+                        ins = (
+                            str(body_op.operands[0].owner)
+                            .split("=", maxsplit=1)[0]
+                            .strip()
+                        )
+                        outs = (
+                            str(body_op.operands[1].owner)
+                            .split("=", maxsplit=1)[0]
+                            .strip()
+                        )
+                        for key, value_list in tensor_empty.items():
+                            if outs == key or outs in value_list:
+                                if ins in zero_const:
+                                    value_list.append("(0)")
+                                    value_list.append(result)
+                                else:
+                                    value_list.append(result)
+                                    value_list[0][-1] += 1
+    for key, value in tensor_empty.items():
+        table_data.append(
+            [key, value[0][0], value[0][1], value[0][2], "\n".join(value[1:])]
+        )
+    table.field_names = ["name(tensor)", "shape", "dtype", "store counts", "other names"]
+    for row in table_data:
+        table.add_row(row, divider=True)
+    table.add_row(
+        [
+            "Total(" + str(total_tensor_count) + ")",
+            "",
+            "",
+            "",
+            "*other names: names\n of tensor after linalg",
+        ]
+    )
+    return table
+
+
+# monitor memory usage
+def monitor_memref_usage(module, enable_tensor=False):
+    # find storeop in forop
+    def find_storeop_in_forop(op):
+        result = None
+        for body_op in op.body.operations:
+            if isinstance(body_op, memref_d.StoreOp):
+                result = body_op
+            elif isinstance(body_op, scf_d.ForOp):
+                result_iter = find_storeop_in_forop(body_op)
+                if result is None:
+                    if result_iter is not None:
+                        result = result_iter
+                    else:
+                        raise NotImplementedError("No storeop found")
+                elif result is not None and result_iter is not None:
+                    raise NotImplementedError("Multiple storeops found")
+        return result
+    mem_alloc = {}
+    zero_const = []
+    table_data = []
+    table = PrettyTable()
+    total_alloc_count = 0
+    total_memory_bits = 0
+    total_bram = 0
+    for op in module.body.operations:
+        if isinstance(op, func_d.FuncOp):
+            if not op.is_external:
+                for body_op in op.entry_block.operations:
+                    # record zero constants
+                    if isinstance(body_op, arith_d.ConstantOp):
+                        dtype = body_op.type
+                        if not isinstance(dtype, IndexType):
+                            value = body_op.literal_value
+                            if value == 0:
+                                name = str(body_op).split("=", maxsplit=1)[0].strip()
+                                zero_const.append(name)
+                    # record memref.alloc
+                    if isinstance(body_op, memref_d.AllocOp):
+                        alloc_name = str(body_op).split("=", maxsplit=1)[0].strip()
+                        mem_alloc[alloc_name] = []
+                        mem_type = body_op.result.type
+                        mem_shape = mem_type.shape
+                        mem_dtype = str(mem_type.element_type)
+                        mem_bits = 1
+                        for dim in mem_shape:
+                            mem_bits *= dim
+                        data_bits = int(re.search(r"\d+", mem_dtype).group())
+                        mem_bits *= data_bits
+                        bram = round(mem_bits / 18 * 1024, 2)
+                        store_count = 0
+                        mem_alloc[alloc_name].append(
+                            [mem_shape, mem_dtype, mem_bits, bram, store_count]
+                        )
+                        total_alloc_count += 1
+                        total_memory_bits += mem_bits
+                        total_bram += bram
+                    # record storage to memref.alloc
+                    elif isinstance(body_op, scf_d.ForOp):
+                        store_op = find_storeop_in_forop(body_op)
+                        if isinstance(store_op, memref_d.StoreOp):
+                            value_name = (
+                                str(store_op.value.owner)
+                                .split("=", maxsplit=1)[0]
+                                .strip()
+                            )
+                            if value_name not in zero_const:
+                                memref_name = (
+                                    str(store_op.memref.owner)
+                                    .split("=", maxsplit=1)[0]
+                                    .strip()
+                                )
+                                if memref_name in mem_alloc:
+                                    mem_alloc[memref_name].append(
+                                        str(store_op.value.owner)
+                                    )
+                                    mem_alloc[memref_name][0][-1] += 1
+    for key, value in mem_alloc.items():
+        table_data.append(
+            [
+                key,
+                value[0][0],
+                value[0][1],
+                value[0][2],
+                value[0][3],
+                value[0][4],
+                "\n".join(value[1:]),
+            ]
+        )
+    table.field_names = [
+        "name(memref)",
+        "shape",
+        "dtype",
+        "mem(bits)",
+        "BRAM(18K)",
+        "store counts",
+        "data storage",
+    ]
+    for row in table_data:
+        table.add_row(row, divider=True)
+    table.add_row(
+        [
+            "Total(" + str(total_alloc_count) + ")",
+            "",
+            "",
+            total_memory_bits,
+            total_bram,
+            "",
+            "*data storage: data stored into an allocated memory. Doesn't include init.",
+        ]
+    )
+    return table
