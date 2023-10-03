@@ -5,11 +5,8 @@
 import os
 import re
 import numpy as np
+from tabulate import tabulate
 
-try:
-    from prettytable import PrettyTable
-except ImportError:
-    pass
 from hcl_mlir.ir import (
     Location,
     MemRefType,
@@ -415,7 +412,6 @@ def monitor_tensor_usage(module):
     tensor_empty = {}
     zero_const = []
     table_data = []
-    table = PrettyTable()
     total_tensor_count = 0
     for op in module.body.operations:
         if isinstance(op, func_d.FuncOp):
@@ -432,7 +428,7 @@ def monitor_tensor_usage(module):
                     # record zero constants from casting
                     elif isinstance(body_op, arith_d.SIToFPOp):
                         match = re.search(r"arith\.sitofp\s(.*?):", str(body_op))
-                        extracted_str = match.group(1).strip()  # 去除首尾空格
+                        extracted_str = match.group(1).strip()
                         if extracted_str in zero_const:
                             name = str(body_op).split("=", maxsplit=1)[0].strip()
                             zero_const.append(name)
@@ -473,16 +469,7 @@ def monitor_tensor_usage(module):
         table_data.append(
             [key, value[0][0], value[0][1], value[0][2], "\n".join(value[1:])]
         )
-    table.field_names = [
-        "name(tensor)",
-        "shape",
-        "dtype",
-        "store counts",
-        "other names",
-    ]
-    for row in table_data:
-        table.add_row(row, divider=True)
-    table.add_row(
+    table_data.append(
         [
             "Total(" + str(total_tensor_count) + ")",
             "",
@@ -491,6 +478,14 @@ def monitor_tensor_usage(module):
             "*other names: names\n of tensor after linalg",
         ]
     )
+    table_headers = [
+        "name(tensor)",
+        "shape",
+        "dtype",
+        "store counts",
+        "other names",
+    ]
+    table = tabulate(table_data, headers=table_headers, tablefmt="grid")
     return table
 
 
@@ -516,7 +511,6 @@ def monitor_memref_usage(module):
     mem_alloc = {}
     zero_const = []
     table_data = []
-    table = PrettyTable()
     total_alloc_count = 0
     total_memory_bits = 0
     total_bram = 0
@@ -584,18 +578,7 @@ def monitor_memref_usage(module):
                 "\n".join(value[1:]),
             ]
         )
-    table.field_names = [
-        "name(memref)",
-        "shape",
-        "dtype",
-        "mem(bits)",
-        "BRAM(18K)",
-        "store counts",
-        "data storage",
-    ]
-    for row in table_data:
-        table.add_row(row, divider=True)
-    table.add_row(
+    table_data.append(
         [
             "Total(" + str(total_alloc_count) + ")",
             "",
@@ -606,4 +589,14 @@ def monitor_memref_usage(module):
             "*data storage: data stored into an allocated memory. Doesn't include init.",
         ]
     )
+    table_headers = [
+        "name(memref)",
+        "shape",
+        "dtype",
+        "mem(bits)",
+        "BRAM(18K)",
+        "store counts",
+        "data storage",
+    ]
+    table = tabulate(table_data, headers=table_headers, tablefmt="grid")
     return table
