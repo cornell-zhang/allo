@@ -3,23 +3,9 @@
 
 import pytest
 import allo
+import re
 from allo.ir.types import int32, float32
 from allo.passes import monitor_memory_usage
-
-
-def test_add_same_int():
-    def kernel(A: int32[32, 32]) -> int32[32, 32]:
-        B = A + A
-        C = B + B
-        D = C + C
-        E = D + D
-        return E
-
-    s = allo.customize(kernel, enable_tensor=True)
-    print(s.module)
-    mod = s.build()
-    monitor_memory_table = monitor_memory_usage(s.module, mod.intermediate_module, True)
-    print(monitor_memory_table)
 
 
 def test_add_same_float():
@@ -33,23 +19,15 @@ def test_add_same_float():
     s = allo.customize(kernel, enable_tensor=True)
     print(s.module)
     mod = s.build()
-    monitor_memory_table = monitor_memory_usage(s.module, mod.intermediate_module, True)
-    print(monitor_memory_table)
-
-
-def test_add_const_int():
-    def kernel(A: int32[32, 32]) -> int32[32, 32]:
-        B = A + 1
-        C = B + 1
-        D = C + 1
-        E = D + 1
-        return E
-
-    s = allo.customize(kernel, enable_tensor=True)
-    print(s.module)
-    mod = s.build()
-    monitor_memory_table = monitor_memory_usage(s.module, mod.intermediate_module, True)
-    print(monitor_memory_table)
+    monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
+    pattern = (
+        r"\|\s+%alloc\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
+    )
+    match = re.search(pattern, monitor_memory_table)
+    assert (
+        match.group(0).strip()
+        == "| %alloc    | [32, 32] | f32     |       32768 | 1.86414e+06 | 2              |"
+    )
 
 
 def test_add_const_float():
@@ -63,10 +41,57 @@ def test_add_const_float():
     s = allo.customize(kernel, enable_tensor=True)
     print(s.module)
     mod = s.build()
-    monitor_memory_table = monitor_memory_usage(s.module, mod.intermediate_module, True)
-    print(monitor_memory_table)
+    monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
+    pattern = (
+        r"\|\s+%alloc_1\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
+    )
+    match = re.search(pattern, monitor_memory_table)
+    assert (
+        match.group(0).strip()
+        == "| %alloc_1  | [32, 32] | f32     |       32768 |    1.86414e+06 | 2              |"
+    )
+
+
+def test_calculate():
+    def kernel(A: float32[8], B: float32[8]) -> float32[8]:
+        c: float32[8] = 3
+        return allo.exp(A * B + c)
+
+    s = allo.customize(kernel, enable_tensor=True)
+    print(s.module)
+    mod = s.build()
+    monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
+    pattern = r"\|\s+%alloc_1\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
+    match = re.search(pattern, monitor_memory_table)
+    assert (
+        match.group(0)
+        == "| %alloc_1 | [8]     | f32     |         256 |     14563.6 | 2              |"
+    )
+
+
+def test_gemm_grid_for():
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+    s.split("i", 8)
+    s.split("j", 8)
+    s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    mod = s.build()
+    print(mod.intermediate_module)
+    monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
+    pattern = (
+        r"\|\s+%alloc\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+1\s+\|"
+    )
+    match = re.search(pattern, monitor_memory_table)
+    assert (
+        match.group(0).strip()
+        == "| %alloc   | [32, 32] | i32     |       32768 | 1.86414e+06 | 1              |"
+    )
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_add_same_int()
+    pytest.main([__file__])

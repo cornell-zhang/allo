@@ -21,7 +21,6 @@ from hcl_mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
-    F32Type,
     IndexType,
 )
 from hcl_mlir.dialects import (
@@ -32,7 +31,6 @@ from hcl_mlir.dialects import (
     linalg as linalg_d,
     arith as arith_d,
     scf as scf_d,
-    tensor as tensor_d,
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
@@ -393,105 +391,7 @@ def update_generic_op(op, name, shape):
         raise NotImplementedError("Unsupported function")
 
 
-# monitor memory usage
-def monitor_memory_usage(module, intermediate_module=None, enable_tensor=False):
-    if enable_tensor:
-        tensor_table = monitor_tensor_usage(module)
-        if intermediate_module is not None:
-            memref_table = monitor_memref_usage(intermediate_module)
-        else:
-            raise NotImplementedError("No intermediate module found")
-        result = str(tensor_table) + "\n" + str(memref_table)
-    else:
-        memref_table = monitor_memref_usage(module)
-        result = str(memref_table)
-    return result
-
-
-def monitor_tensor_usage(module):
-    tensor_empty = {}
-    zero_const = []
-    table_data = []
-    total_tensor_count = 0
-    for op in module.body.operations:
-        if isinstance(op, func_d.FuncOp):
-            if not op.is_external:
-                for body_op in op.entry_block.operations:
-                    # record zero constants
-                    if isinstance(body_op, arith_d.ConstantOp):
-                        dtype = body_op.type
-                        if isinstance(dtype, (IntegerType, F32Type)):
-                            value = body_op.literal_value
-                            if value == 0:
-                                name = str(body_op).split("=", maxsplit=1)[0].strip()
-                                zero_const.append(name)
-                    # record zero constants from casting
-                    elif isinstance(body_op, arith_d.SIToFPOp):
-                        match = re.search(r"arith\.sitofp\s(.*?):", str(body_op))
-                        extracted_str = match.group(1).strip()
-                        if extracted_str in zero_const:
-                            name = str(body_op).split("=", maxsplit=1)[0].strip()
-                            zero_const.append(name)
-                    # record tensor.empty
-                    elif isinstance(body_op, tensor_d.EmptyOp):
-                        tensor_name = str(body_op).split("=", maxsplit=1)[0].strip()
-                        tensor_empty[tensor_name] = []
-                        tensor_type = body_op.result.type
-                        tensor_shape = tensor_type.shape
-                        tensor_dtype = str(tensor_type.element_type)
-                        store_count = 0
-                        tensor_empty[tensor_name].append(
-                            [tensor_shape, tensor_dtype, store_count]
-                        )
-                        total_tensor_count += 1
-                    # record storage to tensor.empty
-                    elif str(body_op).find("linalg") != -1:
-                        result = str(body_op).split("=", maxsplit=1)[0].strip()
-                        ins = (
-                            str(body_op.operands[0].owner)
-                            .split("=", maxsplit=1)[0]
-                            .strip()
-                        )
-                        outs = (
-                            str(body_op.operands[1].owner)
-                            .split("=", maxsplit=1)[0]
-                            .strip()
-                        )
-                        for key, value_list in tensor_empty.items():
-                            if outs == key or outs in value_list:
-                                if ins in zero_const:
-                                    value_list.append("(0)")
-                                    value_list.append(result)
-                                else:
-                                    value_list.append(result)
-                                    value_list[0][-1] += 1
-    for key, value in tensor_empty.items():
-        table_data.append(
-            [key, value[0][0], value[0][1], value[0][2], "\n".join(value[1:])]
-        )
-    table_data.append(
-        [
-            "Total(" + str(total_tensor_count) + ")",
-            "",
-            "",
-            "",
-            "*other names: names\n of tensor after linalg",
-        ]
-    )
-    table_headers = [
-        "name(tensor)",
-        "shape",
-        "dtype",
-        "store counts",
-        "other names",
-    ]
-    table = tabulate(table_data, headers=table_headers, tablefmt="grid")
-    return table
-
-
-# monitor memory usage
-def monitor_memref_usage(module):
-    # find storeop in forop
+def monitor_memory_usage(intermediate_module):
     def find_storeop_in_forop(op):
         result = None
         for body_op in op.body.operations:
@@ -502,10 +402,8 @@ def monitor_memref_usage(module):
                 if result is None:
                     if result_iter is not None:
                         result = result_iter
-                    else:
-                        raise NotImplementedError("No storeop found")
-                elif result is not None and result_iter is not None:
-                    raise NotImplementedError("Multiple storeops found")
+                        break
+                    raise NotImplementedError("No storeop found")
         return result
 
     mem_alloc = {}
@@ -514,7 +412,7 @@ def monitor_memref_usage(module):
     total_alloc_count = 0
     total_memory_bits = 0
     total_bram = 0
-    for op in module.body.operations:
+    for op in intermediate_module.body.operations:
         if isinstance(op, func_d.FuncOp):
             if not op.is_external:
                 for body_op in op.entry_block.operations:
@@ -590,7 +488,7 @@ def monitor_memref_usage(module):
         ]
     )
     table_headers = [
-        "name(memref)",
+        "name",
         "shape",
         "dtype",
         "mem(bits)",
@@ -599,4 +497,4 @@ def monitor_memref_usage(module):
         "data storage",
     ]
     table = tabulate(table_data, headers=table_headers, tablefmt="grid")
-    return table
+    return str(table)

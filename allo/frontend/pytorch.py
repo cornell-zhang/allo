@@ -64,9 +64,7 @@ def from_pytorch(
     mod = s.build()
     if monitor_memory:
         print(s.module)
-        monitor_memory_table = monitor_memory_usage(
-            s.module, mod.intermediate_module, enable_tensor
-        )
+        monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
         print(monitor_memory_table)
     if verbose:
         print(s.module)
