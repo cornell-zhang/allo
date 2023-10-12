@@ -66,6 +66,7 @@ def from_pytorch(
         print(s.module)
         monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
         print(monitor_memory_table)
+        print(mod.intermediate_module)
     if verbose:
         print(s.module)
     return mod

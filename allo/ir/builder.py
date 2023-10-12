@@ -1639,19 +1639,33 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return alloc_op
-            # init zero
-            zero = MockConstant(0, ctx)
-            zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-            # pylint: disable=unexpected-keyword-arg
-            linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
-            result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
-            ASTTransformer.attach_op_name(
-                ctx,
-                node,
-                linalg_fill.owner,
-                f"{attr}_init_zero",
-                postfix="init_zero",
-            )
+            if (
+                attr
+                in {
+                    "matmul",
+                    "bmm",
+                    "conv2d",
+                    "maxpool",
+                    "sumpool",
+                    "relu",
+                }
+                or ctx.enable_tensor
+            ):
+                # init zero
+                zero = MockConstant(0, ctx)
+                zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
+                # pylint: disable=unexpected-keyword-arg
+                linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
+                result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
+                ASTTransformer.attach_op_name(
+                    ctx,
+                    node,
+                    linalg_fill.owner,
+                    f"{attr}_init_zero",
+                    postfix="init_zero",
+                )
+            else:
+                result_tensor = alloc_op
             # build linalg op
             if attr in {
                 "matmul",
@@ -1728,17 +1742,25 @@ class ASTTransformer(ASTBuilder):
                     output=result_tensor if ctx.enable_tensor else result_tensor.result,
                 )
             elif attr == "relu":
-                # TODO: Need to better manage library call
-                zero_op = ASTTransformer.build_array(ctx, dtype, shape)
-                # init zero
-                zero = MockConstant(0, ctx)
-                # TODO: support tensor
-                # pylint: disable=unexpected-keyword-arg
-                linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
-                op = linalg_d.max(
-                    new_args[0].result, zero_op.result, outs=[result_tensor]
-                )
-                op = op.owner
+                if ctx.enable_tensor:
+                    # TODO: Need to better manage library call
+                    zero_op = ASTTransformer.build_array(ctx, dtype, shape)
+                    # init zero
+                    zero = MockConstant(0, ctx)
+                    # TODO: support tensor
+                    # pylint: disable=unexpected-keyword-arg
+                    linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
+                    op = linalg_d.max(
+                        new_args[0].result, zero_op.result, outs=[result_tensor]
+                    )
+                    op = op.owner
+                else:
+                    op = linalg_d.max(
+                        new_args[0].result,
+                        result_tensor if ctx.enable_tensor else result_tensor.result,
+                        outs=[result_tensor],
+                    )
+                    op = op.owner
             elif attr == "transpose":
                 op = linalg_d.TransposeOp(
                     inputs=[new_args[0].result],
