@@ -195,7 +195,10 @@ def load_weights(model, emb_model):
     emb_model.load_state_dict(dic_emb)
 
 
-def llvm_generate(input_text, model, embeddings, n_tokens_to_generate):
+def llvm_generate(input_text, n_tokens_to_generate):
+    model = GPTneo(vocab_size, n_embd, n_head, n_layers, max_seq_len).eval()
+    embeddings = Embedding(vocab_size, n_position, n_embd).eval()
+    load_weights(model, embeddings)
     tokenizer = AutoTokenizer.from_pretrained(
         "EleutherAI/gpt-neo-125M", is_split_into_words=True
     )
@@ -277,11 +280,8 @@ n_position = 2048
 max_seq_len = 20
 input_text = "This cute cat is"
 
-module = GPTneo(vocab_size, n_embd, n_head, n_layers, max_seq_len).eval()
-embeddings = Embedding(vocab_size, n_position, n_embd).eval()
 
-load_weights(module, embeddings)
-llvm_out_text = llvm_generate(input_text, module, embeddings, max_seq_len)
+llvm_out_text = llvm_generate(input_text, max_seq_len)
 gptneo_out_text = gptneo_generate(input_text, max_seq_len)
 
 print(f"        input: {input_text}")
