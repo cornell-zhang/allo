@@ -1,10 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=too-many-public-methods
 
 import operator
 import inspect
 import math
-import warnings
 
 try:
     import torch
@@ -21,7 +21,7 @@ from ..ir import types
 from ..customize import customize
 
 
-def from_pytorch(model, example_inputs, verbose=False):
+def from_pytorch(model, example_inputs, customed_leaf_module=None, verbose=False):
     sig = inspect.signature(model.forward)
     input_names = [
         p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
@@ -34,7 +34,9 @@ def from_pytorch(model, example_inputs, verbose=False):
     for item in concrete_args.values():
         args.append(item)
 
-    tracer = AlloTracer(model, concrete_args=concrete_args)
+    tracer = AlloTracer(
+        model, concrete_args=concrete_args, customed_leaf_module=customed_leaf_module
+    )
     graph = tracer.trace()
     name = (
         model.__class__.__name__
@@ -53,7 +55,7 @@ def from_pytorch(model, example_inputs, verbose=False):
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs)
+    builder = TorchBuilder(gm, example_inputs, customed_leaf_module)
     code = builder.build()
     s = customize(code, verbose=verbose, global_vars=global_vars)
     mod = s.build()
@@ -67,25 +69,45 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm, example_inputs):
+    def __init__(self, gm, example_inputs, customed_leaf_module=None):
         self.gm = gm
         self.code = []
+        self.input_names = []
+        self.input_shapes = []
+        self.example_inputs = example_inputs
+        self.customed_leaf_module = customed_leaf_module
         self.input_args = []
-        self.input_shapes = [x.shape for x in example_inputs]
         self.named_params = gm.named_parameters()
-        self.output = None
+        self.output = []
 
     def build(self):
         for node in self.gm.graph.nodes:
             self(node)
+        for i, x in enumerate(self.example_inputs):
+            if isinstance(x, torch.Tensor):
+                self.input_shapes.append(x.shape)
+                self.input_args.append(self.input_names[i])
+            elif isinstance(x, (list, tuple)):
+                input_name = self.input_names[i]
+                for num, item in enumerate(x):
+                    if isinstance(item, torch.Tensor):
+                        self.input_shapes.append(item.shape)
+                        self.input_args.append(f"{input_name}_{num}")
+                    else:
+                        raise NotImplementedError("Unsupported input type")
+            elif isinstance(x, int):
+                self.input_shapes.append(None)
+                self.input_args.append(self.input_names[i])
         args = [
             f"{name}: float32[{', '.join([str(s) for s in shape])}]"
+            if shape
+            else f"{name}: int32"
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
         # inputs
         res = f"def forward({', '.join(args)})".format()
         # outputs
-        res += f" -> {self.output}:\n"
+        res += f" -> ({', '.join(self.output)}):\n"
         # global parameters
         if self.named_params:
             for name, param in self.named_params:
@@ -107,7 +129,7 @@ class TorchBuilder:
         return dict(self.gm.named_modules())[name]
 
     def build_placeholder(self, node):
-        self.input_args.append(node.name)
+        self.input_names.append(node.name)
 
     def build_getattr(self, node):
         pass
@@ -120,6 +142,8 @@ class TorchBuilder:
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
         }.get(type(module), None)
+        if self.customed_leaf_module and isinstance(module, self.customed_leaf_module):
+            return getattr(self, f"build_{module.__class__.__name__}")(node)
         if op is None:
             raise NotImplementedError("Unsupported module")
         if op == "linear":
@@ -133,8 +157,10 @@ class TorchBuilder:
             operator.sub: "sub",
             operator.mul: "mul",
             operator.truediv: "div",
+            operator.getitem: "getitem",
             torch.matmul: "matmul",
             torch.ones: "ones",
+            torch.zeros: "zeros",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.linear: "linear",
@@ -142,6 +168,7 @@ class TorchBuilder:
             F.relu: "relu",
             F.dropout: "identity",
             torch.tril: "tril",
+            torch.cat: "concat",
         }.get(node.target)
         # Only nodes with shape need to be built.
         return (
@@ -161,28 +188,42 @@ class TorchBuilder:
         )
 
     def build_output(self, node):
-        if len(node.args) > 1:
-            warnings.warn(
-                "Currently we only support return a single value", RuntimeWarning
-            )
-        if isinstance(node.meta["tensor_meta"], TensorMetadata):
-            output_tensor_meta = node.meta["tensor_meta"]
-        elif isinstance(node.meta["tensor_meta"], tuple):
-            output_tensor_meta = node.meta["tensor_meta"][0]
-        elif isinstance(node.meta["tensor_meta"], dict):
-            output_tensor_meta = list(node.meta["tensor_meta"].values())[0]
-        else:
-            raise NotImplementedError("Unsupported output type")
-        shape = str(list(output_tensor_meta.shape))
-        dtype = str(output_tensor_meta.dtype)[6:]
-        self.output = dtype + shape
-
+        for output in node.meta["tensor_meta"]:
+            if isinstance(output, TensorMetadata):
+                output_tensor_meta = output
+                shape = str(list(output_tensor_meta.shape))
+                dtype = str(output_tensor_meta.dtype)[6:]
+                self.output.append(dtype + shape)
+            elif isinstance(output, (list, tuple)):
+                for item in output:
+                    if isinstance(item, TensorMetadata):
+                        output_tensor_meta = item
+                        shape = str(list(output_tensor_meta.shape))
+                        dtype = str(output_tensor_meta.dtype)[6:]
+                        self.output.append(dtype + shape)
+                    else:
+                        raise NotImplementedError("Unsupported output type")
+            elif isinstance(output, dict):
+                output_tensor_meta = list(output.values())[0]
+                shape = str(list(output_tensor_meta.shape))
+                dtype = str(output_tensor_meta.dtype)[6:]
+                self.output.append(dtype + shape)
+            else:
+                raise NotImplementedError("Unsupported output type")
         name = get_var_name(node.args[0])
-        if isinstance(name, (tuple, str)):
-            return f"return ({name[0] if isinstance(name, tuple) else name})"
-        if isinstance(name, dict):
-            return f"return ({list(name.values())[0]})"
-        raise NotImplementedError("Unsupported output type")
+        return_name = (
+            str(name)
+            .replace("(", "")
+            .replace(")", "")
+            .replace("[", "")
+            .replace("]", "")
+        )
+        return f"return ({return_name})"
+
+    def build_getitem(self, node):
+        inp = get_var_name(node.args[0])
+        index = node.args[1]
+        return f"{node.name} = dsl.copy({inp}_{index})"
 
     def build_add(self, node):
         lhs = get_var_name(node.args[0])
@@ -279,6 +320,79 @@ class TorchBuilder:
             dtype = str(dtype)[6:]
         return f"{node.name} = dsl.ones({shape}, dtype={dtype})"
 
+    def build_zeros(self, node):
+        shape = tuple(node.meta["tensor_meta"].shape)
+        dtype = node.meta["tensor_meta"].dtype
+        if str(dtype).startswith("torch."):
+            dtype = str(dtype)[6:]
+        return f"{node.name} = dsl.zeros({shape}, dtype={dtype})"
+
     def build_tril(self, node):
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.tril({inp})"
+
+    def build_concat(self, node):
+        shape_len = len(node.meta["tensor_meta"].shape)
+        tensor_A = get_var_name(node.args[0][0])
+        tensor_B = get_var_name(node.args[0][1])
+        dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
+        return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
+
+    def build_Attention_core(self, node):
+        """
+        This function in Allo representation is equivalent to the following PyTorch snippet,
+        describing the Attention computation core in GPT Attention:
+        ```
+        def forward(self, q, k_cache, v_cache, n_tokens):
+            cmp_k = k_cache[:, :, : n_tokens + 1, :]
+            cmp_v = v_cache[:, :, : n_tokens + 1, :]
+            attn = torch.matmul(q, cmp_k.transpose(-2, -1))
+            attn = F.softmax(attn, dim=-1)
+            attn = torch.matmul(attn, cmp_v)
+            return attn
+        ```
+        """
+        attn = f"{node.name}_atten"
+        sumRow = f"{node.name}_sumRow"
+        shape = tuple(node.meta["tensor_meta"][0])
+        res = f"tmp: float32{list(shape)} = 0.0\n"
+        res += f"  {attn}: float32{list(shape)} = 0.0\n"
+        res += f"  {sumRow}: float32{list(shape[:3])} = 0.0\n"
+        res += f"  for i, j, p in dsl.grid{shape[:3]}:\n"
+        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
+        res += f"      for l in range({shape[-1]}):\n"
+        res += f"        tmp[i, j, p, m] += {node.args[0]}[i, j, p, l] * {node.args[1]}[i, j, m, l]\n"
+        res += "      tmp[i, j, p, m] = dsl.exp(tmp[i, j, p, m])\n"
+        res += f"      {sumRow}[i, j, p] += tmp[i, j, p, m]\n"
+        res += f"  for i, j, p in dsl.grid{shape[:3]}:\n"
+        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
+        res += f"      tmp[i, j, p, m] = tmp[i, j, p, m] / {sumRow}[i, j, p]\n"
+
+        res += f"  for i, j, p, l in dsl.grid{shape}:\n"
+        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
+        res += f"      {attn}[i, j, p, l] += tmp[i, j, p, m] * {node.args[2]}[i, j, m, l]\n"
+        res += f"  {node.name} = dsl.copy({attn})"
+        return res
+
+    def build_KV_cache(self, node):
+        """
+        This function in Allo representation is equivalent to the following PyTorch snippet,
+        describing the KV_cache update in GPT Attention:
+        ```
+        def forward(self, k, k_cache, v, v_cache, n_tokens):
+            k_cache[:, :, n_tokens, :] = k[:, :, 0, :]
+            v_cache[:, :, n_tokens, :] = v[:, :, 0, :]
+            return k_cache, v_cache
+        ```
+        """
+        shape = tuple(node.meta["tensor_meta"][0][0])
+        loop_1 = shape[:2]
+        loop_2 = f"({node.args[-1]}, {node.args[-1]} + 1)"
+        res = f"for i, j in dsl.grid{loop_1}:\n"
+        res += f"    for p in range{loop_2}:\n"
+        res += f"      for m in range({shape[-1]}):\n"
+        res += f"        {node.args[1]}[i, j, p, m] = {node.args[0]}[i, j, 0, m]\n"
+        res += f"        {node.args[3]}[i, j, p, m] = {node.args[2]}[i, j, 0, m]\n"
+        res += f"  {node.name}_0 = dsl.copy({node.args[1]})\n"
+        res += f"  {node.name}_1 = dsl.copy({node.args[3]})"
+        return res

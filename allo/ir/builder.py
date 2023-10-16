@@ -1447,16 +1447,20 @@ class ASTTransformer(ASTBuilder):
                 )
                 return
             fn_name = obj.__name__
-            if fn_name == "ones":
+            if fn_name in {"zeros", "ones"}:
                 shape = node.shape
                 dtype = node.dtype
                 with ctx.get_ip():
                     alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                    one = MockConstant(1, ctx)
-                    one = ASTTransformer.build_cast_op(ctx, one, Int(32), node.dtype)
+                    res = (
+                        MockConstant(1, ctx)
+                        if fn_name == "ones"
+                        else MockConstant(0, ctx)
+                    )
+                    op = ASTTransformer.build_cast_op(ctx, res, Int(32), node.dtype)
                     # pylint: disable=unexpected-keyword-arg
-                    ones = linalg_d.fill(one.result, outs=[alloc_op.result])
-                    return ones.owner if ctx.enable_tensor else alloc_op
+                    op = linalg_d.fill(op.result, outs=[alloc_op.result])
+                    return op.owner if ctx.enable_tensor else alloc_op
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {

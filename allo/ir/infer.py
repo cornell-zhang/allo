@@ -703,7 +703,7 @@ class TypeInferer(ASTVisitor):
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
             return node
-        if op_name == "ones":
+        if op_name in {"ones", "zeros"}:
             axes = compile(ast.Expression(new_args[0]), "", "eval")
             # pylint: disable=eval-used
             axes = eval(axes)
