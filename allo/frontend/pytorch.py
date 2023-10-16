@@ -15,13 +15,13 @@ try:
     from .tracer import AlloTracer
 except ImportError:
     pass
-
+from .library import CoreAttention, KVCache
 from .. import dsl
 from ..ir import types
 from ..customize import customize
 
 
-def from_pytorch(model, example_inputs, customed_leaf_module=None, verbose=False):
+def from_pytorch(model, example_inputs, leaf_modules=None, verbose=False):
     sig = inspect.signature(model.forward)
     input_names = [
         p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
@@ -34,9 +34,7 @@ def from_pytorch(model, example_inputs, customed_leaf_module=None, verbose=False
     for item in concrete_args.values():
         args.append(item)
 
-    tracer = AlloTracer(
-        model, concrete_args=concrete_args, customed_leaf_module=customed_leaf_module
-    )
+    tracer = AlloTracer(model, concrete_args=concrete_args, leaf_modules=leaf_modules)
     graph = tracer.trace()
     name = (
         model.__class__.__name__
@@ -55,7 +53,7 @@ def from_pytorch(model, example_inputs, customed_leaf_module=None, verbose=False
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs, customed_leaf_module)
+    builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
     s = customize(code, verbose=verbose, global_vars=global_vars)
     mod = s.build()
@@ -210,6 +208,7 @@ class TorchBuilder:
                 self.output.append(dtype + shape)
             else:
                 raise NotImplementedError("Unsupported output type")
+        # Unwrap all outputs and return them
         name = get_var_name(node.args[0])
         return_name = (
             str(name)
@@ -338,61 +337,8 @@ class TorchBuilder:
         dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
         return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
 
-    def build_Attention_core(self, node):
-        """
-        This function in Allo representation is equivalent to the following PyTorch snippet,
-        describing the Attention computation core in GPT Attention:
-        ```
-        def forward(self, q, k_cache, v_cache, n_tokens):
-            cmp_k = k_cache[:, :, : n_tokens + 1, :]
-            cmp_v = v_cache[:, :, : n_tokens + 1, :]
-            attn = torch.matmul(q, cmp_k.transpose(-2, -1))
-            attn = F.softmax(attn, dim=-1)
-            attn = torch.matmul(attn, cmp_v)
-            return attn
-        ```
-        """
-        attn = f"{node.name}_atten"
-        sumRow = f"{node.name}_sumRow"
-        shape = tuple(node.meta["tensor_meta"][0])
-        res = f"tmp: float32{list(shape)} = 0.0\n"
-        res += f"  {attn}: float32{list(shape)} = 0.0\n"
-        res += f"  {sumRow}: float32{list(shape[:3])} = 0.0\n"
-        res += f"  for i, j, p in dsl.grid{shape[:3]}:\n"
-        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
-        res += f"      for l in range({shape[-1]}):\n"
-        res += f"        tmp[i, j, p, m] += {node.args[0]}[i, j, p, l] * {node.args[1]}[i, j, m, l]\n"
-        res += "      tmp[i, j, p, m] = dsl.exp(tmp[i, j, p, m])\n"
-        res += f"      {sumRow}[i, j, p] += tmp[i, j, p, m]\n"
-        res += f"  for i, j, p in dsl.grid{shape[:3]}:\n"
-        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
-        res += f"      tmp[i, j, p, m] = tmp[i, j, p, m] / {sumRow}[i, j, p]\n"
+    def build_CoreAttention(self, node):
+        return CoreAttention(node)
 
-        res += f"  for i, j, p, l in dsl.grid{shape}:\n"
-        res += f"    for m in range(0, {node.args[-1]} + 1):\n"
-        res += f"      {attn}[i, j, p, l] += tmp[i, j, p, m] * {node.args[2]}[i, j, m, l]\n"
-        res += f"  {node.name} = dsl.copy({attn})"
-        return res
-
-    def build_KV_cache(self, node):
-        """
-        This function in Allo representation is equivalent to the following PyTorch snippet,
-        describing the KV_cache update in GPT Attention:
-        ```
-        def forward(self, k, k_cache, v, v_cache, n_tokens):
-            k_cache[:, :, n_tokens, :] = k[:, :, 0, :]
-            v_cache[:, :, n_tokens, :] = v[:, :, 0, :]
-            return k_cache, v_cache
-        ```
-        """
-        shape = tuple(node.meta["tensor_meta"][0][0])
-        loop_1 = shape[:2]
-        loop_2 = f"({node.args[-1]}, {node.args[-1]} + 1)"
-        res = f"for i, j in dsl.grid{loop_1}:\n"
-        res += f"    for p in range{loop_2}:\n"
-        res += f"      for m in range({shape[-1]}):\n"
-        res += f"        {node.args[1]}[i, j, p, m] = {node.args[0]}[i, j, 0, m]\n"
-        res += f"        {node.args[3]}[i, j, p, m] = {node.args[2]}[i, j, 0, m]\n"
-        res += f"  {node.name}_0 = dsl.copy({node.args[1]})\n"
-        res += f"  {node.name}_1 = dsl.copy({node.args[3]})"
-        return res
+    def build_KVCache(self, node):
+        return KVCache(node)

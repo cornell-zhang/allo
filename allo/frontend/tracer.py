@@ -47,7 +47,7 @@ class AlloTracer(Tracer):
         "finfo",
     ]
 
-    def __init__(self, model, concrete_args, customed_leaf_module=None):
+    def __init__(self, model, concrete_args, leaf_modules=None):
         super().__init__()
         self.patched_torch_methods = {
             target: _gen_constructor_wrapper(getattr(torch, target))
@@ -56,7 +56,7 @@ class AlloTracer(Tracer):
         self.orig_fns = set()
         self.model = model
         self.concrete_args = concrete_args
-        self.customed_leaf_module = customed_leaf_module
+        self.leaf_modules = leaf_modules
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
         """
@@ -74,7 +74,7 @@ class AlloTracer(Tracer):
                 submodule ``bar``, which contains submodule ``baz``, that module will
                 appear with the qualified name ``foo.bar.baz`` here.
         """
-        if self.customed_leaf_module and isinstance(m, self.customed_leaf_module):
+        if self.leaf_modules and isinstance(m, self.leaf_modules):
             return True
         return m.__module__.startswith("torch.nn") and not isinstance(
             m, torch.nn.Sequential
