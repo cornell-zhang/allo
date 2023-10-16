@@ -1639,18 +1639,16 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return alloc_op
-            if (
-                attr
-                in {
-                    "matmul",
-                    "bmm",
-                    "conv2d",
-                    "maxpool",
-                    "sumpool",
-                    "relu",
-                }
-                or ctx.enable_tensor
-            ):
+            if attr in {
+                "matmul",
+                "matmul_transpose_b",
+                "bmm",
+                "batch_matmul_transpose_b",
+                "conv2d",
+                "maxpool",
+                "sumpool",
+                "relu",
+            }:
                 # init zero
                 zero = MockConstant(0, ctx)
                 zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
@@ -1764,9 +1762,7 @@ class ASTTransformer(ASTBuilder):
             elif attr == "transpose":
                 op = linalg_d.TransposeOp(
                     inputs=[new_args[0].result],
-                    outputs=[
-                        result_tensor if ctx.enable_tensor else result_tensor.result
-                    ],
+                    outputs=[result_tensor.result],
                     permutation=tuple(x.val for x in new_args[1]),
                     ip=ctx.get_ip(),
                 )
