@@ -1641,9 +1641,7 @@ class ASTTransformer(ASTBuilder):
                 return alloc_op
             if attr in {
                 "matmul",
-                "matmul_transpose_b",
                 "bmm",
-                "batch_matmul_transpose_b",
                 "conv2d",
                 "maxpool",
                 "sumpool",
