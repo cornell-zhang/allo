@@ -436,7 +436,7 @@ def monitor_memory_usage(intermediate_module):
                             mem_bits *= dim
                         data_bits = int(re.search(r"\d+", mem_dtype).group())
                         mem_bits *= data_bits
-                        bram = round(mem_bits / 18 * 1024, 2)
+                        bram = round(mem_bits / (18 * 1024), 2)
                         store_count = 0
                         mem_alloc[alloc_name].append(
                             [mem_shape, mem_dtype, mem_bits, bram, store_count]

@@ -20,13 +20,9 @@ def test_add_same_float():
     print(s.module)
     mod = s.build()
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
-    pattern = (
-        r"\|\s+%alloc\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
-    )
-    match = re.search(pattern, monitor_memory_table)
     assert (
-        match.group(0).strip()
-        == "| %alloc    | [32, 32] | f32     |       32768 | 1.86414e+06 | 2              |"
+        """| %alloc    | [32, 32] | f32     |       32768 | 1.86414e+06 | 2              |"""
+        in monitor_memory_table
     )
 
 
@@ -42,13 +38,9 @@ def test_add_const_float():
     print(s.module)
     mod = s.build()
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
-    pattern = (
-        r"\|\s+%alloc_1\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
-    )
-    match = re.search(pattern, monitor_memory_table)
     assert (
-        match.group(0).strip()
-        == "| %alloc_1  | [32, 32] | f32     |       32768 |    1.86414e+06 | 2              |"
+        "| %alloc_1  | [32, 32] | f32     |       32768 |    1.86414e+06 | 2              |"
+        in monitor_memory_table
     )
 
 
@@ -61,11 +53,9 @@ def test_calculate():
     print(s.module)
     mod = s.build()
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
-    pattern = r"\|\s+%alloc_1\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+2\s+\|"
-    match = re.search(pattern, monitor_memory_table)
     assert (
-        match.group(0)
-        == "| %alloc_1 | [8]     | f32     |         256 |     14563.6 | 2              |"
+        "| %alloc_1 | [8]     | f32     |         256 |     14563.6 | 2              |"
+        in monitor_memory_table
     )
 
 
@@ -83,13 +73,9 @@ def test_gemm_grid_for():
     mod = s.build()
     print(mod.intermediate_module)
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
-    pattern = (
-        r"\|\s+%alloc\s+\|\s+\S+\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+\S+\s+\|\s+1\s+\|"
-    )
-    match = re.search(pattern, monitor_memory_table)
     assert (
-        match.group(0).strip()
-        == "| %alloc   | [32, 32] | i32     |       32768 | 1.86414e+06 | 1              |"
+        "| %alloc   | [32, 32] | i32     |       32768 | 1.86414e+06 | 1              |"
+        in monitor_memory_table
     )
 
 
