@@ -4,6 +4,7 @@
 
 import os
 import re
+import math
 import numpy as np
 from tabulate import tabulate
 
@@ -436,7 +437,7 @@ def monitor_memory_usage(intermediate_module):
                             mem_bits *= dim
                         data_bits = int(re.search(r"\d+", mem_dtype).group())
                         mem_bits *= data_bits
-                        bram = round(mem_bits / (18 * 1024), 2)
+                        bram = math.ceil(mem_bits / (18 * 1024))
                         store_count = 0
                         mem_alloc[alloc_name].append(
                             [mem_shape, mem_dtype, mem_bits, bram, store_count]

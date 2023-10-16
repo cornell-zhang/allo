@@ -21,7 +21,7 @@ def test_add_same_float():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc   | [32, 32] | f32     |       32768 |        1.78 | 2              |"
+        "| %alloc   | [32, 32] | f32     |       32768 |           2 | 2              |"
         in monitor_memory_table
     )
 
@@ -40,14 +40,14 @@ def test_add_const_float():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc_0 | [32, 32] | f32     |       32768 |        1.78 | 2              |"
+        "| %alloc_0 | [32, 32] | f32     |       32768 |           2 | 2              |"
         in monitor_memory_table
     )
 
 
 def test_calculate():
-    def kernel(A: float32[8], B: float32[8]) -> float32[8]:
-        c: float32[8] = 3
+    def kernel(A: float32[32], B: float32[32]) -> float32[32]:
+        c: float32[32] = 3
         return allo.exp(A * B + c)
 
     s = allo.customize(kernel, enable_tensor=True)
@@ -56,7 +56,7 @@ def test_calculate():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc_0 | [8]     | f32     |         256 |        0.01 | 2              |"
+        "| %alloc_0 | [32]    | f32     |        1024 |           1 | 2              |"
         in monitor_memory_table
     )
 
@@ -77,7 +77,7 @@ def test_gemm_grid_for():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc   | [32, 32] | i32     |       32768 |        1.78 | 1              |"
+        "| %alloc   | [32, 32] | i32     |       32768 |           2 | 1              |"
         in monitor_memory_table
     )
 
