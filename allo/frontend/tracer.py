@@ -74,8 +74,10 @@ class AlloTracer(Tracer):
                 submodule ``bar``, which contains submodule ``baz``, that module will
                 appear with the qualified name ``foo.bar.baz`` here.
         """
-        if self.leaf_modules and isinstance(m, self.leaf_modules):
-            return True
+        if self.leaf_modules:
+            for leaf_moduel in self.leaf_modules:
+                if isinstance(m, leaf_moduel):
+                    return True
         return m.__module__.startswith("torch.nn") and not isinstance(
             m, torch.nn.Sequential
         )

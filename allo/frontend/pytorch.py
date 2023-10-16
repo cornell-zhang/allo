@@ -67,13 +67,13 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm, example_inputs, customed_leaf_module=None):
+    def __init__(self, gm, example_inputs, leaf_modules=None):
         self.gm = gm
         self.code = []
         self.input_names = []
         self.input_shapes = []
         self.example_inputs = example_inputs
-        self.customed_leaf_module = customed_leaf_module
+        self.leaf_modules = leaf_modules
         self.input_args = []
         self.named_params = gm.named_parameters()
         self.output = []
@@ -140,8 +140,10 @@ class TorchBuilder:
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
         }.get(type(module), None)
-        if self.customed_leaf_module and isinstance(module, self.customed_leaf_module):
-            return getattr(self, f"build_{module.__class__.__name__}")(node)
+        if self.leaf_modules:
+            for leaf_module in self.leaf_modules:
+                if isinstance(module, leaf_module):
+                    return getattr(self, f"build_{module.__class__.__name__}")(node)
         if op is None:
             raise NotImplementedError("Unsupported module")
         if op == "linear":

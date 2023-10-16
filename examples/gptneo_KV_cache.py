@@ -196,6 +196,7 @@ def load_weights(model, emb_model):
 
 
 def llvm_generate(input_text, n_tokens_to_generate):
+    output_vocab = []
     model = GPTneo(vocab_size, n_embd, n_head, n_layers, max_seq_len).eval()
     embeddings = Embedding(vocab_size, n_position, n_embd).eval()
     load_weights(model, embeddings)
@@ -236,6 +237,7 @@ def llvm_generate(input_text, n_tokens_to_generate):
             for i in range(len(output)):
                 output[i] = torch.tensor(output[i])
             logits, k_cache, v_cache = output[0], output[1:13], output[13:25]
+            output_vocab.append(logits)
             next_id = torch.argmax(logits[0, -1, :]).item()
             inputs.append(next_id)  # append prediction to input
             # line break
@@ -243,7 +245,7 @@ def llvm_generate(input_text, n_tokens_to_generate):
                 break
         llvm_generated_text = tokenizer.decode(inputs)
         llvm_out_text = "".join(llvm_generated_text)
-        return llvm_out_text
+        return llvm_out_text, output_vocab
 
 
 def gptneo_generate(in_text, n_tokens_to_generate):
@@ -257,19 +259,21 @@ def gptneo_generate(in_text, n_tokens_to_generate):
     kvcache = None
     out_token = None
     out_text = in_text
+    output = []
     in_tokens = torch.tensor(tokenizer.encode(in_text))
     with torch.no_grad():
         for _ in tqdm(
             range(n_tokens_to_generate), "gptneo_generating"
         ):  # auto-regressive decode loop
             logits, kvcache = model(in_tokens, past_key_values=kvcache)
+            output.append(logits)
             out_token = torch.argmax(logits[-1, :], dim=0, keepdim=True)
             in_tokens = out_token
             text = tokenizer.decode(out_token)
             out_text += text
             if in_tokens == token_eos:
                 break
-        return out_text
+        return out_text, output
 
 
 vocab_size = 50257
@@ -281,9 +285,12 @@ max_seq_len = 20
 input_text = "This cute cat is"
 
 
-llvm_out_text = llvm_generate(input_text, max_seq_len)
-gptneo_out_text = gptneo_generate(input_text, max_seq_len)
-
+llvm_out_text, llvm_output = llvm_generate(input_text, max_seq_len)
+gptneo_out_text, gtpneo_output = gptneo_generate(input_text, max_seq_len)
+for i in range(len(llvm_output)):
+    torch.testing.assert_close(
+        llvm_output[i], gtpneo_output[i].unsqueeze(0), atol=1e-3, rtol=1e-2
+    )
 print(f"        input: {input_text}")
 print(f"  llvm_output: {llvm_out_text}")
 print(f"gptneo_output: {gptneo_out_text}")
