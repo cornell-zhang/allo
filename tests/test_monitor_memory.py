@@ -3,7 +3,6 @@
 
 import pytest
 import allo
-import re
 from allo.ir.types import int32, float32
 from allo.passes import monitor_memory_usage
 
