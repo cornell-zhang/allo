@@ -653,6 +653,7 @@ def customize(
     enable_tensor: bool = False,
     lower_linalg: bool = False,
     global_vars: dict = None,
+    instantiate: dict = None,
 ):
     # Get Python AST
     if isinstance(fn, str):
@@ -672,16 +673,26 @@ def customize(
         except ImportError:
             print(ast.dump(tree))
     # Type construction
+    if instantiate is None:
+        instantiate = {}
+    if global_vars is None:
+        global_vars = _get_global_vars(fn)
+    for typevar in instantiate:
+        if typevar not in global_vars:
+            raise RuntimeError(f"Type variable {typevar} not found")
+        # Checking
+        global_vars[typevar] = global_vars[typevar].instantiate(instantiate[typevar])
     ctx_type_inf = ASTContext(
-        global_vars=_get_global_vars(fn) if global_vars is None else global_vars,
+        global_vars=global_vars,
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
+    ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
-        global_vars=_get_global_vars(fn) if global_vars is None else global_vars,
+        global_vars=global_vars,
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,
@@ -709,6 +720,7 @@ def customize(
     # All live operations = {top_func} + {top_func_ip}
     buffer = None
     ctx.buffers = None
+    global_vars = {}
     # Functions are stored in ctx.global_vars, which should also be removed
     ctx = None
     assert module.context._get_live_operation_count() == 2, (
