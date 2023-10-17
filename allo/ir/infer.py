@@ -629,7 +629,16 @@ class TypeInferer(ASTVisitor):
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"matmul", "bmm", "linear", "conv2d", "sumpool", "maxpool"}:
+        if op_name in {
+            "matmul",
+            "matmul_transpose_b",
+            "bmm",
+            "batch_matmul_transpose_b",
+            "linear",
+            "conv2d",
+            "sumpool",
+            "maxpool",
+        }:
             argAshape = new_args[0].shape
             argBshape = new_args[1].shape
             node.dtype = new_args[0].dtype
@@ -652,6 +661,11 @@ class TypeInferer(ASTVisitor):
                     argAshape[-1] == argBshape[-2]
                 ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
                 node.shape = tuple(argAshape[:-1] + argBshape[-1:])
+            elif op_name == "matmul_transpose_b":
+                assert (
+                    argAshape[-1] == argBshape[-1]
+                ), f"The last dimension of the first input and the last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[1]}"
+                node.shape = tuple(argAshape[:-1] + argBshape[-2:-1])
             elif op_name == "bmm":
                 assert (
                     len(argAshape) == 3 and len(argBshape) == 3
@@ -663,6 +677,17 @@ class TypeInferer(ASTVisitor):
                     argAshape[0] == argBshape[0]
                 ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
+            elif op_name == "batch_matmul_transpose_b":
+                assert (
+                    len(argAshape) == 3 and len(argBshape) == 3
+                ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
+                assert (
+                    argAshape[2] == argBshape[2]
+                ), f"The third dimension of the first input and the third dimension of the second input must be the same, got {argAshape[2]} and {argBshape[2]}"
+                assert (
+                    argAshape[0] == argBshape[0]
+                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
+                node.shape = (argAshape[0], argAshape[1], argBshape[1])
             elif op_name == "linear":
                 # The weight parameter (i.e., `new_args[1]`) should be 2D, see:
                 # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html

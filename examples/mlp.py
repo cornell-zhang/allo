@@ -17,7 +17,7 @@ class MLP(nn.Module):
         out = self.linear1(data)
         out = self.linear2(out)
         out = F.relu(out)
-        return out
+        return data
 
 
 model = MLP()

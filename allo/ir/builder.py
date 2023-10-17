@@ -1474,7 +1474,9 @@ class ASTTransformer(ASTBuilder):
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
             if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {
                 "matmul",
+                "matmul_transpose_b",
                 "bmm",
+                "batch_matmul_transpose_b",
                 "softmax",
                 "exp",
                 "abs",
@@ -1641,7 +1643,9 @@ class ASTTransformer(ASTBuilder):
                 return alloc_op
             if attr in {
                 "matmul",
+                "matmul_transpose_b",
                 "bmm",
+                "batch_matmul_transpose_b",
                 "conv2d",
                 "maxpool",
                 "sumpool",
@@ -1665,7 +1669,9 @@ class ASTTransformer(ASTBuilder):
             # build linalg op
             if attr in {
                 "matmul",
+                "matmul_transpose_b",
                 "bmm",
+                "batch_matmul_transpose_b",
                 "add",
                 "sub",
                 "mul",
@@ -1676,7 +1682,7 @@ class ASTTransformer(ASTBuilder):
             }:
                 # Since MLIR does not natively support matrix multiplication for matrices with more than 2 dimensions,
                 # we must first flatten the leading dimensions, utilize bmm for computation, and subsequently restore the original shape.
-                if len(shape) > 3 and attr == "matmul":
+                if len(shape) >= 3 and attr in {"matmul", "matmul_transpose_b"}:
                     flattened_shapes = ASTTransformer.build_flattened_shapes(
                         node, new_args
                     )
@@ -1688,11 +1694,20 @@ class ASTTransformer(ASTBuilder):
                             [arg, flattened_shapes[i]],
                             shape=flattened_shapes[i],
                         )
-                    inner_shape = flattened_shapes[0][:-1] + flattened_shapes[1][-1:]
+                    if attr == "matmul":
+                        inner_shape = (
+                            flattened_shapes[0][:-1] + flattened_shapes[1][-1:]
+                        )
+                        inner_attr = "bmm"
+                    else:
+                        inner_shape = (
+                            flattened_shapes[0][:-1] + flattened_shapes[1][-2:-1]
+                        )
+                        inner_attr = "batch_matmul_transpose_b"
                     op = ASTTransformer.build_library_op(
                         ctx,
                         node,
-                        "bmm",
+                        inner_attr,
                         new_args,
                         dtype,
                         inner_shape,
@@ -1708,7 +1723,9 @@ class ASTTransformer(ASTBuilder):
                     return op
                 op = {
                     "matmul": linalg_d.matmul,
+                    "matmul_transpose_b": linalg_d.matmul_transpose_b,
                     "bmm": linalg_d.batch_matmul,
+                    "batch_matmul_transpose_b": linalg_d.batch_matmul_transpose_b,
                     "add": linalg_d.add,
                     "sub": linalg_d.sub,
                     "mul": linalg_d.mul,
@@ -1790,30 +1807,22 @@ class ASTTransformer(ASTBuilder):
                 )
                 return op
             elif attr == "linear":  # X @ A.T + B
-                permutation = [MockConstant(val, ctx) for val in (1, 0)]
-                A_T = ASTTransformer.build_library_op(
-                    ctx,
-                    node,
-                    "transpose",
-                    [new_args[1], permutation],
-                    shape=node.args[1].shape[::-1],
-                )
-                inner_attr = "matmul"
+                inner_attr = "matmul_transpose_b"
                 if len(shape) >= 3:
                     flattened_shapes = ASTTransformer.build_flattened_shapes(
                         node, new_args
                     )
-                    A_T = ASTTransformer.build_broadcast_op(
+                    new_args[1] = ASTTransformer.build_broadcast_op(
                         ctx,
-                        A_T,
+                        new_args[1],
                         dtype,
                         list(node.args[1].shape[::-1]),
                         flattened_shapes[1],
                         [0],
                     )
-                    inner_attr = "bmm"
+                    inner_attr = "batch_matmul_transpose_b"
                 matmul = ASTTransformer.build_library_op(
-                    ctx, node, inner_attr, [new_args[0], A_T]
+                    ctx, node, inner_attr, [new_args[0], new_args[1]]
                 )
 
                 # bias = True
@@ -1844,7 +1853,7 @@ class ASTTransformer(ASTBuilder):
         #    while the shapes of the remaining dimensions should be identical.
         # 2. flatten A @ B.T when A is 3D, B is 2D, and the last dimension of A and B is same.
         flattened_shapes = []
-        if node.func.attr == "matmul":
+        if node.func.attr in {"matmul", "matmul_transpose_b"}:
             for i in range(len(new_args)):
                 flattened_shapes.append(
                     [
@@ -1855,9 +1864,7 @@ class ASTTransformer(ASTBuilder):
                 )
         if node.func.attr == "linear":
             flattened_shapes.append(node.args[0].shape)
-            flattened_shapes.append(
-                [flattened_shapes[0][0]] + list(node.args[1].shape[::-1])
-            )
+            flattened_shapes.append([flattened_shapes[0][0]] + list(node.args[1].shape))
         return flattened_shapes
 
     @staticmethod

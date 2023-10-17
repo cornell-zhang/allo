@@ -74,6 +74,25 @@ def test_linalg_matmul():
     print(s.module)
 
 
+def test_linalg_matmul_3D():
+    M = 10
+    K = 15
+    N = 20
+    A = np.random.randint(0, 20, size=(M, M, K), dtype="int32")
+    B = np.random.randint(0, 20, size=(M, K, N), dtype="int32")
+
+    def kernel(A: int32[M, M, K], B: int32[M, K, N]) -> int32[M, M, N]:
+        C = allo.matmul(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    f = s.build()
+    print(s.module)
+    np_out = kernel(A, B)
+    allo_out = f(A, B)
+    np.testing.assert_array_equal(allo_out, np_out)
+
+
 def test_linalg_matmul_5D():
     M = 10
     K = 15
@@ -212,6 +231,84 @@ def test_linalg_batch_matmul_nested():
     out_2 = np.einsum("ijk,ikn->ijn", out_1, (A + 1))
     out_3 = np.einsum("ijk,ikn->ijn", out_1, out_2)
     np.testing.assert_allclose(outs, out_3, atol=1e-4)
+
+
+def test_linalg_matmul_transpose_b():
+    M = 10
+    K = 15
+    N = 20
+    A = np.float32(np.random.uniform(size=(M, N)))
+    B = np.float32(np.random.uniform(size=(K, N)))
+
+    def kernel(A: float32[M, N], B: float32[K, N]) -> float32[M, K]:
+        C = allo.matmul_transpose_b(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_matmul_transpose_b_3D():
+    M = 10
+    K = 15
+    N = 20
+    A = np.float32(np.random.uniform(size=(M, M, N)))
+    B = np.float32(np.random.uniform(size=(M, K, N)))
+
+    def kernel(A: float32[M, M, N], B: float32[M, K, N]) -> float32[M, M, K]:
+        C = allo.matmul_transpose_b(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_matmul_transpose_b_3D():
+    M = 10
+    K = 15
+    N = 20
+    A = np.float32(np.random.uniform(size=(N, K, M, M, N)))
+    B = np.float32(np.random.uniform(size=(N, K, M, K, N)))
+
+    def kernel(
+        A: float32[N, K, M, M, N], B: float32[N, K, M, K, N]
+    ) -> float32[N, K, M, M, K]:
+        C = allo.matmul_transpose_b(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
+
+
+def test_linalg_batch_matmul_transpose_b():
+    M = 10
+    K = 15
+    N = 20
+    A = np.float32(np.random.uniform(size=(M, M, N)))
+    B = np.float32(np.random.uniform(size=(M, K, N)))
+
+    def kernel(A: float32[M, M, N], B: float32[M, K, N]) -> float32[M, M, K]:
+        C = allo.batch_matmul_transpose_b(A, B)
+        return C
+
+    s = allo.customize(kernel)
+    print(s.module)
+    f = s.build()
+    outs = f(A, B)
+    np_outs = kernel(A, B)
+    np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
 @pytest.mark.parametrize("enable_tensor", [True, False])

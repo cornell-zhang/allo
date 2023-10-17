@@ -17,8 +17,20 @@ def matmul(lhs, rhs, name=None):
     return np.matmul(lhs, rhs)
 
 
+def matmul_transpose_b(lhs, rhs, name=None):
+    transpose_axes = list(range(len(rhs.shape)))
+    transpose_axes[-2], transpose_axes[-1] = transpose_axes[-1], transpose_axes[-2]
+    return np.matmul(lhs, np.transpose(rhs, transpose_axes))
+
+
 def bmm(lhs, rhs, name=None):
     return np.einsum("ijk,ikn->ijn", lhs, rhs)
+
+
+def batch_matmul_transpose_b(lhs, rhs, name=None):
+    transpose_axes = list(range(len(rhs.shape)))
+    transpose_axes[-2], transpose_axes[-1] = transpose_axes[-1], transpose_axes[-2]
+    return np.einsum("ijk,ikn->ijn", lhs, np.transpose(rhs, transpose_axes))
 
 
 def add(lhs, rhs, name=None):
