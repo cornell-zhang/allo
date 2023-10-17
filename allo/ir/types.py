@@ -143,17 +143,23 @@ class Struct(AlloType):
         raise NotImplementedError("TODO")
 
 
-class TypeVar:
+class TypeVar(AlloType):
     """A type variable
 
     This is used to represent a type that is not known yet.
     Reference from `typing.TypeVar`
     """
 
+    # pylint: disable=super-init-not-called
     def __init__(self, *constraints):
         # checking
         for constraint in constraints:
-            if not isinstance(constraint, AlloType):
+            if not isinstance(constraint, AlloType) and constraint not in {
+                Int,
+                Float,
+                Fixed,
+                UFixed,
+            }:
                 raise DTypeError("Constraint must be an AlloType")
         self.__constraints__ = tuple(constraints)
 
@@ -162,13 +168,24 @@ class TypeVar:
         pass
 
     def instantiate(self, val):
+        if len(self.__constraints__) == 0:
+            return val
         if val in self.__constraints__:
             return val
+        for constraint in self.__constraints__:
+            if isinstance(val, constraint):
+                return val
         if isinstance(val, (int, float)):
             return val
         raise DTypeError(
             f"Cannot instantialize {val} to types in {self.__constraints__}"
         )
+
+    def __repr__(self):
+        return f"TypeVar({self.__constraints__})"
+
+    def build(self):
+        raise RuntimeError("Cannot build a type variable")
 
 
 bool = Int(1)

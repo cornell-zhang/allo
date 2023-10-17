@@ -1846,6 +1846,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Return(ctx, node):
+        if node.value is not None and ctx.top_func_tree.dtype is None:
+            raise RuntimeError("Return value should have a dtype in function signature")
         if isinstance(node.value, ast.Tuple):
             # return multiple values
             rets = []

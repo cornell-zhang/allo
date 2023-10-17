@@ -349,6 +349,28 @@ def test_polymorphism():
     np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
 
 
+def test_multiple_poly_types():
+    T0 = TypeVar()
+    T1 = TypeVar(Int)
+    T2 = TypeVar(Float)
+    M, N = 32, 32
+
+    def vadd(A: T0[M, N], B: T1[M, N]) -> T2[M, N]:
+        C: T2[M, N] = 0
+        for i in range(M):
+            for j in range(N):
+                C[i, j] = A[i, j] + B[i, j]
+        return C
+
+    s = allo.customize(vadd, instantiate={"T0": float32, "T1": int32, "T2": float32})
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((M, N)).astype(np.float32)
+    np_B = np.random.randint(0, 10, (M, N)).astype(np.int32)
+    allo_C = mod(np_A, np_B)
+    np.testing.assert_allclose(np_A + np_B, allo_C, rtol=1e-5)
+
+
 ######################################################################
 # Legacy tests
 ######################################################################
