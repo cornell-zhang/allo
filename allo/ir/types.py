@@ -164,12 +164,11 @@ class TypeVar:
     def instantiate(self, val):
         if val in self.__constraints__:
             return val
-        elif isinstance(val, (int, float)):
+        if isinstance(val, (int, float)):
             return val
-        else:
-            raise DTypeError(
-                f"Cannot instantialize {val} to types in {self.__constraints__}"
-            )
+        raise DTypeError(
+            f"Cannot instantialize {val} to types in {self.__constraints__}"
+        )
 
 
 bool = Int(1)
