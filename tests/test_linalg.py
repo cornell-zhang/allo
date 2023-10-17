@@ -271,7 +271,7 @@ def test_linalg_matmul_transpose_b_3D():
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
 
 
-def test_linalg_matmul_transpose_b_3D():
+def test_linalg_matmul_transpose_b_5D():
     M = 10
     K = 15
     N = 20
