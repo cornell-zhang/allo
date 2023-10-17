@@ -86,6 +86,7 @@ class LLVMModule:
                 ")"
             )
             pm.run(self.module.operation)
+            self.intermediate_module = self.module.operation.clone()
             # Attach necessary attributes
             func = find_func_in_module(self.module, top_func_name)
             if func is None:
