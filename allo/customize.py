@@ -689,6 +689,7 @@ def customize(
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
+    ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
         global_vars=global_vars,
@@ -719,6 +720,7 @@ def customize(
     # All live operations = {top_func} + {top_func_ip}
     buffer = None
     ctx.buffers = None
+    global_vars = {}
     # Functions are stored in ctx.global_vars, which should also be removed
     ctx = None
     assert module.context._get_live_operation_count() == 2, (
