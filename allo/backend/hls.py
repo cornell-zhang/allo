@@ -14,7 +14,12 @@ from hcl_mlir.ir import (
 )
 from hcl_mlir.passmanager import PassManager
 
-from .vitis import codegen_host, postprocess_hls_code, generate_description_file
+from .vitis import (
+    codegen_host,
+    postprocess_hls_code,
+    generate_description_file,
+    update_makefile,
+)
 from .report import parse_xml
 from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
 from ..harness.makefile_gen.makegen import generate_makefile
@@ -153,12 +158,16 @@ class HLSModule:
                     self.top_func_name,
                     path + "makefile_gen/description.json",
                     dst_path,
-                    self.ext_libs,
                 )
                 generate_makefile(dst_path, project)
+                for postfix in ["us_alveo", "versal_alveo", "versal_ps", "zynqmp"]:
+                    update_makefile(
+                        os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
+                    )
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 for lib in self.ext_libs:
                     for header in lib.headers:
+                        header = header.split("/")[-1]
                         with open(
                             f"{project}/{header}", "r", encoding="utf-8"
                         ) as infile:
@@ -198,6 +207,7 @@ class HLSModule:
                             new_kernel += line
                             if "#include <stdint.h>" in line:
                                 for header in lib.headers:
+                                    header = header.split("/")[-1]
                                     new_kernel += f'#include "{header}"\n'
                     with open(
                         os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
@@ -267,10 +277,6 @@ class HLSModule:
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            if len(self.ext_libs) > 0 and self.mode != "sw_emu":
-                raise RuntimeError(
-                    "External libraries are only supported in sw_emu mode"
-                )
             cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
             print(cmd)
             if shell:

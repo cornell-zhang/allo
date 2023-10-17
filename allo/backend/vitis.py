@@ -303,16 +303,23 @@ def postprocess_hls_code(hls_code, top=None):
     return out_str
 
 
-def generate_description_file(top, src_path, dst_path, ext_libs):
+def generate_description_file(top, src_path, dst_path):
     with open(src_path, "r", encoding="utf-8") as f:
         desc = f.read()
     desc = desc.replace("top", top)
     desc = json.loads(desc)
-    for lib in ext_libs:
-        for impl_path in lib.impls:
-            cpp_file = impl_path.split("/")[-1]
-            desc["containers"][0]["accelerators"].append(
-                {"name": lib.top, "location": cpp_file}
-            )
+    desc["containers"][0]["ldclflags"] += f"  --kernel_frequency 300"
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
+
+
+def update_makefile(file_name, ext_libs):
+    with open(file_name, "r", encoding="utf-8") as f:
+        makefile = f.read()
+    cpp_files = ["kernel.cpp"]
+    for lib in ext_libs:
+        for impl_path in lib.impls:
+            cpp_files.append(impl_path.split("/")[-1])
+    makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
+    with open(file_name, "w", encoding="utf-8") as outfile:
+        outfile.write(makefile)
