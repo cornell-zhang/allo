@@ -4,7 +4,17 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import Int, UInt, Float, Fixed, UFixed, uint1, int4, int32, float32
+from allo.ir.types import (
+    Int,
+    UInt,
+    Float,
+    Fixed,
+    UFixed,
+    uint1,
+    int32,
+    float32,
+    TypeVar,
+)
 import allo.ir.types as T
 
 
@@ -309,6 +319,34 @@ def test_anywidth_int_constant():
     mod = s.build()
     np_C = mod()
     np.testing.assert_allclose(np_C, np_A + np_B, rtol=1e-5)
+
+
+def test_polymorphism():
+    # Similar to C++ template, users need to firstly define a generic type
+    T = TypeVar(float32, int32)
+    M, N, K = TypeVar(int32), TypeVar(int32), TypeVar(int32)
+
+    def gemm(A: T[M, K], B: T[K, N]) -> T[M, N]:
+        C: T[M, N] = 0
+        for i, j, k in allo.grid(M, N, K):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm, instantiate={"T": float32, "M": 4, "N": 4, "K": 4})
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((4, 4)).astype(np.float32)
+    np_B = np.random.random((4, 4)).astype(np.float32)
+    allo_C = mod(np_A, np_B)
+    np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
+
+    s1 = allo.customize(gemm, instantiate={"T": int32, "M": 16, "N": 16, "K": 16})
+    print(s1.module)
+    mod1 = s1.build()
+    np_A = np.random.randint(0, 10, size=(16, 16)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(16, 16)).astype(np.int32)
+    allo_C = mod1(np_A, np_B)
+    np.testing.assert_allclose(np_A @ np_B, allo_C, rtol=1e-5)
 
 
 ######################################################################

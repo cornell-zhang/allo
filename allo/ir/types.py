@@ -143,6 +143,35 @@ class Struct(AlloType):
         raise NotImplementedError("TODO")
 
 
+class TypeVar:
+    """A type variable
+
+    This is used to represent a type that is not known yet.
+    Reference from `typing.TypeVar`
+    """
+
+    def __init__(self, *constraints):
+        # checking
+        for constraint in constraints:
+            if not isinstance(constraint, AlloType):
+                raise DTypeError("Constraint must be an AlloType")
+        self.__constraints__ = tuple(constraints)
+
+    def __getitem__(self, *args):
+        # Just a placeholder for type[*args]
+        pass
+
+    def instantiate(self, val):
+        if val in self.__constraints__:
+            return val
+        elif isinstance(val, (int, float)):
+            return val
+        else:
+            raise DTypeError(
+                f"Cannot instantialize {val} to types in {self.__constraints__}"
+            )
+
+
 bool = Int(1)
 int1 = Int(1)
 int8 = Int(8)
