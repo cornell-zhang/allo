@@ -350,10 +350,10 @@ def test_polymorphism():
 
 
 def test_multiple_poly_types():
-    T0 = TypeVar()
-    T1 = TypeVar(Int)
-    T2 = TypeVar(Float)
-    M, N = 32, 32
+    T0 = TypeVar()  # Can be arbitrary types
+    T1 = TypeVar(Int)  # Must be Int
+    T2 = TypeVar(Float, Int)  # Must be Float or Int
+    M, N = TypeVar(int32), TypeVar(int32)  # Must be int32
 
     def vadd(A: T0[M, N], B: T1[M, N]) -> T2[M, N]:
         C: T2[M, N] = 0
@@ -362,11 +362,13 @@ def test_multiple_poly_types():
                 C[i, j] = A[i, j] + B[i, j]
         return C
 
-    s = allo.customize(vadd, instantiate={"T0": float32, "T1": int32, "T2": float32})
+    s = allo.customize(
+        vadd, instantiate={"T0": float32, "T1": int32, "T2": float32, "M": 32, "N": 32}
+    )
     print(s.module)
     mod = s.build()
-    np_A = np.random.random((M, N)).astype(np.float32)
-    np_B = np.random.randint(0, 10, (M, N)).astype(np.int32)
+    np_A = np.random.random((32, 32)).astype(np.float32)
+    np_B = np.random.randint(0, 10, (32, 32)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, rtol=1e-5)
 

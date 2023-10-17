@@ -173,7 +173,9 @@ class TypeVar(AlloType):
         if val in self.__constraints__:
             return val
         for constraint in self.__constraints__:
-            if isinstance(val, constraint):
+            if constraint in {Int, Float, Fixed, UFixed} and isinstance(
+                val, constraint
+            ):
                 return val
         if isinstance(val, (int, float)):
             return val
