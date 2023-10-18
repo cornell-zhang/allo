@@ -10,10 +10,14 @@ import traceback
 type_map = {
     "float32": "float",
     "float64": "double",
+    "int1": "bool",
+    "int8": "int8_t",
+    "int16": "int16_t",
     "int32": "int",
-    "uint32": "unsigned int",
-    "uint8": "unsigned char",
     "uint1": "bool",
+    "uint8": "uint8_t",
+    "uint16": "uint16_t",
+    "uint32": "unsigned int",
 }
 
 
@@ -34,12 +38,21 @@ class IPModule:
             include_paths = []
         self.include_paths = include_paths + [self.abs_path]
         if link_hls:
-            if os.system("which vivado_hls >> /dev/null") != 0:
-                raise RuntimeError("Please install Vivado HLS and add it to your PATH")
-            self.include_paths.append(
-                "/".join(os.popen("which vivado_hls").read().split("/")[:-2])
-                + "/include"
-            )
+            if os.system("which vivado_hls >> /dev/null") == 0:
+                self.include_paths.append(
+                    "/".join(os.popen("which vivado_hls").read().split("/")[:-2])
+                    + "/include"
+                )
+            elif os.system("which vitis_hls >> /dev/null") == 0:
+                self.include_paths.append(
+                    "/".join(os.popen("which vitis_hls").read().split("/")[:-2])
+                    + "/include"
+                )
+            else:
+                raise RuntimeError(
+                    "Please install Vivado/Vitis HLS and add it to your PATH"
+                )
+
         # Parse signature
         arg_types = signature
         self.args = []
