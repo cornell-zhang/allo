@@ -308,7 +308,7 @@ def generate_description_file(top, src_path, dst_path):
         desc = f.read()
     desc = desc.replace("top", top)
     desc = json.loads(desc)
-    desc["containers"][0]["ldclflags"] += f"  --kernel_frequency 300"
+    desc["containers"][0]["ldclflags"] += "  --kernel_frequency 300"
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
 

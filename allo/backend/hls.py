@@ -160,7 +160,7 @@ class HLSModule:
                     dst_path,
                 )
                 generate_makefile(dst_path, project)
-                for postfix in ["us_alveo", "versal_alveo", "versal_ps", "zynqmp"]:
+                for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
                     )
