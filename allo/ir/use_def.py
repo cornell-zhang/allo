@@ -55,6 +55,22 @@ class UseDefChain(ast.NodeVisitor):
         right = self.visit(node.right)
         return left.union(right)
 
+    def visit_For(self, node):
+        if node.orelse:
+            raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
+        if isinstance(node.iter, ast.Call):
+            obj = ASTResolver.resolve(node.iter.func, self.global_vars)
+            if (
+                obj is None
+                and isinstance(node.iter.func, ast.Name)
+                and node.iter.func.id == "range"
+            ) or (obj is not None and obj.__name__ in {"grid", "reduction"}):
+                res = []
+                for stmt in node.body:
+                    res.append(self.visit(stmt))
+                return res
+        raise RuntimeError("Unsupported for loop")
+
     def visit_Call(self, node):
         obj = ASTResolver.resolve(node.func, self.global_vars)
         if obj is None:
@@ -100,6 +116,23 @@ class UseDefChain(ast.NodeVisitor):
         for parent in parents:
             parent.add_user(var)
         self.buffers[self.get_name(node.target.id)] = var
+
+    def visit_AugAssign(self, node):
+        if isinstance(node.target, ast.Subscript):
+            name = node.target.value.id
+        elif isinstance(node.target, ast.Name):  # scalar
+            name = node.target.id
+        else:
+            raise NotImplementedError("Unsupported AugAssign")
+        var = VarNode(self.path, name)
+        parents = self.visit(node.value)
+        for parent in parents:
+            parent.add_user(var)
+        self.buffers[self.get_name(name)] = var
+
+    def visit_Subscript(self, node):
+        res = self.visit(node.value)
+        return res
 
     def visit_FunctionDef(self, node):
         original_path = self.path

@@ -27,6 +27,20 @@ def test_use_def_chain():
     s = allo.customize(kernel, verbose=True)
     print(s.module)
 
+def test_use_def_chain_array():
+    # def foo(A: int32) -> int32:
+    #     return C
+
+    def kernel(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j in allo.grid(32, 32):
+            for k in allo.reduction(32):
+                C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+
 
 def test_nested_functions():
     M, K, N = 32, 32, 32
@@ -230,4 +244,4 @@ def test_output_partition_compose():
 
 if __name__ == "__main__":
     # pytest.main([__file__])
-    test_use_def_chain()
+    test_use_def_chain_array()
