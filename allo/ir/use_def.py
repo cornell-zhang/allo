@@ -84,9 +84,10 @@ class UseDefChain(ast.NodeVisitor):
             raise NotImplementedError("Nested functions not supported")
         else:
             # Visit arguments in the top-level
-            arg_nodes = set()
+            arg_nodes = []
+            # The arguments have order
             for arg in node.args:
-                arg_nodes.update(self.visit(arg))
+                arg_nodes += list(self.visit(arg))
             func = self.global_vars[node.func.id]
             src, _ = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
@@ -95,7 +96,7 @@ class UseDefChain(ast.NodeVisitor):
             original_arg_nodes = self.arg_nodes
             self.arg_nodes = arg_nodes
             ret = self.visit(tree)
-            arg_nodes.update(ret)
+            arg_nodes += list(ret)
             self.arg_nodes = original_arg_nodes
             return arg_nodes
 

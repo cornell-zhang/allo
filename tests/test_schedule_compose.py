@@ -28,9 +28,6 @@ def test_use_def_chain():
     print(s.module)
 
 def test_use_def_chain_array():
-    # def foo(A: int32) -> int32:
-    #     return C
-
     def kernel(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
         for i, j in allo.grid(32, 32):
@@ -38,7 +35,11 @@ def test_use_def_chain_array():
                 C[i, j] += A[i, k] * B[k, j]
         return C
 
-    s = allo.customize(kernel, verbose=True)
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        ret = kernel(A, B)
+        return ret
+
+    s = allo.customize(gemm, verbose=True)
     print(s.module)
 
 
