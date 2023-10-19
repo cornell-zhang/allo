@@ -673,13 +673,6 @@ def customize(
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
-    # Use-def chain analysis
-    use_def_chain = UseDefChain()
-    use_def_chain.visit(tree)
-    for node in use_def_chain.buffers.values():
-        print(node, node.users)
-    sys.exit()
-    # Type construction
     if instantiate is None:
         instantiate = {}
     if global_vars is None:
@@ -689,6 +682,13 @@ def customize(
             raise RuntimeError(f"Type variable {typevar} not found")
         # Checking
         global_vars[typevar] = global_vars[typevar].instantiate(instantiate[typevar])
+    # Use-def chain analysis
+    use_def_chain = UseDefChain(global_vars)
+    use_def_chain.visit(tree)
+    for node in use_def_chain.buffers.values():
+        print(node, node.users)
+    sys.exit()
+    # Type construction
     ctx_type_inf = ASTContext(
         global_vars=global_vars,
         mlir_ctx=Context(),

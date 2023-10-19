@@ -8,11 +8,17 @@ from allo.ir.types import int32, float32
 
 
 def test_use_def_chain():
+
+    def foo(A: int32) -> int32:
+        B: int32 = (A - 1) / (A + 1)
+        return B
+
     def kernel(A: int32) -> int32:
         B: int32 = A + 1
         C: int32 = A * B
         D: int32 = (C + 1) - (B * A)
-        return D
+        E = foo(D)
+        return E
 
     s = allo.customize(kernel, verbose=True)
     print(s.module)
