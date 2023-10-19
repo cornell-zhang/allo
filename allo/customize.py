@@ -674,7 +674,10 @@ def customize(
         except ImportError:
             print(ast.dump(tree))
     # Use-def chain analysis
-    tree = UseDefChain().visit(tree)
+    use_def_chain = UseDefChain()
+    use_def_chain.visit(tree)
+    for node in use_def_chain.buffers.values():
+        print(node, node.users)
     sys.exit()
     # Type construction
     if instantiate is None:

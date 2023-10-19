@@ -43,9 +43,9 @@ class UseDefChain(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
-        users = self.visit(node.value)
-        print(users)
-        var.add_users(users)
+        parents = self.visit(node.value)
+        for parent in parents:
+            parent.add_user(var)
         self.buffers[node.target.id] = var
 
     def visit_FunctionDef(self, node):
