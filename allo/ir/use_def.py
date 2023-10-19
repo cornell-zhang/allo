@@ -4,12 +4,6 @@
 
 import ast
 
-from .visitor import ASTVisitor, ASTContext
-
-# b = a + 1
-# c = func(b)
-
-
 class VarNode:
     def __init__(self, path, name):
         self.path = path
@@ -17,34 +11,51 @@ class VarNode:
         self.users = []
 
     def add_user(self, node):
+        # node is a VarNode
         self.users.append(node)
+
+    def add_users(self, nodes):
+        for node in nodes:
+            self.users.append(node)
 
     def __repr__(self):
         return f"VarNode({self.path}:{self.name})"
 
 
-class UseDefChain(ASTVisitor):
-    def print_verbose(self, ctx, node):
-        print("get here", node)
+class UseDefChain(ast.NodeVisitor):
+    def __init__(self):
+        self.buffers = {}
+        self.path = ""
 
-    @staticmethod
-    def visit_AnnAssign(ctx, node):
-        ctx.buffers[node.target.id] = VarNode(ctx.path, node.target.id)
+    def visit_Constant(self, node):
+        return []
 
-    @staticmethod
-    def visit_FunctionDef(ctx, node):
-        print("my inside fundef")
-        for arg in node.args:
-            ctx.buffers[node.name] = VarNode(node.name, arg.arg)
-        visit_stmts(ctx, node.body)
-        print("my fasinside fundef")
+    def visit_Name(self, node):
+        if node.id in self.buffers:
+            return [self.buffers[node.id]]
+        else:
+            return []
 
+    def visit_BinOp(self, node):
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        return left + right
 
-visit_stmt = UseDefChain()
+    def visit_AnnAssign(self, node):
+        var = VarNode(self.path, node.target.id)
+        users = self.visit(node.value)
+        print(users)
+        var.add_users(users)
+        self.buffers[node.target.id] = var
 
-
-def visit_stmts(ctx, stmts):
-    results = []
-    for stmt in stmts:
-        results.append(visit_stmt(ctx, stmt))
-    return results
+    def visit_FunctionDef(self, node):
+        original_path = self.path
+        if self.path == "":
+            self.path = node.name
+        else:
+            self.path = ".".join(self.path.split(".") + [node.name])
+        # create initial variables
+        for arg in node.args.args:
+            self.buffers[arg.arg] = VarNode(node.name, arg.arg)
+        self.generic_visit(node)
+        self.path = original_path

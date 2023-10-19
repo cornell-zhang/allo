@@ -45,6 +45,7 @@ from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import get_affine_loop_nests, find_loop_in_bands
 from .ir.types import AlloType
+from .ir.use_def import UseDefChain
 from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
@@ -672,6 +673,9 @@ def customize(
             astpretty.pprint(tree, indent=2, show_offsets=False)
         except ImportError:
             print(ast.dump(tree))
+    # Use-def chain analysis
+    tree = UseDefChain().visit(tree)
+    sys.exit()
     # Type construction
     if instantiate is None:
         instantiate = {}
