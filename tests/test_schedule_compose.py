@@ -8,10 +8,14 @@ from allo.ir.types import int32, float32
 
 
 def test_use_def_chain():
+    def foo2(A: int32) -> int32:
+        B: int32 = A + 1
+        return B
 
     def foo(A: int32) -> int32:
         B: int32 = (A - 1) / (A + 1)
-        return B
+        C = foo2(A) + B
+        return C
 
     def kernel(A: int32) -> int32:
         B: int32 = A + 1
