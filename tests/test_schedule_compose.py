@@ -7,6 +7,10 @@ import allo
 from allo.ir.types import int32, float32
 
 
+def get_user_names(users):
+    return [user.path + ":" + user.name for user in users]
+
+
 def test_use_def_chain():
     def foo2(A: int32) -> int32:
         B: int32 = A + 1
@@ -14,18 +18,32 @@ def test_use_def_chain():
 
     def foo(A: int32) -> int32:
         B: int32 = (A - 1) / (A + 1)
-        C = foo2(A) + B
+        C: int32 = foo2(A) + B
         return C
 
     def kernel(A: int32) -> int32:
         B: int32 = A + 1
         C: int32 = A * B
         D: int32 = (C + 1) - (B * A)
-        E = foo(D)
+        E: int32 = foo(D)
         return E
 
     s = allo.customize(kernel, verbose=True)
     print(s.module)
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == [
+        "kernel:D",
+        "kernel:C",
+        "kernel:B",
+    ]
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == ["kernel:D", "kernel:C"]
+    assert get_user_names(s.use_def_chain["kernel.D"].users) == ["foo:A", "kernel:E"]
+    assert get_user_names(s.use_def_chain["foo.A"].users) == [
+        "foo2:A",
+        "foo:C",
+        "foo:B",
+    ]
+    assert get_user_names(s.use_def_chain["foo.C"].users) == ["kernel:E"]
+
 
 def test_use_def_chain_array():
     def kernel(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
@@ -41,6 +59,11 @@ def test_use_def_chain_array():
 
     s = allo.customize(gemm, verbose=True)
     print(s.module)
+    assert get_user_names(s.use_def_chain["gemm.A"].users) == ["gemm:ret", "kernel:A"]
+    assert get_user_names(s.use_def_chain["gemm.B"].users) == ["gemm:ret", "kernel:B"]
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == ["kernel:C"]
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == ["kernel:C"]
+    assert get_user_names(s.use_def_chain["kernel.C"].users) == ["gemm:ret"]
 
 
 def test_nested_functions():
@@ -244,5 +267,4 @@ def test_output_partition_compose():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_use_def_chain_array()
+    pytest.main([__file__])

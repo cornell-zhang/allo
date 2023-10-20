@@ -13,15 +13,15 @@ class VarNode:
     def __init__(self, path, name):
         self.path = path
         self.name = name
-        self.users = []
+        self.users = set()
 
     def add_user(self, node):
         # node is a VarNode
-        self.users.append(node)
+        self.users.add(node)
 
     def add_users(self, nodes):
         for node in nodes:
-            self.users.append(node)
+            self.users.add(node)
 
     def __repr__(self):
         return f"VarNode({self.path}:{self.name})"
@@ -53,7 +53,7 @@ class UseDefChain(ast.NodeVisitor):
     def visit_BinOp(self, node):
         left = self.visit(node.left)
         right = self.visit(node.right)
-        return left.union(right)
+        return set(left).union(set(right))
 
     def visit_For(self, node):
         if node.orelse:
