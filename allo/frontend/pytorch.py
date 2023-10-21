@@ -19,9 +19,17 @@ from .library import CoreAttention_lib, KVCache_lib
 from .. import dsl
 from ..ir import types
 from ..customize import customize
+from ..passes import monitor_memory_usage
 
 
-def from_pytorch(model, example_inputs, leaf_modules=None, verbose=False):
+def from_pytorch(
+    model,
+    example_inputs,
+    leaf_modules=None,
+    verbose=False,
+    enable_tensor=False,
+    monitor_memory=False,
+):
     sig = inspect.signature(model.forward)
     input_names = [
         p.name for i, p in enumerate(sig.parameters.values()) if i < len(example_inputs)
@@ -55,8 +63,13 @@ def from_pytorch(model, example_inputs, leaf_modules=None, verbose=False):
 
     builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
-    s = customize(code, verbose=verbose, global_vars=global_vars)
+    s = customize(
+        code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
+    )
     mod = s.build()
+    if monitor_memory:
+        monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
+        print(monitor_memory_table)
     if verbose:
         print(s.module)
     return mod
@@ -198,25 +211,25 @@ class TorchBuilder:
 
     def build_output(self, node):
         if isinstance(node.meta["tensor_meta"], TensorMetadata):
-            self.append_output(node, node.meta["tensor_meta"])
+            self.append_output(node.meta["tensor_meta"])
         elif isinstance(node.meta["tensor_meta"], (list, tuple)):
             for output in node.meta["tensor_meta"]:
                 if isinstance(output, TensorMetadata):
-                    self.append_output(node, output)
+                    self.append_output(output)
                 elif isinstance(output, (list, tuple)):
                     for item in output:
                         if isinstance(item, TensorMetadata):
-                            self.append_output(node, item)
+                            self.append_output(item)
                 elif isinstance(output, dict):
                     for item in output.values():
                         if isinstance(item, TensorMetadata):
-                            self.append_output(node, item)
+                            self.append_output(item)
                         else:
                             raise NotImplementedError("Unsupported output type")
         elif isinstance(node.meta["tensor_meta"], dict):
             for output in node.meta["tensor_meta"].values():
                 if isinstance(output, TensorMetadata):
-                    self.append_output(node, output)
+                    self.append_output(output)
         # Unwrap all outputs and return them
         name = get_var_name(node.args[0])
         if isinstance(name, dict):

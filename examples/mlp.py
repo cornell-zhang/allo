@@ -24,7 +24,7 @@ model = MLP()
 model.eval()
 example_inputs = [torch.rand(30, 30)]
 llvm_mod = allo.frontend.from_pytorch(
-    model, example_inputs=example_inputs, verbose=True
+    model, example_inputs=example_inputs, verbose=False
 )
 
 golden = model(*example_inputs)

@@ -1,9 +1,13 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks
 
 import os
+import re
+import math
 import numpy as np
+from tabulate import tabulate
+
 from hcl_mlir.ir import (
     Location,
     MemRefType,
@@ -18,6 +22,7 @@ from hcl_mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
+    IndexType,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -26,6 +31,7 @@ from hcl_mlir.dialects import (
     memref as memref_d,
     linalg as linalg_d,
     arith as arith_d,
+    scf as scf_d,
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
@@ -384,3 +390,112 @@ def update_generic_op(op, name, shape):
             raise NotImplementedError("Unsupported gelu shape")
     else:
         raise NotImplementedError("Unsupported function")
+
+
+def monitor_memory_usage(intermediate_module):
+    def find_storeop_in_forop(op):
+        result = None
+        for body_op in op.body.operations:
+            if isinstance(body_op, memref_d.StoreOp):
+                result = body_op
+            elif isinstance(body_op, scf_d.ForOp):
+                result_iter = find_storeop_in_forop(body_op)
+                if result is None:
+                    if result_iter is not None:
+                        result = result_iter
+                        break
+                    raise NotImplementedError("No storeop found")
+        return result
+
+    mem_alloc = {}
+    zero_const = []
+    table_data = []
+    total_alloc_count = 0
+    total_memory_bits = 0
+    total_bram = 0
+    for op in intermediate_module.body.operations:
+        if isinstance(op, func_d.FuncOp):
+            if not op.is_external:
+                for body_op in op.entry_block.operations:
+                    # record zero constants
+                    if isinstance(body_op, arith_d.ConstantOp):
+                        dtype = body_op.type
+                        if not isinstance(dtype, IndexType):
+                            value = body_op.literal_value
+                            if value == 0:
+                                name = str(body_op).split("=", maxsplit=1)[0].strip()
+                                zero_const.append(name)
+                    # record memref.alloc
+                    if isinstance(body_op, memref_d.AllocOp):
+                        alloc_name = str(body_op).split("=", maxsplit=1)[0].strip()
+                        mem_alloc[alloc_name] = []
+                        mem_type = body_op.result.type
+                        mem_shape = mem_type.shape
+                        mem_dtype = str(mem_type.element_type)
+                        mem_bits = 1
+                        for dim in mem_shape:
+                            mem_bits *= dim
+                        data_bits = int(re.search(r"\d+", mem_dtype).group())
+                        mem_bits *= data_bits
+                        bram = math.ceil(mem_bits / (18 * 1024))
+                        store_count = 0
+                        mem_alloc[alloc_name].append(
+                            [mem_shape, mem_dtype, mem_bits, bram, store_count]
+                        )
+                        total_alloc_count += 1
+                        total_memory_bits += mem_bits
+                        total_bram += bram
+                    # record storage to memref.alloc
+                    elif isinstance(body_op, scf_d.ForOp):
+                        store_op = find_storeop_in_forop(body_op)
+                        if isinstance(store_op, memref_d.StoreOp):
+                            value_name = (
+                                str(store_op.value.owner)
+                                .split("=", maxsplit=1)[0]
+                                .strip()
+                            )
+                            if value_name not in zero_const:
+                                memref_name = (
+                                    str(store_op.memref.owner)
+                                    .split("=", maxsplit=1)[0]
+                                    .strip()
+                                )
+                                if memref_name in mem_alloc:
+                                    mem_alloc[memref_name].append(
+                                        str(store_op.value.owner)
+                                    )
+                                    mem_alloc[memref_name][0][-1] += 1
+    for key, value in mem_alloc.items():
+        table_data.append(
+            [
+                key,
+                value[0][0],
+                value[0][1],
+                value[0][2],
+                value[0][3],
+                value[0][4],
+                "\n".join(value[1:]),
+            ]
+        )
+    table_data.append(
+        [
+            "Total(" + str(total_alloc_count) + ")",
+            "",
+            "",
+            total_memory_bits,
+            total_bram,
+            "",
+            "*data storage: data stored into an allocated memory. Doesn't include init.",
+        ]
+    )
+    table_headers = [
+        "name",
+        "shape",
+        "dtype",
+        "mem(bits)",
+        "BRAM(18K)",
+        "store counts",
+        "data storage",
+    ]
+    table = tabulate(table_data, headers=table_headers, tablefmt="grid")
+    return str(table)

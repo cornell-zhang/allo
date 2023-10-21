@@ -1427,18 +1427,19 @@ class ASTTransformer(ASTBuilder):
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # Add HLS IP as external library
-                ctx.ext_libs.append(obj)
-                # Suppose it does not have any return values
-                input_types = []
-                for arg_type, shape in obj.args:
-                    ele_type = get_mlir_dtype_from_str(arg_type)
-                    memref = MemRefType.get(shape, ele_type)
-                    input_types.append(memref)
-                func_type = FunctionType.get(input_types, [])
-                func_op = func_d.FuncOp(
-                    name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
-                )
-                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+                if obj not in ctx.ext_libs:
+                    ctx.ext_libs.append(obj)
+                    # Suppose it does not have any return values
+                    input_types = []
+                    for arg_type, shape in obj.args:
+                        ele_type = get_mlir_dtype_from_str(arg_type)
+                        memref = MemRefType.get(shape, ele_type)
+                        input_types.append(memref)
+                    func_type = FunctionType.get(input_types, [])
+                    func_op = func_d.FuncOp(
+                        name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
+                    )
+                    func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 call_op = func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(obj.top),
@@ -1850,6 +1851,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Return(ctx, node):
+        if node.value is not None and ctx.top_func_tree.dtype is None:
+            raise RuntimeError("Return value should have a dtype in function signature")
         if isinstance(node.value, ast.Tuple):
             # return multiple values
             rets = []
