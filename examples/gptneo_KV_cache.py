@@ -92,10 +92,9 @@ class KVCache(nn.Module):
     def __init__(self):
         super(KVCache, self).__init__()
 
-    def forward(self, k, k_cache, v, v_cache, n_tokens):
-        k_cache[:, :, n_tokens, :] = k[:, :, 0, :]
-        v_cache[:, :, n_tokens, :] = v[:, :, 0, :]
-        return k_cache, v_cache
+    def forward(self, inp, cache, n_tokens):
+        cache[:, :, n_tokens, :] = inp[:, :, 0, :]
+        return cache
 
 
 class MultiHeadAttention(nn.Module):
@@ -142,7 +141,8 @@ class MultiHeadAttention(nn.Module):
         k = self.split_heads(k)
         v = self.split_heads(v)
         if k_cache is not None and v_cache is not None:
-            k_cache, v_cache = self.kv_cache(k, k_cache, v, v_cache, n)
+            k_cache = self.kv_cache(k, k_cache, n)
+            v_cache = self.kv_cache(v, v_cache, n)
             output = self.attn(q, k_cache, v_cache, n)
         else:
             output = self.scaled_dot_product(q, k, v, x)
@@ -197,7 +197,7 @@ def load_weights(model, emb_model):
 
 def llvm_generate(input_text, n_tokens_to_generate):
     output_vocab = []
-    model = GPTneo(vocab_size, n_embd, n_head, n_layers, max_seq_len).eval()
+    model = GPTneo(vocab_size, n_embd, n_head, n_layers, n_tokens_to_generate).eval()
     embeddings = Embedding(vocab_size, n_position, n_embd).eval()
     load_weights(model, embeddings)
     tokenizer = AutoTokenizer.from_pretrained(

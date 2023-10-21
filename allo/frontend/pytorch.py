@@ -15,7 +15,7 @@ try:
     from .tracer import AlloTracer
 except ImportError:
     pass
-from .library import CoreAttention, KVCache
+from .library import CoreAttention_lib, KVCache_lib
 from .. import dsl
 from ..ir import types
 from ..customize import customize
@@ -76,6 +76,7 @@ class TorchBuilder:
         self.leaf_modules = leaf_modules
         self.input_args = []
         self.named_params = gm.named_parameters()
+        self.subfunctions = []
         self.output = []
 
     def build(self):
@@ -102,18 +103,21 @@ class TorchBuilder:
             else f"{name}: int32"
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
-        # inputs
-        res = f"def forward({', '.join(args)})".format()
+        res = ""
+        # top-level function
+        res += f"def forward({', '.join(args)})".format()
         # outputs
         res += f" -> ({', '.join(self.output)}):\n"
-        # global parameters
+        # subfunctions
+        if self.subfunctions:
+            res += "\n".join(self.subfunctions) + "\n"
         if self.named_params:
             for name, param in self.named_params:
                 new_name = name.replace(".", "_")
-                res += f"  {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+                res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
         # function body
         for line in self.code:
-            res += f"  {line}\n"
+            res += f"    {line}\n"
         return res
 
     def __call__(self, node):
@@ -187,31 +191,36 @@ class TorchBuilder:
             else None
         )
 
+    def append_output(self, output):
+        shape = str(list(output.shape))
+        dtype = str(output.dtype)[6:]
+        self.output.append(dtype + shape)
+
     def build_output(self, node):
-        for output in node.meta["tensor_meta"]:
-            if isinstance(output, TensorMetadata):
-                output_tensor_meta = output
-                shape = str(list(output_tensor_meta.shape))
-                dtype = str(output_tensor_meta.dtype)[6:]
-                self.output.append(dtype + shape)
-            elif isinstance(output, (list, tuple)):
-                for item in output:
-                    if isinstance(item, TensorMetadata):
-                        output_tensor_meta = item
-                        shape = str(list(output_tensor_meta.shape))
-                        dtype = str(output_tensor_meta.dtype)[6:]
-                        self.output.append(dtype + shape)
-                    else:
-                        raise NotImplementedError("Unsupported output type")
-            elif isinstance(output, dict):
-                output_tensor_meta = list(output.values())[0]
-                shape = str(list(output_tensor_meta.shape))
-                dtype = str(output_tensor_meta.dtype)[6:]
-                self.output.append(dtype + shape)
-            else:
-                raise NotImplementedError("Unsupported output type")
+        if isinstance(node.meta["tensor_meta"], TensorMetadata):
+            self.append_output(node, node.meta["tensor_meta"])
+        elif isinstance(node.meta["tensor_meta"], (list, tuple)):
+            for output in node.meta["tensor_meta"]:
+                if isinstance(output, TensorMetadata):
+                    self.append_output(node, output)
+                elif isinstance(output, (list, tuple)):
+                    for item in output:
+                        if isinstance(item, TensorMetadata):
+                            self.append_output(node, item)
+                elif isinstance(output, dict):
+                    for item in output.values():
+                        if isinstance(item, TensorMetadata):
+                            self.append_output(node, item)
+                        else:
+                            raise NotImplementedError("Unsupported output type")
+        elif isinstance(node.meta["tensor_meta"], dict):
+            for output in node.meta["tensor_meta"].values():
+                if isinstance(output, TensorMetadata):
+                    self.append_output(node, output)
         # Unwrap all outputs and return them
         name = get_var_name(node.args[0])
+        if isinstance(name, dict):
+            name = list(name.values())
         return_name = (
             str(name)
             .replace("(", "")
@@ -219,6 +228,8 @@ class TorchBuilder:
             .replace("[", "")
             .replace("]", "")
         )
+        if return_name.endswith(","):
+            return_name = return_name[:-1]
         return f"return ({return_name})"
 
     def build_getitem(self, node):
@@ -340,7 +351,29 @@ class TorchBuilder:
         return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
 
     def build_CoreAttention(self, node):
-        return CoreAttention(node)
+        shape = tuple(self.example_inputs[1][0].shape)
+        src = inspect.getsource(CoreAttention_lib(*shape))
+        src = (
+            src.replace("s_0", str(shape[0]))
+            .replace("s_1", str(shape[1]))
+            .replace("s_2", str(shape[2]))
+            .replace("s_3", str(shape[3]))
+        )
+
+        if src not in self.subfunctions:
+            self.subfunctions.append(src)
+        return f"{node.name} = CoreAttention({', '.join([get_var_name(arg) for arg in node.args])})"
 
     def build_KVCache(self, node):
-        return KVCache(node)
+        shape = tuple(node.meta["tensor_meta"][0])
+        src = inspect.getsource(KVCache_lib(*shape))
+        src = (
+            src.replace("s_0", str(shape[0]))
+            .replace("s_1", str(shape[1]))
+            .replace("s_2", str(shape[2]))
+            .replace("s_3", str(shape[3]))
+        )
+
+        if src not in self.subfunctions:
+            self.subfunctions.append(src)
+        return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"

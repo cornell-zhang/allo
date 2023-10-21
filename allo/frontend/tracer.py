@@ -82,7 +82,7 @@ class AlloTracer(Tracer):
             m, torch.nn.Sequential
         )
 
-    def trace(self):
+    def trace(self, *args):
         for name, (wrapper, orig) in self.patched_torch_methods.items():
             setattr(torch, name, wrapper)
             self.orig_fns.add(orig)

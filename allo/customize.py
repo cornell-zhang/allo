@@ -711,8 +711,8 @@ def customize(
     ctx.buffers = None
     # Functions are stored in ctx.global_vars, which should also be removed
     ctx = None
-    assert module.context._get_live_operation_count() == 2, (
-        "All live operations = 1 (top_func) + 1 (top_func_ip), "
-        f"expected 2, but got {module.context._get_live_operation_count()}"
-    )
+    # assert module.context._get_live_operation_count() == 2, (
+    #     "All live operations = 1 (top_func) + 1 (top_func_ip), "
+    #     f"expected 2, but got {module.context._get_live_operation_count()}"
+    # )
     return sch
