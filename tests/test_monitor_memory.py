@@ -21,7 +21,7 @@ def test_add_same_float():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc    | [32, 32] | f32     |       32768 |           2 | 2              |"
+        "| %alloc   | [32, 32] | f32     |       32768 |           2 | 2              |"
         in monitor_memory_table
     )
 
@@ -40,7 +40,7 @@ def test_add_const_float():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc_1  | [32, 32] | f32     |       32768 |           2 | 2              |"
+        "| %alloc_0 | [32, 32] | f32     |       32768 |           2 | 2              |"
         in monitor_memory_table
     )
 
@@ -56,7 +56,7 @@ def test_calculate():
     monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
     print(monitor_memory_table)
     assert (
-        "| %alloc_1 | [32]    | f32     |        1024 |           1 | 2              |"
+        "| %alloc_0 | [32]    | f32     |        1024 |           1 | 2              |"
         in monitor_memory_table
     )
 
