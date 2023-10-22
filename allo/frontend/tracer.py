@@ -75,8 +75,8 @@ class AlloTracer(Tracer):
                 appear with the qualified name ``foo.bar.baz`` here.
         """
         if self.leaf_modules:
-            for leaf_moduel in self.leaf_modules:
-                if isinstance(m, leaf_moduel):
+            for leaf_module in self.leaf_modules:
+                if isinstance(m, leaf_module):
                     return True
         return m.__module__.startswith("torch.nn") and not isinstance(
             m, torch.nn.Sequential
