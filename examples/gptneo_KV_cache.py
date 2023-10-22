@@ -196,7 +196,7 @@ def load_weights(model, emb_model):
 
 
 def llvm_generate(input_text, n_tokens_to_generate):
-    output_vocab = []
+    output_logits = []
     model = GPTneo(vocab_size, n_embd, n_head, n_layers, n_tokens_to_generate).eval()
     embeddings = Embedding(vocab_size, n_position, n_embd).eval()
     load_weights(model, embeddings)
@@ -237,7 +237,7 @@ def llvm_generate(input_text, n_tokens_to_generate):
             for i in range(len(output)):
                 output[i] = torch.tensor(output[i])
             logits, k_cache, v_cache = output[0], output[1:13], output[13:25]
-            output_vocab.append(logits)
+            output_logits.append(logits)
             next_id = torch.argmax(logits[0, -1, :]).item()
             inputs.append(next_id)  # append prediction to input
             # line break
@@ -245,7 +245,7 @@ def llvm_generate(input_text, n_tokens_to_generate):
                 break
         llvm_generated_text = tokenizer.decode(inputs)
         llvm_out_text = "".join(llvm_generated_text)
-        return llvm_out_text, output_vocab
+        return llvm_out_text, output_logits
 
 
 def gptneo_generate(in_text, n_tokens_to_generate):

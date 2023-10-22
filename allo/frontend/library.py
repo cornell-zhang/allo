@@ -33,7 +33,7 @@ def CoreAttention_lib(s_0, s_1, s_2, s_3):
         sumRow: float32[s_0, s_1, 1] = 0.0
         for i, j, p in dsl.grid(s_0, s_1, 1):
             for m in range(0, n_tokens + 1):
-                for l in range(64):
+                for l in range(s_3):
                     Attn_tmp[i, j, p, m] += q[i, j, p, l] * k_cache[i, j, m, l]
                 Attn_tmp[i, j, p, m] = dsl.exp(Attn_tmp[i, j, p, m])
                 sumRow[i, j, p] += Attn_tmp[i, j, p, m]
