@@ -13,9 +13,8 @@ def KVCache_lib(s_0, s_1, s_2, s_3):
         n_tokens: int32,
     ) -> float32[s_0, s_1, s_2, s_3]:
         for i, j in dsl.grid(s_0, s_1):
-            for p in range(n_tokens, n_tokens + 1):
-                for m in range(s_3):
-                    cache[i, j, p, m] = inp[i, j, 0, m]
+            for m in range(s_3):
+                cache[i, j, n_tokens, m] = inp[i, j, 0, m]
         return cache
 
     return KVCache

@@ -248,7 +248,7 @@ class TorchBuilder:
     def build_getitem(self, node):
         inp = get_var_name(node.args[0])
         index = node.args[1]
-        return f"{node.name} = dsl.copy({inp}_{index})"
+        return f"{node.name} = {inp}_{index}"
 
     def build_add(self, node):
         lhs = get_var_name(node.args[0])

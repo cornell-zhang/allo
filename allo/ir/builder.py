@@ -706,7 +706,8 @@ class ASTTransformer(ASTBuilder):
         if (
             isinstance(node.value, ast.Call) or len(node.value.shape) > 0
         ) and isinstance(node.targets[0], ast.Name):
-            rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
+            if hasattr(rhs, "attribute"):
+                rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
             ctx.buffers[node.targets[0].id] = rhs
             return rhs
         # Store LHS
