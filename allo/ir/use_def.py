@@ -119,7 +119,7 @@ class UseDefChain(ast.NodeVisitor):
         if obj is None:
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
-                raise NotImplementedError(f"Function {node.func.id} not found")
+                return self.visit(node.func.value)
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 return list(self.visit(node.args[0]))
@@ -155,12 +155,14 @@ class UseDefChain(ast.NodeVisitor):
                 "Multiple assignment in one statement not supported"
             )
         parents = self.visit(node.value)
-        if isinstance(node.targets[0], ast.Name):
-            name = node.targets[0].id
-        elif isinstance(node.targets[0], ast.Subscript):
-            name = node.targets[0].value.id
-        else:
-            raise RuntimeError("Unsupported assignment")
+
+        def get_name(subnode):
+            if hasattr(subnode, "id"):
+                return subnode.id
+            else:
+                return get_name(subnode.value)
+
+        name = get_name(node.targets[0])
         var = VarNode(self.path, name)
         for parent in parents:
             parent.add_user(var)
