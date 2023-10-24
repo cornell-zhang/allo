@@ -37,6 +37,9 @@ class UseDefChain(ast.NodeVisitor):
         # Used for nested functions
         self.arg_nodes = []
 
+    def __getitem__(self, key):
+        return self.buffers[key]
+
     def get_name(self, name):
         if self.path == "":
             return name
@@ -166,7 +169,6 @@ class UseDefChain(ast.NodeVisitor):
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
         if node.value is not None:
-            print(node.target.id, node.value)
             parents = self.visit(node.value)
             for parent in parents:
                 parent.add_user(var)

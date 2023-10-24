@@ -686,7 +686,7 @@ def customize(
         # Checking
         global_vars[typevar] = global_vars[typevar].instantiate(instantiate[typevar])
     # Use-def chain analysis
-    use_def_chain = UseDefChain(global_vars)
+    use_def_chain = UseDefChain(global_vars.copy())
     use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
