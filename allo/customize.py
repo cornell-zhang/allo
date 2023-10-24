@@ -713,7 +713,7 @@ def customize(
         ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
         ext_libs=ctx.ext_libs,
-        use_def_chain=use_def_chain.buffers,
+        use_def_chain=use_def_chain,
     )
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that
