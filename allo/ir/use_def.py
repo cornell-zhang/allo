@@ -42,11 +42,13 @@ class UseDefChain(ast.NodeVisitor):
             return self.path + "." + name
 
     def dump_graph(self, top_func_name):
+        print("digraph G {")
         for var in self.buffers.values():
             if var.path == top_func_name:
-                print(f"{var.path}_{var.name} [style=filled, color=gray];")
+                print(f"  {var.path}_{var.name} [style=filled, color=gray];")
             users = ", ".join([f"{user.path}_{user.name}" for user in var.users])
-            print(f"{var.path}_{var.name} -> {{{users}}}")
+            print(f"  {var.path}_{var.name} -> {{{users}}}")
+        print("}")
 
     def visit_Constant(self, node):
         return []
