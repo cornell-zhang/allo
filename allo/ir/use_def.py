@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=unused-argument
 
+from _ast import Attribute
 import ast
 import inspect
 import textwrap
+from typing import Any
 
 from .symbol_resolver import ASTResolver
 
@@ -58,6 +60,24 @@ class UseDefChain(ast.NodeVisitor):
             return set([self.buffers[self.get_name(node.id)]])
         else:
             return set()
+
+    def visit_Attribute(self, node):
+        return self.visit(node.value)
+
+    def visit_Index(self, node):
+        return self.visit(node.value)
+
+    def visit_Tuple(self, node):
+        res = []
+        for elt in node.elts:
+            res += list(self.visit(elt))
+        return set(res)
+
+    def visit_List(self, node):
+        return set()
+
+    def visit_UnaryOp(self, node):
+        return self.visit(node.operand)
 
     def visit_BinOp(self, node):
         left = self.visit(node.left)
@@ -146,6 +166,7 @@ class UseDefChain(ast.NodeVisitor):
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
         if node.value is not None:
+            print(node.target.id, node.value)
             parents = self.visit(node.value)
             for parent in parents:
                 parent.add_user(var)
