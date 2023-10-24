@@ -8,7 +8,7 @@ from allo.ir.types import int32, float32
 
 
 def get_user_names(users):
-    return [user.path + ":" + user.name for user in users]
+    return set([user.path + ":" + user.name for user in users])
 
 
 def test_use_def_chain():
@@ -30,19 +30,27 @@ def test_use_def_chain():
 
     s = allo.customize(kernel, verbose=True)
     print(s.module)
-    assert get_user_names(s.use_def_chain["kernel.A"].users) == [
-        "kernel:D",
-        "kernel:C",
-        "kernel:B",
-    ]
-    assert get_user_names(s.use_def_chain["kernel.B"].users) == ["kernel:D", "kernel:C"]
-    assert get_user_names(s.use_def_chain["kernel.D"].users) == ["foo:A", "kernel:E"]
-    assert get_user_names(s.use_def_chain["foo.A"].users) == [
-        "foo2:A",
-        "foo:C",
-        "foo:B",
-    ]
-    assert get_user_names(s.use_def_chain["foo.C"].users) == ["kernel:E"]
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == set(
+        [
+            "kernel:D",
+            "kernel:C",
+            "kernel:B",
+        ]
+    )
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == set(
+        ["kernel:D", "kernel:C"]
+    )
+    assert get_user_names(s.use_def_chain["kernel.D"].users) == set(
+        ["foo:A", "kernel:E"]
+    )
+    assert get_user_names(s.use_def_chain["foo.A"].users) == set(
+        [
+            "foo2:A",
+            "foo:C",
+            "foo:B",
+        ]
+    )
+    assert get_user_names(s.use_def_chain["foo.C"].users) == set(["kernel:E"])
 
 
 def test_use_def_chain_array():
@@ -59,11 +67,15 @@ def test_use_def_chain_array():
 
     s = allo.customize(gemm, verbose=True)
     print(s.module)
-    assert get_user_names(s.use_def_chain["gemm.A"].users) == ["gemm:ret", "kernel:A"]
-    assert get_user_names(s.use_def_chain["gemm.B"].users) == ["gemm:ret", "kernel:B"]
-    assert get_user_names(s.use_def_chain["kernel.A"].users) == ["kernel:C"]
-    assert get_user_names(s.use_def_chain["kernel.B"].users) == ["kernel:C"]
-    assert get_user_names(s.use_def_chain["kernel.C"].users) == ["gemm:ret"]
+    assert get_user_names(s.use_def_chain["gemm.A"].users) == set(
+        ["gemm:ret", "kernel:A"]
+    )
+    assert get_user_names(s.use_def_chain["gemm.B"].users) == set(
+        ["gemm:ret", "kernel:B"]
+    )
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == set(["kernel:C"])
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == set(["kernel:C"])
+    assert get_user_names(s.use_def_chain["kernel.C"].users) == set(["gemm:ret"])
 
 
 def test_nested_functions():

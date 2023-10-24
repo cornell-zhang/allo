@@ -101,15 +101,22 @@ class UseDefChain(ast.NodeVisitor):
             return arg_nodes
 
     def visit_Assign(self, node):
+        # Compute RHS
         if len(node.targets) > 1:
             raise NotImplementedError(
                 "Multiple assignment in one statement not supported"
             )
-        var = VarNode(self.path, node.targets[0].id)
         parents = self.visit(node.value)
+        if isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+        elif isinstance(node.targets[0], ast.Subscript):
+            name = node.targets[0].value.id
+        else:
+            raise RuntimeError("Unsupported assignment")
+        var = VarNode(self.path, name)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(node.targets[0].id)] = var
+        self.buffers[self.get_name(name)] = var
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
