@@ -83,31 +83,36 @@ class UseDefChain(ast.NodeVisitor):
     def visit_Call(self, node):
         obj = ASTResolver.resolve(node.func, self.global_vars)
         if obj is None:
-            raise NotImplementedError(f"Function {node.func.id} not found")
+            if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                raise NotImplementedError(f"Function {node.func.id} not found")
+            elif node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                return list(self.visit(node.args[0]))
+            else:
+                raise RuntimeError(f"Unsupported function call {node.func.id}")
         if obj.__module__.startswith("allo"):
             raise NotImplementedError("allo functions not supported")
         # User-defined subfunction
         func = self.global_vars[node.func.id]
+        arg_nodes = []
+        # The arguments have order
+        for arg in node.args:
+            arg_nodes += list(self.visit(arg))
         if isinstance(func, ast.FunctionDef):
             # Has already been defined in the top-level scope
-            raise NotImplementedError("Nested functions not supported")
+            tree = func
         else:
-            # Visit arguments in the top-level
-            arg_nodes = []
-            # The arguments have order
-            for arg in node.args:
-                arg_nodes += list(self.visit(arg))
-            func = self.global_vars[node.func.id]
             src, _ = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
             tree = ast.parse(src)
-            original_arg_nodes = self.arg_nodes
-            self.arg_nodes = arg_nodes
-            ret = self.visit(tree)
-            arg_nodes += list(ret)
-            self.arg_nodes = original_arg_nodes
-            return arg_nodes
+        original_arg_nodes = self.arg_nodes
+        self.arg_nodes = arg_nodes
+        ret = self.visit(tree)
+        arg_nodes += list(ret)
+        self.arg_nodes = original_arg_nodes
+        return arg_nodes
 
     def visit_Assign(self, node):
         # Compute RHS
@@ -129,9 +134,10 @@ class UseDefChain(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
-        parents = self.visit(node.value)
-        for parent in parents:
-            parent.add_user(var)
+        if node.value is not None:
+            parents = self.visit(node.value)
+            for parent in parents:
+                parent.add_user(var)
         self.buffers[self.get_name(node.target.id)] = var
 
     def visit_AugAssign(self, node):
@@ -169,6 +175,8 @@ class UseDefChain(ast.NodeVisitor):
         for stmt in node.body:
             res.append(self.visit(stmt))
         self.path = original_path
+        # Add the visited function to global variable for later reference
+        self.global_vars[node.name] = node
         return res[-1]
 
     def visit_Module(self, node):
