@@ -64,6 +64,17 @@ class UseDefChain(ast.NodeVisitor):
         right = self.visit(node.right)
         return set(left).union(set(right))
 
+    def visit_Compare(self, node):
+        left = self.visit(node.left)
+        right = self.visit(node.comparators[0])
+        return set(left).union(set(right))
+
+    def visit_IfExp(self, node):
+        cond = self.visit(node.test)
+        if_branch = self.visit(node.body)
+        else_branch = self.visit(node.orelse)
+        return set(cond).union(set(if_branch)).union(set(else_branch))
+
     def visit_For(self, node):
         if node.orelse:
             raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
