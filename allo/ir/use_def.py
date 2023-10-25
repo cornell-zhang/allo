@@ -126,7 +126,10 @@ class UseDefChain(ast.NodeVisitor):
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
         if obj.__module__.startswith("allo"):
-            raise NotImplementedError("allo functions not supported")
+            arg_nodes = []
+            for arg in node.args:
+                arg_nodes += list(self.visit(arg))
+            return arg_nodes
         # User-defined subfunction
         func = self.global_vars[node.func.id]
         arg_nodes = []
