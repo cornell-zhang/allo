@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=unused-argument
 
-from _ast import Attribute
 import ast
 import inspect
 import textwrap
-from typing import Any
 
 from .symbol_resolver import ASTResolver
 
@@ -43,8 +41,7 @@ class UseDefChain(ast.NodeVisitor):
     def get_name(self, name):
         if self.path == "":
             return name
-        else:
-            return self.path + "." + name
+        return self.path + "." + name
 
     def dump_graph(self, top_func_name):
         print("digraph G {")
@@ -61,8 +58,7 @@ class UseDefChain(ast.NodeVisitor):
     def visit_Name(self, node):
         if self.get_name(node.id) in self.buffers:
             return set([self.buffers[self.get_name(node.id)]])
-        else:
-            return set()
+        return set()
 
     def visit_Attribute(self, node):
         return self.visit(node.value)
@@ -120,11 +116,10 @@ class UseDefChain(ast.NodeVisitor):
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
                 return self.visit(node.func.value)
-            elif node.func.id in {"float", "int"}:
+            if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 return list(self.visit(node.args[0]))
-            else:
-                raise RuntimeError(f"Unsupported function call {node.func.id}")
+            raise RuntimeError(f"Unsupported function call {node.func.id}")
         if obj.__module__.startswith("allo"):
             arg_nodes = []
             for arg in node.args:
@@ -163,8 +158,7 @@ class UseDefChain(ast.NodeVisitor):
         def get_name(subnode):
             if hasattr(subnode, "id"):
                 return subnode.id
-            else:
-                return get_name(subnode.value)
+            return get_name(subnode.value)
 
         name = get_name(node.targets[0])
         var = VarNode(self.path, name)
