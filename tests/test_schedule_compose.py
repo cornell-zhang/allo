@@ -29,7 +29,9 @@ def test_use_def_chain():
         return E
 
     s = allo.customize(kernel, verbose=True)
-    print(s.module)
+    assert get_user_names(s.use_def_chain.get_equivalent_tensors("kernel.D")) == set(
+        ["foo:A", "foo2:A"]
+    )
     assert get_user_names(s.use_def_chain["kernel.A"].users) == set(
         [
             "kernel:D",

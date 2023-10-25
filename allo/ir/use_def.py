@@ -52,6 +52,19 @@ class UseDefChain(ast.NodeVisitor):
             print(f"  {var.path}_{var.name} -> {{{users}}}")
         print("}")
 
+    def get_equivalent_tensors(self, key):
+        def recursive_helper(key):
+            local_res = []
+            path = key.split(".")[0]
+            for tensor in self.buffers[key].users:
+                if tensor.path != path:
+                    local_res.append(tensor)
+                    local_res += recursive_helper(tensor.path + "." + tensor.name)
+            return local_res
+
+        res = recursive_helper(key)
+        return res
+
     def visit_Constant(self, node):
         return []
 
