@@ -147,7 +147,8 @@ class UseDefChain(ast.NodeVisitor):
         original_arg_nodes = self.arg_nodes
         self.arg_nodes = arg_nodes
         ret = self.visit(tree)
-        arg_nodes += list(ret)
+        if ret is not None:
+            arg_nodes += list(ret)
         self.arg_nodes = original_arg_nodes
         return arg_nodes
 
