@@ -7,6 +7,77 @@ import allo
 from allo.ir.types import int32, float32
 
 
+def get_user_names(users):
+    return set([user.path + ":" + user.name for user in users])
+
+
+def test_use_def_chain():
+    def foo2(A: int32) -> int32:
+        B: int32 = A + 1
+        return B
+
+    def foo(A: int32) -> int32:
+        B: int32 = (A - 1) / (A + 1)
+        C: int32 = foo2(A) + B
+        return C
+
+    def kernel(A: int32) -> int32:
+        B: int32 = A + 1
+        C: int32 = A * B
+        D: int32 = (C + 1) - (B * A)
+        E: int32 = foo(D)
+        return E
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == set(
+        [
+            "kernel:D",
+            "kernel:C",
+            "kernel:B",
+        ]
+    )
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == set(
+        ["kernel:D", "kernel:C"]
+    )
+    assert get_user_names(s.use_def_chain["kernel.D"].users) == set(
+        ["foo:A", "kernel:E"]
+    )
+    assert get_user_names(s.use_def_chain["foo.A"].users) == set(
+        [
+            "foo2:A",
+            "foo:C",
+            "foo:B",
+        ]
+    )
+    assert get_user_names(s.use_def_chain["foo.C"].users) == set(["kernel:E"])
+
+
+def test_use_def_chain_array():
+    def kernel(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j in allo.grid(32, 32):
+            for k in allo.reduction(32):
+                C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        ret = kernel(A, B)
+        return ret
+
+    s = allo.customize(gemm, verbose=True)
+    print(s.module)
+    assert get_user_names(s.use_def_chain["gemm.A"].users) == set(
+        ["gemm:ret", "kernel:A"]
+    )
+    assert get_user_names(s.use_def_chain["gemm.B"].users) == set(
+        ["gemm:ret", "kernel:B"]
+    )
+    assert get_user_names(s.use_def_chain["kernel.A"].users) == set(["kernel:C"])
+    assert get_user_names(s.use_def_chain["kernel.B"].users) == set(["kernel:C"])
+    assert get_user_names(s.use_def_chain["kernel.C"].users) == set(["gemm:ret"])
+
+
 def test_nested_functions():
     M, K, N = 32, 32, 32
 

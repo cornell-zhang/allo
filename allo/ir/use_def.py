@@ -1,0 +1,226 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+# pylint: disable=unused-argument
+
+import ast
+import inspect
+import textwrap
+
+from .symbol_resolver import ASTResolver
+
+
+class VarNode:
+    def __init__(self, path, name):
+        self.path = path
+        self.name = name
+        self.users = set()
+
+    def add_user(self, node):
+        # node is a VarNode
+        self.users.add(node)
+
+    def add_users(self, nodes):
+        for node in nodes:
+            self.users.add(node)
+
+    def __repr__(self):
+        return f"VarNode({self.path}:{self.name})"
+
+
+class UseDefChain(ast.NodeVisitor):
+    def __init__(self, global_vars):
+        self.buffers = {}
+        self.path = ""
+        self.global_vars = global_vars
+        # Used for nested functions
+        self.arg_nodes = []
+
+    def __getitem__(self, key):
+        return self.buffers[key]
+
+    def get_name(self, name):
+        if self.path == "":
+            return name
+        return self.path + "." + name
+
+    def dump_graph(self, top_func_name):
+        print("digraph G {")
+        for var in self.buffers.values():
+            if var.path == top_func_name:
+                print(f"  {var.path}_{var.name} [style=filled, color=gray];")
+            users = ", ".join([f"{user.path}_{user.name}" for user in var.users])
+            print(f"  {var.path}_{var.name} -> {{{users}}}")
+        print("}")
+
+    def visit_Constant(self, node):
+        return []
+
+    def visit_Name(self, node):
+        if self.get_name(node.id) in self.buffers:
+            return set([self.buffers[self.get_name(node.id)]])
+        return set()
+
+    def visit_Attribute(self, node):
+        return self.visit(node.value)
+
+    def visit_Index(self, node):
+        return self.visit(node.value)
+
+    def visit_Tuple(self, node):
+        res = []
+        for elt in node.elts:
+            res += list(self.visit(elt))
+        return set(res)
+
+    def visit_List(self, node):
+        return set()
+
+    def visit_UnaryOp(self, node):
+        return self.visit(node.operand)
+
+    def visit_BinOp(self, node):
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        return set(left).union(set(right))
+
+    def visit_Compare(self, node):
+        left = self.visit(node.left)
+        right = self.visit(node.comparators[0])
+        return set(left).union(set(right))
+
+    def visit_IfExp(self, node):
+        cond = self.visit(node.test)
+        if_branch = self.visit(node.body)
+        else_branch = self.visit(node.orelse)
+        return set(cond).union(set(if_branch)).union(set(else_branch))
+
+    def visit_For(self, node):
+        if node.orelse:
+            raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
+        if isinstance(node.iter, ast.Call):
+            obj = ASTResolver.resolve(node.iter.func, self.global_vars)
+            if (
+                obj is None
+                and isinstance(node.iter.func, ast.Name)
+                and node.iter.func.id == "range"
+            ) or (obj is not None and obj.__name__ in {"grid", "reduction"}):
+                res = []
+                for stmt in node.body:
+                    res.append(self.visit(stmt))
+                return res
+        raise RuntimeError("Unsupported for loop")
+
+    def visit_Call(self, node):
+        obj = ASTResolver.resolve(node.func, self.global_vars)
+        if obj is None:
+            if isinstance(node.func, ast.Attribute):
+                # x.T or x.reverse
+                return self.visit(node.func.value)
+            if node.func.id in {"float", "int"}:
+                # Python-Builtin functions
+                return list(self.visit(node.args[0]))
+            raise RuntimeError(f"Unsupported function call {node.func.id}")
+        if obj.__module__.startswith("allo"):
+            arg_nodes = []
+            for arg in node.args:
+                arg_nodes += list(self.visit(arg))
+            return arg_nodes
+        # User-defined subfunction
+        func = self.global_vars[node.func.id]
+        arg_nodes = []
+        # The arguments have order
+        for arg in node.args:
+            arg_nodes += list(self.visit(arg))
+        if isinstance(func, ast.FunctionDef):
+            # Has already been defined in the top-level scope
+            tree = func
+        else:
+            src, _ = inspect.getsourcelines(func)
+            src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
+            src = textwrap.dedent("\n".join(src))
+            tree = ast.parse(src)
+        original_arg_nodes = self.arg_nodes
+        self.arg_nodes = arg_nodes
+        ret = self.visit(tree)
+        if ret is not None:
+            arg_nodes += list(ret)
+        self.arg_nodes = original_arg_nodes
+        return arg_nodes
+
+    def visit_Assign(self, node):
+        # Compute RHS
+        if len(node.targets) > 1:
+            raise NotImplementedError(
+                "Multiple assignment in one statement not supported"
+            )
+        parents = self.visit(node.value)
+
+        def get_name(subnode):
+            if hasattr(subnode, "id"):
+                return subnode.id
+            return get_name(subnode.value)
+
+        name = get_name(node.targets[0])
+        var = VarNode(self.path, name)
+        for parent in parents:
+            parent.add_user(var)
+        self.buffers[self.get_name(name)] = var
+
+    def visit_AnnAssign(self, node):
+        var = VarNode(self.path, node.target.id)
+        if node.value is not None:
+            parents = self.visit(node.value)
+            for parent in parents:
+                parent.add_user(var)
+        self.buffers[self.get_name(node.target.id)] = var
+
+    def visit_AugAssign(self, node):
+        if isinstance(node.target, ast.Subscript):
+            name = node.target.value.id
+        elif isinstance(node.target, ast.Name):  # scalar
+            name = node.target.id
+        else:
+            raise NotImplementedError("Unsupported AugAssign")
+        var = VarNode(self.path, name)
+        parents = self.visit(node.value)
+        for parent in parents:
+            parent.add_user(var)
+        self.buffers[self.get_name(name)] = var
+
+    def visit_Subscript(self, node):
+        res = self.visit(node.value)
+        return res
+
+    def visit_FunctionDef(self, node):
+        original_path = self.path
+        if self.path == "":
+            self.path = node.name
+            # create initial variables
+            for arg in node.args.args:
+                self.buffers[self.get_name(arg.arg)] = VarNode(node.name, arg.arg)
+        else:
+            self.path = node.name
+            for inner_arg, outer_arg in zip(node.args.args, self.arg_nodes):
+                self.buffers[self.get_name(inner_arg.arg)] = VarNode(
+                    self.path, inner_arg.arg
+                )
+                outer_arg.add_user(self.buffers[self.get_name(inner_arg.arg)])
+        res = []
+        for stmt in node.body:
+            res.append(self.visit(stmt))
+        self.path = original_path
+        # Add the visited function to global variable for later reference
+        self.global_vars[node.name] = node
+        return res[-1]
+
+    def visit_Module(self, node):
+        res = []
+        assert (
+            len(node.body) == 1
+        ), "Only one function definition in a module is allowed"
+        for stmt in node.body:
+            res.append(self.visit(stmt))
+        return res[0]
+
+    def visit_Return(self, node):
+        return self.visit(node.value)
