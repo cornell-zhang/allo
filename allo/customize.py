@@ -594,14 +594,12 @@ class Schedule:
             for primitive in sch.primitive_sequences:
                 if primitive[0] == "partition":
                     args, kwargs = primitive[1:]
-                    # =================================
-                    # The context is sch.module.context
-                    if len(args) != 0:
-                        target = args[0]
-                    else:
-                        target = kwargs["target"]
+                    target = args[0] if len(args) != 0 else kwargs["target"]
                     with self.module.context, Location.unknown():
                         self.partition.__wrapped__(self, target, *args[1:], **kwargs)
+                        self.primitive_sequences.append(
+                            ("partition", [target] + list(args[1:]), kwargs)
+                        )
 
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":

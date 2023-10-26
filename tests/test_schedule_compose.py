@@ -280,5 +280,35 @@ def test_output_partition_compose():
     print(f)
 
 
+def test_nested_compose_partition():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    s_addi.partition(s_addi.A)
+
+    def matrix_addi_top(A: int32[M, N]) -> int32[M, N]:
+        B = matrix_addi(A)
+        return B
+
+    s_addi_top = allo.customize(matrix_addi_top)
+    s_addi_top.compose(s_addi)
+    print(s_addi_top.module)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp = matrix_addi_top(inp)
+        return outp
+
+    s = allo.customize(top)
+    # s.partition(s.inp)
+    s.compose(s_addi_top)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
