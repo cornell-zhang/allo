@@ -70,11 +70,11 @@ class UseDefChain(ast.NodeVisitor):
             return local_res
 
         results = {key: set() for key in self.buffers}
-        for key in self.buffers:
+        for key, buffer in self.buffers.items():
             res = recursive_helper(key)
             results[key].update(set(res))
             for tensor in res:
-                results[f"{tensor.path}.{tensor.name}"].add(self.buffers[key])
+                results[f"{tensor.path}.{tensor.name}"].add(buffer)
         return results[target_key]
 
     def visit_Constant(self, node):

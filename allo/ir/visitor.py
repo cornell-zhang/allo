@@ -32,7 +32,9 @@ class AffineScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars, mlir_ctx, func_args=None, enable_tensor=False, verbose=False):
+    def __init__(
+        self, global_vars, mlir_ctx, func_args=None, enable_tensor=False, verbose=False
+    ):
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None

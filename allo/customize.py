@@ -303,7 +303,7 @@ class Schedule:
             func_to_partitioned.append((var.path, var.name, var.idx))
         # Add partition ops to subfunctions
         # pylint: disable=too-many-nested-blocks
-        for (func_name, var_name, idx) in func_to_partitioned:
+        for func_name, var_name, idx in func_to_partitioned:
             for op in self.module.body.operations:
                 if (
                     isinstance(op, func_d.FuncOp)
@@ -565,7 +565,6 @@ class Schedule:
 
     @wrapped_apply
     def compose(self, *schs):
-        # pylint: disable=too-many-nested-blocks
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
