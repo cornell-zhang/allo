@@ -539,11 +539,10 @@ def test_call_partition_nested():
         return C
 
     def top(inp: int32[M, N]) -> int32[M, N]:
-        outp: int32[M, N]
         temp1 = matrix_addi(inp)
         temp2 = matrix_addi(inp)
-        outp = matrix_add(temp1, temp2)
-        return outp
+        res = matrix_add(temp1, temp2)
+        return res
 
     s = allo.customize(top)
     s.partition(s.temp1)
