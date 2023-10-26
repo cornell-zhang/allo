@@ -568,27 +568,6 @@ class Schedule:
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
-            funcs_to_replace = []
-            # Create a new module in the current context
-            new_mod = Module.parse(str(sch.module), self.module.context)
-            for func in new_mod.body.operations:
-                # Move all the functions to the front of the current module
-                if isinstance(func, func_d.FuncOp):
-                    for target in self.module.body.operations:
-                        if (
-                            isinstance(target, func_d.FuncOp)
-                            and func.name.value == target.name.value
-                        ):
-                            func.move_before(target)
-                            target.operation.erase()
-                            funcs_to_replace.append(func.name.value)
-                            break
-                    else:
-                        raise RuntimeError(
-                            f"Target function {func.name.value} not found"
-                        )
-            func = None
-            new_mod = None
             # Need to update CallOp arguments since some of them may be partitioned
             # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:

@@ -310,5 +310,37 @@ def test_nested_compose_partition():
     print(s.module)
 
 
+def test_reuse_function_1():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    s_addi.partition(s_addi.A)
+
+    def matrix_subi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] - 1
+        return B
+
+    s_subi = allo.customize(matrix_subi)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_subi(temp1)
+        outp = matrix_addi(temp2)
+        return outp
+
+    s = allo.customize(top)
+    s.compose(s_addi)
+    s.compose(s_subi)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
