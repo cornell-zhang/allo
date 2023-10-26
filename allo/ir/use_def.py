@@ -189,7 +189,8 @@ class UseDefChain(ast.NodeVisitor):
         var = VarNode(self.path, name)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
@@ -197,7 +198,8 @@ class UseDefChain(ast.NodeVisitor):
             parents = self.visit(node.value)
             for parent in parents:
                 parent.add_user(var)
-        self.buffers[self.get_name(node.target.id)] = var
+        if self.get_name(node.target.id) not in self.buffers:
+            self.buffers[self.get_name(node.target.id)] = var
 
     def visit_AugAssign(self, node):
         if isinstance(node.target, ast.Subscript):
@@ -210,7 +212,8 @@ class UseDefChain(ast.NodeVisitor):
         parents = self.visit(node.value)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_Subscript(self, node):
         res = self.visit(node.value)
@@ -222,15 +225,19 @@ class UseDefChain(ast.NodeVisitor):
             self.path = node.name
             # create initial variables
             for i, arg in enumerate(node.args.args):
-                self.buffers[self.get_name(arg.arg)] = VarNode(node.name, arg.arg, i)
+                if self.get_name(arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(arg.arg)] = VarNode(
+                        node.name, arg.arg, i
+                    )
         else:
             self.path = node.name
             for i, (inner_arg, outer_arg) in enumerate(
                 zip(node.args.args, self.arg_nodes)
             ):
-                self.buffers[self.get_name(inner_arg.arg)] = VarNode(
-                    self.path, inner_arg.arg, i
-                )
+                if self.get_name(inner_arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(inner_arg.arg)] = VarNode(
+                        self.path, inner_arg.arg, i
+                    )
                 outer_arg.add_user(self.buffers[self.get_name(inner_arg.arg)])
         res = []
         for stmt in node.body:
