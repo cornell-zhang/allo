@@ -707,6 +707,10 @@ class ASTTransformer(ASTBuilder):
             isinstance(node.value, ast.Call) or len(node.value.shape) > 0
         ) and isinstance(node.targets[0], ast.Name):
             rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
+            if node.targets[0].id in ctx.buffers:
+                raise RuntimeError(
+                    f"Variable `{node.targets[0].id}` has already been defined, please use a different name"
+                )
             ctx.buffers[node.targets[0].id] = rhs
             return rhs
         # Store LHS
@@ -1129,10 +1133,11 @@ class ASTTransformer(ASTBuilder):
             # Create a new context to avoid name collision
             old_ctx = ctx
             ctx = ASTContext(
-                global_vars=ctx.global_vars,
+                global_vars=old_ctx.global_vars,
                 mlir_ctx=old_ctx.mlir_ctx,
-                enable_tensor=ctx.enable_tensor,
+                enable_tensor=old_ctx.enable_tensor,
                 verbose=old_ctx.verbose,
+                func_args=old_ctx.func_args,
             )
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
@@ -1185,8 +1190,8 @@ class ASTTransformer(ASTBuilder):
         # set context
         ctx.top_func = func_op
         ctx.top_func_tree = node
-        for name, arg in zip(arg_names, func_op.arguments):
-            ctx.buffers[name] = MockArg(arg)
+        for i, (name, arg) in enumerate(zip(arg_names, func_op.arguments)):
+            ctx.buffers[name] = MockArg(arg, idx=i)
         ctx.func_args[node.name] = arg_names
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
@@ -1527,6 +1532,7 @@ class ASTTransformer(ASTBuilder):
                 mlir_ctx=ctx.mlir_ctx,
                 enable_tensor=ctx.enable_tensor,
                 verbose=ctx.verbose,
+                func_args=ctx.func_args,
             )
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
@@ -1536,7 +1542,7 @@ class ASTTransformer(ASTBuilder):
             for name, buffer in func_ctx.buffers.items():
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
-                    setattr(func, name, MockBuffer(f"{node.func.id}.{name}"))
+                    setattr(func, name, MockBuffer(node.func.id, name))
 
         # Build call function in the top-level
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
