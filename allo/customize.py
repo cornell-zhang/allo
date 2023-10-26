@@ -204,24 +204,34 @@ class Schedule:
         assert isinstance(target, MockBuffer), "Target must be a buffer"
         if target.op is not None:
             return -1, target.op
-        func_name, target_name = target.path.rsplit(".", 1)
+        func_name, target_name = target.path, target.name
+        target_func = None
+        for op in self.module.body.operations:
+            if (
+                isinstance(op, func_d.FuncOp)
+                and StringAttr(op.attributes["sym_name"]).value == func_name
+            ):
+                target_func = op
+                break
+        if target_func is None:
+            raise RuntimeError(f"Target function {func_name} not found")
         # Find arguments
         for idx, (name, op) in enumerate(
-            zip(self.func_args[func_name], self.top_func.arguments)
+            zip(self.func_args[func_name], target_func.arguments)
         ):
             if name == target_name:
                 return idx, MockArg(op)
         # Find inner intermediate buffers
-        for op in self.top_func.entry_block.operations:
+        for op in target_func.entry_block.operations:
             if (
                 isinstance(op, memref_d.AllocOp)
                 and "name" in op.attributes
                 and StringAttr(op.attributes["name"]).value == target_name
             ):
                 # verify if it is a return tensor
-                return_op = list(self.top_func.entry_block.operations)[-1]
+                return_op = list(target_func.entry_block.operations)[-1]
                 if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
-                    idx = len(self.top_func.arguments)
+                    idx = len(target_func.arguments)
                 else:
                     idx = -1
                 return idx, op
@@ -237,7 +247,7 @@ class Schedule:
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         # TODO: (1) test whether partition the same array
         #       (2) whether the partition has conflicts for different functions
-        _, target = self._find_target(target)
+        _, mlir_target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -257,20 +267,22 @@ class Schedule:
         partition_type = IntegerAttr.get(i32, partition_type)
         dim = IntegerAttr.get(ui32, dim)
         factor = IntegerAttr.get(ui32, factor)
-        hcl_d.PartitionOp(
-            target.result,
-            partition_kind=partition_type,
-            dim=dim,
-            factor=factor,
-            ip=self.ip,
-        )
+        func_name = target.path
+        if func_name == self.top_func_name:
+            hcl_d.PartitionOp(
+                mlir_target.result,
+                partition_kind=partition_type,
+                dim=dim,
+                factor=factor,
+                ip=self.ip,
+            )
         # calling the same function
-        partitioned_arrays = [target.result]
-        if isinstance(target, func_d.CallOp):
+        partitioned_arrays = [mlir_target.result]
+        if isinstance(mlir_target, func_d.CallOp):
             for call_op in self.top_func.entry_block.operations:
                 if (
                     isinstance(call_op, func_d.CallOp)
-                    and target.attributes["callee"] == call_op.attributes["callee"]
+                    and mlir_target.attributes["callee"] == call_op.attributes["callee"]
                 ):
                     hcl_d.PartitionOp(
                         call_op.results[0],
@@ -282,39 +294,41 @@ class Schedule:
                         ),
                     )
                     partitioned_arrays.append(call_op.results[0])
-        # TODO: Deep nested functions may still have chance to meet errors,
-        #       since this process is not recursive.
         # Make sure the arguments of subfunctions are also partitioned
-        func_to_partitioned = []
-        for call_op in self.top_func.entry_block.operations:
-            if isinstance(call_op, func_d.CallOp):
-                # test arguments
-                for idx, arg in enumerate(call_op.operands):
-                    if arg in partitioned_arrays:
-                        func_to_partitioned.append(
-                            (FlatSymbolRefAttr(call_op.attributes["callee"]).value, idx)
-                        )
-                # test results
-                for idx, res in enumerate(call_op.results):
-                    if res in partitioned_arrays:
-                        func_to_partitioned.append(
-                            (
-                                FlatSymbolRefAttr(call_op.attributes["callee"]).value,
-                                len(call_op.operands) + idx,
-                            )
-                        )
+        equiv_targets = self.use_def_chain.get_equivalent_tensors(
+            f"{target.path}.{target.name}"
+        )
+        func_to_partitioned = [(target.path, target.name, target.idx)]
+        for var in equiv_targets:
+            func_to_partitioned.append((var.path, var.name, var.idx))
         # Add partition ops to subfunctions
         # pylint: disable=too-many-nested-blocks
-        for (
-            func_name,
-            idx,
-        ) in func_to_partitioned:
+        for (func_name, var_name, idx) in func_to_partitioned:
             for op in self.module.body.operations:
                 if (
                     isinstance(op, func_d.FuncOp)
                     and StringAttr(op.attributes["sym_name"]).value == func_name
                 ):
-                    if idx < len(op.arguments):
+                    if idx is None:  # inner variable
+                        for inner_op in op.entry_block.operations:
+                            if (
+                                "name" in inner_op.attributes
+                                and StringAttr(inner_op.attributes["name"]).value
+                                == var_name
+                            ):
+                                hcl_d.PartitionOp(
+                                    inner_op.result,
+                                    partition_kind=partition_type,
+                                    dim=dim,
+                                    factor=factor,
+                                    ip=InsertionPoint.at_block_terminator(
+                                        op.entry_block
+                                    ),
+                                )
+                                break
+                        else:
+                            raise RuntimeError("No inner variable found")
+                    elif idx >= 0:
                         hcl_d.PartitionOp(
                             op.arguments[idx],
                             partition_kind=partition_type,
@@ -323,10 +337,6 @@ class Schedule:
                             ip=InsertionPoint.at_block_terminator(op.entry_block),
                         )
                     else:
-                        idx = idx - len(op.arguments)
-                        assert (
-                            idx == 0
-                        ), "Can only partition one function return for now"
                         return_op = None
                         for inner_op in op.entry_block.operations:
                             if isinstance(inner_op, func_d.ReturnOp):
@@ -425,7 +435,8 @@ class Schedule:
         if len(new_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
         return MockBuffer(
-            f"{self.top_func_name}.{StringAttr(new_reuse_buffers[0].attributes['name']).value}"
+            self.top_func_name,
+            StringAttr(new_reuse_buffers[0].attributes["name"]).value,
         )
 
     @wrapped_apply
@@ -590,46 +601,8 @@ class Schedule:
                         target = args[0]
                     else:
                         target = kwargs["target"]
-                    arg_idx, _ = sch._find_target(target)
-                    if arg_idx == -1:
-                        # The partitioned array is inside the subfunction,
-                        # so we don't need to update the CallOp in the top level
-                        continue
-                    # ==================================
-                    # The context is self.module.context
-                    # Update top-level function call interface
-                    for op in self.top_func.entry_block.operations:
-                        if (
-                            isinstance(op, func_d.CallOp)
-                            and FlatSymbolRefAttr(op.attributes["callee"]).value
-                            in funcs_to_replace
-                        ):
-                            # After all the transformations are added, we lower the module
-                            # Otherwise, the MLIR verifier will complain
-                            if arg_idx >= len(op.operands):
-                                target = MockBuffer(
-                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
-                                    op=op,
-                                )
-                            else:
-                                target = MockBuffer(
-                                    f"{self.top_func_name}.{FlatSymbolRefAttr(op.attributes['callee']).value}",
-                                    op=MockArg(op.operands[arg_idx]),
-                                )
-                            with self.module.context, Location.unknown():
-                                self.partition.__wrapped__(
-                                    self, target, *args[1:], **kwargs
-                                )
-                                # Still need to append the current partition primitive to the sequence
-                                # This is used for deep nested composition
-                                # e.g.
-                                #   s1.partition(...)
-                                #   s2.compose(s1)
-                                #   s3.compose(s2)
-                                # If not appended, s3 will not know the partition primitive of s1
-                                self.primitive_sequences.append(
-                                    ("partition", [target] + list(args[1:]), kwargs)
-                                )
+                    with self.module.context, Location.unknown():
+                        self.partition.__wrapped__(self, target, *args[1:], **kwargs)
 
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
@@ -721,9 +694,16 @@ def customize(
     # which will cause conflicts of different buffers in different contexts.
     if isinstance(fn, Callable):
         for name, buffer in ctx.buffers.items():
-            if isinstance(buffer, (memref_d.AllocOp, MockArg, func_d.CallOp)):
-                # Intermediate buffers and function arguments
-                setattr(sch, name, MockBuffer(f"{fn.__name__}.{name}"))
+            if isinstance(buffer, MockArg):  # Function arguments
+                setattr(
+                    sch,
+                    name,
+                    MockBuffer(fn.__name__, name, buffer.idx),
+                )
+            elif isinstance(
+                buffer, (memref_d.AllocOp, func_d.CallOp)
+            ):  # Intermediate buffers
+                setattr(sch, name, MockBuffer(fn.__name__, name))
     # Check if there are memory leaks
     # All live operations = {top_func} + {top_func_ip}
     buffer = None

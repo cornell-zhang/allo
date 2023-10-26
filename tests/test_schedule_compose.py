@@ -182,9 +182,9 @@ def test_compose_nested():
         return outp
 
     def Top(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
-        outp = Linear_layer(inp, W, B)
-        outp = Add2(outp)
-        return outp
+        out0 = Linear_layer(inp, W, B)
+        out1 = Add2(out0)
+        return out1
 
     s_add2 = allo.customize(Add2)
     s_add2.partition(s_add2.inp)
