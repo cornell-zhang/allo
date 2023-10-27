@@ -527,16 +527,14 @@ class Schedule:
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
-            # Need to update CallOp arguments since some of them may be partitioned
-            # We simply replay all the primitives and find the `partition`
             for primitive in sch.primitive_sequences:
                 if primitive[0] == "partition":
                     args, kwargs = primitive[1:]
-                    target = args[0] if len(args) != 0 else kwargs["target"]
                     with self.module.context, Location.unknown():
-                        self.partition.__wrapped__(self, target, *args[1:], **kwargs)
+                        primitive_func = getattr(self, primitive[0])
+                        primitive_func.__wrapped__(self, *args, **kwargs)
                         self.primitive_sequences.append(
-                            ("partition", [target] + list(args[1:]), kwargs)
+                            (primitive[0], args, kwargs)
                         )
 
     def build(self, target=None, mode=None, project=None):
