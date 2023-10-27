@@ -120,6 +120,18 @@ def test_variable_bound_for():
     np.testing.assert_allclose(np_A, np_B)
 
 
+def test_variable_bound_for_2():
+    def kernel() -> int32[10]:
+        B: int32[10] = 0
+        for i in range(10):
+            for j in range(i, i + 1):
+                B[i] += j
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+
+
 def test_scf_for():
     def kernel(A: int32[10], B: int32[10]):
         for i in range(10):
