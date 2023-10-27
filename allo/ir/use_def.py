@@ -75,7 +75,7 @@ class UseDefChain(ast.NodeVisitor):
             results[key].update(set(res))
             for tensor in res:
                 results[f"{tensor.path}.{tensor.name}"].add(buffer)
-        return results[target_key]
+        return results[target_key] if target_key in results else set()
 
     def visit_Constant(self, node):
         return []
