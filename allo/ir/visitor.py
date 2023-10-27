@@ -32,7 +32,9 @@ class AffineScopeGuard:
 
 
 class ASTContext:
-    def __init__(self, global_vars, mlir_ctx, enable_tensor=False, verbose=False):
+    def __init__(
+        self, global_vars, mlir_ctx, func_args=None, enable_tensor=False, verbose=False
+    ):
         self.ip_stack = []
         self.buffers = {}
         self.top_func = None
@@ -41,7 +43,7 @@ class ASTContext:
         self.mlir_ctx = mlir_ctx
         hcl_d.register_dialect(mlir_ctx)
         # map from function name to function arguments
-        self.func_args = {}
+        self.func_args = {} if func_args is None else func_args
         # used to count nested loops in a band
         self.nested_loops = 0
         # used to avoid loop band naming conflict

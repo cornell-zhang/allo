@@ -29,7 +29,9 @@ def test_use_def_chain():
         return E
 
     s = allo.customize(kernel, verbose=True)
-    print(s.module)
+    assert get_user_names(s.use_def_chain.get_equivalent_tensors("kernel.D")) == set(
+        ["foo:A", "foo2:A"]
+    )
     assert get_user_names(s.use_def_chain["kernel.A"].users) == set(
         [
             "kernel:D",
@@ -180,9 +182,9 @@ def test_compose_nested():
         return outp
 
     def Top(inp: float32[M, K], W: float32[K, N], B: float32[N]) -> float32[M, N]:
-        outp = Linear_layer(inp, W, B)
-        outp = Add2(outp)
-        return outp
+        out0 = Linear_layer(inp, W, B)
+        out1 = Add2(out0)
+        return out1
 
     s_add2 = allo.customize(Add2)
     s_add2.partition(s_add2.inp)
@@ -276,6 +278,103 @@ def test_output_partition_compose():
 
     f = s.build(target="vhls")
     print(f)
+
+
+def test_nested_compose_partition():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    s_addi.partition(s_addi.A)
+
+    def matrix_addi_top(A: int32[M, N]) -> int32[M, N]:
+        B = matrix_addi(A)
+        return B
+
+    s_addi_top = allo.customize(matrix_addi_top)
+    s_addi_top.compose(s_addi)
+    print(s_addi_top.module)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        outp = matrix_addi_top(inp)
+        return outp
+
+    s = allo.customize(top)
+    # s.partition(s.inp)
+    s.compose(s_addi_top)
+    print(s.module)
+
+
+def test_reuse_function_1():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    s_addi.partition(s_addi.A)
+
+    def matrix_subi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] - 1
+        return B
+
+    s_subi = allo.customize(matrix_subi)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_subi(temp1)
+        outp = matrix_addi(temp2)
+        return outp
+
+    s = allo.customize(top)
+    s.compose(s_addi)
+    s.compose(s_subi)
+    print(s.module)
+
+
+def test_reuse_function_2():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    # s_addi.partition(s_addi.A)
+
+    def matrix_subi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] - 1
+        return B
+
+    s_subi = allo.customize(matrix_subi)
+    # s_subi.partition(s_subi.B)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_subi(temp1)
+        temp3 = matrix_addi(temp2)
+        outp = matrix_subi(temp3)
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.outp)
+    s.compose(s_addi)
+    s.compose(s_subi)
+    print(s.module)
 
 
 if __name__ == "__main__":

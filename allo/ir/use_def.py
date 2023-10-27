@@ -10,10 +10,13 @@ from .symbol_resolver import ASTResolver
 
 
 class VarNode:
-    def __init__(self, path, name):
+    def __init__(self, path, name, idx=None):
         self.path = path
         self.name = name
         self.users = set()
+        # Used for identifying the location of function arguments
+        # if self.idx is None, this variable is not a function argument
+        self.idx = idx
 
     def add_user(self, node):
         # node is a VarNode
@@ -24,7 +27,11 @@ class VarNode:
             self.users.add(node)
 
     def __repr__(self):
-        return f"VarNode({self.path}:{self.name})"
+        return (
+            f"VarNode({self.path}:{self.name})"
+            if self.idx is None
+            else f"VarNode({self.path}:{self.name}:{self.idx})"
+        )
 
 
 class UseDefChain(ast.NodeVisitor):
@@ -51,6 +58,24 @@ class UseDefChain(ast.NodeVisitor):
             users = ", ".join([f"{user.path}_{user.name}" for user in var.users])
             print(f"  {var.path}_{var.name} -> {{{users}}}")
         print("}")
+
+    def get_equivalent_tensors(self, target_key):
+        def recursive_helper(key):
+            local_res = []
+            path = key.split(".")[0]
+            for tensor in self.buffers[key].users:
+                if tensor.path != path:
+                    local_res.append(tensor)
+                    local_res += recursive_helper(tensor.path + "." + tensor.name)
+            return local_res
+
+        results = {key: set() for key in self.buffers}
+        for key, buffer in self.buffers.items():
+            res = recursive_helper(key)
+            results[key].update(set(res))
+            for tensor in res:
+                results[f"{tensor.path}.{tensor.name}"].add(buffer)
+        return results[target_key] if target_key in results else set()
 
     def visit_Constant(self, node):
         return []
@@ -164,7 +189,8 @@ class UseDefChain(ast.NodeVisitor):
         var = VarNode(self.path, name)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
@@ -172,7 +198,8 @@ class UseDefChain(ast.NodeVisitor):
             parents = self.visit(node.value)
             for parent in parents:
                 parent.add_user(var)
-        self.buffers[self.get_name(node.target.id)] = var
+        if self.get_name(node.target.id) not in self.buffers:
+            self.buffers[self.get_name(node.target.id)] = var
 
     def visit_AugAssign(self, node):
         if isinstance(node.target, ast.Subscript):
@@ -185,7 +212,8 @@ class UseDefChain(ast.NodeVisitor):
         parents = self.visit(node.value)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_Subscript(self, node):
         res = self.visit(node.value)
@@ -196,14 +224,20 @@ class UseDefChain(ast.NodeVisitor):
         if self.path == "":
             self.path = node.name
             # create initial variables
-            for arg in node.args.args:
-                self.buffers[self.get_name(arg.arg)] = VarNode(node.name, arg.arg)
+            for i, arg in enumerate(node.args.args):
+                if self.get_name(arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(arg.arg)] = VarNode(
+                        node.name, arg.arg, i
+                    )
         else:
             self.path = node.name
-            for inner_arg, outer_arg in zip(node.args.args, self.arg_nodes):
-                self.buffers[self.get_name(inner_arg.arg)] = VarNode(
-                    self.path, inner_arg.arg
-                )
+            for i, (inner_arg, outer_arg) in enumerate(
+                zip(node.args.args, self.arg_nodes)
+            ):
+                if self.get_name(inner_arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(inner_arg.arg)] = VarNode(
+                        self.path, inner_arg.arg, i
+                    )
                 outer_arg.add_user(self.buffers[self.get_name(inner_arg.arg)])
         res = []
         for stmt in node.body:
@@ -223,4 +257,9 @@ class UseDefChain(ast.NodeVisitor):
         return res[0]
 
     def visit_Return(self, node):
-        return self.visit(node.value)
+        results = self.visit(node.value)
+        # update labels
+        for res in results:
+            assert isinstance(res, VarNode)
+            res.idx = -1
+        return results
