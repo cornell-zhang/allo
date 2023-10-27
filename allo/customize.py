@@ -149,7 +149,7 @@ class Schedule:
 
     def _get_func_and_axis(self, axis):
         if isinstance(axis, LoopWrapper):
-            return self.top_func, axis.name
+            return self.top_func, axis
         if ":" in axis:
             func_name, axis = axis.split(":")
         else:
