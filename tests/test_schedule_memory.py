@@ -4,7 +4,7 @@
 import allo
 import numpy as np
 import pytest
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int32, float32
 
 
 def test_reuse_blur_x():

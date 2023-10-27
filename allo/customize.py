@@ -149,7 +149,12 @@ class Schedule:
 
     def _get_func_and_axis(self, axis):
         if isinstance(axis, LoopWrapper):
-            return self.top_func, axis
+            func = (
+                self._find_function(axis.path)
+                if axis.path is not None
+                else self.top_func
+            )
+            return func, axis
         if ":" in axis:
             func_name, axis = axis.split(":")
         else:
@@ -535,23 +540,29 @@ class Schedule:
 
     @wrapped_apply
     def compose(self, *schs):
+        def get_name(arg):
+            if isinstance(arg, LoopWrapper):
+                arg.path = f"{sch.top_func_name}"
+                return arg
+            return f"{sch.top_func_name}:{arg}"
+
         for sch in schs:
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
                 if primitive[0] in {"reorder", "fuse"}:
-                    args = [f"{sch.top_func_name}:{arg}" for arg in args]
+                    args = [get_name(arg) for arg in args]
                 elif primitive[0] in {"split", "unroll", "pipeline", "parallel"}:
                     if "axis" in kwargs:
-                        kwargs["axis"] = f"{sch.top_func_name}:{kwargs['axis']}"
+                        kwargs["axis"] = get_name(kwargs["axis"])
                     else:
-                        args[0] = f"{sch.top_func_name}:{args[0]}"
+                        args[0] = get_name(args[0])
                 elif primitive[0] in {"buffer_at", "reuse_at"}:
                     if "axis" in kwargs:
-                        kwargs["axis"] = f"{sch.top_func_name}:{kwargs['axis']}"
+                        kwargs["axis"] = get_name(kwargs["axis"])
                     else:
-                        args[1] = f"{sch.top_func_name}:{args[1]}"
+                        args[1] = get_name(args[1])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
                     primitive_func.__wrapped__(self, *args, **kwargs)

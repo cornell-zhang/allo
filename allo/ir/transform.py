@@ -25,6 +25,8 @@ class LoopWrapper:
     def __init__(self, name, loop):
         self.name = name
         self.loop = loop
+        # used for function name
+        self.path = None
 
     def __repr__(self):
         return f"LoopWrapper({self.name})"
