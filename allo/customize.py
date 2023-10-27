@@ -153,7 +153,7 @@ class Schedule:
         if ":" in axis:
             func_name, axis = axis.split(":")
         else:
-            func_name, axis = self.top_func_name, axis
+            func_name = self.top_func_name
         func = self._find_function(func_name)
         return func, axis
 
@@ -214,7 +214,7 @@ class Schedule:
     def _find_target(self, target):
         assert isinstance(target, MockBuffer), "Target must be a buffer"
         if target.op is not None:
-            return -1, target.op
+            return None, -1, target.op
         func_name, target_name = target.path, target.name
         target_func = None
         for op in self.module.body.operations:
@@ -310,9 +310,9 @@ class Schedule:
                                 recursive_partition(buffer)
 
         recursive_partition(target)
-        for target in visited_target_names:
+        for inner_target in visited_target_names:
             func, _, mlir_target = self._find_target(
-                MockBuffer(target.split(".")[0], target.split(".")[1])
+                MockBuffer(inner_target.split(".")[0], inner_target.split(".")[1])
             )
             hcl_d.PartitionOp(
                 mlir_target.result,
@@ -540,14 +540,14 @@ class Schedule:
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
-                if primitive[0] in ["reorder", "fuse"]:
+                if primitive[0] in {"reorder", "fuse"}:
                     args = [f"{sch.top_func_name}:{arg}" for arg in args]
-                elif primitive[0] in ["split", "unroll", "pipeline", "parallel"]:
+                elif primitive[0] in {"split", "unroll", "pipeline", "parallel"}:
                     if "axis" in kwargs:
                         kwargs["axis"] = f"{sch.top_func_name}:{kwargs['axis']}"
                     else:
                         args[0] = f"{sch.top_func_name}:{args[0]}"
-                elif primitive[0] in ["buffer_at", "reuse_at"]:
+                elif primitive[0] in {"buffer_at", "reuse_at"}:
                     if "axis" in kwargs:
                         kwargs["axis"] = f"{sch.top_func_name}:{kwargs['axis']}"
                     else:
