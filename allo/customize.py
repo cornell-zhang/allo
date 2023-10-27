@@ -220,7 +220,7 @@ class Schedule:
             zip(self.func_args[func_name], target_func.arguments)
         ):
             if name == target_name:
-                return idx, MockArg(op)
+                return target_func, idx, MockArg(op)
         # Find inner intermediate buffers
         for op in target_func.entry_block.operations:
             if (
@@ -234,20 +234,19 @@ class Schedule:
                     idx = len(target_func.arguments)
                 else:
                     idx = -1
-                return idx, op
+                return target_func, idx, op
             if (
                 isinstance(op, func_d.CallOp)
                 and "name" in op.attributes
                 and StringAttr(op.attributes["name"]).value == target_name
             ):
-                return -1, op
+                return target_func, -1, op
         raise RuntimeError(f"Target {target} not found")
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         # TODO: (1) test whether partition the same array
         #       (2) whether the partition has conflicts for different functions
-        _, mlir_target = self._find_target(target)
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -267,94 +266,54 @@ class Schedule:
         partition_type = IntegerAttr.get(i32, partition_type)
         dim = IntegerAttr.get(ui32, dim)
         factor = IntegerAttr.get(ui32, factor)
-        func_name = target.path
-        if func_name == self.top_func_name:
+        # find all the tensors that need to be partitioned
+        visited_target_names = []
+        visited_func_calls = []
+
+        def recursive_partition(inner_target):
+            name = f"{inner_target.path}.{inner_target.name}"
+            if name in visited_target_names:
+                return
+            visited_target_names.append(name)
+            _, _, mlir_target = self._find_target(inner_target)
+            # equivalent users
+            for tensor in self.use_def_chain.get_equivalent_tensors(name):
+                recursive_partition(MockBuffer(tensor.path, tensor.name))
+            # calling the same function
+            if isinstance(mlir_target, func_d.CallOp):
+                visited_func_calls.append(mlir_target)
+                for func in self.module.body.operations:
+                    if isinstance(func, func_d.FuncOp):
+                        for call_op in func.entry_block.operations:
+                            if (
+                                isinstance(call_op, func_d.CallOp)
+                                and mlir_target.attributes["callee"]
+                                == call_op.attributes["callee"]
+                                and call_op not in visited_func_calls
+                            ):
+                                visited_func_calls.append(call_op)
+                                buffer = MockBuffer(
+                                    func.attributes["sym_name"].value,
+                                    call_op.attributes["name"].value,
+                                )
+                                recursive_partition(buffer)
+
+        recursive_partition(target)
+        for target in visited_target_names:
+            func, _, mlir_target = self._find_target(
+                MockBuffer(target.split(".")[0], target.split(".")[1])
+            )
             hcl_d.PartitionOp(
                 mlir_target.result,
                 partition_kind=partition_type,
                 dim=dim,
                 factor=factor,
-                ip=self.ip,
+                ip=InsertionPoint.at_block_terminator(func.entry_block),
             )
-        # calling the same function
-        partitioned_arrays = [mlir_target.result]
-        if isinstance(mlir_target, func_d.CallOp):
-            for call_op in self.top_func.entry_block.operations:
-                if (
-                    isinstance(call_op, func_d.CallOp)
-                    and mlir_target.attributes["callee"] == call_op.attributes["callee"]
-                ):
-                    hcl_d.PartitionOp(
-                        call_op.results[0],
-                        partition_kind=partition_type,
-                        dim=dim,
-                        factor=factor,
-                        ip=InsertionPoint.at_block_terminator(
-                            self.top_func.entry_block
-                        ),
-                    )
-                    partitioned_arrays.append(call_op.results[0])
-        # Make sure the arguments of subfunctions are also partitioned
-        equiv_targets = self.use_def_chain.get_equivalent_tensors(
-            f"{target.path}.{target.name}"
-        )
-        func_to_partitioned = [(target.path, target.name, target.idx)]
-        for var in equiv_targets:
-            func_to_partitioned.append((var.path, var.name, var.idx))
-        # Add partition ops to subfunctions
-        # pylint: disable=too-many-nested-blocks
-        for func_name, var_name, idx in func_to_partitioned:
-            for op in self.module.body.operations:
-                if (
-                    isinstance(op, func_d.FuncOp)
-                    and StringAttr(op.attributes["sym_name"]).value == func_name
-                ):
-                    if idx is None:  # inner variable
-                        for inner_op in op.entry_block.operations:
-                            if (
-                                "name" in inner_op.attributes
-                                and StringAttr(inner_op.attributes["name"]).value
-                                == var_name
-                            ):
-                                hcl_d.PartitionOp(
-                                    inner_op.result,
-                                    partition_kind=partition_type,
-                                    dim=dim,
-                                    factor=factor,
-                                    ip=InsertionPoint.at_block_terminator(
-                                        op.entry_block
-                                    ),
-                                )
-                                break
-                        else:
-                            raise RuntimeError("No inner variable found")
-                    elif idx >= 0:
-                        hcl_d.PartitionOp(
-                            op.arguments[idx],
-                            partition_kind=partition_type,
-                            dim=dim,
-                            factor=factor,
-                            ip=InsertionPoint.at_block_terminator(op.entry_block),
-                        )
-                    else:
-                        return_op = None
-                        for inner_op in op.entry_block.operations:
-                            if isinstance(inner_op, func_d.ReturnOp):
-                                return_op = inner_op
-                                break
-                        else:
-                            raise RuntimeError("No return op found")
-                        hcl_d.PartitionOp(
-                            return_op.operands[idx],
-                            partition_kind=partition_type,
-                            dim=dim,
-                            factor=factor,
-                            ip=InsertionPoint.at_block_terminator(op.entry_block),
-                        )
 
     @wrapped_apply
     def buffer_at(self, target, axis):
-        _, target = self._find_target(target)
+        _, _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -365,7 +324,7 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
-        _, target = self._find_target(target)
+        _, _, target = self._find_target(target)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
@@ -405,7 +364,7 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
-        _, target = self._find_target(target)
+        _, _, target = self._find_target(target)
         band_name, axis = find_loop_in_bands(self.top_func, axis)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=self.ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(
@@ -441,7 +400,7 @@ class Schedule:
 
     @wrapped_apply
     def to(self, target, dst, fifo_depth=-1):
-        _, target = self._find_target(target)
+        _, _, target = self._find_target(target)
         op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
         i32 = IntegerType.get_signless(32)
         self.top_func.attributes["dataflow"] = UnitAttr.get()

@@ -342,5 +342,40 @@ def test_reuse_function_1():
     print(s.module)
 
 
+def test_reuse_function_2():
+    M, N = 2, 2
+
+    def matrix_addi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s_addi = allo.customize(matrix_addi)
+    # s_addi.partition(s_addi.A)
+
+    def matrix_subi(A: int32[M, N]) -> int32[M, N]:
+        B: int32[M, N]
+        for i, j in allo.grid(M, N):
+            B[i, j] = A[i, j] - 1
+        return B
+
+    s_subi = allo.customize(matrix_subi)
+    # s_subi.partition(s_subi.B)
+
+    def top(inp: int32[M, N]) -> int32[M, N]:
+        temp1 = matrix_addi(inp)
+        temp2 = matrix_subi(temp1)
+        temp3 = matrix_addi(temp2)
+        outp = matrix_subi(temp3)
+        return outp
+
+    s = allo.customize(top)
+    s.partition(s.outp)
+    s.compose(s_addi)
+    s.compose(s_subi)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
