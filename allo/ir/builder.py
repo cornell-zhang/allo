@@ -950,7 +950,41 @@ class ASTTransformer(ASTBuilder):
     def build_memory_access(ctx, node, val=None):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
-        if is_affine:
+        if len(node.value.shape) > len(node.shape):
+            assert is_affine, "Non-affine memory access for memref.subview is not supported yet"
+            strides = [1] * len(node.value.shape)
+            static_offsets = [0] * len(node.value.shape)
+            static_sizes = list(node.value.shape)
+            slices = ASTResolver.resolve_slice(node.slice, ctx)
+            if isinstance(slices, int):
+                slices = [slices]
+            for i, slice in enumerate(slices):
+                assert isinstance(slice, int), "Only constant index is supported"
+                static_offsets[i] = slice
+                static_sizes[i] = 1
+            result = MLIRType.parse(
+                f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
+                f", strided<[1], offset: 50>>"
+            )
+            subview = memref_d.SubViewOp(
+                source=value.result,
+                result=result,
+                static_offsets=static_offsets,
+                static_sizes=static_sizes,
+                static_strides=strides,
+                offsets=[],
+                sizes=[],
+                strides=[],
+                ip=ctx.get_ip(),
+            )
+            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
+            memref_d.CopyOp(
+                subview.result,
+                alloc_op.result,
+                ip=ctx.get_ip(),
+            )
+            op = alloc_op
+        elif is_affine:
             affine_map = AffineMap.get(
                 dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
             )
@@ -1070,7 +1104,7 @@ class ASTTransformer(ASTBuilder):
         # pylint: disable=no-else-return
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
             return ASTTransformer.build_memory_access(ctx, node, val=val)
-        elif ctx.enable_tensor:
+        elif len(node.value.shape) > 0 and ctx.enable_tensor:
             return ASTTransformer.build_tensor_access(ctx, node, val=val)
         else:  # bit operation
             return ASTTransformer.build_bit_operation(ctx, node, val=val)

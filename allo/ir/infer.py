@@ -310,6 +310,10 @@ class TypeInferer(ASTVisitor):
             shape = []
             # e.g., A[:5, 0, 1:3] -> [(0,5,1),0,(1,3,1)]
             indices = ASTResolver.resolve_slice(node.slice, ctx)
+            access_dim = len(indices) if isinstance(indices, (list, tuple)) else 1
+            total_dim = len(value.shape)
+            if access_dim < total_dim:  # only access a part of the tensor
+                shape = value.shape[access_dim:]
             if isinstance(indices, tuple):  # Slice
                 indices = [indices]
             if isinstance(indices, list):  # ExtSlice

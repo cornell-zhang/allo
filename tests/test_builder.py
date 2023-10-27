@@ -488,5 +488,25 @@ def test_multiple_returns_4D():
     np.testing.assert_allclose(np_res2, np_C + 1)
 
 
+def test_subview():
+    def kernel(A: int32[10, 10]) -> int32[10]:
+        return A[5]
+
+    s = allo.customize(kernel, verbose=True)
+    print(s.module)
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    mod = s.build()
+    assert np.array_equal(mod(np_A), kernel(np_A))
+
+    # def kernel(A: int32[5, 10, 15]) -> int32[15]:
+    #     return A[3, 2]
+
+    # s = allo.customize(kernel)
+    # print(s.module)
+    # np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    # mod = s.build()
+    # np.testing.assert_allclose(mod(np_A), kernel(np_A))
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
