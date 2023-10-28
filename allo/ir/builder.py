@@ -971,11 +971,11 @@ class ASTTransformer(ASTBuilder):
             else:
                 offsets = []
             offset = 0
-            for i, slice in enumerate(slices):
-                if isinstance(slice, int):
-                    static_offsets[i] = slice
-                    offset += int(slice * np.prod(node.value.shape[i + 1 :]))
-                elif slice is None:
+            for i, index in enumerate(slices):
+                if isinstance(index, int):
+                    static_offsets[i] = index
+                    offset += int(index * np.prod(node.value.shape[i + 1 :]))
+                elif index is None:
                     static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
                     offset = "?"
                 else:
