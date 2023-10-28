@@ -951,27 +951,35 @@ class ASTTransformer(ASTBuilder):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
         if len(node.value.shape) > len(node.shape):
-            assert is_affine, "Non-affine memory access for memref.subview is not supported yet"
-            strides = [1] * len(node.value.shape)
+            # In this case, always access the first few dimensions
+            assert (
+                is_affine
+            ), "Non-affine memory access for memref.subview is not supported yet"
+            static_strides = [1] * len(node.value.shape)
             static_offsets = [0] * len(node.value.shape)
             static_sizes = list(node.value.shape)
             slices = ASTResolver.resolve_slice(node.slice, ctx)
             if isinstance(slices, int):
                 slices = [slices]
+            offset = 0
             for i, slice in enumerate(slices):
                 assert isinstance(slice, int), "Only constant index is supported"
                 static_offsets[i] = slice
                 static_sizes[i] = 1
+                offset += slice * np.prod(node.value.shape[i + 1 :])
+            strides = [1]
+            for i in range(len(node.shape) - 2, -1, -1):
+                strides.insert(0, strides[-1] * node.shape[i + 1])
             result = MLIRType.parse(
                 f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
-                f", strided<[1], offset: 50>>"
+                f", strided<{strides}, offset: {offset}>>"
             )
             subview = memref_d.SubViewOp(
                 source=value.result,
                 result=result,
                 static_offsets=static_offsets,
                 static_sizes=static_sizes,
-                static_strides=strides,
+                static_strides=static_strides,
                 offsets=[],
                 sizes=[],
                 strides=[],
