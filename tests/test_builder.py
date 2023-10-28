@@ -528,5 +528,58 @@ def test_dynamic_subview():
     np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
 
 
+def test_subview_systolic():
+    M, N, K = 2, 2, 2
+    
+    def kernel(
+        A_in: float32[K],
+        B_in: float32[K],
+        A_out: float32[K],
+        B_out: float32[K],
+        C: float32[M, N],
+        i: index,
+        j: index,
+    ):
+        for k in range(K):
+            a: float32 = A_in[k]
+            b: float32 = B_in[k]
+            C[i, j] += a * b
+            A_out[k] = a
+            B_out[k] = b
+
+    def systolic_array(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+        A_fifo: float32[M, N + 1, K]
+        B_fifo: float32[N, M + 1, K]
+
+        for k in range(K, name="data_load"):
+            for m in range(M):
+                A_fifo[m, 0, k] = A[m, k]
+            for n in range(M):
+                B_fifo[n, 0, k] = B[k, n]
+        for i, j in allo.grid(M, N, name="PE"):
+            kernel(
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
+        A_drain: float32[M]
+        B_drain: float32[N]
+        for k in range(K, name="data_drain"):
+            for m in range(M):
+                A_drain[m] = A_fifo[m, N, k]
+            for n in range(M):
+                B_drain[n] = B_fifo[n, M, k]
+
+    s = allo.customize(systolic_array)
+    print(s.module)
+
+    mod = s.build()
+    A = np.float32(np.random.uniform(size=(M, K)))
+    B = np.float32(np.random.uniform(size=(K, N)))
+    allo_C = np.float32(np.zeros((M, N)))
+    mod(A, B, allo_C)
+    np_C = A @ B
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_subview_systolic()

@@ -1199,10 +1199,13 @@ class ASTTransformer(ASTBuilder):
         # Build input types
         input_types = []
         input_typehints = []
-        for arg in node.args.args:
-            input_types.append(
-                ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
-            )
+        for i, arg in enumerate(node.args.args):
+            if len(ctx.call_args) == 0:
+                input_types.append(
+                    ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
+                )
+            else:
+                input_types.append(ctx.call_args[i].type)
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 
@@ -1572,6 +1575,7 @@ class ASTTransformer(ASTBuilder):
 
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]
+        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
@@ -1584,9 +1588,11 @@ class ASTTransformer(ASTBuilder):
                 verbose=ctx.verbose,
                 func_args=ctx.func_args,
             )
+            func_ctx.call_args = new_args
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
+            func_ctx.call_args = None
             # Attach buffers to function
             # FIXME: Should create subschedule
             for name, buffer in func_ctx.buffers.items():
@@ -1595,7 +1601,6 @@ class ASTTransformer(ASTBuilder):
                     setattr(func, name, MockBuffer(node.func.id, name))
 
         # Build call function in the top-level
-        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         call_op = func_d.CallOp(
             stmts[-1].type.results,
             FlatSymbolRefAttr.get(node.func.id),
