@@ -13,6 +13,7 @@ from hcl_mlir.ir import (
     FunctionType,
     MemRefType,
     RankedTensorType,
+    ShapedType,
     IntegerType,
     IndexType,
     F32Type,
@@ -675,13 +676,13 @@ class ASTTransformer(ASTBuilder):
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def build_indices(ctx, node):
+    def build_indices(ctx, node, enable_affine=True):
         indices = node.value if isinstance(node, ast.Index) else node
         elts = indices.elts if isinstance(indices, ast.Tuple) else [indices]
         ctx.dim_count = 0
         ctx.affine_vars = []
         new_indices = []
-        if not ctx.enable_tensor:
+        if not ctx.enable_tensor and enable_affine:
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
@@ -950,7 +951,56 @@ class ASTTransformer(ASTBuilder):
     def build_memory_access(ctx, node, val=None):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
-        if is_affine:
+        if len(node.value.shape) > len(new_indices):  # partial access
+            # In this case, always access the first few dimensions
+            assert (
+                is_affine
+            ), "Non-affine memory access for memref.subview is not supported yet"
+            static_strides = [1] * len(node.value.shape)
+            static_offsets = [0] * len(node.value.shape)
+            static_sizes = list(node.value.shape)
+            slices = ASTResolver.resolve_slice(node.slice, ctx)
+            if isinstance(slices, int):
+                slices = [slices]
+                offsets = []
+            elif slices is None:
+                offsets, _ = ASTTransformer.build_indices(
+                    ctx, node.slice, enable_affine=False
+                )
+                slices = [None] * len(offsets)
+            else:
+                offsets = []
+            offset = 0
+            for i, index in enumerate(slices):
+                if isinstance(index, int):
+                    static_offsets[i] = index
+                    offset += int(index * np.prod(node.value.shape[i + 1 :]))
+                elif index is None:
+                    static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
+                    offset = "?"
+                else:
+                    raise RuntimeError("Unsupported slice type")
+                static_sizes[i] = 1
+            strides = [1]
+            for i in range(len(node.shape) - 2, -1, -1):
+                strides.insert(0, strides[-1] * node.shape[i + 1])
+            result = MLIRType.parse(
+                f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
+                f", strided<{strides}, offset: {offset}>>"
+            )
+            subview = memref_d.SubViewOp(
+                source=value.result,
+                result=result,
+                static_offsets=static_offsets,
+                static_sizes=static_sizes,
+                static_strides=static_strides,
+                offsets=offsets,
+                sizes=[],
+                strides=[],
+                ip=ctx.get_ip(),
+            )
+            op = subview
+        elif is_affine:
             affine_map = AffineMap.get(
                 dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
             )
@@ -1070,7 +1120,7 @@ class ASTTransformer(ASTBuilder):
         # pylint: disable=no-else-return
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
             return ASTTransformer.build_memory_access(ctx, node, val=val)
-        elif ctx.enable_tensor:
+        elif len(node.value.shape) > 0 and ctx.enable_tensor:
             return ASTTransformer.build_tensor_access(ctx, node, val=val)
         else:  # bit operation
             return ASTTransformer.build_bit_operation(ctx, node, val=val)
@@ -1149,10 +1199,13 @@ class ASTTransformer(ASTBuilder):
         # Build input types
         input_types = []
         input_typehints = []
-        for arg in node.args.args:
-            input_types.append(
-                ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
-            )
+        for i, arg in enumerate(node.args.args):
+            if len(ctx.call_args) == 0:
+                input_types.append(
+                    ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
+                )
+            else:
+                input_types.append(ctx.call_args[i].type)
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 
@@ -1522,6 +1575,7 @@ class ASTTransformer(ASTBuilder):
 
         # User-defined subfunction
         func = ctx.global_vars[node.func.id]
+        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
@@ -1534,9 +1588,11 @@ class ASTTransformer(ASTBuilder):
                 verbose=ctx.verbose,
                 func_args=ctx.func_args,
             )
+            func_ctx.call_args = new_args
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
+            func_ctx.call_args = None
             # Attach buffers to function
             # FIXME: Should create subschedule
             for name, buffer in func_ctx.buffers.items():
@@ -1545,7 +1601,6 @@ class ASTTransformer(ASTBuilder):
                     setattr(func, name, MockBuffer(node.func.id, name))
 
         # Build call function in the top-level
-        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         call_op = func_d.CallOp(
             stmts[-1].type.results,
             FlatSymbolRefAttr.get(node.func.id),
@@ -1890,6 +1945,18 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
+        if (
+            isinstance(ret.result.type, MemRefType)
+            and ret.result.type.layout != ctx.top_func.type.results[0].layout
+        ):
+            # memref.subview is involved, we need to copy the values from the original buffer
+            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
+            memref_d.CopyOp(
+                ret.result,
+                alloc_op.result,
+                ip=ctx.get_ip(),
+            )
+            ret = alloc_op
         return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
     @staticmethod

@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int8, int16, int32, float32, index
 
 
 def test_grid_for_gemm():
@@ -486,6 +486,98 @@ def test_multiple_returns_4D():
     np.testing.assert_allclose(np_res0, np_A + 1)
     np.testing.assert_allclose(np_res1, np_B + 1)
     np.testing.assert_allclose(np_res2, np_C + 1)
+
+
+def test_subview():
+    def kernel(A: int32[10, 10]) -> int32[10]:
+        return A[5]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    mod = s.build()
+    assert np.array_equal(mod(np_A), kernel(np_A))
+
+    def kernel(A: float32[5, 10, 15]) -> float32[15]:
+        return A[3, 2]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A), kernel(np_A))
+
+    def kernel(A: float32[5, 10, 15]) -> float32[10, 15]:
+        return A[3]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A), kernel(np_A))
+
+
+def test_dynamic_subview():
+    def kernel(A: float32[5, 10, 15], i: index, j: index) -> float32[15]:
+        return A[i, j]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
+
+
+def test_subview_systolic():
+    M, N, K = 2, 2, 2
+
+    def kernel(
+        A_in: int8[K],
+        B_in: int8[K],
+        A_out: int8[K],
+        B_out: int8[K],
+        C: int16[M, N],
+        i: index,
+        j: index,
+    ):
+        for k in range(K):
+            a: int8 = A_in[k]
+            b: int8 = B_in[k]
+            C[i, j] += a * b
+            A_out[k] = a
+            B_out[k] = b
+
+    def systolic_array(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
+        A_fifo: int8[M, N + 1, K]
+        B_fifo: int8[N, M + 1, K]
+
+        for k in range(K, name="data_load"):
+            for m in range(M):
+                A_fifo[m, 0, k] = A[m, k]
+            for n in range(M):
+                B_fifo[n, 0, k] = B[k, n]
+        for i, j in allo.grid(M, N, name="PE"):
+            kernel(
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
+        A_drain: int8[M]
+        B_drain: int8[N]
+        for k in range(K, name="data_drain"):
+            for m in range(M):
+                A_drain[m] = A_fifo[m, N, k]
+            for n in range(M):
+                B_drain[n] = B_fifo[n, M, k]
+
+    s = allo.customize(systolic_array)
+    print(s.module)
+
+    mod = s.build()
+    A = np.random.randint(-8, 8, size=(M, K)).astype(np.int8)
+    B = np.random.randint(-8, 8, size=(K, N)).astype(np.int8)
+    allo_C = np.zeros((M, N), dtype=np.int16)
+    mod(A, B, allo_C)
+    np_C = A @ B
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
 
 
 if __name__ == "__main__":
