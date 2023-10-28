@@ -517,5 +517,16 @@ def test_subview():
     np.testing.assert_allclose(mod(np_A), kernel(np_A))
 
 
+def test_dynamic_subview():
+    def kernel(A: float32[5, 10, 15], i: index, j: index) -> float32[15]:
+        return A[i, j]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

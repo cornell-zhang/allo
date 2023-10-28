@@ -13,6 +13,7 @@ from hcl_mlir.ir import (
     FunctionType,
     MemRefType,
     RankedTensorType,
+    ShapedType,
     IntegerType,
     IndexType,
     F32Type,
@@ -675,13 +676,13 @@ class ASTTransformer(ASTBuilder):
         return ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def build_indices(ctx, node):
+    def build_indices(ctx, node, enable_affine=True):
         indices = node.value if isinstance(node, ast.Index) else node
         elts = indices.elts if isinstance(indices, ast.Tuple) else [indices]
         ctx.dim_count = 0
         ctx.affine_vars = []
         new_indices = []
-        if not ctx.enable_tensor:
+        if not ctx.enable_tensor and enable_affine:
             is_affine = True
             for index in elts:
                 expr = ASTTransformer.build_affine_expr(ctx, index)
@@ -950,7 +951,7 @@ class ASTTransformer(ASTBuilder):
     def build_memory_access(ctx, node, val=None):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
-        if len(node.value.shape) > len(node.shape):
+        if len(node.value.shape) > len(new_indices):  # partial access
             # In this case, always access the first few dimensions
             assert (
                 is_affine
@@ -961,12 +962,25 @@ class ASTTransformer(ASTBuilder):
             slices = ASTResolver.resolve_slice(node.slice, ctx)
             if isinstance(slices, int):
                 slices = [slices]
+                offsets = []
+            elif slices is None:
+                offsets, _ = ASTTransformer.build_indices(
+                    ctx, node.slice, enable_affine=False
+                )
+                slices = [None] * len(offsets)
+            else:
+                offsets = []
             offset = 0
             for i, slice in enumerate(slices):
-                assert isinstance(slice, int), "Only constant index is supported"
-                static_offsets[i] = slice
+                if isinstance(slice, int):
+                    static_offsets[i] = slice
+                    offset += int(slice * np.prod(node.value.shape[i + 1 :]))
+                elif slice is None:
+                    static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
+                    offset = "?"
+                else:
+                    raise RuntimeError("Unsupported slice type")
                 static_sizes[i] = 1
-                offset += slice * np.prod(node.value.shape[i + 1 :])
             strides = [1]
             for i in range(len(node.shape) - 2, -1, -1):
                 strides.insert(0, strides[-1] * node.shape[i + 1])
@@ -980,7 +994,7 @@ class ASTTransformer(ASTBuilder):
                 static_offsets=static_offsets,
                 static_sizes=static_sizes,
                 static_strides=static_strides,
-                offsets=[],
+                offsets=offsets,
                 sizes=[],
                 strides=[],
                 ip=ctx.get_ip(),

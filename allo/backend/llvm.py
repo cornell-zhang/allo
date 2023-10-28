@@ -137,7 +137,7 @@ class LLVMModule:
                     if target_in_type != "i32":
                         DTypeWarning(
                             f"Input type mismatch: {target_in_type} vs i32. Please use NumPy array"
-                            "to wrap the data to avoid possible result mismatch"
+                            " to wrap the data to avoid possible result mismatch"
                         ).warn()
                     bitwidth = get_bitwidth_from_type(target_in_type)
                     pow2_width = max(get_clostest_pow2(bitwidth), 8)
@@ -149,7 +149,7 @@ class LLVMModule:
                     if target_in_type != "f32":
                         DTypeWarning(
                             f"Input type mismatch: {target_in_type} vs f32. Please use NumPy array"
-                            "to wrap the data to avoid possible result mismatch"
+                            " to wrap the data to avoid possible result mismatch"
                         ).warn()
                     if target_in_type == "f32":
                         c_float_p = ctypes.c_float * 1
@@ -159,7 +159,7 @@ class LLVMModule:
                 else:
                     raise RuntimeError(
                         "Unsupported input type. Please use NumPy array to wrap the data if other"
-                        "data types are needed as inputs."
+                        " data types are needed as inputs."
                     )
             else:  # memref
                 np_type = np_type_to_str(arg.dtype)
