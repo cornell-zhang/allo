@@ -48,6 +48,7 @@ from .ir.types import AlloType
 from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
+from .backend.aie import AIEModule
 
 
 def getsourcefile(obj):
@@ -643,6 +644,13 @@ class Schedule:
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,
+            )
+        if target == "aie":
+            return AIEModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                mode=mode,
+                project=project,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
