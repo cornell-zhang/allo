@@ -1947,7 +1947,7 @@ class ASTTransformer(ASTBuilder):
         )
         if (
             isinstance(ret.result.type, MemRefType)
-            and ret.result.type.layout != ctx.top_func.type.results[0]
+            and ret.result.type.layout != ctx.top_func.type.results[0].layout
         ):
             # memref.subview is involved, we need to copy the values from the original buffer
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)

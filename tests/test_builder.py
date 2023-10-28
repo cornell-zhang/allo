@@ -581,5 +581,4 @@ def test_subview_systolic():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_subview_systolic()
+    pytest.main([__file__])
