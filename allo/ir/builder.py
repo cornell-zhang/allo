@@ -999,13 +999,7 @@ class ASTTransformer(ASTBuilder):
                 strides=[],
                 ip=ctx.get_ip(),
             )
-            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
-            memref_d.CopyOp(
-                subview.result,
-                alloc_op.result,
-                ip=ctx.get_ip(),
-            )
-            op = alloc_op
+            op = subview
         elif is_affine:
             affine_map = AffineMap.get(
                 dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
@@ -1946,6 +1940,18 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
+        if (
+            isinstance(ret.result.type, MemRefType)
+            and ret.result.type.layout != ctx.top_func.type.results[0]
+        ):
+            # memref.subview is involved, we need to copy the values from the original buffer
+            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
+            memref_d.CopyOp(
+                ret.result,
+                alloc_op.result,
+                ip=ctx.get_ip(),
+            )
+            ret = alloc_op
         return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
 
     @staticmethod
