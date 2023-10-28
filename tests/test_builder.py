@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int8, int16, int32, float32, index
 
 
 def test_grid_for_gemm():
@@ -530,26 +530,26 @@ def test_dynamic_subview():
 
 def test_subview_systolic():
     M, N, K = 2, 2, 2
-    
+
     def kernel(
-        A_in: float32[K],
-        B_in: float32[K],
-        A_out: float32[K],
-        B_out: float32[K],
-        C: float32[M, N],
+        A_in: int8[K],
+        B_in: int8[K],
+        A_out: int8[K],
+        B_out: int8[K],
+        C: int16[M, N],
         i: index,
         j: index,
     ):
         for k in range(K):
-            a: float32 = A_in[k]
-            b: float32 = B_in[k]
+            a: int8 = A_in[k]
+            b: int8 = B_in[k]
             C[i, j] += a * b
             A_out[k] = a
             B_out[k] = b
 
-    def systolic_array(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
-        A_fifo: float32[M, N + 1, K]
-        B_fifo: float32[N, M + 1, K]
+    def systolic_array(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
+        A_fifo: int8[M, N + 1, K]
+        B_fifo: int8[N, M + 1, K]
 
         for k in range(K, name="data_load"):
             for m in range(M):
@@ -560,8 +560,8 @@ def test_subview_systolic():
             kernel(
                 A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
             )
-        A_drain: float32[M]
-        B_drain: float32[N]
+        A_drain: int8[M]
+        B_drain: int8[N]
         for k in range(K, name="data_drain"):
             for m in range(M):
                 A_drain[m] = A_fifo[m, N, k]
@@ -572,9 +572,9 @@ def test_subview_systolic():
     print(s.module)
 
     mod = s.build()
-    A = np.float32(np.random.uniform(size=(M, K)))
-    B = np.float32(np.random.uniform(size=(K, N)))
-    allo_C = np.float32(np.zeros((M, N)))
+    A = np.random.randint(-8, 8, size=(M, K)).astype(np.int8)
+    B = np.random.randint(-8, 8, size=(K, N)).astype(np.int8)
+    allo_C = np.zeros((M, N), dtype=np.int16)
     mod(A, B, allo_C)
     np_C = A @ B
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
