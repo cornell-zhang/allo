@@ -1529,6 +1529,7 @@ class ASTTransformer(ASTBuilder):
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
                     "power": math_d.PowFOp,
+                    "abs": math_d.AbsIOp,
                 }.get(fn_name)
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
             if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {

@@ -122,7 +122,7 @@ class HLSModule:
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
                 generate_input_output_buffers(self.func, flatten=True)
-            _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
+            _mlir_lower_pipeline(self.module, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(
                 "builtin.module("
@@ -130,8 +130,6 @@ class HLSModule:
                 "empty-tensor-to-alloc-tensor,"
                 # translate tensor dialect (virtual) to memref dialect (physical)
                 "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
-                # used for lowering memref.subview
-                "expand-strided-metadata,"
                 # common lowering passes
                 "func.func(convert-linalg-to-affine-loops)"
                 # DO NOT LOWER AFFINE DIALECT
