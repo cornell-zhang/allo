@@ -1,3 +1,8 @@
+/*
+ * Copyright Allo authors. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #ifndef SYSTOLIC_SA_H
 #define SYSTOLIC_SA_H
 

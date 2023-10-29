@@ -89,7 +89,9 @@ def test_lib_gemm():
         print("Vitis HLS not found, skipping...")
 
 
-@pytest.mark.skipif(os.system(f"which vivado_hls >> /dev/null") != 0, reason="Vivado HLS not found")
+@pytest.mark.skipif(
+    os.system(f"which vivado_hls >> /dev/null") != 0, reason="Vivado HLS not found"
+)
 def test_systolic_stream():
     M, N, K = 2, 2, 2
     sa = allo.IPModule(
