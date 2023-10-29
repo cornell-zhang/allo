@@ -37,6 +37,7 @@ from hcl_mlir.dialects import (
 from hcl_mlir.exceptions import (
     HCLValueError,
 )
+from hcl_mlir.ir import Type as MLIRType
 
 from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer
@@ -415,17 +416,75 @@ class Schedule:
         )
 
     @wrapped_apply
-    def to(self, target, dst, fifo_depth=-1):
+    def to(self, target, dst, axis=None, fifo_depth=-1):
         _, _, target = self._find_target(target)
-        op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
-        i32 = IntegerType.get_signless(32)
         self.top_func.attributes["dataflow"] = UnitAttr.get()
-        hcl_d.InterKernelToOp(
-            target.result,
-            op_hdl.result,
-            fifo_depth=IntegerAttr.get(i32, fifo_depth),
-            ip=self.ip,
-        )
+        # pylint: disable=too-many-nested-blocks
+        if axis is None:
+            op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
+            i32 = IntegerType.get_signless(32)
+            hcl_d.InterKernelToOp(
+                target.result,
+                op_hdl.result,
+                fifo_depth=IntegerAttr.get(i32, fifo_depth),
+                ip=self.ip,
+            )
+        else:
+            assert dst is not None, "Need to specify dst"
+            # TODO: fix the ad-hoc logic here
+            memref = MemRefType(target.result.type)
+            space_time_label = ["T"] * len(memref.shape)
+            for idx in dst:
+                space_time_label[idx] = "S"
+            memory_space = f"stream:{fifo_depth};{''.join(space_time_label)}"
+            new_memref = MemRefType.get(
+                memref.shape,
+                memref.element_type,
+                memref.layout,
+                StringAttr.get(memory_space),
+            )
+            new_alloc = memref_d.AllocOp(new_memref, [], [], ip=InsertionPoint(target))
+            new_alloc.attributes["name"] = target.attributes["name"]
+            target.result.replace_all_uses_with(new_alloc.result)
+            for use in new_alloc.result.uses:
+                op = use.owner
+                if isinstance(op, memref_d.SubViewOp):
+                    subview_memref = MLIRType.parse(
+                        str(op.result.type)[:-1] + f', "{memory_space}">'
+                    )
+                    subview = memref_d.SubViewOp(
+                        source=op.source,
+                        result=subview_memref,
+                        static_offsets=op.static_offsets,
+                        static_sizes=op.static_sizes,
+                        static_strides=op.static_strides,
+                        offsets=op.offsets,
+                        sizes=[],
+                        strides=[],
+                        ip=InsertionPoint(op),
+                    )
+                    op.result.replace_all_uses_with(subview.result)
+                    op.operation.erase()
+            target.operation.erase()
+            # Find target in the top function
+            target_arr = {}
+            for op in self.top_func.entry_block.operations:
+                if isinstance(op, func_d.CallOp):
+                    for func in self.module.body.operations:
+                        if (
+                            isinstance(func, func_d.FuncOp)
+                            and func.name.value == op.attributes["callee"].value
+                        ):
+                            in_types = func.attributes["function_type"].value.inputs
+                            out_types = func.attributes["function_type"].value.results
+                            new_in_types = []
+                            for i, operand in enumerate(op.operands):
+                                new_in_types.append(operand.type)
+                            func_type = FunctionType.get(new_in_types, out_types)
+                            func.attributes["function_type"] = TypeAttr.get(func_type)
+                            for i, arg in enumerate(func.arguments):
+                                arg.set_type(new_in_types[i])
+            return
         # Find target in the top function
         target_arr = {}
         for op in self.top_func.entry_block.operations:
@@ -435,6 +494,7 @@ class Schedule:
                         target_arr[
                             FlatSymbolRefAttr(op.attributes["callee"]).value
                         ] = idx
+        # update function arguments
         for func in self.module.body.operations:
             if isinstance(func, func_d.FuncOp) and func.name.value in target_arr:
                 in_types = func.attributes["function_type"].value.inputs
@@ -537,6 +597,8 @@ class Schedule:
             for op in op_to_remove:
                 op.operation.erase()
             loop.operation.erase()
+        # TODO: use a class to wrap the results
+        return axes
 
     @wrapped_apply
     def compose(self, *schs):
