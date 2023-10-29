@@ -707,8 +707,7 @@ class ASTTransformer(ASTBuilder):
         if (
             isinstance(node.value, ast.Call) or len(node.value.shape) > 0
         ) and isinstance(node.targets[0], ast.Name):
-            if hasattr(rhs, "attributes"):
-                rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
+            rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
             if node.targets[0].id in ctx.buffers:
                 raise RuntimeError(
                     f"Variable `{node.targets[0].id}` has already been defined, please use a different name"
