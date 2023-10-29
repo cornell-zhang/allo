@@ -89,6 +89,7 @@ def test_lib_gemm():
         print("Vitis HLS not found, skipping...")
 
 
+@pytest.mark.skipif(os.system(f"which vivado_hls >> /dev/null") != 0, reason="Vivado HLS not found")
 def test_systolic_stream():
     M, N, K = 2, 2, 2
     sa = allo.IPModule(
@@ -96,7 +97,7 @@ def test_systolic_stream():
         headers=["sa.h"],
         impls=["sa.cpp"],
         signature=[f"int8[{M}, {K}]", f"int8[{K}, {N}]", f"int16[{M}, {N}]"],
-        link_hls=False,
+        link_hls=True,
     )
 
     A = np.random.randint(-8, 8, (M, K)).astype(np.int8)

@@ -107,7 +107,7 @@ def test_subview_systolic_stream():
     s.to(s.B_fifo, pe, axis=0, fifo_depth=2)
     print(s.module)
     code = s.build("vhls")
-    assert "#pragma HLS dataflow" in code
+    assert "#pragma HLS dataflow" in str(code)
     if os.system("which vivado_hls >> /dev/null") == 0:
         hls_mod = s.build(
             target="vivado_hls", mode="debug", project="systolic_stream.prj"
@@ -133,28 +133,12 @@ def test_subview_systolic_dsp_packed_int4xint4():
             a1: int4 = A_in[k + 1]
             b0: int4 = B_in[k]
             b1: int4 = B_in[k + 1]
-            a0u: UInt(4) = 0
-            a1u: UInt(4) = 0
-            b0u: UInt(4) = 0
-            b1u: UInt(4) = 0
             s0: UInt(1) = a0[3] ^ b0[3]
             s1: UInt(1) = a1[3] ^ b1[3]
-            if a0 < 0:
-                a0u = -a0
-            else:
-                a0u = a0
-            if a1 < 0:
-                a1u = -a1
-            else:
-                a1u = a1
-            if b0 < 0:
-                b0u = -b0
-            else:
-                b0u = b0
-            if b1 < 0:
-                b1u = -b1
-            else:
-                b1u = b1
+            a0u: UInt(4) = -a0 if a0 < 0 else a0
+            a1u: UInt(4) = -a1 if a1 < 0 else a1
+            b0u: UInt(4) = -b0 if b0 < 0 else b0
+            b1u: UInt(4) = -b1 if b1 < 0 else b1
             op0: UInt(27) = 0
             op1: UInt(18) = 0
             op0[0:4] = a0u
@@ -164,16 +148,8 @@ def test_subview_systolic_dsp_packed_int4xint4():
             res: UInt(48) = op0 * op1
             res0u: UInt(8) = res[0:8]
             res1u: UInt(8) = res[33:41]
-            res0: int8 = 0
-            res1: int8 = 0
-            if s0:
-                res0 = -res0u
-            else:
-                res0 = res0u
-            if s1:
-                res1 = -res1u
-            else:
-                res1 = res1u
+            res0: int8 = -res0u if s0 else res0u
+            res1: int8 = -res1u if s1 else res1u
             C[i, j] += res0
             C[i, j] += res1
             A_out[k] = a0
@@ -203,7 +179,7 @@ def test_subview_systolic_dsp_packed_int4xint4():
                 B_drain[n] = B_fifo[n, M, k]
 
     s = allo.customize(systolic_array)
-    # print(s.module)
+    print(s.module)
 
     mod = s.build()
     A = np.random.randint(-8, 7, size=(M, K)).astype(np.int8)
@@ -232,23 +208,11 @@ def test_subview_systolic_dsp_packed_int4xint8():
             b_packed: int8 = B_in[k]
             b0: int4 = b_packed[0:4]
             b1: int4 = b_packed[4:8]
-            au: UInt(8) = 0
-            b0u: UInt(4) = 0
-            b1u: UInt(4) = 0
             s0: UInt(1) = a[7] ^ b0[3]
             s1: UInt(1) = a[7] ^ b1[3]
-            if a < 0:
-                au = 0 - a
-            else:
-                au = a
-            if b0 < 0:
-                b0u = 0 - b0
-            else:
-                b0u = b0
-            if b1 < 0:
-                b1u = 0 - b1
-            else:
-                b1u = b1
+            au: UInt(8) = 0 - a if a < 0 else a
+            b0u: UInt(4) = 0 - b0 if b0 < 0 else b0
+            b1u: UInt(4) = 0 - b1 if b1 < 0 else b1
             op0: UInt(18) = 0
             op1: UInt(27) = 0
             op0[0:8] = au
@@ -257,16 +221,8 @@ def test_subview_systolic_dsp_packed_int4xint8():
             res: UInt(48) = op0 * op1
             res0u: UInt(12) = res[0:12]
             res1u: UInt(12) = res[13:25]
-            res0: int16 = 0
-            res1: int16 = 0
-            if s0:
-                res0 = 0 - res0u
-            else:
-                res0 = res0u
-            if s1:
-                res1 = 0 - res1u
-            else:
-                res1 = res1u
+            res0: int16 = 0 - res0u if s0 else res0u
+            res1: int16 = 0 - res1u if s1 else res1u
             c_packed: int32 = C[i, j]
             c0: int16 = c_packed[0:16]
             c1: int16 = c_packed[16:32]
