@@ -675,7 +675,7 @@ def test_subview_systolic_dsp_packed_int4xint8():
         B_in: int8[K], # bit-packed, each element is 4 bits
         A_out: int8[K],
         B_out: int8[K],
-        C: int16[M, N],
+        C: int32[M, N], # bit-packed, each element is 16 bits
         i: index,
         j: index,
     ):
@@ -709,8 +709,12 @@ def test_subview_systolic_dsp_packed_int4xint8():
             else: res0 = res0u
             if s1: res1 = 0-res1u
             else: res1 = res1u
-            C[i, j * 2] += res0
-            C[i, j * 2 + 1] += res1
+            c_packed : int32 = C[i, j]
+            c0: int16 = c_packed[0:16]
+            c1: int16 = c_packed[16:32]
+            c_packed[0:16] = c0 + res0
+            c_packed[16:32] = c1 + res1
+            C[i, j] = c_packed
             A_out[k] = a
             B_out[k] = b_packed
 
@@ -730,9 +734,10 @@ def test_subview_systolic_dsp_packed_int4xint8():
                 A_fifo[m, 0, k] = A[m, k]
             for n in range(half_N):
                 B_fifo[n, 0, k] = B_packed[k, n]
+        C_packed: int32[M, half_N] = 0
         for i, j in allo.grid(M, half_N, name="PE"):
             kernel(
-                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C_packed, i, j
             )
         A_drain: int8[M]
         B_drain: int8[half_N]
@@ -741,6 +746,11 @@ def test_subview_systolic_dsp_packed_int4xint8():
                 A_drain[m] = A_fifo[m, N, k]
             for n in range(half_N):
                 B_drain[n] = B_fifo[n, M, k]
+        # unpack C
+        for i in range(M):
+            for j in range(half_N):
+                C[i, j * 2] = C_packed[i, j][0: 16]
+                C[i, j * 2 + 1] = C_packed[i, j][16: 32]
 
     s = allo.customize(systolic_array)
     # print(s.module)
@@ -753,6 +763,6 @@ def test_subview_systolic_dsp_packed_int4xint8():
     mod(A, B, allo_C)
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
 
- 
+
 if __name__ == "__main__":
     pytest.main([__file__])
