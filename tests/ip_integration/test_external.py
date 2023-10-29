@@ -60,8 +60,8 @@ def test_lib_gemm():
     def top(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
         C: float32[16, 16] = 0
         gemm(A, B, C)
-        C = C + 1
-        return C
+        D = C + 1
+        return D
 
     s = allo.customize(top)
     print(s.module)

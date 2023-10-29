@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int8, int16, int32, float32, index
 
 
 def test_grid_for_gemm():
@@ -118,6 +118,18 @@ def test_variable_bound_for():
     np_B = np.zeros((10,), dtype=np.int32)
     mod(np_B)
     np.testing.assert_allclose(np_A, np_B)
+
+
+def test_variable_bound_for_2():
+    def kernel() -> int32[10]:
+        B: int32[10] = 0
+        for i in range(10):
+            for j in range(i, i + 1):
+                B[i] += j
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
 
 
 def test_scf_for():
@@ -474,6 +486,46 @@ def test_multiple_returns_4D():
     np.testing.assert_allclose(np_res0, np_A + 1)
     np.testing.assert_allclose(np_res1, np_B + 1)
     np.testing.assert_allclose(np_res2, np_C + 1)
+
+
+def test_subview():
+    def kernel(A: int32[10, 10]) -> int32[10]:
+        return A[5]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    mod = s.build()
+    assert np.array_equal(mod(np_A), kernel(np_A))
+
+    def kernel(A: float32[5, 10, 15]) -> float32[15]:
+        return A[3, 2]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A), kernel(np_A))
+
+    def kernel(A: float32[5, 10, 15]) -> float32[10, 15]:
+        return A[3]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A), kernel(np_A))
+
+
+def test_dynamic_subview():
+    def kernel(A: float32[5, 10, 15], i: index, j: index) -> float32[15]:
+        return A[i, j]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    mod = s.build()
+    np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
 
 
 if __name__ == "__main__":
