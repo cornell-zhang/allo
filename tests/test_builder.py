@@ -603,14 +603,22 @@ def test_subview_systolic_dsp_packed_int4xint4():
             b1u: UInt(4) = 0
             s0: UInt(1) = a0[3] ^ b0[3]
             s1: UInt(1) = a1[3] ^ b1[3]
-            if a0 < 0: a0u = -a0
-            else: a0u = a0
-            if a1 < 0: a1u = -a1
-            else: a1u = a1
-            if b0 < 0: b0u = -b0
-            else: b0u = b0
-            if b1 < 0: b1u = -b1
-            else: b1u = b1
+            if a0 < 0:
+                a0u = -a0
+            else:
+                a0u = a0
+            if a1 < 0:
+                a1u = -a1
+            else:
+                a1u = a1
+            if b0 < 0:
+                b0u = -b0
+            else:
+                b0u = b0
+            if b1 < 0:
+                b1u = -b1
+            else:
+                b1u = b1
             op0: UInt(27) = 0
             op1: UInt(18) = 0
             op0[0:4] = a0u
@@ -622,16 +630,20 @@ def test_subview_systolic_dsp_packed_int4xint4():
             res1u: UInt(8) = res[33:41]
             res0: int8 = 0
             res1: int8 = 0
-            if s0: res0 = -res0u
-            else: res0 = res0u
-            if s1: res1 = -res1u
-            else: res1 = res1u
+            if s0:
+                res0 = -res0u
+            else:
+                res0 = res0u
+            if s1:
+                res1 = -res1u
+            else:
+                res1 = res1u
             C[i, j] += res0
             C[i, j] += res1
             A_out[k] = a0
             A_out[k + 1] = a1
-            B_out[k] =  b0
-            B_out[k + 1] =  b1
+            B_out[k] = b0
+            B_out[k + 1] = b1
 
     def systolic_array(A: int4[M, K], B: int4[K, N], C: int8[M, N]):
         A_fifo: int4[M, N + 1, K]
@@ -671,11 +683,11 @@ def test_subview_systolic_dsp_packed_int4xint8():
     half_N = 2
 
     def kernel(
-        A_in: int8[K], # not bit-packed
-        B_in: int8[K], # bit-packed, each element is 4 bits
+        A_in: int8[K],  # not bit-packed
+        B_in: int8[K],  # bit-packed, each element is 4 bits
         A_out: int8[K],
         B_out: int8[K],
-        C: int32[M, N], # bit-packed, each element is 16 bits
+        C: int32[M, N],  # bit-packed, each element is 16 bits
         i: index,
         j: index,
     ):
@@ -684,17 +696,23 @@ def test_subview_systolic_dsp_packed_int4xint8():
             b_packed: int8 = B_in[k]
             b0: int4 = b_packed[0:4]
             b1: int4 = b_packed[4:8]
-            au : UInt(8) = 0
+            au: UInt(8) = 0
             b0u: UInt(4) = 0
             b1u: UInt(4) = 0
             s0: UInt(1) = a[7] ^ b0[3]
             s1: UInt(1) = a[7] ^ b1[3]
-            if a < 0: au = 0-a
-            else: au = a
-            if b0 < 0: b0u = 0-b0
-            else: b0u = b0
-            if b1 < 0: b1u = 0-b1
-            else: b1u = b1
+            if a < 0:
+                au = 0 - a
+            else:
+                au = a
+            if b0 < 0:
+                b0u = 0 - b0
+            else:
+                b0u = b0
+            if b1 < 0:
+                b1u = 0 - b1
+            else:
+                b1u = b1
             op0: UInt(18) = 0
             op1: UInt(27) = 0
             op0[0:8] = au
@@ -705,11 +723,15 @@ def test_subview_systolic_dsp_packed_int4xint8():
             res1u: UInt(12) = res[13:25]
             res0: int16 = 0
             res1: int16 = 0
-            if s0: res0 = 0-res0u
-            else: res0 = res0u
-            if s1: res1 = 0-res1u
-            else: res1 = res1u
-            c_packed : int32 = C[i, j]
+            if s0:
+                res0 = 0 - res0u
+            else:
+                res0 = res0u
+            if s1:
+                res1 = 0 - res1u
+            else:
+                res1 = res1u
+            c_packed: int32 = C[i, j]
             c0: int16 = c_packed[0:16]
             c1: int16 = c_packed[16:32]
             c_packed[0:16] = c0 + res0
@@ -725,7 +747,7 @@ def test_subview_systolic_dsp_packed_int4xint8():
             for n in range(half_N):
                 B_packed[k, n][0:4] = B[k, n * 2]
                 B_packed[k, n][4:8] = B[k, n * 2 + 1]
-        
+
         A_fifo: int8[M, half_N + 1, K]
         B_fifo: int8[half_N, M + 1, K]
 
@@ -737,7 +759,13 @@ def test_subview_systolic_dsp_packed_int4xint8():
         C_packed: int32[M, half_N] = 0
         for i, j in allo.grid(M, half_N, name="PE"):
             kernel(
-                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C_packed, i, j
+                A_fifo[i, j],
+                B_fifo[j, i],
+                A_fifo[i, j + 1],
+                B_fifo[j, i + 1],
+                C_packed,
+                i,
+                j,
             )
         A_drain: int8[M]
         B_drain: int8[half_N]
@@ -749,8 +777,8 @@ def test_subview_systolic_dsp_packed_int4xint8():
         # unpack C
         for i in range(M):
             for j in range(half_N):
-                C[i, j * 2] = C_packed[i, j][0: 16]
-                C[i, j * 2 + 1] = C_packed[i, j][16: 32]
+                C[i, j * 2] = C_packed[i, j][0:16]
+                C[i, j * 2 + 1] = C_packed[i, j][16:32]
 
     s = allo.customize(systolic_array)
     # print(s.module)
