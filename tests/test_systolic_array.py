@@ -210,9 +210,9 @@ def test_subview_systolic_dsp_packed_int4xint8():
             b1: int4 = b_packed[4:8]
             s0: UInt(1) = a[7] ^ b0[3]
             s1: UInt(1) = a[7] ^ b1[3]
-            au: UInt(8) = 0 - a if a < 0 else a
-            b0u: UInt(4) = 0 - b0 if b0 < 0 else b0
-            b1u: UInt(4) = 0 - b1 if b1 < 0 else b1
+            au: UInt(8) = allo.abs(a)
+            b0u: UInt(4) = allo.abs(b0)
+            b1u: UInt(4) = allo.abs(b1)
             op0: UInt(18) = 0
             op1: UInt(27) = 0
             op0[0:8] = au
