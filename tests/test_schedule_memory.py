@@ -552,5 +552,17 @@ def test_call_partition_nested():
     print(f)
 
 
+def test_partition_constant_array():
+    np_A = np.zeros((32,), dtype=np.int32)
+
+    def kernel() -> int32[32]:
+        A: int32[32] = np_A
+        return A
+
+    s = allo.customize(kernel)
+    s.partition(s.A)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

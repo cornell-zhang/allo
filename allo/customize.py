@@ -26,6 +26,8 @@ from hcl_mlir.ir import (
     F32Type,
     MemRefType,
     FlatSymbolRefAttr,
+    AffineMap,
+    AffineMapAttr,
 )
 from hcl_mlir.dialects import (
     hcl as hcl_d,
@@ -33,6 +35,10 @@ from hcl_mlir.dialects import (
     affine as affine_d,
     arith as arith_d,
     func as func_d,
+)
+from hcl_mlir.dialects.affine import (
+    AffineExpr,
+    AffineDimExpr,
 )
 from hcl_mlir.exceptions import (
     HCLValueError,
@@ -258,6 +264,8 @@ class Schedule:
                 and StringAttr(op.attributes["name"]).value == target_name
             ):
                 return target_func, -1, op
+            if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
+                return target_func, -1, op
         raise RuntimeError(f"Target {target} not found")
 
     @wrapped_apply
@@ -280,9 +288,6 @@ class Schedule:
             raise HCLValueError("Not supported partition type")
         i32 = IntegerType.get_signless(32)
         ui32 = IntegerType.get_unsigned(32)
-        partition_type = IntegerAttr.get(i32, partition_type)
-        dim = IntegerAttr.get(ui32, dim)
-        factor = IntegerAttr.get(ui32, factor)
         # find all the tensors that need to be partitioned
         visited_target_names = []
         visited_func_calls = []
@@ -322,11 +327,48 @@ class Schedule:
             )
             hcl_d.PartitionOp(
                 mlir_target.result,
-                partition_kind=partition_type,
-                dim=dim,
-                factor=factor,
+                partition_kind=IntegerAttr.get(i32, partition_type),
+                dim=IntegerAttr.get(ui32, dim),
+                factor=IntegerAttr.get(ui32, factor),
                 ip=InsertionPoint.at_block_terminator(func.entry_block),
             )
+        # Calculate layout map
+        # first N: partition index
+        # last N : physical index
+        shape = mlir_target.result.type.shape
+        exprs = []
+        for i in range(len(shape)):
+            if partition_type == Partition.Cyclic:
+                exprs.insert(2 * i, AffineDimExpr.get(i) % factor)
+                exprs.insert(
+                    2 * i + 1, AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
+                )
+            elif partition_type == Partition.Block:
+                # block factor N means partition into N blocks
+                # each block has shape[dim] / factor elements
+                block_factor = (shape[dim] + factor - 1) / factor
+                exprs.insert(
+                    2 * i, AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
+                )
+                exprs.insert(2 * i + 1, AffineDimExpr.get(i) % block_factor)
+            else:  # Partition.Complete
+                exprs.insert(2 * i, AffineDimExpr.get(i))
+                exprs.insert(2 * i + 1, AffineExpr.get_constant(0))
+        affine_map = AffineMap.get(dim_count=len(shape), symbol_count=0, exprs=exprs)
+        affine_attr = AffineMapAttr.get(affine_map)
+        for op in self.module.body.operations:
+            if (
+                isinstance(op, memref_d.GlobalOp)
+                and op.attributes["sym_name"].value == target.name
+            ):
+                op.attributes["type"] = TypeAttr.get(
+                    MemRefType.get(
+                        op.attributes["type"].value.shape,
+                        op.attributes["type"].value.element_type,
+                        affine_attr,
+                        op.attributes["type"].value.memory_space,
+                    )
+                )
 
     @wrapped_apply
     def buffer_at(self, target, axis):
@@ -727,7 +769,7 @@ def customize(
                     MockBuffer(fn.__name__, name, buffer.idx),
                 )
             elif isinstance(
-                buffer, (memref_d.AllocOp, func_d.CallOp)
+                buffer, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)
             ):  # Intermediate buffers
                 setattr(sch, name, MockBuffer(fn.__name__, name))
     # Check if there are memory leaks
