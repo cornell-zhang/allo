@@ -641,7 +641,7 @@ class Schedule:
                             FlatSymbolRefAttr(op.attributes["callee"]).value
                         )
                         dup_func = old_func.operation.clone(
-                            InsertionPoint(self.top_func)
+                            InsertionPoint(func)
                         )
                         new_name = (
                             f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"

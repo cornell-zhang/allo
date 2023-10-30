@@ -142,7 +142,7 @@ def test_cascade_systolic():
     W_A_cst = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
     W_B_cst = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
 
-    def kernel(X: int8[4, 4]) -> int8[4, 4]:
+    def top(X: int8[4, 4]) -> int8[4, 4]:
         Z: int8[4, 4] = 0
         Y: int8[4, 4] = 0
         W_A: int8[4, 4] = W_A_cst
@@ -152,7 +152,7 @@ def test_cascade_systolic():
         return Y
 
     s_top = allo.customize(
-        kernel,
+        top,
         instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": 4, "N": 4, "K": 4},
     )
     # CPU testing
@@ -180,7 +180,7 @@ def test_cascade_systolic():
     code = s_top.build("vhls")
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
-        hls_mod = s.build(target="vitis_hls", mode="hw_emu", project="sa_4x4.prj")
+        hls_mod = s_top.build(target="vitis_hls", mode="sw_emu", project="sa_4x4.prj")
         hls_mod()
 
 
