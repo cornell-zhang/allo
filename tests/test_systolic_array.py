@@ -151,17 +151,37 @@ def test_cascade_systolic():
         systolic(Z, W_B, Y)
         return Y
 
-    s = allo.customize(
+    s_top = allo.customize(
         kernel,
         instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": 4, "N": 4, "K": 4},
     )
-    print(s.module)
-    mod = s.build()
+    # CPU testing
+    mod = s_top.build()
     X = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
     allo_C = mod(X)
     np_C = X @ W_A_cst @ W_B_cst
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
     print("Passed!")
+    # Submodule customization
+    s = allo.customize(
+        systolic,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": 4, "N": 4, "K": 4},
+    )
+    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
+    s.to(s.A_fifo, pe, axis=1, depth=5)
+    s.to(s.B_fifo, pe, axis=0, depth=5)
+    code = s.build("vhls")
+    # Compose with submodule
+    s_top.compose(s)
+    # HLS testing
+    code = s_top.build("vhls")
+    print(code)
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s.build(target="vitis_hls", mode="hw_emu", project="sa_4x4.prj")
+        hls_mod()
 
 
 def test_subview_systolic_dsp_packed_int4xint4():
