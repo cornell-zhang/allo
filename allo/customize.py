@@ -8,6 +8,7 @@ import textwrap
 import ast
 from dataclasses import dataclass
 from functools import wraps
+from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 import numpy as np
@@ -721,6 +722,12 @@ def customize(
         instantiate = {}
     if global_vars is None:
         global_vars = _get_global_vars(fn)
+        new_global_vars = global_vars.copy()
+        for var in global_vars.values():
+            # import functions from other files
+            if isinstance(var, PyFunctionType):
+                new_global_vars.update(_get_global_vars(var))
+        global_vars = new_global_vars
     for typevar in instantiate:
         if typevar not in global_vars:
             raise RuntimeError(f"Type variable {typevar} not found")

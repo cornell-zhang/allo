@@ -136,6 +136,34 @@ def test_parameterized_systolic():
     print("Passed!")
 
 
+def test_cascade_systolic():
+    from allo.library.systolic import systolic
+
+    W_A_cst = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
+    W_B_cst = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
+
+    def kernel(X: int8[4, 4]) -> int8[4, 4]:
+        Z: int8[4, 4] = 0
+        Y: int8[4, 4] = 0
+        W_A: int8[4, 4] = W_A_cst
+        W_B: int8[4, 4] = W_B_cst
+        systolic(X, W_A, Z)
+        systolic(Z, W_B, Y)
+        return Y
+
+    s = allo.customize(
+        kernel,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": 4, "N": 4, "K": 4},
+    )
+    print(s.module)
+    mod = s.build()
+    X = np.random.randint(-4, 4, size=(4, 4)).astype(np.int8)
+    allo_C = mod(X)
+    np_C = X @ W_A_cst @ W_B_cst
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+
+
 def test_subview_systolic_dsp_packed_int4xint4():
     M, N, K = 2, 2, 2
 
