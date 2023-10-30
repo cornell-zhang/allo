@@ -469,7 +469,7 @@ class Schedule:
         )
 
     @wrapped_apply
-    def to(self, target, dst, axis=None, fifo_depth=-1):
+    def to(self, target, dst, axis=None, depth=-1):
         _, _, target = self._find_target(target)
         self.top_func.attributes["dataflow"] = UnitAttr.get()
         # pylint: disable=too-many-nested-blocks
@@ -479,7 +479,7 @@ class Schedule:
             hcl_d.InterKernelToOp(
                 target.result,
                 op_hdl.result,
-                fifo_depth=IntegerAttr.get(i32, fifo_depth),
+                depth=IntegerAttr.get(i32, depth),
                 ip=self.ip,
             )
         else:
@@ -489,7 +489,7 @@ class Schedule:
             space_time_label = ["T"] * len(memref.shape)
             for idx in dst:
                 space_time_label[idx] = "S"
-            memory_space = f"stream:{fifo_depth};{''.join(space_time_label)}"
+            memory_space = f"stream:{depth};{''.join(space_time_label)}"
             new_memref = MemRefType.get(
                 memref.shape,
                 memref.element_type,
@@ -555,13 +555,13 @@ class Schedule:
                 idx = target_arr[func.name.value]
                 arg = func.arguments[idx]
                 memref = MemRefType(arg.type)
-                if fifo_depth == -1:
-                    fifo_depth = int(np.prod(memref.shape))
+                if depth == -1:
+                    depth = int(np.prod(memref.shape))
                 new_memref = MemRefType.get(
                     memref.shape,
                     memref.element_type,
                     memref.layout,
-                    StringAttr.get(f"stream:{fifo_depth}"),
+                    StringAttr.get(f"stream:{depth}"),
                 )
                 arg.set_type(new_memref)
                 new_in_types = []

@@ -105,8 +105,8 @@ def test_subview_systolic_stream():
     s.partition(s.A, dim=1)
     s.partition(s.B, dim=2)
     pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
-    s.to(s.A_fifo, pe, axis=1, fifo_depth=M + 1)
-    s.to(s.B_fifo, pe, axis=0, fifo_depth=N + 1)
+    s.to(s.A_fifo, pe, axis=1, depth=M + 1)
+    s.to(s.B_fifo, pe, axis=0, depth=N + 1)
     code = s.build("vhls")
     assert "#pragma HLS dataflow" in str(code)
     if os.system("which vivado_hls >> /dev/null") == 0:
