@@ -221,8 +221,8 @@ def test_subview_systolic_dsp_packed_int4xint8():
             res: UInt(48) = op0 * op1
             res0u: UInt(12) = res[0:12]
             res1u: UInt(12) = res[13:25]
-            res0: int16 = 0 - res0u if s0 else res0u
-            res1: int16 = 0 - res1u if s1 else res1u
+            res0: int16 = -res0u if s0 else res0u
+            res1: int16 = -res1u if s1 else res1u
             c_packed: int32 = C[i, j]
             c0: int16 = c_packed[0:16]
             c1: int16 = c_packed[16:32]
