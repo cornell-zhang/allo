@@ -470,7 +470,7 @@ class Schedule:
 
     @wrapped_apply
     def to(self, target, dst, axis=None, depth=-1):
-        _, _, target = self._find_target(target)
+        func, _, target = self._find_target(target)
         self.top_func.attributes["dataflow"] = UnitAttr.get()
         # pylint: disable=too-many-nested-blocks
         if axis is None:
@@ -521,7 +521,7 @@ class Schedule:
             target.operation.erase()
             # Find target in the top function
             target_arr = {}
-            for op in self.top_func.entry_block.operations:
+            for op in func.entry_block.operations:
                 if isinstance(op, func_d.CallOp):
                     for func in self.module.body.operations:
                         if (
@@ -540,7 +540,7 @@ class Schedule:
             return
         # Find target in the top function
         target_arr = {}
-        for op in self.top_func.entry_block.operations:
+        for op in func.entry_block.operations:
             if isinstance(op, func_d.CallOp):
                 for idx, arg in enumerate(op.operands):
                     if arg.owner == target:
@@ -696,6 +696,11 @@ class Schedule:
                             band_name.split(":")[1] if ":" in band_name else band_name
                         )
                         args[0] = f"{sch.top_func_name}:{band_name}"
+                elif primitive[0] == "to":
+                    if "axis" in kwargs:
+                        kwargs["axis"] = get_name(kwargs["axis"])
+                    else:
+                        args[2] = get_name(args[2])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
                     primitive_func.__wrapped__(self, *args, **kwargs)
