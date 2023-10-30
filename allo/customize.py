@@ -147,7 +147,6 @@ class Schedule:
 
     def _find_band(self, band_name, func=None):
         loops = self.get_loops(func)
-        print(band_name, loops)
         if band_name in loops.loops:
             return loops[band_name]
         raise RuntimeError(f"Band {band_name} not found")
@@ -297,7 +296,7 @@ class Schedule:
         visited_func_calls = []
 
         def recursive_partition(inner_target):
-            name = f"{inner_target.path}.{inner_target.name}"
+            name = f"{inner_target.path}:{inner_target.name}"
             if name in visited_target_names:
                 return
             visited_target_names.append(name)
@@ -327,7 +326,7 @@ class Schedule:
         recursive_partition(target)
         for inner_target in visited_target_names:
             func, _, mlir_target = self._find_target(
-                MockBuffer(inner_target.split(".")[0], inner_target.split(".")[1])
+                MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1])
             )
             hcl_d.PartitionOp(
                 mlir_target.result,
@@ -340,30 +339,38 @@ class Schedule:
         # first N: partition index
         # last N : physical index
         shape = mlir_target.result.type.shape
-        exprs = []
+        partition_idx = []
+        address_idx = []
         for i, _ in enumerate(shape):
-            if partition_type == Partition.Cyclic:
-                exprs.insert(2 * i, AffineDimExpr.get(i) % factor)
-                exprs.insert(
-                    2 * i + 1, AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
-                )
-            elif partition_type == Partition.Block:
-                # block factor N means partition into N blocks
-                # each block has shape[dim] / factor elements
-                block_factor = (shape[i] + factor - 1) // factor
-                exprs.insert(
-                    2 * i, AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
-                )
-                exprs.insert(2 * i + 1, AffineDimExpr.get(i) % block_factor)
-            else:  # Partition.Complete
-                exprs.insert(2 * i, AffineDimExpr.get(i))
-                exprs.insert(2 * i + 1, AffineExpr.get_constant(0))
-        affine_map = AffineMap.get(dim_count=len(shape), symbol_count=0, exprs=exprs)
+            if dim == 0 or (dim > 0 and i == dim - 1):
+                if partition_type == Partition.Cyclic:
+                    partition_idx.append(AffineDimExpr.get(i) % factor)
+                    address_idx.append(
+                        AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
+                    )
+                elif partition_type == Partition.Block:
+                    # block factor N means partition into N blocks
+                    # each block has shape[dim] / factor elements
+                    block_factor = (shape[i] + factor - 1) // factor
+                    partition_idx.append(
+                        AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
+                    )
+                    address_idx.append(AffineDimExpr.get(i) % block_factor)
+                else:  # Partition.Complete
+                    partition_idx.append(AffineDimExpr.get(i))
+                    address_idx.append(AffineExpr.get_constant(0))
+            else:
+                partition_idx.append(AffineExpr.get_constant(0))
+                address_idx.append(AffineDimExpr.get(i))
+        affine_map = AffineMap.get(
+            dim_count=len(shape), symbol_count=0, exprs=partition_idx + address_idx
+        )
         affine_attr = AffineMapAttr.get(affine_map)
+        only_target_names = [item.split(":")[-1] for item in visited_target_names]
         for op in self.module.body.operations:
             if (
                 isinstance(op, memref_d.GlobalOp)
-                and op.attributes["sym_name"].value == target.name
+                and op.attributes["sym_name"].value in only_target_names
             ):
                 op.attributes["type"] = TypeAttr.get(
                     MemRefType.get(

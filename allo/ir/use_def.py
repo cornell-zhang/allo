@@ -48,7 +48,7 @@ class UseDefChain(ast.NodeVisitor):
     def get_name(self, name):
         if self.path == "":
             return name
-        return self.path + "." + name
+        return self.path + ":" + name
 
     def dump_graph(self, top_func_name):
         print("digraph G {")
@@ -62,11 +62,11 @@ class UseDefChain(ast.NodeVisitor):
     def get_equivalent_tensors(self, target_key):
         def recursive_helper(key):
             local_res = []
-            path = key.split(".")[0]
+            path = key.split(":")[0]
             for tensor in self.buffers[key].users:
                 if tensor.path != path:
                     local_res.append(tensor)
-                    local_res += recursive_helper(tensor.path + "." + tensor.name)
+                    local_res += recursive_helper(tensor.path + ":" + tensor.name)
             return local_res
 
         results = {key: set() for key in self.buffers}
@@ -74,7 +74,7 @@ class UseDefChain(ast.NodeVisitor):
             res = recursive_helper(key)
             results[key].update(set(res))
             for tensor in res:
-                results[f"{tensor.path}.{tensor.name}"].add(buffer)
+                results[f"{tensor.path}:{tensor.name}"].add(buffer)
         return results[target_key] if target_key in results else set()
 
     def visit_Constant(self, node):
