@@ -346,7 +346,7 @@ class Schedule:
             elif partition_type == Partition.Block:
                 # block factor N means partition into N blocks
                 # each block has shape[dim] / factor elements
-                block_factor = (shape[dim] + factor - 1) / factor
+                block_factor = (shape[i] + factor - 1) // factor
                 exprs.insert(
                     2 * i, AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
                 )
