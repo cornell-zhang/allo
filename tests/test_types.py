@@ -200,6 +200,21 @@ def test_fixed_compare():
     # FIXME: FixedType kernels cannot be lowered
 
 
+def test_select_typing():
+    def kernel(flt: float32, itg: int32) -> float32:
+        # if correctly typed, the select should have float32 result
+        # resulting in a sitofp for itg.
+
+        # if not correctly typed, the select should have int32 result
+        # there would be no sitofp
+        res: int32 = flt if flt > 0.0 else itg
+        return res
+
+    s = allo.customize(kernel)
+    ir = str(s.module)
+    assert "sitofp" in ir
+
+
 def test_bconv2D_nchw():
     bs = 4
     ic, oc = 6, 16
