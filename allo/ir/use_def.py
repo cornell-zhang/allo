@@ -145,7 +145,9 @@ class UseDefChain(ast.NodeVisitor):
                 # Python-Builtin functions
                 return list(self.visit(node.args[0]))
             raise RuntimeError(f"Unsupported function call {node.func.id}")
-        if obj.__module__.startswith("allo"):
+        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
+            "allo.library"
+        ):
             arg_nodes = []
             for arg in node.args:
                 arg_nodes += list(self.visit(arg))

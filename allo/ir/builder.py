@@ -1481,7 +1481,9 @@ class ASTTransformer(ASTBuilder):
                 )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
-        if obj.__module__.startswith("allo"):
+        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
+            "allo.library"
+        ):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
