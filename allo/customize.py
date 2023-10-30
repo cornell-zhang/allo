@@ -337,7 +337,7 @@ class Schedule:
         # last N : physical index
         shape = mlir_target.result.type.shape
         exprs = []
-        for i in range(len(shape)):
+        for i, _ in enumerate(shape):
             if partition_type == Partition.Cyclic:
                 exprs.insert(2 * i, AffineDimExpr.get(i) % factor)
                 exprs.insert(
