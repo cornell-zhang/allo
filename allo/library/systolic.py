@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=used-before-assignment
 
 import allo
 from allo.ir.types import int32, index, TypeVar

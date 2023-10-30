@@ -479,7 +479,7 @@ class Schedule:
             hcl_d.InterKernelToOp(
                 target.result,
                 op_hdl.result,
-                depth=IntegerAttr.get(i32, depth),
+                fifo_depth=IntegerAttr.get(i32, depth),
                 ip=self.ip,
             )
         else:
