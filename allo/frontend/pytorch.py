@@ -1,10 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=too-many-public-methods
 
 import operator
 import inspect
 import math
-import warnings
 
 try:
     import torch
@@ -15,7 +15,7 @@ try:
     from .tracer import AlloTracer
 except ImportError:
     pass
-
+from .library import CoreAttention_lib, KVCache_lib
 from .. import dsl
 from ..ir import types
 from ..customize import customize
@@ -23,7 +23,12 @@ from ..passes import monitor_memory_usage
 
 
 def from_pytorch(
-    model, example_inputs, verbose=False, enable_tensor=False, monitor_memory=False
+    model,
+    example_inputs,
+    leaf_modules=None,
+    verbose=False,
+    enable_tensor=False,
+    monitor_memory=False,
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -37,7 +42,7 @@ def from_pytorch(
     for item in concrete_args.values():
         args.append(item)
 
-    tracer = AlloTracer(model, concrete_args=concrete_args)
+    tracer = AlloTracer(model, concrete_args=concrete_args, leaf_modules=leaf_modules)
     graph = tracer.trace()
     name = (
         model.__class__.__name__
@@ -56,14 +61,13 @@ def from_pytorch(
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs)
+    builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
     s = customize(
         code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
     )
     mod = s.build()
     if monitor_memory:
-        print(s.module)
         monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
         print(monitor_memory_table)
     if verbose:
@@ -76,33 +80,57 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm, example_inputs):
+    def __init__(self, gm, example_inputs, leaf_modules=None):
         self.gm = gm
         self.code = []
+        self.input_names = []
+        self.input_shapes = []
+        self.example_inputs = example_inputs
+        self.leaf_modules = leaf_modules
         self.input_args = []
-        self.input_shapes = [x.shape for x in example_inputs]
         self.named_params = gm.named_parameters()
-        self.output = None
+        self.subfunctions = []
+        self.output = []
 
     def build(self):
         for node in self.gm.graph.nodes:
             self(node)
+        for i, x in enumerate(self.example_inputs):
+            if isinstance(x, torch.Tensor):
+                self.input_shapes.append(x.shape)
+                self.input_args.append(self.input_names[i])
+            elif isinstance(x, (list, tuple)):
+                input_name = self.input_names[i]
+                for num, item in enumerate(x):
+                    if isinstance(item, torch.Tensor):
+                        self.input_shapes.append(item.shape)
+                        self.input_args.append(f"{input_name}_{num}")
+                    else:
+                        raise NotImplementedError("Unsupported input type")
+            elif isinstance(x, int):
+                self.input_shapes.append(None)
+                self.input_args.append(self.input_names[i])
         args = [
             f"{name}: float32[{', '.join([str(s) for s in shape])}]"
+            if shape
+            else f"{name}: int32"
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
-        # inputs
-        res = f"def forward({', '.join(args)})".format()
+        res = ""
+        # top-level function
+        res += f"def forward({', '.join(args)})".format()
         # outputs
-        res += f" -> {self.output}:\n"
-        # global parameters
+        res += f" -> ({', '.join(self.output)}):\n"
+        # subfunctions
+        if self.subfunctions:
+            res += "\n".join(self.subfunctions) + "\n"
         if self.named_params:
             for name, param in self.named_params:
                 new_name = name.replace(".", "_")
-                res += f"  {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+                res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
         # function body
         for line in self.code:
-            res += f"  {line}\n"
+            res += f"    {line}\n"
         return res
 
     def __call__(self, node):
@@ -116,7 +144,7 @@ class TorchBuilder:
         return dict(self.gm.named_modules())[name]
 
     def build_placeholder(self, node):
-        self.input_args.append(node.name)
+        self.input_names.append(node.name)
 
     def build_getattr(self, node):
         pass
@@ -129,6 +157,10 @@ class TorchBuilder:
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
         }.get(type(module), None)
+        if self.leaf_modules:
+            for leaf_module in self.leaf_modules:
+                if isinstance(module, leaf_module):
+                    return getattr(self, f"build_{module.__class__.__name__}")(node)
         if op is None:
             raise NotImplementedError("Unsupported module")
         if op == "linear":
@@ -142,8 +174,10 @@ class TorchBuilder:
             operator.sub: "sub",
             operator.mul: "mul",
             operator.truediv: "div",
+            operator.getitem: "getitem",
             torch.matmul: "matmul",
             torch.ones: "ones",
+            torch.zeros: "zeros",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
             F.linear: "linear",
@@ -151,6 +185,7 @@ class TorchBuilder:
             F.relu: "relu",
             F.dropout: "identity",
             torch.tril: "tril",
+            torch.cat: "concat",
         }.get(node.target)
         # Only nodes with shape need to be built.
         return (
@@ -169,29 +204,51 @@ class TorchBuilder:
             else None
         )
 
-    def build_output(self, node):
-        if len(node.args) > 1:
-            warnings.warn(
-                "Currently we only support return a single value", RuntimeWarning
-            )
-        if isinstance(node.meta["tensor_meta"], TensorMetadata):
-            output_tensor_meta = node.meta["tensor_meta"]
-        elif isinstance(node.meta["tensor_meta"], tuple):
-            output_tensor_meta = node.meta["tensor_meta"][0]
-        elif isinstance(node.meta["tensor_meta"], dict):
-            output_tensor_meta = list(node.meta["tensor_meta"].values())[0]
-        else:
-            raise NotImplementedError("Unsupported output type")
-        shape = str(list(output_tensor_meta.shape))
-        dtype = str(output_tensor_meta.dtype)[6:]
-        self.output = dtype + shape
+    def append_output(self, output):
+        shape = str(list(output.shape))
+        dtype = str(output.dtype)[6:]
+        self.output.append(dtype + shape)
 
+    def build_output(self, node):
+        if isinstance(node.meta["tensor_meta"], TensorMetadata):
+            self.append_output(node.meta["tensor_meta"])
+        elif isinstance(node.meta["tensor_meta"], (list, tuple)):
+            for output in node.meta["tensor_meta"]:
+                if isinstance(output, TensorMetadata):
+                    self.append_output(output)
+                elif isinstance(output, (list, tuple)):
+                    for item in output:
+                        if isinstance(item, TensorMetadata):
+                            self.append_output(item)
+                elif isinstance(output, dict):
+                    for item in output.values():
+                        if isinstance(item, TensorMetadata):
+                            self.append_output(item)
+                        else:
+                            raise NotImplementedError("Unsupported output type")
+        elif isinstance(node.meta["tensor_meta"], dict):
+            for output in node.meta["tensor_meta"].values():
+                if isinstance(output, TensorMetadata):
+                    self.append_output(output)
+        # Unwrap all outputs and return them
         name = get_var_name(node.args[0])
-        if isinstance(name, (tuple, str)):
-            return f"return ({name[0] if isinstance(name, tuple) else name})"
         if isinstance(name, dict):
-            return f"return ({list(name.values())[0]})"
-        raise NotImplementedError("Unsupported output type")
+            name = list(name.values())
+        return_name = (
+            str(name)
+            .replace("(", "")
+            .replace(")", "")
+            .replace("[", "")
+            .replace("]", "")
+        )
+        if return_name.endswith(","):
+            return_name = return_name[:-1]
+        return f"return ({return_name})"
+
+    def build_getitem(self, node):
+        inp = get_var_name(node.args[0])
+        index = node.args[1]
+        return f"{node.name} = {inp}_{index}"
 
     def build_add(self, node):
         lhs = get_var_name(node.args[0])
@@ -288,6 +345,48 @@ class TorchBuilder:
             dtype = str(dtype)[6:]
         return f"{node.name} = dsl.ones({shape}, dtype={dtype})"
 
+    def build_zeros(self, node):
+        shape = tuple(node.meta["tensor_meta"].shape)
+        dtype = node.meta["tensor_meta"].dtype
+        if str(dtype).startswith("torch."):
+            dtype = str(dtype)[6:]
+        return f"{node.name} = dsl.zeros({shape}, dtype={dtype})"
+
     def build_tril(self, node):
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.tril({inp})"
+
+    def build_concat(self, node):
+        shape_len = len(node.meta["tensor_meta"].shape)
+        tensor_A = get_var_name(node.args[0][0])
+        tensor_B = get_var_name(node.args[0][1])
+        dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
+        return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
+
+    def build_CoreAttention(self, node):
+        shape = tuple(self.example_inputs[1][0].shape)
+        src = inspect.getsource(CoreAttention_lib(*shape))
+        src = (
+            src.replace("s_0", str(shape[0]))
+            .replace("s_1", str(shape[1]))
+            .replace("s_2", str(shape[2]))
+            .replace("s_3", str(shape[3]))
+        )
+
+        if src not in self.subfunctions:
+            self.subfunctions.append(src)
+        return f"{node.name} = CoreAttention({', '.join([get_var_name(arg) for arg in node.args])})"
+
+    def build_KVCache(self, node):
+        shape = tuple(node.meta["tensor_meta"][0])
+        src = inspect.getsource(KVCache_lib(*shape))
+        src = (
+            src.replace("s_0", str(shape[0]))
+            .replace("s_1", str(shape[1]))
+            .replace("s_2", str(shape[2]))
+            .replace("s_3", str(shape[3]))
+        )
+
+        if src not in self.subfunctions:
+            self.subfunctions.append(src)
+        return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
