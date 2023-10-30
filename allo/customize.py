@@ -140,14 +140,17 @@ class Schedule:
         self.ext_libs = ext_libs
         self.use_def_chain = use_def_chain
 
-    def get_loops(self):
-        return get_affine_loop_nests(self.top_func)
+    def get_loops(self, func=None):
+        if func is None:
+            func = self.top_func
+        return get_affine_loop_nests(func)
 
-    def _find_band(self, band):
-        loops = self.get_loops()
-        if band in loops.loops:
-            return loops[band]
-        raise RuntimeError(f"Band {band} not found")
+    def _find_band(self, band_name, func=None):
+        loops = self.get_loops(func)
+        print(band_name, loops)
+        if band_name in loops.loops:
+            return loops[band_name]
+        raise RuntimeError(f"Band {band_name} not found")
 
     def _find_function(self, name):
         for func in self.module.body.operations:
@@ -568,11 +571,16 @@ class Schedule:
             range(axes[0], axes[0] + len(axes))
         ), "Axes must be consecutive"
         # start from the inner most loop
+        if ":" in band_name:
+            func = self._find_function(band_name.split(":")[0])
+            band_name = band_name.split(":")[1]
+        else:
+            func = self.top_func
         for axis in axes[::-1]:
             # Need to recompute the loop nests due to the MLIR bug:
             # https://reviews.llvm.org/D101422
             # Otherwise, it may hit invalid operations
-            band = self._find_band(band_name)
+            band = self._find_band(band_name, func)
             target_outer = band.get_outer_most()
             loops = list(band)
             op_to_remove = []
@@ -668,6 +676,19 @@ class Schedule:
                         kwargs["axis"] = get_name(kwargs["axis"])
                     else:
                         args[1] = get_name(args[1])
+                elif primitive[0] == "unfold":
+                    if "band_name" in kwargs:
+                        band_name = kwargs["band_name"]
+                        band_name = (
+                            band_name.split(":")[1] if ":" in band_name else band_name
+                        )
+                        kwargs["band_name"] = f"{sch.top_func_name}:{band_name}"
+                    else:
+                        band_name = args[0]
+                        band_name = (
+                            band_name.split(":")[1] if ":" in band_name else band_name
+                        )
+                        args[0] = f"{sch.top_func_name}:{band_name}"
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
                     primitive_func.__wrapped__(self, *args, **kwargs)
