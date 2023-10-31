@@ -471,7 +471,7 @@ class Schedule:
     @wrapped_apply
     def to(self, target, dst, axis=None, depth=-1):
         func, _, target = self._find_target(target)
-        self.top_func.attributes["dataflow"] = UnitAttr.get()
+        func.attributes["dataflow"] = UnitAttr.get()
         # pylint: disable=too-many-nested-blocks
         if axis is None:
             op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)

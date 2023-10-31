@@ -172,8 +172,8 @@ def test_cascade_systolic():
     s.partition(s.A, dim=1)
     s.partition(s.B, dim=2)
     pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
-    s.to(s.A_fifo, pe, axis=1, depth=5)
-    s.to(s.B_fifo, pe, axis=0, depth=5)
+    s.to(s.A_fifo, pe, axis=1, depth=M0 + 1)
+    s.to(s.B_fifo, pe, axis=0, depth=M1 + 1)
     code = s.build("vhls")
     # Compose with submodule
     s_top.compose(s)
@@ -182,7 +182,7 @@ def test_cascade_systolic():
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
-            target="vitis_hls", mode="sw_emu", project=f"sa_{M0}x{M1}.prj"
+            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
         )
         hls_mod()
 
