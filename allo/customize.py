@@ -8,6 +8,7 @@ import textwrap
 import ast
 from dataclasses import dataclass
 from functools import wraps
+from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 import numpy as np
@@ -139,14 +140,16 @@ class Schedule:
         self.ext_libs = ext_libs
         self.use_def_chain = use_def_chain
 
-    def get_loops(self):
-        return get_affine_loop_nests(self.top_func)
+    def get_loops(self, func=None):
+        if func is None:
+            func = self.top_func
+        return get_affine_loop_nests(func)
 
-    def _find_band(self, band):
-        loops = self.get_loops()
-        if band in loops.loops:
-            return loops[band]
-        raise RuntimeError(f"Band {band} not found")
+    def _find_band(self, band_name, func=None):
+        loops = self.get_loops(func)
+        if band_name in loops.loops:
+            return loops[band_name]
+        raise RuntimeError(f"Band {band_name} not found")
 
     def _find_function(self, name):
         for func in self.module.body.operations:
@@ -293,7 +296,7 @@ class Schedule:
         visited_func_calls = []
 
         def recursive_partition(inner_target):
-            name = f"{inner_target.path}.{inner_target.name}"
+            name = f"{inner_target.path}:{inner_target.name}"
             if name in visited_target_names:
                 return
             visited_target_names.append(name)
@@ -323,7 +326,7 @@ class Schedule:
         recursive_partition(target)
         for inner_target in visited_target_names:
             func, _, mlir_target = self._find_target(
-                MockBuffer(inner_target.split(".")[0], inner_target.split(".")[1])
+                MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1])
             )
             hcl_d.PartitionOp(
                 mlir_target.result,
@@ -336,30 +339,38 @@ class Schedule:
         # first N: partition index
         # last N : physical index
         shape = mlir_target.result.type.shape
-        exprs = []
+        partition_idx = []
+        address_idx = []
         for i, _ in enumerate(shape):
-            if partition_type == Partition.Cyclic:
-                exprs.insert(2 * i, AffineDimExpr.get(i) % factor)
-                exprs.insert(
-                    2 * i + 1, AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
-                )
-            elif partition_type == Partition.Block:
-                # block factor N means partition into N blocks
-                # each block has shape[dim] / factor elements
-                block_factor = (shape[i] + factor - 1) // factor
-                exprs.insert(
-                    2 * i, AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
-                )
-                exprs.insert(2 * i + 1, AffineDimExpr.get(i) % block_factor)
-            else:  # Partition.Complete
-                exprs.insert(2 * i, AffineDimExpr.get(i))
-                exprs.insert(2 * i + 1, AffineExpr.get_constant(0))
-        affine_map = AffineMap.get(dim_count=len(shape), symbol_count=0, exprs=exprs)
+            if dim == 0 or (dim > 0 and i == dim - 1):
+                if partition_type == Partition.Cyclic:
+                    partition_idx.append(AffineDimExpr.get(i) % factor)
+                    address_idx.append(
+                        AffineExpr.get_floor_div(AffineDimExpr.get(i), factor)
+                    )
+                elif partition_type == Partition.Block:
+                    # block factor N means partition into N blocks
+                    # each block has shape[dim] / factor elements
+                    block_factor = (shape[i] + factor - 1) // factor
+                    partition_idx.append(
+                        AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
+                    )
+                    address_idx.append(AffineDimExpr.get(i) % block_factor)
+                else:  # Partition.Complete
+                    partition_idx.append(AffineDimExpr.get(i))
+                    address_idx.append(AffineExpr.get_constant(0))
+            else:
+                partition_idx.append(AffineExpr.get_constant(0))
+                address_idx.append(AffineDimExpr.get(i))
+        affine_map = AffineMap.get(
+            dim_count=len(shape), symbol_count=0, exprs=partition_idx + address_idx
+        )
         affine_attr = AffineMapAttr.get(affine_map)
+        only_target_names = [item.split(":")[-1] for item in visited_target_names]
         for op in self.module.body.operations:
             if (
                 isinstance(op, memref_d.GlobalOp)
-                and op.attributes["sym_name"].value == target.name
+                and op.attributes["sym_name"].value in only_target_names
             ):
                 op.attributes["type"] = TypeAttr.get(
                     MemRefType.get(
@@ -458,9 +469,9 @@ class Schedule:
         )
 
     @wrapped_apply
-    def to(self, target, dst, axis=None, fifo_depth=-1):
-        _, _, target = self._find_target(target)
-        self.top_func.attributes["dataflow"] = UnitAttr.get()
+    def to(self, target, dst, axis=None, depth=-1):
+        func, _, target = self._find_target(target)
+        func.attributes["dataflow"] = UnitAttr.get()
         # pylint: disable=too-many-nested-blocks
         if axis is None:
             op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
@@ -468,7 +479,7 @@ class Schedule:
             hcl_d.InterKernelToOp(
                 target.result,
                 op_hdl.result,
-                fifo_depth=IntegerAttr.get(i32, fifo_depth),
+                fifo_depth=IntegerAttr.get(i32, depth),
                 ip=self.ip,
             )
         else:
@@ -478,7 +489,7 @@ class Schedule:
             space_time_label = ["T"] * len(memref.shape)
             for idx in dst:
                 space_time_label[idx] = "S"
-            memory_space = f"stream:{fifo_depth};{''.join(space_time_label)}"
+            memory_space = f"stream:{depth};{''.join(space_time_label)}"
             new_memref = MemRefType.get(
                 memref.shape,
                 memref.element_type,
@@ -510,7 +521,7 @@ class Schedule:
             target.operation.erase()
             # Find target in the top function
             target_arr = {}
-            for op in self.top_func.entry_block.operations:
+            for op in func.entry_block.operations:
                 if isinstance(op, func_d.CallOp):
                     for func in self.module.body.operations:
                         if (
@@ -529,7 +540,7 @@ class Schedule:
             return
         # Find target in the top function
         target_arr = {}
-        for op in self.top_func.entry_block.operations:
+        for op in func.entry_block.operations:
             if isinstance(op, func_d.CallOp):
                 for idx, arg in enumerate(op.operands):
                     if arg.owner == target:
@@ -544,13 +555,13 @@ class Schedule:
                 idx = target_arr[func.name.value]
                 arg = func.arguments[idx]
                 memref = MemRefType(arg.type)
-                if fifo_depth == -1:
-                    fifo_depth = int(np.prod(memref.shape))
+                if depth == -1:
+                    depth = int(np.prod(memref.shape))
                 new_memref = MemRefType.get(
                     memref.shape,
                     memref.element_type,
                     memref.layout,
-                    StringAttr.get(f"stream:{fifo_depth}"),
+                    StringAttr.get(f"stream:{depth}"),
                 )
                 arg.set_type(new_memref)
                 new_in_types = []
@@ -567,11 +578,16 @@ class Schedule:
             range(axes[0], axes[0] + len(axes))
         ), "Axes must be consecutive"
         # start from the inner most loop
+        if ":" in band_name:
+            func = self._find_function(band_name.split(":")[0])
+            band_name = band_name.split(":")[1]
+        else:
+            func = self.top_func
         for axis in axes[::-1]:
             # Need to recompute the loop nests due to the MLIR bug:
             # https://reviews.llvm.org/D101422
             # Otherwise, it may hit invalid operations
-            band = self._find_band(band_name)
+            band = self._find_band(band_name, func)
             target_outer = band.get_outer_most()
             loops = list(band)
             op_to_remove = []
@@ -624,9 +640,7 @@ class Schedule:
                         old_func = self._find_function(
                             FlatSymbolRefAttr(op.attributes["callee"]).value
                         )
-                        dup_func = old_func.operation.clone(
-                            InsertionPoint(self.top_func)
-                        )
+                        dup_func = old_func.operation.clone(InsertionPoint(func))
                         new_name = (
                             f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
                         )
@@ -667,6 +681,24 @@ class Schedule:
                         kwargs["axis"] = get_name(kwargs["axis"])
                     else:
                         args[1] = get_name(args[1])
+                elif primitive[0] == "unfold":
+                    if "band_name" in kwargs:
+                        band_name = kwargs["band_name"]
+                        band_name = (
+                            band_name.split(":")[1] if ":" in band_name else band_name
+                        )
+                        kwargs["band_name"] = f"{sch.top_func_name}:{band_name}"
+                    else:
+                        band_name = args[0]
+                        band_name = (
+                            band_name.split(":")[1] if ":" in band_name else band_name
+                        )
+                        args[0] = f"{sch.top_func_name}:{band_name}"
+                elif primitive[0] == "to":
+                    if "axis" in kwargs:
+                        kwargs["axis"] = get_name(kwargs["axis"])
+                    else:
+                        args[2] = get_name(args[2])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
                     primitive_func.__wrapped__(self, *args, **kwargs)
@@ -721,6 +753,12 @@ def customize(
         instantiate = {}
     if global_vars is None:
         global_vars = _get_global_vars(fn)
+        new_global_vars = global_vars.copy()
+        for var in global_vars.values():
+            # import functions from other files
+            if isinstance(var, PyFunctionType):
+                new_global_vars.update(_get_global_vars(var))
+        global_vars = new_global_vars
     for typevar in instantiate:
         if typevar not in global_vars:
             raise RuntimeError(f"Type variable {typevar} not found")

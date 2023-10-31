@@ -102,10 +102,11 @@ def test_subview_systolic_stream():
 
     s = allo.customize(systolic_array)
     s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
     pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
-    s.to(s.A_fifo, pe, axis=1, fifo_depth=2)
-    s.to(s.B_fifo, pe, axis=0, fifo_depth=2)
-    print(s.module)
+    s.to(s.A_fifo, pe, axis=1, depth=M + 1)
+    s.to(s.B_fifo, pe, axis=0, depth=N + 1)
     code = s.build("vhls")
     assert "#pragma HLS dataflow" in str(code)
     if os.system("which vivado_hls >> /dev/null") == 0:
@@ -113,6 +114,76 @@ def test_subview_systolic_stream():
             target="vivado_hls", mode="debug", project="systolic_stream.prj"
         )
         print(hls_mod)
+        hls_mod()
+
+
+def test_parameterized_systolic():
+    from allo.library.systolic import systolic
+
+    s = allo.customize(
+        systolic,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "M": 4, "N": 4, "K": 4},
+    )
+    print(s.module)
+    mod = s.build()
+    M, N, K = 4, 4, 4
+    A = np.random.randint(-8, 8, size=(M, K)).astype(np.int8)
+    B = np.random.randint(-8, 8, size=(K, N)).astype(np.int8)
+    allo_C = np.zeros((M, N), dtype=np.int16)
+    mod(A, B, allo_C)
+    np_C = A.astype(np.int16) @ B.astype(np.int16)
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+
+
+def test_cascade_systolic():
+    from allo.library.systolic import systolic
+
+    M0, M1, KK = 4, 4, 4
+    W_A_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    W_B_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+
+    def top(X: int8[M0, M1]) -> int8[M0, M1]:
+        Z: int8[M0, M1] = 0
+        Y: int8[M0, M1] = 0
+        W_A: int8[M0, M1] = W_A_cst
+        W_B: int8[M0, M1] = W_B_cst
+        systolic(X, W_A, Z)
+        systolic(Z, W_B, Y)
+        return Y
+
+    s_top = allo.customize(
+        top,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+    )
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    allo_C = mod(X)
+    np_C = X @ W_A_cst @ W_B_cst
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+    # Submodule customization
+    s = allo.customize(
+        systolic,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+    )
+    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
+    s.to(s.A_fifo, pe, axis=1, depth=M0 + 1)
+    s.to(s.B_fifo, pe, axis=0, depth=M1 + 1)
+    code = s.build("vhls")
+    # Compose with submodule
+    s_top.compose(s)
+    # HLS testing
+    code = s_top.build("vhls")
+    print(code)
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s_top.build(
+            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
+        )
         hls_mod()
 
 

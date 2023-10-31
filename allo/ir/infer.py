@@ -569,7 +569,9 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
-        if obj.__module__.startswith("allo"):
+        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
+            "allo.library"
+        ):
             # Allo library functions
             new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
