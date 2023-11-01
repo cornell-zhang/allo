@@ -1470,6 +1470,9 @@ class ASTTransformer(ASTBuilder):
         if isinstance(node.func, ast.Name):
             obj = ASTResolver.resolve(node.func, ctx.global_vars)
             obj_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            obj = ASTResolver.resolve(node.func, ctx.global_vars)
+            obj_name = node.func.attr
         elif isinstance(node.func, ast.Subscript):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
