@@ -784,7 +784,7 @@ class Schedule:
             ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
             ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
             res_type = IntegerType.get_signless(bits * factor)
-            val = hcl_d.SetIntSliceOp(res_type, load_packed.result, lb.result, ub_minus_one.result, load_org.result)
+            val = hcl_d.SetIntSliceOp(res_type, load_packed.result, ub_minus_one.result, lb.result, load_org.result)
             # build store
             affine_d.AffineStoreOp(val.result, tensor.result, induction_vars[:-1], affine_attr)
         
@@ -845,7 +845,9 @@ class Schedule:
             ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
             ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
             res_type = IntegerType.get_signless(bits)
-            val = hcl_d.GetIntSliceOp(res_type, load_packed.result, lb.result, ub_minus_one.result)
+            val = hcl_d.GetIntSliceOp(res_type, load_packed.result, ub_minus_one.result, lb.result)
+            # truncate 
+            # val = arith_d.TruncIOp(memref_unpacked.result.type.element_type, load_packed.result)
             # build store
             in_str = ", ".join([f"d{i}" for i in range(len(loop_band))])
             out_str = ""
