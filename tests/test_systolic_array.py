@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import allo
 from allo.ir.types import int4, int8, int16, int32, index, UInt
+from allo.ir.utils import MockBuffer
 
 
 def test_subview_systolic():
@@ -232,8 +233,8 @@ def test_cascade_systolic():
 def test_cascade_specialized_systolic():
     from allo.library.systolic import systolic
 
-    M0, M1 = 2, 2
-    MM, NN, KK = 4, 4, 4
+    M0, M1 = 8, 8
+    MM, NN, KK = 64, 64, 64
     W_A_cst = np.random.randint(-4, 4, size=(MM, NN)).astype(np.int8)
     W_B_cst = np.random.randint(-4, 4, size=(MM, NN)).astype(np.int8)
 
@@ -284,8 +285,9 @@ def test_cascade_specialized_systolic():
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)
+    store_C_loop = s.get_loops("systolic")["outer_tile"]["si"]
+    s.pipeline(store_C_loop)
     pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
-    from allo.ir.utils import MockBuffer
     s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=M0 + 1)
     s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=M1 + 1)
     # Compose with submodule
@@ -298,7 +300,9 @@ def test_cascade_specialized_systolic():
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
-            target="vitis_hls", mode="hw", project=f"sa_{M0}x{M1}_stream_hw.prj"
+            target="vitis_hls",
+            mode="sw_emu",
+            project=f"sa_{MM}x{NN}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
 

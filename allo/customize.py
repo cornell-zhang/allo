@@ -143,6 +143,8 @@ class Schedule:
         self.partitioned_arrays = {}
 
     def get_loops(self, func=None):
+        if isinstance(func, str):
+            func = self._find_function(func)
         if func is None:
             func = self.top_func
         return get_affine_loop_nests(func)
@@ -682,7 +684,7 @@ class Schedule:
         def get_name(arg):
             if isinstance(arg, (LoopWrapper, MockBuffer)):
                 arg = copy.copy(arg)
-                orig_func_name = arg.path
+                orig_func_name = arg.path if arg.path is not None else sch.top_func_name
                 func_name = (
                     orig_func_name
                     if "id" not in configs
