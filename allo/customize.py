@@ -5,6 +5,7 @@
 import re
 import inspect
 import textwrap
+import copy
 import ast
 from dataclasses import dataclass
 from functools import wraps
@@ -679,22 +680,26 @@ class Schedule:
     @wrapped_apply
     def compose(self, *schs, **configs):
         def get_name(arg):
-            if isinstance(arg, LoopWrapper):
-                arg.path = f"{func_name}"
+            if isinstance(arg, (LoopWrapper, MockBuffer)):
+                arg = copy.copy(arg)
+                orig_func_name = arg.path
+                func_name = (
+                    orig_func_name
+                    if "id" not in configs
+                    else orig_func_name + "_" + str(configs["id"])
+                )
+                arg.path = func_name
                 return arg
-            if isinstance(arg, MockBuffer):
-                if arg.path == sch.top_func_name:
-                    # need to add identifier
-                    return MockBuffer(func_name, arg.name, arg.idx)
-                return arg
+            orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
+            arg = arg.split(":")[1] if ":" in arg else arg
+            func_name = (
+                orig_func_name
+                if "id" not in configs
+                else orig_func_name + "_" + str(configs["id"])
+            )
             return f"{func_name}:{arg}"
 
         for sch in schs:
-            func_name = (
-                sch.top_func_name
-                if "id" not in configs
-                else sch.top_func_name + "_" + str(configs["id"])
-            )
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
@@ -717,22 +722,9 @@ class Schedule:
                         args[1] = get_name(args[1])
                 elif primitive[0] == "unfold":
                     if "band_name" in kwargs:
-                        band_name = kwargs["band_name"]
-                        band_name = (
-                            band_name.split(":")[1] if ":" in band_name else band_name
-                        )
-                        kwargs["band_name"] = f"{func_name}:{band_name}"
+                        kwargs["band_name"] = get_name(kwargs["band_name"])
                     else:
-                        band_name = args[0]
-                        band_name = (
-                            band_name.split(":")[1] if ":" in band_name else band_name
-                        )
-                        args[0] = f"{func_name}:{band_name}"
-                elif primitive[0] == "to":
-                    if "axis" in kwargs:
-                        kwargs["axis"] = get_name(kwargs["axis"])
-                    else:
-                        args[2] = get_name(args[2])
+                        args[0] = get_name(args[0])
                 # Update target buffers
                 if primitive[0] in {
                     "partition",

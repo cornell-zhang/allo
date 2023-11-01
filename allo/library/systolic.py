@@ -13,7 +13,7 @@ Mt, Nt = TypeVar(int32), TypeVar(int32)
 T_A, T_B, T_C = TypeVar(), TypeVar(), TypeVar()
 
 
-def PE(
+def PE_kernel(
     A_in: T_A[K],
     B_in: T_B[K],
     A_out: T_A[K],
@@ -44,7 +44,7 @@ def systolic_tile(A: T_A[Mt, K], B: T_B[K, Nt], C: T_C[Mt, Nt]):
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
     for i, j in allo.grid(Mt, Nt, name="PE"):
-        PE(A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j)
+        PE_kernel(A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j)
     for k in range(K, name="data_drain"):
         for m in range(Mt):
             A_drain[m] = A_fifo[m, Nt, k]
