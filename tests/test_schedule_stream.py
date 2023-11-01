@@ -122,7 +122,7 @@ def test_fork_join_function():
 
 def test_pack_unpack():
     T = int32
-    
+
     def func1(A: T[10, 20], B: T[10, 20]):
         for i, j in allo.grid(10, 20):
             B[i, j] = A[i, j] + 1

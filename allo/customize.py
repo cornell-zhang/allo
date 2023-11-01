@@ -712,17 +712,22 @@ class Schedule:
         func, arg_idx, tensor = self._find_target(tensor)
         assert isinstance(tensor, MockArg), "Only support function arguments for now"
         bits = tensor.result.type.element_type.width
-        sign = True # TODO: support detecting signedness
+        sign = True  # TODO: support detecting signedness
         shape = tensor.result.type.shape
         if factor is None and dtype is not None:
             factor = dtype.bits // bits
         if factor is None or not isinstance(factor, int):
             raise RuntimeError("Should specify factor")
         # if not isinstance(tensor.dtype, (Int, UInt)):
-            # raise RuntimeError("Only support integer packing")
+        # raise RuntimeError("Only support integer packing")
 
         # allocate a memref to replace the original argument
-        memref_orig = memref_d.AllocOp(tensor.result.type, [], [], ip=InsertionPoint(func.entry_block.operations[0]))
+        memref_orig = memref_d.AllocOp(
+            tensor.result.type,
+            [],
+            [],
+            ip=InsertionPoint(func.entry_block.operations[0]),
+        )
         tensor.result.replace_all_uses_with(memref_orig.result)
 
         new_type = IntegerType.get_signless(bits * factor)
@@ -743,7 +748,9 @@ class Schedule:
         for tnsr in self.use_def_chain.get_equivalent_tensors(use_def_name):
             _, _, tnsr_mlir = self._find_target(MockBuffer(tnsr.path, tnsr.name))
             assert isinstance(tnsr_mlir, memref_d.AllocOp)
-            alloc_packed = memref_d.AllocOp(new_memref_type, [], [], ip=InsertionPoint(tnsr_mlir))
+            alloc_packed = memref_d.AllocOp(
+                new_memref_type, [], [], ip=InsertionPoint(tnsr_mlir)
+            )
             tnsr_mlir.result.replace_all_uses_with(alloc_packed.result)
             for attribute in tnsr_mlir.attributes:
                 alloc_packed.attributes[attribute.name] = attribute.attr
@@ -765,17 +772,17 @@ class Schedule:
                     out_str += f"d{_axis}"
                 if _axis != len(shape) - 1:
                     out_str += ", "
-            affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-            load_org = affine_d.AffineLoadOp(memref_orig.result, induction_vars, affine_attr)
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+            load_org = affine_d.AffineLoadOp(
+                memref_orig.result, induction_vars, affine_attr
+            )
             # build load op for bitpacked tensor
             in_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
             out_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
-            affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-            load_packed = affine_d.AffineLoadOp(tensor.result, induction_vars[:-1], affine_attr)
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+            load_packed = affine_d.AffineLoadOp(
+                tensor.result, induction_vars[:-1], affine_attr
+            )
             # build set slice
             bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
             one_cst = arith_d.ConstantOp(IndexType.get(), 1)
@@ -784,10 +791,17 @@ class Schedule:
             ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
             ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
             res_type = IntegerType.get_signless(bits * factor)
-            val = hcl_d.SetIntSliceOp(res_type, load_packed.result, ub_minus_one.result, lb.result, load_org.result)
+            val = hcl_d.SetIntSliceOp(
+                res_type,
+                load_packed.result,
+                ub_minus_one.result,
+                lb.result,
+                load_org.result,
+            )
             # build store
-            affine_d.AffineStoreOp(val.result, tensor.result, induction_vars[:-1], affine_attr)
-        
+            affine_d.AffineStoreOp(
+                val.result, tensor.result, induction_vars[:-1], affine_attr
+            )
 
     @wrapped_apply
     def unpack(self, tensor, axis=0, factor=None, name=None, dtype=None):
@@ -796,7 +810,7 @@ class Schedule:
         assert isinstance(tensor, MockArg), "Only support function arguments for now"
         unpacked_memref_type = tensor.result.type
         bits = unpacked_memref_type.element_type.width
-        sign = True # TODO: support detecting signedness
+        sign = True  # TODO: support detecting signedness
         shape = unpacked_memref_type.shape
         if factor is None and dtype is not None:
             factor = tensor.dtype.bits // dtype.bits
@@ -833,10 +847,10 @@ class Schedule:
             # build load op for packed tensor
             in_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
             out_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
-            affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-            load_packed = affine_d.AffineLoadOp(tensor.result, induction_vars[:-1], affine_attr)
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+            load_packed = affine_d.AffineLoadOp(
+                tensor.result, induction_vars[:-1], affine_attr
+            )
             # build get slice
             bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
             one_cst = arith_d.ConstantOp(IndexType.get(), 1)
@@ -845,8 +859,10 @@ class Schedule:
             ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
             ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
             res_type = IntegerType.get_signless(bits)
-            val = hcl_d.GetIntSliceOp(res_type, load_packed.result, ub_minus_one.result, lb.result)
-            # truncate 
+            val = hcl_d.GetIntSliceOp(
+                res_type, load_packed.result, ub_minus_one.result, lb.result
+            )
+            # truncate
             # val = arith_d.TruncIOp(memref_unpacked.result.type.element_type, load_packed.result)
             # build store
             in_str = ", ".join([f"d{i}" for i in range(len(loop_band))])
@@ -858,12 +874,11 @@ class Schedule:
                     out_str += f"d{_axis}"
                 if _axis != len(shape) - 1:
                     out_str += ", "
-            affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-            affine_d.AffineStoreOp(val.result, memref_unpacked.result, induction_vars, affine_attr)
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+            affine_d.AffineStoreOp(
+                val.result, memref_unpacked.result, induction_vars, affine_attr
+            )
 
-    
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"

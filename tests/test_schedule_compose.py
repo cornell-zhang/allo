@@ -312,7 +312,7 @@ def test_nested_compose_partition():
 
 def test_compose_pack_unpack():
     T = int32
-    
+
     def func1(A: T[10, 20], B: T[10, 20]):
         for i, j in allo.grid(10, 20):
             B[i, j] = A[i, j] + 1
@@ -342,6 +342,7 @@ def test_compose_pack_unpack():
     f = sch.build()
     allo_C = f(np_A)
     assert np.allclose(allo_C, np_C)
+
 
 def test_reuse_function_1():
     M, N = 2, 2
