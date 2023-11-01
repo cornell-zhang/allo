@@ -139,6 +139,7 @@ class Schedule:
             ext_libs = []
         self.ext_libs = ext_libs
         self.use_def_chain = use_def_chain
+        self.partitioned_arrays = {}
 
     def get_loops(self, func=None):
         if func is None:
@@ -273,8 +274,7 @@ class Schedule:
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
-        # TODO: (1) test whether partition the same array
-        #       (2) whether the partition has conflicts for different functions
+        # TODO: test whether the partition has conflicts for different functions
         if partition_type > 2:
             raise HCLValueError("Invalid partition type")
         if dim < 0:
@@ -289,6 +289,20 @@ class Schedule:
             partition_type = 2
         else:
             raise HCLValueError("Not supported partition type")
+        # test whether partitioning the same array
+        for parray, items in self.partitioned_arrays.items():
+            for item in items:
+                if (
+                    parray.split(":")[0] == target.path
+                    and parray.split(":")[1] == target.name
+                ):
+                    if item[0] == Partition.Complete and item[1] == 0:
+                        # this array has been completely partitioned along all the axes
+                        return
+                    raise HCLValueError(
+                        f"Cannot partition the same array twice: {parray}, {item} vs ({partition_type}, {dim}, {factor})"
+                    )
+        # actual partition
         i32 = IntegerType.get_signless(32)
         ui32 = IntegerType.get_unsigned(32)
         # find all the tensors that need to be partitioned
@@ -328,6 +342,12 @@ class Schedule:
             func, _, mlir_target = self._find_target(
                 MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1])
             )
+            if inner_target not in self.partitioned_arrays:
+                self.partitioned_arrays[inner_target] = [(partition_type, dim, factor)]
+            else:
+                self.partitioned_arrays[inner_target].append(
+                    (partition_type, dim, factor)
+                )
             hcl_d.PartitionOp(
                 mlir_target.result,
                 partition_kind=IntegerAttr.get(i32, partition_type),
@@ -680,6 +700,9 @@ class Schedule:
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
+                # Avoid changing the original schedule
+                args = args.copy()
+                kwargs = kwargs.copy()
                 # Update axes
                 if primitive[0] in {"reorder", "fuse"}:
                     args = [get_name(arg) for arg in args]

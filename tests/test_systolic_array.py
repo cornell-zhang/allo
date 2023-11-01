@@ -207,14 +207,14 @@ def test_cascade_specialized_systolic():
         top,
         instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
     )
-    # print(s_top.module)
-    # # CPU testing
-    # mod = s_top.build()
-    # X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
-    # allo_C = mod(X)
-    # np_C = X @ W_A_cst @ W_B_cst
-    # np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
-    # print("Passed!")
+    print(s_top.module)
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    allo_C = mod(X)
+    np_C = X @ W_A_cst @ W_B_cst
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
     # Submodule customization
     s = allo.customize(
         systolic,
@@ -230,8 +230,6 @@ def test_cascade_specialized_systolic():
     s_top.use_def_chain.dump_graph("top")
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
-    print(s_top.module)
-    sys.exit()
     # HLS testing
     code = s_top.build("vhls")
     print(code)
