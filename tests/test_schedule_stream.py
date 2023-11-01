@@ -3,7 +3,7 @@
 
 import allo
 import pytest
-from allo.ir.types import Fixed, int32, int64
+from allo.ir.types import Fixed, int32
 
 
 def test_two_bands():
