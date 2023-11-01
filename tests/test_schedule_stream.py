@@ -3,7 +3,7 @@
 
 import allo
 import pytest
-from allo.ir.types import Fixed, int32
+from allo.ir.types import Fixed, int32, int64
 
 
 def test_two_bands():
@@ -120,5 +120,42 @@ def test_fork_join_function():
     assert "#pragma HLS stream variable=C1 depth=200" in code
 
 
+def test_pack_unpack():
+    T = int32
+    
+    def func1(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] + 1
+
+    def func2(B: T[10, 20], C: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            C[i, j] = B[i, j] * 2
+
+    def top(A: T[10, 20]) -> T[10, 20]:
+        B: T[10, 20]
+        C: T[10, 20]
+        func1(A, B)
+        func2(B, C)
+        return C
+
+    sch1 = allo.customize(func1)
+    sch1.pack(sch1.B, axis=0, factor=2)
+
+    sch2 = allo.customize(func2)
+    sch2.unpack(sch2.B, axis=0, factor=2)
+
+    # top-level customization
+    sch = allo.customize(top)
+    sch.use_def_chain.dump_graph('top')
+    tensors = sch.use_def_chain.get_equivalent_tensors('top:B')
+
+    sch.compose(sch1, sch2)
+    print(sch.module)
+    sch.to(sch.B, "func2")
+    code = sch.build(target="vhls").hls_code
+    print(code)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_pack_unpack()

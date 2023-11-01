@@ -708,6 +708,7 @@ class Schedule:
     @wrapped_apply
     def pack(self, tensor, axis=0, factor=None, name=None, dtype=None):
         """Pack a tensor with smaller bitwidth to a tensor with larger bitwidth."""
+        use_def_name = tensor.path + ":" + tensor.name
         func, arg_idx, tensor = self._find_target(tensor)
         assert isinstance(tensor, MockArg), "Only support function arguments for now"
         bits = tensor.result.type.element_type.width
@@ -738,6 +739,15 @@ class Schedule:
             new_in_types.append(new_memref_type if i == arg_idx else in_type)
         func_type = FunctionType.get(new_in_types, out_types)
         func.attributes["function_type"] = TypeAttr.get(func_type)
+        # update the equivalent tensors in the use-def chain
+        for tnsr in self.use_def_chain.get_equivalent_tensors(use_def_name):
+            _, _, tnsr_mlir = self._find_target(MockBuffer(tnsr.path, tnsr.name))
+            assert isinstance(tnsr_mlir, memref_d.AllocOp)
+            alloc_packed = memref_d.AllocOp(new_memref_type, [], [], ip=InsertionPoint(tnsr_mlir))
+            tnsr_mlir.result.replace_all_uses_with(alloc_packed.result)
+            for attribute in tnsr_mlir.attributes:
+                alloc_packed.attributes[attribute.name] = attribute.attr
+            tnsr_mlir.operation.erase()
 
         # build loops to pack the tensor
         ip = InsertionPoint.at_block_terminator(func.entry_block)
