@@ -44,6 +44,7 @@ class ASTContext:
         hcl_d.register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
+        self.func_id = None
         # used for subfunction call
         self.call_args = []
         # used to count nested loops in a band

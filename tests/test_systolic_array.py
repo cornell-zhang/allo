@@ -187,6 +187,59 @@ def test_cascade_systolic():
         hls_mod()
 
 
+def test_cascade_specialized_systolic():
+    from allo.library.systolic import systolic
+
+    M0, M1, KK = 4, 4, 4
+    W_A_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    W_B_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+
+    def top(X: int8[M0, M1]) -> int8[M0, M1]:
+        Z: int8[M0, M1] = 0
+        Y: int8[M0, M1] = 0
+        W_A: int8[M0, M1] = W_A_cst
+        W_B: int8[M0, M1] = W_B_cst
+        systolic["FFN1"](X, W_A, Z)
+        systolic["FFN2"](Z, W_B, Y)
+        return Y
+
+    s_top = allo.customize(
+        top,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+    )
+    print(s_top.module)
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    allo_C = mod(X)
+    np_C = X @ W_A_cst @ W_B_cst
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+    # Submodule customization
+    s = allo.customize(
+        systolic,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+    )
+    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
+    s.to(s.A_fifo, pe, axis=1, depth=M0 + 1)
+    s.to(s.B_fifo, pe, axis=0, depth=M1 + 1)
+    # Compose with submodule
+    s_top.use_def_chain.dump_graph("top")
+    s_top.compose(s, id="FFN1")
+    s_top.compose(s, id="FFN2")
+    # HLS testing
+    code = s_top.build("vhls")
+    print(code)
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s_top.build(
+            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
+        )
+        hls_mod()
+
+
 def test_subview_systolic_dsp_packed_int4xint4():
     M, N, K = 2, 2, 2
 
