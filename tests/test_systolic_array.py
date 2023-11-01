@@ -118,11 +118,11 @@ def test_subview_systolic_stream():
 
 
 def test_parameterized_systolic():
-    from allo.library.systolic import systolic
+    from allo.library.systolic import systolic_tile
 
     s = allo.customize(
-        systolic,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "M": 4, "N": 4, "K": 4},
+        systolic_tile,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "Mt": 4, "Nt": 4, "K": 4},
     )
     print(s.module)
     mod = s.build()
@@ -130,6 +130,34 @@ def test_parameterized_systolic():
     A = np.random.randint(-8, 8, size=(M, K)).astype(np.int8)
     B = np.random.randint(-8, 8, size=(K, N)).astype(np.int8)
     allo_C = np.zeros((M, N), dtype=np.int16)
+    mod(A, B, allo_C)
+    np_C = A.astype(np.int16) @ B.astype(np.int16)
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+
+
+def test_tiled_systolic():
+    from allo.library.systolic import systolic
+
+    MM, KK, NN = 8, 16, 8
+    s = allo.customize(
+        systolic,
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int16,
+            "M": MM,
+            "N": NN,
+            "K": KK,
+            "Mt": 4,
+            "Nt": 4,
+        },
+    )
+    print(s.module)
+    mod = s.build()
+    A = np.random.randint(-4, 4, size=(MM, KK)).astype(np.int8)
+    B = np.random.randint(-4, 4, size=(KK, NN)).astype(np.int8)
+    allo_C = np.zeros((MM, NN), dtype=np.int16)
     mod(A, B, allo_C)
     np_C = A.astype(np.int16) @ B.astype(np.int16)
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
@@ -230,13 +258,13 @@ def test_cascade_specialized_systolic():
     s_top.use_def_chain.dump_graph("top")
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
-    s_top.to(s_top.Z, "systolic_FFN2", depth=2)
+    s_top.to(s_top.Z, "systolic_FFN2", depth=4)
     # HLS testing
     code = s_top.build("vhls")
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
-            target="vitis_hls", mode="sw_emu", project=f"sa_{M0}x{M1}_stream.prj"
+            target="vitis_hls", mode="hw", project=f"sa_{M0}x{M1}_stream_hw.prj"
         )
         hls_mod()
 
@@ -410,4 +438,5 @@ def test_subview_systolic_dsp_packed_int4xint8():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_tiled_systolic()
