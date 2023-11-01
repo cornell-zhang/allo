@@ -12,7 +12,6 @@ from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 import numpy as np
-from ir.transform import build_for_loops
 
 from hcl_mlir.ir import (
     Context,
@@ -51,7 +50,12 @@ from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
-from .ir.transform import get_affine_loop_nests, find_loop_in_bands, LoopWrapper
+from .ir.transform import (
+    get_affine_loop_nests,
+    find_loop_in_bands,
+    build_for_loops,
+    LoopWrapper,
+)
 from .ir.types import AlloType
 from .ir.use_def import UseDefChain
 from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
@@ -709,10 +713,11 @@ class Schedule:
     def pack(self, tensor, axis=0, factor=None, name=None, dtype=None):
         """Pack a tensor with smaller bitwidth to a tensor with larger bitwidth."""
         use_def_name = tensor.path + ":" + tensor.name
+        if name is None:
+            name = tensor.name + "_packed"
         func, arg_idx, tensor = self._find_target(tensor)
         assert isinstance(tensor, MockArg), "Only support function arguments for now"
         bits = tensor.result.type.element_type.width
-        sign = True  # TODO: support detecting signedness
         shape = tensor.result.type.shape
         if factor is None and dtype is not None:
             factor = dtype.bits // bits
@@ -728,6 +733,8 @@ class Schedule:
             [],
             ip=InsertionPoint(func.entry_block.operations[0]),
         )
+        for attribute in tensor.attributes:
+            memref_orig.attributes[attribute.name] = attribute.attr
         tensor.result.replace_all_uses_with(memref_orig.result)
 
         new_type = IntegerType.get_signless(bits * factor)
@@ -758,8 +765,7 @@ class Schedule:
 
         # build loops to pack the tensor
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        # TODO: add name for this stage
-        loop_band = build_for_loops(new_shape + [factor], ip)
+        loop_band = build_for_loops(new_shape + [factor], ip, name=name)
         induction_vars = [loop.induction_variable for loop in loop_band]
         with InsertionPoint(loop_band[-1].body.operations[0]):
             # build load op for orig type tensor
@@ -784,6 +790,7 @@ class Schedule:
                 tensor.result, induction_vars[:-1], affine_attr
             )
             # build set slice
+            # pylint: disable=too-many-function-args
             bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
             one_cst = arith_d.ConstantOp(IndexType.get(), 1)
             slice_idx = loop_band[-1].induction_variable
@@ -806,11 +813,12 @@ class Schedule:
     @wrapped_apply
     def unpack(self, tensor, axis=0, factor=None, name=None, dtype=None):
         """Unpack a tensor with larger bitwidth to a tensor with smaller bitwidth."""
+        if name is None:
+            name = tensor.name + "_packed"
         func, arg_idx, tensor = self._find_target(tensor)
         assert isinstance(tensor, MockArg), "Only support function arguments for now"
         unpacked_memref_type = tensor.result.type
         bits = unpacked_memref_type.element_type.width
-        sign = True  # TODO: support detecting signedness
         shape = unpacked_memref_type.shape
         if factor is None and dtype is not None:
             factor = tensor.dtype.bits // dtype.bits
@@ -836,12 +844,13 @@ class Schedule:
 
         # build loops to unpack the tensor
         ip = InsertionPoint.at_block_begin(func.entry_block)
-        # TODO: add name for this stage
-        loop_band = build_for_loops(packed_shape + [factor], ip)
+        loop_band = build_for_loops(packed_shape + [factor], ip, name=name)
         induction_vars = [loop.induction_variable for loop in loop_band]
         # allocate a memref to replace the original argument
         ip = InsertionPoint.at_block_begin(func.entry_block)
         memref_unpacked = memref_d.AllocOp(unpacked_memref_type, [], [], ip=ip)
+        for attribute in tensor.attributes:
+            memref_unpacked.attributes[attribute.name] = attribute.attr
         tensor.result.replace_all_uses_with(memref_unpacked.result)
         with InsertionPoint(loop_band[-1].body.operations[0]):
             # build load op for packed tensor
@@ -852,6 +861,7 @@ class Schedule:
                 tensor.result, induction_vars[:-1], affine_attr
             )
             # build get slice
+            # pylint: disable=too-many-function-args
             bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
             one_cst = arith_d.ConstantOp(IndexType.get(), 1)
             slice_idx = loop_band[-1].induction_variable
@@ -862,8 +872,6 @@ class Schedule:
             val = hcl_d.GetIntSliceOp(
                 res_type, load_packed.result, ub_minus_one.result, lb.result
             )
-            # truncate
-            # val = arith_d.TruncIOp(memref_unpacked.result.type.element_type, load_packed.result)
             # build store
             in_str = ", ".join([f"d{i}" for i in range(len(loop_band))])
             out_str = ""
