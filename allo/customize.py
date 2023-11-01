@@ -12,6 +12,7 @@ from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 import numpy as np
+from ir.transform import build_for_loops
 
 from hcl_mlir.ir import (
     Context,
@@ -704,6 +705,153 @@ class Schedule:
                     primitive_func.__wrapped__(self, *args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
+    @wrapped_apply
+    def pack(self, tensor, axis=0, factor=None, name=None, dtype=None):
+        """Pack a tensor with smaller bitwidth to a tensor with larger bitwidth."""
+        func, arg_idx, tensor = self._find_target(tensor)
+        assert isinstance(tensor, MockArg), "Only support function arguments for now"
+        bits = tensor.result.type.element_type.width
+        sign = True # TODO: support detecting signedness
+        shape = tensor.result.type.shape
+        if factor is None and dtype is not None:
+            factor = dtype.bits // bits
+        if factor is None or not isinstance(factor, int):
+            raise RuntimeError("Should specify factor")
+        # if not isinstance(tensor.dtype, (Int, UInt)):
+            # raise RuntimeError("Only support integer packing")
+
+        # allocate a memref to replace the original argument
+        memref_orig = memref_d.AllocOp(tensor.result.type, [], [], ip=InsertionPoint(func.entry_block.operations[0]))
+        tensor.result.replace_all_uses_with(memref_orig.result)
+
+        new_type = IntegerType.get_signless(bits * factor)
+        new_shape = [
+            size // factor if i == axis else size for i, size in enumerate(shape)
+        ]
+        new_memref_type = MemRefType.get(new_shape, new_type)
+        # update function arguments
+        func.arguments[arg_idx].set_type(new_memref_type)
+        in_types = func.attributes["function_type"].value.inputs
+        out_types = func.attributes["function_type"].value.results
+        new_in_types = []
+        for i, in_type in enumerate(in_types):
+            new_in_types.append(new_memref_type if i == arg_idx else in_type)
+        func_type = FunctionType.get(new_in_types, out_types)
+        func.attributes["function_type"] = TypeAttr.get(func_type)
+
+        # build loops to pack the tensor
+        ip = InsertionPoint.at_block_terminator(func.entry_block)
+        # TODO: add name for this stage
+        loop_band = build_for_loops(new_shape + [factor], ip)
+        induction_vars = [loop.induction_variable for loop in loop_band]
+        with InsertionPoint(loop_band[-1].body.operations[0]):
+            # build load op for orig type tensor
+            in_str = ", ".join([f"d{i}" for i in range(len(loop_band))])
+            out_str = ""
+            for _axis in range(len(shape)):
+                if _axis == axis:
+                    out_str += f"d{_axis} * {factor} + d{len(loop_band) - 1}"
+                else:
+                    out_str += f"d{_axis}"
+                if _axis != len(shape) - 1:
+                    out_str += ", "
+            affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+            load_org = affine_d.AffineLoadOp(memref_orig.result, induction_vars, affine_attr)
+            # build load op for bitpacked tensor
+            in_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
+            out_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
+            affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+            load_packed = affine_d.AffineLoadOp(tensor.result, induction_vars[:-1], affine_attr)
+            # build set slice
+            bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
+            one_cst = arith_d.ConstantOp(IndexType.get(), 1)
+            slice_idx = loop_band[-1].induction_variable
+            lb = arith_d.MulIOp(slice_idx, bitwidth_cst.result)
+            ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
+            ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
+            res_type = IntegerType.get_signless(bits * factor)
+            val = hcl_d.SetIntSliceOp(res_type, load_packed.result, lb.result, ub_minus_one.result, load_org.result)
+            # build store
+            affine_d.AffineStoreOp(val.result, tensor.result, induction_vars[:-1], affine_attr)
+        
+
+    @wrapped_apply
+    def unpack(self, tensor, axis=0, factor=None, name=None, dtype=None):
+        """Unpack a tensor with larger bitwidth to a tensor with smaller bitwidth."""
+        func, arg_idx, tensor = self._find_target(tensor)
+        assert isinstance(tensor, MockArg), "Only support function arguments for now"
+        unpacked_memref_type = tensor.result.type
+        bits = unpacked_memref_type.element_type.width
+        sign = True # TODO: support detecting signedness
+        shape = unpacked_memref_type.shape
+        if factor is None and dtype is not None:
+            factor = tensor.dtype.bits // dtype.bits
+        if factor is None or not isinstance(factor, int):
+            raise RuntimeError("Should specify factor")
+        # if not isinstance(tensor.dtype, (Int, UInt)):
+        #     raise APIError("Only support integer packing")
+
+        packed_type = IntegerType.get_signless(bits * factor)
+        packed_shape = [
+            size // factor if i == axis else size for i, size in enumerate(shape)
+        ]
+        packed_memref_type = MemRefType.get(packed_shape, packed_type)
+        # update function arguments
+        func.arguments[arg_idx].set_type(packed_memref_type)
+        in_types = func.attributes["function_type"].value.inputs
+        out_types = func.attributes["function_type"].value.results
+        new_in_types = []
+        for i, in_type in enumerate(in_types):
+            new_in_types.append(packed_memref_type if i == arg_idx else in_type)
+        func_type = FunctionType.get(new_in_types, out_types)
+        func.attributes["function_type"] = TypeAttr.get(func_type)
+
+        # build loops to unpack the tensor
+        ip = InsertionPoint.at_block_begin(func.entry_block)
+        # TODO: add name for this stage
+        loop_band = build_for_loops(packed_shape + [factor], ip)
+        induction_vars = [loop.induction_variable for loop in loop_band]
+        # allocate a memref to replace the original argument
+        ip = InsertionPoint.at_block_begin(func.entry_block)
+        memref_unpacked = memref_d.AllocOp(unpacked_memref_type, [], [], ip=ip)
+        tensor.result.replace_all_uses_with(memref_unpacked.result)
+        with InsertionPoint(loop_band[-1].body.operations[0]):
+            # build load op for packed tensor
+            in_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
+            out_str = ", ".join([f"d{i}" for i in range(len(loop_band) - 1)])
+            affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+            load_packed = affine_d.AffineLoadOp(tensor.result, induction_vars[:-1], affine_attr)
+            # build get slice
+            bitwidth_cst = arith_d.ConstantOp(IndexType.get(), bits)
+            one_cst = arith_d.ConstantOp(IndexType.get(), 1)
+            slice_idx = loop_band[-1].induction_variable
+            lb = arith_d.MulIOp(slice_idx, bitwidth_cst.result)
+            ub = arith_d.AddIOp(lb.result, bitwidth_cst.result)
+            ub_minus_one = arith_d.SubIOp(ub.result, one_cst.result)
+            res_type = IntegerType.get_signless(bits)
+            val = hcl_d.GetIntSliceOp(res_type, load_packed.result, lb.result, ub_minus_one.result)
+            # build store
+            in_str = ", ".join([f"d{i}" for i in range(len(loop_band))])
+            out_str = ""
+            for _axis in range(len(shape)):
+                if _axis == axis:
+                    out_str += f"d{_axis} * {factor} + d{len(loop_band) - 1}"
+                else:
+                    out_str += f"d{_axis}"
+                if _axis != len(shape) - 1:
+                    out_str += ", "
+            affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
+            affine_d.AffineStoreOp(val.result, memref_unpacked.result, induction_vars, affine_attr)
+
+    
     def build(self, target=None, mode=None, project=None):
         if target is None or target == "llvm":
             target = "llvm"
