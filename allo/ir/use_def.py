@@ -58,9 +58,7 @@ class UseDefChain(ast.NodeVisitor):
             var_path = var.path
             if var.path == top_func_name:
                 print(f"  {var_path}_{var.name} [style=filled, color=gray];")
-            users = ", ".join(
-                [f"{user.path}_{user.name}" for user in var.users]
-            )
+            users = ", ".join([f"{user.path}_{user.name}" for user in var.users])
             print(f"  {var_path}_{var.name} -> {{{users}}}")
         print("}")
 

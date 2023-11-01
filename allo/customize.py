@@ -682,12 +682,11 @@ class Schedule:
             if isinstance(arg, LoopWrapper):
                 arg.path = f"{func_name}"
                 return arg
-            elif isinstance(arg, MockBuffer):
+            if isinstance(arg, MockBuffer):
                 if arg.path == sch.top_func_name:
                     # need to add identifier
                     return MockBuffer(func_name, arg.name, arg.idx)
-                else:
-                    return arg
+                return arg
             return f"{func_name}:{arg}"
 
         for sch in schs:
