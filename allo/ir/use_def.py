@@ -55,11 +55,11 @@ class UseDefChain(ast.NodeVisitor):
     def dump_graph(self, top_func_name):
         print("digraph G {")
         for var in self.buffers.values():
-            var_path = var.path.replace("#", "_")
+            var_path = var.path
             if var.path == top_func_name:
                 print(f"  {var_path}_{var.name} [style=filled, color=gray];")
             users = ", ".join(
-                [f"{user.path.replace('#', '_')}_{user.name}" for user in var.users]
+                [f"{user.path}_{user.name}" for user in var.users]
             )
             print(f"  {var_path}_{var.name} -> {{{users}}}")
         print("}")
@@ -247,7 +247,7 @@ class UseDefChain(ast.NodeVisitor):
         if self.func_id is None:
             self.path = node.name
         else:
-            self.path = node.name + "#" + str(self.func_id)
+            self.path = node.name + "_" + str(self.func_id)
         if original_path == "":  # top-level function
             # create initial variables
             for i, arg in enumerate(node.args.args):

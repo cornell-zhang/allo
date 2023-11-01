@@ -657,18 +657,30 @@ class Schedule:
         return axes
 
     @wrapped_apply
-    def compose(self, *schs):
+    def compose(self, *schs, **configs):
         def get_name(arg):
             if isinstance(arg, LoopWrapper):
-                arg.path = f"{sch.top_func_name}"
+                arg.path = f"{func_name}"
                 return arg
-            return f"{sch.top_func_name}:{arg}"
+            elif isinstance(arg, MockBuffer):
+                if arg.path == sch.top_func_name:
+                    # need to add identifier
+                    return MockBuffer(func_name, arg.name, arg.idx)
+                else:
+                    return arg
+            return f"{func_name}:{arg}"
 
         for sch in schs:
+            func_name = (
+                sch.top_func_name
+                if "id" not in configs
+                else sch.top_func_name + "_" + str(configs["id"])
+            )
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
                 args, kwargs = primitive[1:]
+                # Update axes
                 if primitive[0] in {"reorder", "fuse"}:
                     args = [get_name(arg) for arg in args]
                 elif primitive[0] in {"split", "unroll", "pipeline", "parallel"}:
@@ -687,18 +699,30 @@ class Schedule:
                         band_name = (
                             band_name.split(":")[1] if ":" in band_name else band_name
                         )
-                        kwargs["band_name"] = f"{sch.top_func_name}:{band_name}"
+                        kwargs["band_name"] = f"{func_name}:{band_name}"
                     else:
                         band_name = args[0]
                         band_name = (
                             band_name.split(":")[1] if ":" in band_name else band_name
                         )
-                        args[0] = f"{sch.top_func_name}:{band_name}"
+                        args[0] = f"{func_name}:{band_name}"
                 elif primitive[0] == "to":
                     if "axis" in kwargs:
                         kwargs["axis"] = get_name(kwargs["axis"])
                     else:
                         args[2] = get_name(args[2])
+                # Update target buffers
+                if primitive[0] in {
+                    "partition",
+                    "to",
+                    "buffer_at",
+                    "reuse_at",
+                    "reshape",
+                }:
+                    if "target" in kwargs:
+                        kwargs["target"] = get_name(kwargs["target"])
+                    else:
+                        args[0] = get_name(args[0])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
                     primitive_func.__wrapped__(self, *args, **kwargs)
