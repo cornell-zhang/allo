@@ -57,7 +57,7 @@ def systolic(A: T_A[M, K], B: T_B[K, N], C: T_C[M, N]):
     local_B: T_B[K, Nt]
     local_C: T_C[Mt, Nt]
 
-    # k needs not be tiled
+    # k needs not be tiled, since it is temporal dimension
     for mi, ni in allo.grid(M // Mt, N // Nt):
         for i, k in allo.grid(Mt, K, name="load_A_tile"):
             local_A[i, k] = A[mi * Mt + i, k]
@@ -68,5 +68,6 @@ def systolic(A: T_A[M, K], B: T_B[K, N], C: T_C[M, N]):
             local_B,
             local_C,
         )
-        for i, j in allo.grid(Mt, Nt, name="store_C_tile"):
+        # reversed traversal, better for cascading systolic arrays with FIFOs
+        for j, i in allo.grid(Nt, Mt, name="store_C_tile"):
             C[mi * Mt + i, ni * Nt + j] = local_C[i, j]
