@@ -168,7 +168,7 @@ def test_cascade_systolic():
         systolic,
         instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
     )
-    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.A, dim=1)
     s.partition(s.B, dim=2)
     pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
@@ -195,8 +195,8 @@ def test_cascade_specialized_systolic():
     W_B_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
 
     def top(X: int8[M0, M1]) -> int8[M0, M1]:
-        Z: int8[M0, M1] = 0
-        Y: int8[M0, M1] = 0
+        Z: int8[M0, M1]  # will become FIFO later, so don't need to initialize
+        Y: int8[M0, M1]
         W_A: int8[M0, M1] = W_A_cst
         W_B: int8[M0, M1] = W_B_cst
         systolic["FFN1"](X, W_A, Z)
@@ -220,7 +220,7 @@ def test_cascade_specialized_systolic():
         systolic,
         instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
     )
-    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.A, dim=1)
     s.partition(s.B, dim=2)
     pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
@@ -230,12 +230,13 @@ def test_cascade_specialized_systolic():
     s_top.use_def_chain.dump_graph("top")
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
+    s_top.to(s_top.Z, "systolic_FFN2", depth=2)
     # HLS testing
     code = s_top.build("vhls")
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
-            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
+            target="vitis_hls", mode="sw_emu", project=f"sa_{M0}x{M1}_stream.prj"
         )
         hls_mod()
 
