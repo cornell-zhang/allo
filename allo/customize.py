@@ -733,8 +733,6 @@ class Schedule:
             [],
             ip=InsertionPoint(func.entry_block.operations[0]),
         )
-        for attribute in tensor.attributes:
-            memref_orig.attributes[attribute.name] = attribute.attr
         tensor.result.replace_all_uses_with(memref_orig.result)
 
         new_type = IntegerType.get_signless(bits * factor)
@@ -849,8 +847,6 @@ class Schedule:
         # allocate a memref to replace the original argument
         ip = InsertionPoint.at_block_begin(func.entry_block)
         memref_unpacked = memref_d.AllocOp(unpacked_memref_type, [], [], ip=ip)
-        for attribute in tensor.attributes:
-            memref_unpacked.attributes[attribute.name] = attribute.attr
         tensor.result.replace_all_uses_with(memref_unpacked.result)
         with InsertionPoint(loop_band[-1].body.operations[0]):
             # build load op for packed tensor
