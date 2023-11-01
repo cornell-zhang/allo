@@ -1236,7 +1236,8 @@ class ASTTransformer(ASTBuilder):
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=node.name, type=func_type, ip=ctx.get_ip())
+        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
+        func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         # attach type hints
         func_op.attributes["otypes"] = StringAttr.get("".join(output_typehints))
@@ -1246,7 +1247,7 @@ class ASTTransformer(ASTBuilder):
         ctx.top_func_tree = node
         for i, (name, arg) in enumerate(zip(arg_names, func_op.arguments)):
             ctx.buffers[name] = MockArg(arg, idx=i)
-        ctx.func_args[node.name] = arg_names
+        ctx.func_args[func_name] = arg_names
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         if not isinstance(stmts[-1], func_d.ReturnOp):
@@ -1255,7 +1256,7 @@ class ASTTransformer(ASTBuilder):
         if old_ctx is not None:
             ctx = old_ctx
         # Add the built function to global variable for later reference
-        ctx.global_vars[node.name] = func_op
+        ctx.global_vars[func_name] = func_op
         return func_op
 
     @staticmethod
@@ -1465,7 +1466,20 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Call(ctx, node):
-        obj = ASTResolver.resolve(node.func, ctx.global_vars)
+        original_func_id = ctx.func_id
+        if isinstance(node.func, ast.Name):
+            obj = ASTResolver.resolve(node.func, ctx.global_vars)
+            obj_name = node.func.id
+        elif isinstance(node.func, ast.Subscript):
+            obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
+            assert obj is not None, "Unsupported function call"
+            assert isinstance(node.func.slice, ast.Index)
+            assert isinstance(node.func.slice.value, ast.Constant)
+            obj_name = node.func.value.id
+            ctx.func_id = node.func.slice.value.value
+        else:
+            raise RuntimeError("Unsupported function call")
+
         if obj is None:
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
@@ -1582,8 +1596,9 @@ class ASTTransformer(ASTBuilder):
             raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
 
         # User-defined subfunction
-        func = ctx.global_vars[node.func.id]
+        func = ctx.global_vars[obj_name]
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+        func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
@@ -1597,6 +1612,7 @@ class ASTTransformer(ASTBuilder):
                 func_args=ctx.func_args,
             )
             func_ctx.call_args = new_args
+            func_ctx.func_id = ctx.func_id
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
@@ -1606,15 +1622,16 @@ class ASTTransformer(ASTBuilder):
             for name, buffer in func_ctx.buffers.items():
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
-                    setattr(func, name, MockBuffer(node.func.id, name))
+                    setattr(func, name, MockBuffer(func_name, name))
 
         # Build call function in the top-level
         call_op = func_d.CallOp(
             stmts[-1].type.results,
-            FlatSymbolRefAttr.get(node.func.id),
+            FlatSymbolRefAttr.get(func_name),
             new_args,
             ip=ctx.get_ip(),
         )
+        ctx.func_id = original_func_id
         return call_op
 
     @staticmethod
