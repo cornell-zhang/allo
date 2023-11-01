@@ -144,18 +144,15 @@ def test_pack_unpack():
     sch2 = allo.customize(func2)
     sch2.unpack(sch2.B, axis=0, factor=2)
 
-    # top-level customization
     sch = allo.customize(top)
-    sch.use_def_chain.dump_graph('top')
-    tensors = sch.use_def_chain.get_equivalent_tensors('top:B')
-
     sch.compose(sch1, sch2)
-    print(sch.module)
     sch.to(sch.B, "func2")
+
     code = sch.build(target="vhls").hls_code
-    print(code)
+    # remove all space, new line, tab
+    code = "".join(code.split())
+    assert "hls::stream<int64_t>B" in code
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_pack_unpack()
+    pytest.main([__file__])

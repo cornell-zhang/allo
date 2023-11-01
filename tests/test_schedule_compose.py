@@ -310,6 +310,39 @@ def test_nested_compose_partition():
     print(s.module)
 
 
+def test_compose_pack_unpack():
+    T = int32
+    
+    def func1(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] + 1
+
+    def func2(B: T[10, 20], C: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            C[i, j] = B[i, j] * 2
+
+    def top(A: T[10, 20]) -> T[10, 20]:
+        B: T[10, 20]
+        C: T[10, 20]
+        func1(A, B)
+        func2(B, C)
+        return C
+
+    sch1 = allo.customize(func1)
+    sch1.pack(sch1.B, axis=0, factor=2)
+
+    sch2 = allo.customize(func2)
+    sch2.unpack(sch2.B, axis=0, factor=2)
+
+    sch = allo.customize(top)
+    sch.compose(sch1, sch2)
+
+    np_A = np.random.randint(-100, 100, size=(10, 20)).astype(np.int32)
+    np_C = (np_A + 1) * 2
+    f = sch.build()
+    allo_C = f(np_A)
+    assert np.allclose(allo_C, np_C)
+
 def test_reuse_function_1():
     M, N = 2, 2
 
