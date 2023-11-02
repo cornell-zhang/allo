@@ -175,13 +175,16 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
 def update_streaming_interface(module, target, depth=-1):
     # Find target in the top function
     target_arr = {}
+    # pylint: disable=too-many-nested-blocks
     for func in module.body.operations:
         if isinstance(func, func_d.FuncOp):
             for op in func.entry_block.operations:
                 if isinstance(op, func_d.CallOp):
                     for idx, arg in enumerate(op.operands):
                         if arg.owner == target:
-                            target_arr[FlatSymbolRefAttr(op.attributes["callee"]).value] = idx
+                            target_arr[
+                                FlatSymbolRefAttr(op.attributes["callee"]).value
+                            ] = idx
     # update function arguments
     for func in module.body.operations:
         if isinstance(func, func_d.FuncOp) and func.name.value in target_arr:

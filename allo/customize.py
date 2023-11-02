@@ -594,7 +594,6 @@ class Schedule:
                             func.attributes["function_type"] = TypeAttr.get(func_type)
                             for i, arg in enumerate(func.arguments):
                                 arg.set_type(new_in_types[i])
-        return
 
     @wrapped_apply
     def unfold(self, band_name, axes):

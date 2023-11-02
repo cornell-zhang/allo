@@ -146,7 +146,9 @@ def generate_input_output_buffers(top_func, flatten=False):
                     # update returnop
                     op.operation.replace_uses_of_with(arg, buf.result)
                     new_out_types.append(buf.result.type)
-                    res["outputs"].append(MockBuffer(top_func_name, arg.owner.attributes["name"].value))
+                    res["outputs"].append(
+                        MockBuffer(top_func_name, arg.owner.attributes["name"].value)
+                    )
                 break
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
