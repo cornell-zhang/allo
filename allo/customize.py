@@ -443,6 +443,22 @@ class Schedule:
         hcl_d.ParallelOp(loop_hdl.result, ip=ip)
 
     @wrapped_apply
+    def dataflow(self, axis):
+        func, _ = self._get_func_and_axis(axis)
+        band_name, loop_name = axis.name.split(".", 1)
+
+        # TODO: Fix deep nested
+        def DFS(op):
+            if isinstance(op, affine_d.AffineForOp):
+                if "op_name" in op.attributes and op.attributes["op_name"].value == band_name:
+                    DFS(op.body.operations[0])
+                if "loop_name" in op.attributes and op.attributes["loop_name"].value == loop_name:
+                    op.attributes["dataflow"] = UnitAttr.get()
+
+        for op in func.entry_block.operations:
+            DFS(op)
+
+    @wrapped_apply
     def compute_at(self, from_loop, target_loop):
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
         target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
@@ -712,7 +728,13 @@ class Schedule:
                 # Update axes
                 if primitive[0] in {"reorder", "fuse"}:
                     args = [get_name(arg) for arg in args]
-                elif primitive[0] in {"split", "unroll", "pipeline", "parallel"}:
+                elif primitive[0] in {
+                    "split",
+                    "unroll",
+                    "pipeline",
+                    "parallel",
+                    "dataflow",
+                }:
                     if "axis" in kwargs:
                         kwargs["axis"] = get_name(kwargs["axis"])
                     else:
