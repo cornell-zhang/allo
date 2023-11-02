@@ -5,13 +5,13 @@
 import re
 import inspect
 import textwrap
+import copy
 import ast
 from dataclasses import dataclass
 from functools import wraps
 from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
-import numpy as np
 
 from hcl_mlir.ir import (
     Context,
@@ -50,10 +50,19 @@ from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
-from .ir.transform import get_affine_loop_nests, find_loop_in_bands, LoopWrapper
+from .ir.transform import (
+    get_affine_loop_nests,
+    find_loop_in_bands,
+    update_streaming_interface,
+    LoopWrapper,
+)
 from .ir.types import AlloType
 from .ir.use_def import UseDefChain
-from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
+from .passes import (
+    _mlir_lower_pipeline,
+    lower_linalg_and_attach_names,
+    generate_input_output_buffers,
+)
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 
@@ -142,6 +151,8 @@ class Schedule:
         self.partitioned_arrays = {}
 
     def get_loops(self, func=None):
+        if isinstance(func, str):
+            func = self._find_function(func)
         if func is None:
             func = self.top_func
         return get_affine_loop_nests(func)
@@ -440,6 +451,33 @@ class Schedule:
         hcl_d.ParallelOp(loop_hdl.result, ip=ip)
 
     @wrapped_apply
+    def dataflow(self, axis):
+        if isinstance(axis, str):
+            # function
+            func = self._find_function(axis)
+            func.attributes["dataflow"] = UnitAttr.get()
+            return
+        func, _ = self._get_func_and_axis(axis)
+        band_name, loop_name = axis.name.split(".", 1)
+
+        # TODO: Fix deep nested
+        def DFS(op):
+            if isinstance(op, affine_d.AffineForOp):
+                if (
+                    "op_name" in op.attributes
+                    and op.attributes["op_name"].value == band_name
+                ):
+                    DFS(op.body.operations[0])
+                if (
+                    "loop_name" in op.attributes
+                    and op.attributes["loop_name"].value == loop_name
+                ):
+                    op.attributes["dataflow"] = UnitAttr.get()
+
+        for op in func.entry_block.operations:
+            DFS(op)
+
+    @wrapped_apply
     def compute_at(self, from_loop, target_loop):
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
         target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
@@ -502,6 +540,7 @@ class Schedule:
                 fifo_depth=IntegerAttr.get(i32, depth),
                 ip=self.ip,
             )
+            update_streaming_interface(self.module, target, depth=depth)
         else:
             assert dst is not None, "Need to specify dst"
             # TODO: fix the ad-hoc logic here
@@ -540,7 +579,6 @@ class Schedule:
                     op.operation.erase()
             target.operation.erase()
             # Find target in the top function
-            target_arr = {}
             for op in func.entry_block.operations:
                 if isinstance(op, func_d.CallOp):
                     for func in self.module.body.operations:
@@ -548,7 +586,6 @@ class Schedule:
                             isinstance(func, func_d.FuncOp)
                             and func.name.value == op.attributes["callee"].value
                         ):
-                            in_types = func.attributes["function_type"].value.inputs
                             out_types = func.attributes["function_type"].value.results
                             new_in_types = []
                             for i, operand in enumerate(op.operands):
@@ -557,38 +594,6 @@ class Schedule:
                             func.attributes["function_type"] = TypeAttr.get(func_type)
                             for i, arg in enumerate(func.arguments):
                                 arg.set_type(new_in_types[i])
-            return
-        # Find target in the top function
-        target_arr = {}
-        for op in func.entry_block.operations:
-            if isinstance(op, func_d.CallOp):
-                for idx, arg in enumerate(op.operands):
-                    if arg.owner == target:
-                        target_arr[
-                            FlatSymbolRefAttr(op.attributes["callee"]).value
-                        ] = idx
-        # update function arguments
-        for func in self.module.body.operations:
-            if isinstance(func, func_d.FuncOp) and func.name.value in target_arr:
-                in_types = func.attributes["function_type"].value.inputs
-                out_types = func.attributes["function_type"].value.results
-                idx = target_arr[func.name.value]
-                arg = func.arguments[idx]
-                memref = MemRefType(arg.type)
-                if depth == -1:
-                    depth = int(np.prod(memref.shape))
-                new_memref = MemRefType.get(
-                    memref.shape,
-                    memref.element_type,
-                    memref.layout,
-                    StringAttr.get(f"stream:{depth}"),
-                )
-                arg.set_type(new_memref)
-                new_in_types = []
-                for i, in_type in enumerate(in_types):
-                    new_in_types.append(new_memref if i == idx else in_type)
-                func_type = FunctionType.get(new_in_types, out_types)
-                func.attributes["function_type"] = TypeAttr.get(func_type)
 
     @wrapped_apply
     def unfold(self, band_name, axes):
@@ -679,22 +684,26 @@ class Schedule:
     @wrapped_apply
     def compose(self, *schs, **configs):
         def get_name(arg):
-            if isinstance(arg, LoopWrapper):
-                arg.path = f"{func_name}"
+            if isinstance(arg, (LoopWrapper, MockBuffer)):
+                arg = copy.copy(arg)
+                orig_func_name = arg.path if arg.path is not None else sch.top_func_name
+                func_name = (
+                    orig_func_name
+                    if "id" not in configs
+                    else orig_func_name + "_" + str(configs["id"])
+                )
+                arg.path = func_name
                 return arg
-            if isinstance(arg, MockBuffer):
-                if arg.path == sch.top_func_name:
-                    # need to add identifier
-                    return MockBuffer(func_name, arg.name, arg.idx)
-                return arg
+            orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
+            arg = arg.split(":")[1] if ":" in arg else arg
+            func_name = (
+                orig_func_name
+                if "id" not in configs
+                else orig_func_name + "_" + str(configs["id"])
+            )
             return f"{func_name}:{arg}"
 
         for sch in schs:
-            func_name = (
-                sch.top_func_name
-                if "id" not in configs
-                else sch.top_func_name + "_" + str(configs["id"])
-            )
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
@@ -705,7 +714,13 @@ class Schedule:
                 # Update axes
                 if primitive[0] in {"reorder", "fuse"}:
                     args = [get_name(arg) for arg in args]
-                elif primitive[0] in {"split", "unroll", "pipeline", "parallel"}:
+                elif primitive[0] in {
+                    "split",
+                    "unroll",
+                    "pipeline",
+                    "parallel",
+                    "dataflow",
+                }:
                     if "axis" in kwargs:
                         kwargs["axis"] = get_name(kwargs["axis"])
                     else:
@@ -717,22 +732,9 @@ class Schedule:
                         args[1] = get_name(args[1])
                 elif primitive[0] == "unfold":
                     if "band_name" in kwargs:
-                        band_name = kwargs["band_name"]
-                        band_name = (
-                            band_name.split(":")[1] if ":" in band_name else band_name
-                        )
-                        kwargs["band_name"] = f"{func_name}:{band_name}"
+                        kwargs["band_name"] = get_name(kwargs["band_name"])
                     else:
-                        band_name = args[0]
-                        band_name = (
-                            band_name.split(":")[1] if ":" in band_name else band_name
-                        )
-                        args[0] = f"{func_name}:{band_name}"
-                elif primitive[0] == "to":
-                    if "axis" in kwargs:
-                        kwargs["axis"] = get_name(kwargs["axis"])
-                    else:
-                        args[2] = get_name(args[2])
+                        args[0] = get_name(args[0])
                 # Update target buffers
                 if primitive[0] in {
                     "partition",
@@ -759,6 +761,13 @@ class Schedule:
                 ext_libs=self.ext_libs,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
+            if target == "vitis_hls":
+                buffers = generate_input_output_buffers(self.top_func, flatten=True)
+                if "dataflow" in self.top_func.attributes:
+                    for inp in buffers["inputs"]:
+                        self.to(inp, "", depth=4)
+                    for out in buffers["outputs"]:
+                        self.to(out, "", depth=4)
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,

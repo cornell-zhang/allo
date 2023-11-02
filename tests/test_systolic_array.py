@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import allo
 from allo.ir.types import int4, int8, int16, int32, index, UInt
+from allo.ir.utils import MockBuffer
 
 
 def test_subview_systolic():
@@ -118,11 +119,11 @@ def test_subview_systolic_stream():
 
 
 def test_parameterized_systolic():
-    from allo.library.systolic import systolic
+    from allo.library.systolic import systolic_tile
 
     s = allo.customize(
-        systolic,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "M": 4, "N": 4, "K": 4},
+        systolic_tile,
+        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "Mt": 4, "Nt": 4, "K": 4},
     )
     print(s.module)
     mod = s.build()
@@ -136,8 +137,36 @@ def test_parameterized_systolic():
     print("Passed!")
 
 
-def test_cascade_systolic():
+def test_tiled_systolic():
     from allo.library.systolic import systolic
+
+    MM, KK, NN = 8, 16, 8
+    s = allo.customize(
+        systolic,
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int16,
+            "M": MM,
+            "N": NN,
+            "K": KK,
+            "Mt": 4,
+            "Nt": 4,
+        },
+    )
+    print(s.module)
+    mod = s.build()
+    A = np.random.randint(-4, 4, size=(MM, KK)).astype(np.int8)
+    B = np.random.randint(-4, 4, size=(KK, NN)).astype(np.int8)
+    allo_C = np.zeros((MM, NN), dtype=np.int16)
+    mod(A, B, allo_C)
+    np_C = A.astype(np.int16) @ B.astype(np.int16)
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+
+
+def test_cascade_systolic():
+    from allo.library.systolic import systolic_tile
 
     M0, M1, KK = 4, 4, 4
     W_A_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
@@ -148,13 +177,20 @@ def test_cascade_systolic():
         Y: int8[M0, M1] = 0
         W_A: int8[M0, M1] = W_A_cst
         W_B: int8[M0, M1] = W_B_cst
-        systolic(X, W_A, Z)
-        systolic(Z, W_B, Y)
+        systolic_tile(X, W_A, Z)
+        systolic_tile(Z, W_B, Y)
         return Y
 
     s_top = allo.customize(
         top,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int8,
+            "Mt": M0,
+            "Nt": M1,
+            "K": KK,
+        },
     )
     # CPU testing
     mod = s_top.build()
@@ -165,8 +201,15 @@ def test_cascade_systolic():
     print("Passed!")
     # Submodule customization
     s = allo.customize(
-        systolic,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+        systolic_tile,
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int8,
+            "Mt": M0,
+            "Nt": M1,
+            "K": KK,
+        },
     )
     s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.A, dim=1)
@@ -190,27 +233,37 @@ def test_cascade_systolic():
 def test_cascade_specialized_systolic():
     from allo.library.systolic import systolic
 
-    M0, M1, KK = 4, 4, 4
-    W_A_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
-    W_B_cst = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    M0, M1 = 2, 2
+    MM, NN, KK = 4, 4, 4
+    W_A_cst = np.random.randint(-4, 4, size=(MM, NN)).astype(np.int8)
+    W_B_cst = np.random.randint(-4, 4, size=(MM, NN)).astype(np.int8)
 
-    def top(X: int8[M0, M1]) -> int8[M0, M1]:
-        Z: int8[M0, M1] = 0
-        Y: int8[M0, M1] = 0
-        W_A: int8[M0, M1] = W_A_cst
-        W_B: int8[M0, M1] = W_B_cst
+    def top(X: int8[MM, NN]) -> int8[MM, NN]:
+        Z: int8[MM, NN]  # will become FIFO later, so don't need to initialize
+        Y: int8[MM, NN]
+        W_A: int8[MM, NN] = W_A_cst
+        W_B: int8[MM, NN] = W_B_cst
         systolic["FFN1"](X, W_A, Z)
         systolic["FFN2"](Z, W_B, Y)
         return Y
 
     s_top = allo.customize(
         top,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int8,
+            "Mt": M0,
+            "Nt": M1,
+            "M": MM,
+            "N": NN,
+            "K": KK,
+        },
     )
     print(s_top.module)
     # CPU testing
     mod = s_top.build()
-    X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
+    X = np.random.randint(-4, 4, size=(MM, NN)).astype(np.int8)
     allo_C = mod(X)
     np_C = X @ W_A_cst @ W_B_cst
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
@@ -218,24 +271,44 @@ def test_cascade_specialized_systolic():
     # Submodule customization
     s = allo.customize(
         systolic,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int8, "M": M0, "N": M1, "K": KK},
+        instantiate={
+            "T_A": int8,
+            "T_B": int8,
+            "T_C": int8,
+            "Mt": M0,
+            "Nt": M1,
+            "M": MM,
+            "N": NN,
+            "K": KK,
+        },
     )
-    s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
-    s.partition(s.A, dim=1)
-    s.partition(s.B, dim=2)
-    pe = s.unfold("PE", [0, 1])  # specify which are spatial loops
-    s.to(s.A_fifo, pe, axis=1, depth=M0 + 1)
-    s.to(s.B_fifo, pe, axis=0, depth=M1 + 1)
+    s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.local_A, dim=1)
+    s.partition(s.local_B, dim=2)
+    load_A_loop = s.get_loops("systolic")["outer_tile"]["ai"]
+    s.pipeline(load_A_loop)
+    load_B_loop = s.get_loops("systolic")["outer_tile"]["bj"]
+    s.pipeline(load_B_loop)
+    store_C_loop = s.get_loops("systolic")["outer_tile"]["si"]
+    s.pipeline(store_C_loop)
+    tile_loop = s.get_loops("systolic")["outer_tile"]["ni"]
+    s.dataflow(tile_loop)
+    pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
+    s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=M0 + 1)
+    s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=M1 + 1)
     # Compose with submodule
     s_top.use_def_chain.dump_graph("top")
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
+    s_top.to(s_top.Z, "systolic_FFN2", depth=M0 * KK)
     # HLS testing
     code = s_top.build("vhls")
     print(code)
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
-            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
+            target="vitis_hls",
+            mode="hw_emu",
+            project=f"sa_{MM}x{NN}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
 

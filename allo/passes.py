@@ -36,6 +36,7 @@ from hcl_mlir.dialects import (
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer
+from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
 
 
@@ -112,6 +113,8 @@ def lower_linalg_and_attach_names(module):
 
 
 def generate_input_output_buffers(top_func, flatten=False):
+    res = {"inputs": [], "outputs": []}
+    top_func_name = top_func.attributes["sym_name"].value
     with top_func.context, Location.unknown():
         first_op = top_func.entry_block.operations[0]
         new_in_types = []
@@ -127,6 +130,7 @@ def generate_input_output_buffers(top_func, flatten=False):
                 new_in_types.append(new_memref)
             else:
                 new_in_types.append(arg.type)
+            res["inputs"].append(MockBuffer(top_func_name, f"buf{i}"))
         # find return op
         new_out_types = []
         for op in top_func.entry_block.operations:
@@ -142,9 +146,13 @@ def generate_input_output_buffers(top_func, flatten=False):
                     # update returnop
                     op.operation.replace_uses_of_with(arg, buf.result)
                     new_out_types.append(buf.result.type)
+                    res["outputs"].append(
+                        MockBuffer(top_func_name, arg.owner.attributes["name"].value)
+                    )
                 break
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
+    return res
 
 
 def decompose_library_function(module):
