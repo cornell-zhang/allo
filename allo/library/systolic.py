@@ -46,7 +46,9 @@ def systolic_tile(A: T_A[Mt, K], B: T_B[K, Nt], C: T_C[Mt, Nt]):
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
     for i, j in allo.grid(Mt, Nt, name="PE"):
-        PE_kernel(A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j)
+        PE_kernel(
+            A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+        )
     for k in range(K, name="data_drain"):
         for m in range(Mt):
             A_drain[m] = A_fifo[m, Nt, k]
@@ -61,9 +63,16 @@ def systolic(A: T_A[M, K], B: T_B[K, N], C: T_C[M, N]):
 
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in allo.grid(M // Mt, N // Nt, name="outer_tile"):
-        for ai, ak in allo.grid(Mt, K, name="load_A_tile"):
-            local_A[ai, ak] = A[mi * Mt + ai, ak]
+        # reversed traversal, better for cascading systolic arrays with FIFOs
+        # corresponds to the order of the previous `store_C_tile` output
+        for ak, ai in allo.grid(K, Mt, name="load_A_tile"):
+            # reuse along the ni dimension
+            if ni == 0:
+                local_A[ai, ak] = A[mi * Mt + ai, ak]
         for bk, bj in allo.grid(K, Nt, name="load_B_tile"):
+            # reuse along the mi dimension
+            # since the inner access order is different from the outer one,
+            # we cannot cache as a line buffer
             local_B[bk, bj] = B[bk, ni * Nt + bj]
         systolic_tile(
             local_A,
