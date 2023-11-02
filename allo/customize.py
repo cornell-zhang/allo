@@ -12,7 +12,6 @@ from functools import wraps
 from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
-import numpy as np
 
 from hcl_mlir.ir import (
     Context,
@@ -51,10 +50,19 @@ from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
-from .ir.transform import get_affine_loop_nests, find_loop_in_bands, LoopWrapper
+from .ir.transform import (
+    get_affine_loop_nests,
+    find_loop_in_bands,
+    update_streaming_interface,
+    LoopWrapper,
+)
 from .ir.types import AlloType
 from .ir.use_def import UseDefChain
-from .passes import _mlir_lower_pipeline, lower_linalg_and_attach_names
+from .passes import (
+    _mlir_lower_pipeline,
+    lower_linalg_and_attach_names,
+    generate_input_output_buffers,
+)
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 
@@ -444,15 +452,26 @@ class Schedule:
 
     @wrapped_apply
     def dataflow(self, axis):
+        if isinstance(axis, str):
+            # function
+            func = self._find_function(axis)
+            func.attributes["dataflow"] = UnitAttr.get()
+            return
         func, _ = self._get_func_and_axis(axis)
         band_name, loop_name = axis.name.split(".", 1)
 
         # TODO: Fix deep nested
         def DFS(op):
             if isinstance(op, affine_d.AffineForOp):
-                if "op_name" in op.attributes and op.attributes["op_name"].value == band_name:
+                if (
+                    "op_name" in op.attributes
+                    and op.attributes["op_name"].value == band_name
+                ):
                     DFS(op.body.operations[0])
-                if "loop_name" in op.attributes and op.attributes["loop_name"].value == loop_name:
+                if (
+                    "loop_name" in op.attributes
+                    and op.attributes["loop_name"].value == loop_name
+                ):
                     op.attributes["dataflow"] = UnitAttr.get()
 
         for op in func.entry_block.operations:
@@ -521,6 +540,7 @@ class Schedule:
                 fifo_depth=IntegerAttr.get(i32, depth),
                 ip=self.ip,
             )
+            update_streaming_interface(self.module, target, depth=depth)
         else:
             assert dst is not None, "Need to specify dst"
             # TODO: fix the ad-hoc logic here
@@ -559,7 +579,6 @@ class Schedule:
                     op.operation.erase()
             target.operation.erase()
             # Find target in the top function
-            target_arr = {}
             for op in func.entry_block.operations:
                 if isinstance(op, func_d.CallOp):
                     for func in self.module.body.operations:
@@ -567,7 +586,6 @@ class Schedule:
                             isinstance(func, func_d.FuncOp)
                             and func.name.value == op.attributes["callee"].value
                         ):
-                            in_types = func.attributes["function_type"].value.inputs
                             out_types = func.attributes["function_type"].value.results
                             new_in_types = []
                             for i, operand in enumerate(op.operands):
@@ -576,38 +594,7 @@ class Schedule:
                             func.attributes["function_type"] = TypeAttr.get(func_type)
                             for i, arg in enumerate(func.arguments):
                                 arg.set_type(new_in_types[i])
-            return
-        # Find target in the top function
-        target_arr = {}
-        for op in func.entry_block.operations:
-            if isinstance(op, func_d.CallOp):
-                for idx, arg in enumerate(op.operands):
-                    if arg.owner == target:
-                        target_arr[
-                            FlatSymbolRefAttr(op.attributes["callee"]).value
-                        ] = idx
-        # update function arguments
-        for func in self.module.body.operations:
-            if isinstance(func, func_d.FuncOp) and func.name.value in target_arr:
-                in_types = func.attributes["function_type"].value.inputs
-                out_types = func.attributes["function_type"].value.results
-                idx = target_arr[func.name.value]
-                arg = func.arguments[idx]
-                memref = MemRefType(arg.type)
-                if depth == -1:
-                    depth = int(np.prod(memref.shape))
-                new_memref = MemRefType.get(
-                    memref.shape,
-                    memref.element_type,
-                    memref.layout,
-                    StringAttr.get(f"stream:{depth}"),
-                )
-                arg.set_type(new_memref)
-                new_in_types = []
-                for i, in_type in enumerate(in_types):
-                    new_in_types.append(new_memref if i == idx else in_type)
-                func_type = FunctionType.get(new_in_types, out_types)
-                func.attributes["function_type"] = TypeAttr.get(func_type)
+        return
 
     @wrapped_apply
     def unfold(self, band_name, axes):
@@ -775,6 +762,13 @@ class Schedule:
                 ext_libs=self.ext_libs,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
+            if target == "vitis_hls":
+                buffers = generate_input_output_buffers(self.top_func, flatten=True)
+                if "dataflow" in self.top_func.attributes:
+                    for inp in buffers["inputs"]:
+                        self.to(inp, "", depth=4)
+                    for out in buffers["outputs"]:
+                        self.to(out, "", depth=4)
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,

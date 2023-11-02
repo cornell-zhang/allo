@@ -285,6 +285,10 @@ def test_cascade_specialized_systolic():
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)
+    load_A_loop = s.get_loops("systolic")["outer_tile"]["ai"]
+    s.pipeline(load_A_loop)
+    load_B_loop = s.get_loops("systolic")["outer_tile"]["bj"]
+    s.pipeline(load_B_loop)
     store_C_loop = s.get_loops("systolic")["outer_tile"]["si"]
     s.pipeline(store_C_loop)
     tile_loop = s.get_loops("systolic")["outer_tile"]["ni"]
@@ -303,7 +307,7 @@ def test_cascade_specialized_systolic():
     if os.system("which vitis_hls >> /dev/null") == 0:
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="sw_emu",
+            mode="hw_emu",
             project=f"sa_{MM}x{NN}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
