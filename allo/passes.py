@@ -160,7 +160,7 @@ def decompose_library_function(module):
                         body_op_to_remove.append(body_op)
                     if isinstance(body_op, func_d.CallOp):
                         callee_value = body_op.attributes["callee"].value
-                        if callee_value.startswith(("gelu", "layernorm", "tril")):
+                        if callee_value.startswith(("gelu", "layernorm", "tril", "batchnorm", "pad")):
                             name = callee_value.split("_")[0]
                         else:
                             continue

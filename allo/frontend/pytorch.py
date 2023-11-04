@@ -128,9 +128,15 @@ class TorchBuilder:
             torch.nn.Dropout: "identity",
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
+            torch.nn.Conv2d: "conv2d",
+            torch.nn.BatchNorm2d: "batchnorm",
+            torch.nn.MaxPool2d: "maxpool",
+            torch.nn.AvgPool2d: "avgpool",
+            torch.nn.ReLU: "relu",
         }.get(type(module), None)
+        
         if op is None:
-            raise NotImplementedError("Unsupported module")
+            raise NotImplementedError(f"Unsupported module type {type(module)}")
         if op == "linear":
             bias = True if module.bias is not None else None
             return getattr(self, "build_linear")(node, bias)
@@ -151,6 +157,7 @@ class TorchBuilder:
             F.relu: "relu",
             F.dropout: "identity",
             torch.tril: "tril",
+            torch.flatten: "view",
         }.get(node.target)
         # Only nodes with shape need to be built.
         return (
@@ -236,6 +243,81 @@ class TorchBuilder:
             bias = get_var_name(target_name + "_bias")
             return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
         return f"{node.name} = dsl.linear({inp}, {weight})"
+
+    def build_conv2d(self, node):
+        target_name = node.target.replace(".", "_")
+        inp = get_var_name(node.args[0])
+        weight = get_var_name(target_name + "_weight")
+
+        m = self.gm.named_modules()
+        sub_mod= dict(m).get(node.target)
+        if sub_mod is None:
+            raise NotImplementedError(f"Target module {node.target} not found")
+        
+        stride = sub_mod.stride
+        padding = sub_mod.padding
+        dilation = sub_mod.dilation
+
+        if padding != (0, 0):
+            inp = f"dsl.pad({inp}, dsl.ones({padding}, dtype=int))"
+
+        return f"{node.name} = dsl.conv2d({inp}, {weight}, stride={stride}, dilation={dilation})"
+
+    def build_batchnorm(self, node):
+        target_name = node.target.replace(".", "_")
+        inp = get_var_name(node.args[0])
+        weight = get_var_name(target_name + "_weight")
+        bias = get_var_name(target_name + "_bias")
+        return f"{node.name} = dsl.batchnorm({inp}, {weight}, {bias})"
+    
+    def build_maxpool(self, node):
+        inp = get_var_name(node.args[0])
+
+        m = self.gm.named_modules()
+        sub_mod= dict(m).get(node.target)
+        if sub_mod is None:
+            raise NotImplementedError(f"Target module {node.target} not found")
+        
+        kernel_size = sub_mod.kernel_size
+        stride = sub_mod.stride
+        padding = sub_mod.padding
+        dilation = sub_mod.dilation
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size)
+        if isinstance(stride, int):
+            stride = (stride, stride)
+        if isinstance(padding, int):
+            padding = (padding, padding)
+        if isinstance(dilation, int):
+            dilation = (dilation, dilation)
+
+        if padding != (0, 0):
+            inp = f"dsl.pad({inp}, dsl.ones({padding}, dtype=int))"
+
+        return f"{node.name} = dsl.maxpool({inp}, dsl.ones({kernel_size}, dtype=int), stride={stride}, dilation={dilation})"
+    
+    def build_avgpool(self, node):
+        inp = get_var_name(node.args[0])
+        m = self.gm.named_modules()
+        sub_mod= dict(m).get(node.target)
+        if sub_mod is None:
+            raise NotImplementedError(f"Target module {node.target} not found")
+        
+        kernel_size = sub_mod.kernel_size
+        stride = sub_mod.stride
+        padding = sub_mod.padding
+
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size)
+        if isinstance(stride, int):
+            stride = (stride, stride)
+        if isinstance(padding, int):
+            padding = (padding, padding)
+
+        if padding != (0, 0):
+            inp = f"dsl.pad({inp}, dsl.ones({padding}, dtype=int))"
+
+        return f"{node.name} = dsl.sumpool({inp}, dsl.ones({kernel_size}, dtype=int), stride={stride}, dilation=(1,1)) / {kernel_size[0]*kernel_size[1]}"
 
     def build_gelu(self, node):
         inp = get_var_name(node.args[0])

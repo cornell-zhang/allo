@@ -633,19 +633,43 @@ class TypeInferer(ASTVisitor):
             argAshape = new_args[0].shape
             argBshape = new_args[1].shape
             node.dtype = new_args[0].dtype
+
             if op_name == "conv2d":
+                stride = [
+                    node.keywords[0].value.elts[0].value,
+                    node.keywords[0].value.elts[1].value,
+                ]
+                dilation = [
+                    node.keywords[1].value.elts[0].value,
+                    node.keywords[1].value.elts[1].value,
+                ]
+                
                 node.shape = (
                     argAshape[0],
                     argBshape[0],
-                    argAshape[2] - argBshape[2] + 1,
-                    argAshape[3] - argBshape[3] + 1,
+                    (argAshape[2] - dilation[0] * (argBshape[2]-1) -1)//stride[0] + 1,
+                    (argAshape[3] - dilation[1] * (argBshape[3]-1) -1)//stride[1] + 1,
                 )
+            
             elif op_name in {"maxpool", "sumpool"}:
+                stride = [
+                    node.keywords[0].value.elts[0].value,
+                    node.keywords[0].value.elts[1].value,
+                ]
+                dilation = [
+                    node.keywords[1].value.elts[0].value,
+                    node.keywords[1].value.elts[1].value,
+                ]
+                
+                if isinstance(new_args[1], ast.Constant):
+                    v = new_args[1].value
+                    argBshape = (v, v)
+
                 node.shape = (
                     argAshape[0],
                     argAshape[1],
-                    argAshape[2] - argBshape[0] + 1,
-                    argAshape[3] - argBshape[1] + 1,
+                    (argAshape[2] - dilation[0] * (argBshape[0]-1) - 1) // stride[0] + 1,
+                    (argAshape[3] - dilation[1] * (argBshape[1]-1) - 1) // stride[1] + 1,
                 )
             elif op_name == "matmul":
                 assert (
@@ -699,9 +723,17 @@ class TypeInferer(ASTVisitor):
             node.shape = axes
             node.dtype = new_args[0].dtype
             return node
-        if op_name in {"layernorm", "gelu", "tril"}:
+        if op_name in {"layernorm", "gelu", "tril", "batchnorm"}:
             node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
+            return node
+        if op_name == "pad":
+            node.dtype = new_args[0].dtype
+            pad = new_args[1].shape
+            node.shape = new_args[0].shape[:-2] + (
+                new_args[0].shape[-2] + 2*pad[0],
+                new_args[0].shape[-1] + 2*pad[1],
+            )
             return node
         if op_name == "ones":
             axes = compile(ast.Expression(new_args[0]), "", "eval")

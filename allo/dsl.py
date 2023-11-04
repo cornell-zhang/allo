@@ -94,6 +94,11 @@ def relu(x, name=None):
     return np.maximum(x, 0)
 
 
+def pad(x, pad_tensor, name=None):
+    pad_size = pad_tensor.shape
+    return np.pad(x, pad_size, mode="constant")
+
+
 def conv2d(inp, filter, name=None):
     view_shape = (
         tuple(inp.shape[:2])
@@ -103,6 +108,10 @@ def conv2d(inp, filter, name=None):
     strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
     sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
     return np.einsum("fcij,nchwij->nfhw", filter, sub_matrices)
+
+def batchnorm(x, mean, variance, gamma, beta, eps: float = 1e-5):
+    x = (x - mean) / np.sqrt(variance + eps)
+    return gamma * x + beta
 
 
 def maxpool(inp, filter, name=None):
