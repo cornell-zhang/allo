@@ -8,6 +8,7 @@ from hcl_mlir.ir import (
     MemRefType,
     RankedTensorType,
     IntegerType,
+    IndexType,
     F32Type,
     F64Type,
 )
@@ -86,6 +87,8 @@ def get_clostest_pow2(n):
 
 
 def get_bitwidth_from_type(dtype):
+    if dtype == "index":
+        return 64
     if dtype.startswith("i"):
         return int(dtype[1:])
     if dtype.startswith("ui"):
@@ -142,6 +145,8 @@ def get_dtype_and_shape_from_type(dtype):
         shape = dtype.shape
         ele_type, _ = get_dtype_and_shape_from_type(dtype.element_type)
         return ele_type, shape
+    if IndexType.isinstance(dtype):
+        return "index", tuple()
     if IntegerType.isinstance(dtype):
         return str(IntegerType(dtype)), tuple()
     if F32Type.isinstance(dtype):

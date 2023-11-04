@@ -310,6 +310,18 @@ class TypeInferer(ASTVisitor):
             shape = []
             # e.g., A[:5, 0, 1:3] -> [(0,5,1),0,(1,3,1)]
             indices = ASTResolver.resolve_slice(node.slice, ctx)
+            size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
+            elts = (
+                size.elts
+                if isinstance(size, ast.Tuple)
+                else size.dims
+                if isinstance(size, ast.ExtSlice)
+                else [size]
+            )
+            access_dim = len(elts)
+            total_dim = len(value.shape)
+            if access_dim < total_dim:  # only access a part of the tensor
+                shape = value.shape[access_dim:]
             if isinstance(indices, tuple):  # Slice
                 indices = [indices]
             if isinstance(indices, list):  # ExtSlice
@@ -437,6 +449,7 @@ class TypeInferer(ASTVisitor):
             arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
             ctx.buffers[arg.arg] = arg
 
+        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # Return type
         if not (
             (isinstance(node.returns, ast.Constant) and node.returns.value is None)
@@ -455,7 +468,7 @@ class TypeInferer(ASTVisitor):
                 node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
                     ctx, node.returns
                 )
-            ctx.buffers[node.name] = node
+            ctx.buffers[func_name] = node
 
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
@@ -471,7 +484,7 @@ class TypeInferer(ASTVisitor):
         if old_ctx is not None:
             ctx = old_ctx
         # Add the visited function to global variable for later reference
-        ctx.global_vars[node.name] = node
+        ctx.global_vars[func_name] = node
         return node
 
     @staticmethod
@@ -535,7 +548,23 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Call(ctx, node):
-        obj = ASTResolver.resolve(node.func, ctx.global_vars)
+        original_func_id = ctx.func_id
+        if isinstance(node.func, ast.Name):
+            obj = ASTResolver.resolve(node.func, ctx.global_vars)
+            obj_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            obj = ASTResolver.resolve(node.func, ctx.global_vars)
+            obj_name = node.func.attr
+        elif isinstance(node.func, ast.Subscript):
+            obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
+            assert obj is not None, "Unsupported function call"
+            assert isinstance(node.func.slice, ast.Index)
+            assert isinstance(node.func.slice.value, ast.Constant)
+            obj_name = node.func.value.id
+            ctx.func_id = node.func.slice.value.value
+        else:
+            raise RuntimeError("Unsupported function call")
+
         if obj is None:
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
@@ -557,7 +586,9 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
-        if obj.__module__.startswith("allo"):
+        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
+            "allo.library"
+        ):
             # Allo library functions
             new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
@@ -577,14 +608,14 @@ class TypeInferer(ASTVisitor):
             )
 
         # User-defined subfunction
-        func = ctx.global_vars[node.func.id]
+        func = ctx.global_vars[obj_name]
         if isinstance(func, ast.FunctionDef):
             # Has already been defined in the top-level scope
             stmts = [func]
         else:
             # Visit arguments in the top-level
             visit_stmts(ctx, node.args)
-            func = ctx.global_vars[node.func.id]
+            func = ctx.global_vars[obj_name]
             src, _ = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
@@ -596,6 +627,7 @@ class TypeInferer(ASTVisitor):
                 enable_tensor=ctx.enable_tensor,
                 verbose=ctx.verbose,
             )
+            func_ctx.func_id = ctx.func_id
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree
@@ -606,6 +638,7 @@ class TypeInferer(ASTVisitor):
         else:
             node.dtype = stmts[-1].dtype
             node.shape = stmts[-1].shape
+        ctx.func_id = original_func_id
         return node
 
     @staticmethod
@@ -735,7 +768,7 @@ class TypeInferer(ASTVisitor):
                 new_args[0].shape[-1] + 2*pad[1],
             )
             return node
-        if op_name == "ones":
+        if op_name in {"ones", "zeros"}:
             axes = compile(ast.Expression(new_args[0]), "", "eval")
             # pylint: disable=eval-used
             axes = eval(axes)
@@ -788,7 +821,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Pass(ctx, node):
-        pass
+        node.dtype = None
+        node.shape = None
+        return node
 
 
 visit_stmt = TypeInferer()

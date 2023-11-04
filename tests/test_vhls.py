@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import pytest
 import allo
 from allo.ir.types import int32
@@ -44,6 +45,23 @@ def test_vitis_gemm():
     print(s.module)
     mod = s.build(target="vitis_hls", mode="sw_emu", project="gemm_vitis.prj")
     print(mod.hls_code)
+
+
+def test_vitis_io_stream():
+    def foo(A: int32[32, 32], B: int32[32, 32]):
+        pass
+
+    def top(A: int32[32, 32]) -> int32[32, 32]:
+        B: int32[32, 32]
+        foo(A, B)
+        return B
+
+    s = allo.customize(top)
+    s.dataflow("top")
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s.build(target="vitis_hls", mode="sw_emu", project="test_io.prj")
+        print(s.module)
+        hls_mod()
 
 
 if __name__ == "__main__":

@@ -558,7 +558,7 @@ def select_rule():
         (Int, UFixed): lambda t1, t2: Fixed(
             max(t1.bits, t2.bits - t2.fracs + 1) + t2.fracs, t2.fracs
         ),
-        (Int, Float): lambda t1, t2: t2,
+        (Int, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     uint_rules = {
         (UInt, UInt): lambda t1, t2: UInt(max(t1.bits, t2.bits)),
@@ -569,7 +569,7 @@ def select_rule():
         (UInt, UFixed): lambda t1, t2: UFixed(
             max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (UInt, Float): lambda t1, t2: t2,
+        (UInt, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     index_rules = {
         (Index, Index): lambda t1, t2: Index(),
@@ -579,7 +579,7 @@ def select_rule():
         (Index, UFixed): lambda t1, t2: UFixed(
             max(t1.bits, t2.bits - t2.fracs) + t2.fracs, t2.fracs
         ),
-        (Index, Float): lambda t1, t2: t2,
+        (Index, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     fixed_rules = {
         (Fixed, Fixed): lambda t1, t2: Fixed(
@@ -590,14 +590,14 @@ def select_rule():
             max(t1.bits - t1.fracs, t2.bits - t2.fracs + 1) + max(t1.fracs, t2.fracs),
             max(t1.fracs, t2.fracs),
         ),
-        (Fixed, Float): lambda t1, t2: t2,
+        (Fixed, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     ufixed_rules = {
         (UFixed, UFixed): lambda t1, t2: UFixed(
             max(t1.bits - t1.fracs, t2.bits - t2.fracs) + max(t1.fracs, t2.fracs),
             max(t1.fracs, t2.fracs),
         ),
-        (UFixed, Float): lambda t1, t2: t2,
+        (UFixed, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     float_rules = {
         (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),

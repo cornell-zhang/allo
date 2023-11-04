@@ -60,8 +60,8 @@ def test_lib_gemm():
     def top(A: float32[16, 16], B: float32[16, 16]) -> float32[16, 16]:
         C: float32[16, 16] = 0
         gemm(A, B, C)
-        C = C + 1
-        return C
+        D = C + 1
+        return D
 
     s = allo.customize(top)
     print(s.module)
@@ -87,6 +87,28 @@ def test_lib_gemm():
         hls_mod()
     else:
         print("Vitis HLS not found, skipping...")
+
+
+@pytest.mark.skipif(
+    os.system(f"which vivado_hls >> /dev/null") != 0, reason="Vivado HLS not found"
+)
+def test_systolic_stream():
+    M, N, K = 2, 2, 2
+    sa = allo.IPModule(
+        "systolic_array",
+        headers=["sa.h"],
+        impls=["sa.cpp"],
+        signature=[f"int8[{M}, {K}]", f"int8[{K}, {N}]", f"int16[{M}, {N}]"],
+        link_hls=True,
+    )
+
+    A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
+    B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+    allo_D = np.zeros((M, N), dtype=np.int16)
+    sa(A, B, allo_D)
+    np_D = A @ B
+    np.testing.assert_allclose(allo_D, np_D, atol=1e-3)
+    print("Pass!")
 
 
 if __name__ == "__main__":

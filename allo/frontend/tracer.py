@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=unused-argument
 
 import functools
 
@@ -46,7 +47,7 @@ class AlloTracer(Tracer):
         "finfo",
     ]
 
-    def __init__(self, model, concrete_args):
+    def __init__(self, model, concrete_args, leaf_modules=None):
         super().__init__()
         self.patched_torch_methods = {
             target: _gen_constructor_wrapper(getattr(torch, target))
@@ -55,8 +56,33 @@ class AlloTracer(Tracer):
         self.orig_fns = set()
         self.model = model
         self.concrete_args = concrete_args
+        self.leaf_modules = leaf_modules
 
-    def trace(self):
+    def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
+        """
+        A method to specify whether a given ``nn.Module`` is a "leaf" module.
+        Leaf modules are the atomic units that appear in
+        the IR, referenced by ``call_module`` calls. By default,
+        Modules in the PyTorch standard library namespace (torch.nn)
+        are leaf modules. All other modules are traced through and
+        their constituent ops are recorded, unless specified otherwise
+        via this parameter.
+        Args:
+            m (Module): The module being queried about
+            module_qualified_name (str): The path to root of this module. For example,
+                if you have a module hierarchy where submodule ``foo`` contains
+                submodule ``bar``, which contains submodule ``baz``, that module will
+                appear with the qualified name ``foo.bar.baz`` here.
+        """
+        if self.leaf_modules:
+            for leaf_module in self.leaf_modules:
+                if isinstance(m, leaf_module):
+                    return True
+        return m.__module__.startswith("torch.nn") and not isinstance(
+            m, torch.nn.Sequential
+        )
+
+    def trace(self, *args):
         for name, (wrapper, orig) in self.patched_torch_methods.items():
             setattr(torch, name, wrapper)
             self.orig_fns.add(orig)
