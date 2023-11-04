@@ -161,6 +161,10 @@ def ones(shape, dtype=None):
     return np.ones(shape, dtype=dtype)
 
 
+def zeros(shape, dtype=None):
+    return np.zeros(shape, dtype=dtype)
+
+
 def tril(x):
     return np.tril(x)
 

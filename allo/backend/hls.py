@@ -21,7 +21,10 @@ from .vitis import (
     update_makefile,
 )
 from .report import parse_xml
-from ..passes import _mlir_lower_pipeline, generate_input_output_buffers
+from ..passes import (
+    _mlir_lower_pipeline,
+    decompose_library_function,
+)
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
 
@@ -120,9 +123,8 @@ class HLSModule:
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
-            if platform == "vitis_hls":
-                generate_input_output_buffers(self.func, flatten=True)
-            _mlir_lower_pipeline(self.module, canonicalize=True, lower_linalg=True)
+            self.module = decompose_library_function(self.module)
+            _mlir_lower_pipeline(self.module, lower_linalg=True)
             # Run through lowering passes
             pm = PassManager.parse(
                 "builtin.module("
@@ -130,8 +132,6 @@ class HLSModule:
                 "empty-tensor-to-alloc-tensor,"
                 # translate tensor dialect (virtual) to memref dialect (physical)
                 "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
-                # used for lowering memref.subview
-                "expand-strided-metadata,"
                 # common lowering passes
                 "func.func(convert-linalg-to-affine-loops)"
                 # DO NOT LOWER AFFINE DIALECT

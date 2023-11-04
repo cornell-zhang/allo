@@ -224,16 +224,18 @@ def codegen_host(top, module):
         strip=False,
     )
     out_str += "\n"
-    out_str += format_str(
-        "// Copy Result from Device Global Memory to Host Local Memory\n", strip=False
-    )
     buf_str = ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
-    out_str += format_str(
-        "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
-        + buf_str
-        + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
-        strip=False,
-    )
+    if buf_str != "":
+        out_str += format_str(
+            "// Copy Result from Device Global Memory to Host Local Memory\n",
+            strip=False,
+        )
+        out_str += format_str(
+            "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+            + buf_str
+            + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+            strip=False,
+        )
     out_str += format_str("q.finish();\n", strip=False)
     out_str += format_str("// OpenCL Host Code Ends\n", strip=False)
     out_str += "\n"
@@ -248,7 +250,7 @@ def codegen_host(top, module):
     )
     out_str += "\n"
     out_str += format_str(
-        f'std::cout << "| " << std::left << std::setw(24) << "{top}: "\n',
+        f'std::cout << "| " << std::left << std::setw(24) << "{top} "\n',
         strip=False,
     )
     out_str += format_str(
@@ -276,6 +278,7 @@ def postprocess_hls_code(hls_code, top=None):
     out_str = ""
     func_decl = False
     has_endif = False
+    func_args = []
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
@@ -287,11 +290,15 @@ def postprocess_hls_code(hls_code, top=None):
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
+            # Add extra interfaces
+            for i, arg in enumerate(func_args):
+                out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
         elif func_decl:
             dtype, var = line.strip().rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
             var = var.split("[")[0]
             out_str += "  " + dtype + " *" + var + f"{comma}\n"
+            func_args.append(var)
         elif line.startswith("#endif"):
             out_str += '} // extern "C"\n\n'
             out_str += line + "\n"

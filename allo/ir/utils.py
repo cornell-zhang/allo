@@ -44,9 +44,12 @@ class MockOp:
 
 
 class MockArg(MockOp):
-    def __init__(self, val, is_affine=True):
+    def __init__(self, val, is_affine=True, idx=None):
         self.val = val
         self.is_affine = is_affine
+        # Used for identifying the location of function arguments
+        # if self.idx is None, this variable is not a function argument
+        self.idx = idx
 
     @property
     def result(self):
@@ -58,14 +61,22 @@ class MockArg(MockOp):
 
 
 class MockBuffer(MockOp):
-    def __init__(self, path, op=None):
+    def __init__(self, path, name, idx=None, op=None):
         self.path = path
+        self.name = name
         # Normally we do not use this attribute to avoid possible context conflicts
         # only when we need to access the op directly, we set this attribute (e.g., compose)
         self.op = op
+        # Used for identifying the location of function arguments
+        # if self.idx is None, this variable is not a function argument
+        self.idx = idx
 
     def __repr__(self):
-        return f"MockBuffer({self.path})"
+        return (
+            f"MockBuffer({self.path}:{self.name})"
+            if self.idx is None
+            else f"MockBuffer({self.path}:{self.name}:{self.idx})"
+        )
 
 
 class MockConstant(MockOp):

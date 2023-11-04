@@ -4,7 +4,7 @@
 import allo
 import numpy as np
 import pytest
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int32, float32
 
 
 def test_reuse_blur_x():
@@ -539,11 +539,10 @@ def test_call_partition_nested():
         return C
 
     def top(inp: int32[M, N]) -> int32[M, N]:
-        outp: int32[M, N]
         temp1 = matrix_addi(inp)
         temp2 = matrix_addi(inp)
-        outp = matrix_add(temp1, temp2)
-        return outp
+        res = matrix_add(temp1, temp2)
+        return res
 
     s = allo.customize(top)
     s.partition(s.temp1)
@@ -551,6 +550,18 @@ def test_call_partition_nested():
 
     f = s.build(target="vhls")
     print(f)
+
+
+def test_partition_constant_array():
+    np_A = np.zeros((32,), dtype=np.int32)
+
+    def kernel() -> int32[32]:
+        A: int32[32] = np_A
+        return A
+
+    s = allo.customize(kernel)
+    s.partition(s.A)
+    print(s.module)
 
 
 if __name__ == "__main__":

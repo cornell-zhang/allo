@@ -79,7 +79,7 @@ def test_nested_function():
         return C
 
     s = allo.customize(top)
-    s.to(s.B, "func2", fifo_depth=1)
+    s.to(s.B, "func2", depth=1)
     print(s.module)
     code = s.build(target="vhls").hls_code
     assert "#pragma HLS stream variable=B1 depth=1" in code

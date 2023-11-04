@@ -10,10 +10,13 @@ from .symbol_resolver import ASTResolver
 
 
 class VarNode:
-    def __init__(self, path, name):
+    def __init__(self, path, name, idx=None):
         self.path = path
         self.name = name
         self.users = set()
+        # Used for identifying the location of function arguments
+        # if self.idx is None, this variable is not a function argument
+        self.idx = idx
 
     def add_user(self, node):
         # node is a VarNode
@@ -24,7 +27,11 @@ class VarNode:
             self.users.add(node)
 
     def __repr__(self):
-        return f"VarNode({self.path}:{self.name})"
+        return (
+            f"VarNode({self.path}:{self.name})"
+            if self.idx is None
+            else f"VarNode({self.path}:{self.name}:{self.idx})"
+        )
 
 
 class UseDefChain(ast.NodeVisitor):
@@ -34,6 +41,8 @@ class UseDefChain(ast.NodeVisitor):
         self.global_vars = global_vars
         # Used for nested functions
         self.arg_nodes = []
+        # Used for unique function identification when calling the same function
+        self.func_id = None
 
     def __getitem__(self, key):
         return self.buffers[key]
@@ -41,16 +50,35 @@ class UseDefChain(ast.NodeVisitor):
     def get_name(self, name):
         if self.path == "":
             return name
-        return self.path + "." + name
+        return self.path + ":" + name
 
     def dump_graph(self, top_func_name):
         print("digraph G {")
         for var in self.buffers.values():
+            var_path = var.path
             if var.path == top_func_name:
-                print(f"  {var.path}_{var.name} [style=filled, color=gray];")
+                print(f"  {var_path}_{var.name} [style=filled, color=gray];")
             users = ", ".join([f"{user.path}_{user.name}" for user in var.users])
-            print(f"  {var.path}_{var.name} -> {{{users}}}")
+            print(f"  {var_path}_{var.name} -> {{{users}}}")
         print("}")
+
+    def get_equivalent_tensors(self, target_key):
+        def recursive_helper(key):
+            local_res = []
+            path = key.split(":")[0]
+            for tensor in self.buffers[key].users:
+                if tensor.path != path:
+                    local_res.append(tensor)
+                    local_res += recursive_helper(tensor.path + ":" + tensor.name)
+            return local_res
+
+        results = {key: set() for key in self.buffers}
+        for key, buffer in self.buffers.items():
+            res = recursive_helper(key)
+            results[key].update(set(res))
+            for tensor in res:
+                results[f"{tensor.path}:{tensor.name}"].add(buffer)
+        return results[target_key] if target_key in results else set()
 
     def visit_Constant(self, node):
         return []
@@ -111,7 +139,23 @@ class UseDefChain(ast.NodeVisitor):
         raise RuntimeError("Unsupported for loop")
 
     def visit_Call(self, node):
-        obj = ASTResolver.resolve(node.func, self.global_vars)
+        original_func_id = self.func_id
+        if isinstance(node.func, ast.Name):
+            obj = ASTResolver.resolve(node.func, self.global_vars)
+            obj_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            obj = ASTResolver.resolve(node.func, self.global_vars)
+            obj_name = node.func.attr
+        elif isinstance(node.func, ast.Subscript):
+            obj = ASTResolver.resolve(node.func.value, self.global_vars)
+            assert obj is not None, "Unsupported function call"
+            assert isinstance(node.func.slice, ast.Index)
+            assert isinstance(node.func.slice.value, ast.Constant)
+            obj_name = node.func.value.id
+            self.func_id = node.func.slice.value.value
+        else:
+            raise RuntimeError("Unsupported function call")
+
         if obj is None:
             if isinstance(node.func, ast.Attribute):
                 # x.T or x.reverse
@@ -120,13 +164,17 @@ class UseDefChain(ast.NodeVisitor):
                 # Python-Builtin functions
                 return list(self.visit(node.args[0]))
             raise RuntimeError(f"Unsupported function call {node.func.id}")
-        if obj.__module__.startswith("allo"):
+
+        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
+            "allo.library"
+        ):
             arg_nodes = []
             for arg in node.args:
                 arg_nodes += list(self.visit(arg))
             return arg_nodes
+
         # User-defined subfunction
-        func = self.global_vars[node.func.id]
+        func = self.global_vars[obj_name]
         arg_nodes = []
         # The arguments have order
         for arg in node.args:
@@ -145,6 +193,7 @@ class UseDefChain(ast.NodeVisitor):
         if ret is not None:
             arg_nodes += list(ret)
         self.arg_nodes = original_arg_nodes
+        self.func_id = original_func_id
         return arg_nodes
 
     def visit_Assign(self, node):
@@ -164,7 +213,8 @@ class UseDefChain(ast.NodeVisitor):
         var = VarNode(self.path, name)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
@@ -172,7 +222,8 @@ class UseDefChain(ast.NodeVisitor):
             parents = self.visit(node.value)
             for parent in parents:
                 parent.add_user(var)
-        self.buffers[self.get_name(node.target.id)] = var
+        if self.get_name(node.target.id) not in self.buffers:
+            self.buffers[self.get_name(node.target.id)] = var
 
     def visit_AugAssign(self, node):
         if isinstance(node.target, ast.Subscript):
@@ -185,7 +236,8 @@ class UseDefChain(ast.NodeVisitor):
         parents = self.visit(node.value)
         for parent in parents:
             parent.add_user(var)
-        self.buffers[self.get_name(name)] = var
+        if self.get_name(name) not in self.buffers:
+            self.buffers[self.get_name(name)] = var
 
     def visit_Subscript(self, node):
         res = self.visit(node.value)
@@ -193,17 +245,25 @@ class UseDefChain(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node):
         original_path = self.path
-        if self.path == "":
+        if self.func_id is None:
             self.path = node.name
-            # create initial variables
-            for arg in node.args.args:
-                self.buffers[self.get_name(arg.arg)] = VarNode(node.name, arg.arg)
         else:
-            self.path = node.name
-            for inner_arg, outer_arg in zip(node.args.args, self.arg_nodes):
-                self.buffers[self.get_name(inner_arg.arg)] = VarNode(
-                    self.path, inner_arg.arg
-                )
+            self.path = node.name + "_" + str(self.func_id)
+        if original_path == "":  # top-level function
+            # create initial variables
+            for i, arg in enumerate(node.args.args):
+                if self.get_name(arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(arg.arg)] = VarNode(
+                        node.name, arg.arg, i
+                    )
+        else:
+            for i, (inner_arg, outer_arg) in enumerate(
+                zip(node.args.args, self.arg_nodes)
+            ):
+                if self.get_name(inner_arg.arg) not in self.buffers:
+                    self.buffers[self.get_name(inner_arg.arg)] = VarNode(
+                        self.path, inner_arg.arg, i
+                    )
                 outer_arg.add_user(self.buffers[self.get_name(inner_arg.arg)])
         res = []
         for stmt in node.body:
@@ -223,4 +283,9 @@ class UseDefChain(ast.NodeVisitor):
         return res[0]
 
     def visit_Return(self, node):
-        return self.visit(node.value)
+        results = self.visit(node.value)
+        # update labels
+        for res in results:
+            assert isinstance(res, VarNode)
+            res.idx = -1
+        return results
