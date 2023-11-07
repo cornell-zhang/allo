@@ -238,6 +238,24 @@ def generate_call_module(target_op, func_op, name):
     file_path = os.path.join(current_directory, f"ir/template/{name}_impl.mlir")
     with open(file_path, "r", encoding="utf-8") as f:
         template = f.read()
+
+    if name == "pad":
+        sym_name = target_op.attributes["callee"].value
+        in_types = [arg.type for arg in target_op.operands_]
+        batch, channel, width, height = in_types[0].shape
+        out_type = target_op.result.type.shape
+        padding = int((out_type[-1] - height) / 2)
+
+        template = template.replace("{BATCH}", str(batch))
+        template = template.replace("{CHANNEL}", str(channel))
+        template = template.replace("{ORI_WIDTH}", str(width))
+        template = template.replace("{ORI_HEIGHT}", str(height))
+        template = template.replace("{ORI_WIDTH_PAD}", str(width + padding - 1))
+        template = template.replace("{ORI_HEIGHT_PAD}", str(height + padding - 1))
+        template = template.replace("{PADDING}", str(padding))
+        template = template.replace("{NEW_WIDTH}", str(width + padding * 2))
+        template = template.replace("{NEW_HEIGHT}", str(height + padding * 2))
+
     op_to_remove = []
     mod = Module.parse(template)
     func = mod.body.operations[0]
@@ -249,13 +267,21 @@ def generate_call_module(target_op, func_op, name):
         in_types = [args[0].type, args[1].type]
         out_types = [args[1].type]
         operands = [target_op.input, target_op.output]
-    elif name in {"gelu", "layernorm", "tril"}:
+    elif name in {"gelu", "layernorm", "tril", "batchnorm"}:
         sym_name = target_op.attributes["callee"].value
         in_types = [arg.type for arg in target_op.operands_]
         for i, arg in enumerate(func.arguments):
             arg.set_type(in_types[i])
         out_types = [in_types[0]]
         operands = target_op.operands_
+    elif name == "pad":
+        sym_name = f"{name}_{hash(target_op)}"
+        in_types = [arg.type for arg in target_op.operands_]
+        for i, arg in enumerate(func.arguments):
+            arg.set_type(in_types[i])
+        out_types = [MemRefType.get(target_op.result.type.shape, in_types[0].element_type)]
+        operands = target_op.operands_
+
     func.attributes["sym_name"] = StringAttr.get(sym_name)
     func_type = FunctionType.get(in_types, out_types)
     func.attributes["function_type"] = TypeAttr.get(func_type)
@@ -266,7 +292,7 @@ def generate_call_module(target_op, func_op, name):
         operands,
         ip=InsertionPoint(target_op),
     )
-    if name in {"gelu", "layernorm", "tril"}:
+    if name in {"gelu", "layernorm", "tril", "batchnorm", "pad"}:
         target_op.result.replace_all_uses_with(call_op.result)
 
     for op in func.entry_block.operations:
@@ -287,7 +313,7 @@ def generate_call_module(target_op, func_op, name):
 
             elif isinstance(op, linalg_d.GenericOp):
                 update_generic_op(op, name, shape)
-        elif name == "gelu":
+        elif name in {"gelu", "batchnorm"}:
             if isinstance(op, memref_d.AllocOp):
                 alloc_op = memref_d.AllocOp(
                     MemRefType(out_types[0]),
@@ -347,7 +373,6 @@ def generate_call_module(target_op, func_op, name):
     for op in op_to_remove:
         op.operation.erase()
 
-
 def update_generic_op(op, name, shape):
     in_str = ", ".join([f"d{i}" for i in range(len(shape))])
     out_str = ", ".join([f"d{i}" for i in range(len(shape) - 1)])
@@ -396,6 +421,8 @@ def update_generic_op(op, name, shape):
             op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
         else:
             raise NotImplementedError("Unsupported gelu shape")
+    elif name == "batchnorm":
+        op.attributes["iterator_types"] = ArrayAttr.get(iter_types_1)
     else:
         raise NotImplementedError("Unsupported function")
 
