@@ -152,7 +152,7 @@ if __name__ == "__main__":
         img_channels=3, num_layers=18, block=BasicBlock, num_classes=1000
     ).eval()
 
-    llvm_mod = allo.frontend.from_pytorch(model, example_inputs=tensors, verbose=True)
+    llvm_mod = allo.frontend.from_pytorch(model, example_inputs=tensors, verbose=False)
 
     golden = model(*tensors)
     np_inputs = [x.detach().numpy() for x in tensors]

@@ -7,13 +7,20 @@
 
 func.func @pad_tensor(%I : memref<{BATCH}x{CHANNEL}x{ORI_WIDTH}x{ORI_HEIGHT}xf32>) -> memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32> {
   %O = memref.alloc() {name = "outp"} : memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32>
-  affine.parallel (%b, %c, %i, %j) = (0, 0, 0, 0) to ({BATCH}, {CHANNEL}, {NEW_WIDTH}, {NEW_HEIGHT}) {
-    affine.if #interior (%b, %c, %i, %j) {
-      %2 = affine.load %I[%b, %c, %i - {PADDING}, %j - {PADDING}] : memref<{BATCH}x{CHANNEL}x{ORI_WIDTH}x{ORI_HEIGHT}xf32>
-      affine.store %2, %O[%b, %c, %i, %j] : memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32>
-    } else {
-      %2 = arith.constant 0.0 : f32
-      affine.store %2, %O[%b, %c, %i, %j] : memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32>
+  affine.for %b = 0 to {BATCH} {
+    affine.for %c = 0 to {CHANNEL} {
+      affine.for %i = 0 to {NEW_WIDTH} {
+        affine.for %j = 0 to {NEW_HEIGHT} {
+          %3 = affine.if #interior (%b, %c, %i, %j) -> (f32) {
+            %2 = affine.load %I[%b, %c, %i - {PADDING}, %j - {PADDING}] : memref<{BATCH}x{CHANNEL}x{ORI_WIDTH}x{ORI_HEIGHT}xf32>
+            affine.yield %2 : f32
+          } else {
+            %2 = arith.constant 0.0 : f32
+            affine.yield %2 : f32
+          }
+          affine.store %3, %O[%b, %c, %i, %j] : memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32>
+        }
+      }
     }
   }
   return %O: memref<{BATCH}x{CHANNEL}x{NEW_WIDTH}x{NEW_HEIGHT}xf32>
