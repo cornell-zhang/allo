@@ -177,7 +177,7 @@ def decompose_library_function(module):
                         generate_call_module(body_op, op, name)
                         body_op_to_remove.append(body_op)
             elif op.attributes["sym_name"].value.startswith(
-                ("gelu", "layernorm", "tril")
+                ("gelu", "layernorm", "tril", "batchnorm", "pad")
             ):
                 body_op_to_remove.append(op)
         # need to erase at the end
@@ -277,7 +277,7 @@ def generate_call_module(target_op, func_op, name):
         out_types = [in_types[0]]
         operands = target_op.operands_
     elif name == "pad":
-        sym_name = f"{name}_{hash(target_op)}"
+        sym_name = target_op.attributes["callee"].value
         in_types = [arg.type for arg in target_op.operands_]
         for i, arg in enumerate(func.arguments):
             arg.set_type(in_types[i])

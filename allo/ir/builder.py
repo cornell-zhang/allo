@@ -1601,15 +1601,16 @@ class ASTTransformer(ASTBuilder):
                     arg_results = arg_results[:1]
                     input_types = input_types[:1]
 
+                hash_v = f"{fn_name}_{hash(node)}"
                 func_op = func_d.FuncOp(
-                    name=f"{fn_name}_{hash(node)}",
+                    name=hash_v,
                     type=FunctionType.get(input_types, output_types),
                     ip=InsertionPoint(ctx.top_func),
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 call_op = func_d.CallOp(
                     output_types,
-                    FlatSymbolRefAttr.get(f"{fn_name}_{hash(node)}"),
+                    FlatSymbolRefAttr.get(hash_v),
                     arg_results,
                     ip=ctx.get_ip(),
                 )
