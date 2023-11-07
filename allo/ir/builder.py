@@ -134,9 +134,7 @@ class ASTTransformer(ASTBuilder):
                 v = v.value
             except AttributeError:
                 pass
-            op.attributes["op_name"] = StringAttr.get(
-                f"{v}{postfix}"
-            )
+            op.attributes["op_name"] = StringAttr.get(f"{v}{postfix}")
         else:
             op.attributes["op_name"] = StringAttr.get(
                 f"{name}_{ctx.unnamed_linalg_op_count}"
@@ -1593,10 +1591,12 @@ class ASTTransformer(ASTBuilder):
                     shape_before_padding = input_types[0].shape
                     padding_size = input_types[1].shape
                     new_shape = shape_before_padding[:2] + [
-                        shape_before_padding[2] + padding_size[0]*2,
-                        shape_before_padding[3] + padding_size[1]*2,
+                        shape_before_padding[2] + padding_size[0] * 2,
+                        shape_before_padding[3] + padding_size[1] * 2,
                     ]
-                    out_type = RankedTensorType.get(new_shape, input_types[0].element_type)
+                    out_type = RankedTensorType.get(
+                        new_shape, input_types[0].element_type
+                    )
                     output_types = [out_type]
                     arg_results = arg_results[:1]
                     input_types = input_types[:1]
@@ -1817,21 +1817,22 @@ class ASTTransformer(ASTBuilder):
                 if attr in {"conv2d", "maxpool", "sumpool"}:
                     stride = [
                         node.keywords[0].value.elts[0].value,
-                        node.keywords[0].value.elts[1].value
+                        node.keywords[0].value.elts[1].value,
                     ]
                     dilation = [
                         node.keywords[1].value.elts[0].value,
-                        node.keywords[1].value.elts[1].value
+                        node.keywords[1].value.elts[1].value,
                     ]
                     op = {
                         "conv2d": linalg_d.conv_2d_nchw_fchw,
                         "maxpool": linalg_d.pooling_nchw_max,
                         "sumpool": linalg_d.pooling_nchw_sum,
                     }.get(attr)(
-                        new_args[0].result, new_args[1].result, 
+                        new_args[0].result,
+                        new_args[1].result,
                         strides=stride,
                         dilation=dilation,
-                        outs=[result_tensor]
+                        outs=[result_tensor],
                     )
                 else:
                     op = {
@@ -1840,7 +1841,7 @@ class ASTTransformer(ASTBuilder):
                         "add": linalg_d.add,
                         "sub": linalg_d.sub,
                         "mul": linalg_d.mul,
-                        "div": linalg_d.div
+                        "div": linalg_d.div,
                     }.get(attr)(
                         new_args[0].result, new_args[1].result, outs=[result_tensor]
                     )

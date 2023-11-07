@@ -109,6 +109,7 @@ def conv2d(inp, filter, name=None):
     sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
     return np.einsum("fcij,nchwij->nfhw", filter, sub_matrices)
 
+
 def batchnorm(x, mean, variance, gamma, beta, eps: float = 1e-5):
     x = (x - mean) / np.sqrt(variance + eps)
     return gamma * x + beta

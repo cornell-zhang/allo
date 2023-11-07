@@ -168,7 +168,9 @@ def decompose_library_function(module):
                         body_op_to_remove.append(body_op)
                     if isinstance(body_op, func_d.CallOp):
                         callee_value = body_op.attributes["callee"].value
-                        if callee_value.startswith(("gelu", "layernorm", "tril", "batchnorm", "pad")):
+                        if callee_value.startswith(
+                            ("gelu", "layernorm", "tril", "batchnorm", "pad")
+                        ):
                             name = callee_value.split("_")[0]
                         else:
                             continue
@@ -279,7 +281,9 @@ def generate_call_module(target_op, func_op, name):
         in_types = [arg.type for arg in target_op.operands_]
         for i, arg in enumerate(func.arguments):
             arg.set_type(in_types[i])
-        out_types = [MemRefType.get(target_op.result.type.shape, in_types[0].element_type)]
+        out_types = [
+            MemRefType.get(target_op.result.type.shape, in_types[0].element_type)
+        ]
         operands = target_op.operands_
 
     func.attributes["sym_name"] = StringAttr.get(sym_name)
@@ -372,6 +376,7 @@ def generate_call_module(target_op, func_op, name):
     # need to erase at the end
     for op in op_to_remove:
         op.operation.erase()
+
 
 def update_generic_op(op, name, shape):
     in_str = ", ".join([f"d{i}" for i in range(len(shape))])

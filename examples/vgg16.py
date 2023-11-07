@@ -7,10 +7,51 @@ import torch_mlir
 
 
 cfg = {
-    'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
-    'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+    "VGG11": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "VGG13": [64, 64, "M", 128, 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "VGG16": [
+        64,
+        64,
+        "M",
+        128,
+        128,
+        "M",
+        256,
+        256,
+        256,
+        "M",
+        512,
+        512,
+        512,
+        "M",
+        512,
+        512,
+        512,
+        "M",
+    ],
+    "VGG19": [
+        64,
+        64,
+        "M",
+        128,
+        128,
+        "M",
+        256,
+        256,
+        256,
+        256,
+        "M",
+        512,
+        512,
+        512,
+        512,
+        "M",
+        512,
+        512,
+        512,
+        512,
+        "M",
+    ],
 }
 
 
@@ -31,16 +72,22 @@ class VGG(nn.Module):
         in_channels = 3
         index = 0
         for x in cfg:
-            if x == 'M':
+            if x == "M":
                 layers += []
                 # layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-            elif cfg[index+1] == 'M':
-                layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1, stride=2, bias=False),
-                           nn.ReLU(inplace=True)]
+            elif cfg[index + 1] == "M":
+                layers += [
+                    nn.Conv2d(
+                        in_channels, x, kernel_size=3, padding=1, stride=2, bias=False
+                    ),
+                    nn.ReLU(inplace=True),
+                ]
                 in_channels = x
             else:
-                layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1, bias=False),
-                           nn.ReLU(inplace=True)]
+                layers += [
+                    nn.Conv2d(in_channels, x, kernel_size=3, padding=1, bias=False),
+                    nn.ReLU(inplace=True),
+                ]
                 in_channels = x
             index += 1
         layers += [nn.AdaptiveAvgPool2d((1, 1))]
@@ -48,10 +95,13 @@ class VGG(nn.Module):
 
 
 def VGG16():
-    return VGG('VGG16')
+    return VGG("VGG16")
 
 
-module = torch_mlir.compile(VGG16(), torch.ones(
-    1, 3, 32, 32), output_type=torch_mlir.OutputType.LINALG_ON_TENSORS)
+module = torch_mlir.compile(
+    VGG16(),
+    torch.ones(1, 3, 32, 32),
+    output_type=torch_mlir.OutputType.LINALG_ON_TENSORS,
+)
 
 print(module)

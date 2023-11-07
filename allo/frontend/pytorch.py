@@ -307,10 +307,10 @@ class TorchBuilder:
         weight = get_var_name(target_name + "_weight")
 
         m = self.gm.named_modules()
-        sub_mod= dict(m).get(node.target)
+        sub_mod = dict(m).get(node.target)
         if sub_mod is None:
             raise NotImplementedError(f"Target module {node.target} not found")
-        
+
         stride = sub_mod.stride
         padding = sub_mod.padding
         dilation = sub_mod.dilation
@@ -326,15 +326,15 @@ class TorchBuilder:
         weight = get_var_name(target_name + "_weight")
         bias = get_var_name(target_name + "_bias")
         return f"{node.name} = dsl.batchnorm({inp}, {weight}, {bias})"
-    
+
     def build_maxpool(self, node):
         inp = get_var_name(node.args[0])
 
         m = self.gm.named_modules()
-        sub_mod= dict(m).get(node.target)
+        sub_mod = dict(m).get(node.target)
         if sub_mod is None:
             raise NotImplementedError(f"Target module {node.target} not found")
-        
+
         kernel_size = sub_mod.kernel_size
         stride = sub_mod.stride
         padding = sub_mod.padding
@@ -352,14 +352,14 @@ class TorchBuilder:
             inp = f"dsl.pad({inp}, dsl.ones({padding}, dtype=int))"
 
         return f"{node.name} = dsl.maxpool({inp}, dsl.ones({kernel_size}, dtype=int), stride={stride}, dilation={dilation})"
-    
+
     def build_avgpool(self, node):
         inp = get_var_name(node.args[0])
         m = self.gm.named_modules()
-        sub_mod= dict(m).get(node.target)
+        sub_mod = dict(m).get(node.target)
         if sub_mod is None:
             raise NotImplementedError(f"Target module {node.target} not found")
-        
+
         kernel_size = sub_mod.kernel_size
         stride = sub_mod.stride
         padding = sub_mod.padding
