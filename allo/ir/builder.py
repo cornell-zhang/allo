@@ -1816,14 +1816,18 @@ class ASTTransformer(ASTBuilder):
                         )
                     return op
                 if attr in {"conv2d", "maxpool", "sumpool"}:
-                    stride = [
-                        node.keywords[0].value.elts[0].value,
-                        node.keywords[0].value.elts[1].value,
-                    ]
-                    dilation = [
-                        node.keywords[1].value.elts[0].value,
-                        node.keywords[1].value.elts[1].value,
-                    ]
+                    stride = [1, 1]
+                    dilation = [1, 1]
+                    if len(node.keywords) > 0:
+                        stride = [
+                            node.keywords[0].value.elts[0].value,
+                            node.keywords[0].value.elts[1].value,
+                        ]
+                        dilation = [
+                            node.keywords[1].value.elts[0].value,
+                            node.keywords[1].value.elts[1].value,
+                        ]
+
                     op = {
                         "conv2d": linalg_d.conv_2d_nchw_fchw,
                         "maxpool": linalg_d.pooling_nchw_max,

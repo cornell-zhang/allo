@@ -668,14 +668,17 @@ class TypeInferer(ASTVisitor):
             node.dtype = new_args[0].dtype
 
             if op_name == "conv2d":
-                stride = [
-                    node.keywords[0].value.elts[0].value,
-                    node.keywords[0].value.elts[1].value,
-                ]
-                dilation = [
-                    node.keywords[1].value.elts[0].value,
-                    node.keywords[1].value.elts[1].value,
-                ]
+                stride = [1, 1]
+                dilation = [1, 1]
+                if len(node.keywords) > 0:
+                    stride = [
+                        node.keywords[0].value.elts[0].value,
+                        node.keywords[0].value.elts[1].value,
+                    ]
+                    dilation = [
+                        node.keywords[1].value.elts[0].value,
+                        node.keywords[1].value.elts[1].value,
+                    ]
 
                 node.shape = (
                     argAshape[0],
@@ -687,14 +690,17 @@ class TypeInferer(ASTVisitor):
                 )
 
             elif op_name in {"maxpool", "sumpool"}:
-                stride = [
-                    node.keywords[0].value.elts[0].value,
-                    node.keywords[0].value.elts[1].value,
-                ]
-                dilation = [
-                    node.keywords[1].value.elts[0].value,
-                    node.keywords[1].value.elts[1].value,
-                ]
+                stride = [1, 1]
+                dilation = [1, 1]
+                if len(node.keywords) > 0:
+                    stride = [
+                        node.keywords[0].value.elts[0].value,
+                        node.keywords[0].value.elts[1].value,
+                    ]
+                    dilation = [
+                        node.keywords[1].value.elts[0].value,
+                        node.keywords[1].value.elts[1].value,
+                    ]
 
                 if isinstance(new_args[1], ast.Constant):
                     v = new_args[1].value
