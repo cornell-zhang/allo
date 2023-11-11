@@ -96,7 +96,15 @@ def relu(x, name=None):
 
 def pad(x, pad_tensor, name=None):
     pad_size = pad_tensor.shape
-    return np.pad(x, pad_size, mode="constant")
+    if pad_size < 0:
+        raise ValueError("Pad size must be non-negative")
+
+    shape = x.shape
+    if len(shape) < 2:
+        raise ValueError("Input tensor must have at least two dimensions")
+
+    pad_width = [(0, 0)] * (len(shape) - 2) + [(pad_size//2, pad_size//2), (pad_size//2, pad_size//2)]
+    return np.pad(x, pad_width, mode='constant', constant_values=0)
 
 
 def conv2d(inp, filter, name=None):

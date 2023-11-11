@@ -1594,7 +1594,7 @@ class ASTTransformer(ASTBuilder):
                         shape_before_padding[2] + padding_size[0] * 2,
                         shape_before_padding[3] + padding_size[1] * 2,
                     ]
-                    out_type = RankedTensorType.get(
+                    out_type = MemRefType.get(
                         new_shape, input_types[0].element_type
                     )
                     output_types = [out_type]
