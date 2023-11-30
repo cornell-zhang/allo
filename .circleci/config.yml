@@ -17,14 +17,14 @@ jobs:
     resource_class: large
     steps:
       - checkout  # checkout source code to working directory
-      - run:
-          name: Patch LLVM Project
-          command: |
-            cp externals/llvm_patch /root/llvm-project
-            cd /root/llvm-project
-            git apply llvm_patch
-            cd build
-            make -j4
+      # - run:
+      #     name: Patch LLVM Project
+      #     command: |
+      #       cp externals/llvm_patch /root/llvm-project
+      #       cd /root/llvm-project
+      #       git apply llvm_patch
+      #       cd build
+      #       make -j4
       - run:
           name: Build HCL-MLIR
           command: |
