@@ -10,36 +10,31 @@ jobs:
   build:
     working_directory: ~/allo
     docker:
-      - image: chhzh123/llvm-project:18.x
+      - image: chhzh123/hcl-dialect:llvm-18.x-py3.12
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
     resource_class: large
     steps:
       - checkout  # checkout source code to working directory
-      - run:
-          name: Patch LLVM Project
-          command: |
-            cp externals/llvm_patch /root/llvm-project
-            cd /root/llvm-project
-            git apply llvm_patch
-            cd build
-            make -j4
+      # - run:
+      #     name: Patch LLVM Project
+      #     command: |
+      #       cp externals/llvm_patch /root/llvm-project
+      #       cd /root/llvm-project
+      #       git apply llvm_patch
+      #       cd build
+      #       make -j4
       - run:
           name: Build HCL-MLIR
           command: |
             source activate hcl-dev
-            export BUILD_DIR=/root/llvm-project/build
-            export PREFIX=/root/llvm-project/build
-            git submodule update --init
-            cd externals/hcl_mlir
-            mkdir -p build && cd build
-            cmake -G "Unix Makefiles" .. \
-                -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
-                -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
-                -DPYTHON_BINDING=ON \
-                -DPython3_EXECUTABLE=`which python3` \
-                -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
+            export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
+            cd /root/hcl-dialect
+            git remote update
+            git fetch
+            git checkout $SUBMOD_COMMIT
+            cd build
             make -j4
             cd tools/hcl/python_packages/hcl_core
             python3 -m pip install -e .
@@ -52,7 +47,7 @@ jobs:
           name: Formatting Check
           command: |
             source activate hcl-dev
-            python3 -m pip install black==23.1.0 pylint==2.17.1
+            python3 -m pip install black==23.11.0 pylint==3.0.2
             bash ./.circleci/task_lint.sh
       - run: 
           name: Allo Tests
@@ -61,7 +56,7 @@ jobs:
             export ALLO_HOME=$(pwd)
             export LLVM_BUILD_DIR=/root/llvm-project/build
             export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
-            export PYTHONPATH=$ALLO_HOME/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+            export PYTHONPATH=/root/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
             export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
             python3 -m pytest tests -v
             python3 -m pytest tutorials -v

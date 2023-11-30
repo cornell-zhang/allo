@@ -24,34 +24,29 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/llvm-project:18.x
+      image: chhzh123/hcl-dialect:llvm-18.x-py3.12
 
     steps:
     - uses: actions/checkout@v3
       with:
         ref: ${{ github.ref }}
-    - name: Patch LLVM Project
-      run: |
-        cp externals/llvm_patch /root/llvm-project
-        cd /root/llvm-project
-        git apply llvm_patch
+    # - name: Patch LLVM Project
+    #   run: |
+    #     cp externals/llvm_patch /root/llvm-project
+    #     cd /root/llvm-project
+    #     git apply llvm_patch
     - name: Build HCL-MLIR
       run: |
         source activate hcl-dev
-        export BUILD_DIR=/root/llvm-project/build
-        export PREFIX=/root/llvm-project/build
-        git submodule update --init
-        cd externals/hcl_mlir
-        mkdir -p build && cd build
-        cmake -G "Unix Makefiles" .. \
-            -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
-            -DPYTHON_BINDING=ON \
-            -DPython3_EXECUTABLE=`which python3` \
-            -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
-        make -j2
+        export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
+        cd /root/hcl-dialect
+        git remote update
+        git fetch
+        git checkout $SUBMOD_COMMIT
+        cd build
+        make -j4
         cd tools/hcl/python_packages/hcl_core
-        python3 -m pip install . -v
+        python3 -m pip install -e .
     - name: Build docs
       run: |
         source activate hcl-dev
@@ -59,7 +54,7 @@ jobs:
         export LLVM_BUILD_DIR=/root/llvm-project/build
         export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
         export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
-        export PYTHONPATH=$ALLO_HOME/externals/hcl_mlir/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+        export PYTHONPATH=/root/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
         python3 -m pip install -r requirements.txt
         cd docs
         python3 -m pip install -r requirements.txt

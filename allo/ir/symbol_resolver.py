@@ -57,7 +57,7 @@ class ASTResolver:
 
     @staticmethod
     def resolve_slice(node, ctx):
-        if isinstance(node, ast.ExtSlice):
+        if isinstance(node, (ast.ExtSlice, ast.Tuple)):
             return list(ASTResolver.resolve_slice(s, ctx) for s in node.dims)
         if isinstance(node, ast.Slice):
             return tuple(

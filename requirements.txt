@@ -5,10 +5,11 @@ dataclasses
 xmltodict
 tabulate
 pytest
-black==23.1.0
-pylint==2.17.1
+black==23.11.0
+pylint==3.0.2
 matplotlib
 pandas
 astpretty
 packaging
 psutil
+ninja

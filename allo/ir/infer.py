@@ -346,7 +346,7 @@ class TypeInferer(ASTVisitor):
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
-            if isinstance(node.slice, ast.Index):
+            if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
                 visit_stmt(ctx, node.slice)
                 node.shape = tuple()
                 node.dtype = uint1
@@ -365,7 +365,7 @@ class TypeInferer(ASTVisitor):
                 node.shape = tuple()
                 node.dtype = UInt(upper.value - lower.value)
             else:
-                raise RuntimeError("Unsupported bit operation")
+                raise RuntimeError(f"Unsupported bit operation {node.slice}")
         else:
             raise RuntimeError("Can only access bit (slice) for integers")
         return node
@@ -558,10 +558,12 @@ class TypeInferer(ASTVisitor):
         elif isinstance(node.func, ast.Subscript):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
-            assert isinstance(node.func.slice, ast.Index)
-            assert isinstance(node.func.slice.value, ast.Constant)
             obj_name = node.func.value.id
-            ctx.func_id = node.func.slice.value.value
+            ctx.func_id = (
+                node.func.slice.value.value
+                if isinstance(node.func.slice, ast.Index)
+                else node.func.slice.value
+            )
         else:
             raise RuntimeError("Unsupported function call")
 

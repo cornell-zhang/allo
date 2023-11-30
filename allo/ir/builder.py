@@ -776,7 +776,6 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        # pylint: disable=redefined-variable-type
         node.target.ctx = ast.Load()
         lhs = build_stmt(ctx, node.target)
         node.target.ctx = ast.Store()
@@ -876,8 +875,10 @@ class ASTTransformer(ASTBuilder):
                     step = index.step.value
                 else:
                     raise RuntimeError("Unsupported step type")
-            elif isinstance(index, ast.Index):
-                lower = index.value.value
+            elif isinstance(index, (ast.Index, ast.Constant)):
+                lower = (
+                    index.value.value if isinstance(index, ast.Index) else index.value
+                )
                 upper = lower + 1
                 step = 1
             if lower < 0 or upper < 0:
@@ -930,7 +931,7 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Tuple)):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -964,7 +965,7 @@ class ASTTransformer(ASTBuilder):
             if isinstance(slices, int):
                 slices = [slices]
                 offsets = []
-            elif slices is None:
+            elif slices is None or slices == [None] * len(slices):
                 offsets, _ = ASTTransformer.build_indices(
                     ctx, node.slice, enable_affine=False
                 )
@@ -1051,7 +1052,7 @@ class ASTTransformer(ASTBuilder):
         # >>> a[28:32].reverse()
         # 0x5
         value = build_stmt(ctx, node.value)
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
             index = build_stmt(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -1065,9 +1066,12 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             else:
-                index = ASTTransformer.build_cast_op(
-                    ctx, index, node.slice.value.dtype, Index()
+                value_dtype = (
+                    node.slice.value.dtype
+                    if isinstance(node.slice, ast.Index)
+                    else node.slice.dtype
                 )
+                index = ASTTransformer.build_cast_op(ctx, index, value_dtype, Index())
                 # TODO: Test if rhs is uint1
                 set_bit_op = hcl_d.SetIntBitOp(
                     node.value.dtype.build(),
@@ -1476,10 +1480,12 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(node.func, ast.Subscript):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
-            assert isinstance(node.func.slice, ast.Index)
-            assert isinstance(node.func.slice.value, ast.Constant)
             obj_name = node.func.value.id
-            ctx.func_id = node.func.slice.value.value
+            ctx.func_id = (
+                node.func.slice.value.value
+                if isinstance(node.func.slice, ast.Index)
+                else node.func.slice.value
+            )
         else:
             raise RuntimeError("Unsupported function call")
 
