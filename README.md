@@ -15,10 +15,10 @@ git clone https://github.com/cornell-zhang/allo.git
 cd allo
 ```
 
-We recommend creating a new conda environment for Allo. The default Python version is 3.8.
+We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is 3.12.
 
 ```bash
-conda create -n allo python=3.8
+conda create -n allo python=3.12
 conda activate allo
 ```
 
