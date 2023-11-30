@@ -930,7 +930,7 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Tuple)):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
