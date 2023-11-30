@@ -1051,7 +1051,7 @@ class ASTTransformer(ASTBuilder):
         # >>> a[28:32].reverse()
         # 0x5
         value = build_stmt(ctx, node.value)
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
             index = build_stmt(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -1065,9 +1065,12 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             else:
-                index = ASTTransformer.build_cast_op(
-                    ctx, index, node.slice.value.dtype, Index()
+                value_dtype = (
+                    node.slice.value.dtype
+                    if isinstance(node.slice, ast.Index)
+                    else node.slice.dtype
                 )
+                index = ASTTransformer.build_cast_op(ctx, index, value_dtype, Index())
                 # TODO: Test if rhs is uint1
                 set_bit_op = hcl_d.SetIntBitOp(
                     node.value.dtype.build(),
