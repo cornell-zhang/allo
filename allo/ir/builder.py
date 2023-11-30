@@ -876,8 +876,10 @@ class ASTTransformer(ASTBuilder):
                     step = index.step.value
                 else:
                     raise RuntimeError("Unsupported step type")
-            elif isinstance(index, ast.Index):
-                lower = index.value.value
+            elif isinstance(index, (ast.Index, ast.Constant)):
+                lower = (
+                    index.value.value if isinstance(index, ast.Index) else index.value
+                )
                 upper = lower + 1
                 step = 1
             if lower < 0 or upper < 0:
