@@ -38,7 +38,7 @@ jobs:
     - name: Build HCL-MLIR
       run: |
         source activate hcl-dev
-        export SUBMOD_COMMIT=$(git submodule status | cut -f2 -d' ')
+        export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
         cd /root/hcl-dialect
         git remote update
         git fetch
