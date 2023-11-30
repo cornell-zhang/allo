@@ -776,7 +776,6 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        # pylint: disable=redefined-variable-type
         node.target.ctx = ast.Load()
         lhs = build_stmt(ctx, node.target)
         node.target.ctx = ast.Store()
