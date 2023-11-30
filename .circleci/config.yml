@@ -31,7 +31,8 @@ jobs:
             source activate hcl-dev
             export SUBMOD_COMMIT=$(git submodule status | cut -f2 -d' ')
             cd /root/hcl-dialect
-            git pull
+            git remote update
+            git fetch
             git checkout $SUBMOD_COMMIT
             cd build
             make -j4
