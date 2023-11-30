@@ -966,7 +966,7 @@ class ASTTransformer(ASTBuilder):
             if isinstance(slices, int):
                 slices = [slices]
                 offsets = []
-            elif slices is None:
+            elif slices is None or slices == [None] * len(slices):
                 offsets, _ = ASTTransformer.build_indices(
                     ctx, node.slice, enable_affine=False
                 )
