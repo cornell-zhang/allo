@@ -1481,10 +1481,12 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(node.func, ast.Subscript):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
-            assert isinstance(node.func.slice, ast.Index)
-            assert isinstance(node.func.slice.value, ast.Constant)
             obj_name = node.func.value.id
-            ctx.func_id = node.func.slice.value.value
+            ctx.func_id = (
+                node.func.slice.value.value
+                if isinstance(node.func.slice, ast.Index)
+                else node.func.slice.value
+            )
         else:
             raise RuntimeError("Unsupported function call")
 
