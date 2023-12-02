@@ -52,6 +52,7 @@ from .utils import (
     MockBuffer,
     get_extra_type_hints,
     get_kwarg,
+    get_func_id_from_param_types,
 )
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor
@@ -1475,12 +1476,17 @@ class ASTTransformer(ASTBuilder):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            ctx.func_id = 0
-            # ctx.func_id = (
-            #     node.func.slice.value.value
-            #     if isinstance(node.func.slice, ast.Index)
-            #     else node.func.slice.value
-            # )
+            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
+            func_id = get_func_id_from_param_types(ctx.inst)
+            if func_id is None:
+                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
+                    tuple(ctx.inst), len(ctx.func_name2id.setdefault(obj_name, {}))
+                )
+            else:
+                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
+                    tuple(ctx.inst), func_id
+                )
+            ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -1606,7 +1612,7 @@ class ASTTransformer(ASTBuilder):
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
-        else:
+        elif func_name not in ctx.global_vars: # function not built yet
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             func_ctx.call_args = new_args
@@ -1621,6 +1627,8 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
                     setattr(func, name, MockBuffer(func_name, name))
+        else:
+            stmts = [ctx.global_vars[func_name]]
 
         # Build call function in the top-level
         call_op = func_d.CallOp(

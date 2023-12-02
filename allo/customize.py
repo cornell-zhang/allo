@@ -814,7 +814,7 @@ def customize(
     use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
-        global_vars=global_vars,
+        global_vars=global_vars.copy(),
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,

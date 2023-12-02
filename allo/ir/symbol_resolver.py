@@ -90,5 +90,5 @@ class ASTResolver:
         if isinstance(node, ast.Tuple):
             return list(ASTResolver.resolve(n, global_vars) for n in node.elts)
         if isinstance(node, ast.Name):
-            return ASTResolver.resolve(node, global_vars)
+            return [ASTResolver.resolve(node, global_vars)]
         raise RuntimeError(f"Unsupported node type: {type(node)}")

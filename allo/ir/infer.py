@@ -19,7 +19,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
-from .utils import parse_ast
+from .utils import parse_ast, get_func_id_from_param_types
 
 
 def resolve_generic_types(ctx, type_var, call_val):
@@ -27,8 +27,6 @@ def resolve_generic_types(ctx, type_var, call_val):
     if type_var.bound is None:
         return name, call_val
     constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
-    if not isinstance(constrained_types, list):
-        constrained_types = [constrained_types]
     for ty in constrained_types:
         if ty.isinstance(call_val):
             return name, call_val
@@ -584,12 +582,16 @@ class TypeInferer(ASTVisitor):
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
             ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
-            ctx.func_id = 0
-            # ctx.func_id = (
-            #     node.func.slice.value.value
-            #     if isinstance(node.func.slice, ast.Index)
-            #     else node.func.slice.value
-            # )
+            func_id = get_func_id_from_param_types(ctx.inst)
+            if func_id is None:
+                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
+                    tuple(ctx.inst), len(ctx.func_name2id.setdefault(obj_name, {}))
+                )
+            else:
+                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
+                    tuple(ctx.inst), func_id
+                )
+            ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -650,8 +652,6 @@ class TypeInferer(ASTVisitor):
             tree = parse_ast(src, ctx.verbose)
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
-            func_ctx.func_id = ctx.func_id
-            func_ctx.inst = ctx.inst
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree
