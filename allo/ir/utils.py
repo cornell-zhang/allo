@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import ast
 from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
@@ -36,6 +37,19 @@ def get_kwarg(kwargs, name):
         if keyword.arg == name:
             return keyword.value
     raise RuntimeError(f"Keyword argument {name} not found")
+
+
+def parse_ast(src, verbose=False):
+    tree = ast.parse(src)
+    if verbose:
+        print(src)
+        try:
+            import astpretty
+
+            astpretty.pprint(tree, indent=2, show_offsets=False)
+        except ImportError:
+            print(ast.dump(tree))
+    return tree
 
 
 class MockOp:

@@ -6,7 +6,6 @@ import re
 import inspect
 import textwrap
 import copy
-import ast
 from dataclasses import dataclass
 from functools import wraps
 from types import FunctionType as PyFunctionType
@@ -47,7 +46,7 @@ from hcl_mlir.exceptions import (
 from hcl_mlir.ir import Type as MLIRType
 
 from .ir.visitor import ASTContext
-from .ir.utils import MockArg, MockBuffer
+from .ir.utils import MockArg, MockBuffer, parse_ast
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import (
@@ -794,16 +793,7 @@ def customize(
         src, _ = getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
-    if verbose:
-        print(src)
-    tree = ast.parse(src)
-    if verbose:
-        try:
-            import astpretty
-
-            astpretty.pprint(tree, indent=2, show_offsets=False)
-        except ImportError:
-            print(ast.dump(tree))
+    tree = parse_ast(src, verbose)
     if instantiate is None:
         instantiate = {}
     if global_vars is None:

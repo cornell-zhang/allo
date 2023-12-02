@@ -19,6 +19,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from .utils import parse_ast
 
 
 def resolve_generic_types(ctx, type_var, call_val):
@@ -651,7 +652,7 @@ class TypeInferer(ASTVisitor):
             src, _ = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
-            tree = ast.parse(src)
+            tree = parse_ast(src, ctx.verbose)
             # Create a new context to avoid name collision
             func_ctx = ASTContext(
                 global_vars=ctx.global_vars,
