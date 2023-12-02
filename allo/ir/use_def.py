@@ -150,11 +150,13 @@ class UseDefChain(ast.NodeVisitor):
             obj = ASTResolver.resolve(node.func.value, self.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            self.func_id = (
-                node.func.slice.value.value
-                if isinstance(node.func.slice, ast.Index)
-                else node.func.slice.value
-            )
+            inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
+            self.func_id = 0
+            # self.func_id = (
+            #     node.func.slice.value.value
+            #     if isinstance(node.func.slice, ast.Index)
+            #     else node.func.slice.value
+            # )
         else:
             raise RuntimeError("Unsupported function call")
 

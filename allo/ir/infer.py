@@ -21,6 +21,19 @@ from ..utils import (
 )
 
 
+def resolve_generic_types(ctx, type_var, call_val):
+    name = type_var.name
+    if type_var.bound is None:
+        return name, call_val
+    constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
+    if not isinstance(constrained_types, list):
+        constrained_types = [constrained_types]
+    for ty in constrained_types:
+        if ty.isinstance(call_val):
+            return name, call_val
+    raise RuntimeError(f"Cannot resolve type {name} with {call_val}")
+
+
 # pylint: disable=too-many-public-methods
 class TypeInferer(ASTVisitor):
     def print_verbose(self, ctx, node):
@@ -66,6 +79,14 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
             return dtype, tuple()
+        if isinstance(node, ast.Constant):
+            assert isinstance(node.value, str), "Only support string type annotation"
+            tree = ast.parse(node.value)
+            assert len(ctx.inst) == len(ctx.type_params)
+            for type_var, call_val in zip(ctx.type_params, ctx.inst):
+                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                ctx.global_vars[name] = call_val
+            return TypeInferer.visit_type_hint(ctx, tree.body[0].value)
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -82,6 +103,8 @@ class TypeInferer(ASTVisitor):
             elif isinstance(ctx.global_vars[node.id], float):
                 node.dtype = float32
                 node.shape = tuple()
+            else:
+                raise RuntimeError(f"Unsupported global variable {node.id}")
             return node
         raise RuntimeError(f"Unsupported Name {node.id}")
 
@@ -444,6 +467,11 @@ class TypeInferer(ASTVisitor):
             )
         else:
             old_ctx = None
+
+        # Generic function
+        if hasattr(node, "type_params") and len(node.type_params) > 0:
+            ctx.type_params = node.type_params
+
         # Input types
         for arg in node.args.args:
             arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
@@ -559,11 +587,13 @@ class TypeInferer(ASTVisitor):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            ctx.func_id = (
-                node.func.slice.value.value
-                if isinstance(node.func.slice, ast.Index)
-                else node.func.slice.value
-            )
+            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
+            ctx.func_id = 0
+            # ctx.func_id = (
+            #     node.func.slice.value.value
+            #     if isinstance(node.func.slice, ast.Index)
+            #     else node.func.slice.value
+            # )
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -630,6 +660,7 @@ class TypeInferer(ASTVisitor):
                 verbose=ctx.verbose,
             )
             func_ctx.func_id = ctx.func_id
+            func_ctx.inst = ctx.inst
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree
