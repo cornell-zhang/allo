@@ -19,18 +19,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
-from .utils import parse_ast, get_func_id_from_param_types
-
-
-def resolve_generic_types(ctx, type_var, call_val):
-    name = type_var.name
-    if type_var.bound is None:
-        return name, call_val
-    constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
-    for ty in constrained_types:
-        if ty.isinstance(call_val):
-            return name, call_val
-    raise RuntimeError(f"Cannot resolve type {name} with {call_val}")
+from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
 # pylint: disable=too-many-public-methods
@@ -81,10 +70,6 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Constant):
             assert isinstance(node.value, str), "Only support string type annotation"
             tree = ast.parse(node.value)
-            assert len(ctx.inst) == len(ctx.type_params)
-            for type_var, call_val in zip(ctx.type_params, ctx.inst):
-                name, call_val = resolve_generic_types(ctx, type_var, call_val)
-                ctx.global_vars[name] = call_val
             return TypeInferer.visit_type_hint(ctx, tree.body[0].value)
         raise RuntimeError("Unsupported function argument type")
 
@@ -464,7 +449,10 @@ class TypeInferer(ASTVisitor):
 
         # Generic function
         if hasattr(node, "type_params") and len(node.type_params) > 0:
-            ctx.type_params = node.type_params
+            assert len(ctx.inst) == len(node.type_params)
+            for type_var, call_val in zip(node.type_params, ctx.inst):
+                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                ctx.global_vars[name] = call_val
 
         # Input types
         for arg in node.args.args:

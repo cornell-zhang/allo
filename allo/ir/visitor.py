@@ -47,7 +47,6 @@ class ASTContext:
         self.func_id = None
         # instantiation of a template function
         self.inst = None
-        self.type_params = []
         self.func_name2id = {}
         # used for subfunction call
         self.call_args = []
@@ -66,7 +65,7 @@ class ASTContext:
 
     def copy(self):
         ctx = ASTContext(
-            self.global_vars,
+            self.global_vars.copy(),
             self.mlir_ctx,
             self.func_args,
             self.enable_tensor,
@@ -74,7 +73,6 @@ class ASTContext:
         )
         ctx.func_id = self.func_id
         ctx.inst = self.inst
-        ctx.type_params = self.type_params
         ctx.func_name2id = self.func_name2id
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose

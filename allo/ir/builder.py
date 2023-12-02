@@ -53,6 +53,7 @@ from .utils import (
     get_extra_type_hints,
     get_kwarg,
     get_func_id_from_param_types,
+    resolve_generic_types,
 )
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor
@@ -1194,9 +1195,15 @@ class ASTTransformer(ASTBuilder):
         else:
             old_ctx = None
 
-        arg_names = []
+        # Generic function
+        if hasattr(node, "type_params") and len(node.type_params) > 0:
+            assert len(ctx.inst) == len(node.type_params)
+            for type_var, call_val in zip(node.type_params, ctx.inst):
+                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                ctx.global_vars[name] = call_val
 
         # Build input types
+        arg_names = []
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
@@ -1616,11 +1623,10 @@ class ASTTransformer(ASTBuilder):
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             func_ctx.call_args = new_args
-            func_ctx.func_id = ctx.func_id
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
-            func_ctx.call_args = None
+            func_ctx.call_args = []
             # Attach buffers to function
             # FIXME: Should create subschedule
             for name, buffer in func_ctx.buffers.items():
