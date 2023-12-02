@@ -60,6 +60,20 @@ class ASTContext:
         # libraries for external IPs
         self.ext_libs = []
 
+    def copy(self):
+        ctx = ASTContext(
+            self.global_vars,
+            self.mlir_ctx,
+            self.func_args,
+            self.enable_tensor,
+            self.verbose,
+        )
+        ctx.func_id = self.func_id
+        ctx.enable_tensor = self.enable_tensor
+        ctx.verbose = self.verbose
+        ctx.ext_libs = self.ext_libs
+        return ctx
+
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):
             ip = InsertionPoint(ip)

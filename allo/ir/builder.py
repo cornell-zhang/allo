@@ -54,7 +54,7 @@ from .utils import (
     get_kwarg,
 )
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
 from ..utils import get_mlir_dtype_from_str
@@ -1187,13 +1187,7 @@ class ASTTransformer(ASTBuilder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(
-                global_vars=old_ctx.global_vars,
-                mlir_ctx=old_ctx.mlir_ctx,
-                enable_tensor=old_ctx.enable_tensor,
-                verbose=old_ctx.verbose,
-                func_args=old_ctx.func_args,
-            )
+            ctx = old_ctx.copy()
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
         else:
@@ -1614,13 +1608,7 @@ class ASTTransformer(ASTBuilder):
             stmts = [func]
         else:
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=ctx.mlir_ctx,
-                enable_tensor=ctx.enable_tensor,
-                verbose=ctx.verbose,
-                func_args=ctx.func_args,
-            )
+            func_ctx = ctx.copy()
             func_ctx.call_args = new_args
             func_ctx.func_id = ctx.func_id
             func_ctx.set_ip(ctx.top_func)

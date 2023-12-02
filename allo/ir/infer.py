@@ -7,7 +7,7 @@ import inspect
 import textwrap
 import numpy as np
 
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
@@ -460,12 +460,7 @@ class TypeInferer(ASTVisitor):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=old_ctx.mlir_ctx,
-                enable_tensor=old_ctx.enable_tensor,
-                verbose=old_ctx.verbose,
-            )
+            ctx = old_ctx.copy()
         else:
             old_ctx = None
 
@@ -654,12 +649,7 @@ class TypeInferer(ASTVisitor):
             src = textwrap.dedent("\n".join(src))
             tree = parse_ast(src, ctx.verbose)
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=ctx.mlir_ctx,
-                enable_tensor=ctx.enable_tensor,
-                verbose=ctx.verbose,
-            )
+            func_ctx = ctx.copy()
             func_ctx.func_id = ctx.func_id
             func_ctx.inst = ctx.inst
             stmts = visit_stmts(func_ctx, tree.body)
