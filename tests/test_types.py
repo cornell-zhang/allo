@@ -13,7 +13,6 @@ from allo.ir.types import (
     uint1,
     int32,
     float32,
-    TypeVar,
 )
 import allo.ir.types as T
 
@@ -372,9 +371,7 @@ def test_multiple_poly_types():
                 C[i, j] = A[i, j] + B[i, j]
         return C
 
-    s = allo.customize(
-        vadd, instantiate=[float32, int32, float32, 32, 32]
-    )
+    s = allo.customize(vadd, instantiate=[float32, int32, float32, 32, 32])
     print(s.module)
     mod = s.build()
     np_A = np.random.random((32, 32)).astype(np.float32)

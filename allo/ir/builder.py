@@ -1199,9 +1199,7 @@ class ASTTransformer(ASTBuilder):
         if hasattr(node, "type_params") and len(node.type_params) > 0:
             assert len(ctx.inst) == len(
                 node.type_params
-            ), "Type parameters mismatch, got {} and {}".format(
-                ctx.inst, node.type_params
-            )
+            ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
             for type_var, call_val in zip(node.type_params, ctx.inst):
                 name, call_val = resolve_generic_types(ctx, type_var, call_val)
                 ctx.global_vars[name] = call_val

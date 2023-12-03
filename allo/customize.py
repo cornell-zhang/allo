@@ -168,8 +168,7 @@ class Schedule:
                 return func
         if error:
             raise RuntimeError(f"Function {name} not found")
-        else:
-            return None
+        return None
 
     def _get_func_and_axis(self, axis):
         if isinstance(axis, LoopWrapper):
