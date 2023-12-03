@@ -1,42 +1,39 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment
+# pylint: disable=used-before-assignment, unsubscriptable-object, unused-import
 
 import allo
-from allo.ir.types import int32, index, TypeVar
-
-# The actual matrix size: (M x K) x (K x N) = (M x N)
-M, N, K = TypeVar(int32), TypeVar(int32), TypeVar(int32)
-# Tiled systolic array size: Mt x Nt
-Mt, Nt = TypeVar(int32), TypeVar(int32)
-# Data type of the matrices
-T_A, T_B, T_C = TypeVar(), TypeVar(), TypeVar()
+from allo.ir.types import int32, index
 
 
-def PE_kernel(
-    A_in: T_A[K],
-    B_in: T_B[K],
-    A_out: T_A[K],
-    B_out: T_B[K],
-    C: T_C[Mt, Nt],
+def PE_kernel[
+    TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
+](
+    A_in: "TyA[K]",
+    B_in: "TyB[K]",
+    A_out: "TyA[K]",
+    B_out: "TyB[K]",
+    C: "TyC[Mt, Nt]",
     i: index,
     j: index,
 ):
-    v: T_C = 0
+    v: TyC = 0
     for k in range(K):
-        a: T_A = A_in[k]
-        b: T_B = B_in[k]
+        a: TyA = A_in[k]
+        b: TyB = B_in[k]
         v += a * b
         A_out[k] = a
         B_out[k] = b
     C[i, j] = v
 
 
-def systolic_tile(A: T_A[Mt, K], B: T_B[K, Nt], C: T_C[Mt, Nt]):
-    A_fifo: T_A[Mt, Nt + 1, K]
-    B_fifo: T_B[Nt, Mt + 1, K]
-    A_drain: T_A[Mt]
-    B_drain: T_B[Nt]
+def systolic_tile[
+    TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
+](A: "TyA[Mt, K]", B: "TyB[K, Nt]", C: "TyC[Mt, Nt]"):
+    A_fifo: TyA[Mt, Nt + 1, K]
+    B_fifo: TyB[Nt, Mt + 1, K]
+    A_drain: TyA[Mt]
+    B_drain: TyB[Nt]
 
     for k in range(K, name="data_load"):
         # Can be fully unrolled inside this loop,
@@ -46,7 +43,7 @@ def systolic_tile(A: T_A[Mt, K], B: T_B[K, Nt], C: T_C[Mt, Nt]):
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
     for i, j in allo.grid(Mt, Nt, name="PE"):
-        PE_kernel(
+        PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
             A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
         )
     for k in range(K, name="data_drain"):
@@ -56,10 +53,12 @@ def systolic_tile(A: T_A[Mt, K], B: T_B[K, Nt], C: T_C[Mt, Nt]):
             B_drain[n] = B_fifo[n, Mt, k]
 
 
-def systolic(A: T_A[M, K], B: T_B[K, N], C: T_C[M, N]):
-    local_A: T_A[Mt, K]
-    local_B: T_B[K, Nt]
-    local_C: T_C[Mt, Nt]
+def systolic[
+    TyA, TyB, TyC, M: int32, K: int32, N: int32, Mt: int32, Nt: int32
+](A: "TyA[M, K]", B: "TyB[K, N]", C: "TyC[M, N]"):
+    local_A: TyA[Mt, K]
+    local_B: TyB[K, Nt]
+    local_C: TyC[Mt, Nt]
 
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in allo.grid(M // Mt, N // Nt, name="outer_tile"):
@@ -74,7 +73,7 @@ def systolic(A: T_A[M, K], B: T_B[K, N], C: T_C[M, N]):
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
             local_B[bk, bj] = B[bk, ni * Nt + bj]
-        systolic_tile(
+        systolic_tile[TyA, TyB, TyC, K, Mt, Nt](
             local_A,
             local_B,
             local_C,

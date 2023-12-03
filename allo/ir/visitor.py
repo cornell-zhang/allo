@@ -45,6 +45,9 @@ class ASTContext:
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
         self.func_id = None
+        # instantiation of a template function
+        self.inst = None
+        self.func_name2id = {}
         # used for subfunction call
         self.call_args = []
         # used to count nested loops in a band
@@ -59,6 +62,22 @@ class ASTContext:
         self.verbose = verbose
         # libraries for external IPs
         self.ext_libs = []
+
+    def copy(self):
+        ctx = ASTContext(
+            self.global_vars.copy(),
+            self.mlir_ctx,
+            self.func_args,
+            self.enable_tensor,
+            self.verbose,
+        )
+        ctx.func_id = self.func_id
+        ctx.inst = self.inst
+        ctx.func_name2id = self.func_name2id
+        ctx.enable_tensor = self.enable_tensor
+        ctx.verbose = self.verbose
+        ctx.ext_libs = self.ext_libs
+        return ctx
 
     def set_ip(self, ip):
         if not isinstance(ip, InsertionPoint):

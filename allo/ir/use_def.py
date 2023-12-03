@@ -7,6 +7,7 @@ import inspect
 import textwrap
 
 from .symbol_resolver import ASTResolver
+from .utils import get_func_id_from_param_types
 
 
 class VarNode:
@@ -42,6 +43,13 @@ class UseDefChain(ast.NodeVisitor):
         # Used for nested functions
         self.arg_nodes = []
         # Used for unique function identification when calling the same function
+        # Need to consider different situations:
+        # 1) Explicit name is not given in the parameter list
+        #    Gernerate a unique name for each function call based on whether the instatiation has been seen before
+        # 2) Explicit name is given in the parameter list
+        #    Use the explicit name
+        # name -> id -> (param_type1, param_type2, ...)
+        self.func_name2id = {}
         self.func_id = None
 
     def __getitem__(self, key):
@@ -150,11 +158,23 @@ class UseDefChain(ast.NodeVisitor):
             obj = ASTResolver.resolve(node.func.value, self.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            self.func_id = (
-                node.func.slice.value.value
-                if isinstance(node.func.slice, ast.Index)
-                else node.func.slice.value
-            )
+            inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
+            if self.func_id is None:
+                func_id = get_func_id_from_param_types(inst)
+                if func_id is None:
+                    func_dict = self.func_name2id.setdefault(obj_name, {})
+                    for key, value in func_dict.items():
+                        if value == tuple(inst):
+                            func_id = key
+                            break
+                    else:
+                        func_id = len(func_dict) if len(func_dict) > 0 else None
+                        func_dict[func_id] = tuple(inst)
+                else:
+                    inst.remove(func_id)
+                    func_dict = self.func_name2id.setdefault(obj_name, {})
+                    func_dict[func_id] = tuple(inst)
+                self.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 

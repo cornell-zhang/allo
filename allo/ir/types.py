@@ -28,6 +28,10 @@ class AlloType:
         # Required a MLIR context outside
         raise NotImplementedError
 
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, (AlloType, numbers.Number))
+
     def __getitem__(self, sizes):
         # Placeholder for type[*sizes]
         pass
@@ -51,6 +55,10 @@ class Index(AlloType):
     def build(self):
         return IndexType.get()
 
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, (Index, int))
+
 
 class Int(AlloType):
     def __init__(self, bits):
@@ -58,6 +66,10 @@ class Int(AlloType):
 
     def build(self):
         return IntegerType.get_signless(self.bits)
+
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, (Int, int))
 
 
 class UInt(AlloType):
@@ -70,6 +82,10 @@ class UInt(AlloType):
         # label it in the IR with attributes, and then cast it to unsigned
         # in the codegen.
         return IntegerType.get_signless(self.bits)
+
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, UInt) or (isinstance(other, int) and other >= 0)
 
 
 class Float(AlloType):
@@ -94,6 +110,10 @@ class Float(AlloType):
             return F32Type.get()
         if self.bits == 64:
             return F64Type.get()
+
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, (Float, float))
 
 
 class Fixed(AlloType):
@@ -141,53 +161,6 @@ class Struct(AlloType):
 
     def build(self):
         raise NotImplementedError("TODO")
-
-
-class TypeVar(AlloType):
-    """A type variable
-
-    This is used to represent a type that is not known yet.
-    Reference from `typing.TypeVar`
-    """
-
-    # pylint: disable=super-init-not-called
-    def __init__(self, *constraints):
-        # checking
-        for constraint in constraints:
-            if not isinstance(constraint, AlloType) and constraint not in {
-                Int,
-                Float,
-                Fixed,
-                UFixed,
-            }:
-                raise DTypeError("Constraint must be an AlloType")
-        self.__constraints__ = tuple(constraints)
-
-    def __getitem__(self, *args):
-        # Just a placeholder for type[*args]
-        pass
-
-    def instantiate(self, val):
-        if len(self.__constraints__) == 0:
-            return val
-        if val in self.__constraints__:
-            return val
-        for constraint in self.__constraints__:
-            if constraint in {Int, Float, Fixed, UFixed} and isinstance(
-                val, constraint
-            ):
-                return val
-        if isinstance(val, (int, float)):
-            return val
-        raise DTypeError(
-            f"Cannot instantialize {val} to types in {self.__constraints__}"
-        )
-
-    def __repr__(self):
-        return f"TypeVar({self.__constraints__})"
-
-    def build(self):
-        raise RuntimeError("Cannot build a type variable")
 
 
 bool = Int(1)

@@ -123,7 +123,7 @@ def test_parameterized_systolic():
 
     s = allo.customize(
         systolic_tile,
-        instantiate={"T_A": int8, "T_B": int8, "T_C": int16, "Mt": 4, "Nt": 4, "K": 4},
+        instantiate=[int8, int8, int16, 4, 4, 4],
     )
     print(s.module)
     mod = s.build()
@@ -143,16 +143,7 @@ def test_tiled_systolic():
     MM, KK, NN = 8, 16, 8
     s = allo.customize(
         systolic,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int16,
-            "M": MM,
-            "N": NN,
-            "K": KK,
-            "Mt": 4,
-            "Nt": 4,
-        },
+        instantiate=[int8, int8, int16, MM, KK, NN, 4, 4],
     )
     print(s.module)
     mod = s.build()
@@ -177,21 +168,12 @@ def test_cascade_systolic():
         Y: int8[M0, M1] = 0
         W_A: int8[M0, M1] = W_A_cst
         W_B: int8[M0, M1] = W_B_cst
-        systolic_tile(X, W_A, Z)
-        systolic_tile(Z, W_B, Y)
+        systolic_tile[int8, int8, int8, KK, M0, M1](X, W_A, Z)
+        systolic_tile[int8, int8, int8, KK, M0, M1](Z, W_B, Y)
         return Y
 
-    s_top = allo.customize(
-        top,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "K": KK,
-        },
-    )
+    s_top = allo.customize(top)
+    print(s_top.module)
     # CPU testing
     mod = s_top.build()
     X = np.random.randint(-4, 4, size=(M0, M1)).astype(np.int8)
@@ -202,14 +184,7 @@ def test_cascade_systolic():
     # Submodule customization
     s = allo.customize(
         systolic_tile,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "K": KK,
-        },
+        instantiate=[int8, int8, int8, KK, M0, M1],
     )
     s.partition(s.C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.A, dim=1)
@@ -243,23 +218,11 @@ def test_cascade_specialized_systolic():
         Y: int8[MM, NN]
         W_A: int8[MM, NN] = W_A_cst
         W_B: int8[MM, NN] = W_B_cst
-        systolic["FFN1"](X, W_A, Z)
-        systolic["FFN2"](Z, W_B, Y)
+        systolic[int8, int8, int8, MM, KK, NN, M0, M1, "FFN1"](X, W_A, Z)
+        systolic[int8, int8, int8, MM, KK, NN, M0, M1, "FFN2"](Z, W_B, Y)
         return Y
 
-    s_top = allo.customize(
-        top,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "M": MM,
-            "N": NN,
-            "K": KK,
-        },
-    )
+    s_top = allo.customize(top)
     print(s_top.module)
     # CPU testing
     mod = s_top.build()
@@ -271,16 +234,7 @@ def test_cascade_specialized_systolic():
     # Submodule customization
     s = allo.customize(
         systolic,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "M": MM,
-            "N": NN,
-            "K": KK,
-        },
+        instantiate=[int8, int8, int8, MM, KK, NN, M0, M1],
     )
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)

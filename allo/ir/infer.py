@@ -7,7 +7,7 @@ import inspect
 import textwrap
 import numpy as np
 
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
@@ -19,6 +19,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
 # pylint: disable=too-many-public-methods
@@ -66,6 +67,10 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
             return dtype, tuple()
+        if isinstance(node, ast.Constant):
+            assert isinstance(node.value, str), "Only support string type annotation"
+            tree = ast.parse(node.value)
+            return TypeInferer.visit_type_hint(ctx, tree.body[0].value)
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -82,6 +87,8 @@ class TypeInferer(ASTVisitor):
             elif isinstance(ctx.global_vars[node.id], float):
                 node.dtype = float32
                 node.shape = tuple()
+            else:
+                raise RuntimeError(f"Unsupported global variable {node.id}")
             return node
         raise RuntimeError(f"Unsupported Name {node.id}")
 
@@ -436,14 +443,19 @@ class TypeInferer(ASTVisitor):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=old_ctx.mlir_ctx,
-                enable_tensor=old_ctx.enable_tensor,
-                verbose=old_ctx.verbose,
-            )
+            ctx = old_ctx.copy()
         else:
             old_ctx = None
+
+        # Generic function
+        if hasattr(node, "type_params") and len(node.type_params) > 0:
+            assert len(ctx.inst) == len(
+                node.type_params
+            ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
+            for type_var, call_val in zip(node.type_params, ctx.inst):
+                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                ctx.global_vars[name] = call_val
+
         # Input types
         for arg in node.args.args:
             arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
@@ -559,11 +571,23 @@ class TypeInferer(ASTVisitor):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            ctx.func_id = (
-                node.func.slice.value.value
-                if isinstance(node.func.slice, ast.Index)
-                else node.func.slice.value
-            )
+            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
+            if ctx.func_id is None:
+                func_id = get_func_id_from_param_types(ctx.inst)
+                if func_id is None:
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                    for key, value in func_dict.items():
+                        if value == tuple(ctx.inst):
+                            func_id = key
+                            break
+                    else:
+                        func_id = len(func_dict) if len(func_dict) > 0 else None
+                        func_dict[func_id] = tuple(ctx.inst)
+                else:
+                    ctx.inst.remove(func_id)
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                    func_dict[func_id] = tuple(ctx.inst)
+                ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -621,15 +645,9 @@ class TypeInferer(ASTVisitor):
             src, _ = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
-            tree = ast.parse(src)
+            tree = parse_ast(src, ctx.verbose)
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=ctx.mlir_ctx,
-                enable_tensor=ctx.enable_tensor,
-                verbose=ctx.verbose,
-            )
-            func_ctx.func_id = ctx.func_id
+            func_ctx = ctx.copy()
             stmts = visit_stmts(func_ctx, tree.body)
             # Attach type-inferenced tree to the top-level AST
             node.tree = tree

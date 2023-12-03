@@ -6,7 +6,6 @@ import re
 import inspect
 import textwrap
 import copy
-import ast
 from dataclasses import dataclass
 from functools import wraps
 from types import FunctionType as PyFunctionType
@@ -47,7 +46,7 @@ from hcl_mlir.exceptions import (
 from hcl_mlir.ir import Type as MLIRType
 
 from .ir.visitor import ASTContext
-from .ir.utils import MockArg, MockBuffer
+from .ir.utils import MockArg, MockBuffer, parse_ast
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import (
@@ -163,11 +162,13 @@ class Schedule:
             return loops[band_name]
         raise RuntimeError(f"Band {band_name} not found")
 
-    def _find_function(self, name):
+    def _find_function(self, name, error=True):
         for func in self.module.body.operations:
             if isinstance(func, func_d.FuncOp) and func.name.value == name:
                 return func
-        raise RuntimeError(f"Function {name} not found")
+        if error:
+            raise RuntimeError(f"Function {name} not found")
+        return None
 
     def _get_func_and_axis(self, axis):
         if isinstance(axis, LoopWrapper):
@@ -692,6 +693,8 @@ class Schedule:
                     if "id" not in configs
                     else orig_func_name + "_" + str(configs["id"])
                 )
+                if self._find_function(func_name, error=False) is None:
+                    func_name = orig_func_name + "_0"
                 arg.path = func_name
                 return arg
             orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
@@ -701,6 +704,8 @@ class Schedule:
                 if "id" not in configs
                 else orig_func_name + "_" + str(configs["id"])
             )
+            if self._find_function(func_name, error=False) is None:
+                func_name = orig_func_name + "_0"
             return f"{func_name}:{arg}"
 
         for sch in schs:
@@ -794,18 +799,9 @@ def customize(
         src, _ = getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
-    if verbose:
-        print(src)
-    tree = ast.parse(src)
-    if verbose:
-        try:
-            import astpretty
-
-            astpretty.pprint(tree, indent=2, show_offsets=False)
-        except ImportError:
-            print(ast.dump(tree))
+    tree = parse_ast(src, verbose)
     if instantiate is None:
-        instantiate = {}
+        instantiate = []
     if global_vars is None:
         global_vars = _get_global_vars(fn)
         new_global_vars = global_vars.copy()
@@ -814,21 +810,17 @@ def customize(
             if isinstance(var, PyFunctionType):
                 new_global_vars.update(_get_global_vars(var))
         global_vars = new_global_vars
-    for typevar in instantiate:
-        if typevar not in global_vars:
-            raise RuntimeError(f"Type variable {typevar} not found")
-        # Checking
-        global_vars[typevar] = global_vars[typevar].instantiate(instantiate[typevar])
     # Use-def chain analysis
     use_def_chain = UseDefChain(global_vars.copy())
     use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
-        global_vars=global_vars,
+        global_vars=global_vars.copy(),
         mlir_ctx=Context(),
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
+    ctx_type_inf.inst = instantiate
     tree = TypeInferer()(ctx_type_inf, tree)
     ctx_type_inf = None
     # Start building IR
@@ -838,6 +830,7 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
+    ctx.inst = instantiate
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
