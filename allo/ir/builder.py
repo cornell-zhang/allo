@@ -1488,21 +1488,22 @@ class ASTTransformer(ASTBuilder):
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
             ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
-            func_id = get_func_id_from_param_types(ctx.inst)
-            if func_id is None:
-                func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                for key, value in func_dict.items():
-                    if value == tuple(ctx.inst):
-                        func_id = key
-                        break
+            if ctx.func_id is None:
+                func_id = get_func_id_from_param_types(ctx.inst)
+                if func_id is None:
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                    for key, value in func_dict.items():
+                        if value == tuple(ctx.inst):
+                            func_id = key
+                            break
+                    else:
+                        func_id = len(func_dict) if len(func_dict) > 0 else None
+                        func_dict[func_id] = tuple(ctx.inst)
                 else:
-                    func_id = len(func_dict)
+                    ctx.inst.remove(func_id)
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
                     func_dict[func_id] = tuple(ctx.inst)
-            else:
-                ctx.inst.remove(func_id)
-                func_dict = ctx.func_name2id.setdefault(obj_name, {})
-                func_dict[func_id] = tuple(ctx.inst)
-            ctx.func_id = func_id
+                ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -1628,7 +1629,9 @@ class ASTTransformer(ASTBuilder):
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
-        elif func_name not in ctx.global_vars:  # function not built yet
+        elif func_name not in ctx.global_vars or not isinstance(
+            ctx.global_vars[func_name], func_d.FuncOp
+        ):  # function not built yet
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             func_ctx.call_args = new_args

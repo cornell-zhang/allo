@@ -159,20 +159,22 @@ class UseDefChain(ast.NodeVisitor):
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
             inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
-            func_id = get_func_id_from_param_types(inst)
-            if func_id is None:
-                func_dict = self.func_name2id.setdefault(obj_name, {})
-                for key, value in func_dict.items():
-                    if value == tuple(inst):
-                        func_id = key
-                        break
+            if self.func_id is None:
+                func_id = get_func_id_from_param_types(inst)
+                if func_id is None:
+                    func_dict = self.func_name2id.setdefault(obj_name, {})
+                    for key, value in func_dict.items():
+                        if value == tuple(inst):
+                            func_id = key
+                            break
+                    else:
+                        func_id = len(func_dict) if len(func_dict) > 0 else None
+                        func_dict[func_id] = tuple(inst)
                 else:
-                    func_id = len(func_dict)
+                    inst.remove(func_id)
+                    func_dict = self.func_name2id.setdefault(obj_name, {})
                     func_dict[func_id] = tuple(inst)
-            else:
-                inst.remove(func_id)
-                func_dict = self.func_name2id.setdefault(obj_name, {})
-                func_dict[func_id] = tuple(inst)
+                self.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 

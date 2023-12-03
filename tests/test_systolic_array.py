@@ -436,5 +436,4 @@ def test_subview_systolic_dsp_packed_int4xint8():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_cascade_specialized_systolic()
+    pytest.main([__file__])
