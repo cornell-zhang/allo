@@ -55,8 +55,8 @@ def test_same_function():
         return D
 
     s = allo.customize(top)
-    mod = s.build()
     print(s.module)
+    mod = s.build()
     np_A = np.random.randn(M, K).astype(np.float32)
     np_B = np.random.randn(K, N).astype(np.float32)
     np_W = np.random.randn(N, P).astype(np.float32)

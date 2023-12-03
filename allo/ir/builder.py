@@ -1504,6 +1504,7 @@ class ASTTransformer(ASTBuilder):
                     func_dict = ctx.func_name2id.setdefault(obj_name, {})
                     func_dict[func_id] = tuple(ctx.inst)
                 ctx.func_id = func_id
+                print(ctx.func_name2id)
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -1626,10 +1627,7 @@ class ASTTransformer(ASTBuilder):
         func = ctx.global_vars[obj_name]
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
-        if isinstance(func, func_d.FuncOp):
-            # Has already been defined in the top-level scope
-            stmts = [func]
-        elif func_name not in ctx.global_vars or not isinstance(
+        if func_name not in ctx.global_vars or not isinstance(
             ctx.global_vars[func_name], func_d.FuncOp
         ):  # function not built yet
             # Create a new context to avoid name collision
@@ -1648,6 +1646,9 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
                     setattr(func, name, MockBuffer(func_name, name))
+        elif isinstance(func, func_d.FuncOp):
+            # Has already been defined in the top-level scope
+            stmts = [func]
         else:
             stmts = [ctx.global_vars[func_name]]
 
