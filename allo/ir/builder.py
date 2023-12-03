@@ -12,7 +12,6 @@ from hcl_mlir.ir import (
     InsertionPoint,
     FunctionType,
     MemRefType,
-    UnrankedMemRefType,
     RankedTensorType,
     ShapedType,
     IntegerType,
@@ -119,10 +118,10 @@ class ASTTransformer(ASTBuilder):
         if len(shape) == 0:
             return dtype.build()
         if not ctx.enable_tensor:
-            if Ellipsis in shape:
-                return MemRefType.get((ShapedType.get_dynamic_size(),), dtype.build())
-            else:
-                return MemRefType.get(shape, dtype.build())
+            shape = [
+                ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
+            ]
+            return MemRefType.get(shape, dtype.build())
         return RankedTensorType.get(shape, dtype.build())
 
     @staticmethod

@@ -533,13 +533,15 @@ def test_dynamic_shape():
         for i in range(size):
             B[i] = A[i]
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel)
     print(s.module)
-    np_A = np.random.random((10,)).astype(np.float32)
-    allo_A = np.zeros((10,)).astype(np.float32)
+    np_A = np.random.random((256,)).astype(np.float32)
+    allo_A = np.zeros((256,)).astype(np.float32)
     mod = s.build()
-    mod(np_A, allo_A, 10)
+    mod(np_A, allo_A, 256)
     np.testing.assert_allclose(np_A, allo_A)
+    code = s.build(target="vhls")
+    print(code)
 
 
 if __name__ == "__main__":
