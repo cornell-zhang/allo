@@ -530,7 +530,7 @@ def test_dynamic_subview():
 
 def test_dynamic_shape():
     def kernel(A: float32[...], B: float32[...], size: int32):
-        for i in range(0, size):
+        for i in range(size):
             B[i] = A[i]
 
     s = allo.customize(kernel, verbose=True)
@@ -543,5 +543,4 @@ def test_dynamic_shape():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_dynamic_shape()
+    pytest.main([__file__])
