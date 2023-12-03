@@ -530,16 +530,16 @@ def test_dynamic_subview():
 
 def test_dynamic_shape():
     def kernel(A: float32[...], B: float32[...], size: int32):
-        return
-        # for i in range(size):
-        #     B[i] = A[i]
+        for i in range(0, size):
+            B[i] = A[i]
 
     s = allo.customize(kernel, verbose=True)
     print(s.module)
-    sys.exit()
-    np_A = np.random.random((5, 10, 15)).astype(np.float32)
+    np_A = np.random.random((10,)).astype(np.float32)
+    allo_A = np.zeros((10,)).astype(np.float32)
     mod = s.build()
-    np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
+    mod(np_A, allo_A, 10)
+    np.testing.assert_allclose(np_A, allo_A)
 
 
 if __name__ == "__main__":

@@ -120,7 +120,7 @@ class ASTTransformer(ASTBuilder):
             return dtype.build()
         if not ctx.enable_tensor:
             if Ellipsis in shape:
-                return UnrankedMemRefType.get(dtype.build(), None)
+                return MemRefType.get((ShapedType.get_dynamic_size(),),dtype.build())
             else:
                 return MemRefType.get(shape, dtype.build())
         return RankedTensorType.get(shape, dtype.build())
