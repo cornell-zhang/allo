@@ -118,6 +118,9 @@ class ASTTransformer(ASTBuilder):
         if len(shape) == 0:
             return dtype.build()
         if not ctx.enable_tensor:
+            shape = [
+                ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
+            ]
             return MemRefType.get(shape, dtype.build())
         return RankedTensorType.get(shape, dtype.build())
 
@@ -242,7 +245,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 is_affine = False
                 lb_expr = build_stmt(
-                    ctx, iter_args[0] if len(iter_args) >= 1 else ast.Constant(0)
+                    ctx, iter_args[0] if len(iter_args) > 1 else ast.Constant(0)
                 )
                 ub_expr = build_stmt(
                     ctx, iter_args[1] if len(iter_args) >= 2 else iter_args[0]
@@ -1993,6 +1996,8 @@ class ASTTransformer(ASTBuilder):
             return func_d.ReturnOp(rets, ip=ctx.pop_ip())
         # return a single value or none
         ret = build_stmt(ctx, node.value)
+        if ret is None:
+            return func_d.ReturnOp([], ip=ctx.pop_ip())
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )

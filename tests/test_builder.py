@@ -528,5 +528,21 @@ def test_dynamic_subview():
     np.testing.assert_allclose(mod(np_A, 3, 3), kernel(np_A, 3, 3))
 
 
+def test_dynamic_shape():
+    def kernel(A: float32[...], B: float32[...], size: int32):
+        for i in range(size):
+            B[i] = A[i]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    np_A = np.random.random((256,)).astype(np.float32)
+    allo_A = np.zeros((256,)).astype(np.float32)
+    mod = s.build()
+    mod(np_A, allo_A, 256)
+    np.testing.assert_allclose(np_A, allo_A)
+    code = s.build(target="vhls")
+    print(code)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
