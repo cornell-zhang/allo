@@ -796,8 +796,8 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Return(ctx, node):
         res = visit_stmt(ctx, node.value)
-        node.dtype = res.dtype
-        node.shape = res.shape
+        node.dtype = res.dtype if res is not None else None
+        node.shape = res.shape if res is not None else None
         return node
 
     @staticmethod

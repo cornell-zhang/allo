@@ -305,6 +305,8 @@ class UseDefChain(ast.NodeVisitor):
         return res[0]
 
     def visit_Return(self, node):
+        if node.value is None:
+            return []
         results = self.visit(node.value)
         # update labels
         for res in results:
