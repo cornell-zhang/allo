@@ -449,7 +449,9 @@ class TypeInferer(ASTVisitor):
 
         # Generic function
         if hasattr(node, "type_params") and len(node.type_params) > 0:
-            assert len(ctx.inst) == len(node.type_params), "Type parameters mismatch, got {} and {}".format(
+            assert len(ctx.inst) == len(
+                node.type_params
+            ), "Type parameters mismatch, got {} and {}".format(
                 ctx.inst, node.type_params
             )
             for type_var, call_val in zip(node.type_params, ctx.inst):
@@ -574,13 +576,18 @@ class TypeInferer(ASTVisitor):
             ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
             func_id = get_func_id_from_param_types(ctx.inst)
             if func_id is None:
-                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
-                    tuple(ctx.inst), len(ctx.func_name2id.setdefault(obj_name, {}))
-                )
+                func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                for key, value in func_dict.items():
+                    if value == tuple(ctx.inst):
+                        func_id = key
+                        break
+                else:
+                    func_id = len(func_dict)
+                    func_dict[func_id] = tuple(ctx.inst)
             else:
-                func_id = ctx.func_name2id.setdefault(obj_name, {}).setdefault(
-                    tuple(ctx.inst), func_id
-                )
+                ctx.inst.remove(func_id)
+                func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                func_dict[func_id] = tuple(ctx.inst)
             ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")

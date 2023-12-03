@@ -48,7 +48,7 @@ class UseDefChain(ast.NodeVisitor):
         #    Gernerate a unique name for each function call based on whether the instatiation has been seen before
         # 2) Explicit name is given in the parameter list
         #    Use the explicit name
-        # name -> (param_type1, param_type2, ...) -> id
+        # name -> id -> (param_type1, param_type2, ...)
         self.func_name2id = {}
         self.func_id = None
 
@@ -161,14 +161,18 @@ class UseDefChain(ast.NodeVisitor):
             inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
             func_id = get_func_id_from_param_types(inst)
             if func_id is None:
-                func_id = self.func_name2id.setdefault(obj_name, {}).setdefault(
-                    tuple(inst), len(self.func_name2id.setdefault(obj_name, {}))
-                )
+                func_dict = self.func_name2id.setdefault(obj_name, {})
+                for key, value in func_dict.items():
+                    if value == tuple(inst):
+                        func_id = key
+                        break
+                else:
+                    func_id = len(func_dict)
+                    func_dict[func_id] = tuple(inst)
             else:
-                func_id = self.func_name2id.setdefault(obj_name, {}).setdefault(
-                    tuple(inst), func_id
-                )
-            self.func_id = func_id
+                inst.remove(func_id)
+                func_dict = self.func_name2id.setdefault(obj_name, {})
+                func_dict[func_id] = tuple(inst)
         else:
             raise RuntimeError("Unsupported function call")
 

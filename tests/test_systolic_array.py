@@ -218,23 +218,11 @@ def test_cascade_specialized_systolic():
         Y: int8[MM, NN]
         W_A: int8[MM, NN] = W_A_cst
         W_B: int8[MM, NN] = W_B_cst
-        systolic["FFN1"](X, W_A, Z)
-        systolic["FFN2"](Z, W_B, Y)
+        systolic[int8, int8, int8, MM, KK, NN, M0, M1, "FFN1"](X, W_A, Z)
+        systolic[int8, int8, int8, MM, KK, NN, M0, M1, "FFN2"](Z, W_B, Y)
         return Y
 
-    s_top = allo.customize(
-        top,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "M": MM,
-            "N": NN,
-            "K": KK,
-        },
-    )
+    s_top = allo.customize(top)
     print(s_top.module)
     # CPU testing
     mod = s_top.build()
@@ -246,16 +234,7 @@ def test_cascade_specialized_systolic():
     # Submodule customization
     s = allo.customize(
         systolic,
-        instantiate={
-            "T_A": int8,
-            "T_B": int8,
-            "T_C": int8,
-            "Mt": M0,
-            "Nt": M1,
-            "M": MM,
-            "N": NN,
-            "K": KK,
-        },
+        instantiate=[int8, int8, int8, MM, KK, NN, M0, M1],
     )
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
@@ -457,4 +436,5 @@ def test_subview_systolic_dsp_packed_int4xint8():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_cascade_specialized_systolic()
