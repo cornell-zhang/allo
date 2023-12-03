@@ -1619,7 +1619,7 @@ class ASTTransformer(ASTBuilder):
         if isinstance(func, func_d.FuncOp):
             # Has already been defined in the top-level scope
             stmts = [func]
-        elif func_name not in ctx.global_vars: # function not built yet
+        elif func_name not in ctx.global_vars:  # function not built yet
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             func_ctx.call_args = new_args
@@ -1627,6 +1627,9 @@ class ASTTransformer(ASTBuilder):
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
             func_ctx.call_args = []
+            for key, value in func_ctx.global_vars.items():
+                if isinstance(value, func_d.FuncOp):
+                    ctx.global_vars[key] = value
             # Attach buffers to function
             # FIXME: Should create subschedule
             for name, buffer in func_ctx.buffers.items():
