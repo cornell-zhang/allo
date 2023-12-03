@@ -28,8 +28,9 @@ class AlloType:
         # Required a MLIR context outside
         raise NotImplementedError
 
-    def isinstance(self, other):
-        return isinstance(other, numbers.Number)
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, AlloType) or isinstance(other, numbers.Number)
 
     def __getitem__(self, sizes):
         # Placeholder for type[*sizes]
@@ -65,8 +66,9 @@ class Int(AlloType):
     def build(self):
         return IntegerType.get_signless(self.bits)
 
-    def isinstance(self, other):
-        return isinstance(other, int)
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, Int) or isinstance(other, int)
 
 
 class UInt(AlloType):
@@ -80,8 +82,9 @@ class UInt(AlloType):
         # in the codegen.
         return IntegerType.get_signless(self.bits)
 
-    def isinstance(self, other):
-        return isinstance(other, int) and other >= 0
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, UInt) or (isinstance(other, int) and other >= 0)
 
 
 class Float(AlloType):
@@ -107,8 +110,9 @@ class Float(AlloType):
         if self.bits == 64:
             return F64Type.get()
 
-    def isinstance(self, other):
-        return isinstance(other, float)
+    @staticmethod
+    def isinstance(other):
+        return isinstance(other, Float) or isinstance(other, float)
 
 
 class Fixed(AlloType):

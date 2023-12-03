@@ -66,7 +66,11 @@ def resolve_generic_types(ctx, type_var, call_val):
         return name, call_val
     constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
     for ty in constrained_types:
-        if ty.isinstance(call_val):
+        if (
+            (isinstance(ty, AlloType) and type(ty).isinstance(call_val))
+            or ty == call_val
+            or (hasattr(ty, "isinstance") and ty.isinstance(call_val))
+        ):
             return name, call_val
     raise RuntimeError(f"Cannot resolve type {name} with {call_val}")
 
