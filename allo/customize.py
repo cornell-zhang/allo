@@ -511,14 +511,16 @@ class Schedule:
         memref_type = MemRefType.get((1,), F32Type.get())
 
         def find_reuse_buffers(res):
-            for op in self.top_func.entry_block.operations:
-                if (
-                    isinstance(op, memref_d.AllocOp)
-                    and "name" in op.attributes
-                    and StringAttr(band_name).value + "_reuse"
-                    in StringAttr(op.attributes["name"]).value
-                ):
-                    res.append(op)
+            for func in self.module.body.operations:
+                if isinstance(func, func_d.FuncOp):
+                    for op in func.entry_block.operations:
+                        if (
+                            isinstance(op, memref_d.AllocOp)
+                            and "name" in op.attributes
+                            and StringAttr(band_name).value + "_reuse"
+                            in StringAttr(op.attributes["name"]).value
+                        ):
+                            res.append(op)
 
         prev_reuse_buffers = []
         find_reuse_buffers(prev_reuse_buffers)
