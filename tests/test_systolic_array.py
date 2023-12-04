@@ -287,7 +287,6 @@ def test_ffn():
         return Y
 
     s_top = allo.customize(top)
-    print(s_top.module)
     # CPU testing
     mod = s_top.build()
     X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
@@ -295,9 +294,7 @@ def test_ffn():
     np_C = X @ W_A_cst @ W_B_cst
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
     print("Passed!")
-    # Submodule customization
     # Compose with submodule
-    s_top.use_def_chain.dump_graph("top")
     s_top.compose(
         systolic, instantiate=[int8, int8, int8, L, D, 4 * D, M0, M1], id="FFN1"
     )
