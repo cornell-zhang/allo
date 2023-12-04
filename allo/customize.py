@@ -717,6 +717,10 @@ class Schedule:
         for sch in schs:
             if isinstance(sch, PyFunctionType):
                 schedule = customize(sch, instantiate=instantiate)
+                if sch not in KERNEL2SCHEDULE:
+                    raise RuntimeError(
+                        f"Cannot find schedule for kernel {sch.__name__}"
+                    )
                 sch = KERNEL2SCHEDULE[sch](schedule)
                 print(sch.module)
             if not isinstance(sch, Schedule):
