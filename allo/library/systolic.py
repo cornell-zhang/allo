@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=used-before-assignment, unsubscriptable-object, unused-import
 
-import allo
-from allo.ir.types import int32, index
+from .. import dsl
+from ..ir.types import int32, index
+from ..ir.utils import MockBuffer
 
 
 def PE_kernel[
@@ -42,7 +43,7 @@ def systolic_tile[
             A_fifo[m, 0, k] = A[m, k]
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
-    for i, j in allo.grid(Mt, Nt, name="PE"):
+    for i, j in dsl.grid(Mt, Nt, name="PE"):
         PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
             A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
         )
@@ -61,14 +62,14 @@ def systolic[
     local_C: TyC[Mt, Nt]
 
     # k needs not be tiled, since it is temporal dimension
-    for mi, ni in allo.grid(M // Mt, N // Nt, name="outer_tile"):
+    for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
-        for ak, ai in allo.grid(K, Mt, name="load_A_tile"):
+        for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
                 local_A[ai, ak] = A[mi * Mt + ai, ak]
-        for bk, bj in allo.grid(K, Nt, name="load_B_tile"):
+        for bk, bj in dsl.grid(K, Nt, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
@@ -79,5 +80,24 @@ def systolic[
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
-        for sj, si in allo.grid(Nt, Mt, name="store_C_tile"):
+        for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
             C[mi * Mt + si, ni * Nt + sj] = local_C[si, sj]
+
+
+def schedule_systolic(s):
+    assert len(s.inst_list) == 8
+    s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
+    s.partition(s.local_A, dim=1)
+    s.partition(s.local_B, dim=2)
+    load_A_loop = s.get_loops("systolic")["outer_tile"]["ai"]
+    s.pipeline(load_A_loop)
+    load_B_loop = s.get_loops("systolic")["outer_tile"]["bj"]
+    s.pipeline(load_B_loop)
+    store_C_loop = s.get_loops("systolic")["outer_tile"]["si"]
+    s.pipeline(store_C_loop)
+    tile_loop = s.get_loops("systolic")["outer_tile"]["ni"]
+    s.dataflow(tile_loop)
+    pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
+    s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=s.inst_list[-2] + 1)
+    s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=s.inst_list[-1] + 1)
+    return s

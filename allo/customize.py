@@ -64,6 +64,7 @@ from .passes import (
 )
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
+from .library import KERNEL2SCHEDULE
 
 
 def getsourcefile(obj):
@@ -135,7 +136,14 @@ class Partition:
 
 class Schedule:
     def __init__(
-        self, module, top_func, func_args, ip, ext_libs=None, use_def_chain=None
+        self,
+        module,
+        top_func,
+        func_args,
+        ip,
+        ext_libs=None,
+        use_def_chain=None,
+        inst_list=None,
     ):
         self.module = module
         self.top_func = top_func
@@ -148,6 +156,7 @@ class Schedule:
         self.ext_libs = ext_libs
         self.use_def_chain = use_def_chain
         self.partitioned_arrays = {}
+        self.inst_list = inst_list if inst_list is not None else []
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -682,16 +691,15 @@ class Schedule:
         # TODO: use a class to wrap the results
         return axes
 
+    # pylint: disable=redefined-builtin
     @wrapped_apply
-    def compose(self, *schs, **configs):
+    def compose(self, schs: list, id=None, instantiate=None):
         def get_name(arg):
             if isinstance(arg, (LoopWrapper, MockBuffer)):
                 arg = copy.copy(arg)
                 orig_func_name = arg.path if arg.path is not None else sch.top_func_name
                 func_name = (
-                    orig_func_name
-                    if "id" not in configs
-                    else orig_func_name + "_" + str(configs["id"])
+                    orig_func_name if id is None else orig_func_name + "_" + str(id)
                 )
                 if self._find_function(func_name, error=False) is None:
                     func_name = orig_func_name + "_0"
@@ -699,16 +707,21 @@ class Schedule:
                 return arg
             orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
             arg = arg.split(":")[1] if ":" in arg else arg
-            func_name = (
-                orig_func_name
-                if "id" not in configs
-                else orig_func_name + "_" + str(configs["id"])
-            )
+            func_name = orig_func_name if id is None else orig_func_name + "_" + str(id)
             if self._find_function(func_name, error=False) is None:
                 func_name = orig_func_name + "_0"
             return f"{func_name}:{arg}"
 
+        if not isinstance(schs, list):
+            schs = [schs]
         for sch in schs:
+            if isinstance(sch, PyFunctionType):
+                schedule = customize(sch, instantiate=instantiate)
+                if sch not in KERNEL2SCHEDULE:
+                    raise RuntimeError(
+                        f"Cannot find schedule for kernel {sch.__name__}"
+                    )
+                sch = KERNEL2SCHEDULE[sch](schedule)
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
@@ -790,7 +803,7 @@ def customize(
     enable_tensor: bool = False,
     lower_linalg: bool = False,
     global_vars: dict = None,
-    instantiate: dict = None,
+    instantiate: list = None,
 ):
     # Get Python AST
     if isinstance(fn, str):
@@ -841,6 +854,7 @@ def customize(
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
         ext_libs=ctx.ext_libs,
         use_def_chain=use_def_chain,
+        inst_list=instantiate,
     )
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that
