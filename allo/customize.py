@@ -722,7 +722,6 @@ class Schedule:
                         f"Cannot find schedule for kernel {sch.__name__}"
                     )
                 sch = KERNEL2SCHEDULE[sch](schedule)
-                print(sch.module)
             if not isinstance(sch, Schedule):
                 raise TypeError("The first argument must be a Schedule object")
             for primitive in sch.primitive_sequences:
