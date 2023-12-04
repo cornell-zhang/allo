@@ -52,9 +52,11 @@ from .utils import (
     MockBuffer,
     get_extra_type_hints,
     get_kwarg,
+    get_func_id_from_param_types,
+    resolve_generic_types,
 )
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
 from ..utils import get_mlir_dtype_from_str
@@ -116,6 +118,9 @@ class ASTTransformer(ASTBuilder):
         if len(shape) == 0:
             return dtype.build()
         if not ctx.enable_tensor:
+            shape = [
+                ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
+            ]
             return MemRefType.get(shape, dtype.build())
         return RankedTensorType.get(shape, dtype.build())
 
@@ -240,7 +245,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 is_affine = False
                 lb_expr = build_stmt(
-                    ctx, iter_args[0] if len(iter_args) >= 1 else ast.Constant(0)
+                    ctx, iter_args[0] if len(iter_args) > 1 else ast.Constant(0)
                 )
                 ub_expr = build_stmt(
                     ctx, iter_args[1] if len(iter_args) >= 2 else iter_args[0]
@@ -776,7 +781,6 @@ class ASTTransformer(ASTBuilder):
         # Compute RHS
         rhs = build_stmt(ctx, node.value)
         # Load LHS
-        # pylint: disable=redefined-variable-type
         node.target.ctx = ast.Load()
         lhs = build_stmt(ctx, node.target)
         node.target.ctx = ast.Store()
@@ -876,8 +880,10 @@ class ASTTransformer(ASTBuilder):
                     step = index.step.value
                 else:
                     raise RuntimeError("Unsupported step type")
-            elif isinstance(index, ast.Index):
-                lower = index.value.value
+            elif isinstance(index, (ast.Index, ast.Constant)):
+                lower = (
+                    index.value.value if isinstance(index, ast.Index) else index.value
+                )
                 upper = lower + 1
                 step = 1
             if lower < 0 or upper < 0:
@@ -930,7 +936,7 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Tuple)):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -964,7 +970,7 @@ class ASTTransformer(ASTBuilder):
             if isinstance(slices, int):
                 slices = [slices]
                 offsets = []
-            elif slices is None:
+            elif slices is None or slices == [None] * len(slices):
                 offsets, _ = ASTTransformer.build_indices(
                     ctx, node.slice, enable_affine=False
                 )
@@ -1051,7 +1057,7 @@ class ASTTransformer(ASTBuilder):
         # >>> a[28:32].reverse()
         # 0x5
         value = build_stmt(ctx, node.value)
-        if isinstance(node.slice, ast.Index):
+        if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
             index = build_stmt(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -1065,9 +1071,12 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             else:
-                index = ASTTransformer.build_cast_op(
-                    ctx, index, node.slice.value.dtype, Index()
+                value_dtype = (
+                    node.slice.value.dtype
+                    if isinstance(node.slice, ast.Index)
+                    else node.slice.dtype
                 )
+                index = ASTTransformer.build_cast_op(ctx, index, value_dtype, Index())
                 # TODO: Test if rhs is uint1
                 set_bit_op = hcl_d.SetIntBitOp(
                     node.value.dtype.build(),
@@ -1183,21 +1192,23 @@ class ASTTransformer(ASTBuilder):
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
-            ctx = ASTContext(
-                global_vars=old_ctx.global_vars,
-                mlir_ctx=old_ctx.mlir_ctx,
-                enable_tensor=old_ctx.enable_tensor,
-                verbose=old_ctx.verbose,
-                func_args=old_ctx.func_args,
-            )
+            ctx = old_ctx.copy()
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
         else:
             old_ctx = None
 
-        arg_names = []
+        # Generic function
+        if hasattr(node, "type_params") and len(node.type_params) > 0:
+            assert len(ctx.inst) == len(
+                node.type_params
+            ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
+            for type_var, call_val in zip(node.type_params, ctx.inst):
+                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                ctx.global_vars[name] = call_val
 
         # Build input types
+        arg_names = []
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
@@ -1476,10 +1487,24 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(node.func, ast.Subscript):
             obj = ASTResolver.resolve(node.func.value, ctx.global_vars)
             assert obj is not None, "Unsupported function call"
-            assert isinstance(node.func.slice, ast.Index)
-            assert isinstance(node.func.slice.value, ast.Constant)
             obj_name = node.func.value.id
-            ctx.func_id = node.func.slice.value.value
+            ctx.inst = ASTResolver.resolve_param_types(node.func.slice, ctx.global_vars)
+            if ctx.func_id is None:
+                func_id = get_func_id_from_param_types(ctx.inst)
+                if func_id is None:
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                    for key, value in func_dict.items():
+                        if value == tuple(ctx.inst):
+                            func_id = key
+                            break
+                    else:
+                        func_id = len(func_dict) if len(func_dict) > 0 else None
+                        func_dict[func_id] = tuple(ctx.inst)
+                else:
+                    ctx.inst.remove(func_id)
+                    func_dict = ctx.func_name2id.setdefault(obj_name, {})
+                    func_dict[func_id] = tuple(ctx.inst)
+                ctx.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
 
@@ -1602,30 +1627,30 @@ class ASTTransformer(ASTBuilder):
         func = ctx.global_vars[obj_name]
         new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
-        if isinstance(func, func_d.FuncOp):
-            # Has already been defined in the top-level scope
-            stmts = [func]
-        else:
+        if func_name not in ctx.global_vars or not isinstance(
+            ctx.global_vars[func_name], func_d.FuncOp
+        ):  # function not built yet
             # Create a new context to avoid name collision
-            func_ctx = ASTContext(
-                global_vars=ctx.global_vars,
-                mlir_ctx=ctx.mlir_ctx,
-                enable_tensor=ctx.enable_tensor,
-                verbose=ctx.verbose,
-                func_args=ctx.func_args,
-            )
+            func_ctx = ctx.copy()
             func_ctx.call_args = new_args
-            func_ctx.func_id = ctx.func_id
             func_ctx.set_ip(ctx.top_func)
             stmts = build_stmts(func_ctx, node.tree.body)
             func_ctx.pop_ip()
-            func_ctx.call_args = None
+            func_ctx.call_args = []
+            for key, value in func_ctx.global_vars.items():
+                if isinstance(value, func_d.FuncOp):
+                    ctx.global_vars[key] = value
             # Attach buffers to function
             # FIXME: Should create subschedule
             for name, buffer in func_ctx.buffers.items():
                 if isinstance(buffer, (memref_d.AllocOp, MockArg)):
                     # Intermediate buffers and function arguments
                     setattr(func, name, MockBuffer(func_name, name))
+        elif isinstance(func, func_d.FuncOp):
+            # Has already been defined in the top-level scope
+            stmts = [func]
+        else:
+            stmts = [ctx.global_vars[func_name]]
 
         # Build call function in the top-level
         call_op = func_d.CallOp(
@@ -1970,6 +1995,8 @@ class ASTTransformer(ASTBuilder):
             return func_d.ReturnOp(rets, ip=ctx.pop_ip())
         # return a single value or none
         ret = build_stmt(ctx, node.value)
+        if ret is None:
+            return func_d.ReturnOp([], ip=ctx.pop_ip())
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )

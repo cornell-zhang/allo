@@ -310,6 +310,87 @@ def test_nested_compose_partition():
     print(s.module)
 
 
+def test_reuse_at_compose():
+    def reuse_blur_x_y(A: int32[10, 10]) -> int32[8, 8]:
+        B: int32[8, 8] = 0
+        for y, x in allo.grid(8, 8):
+            B[y, x] = A[y, x] + A[y + 1, x + 1] + A[y + 2, x + 2]
+        return B
+
+    s = allo.customize(reuse_blur_x_y)
+    RB_y = s.reuse_at(s.A, "y")
+    RB_x = s.reuse_at(RB_y, "x")
+
+    def top_kernel(A: int32[10, 10]) -> int32[8, 8]:
+        B = reuse_blur_x_y(A)
+        return B * 2
+
+    s_top = allo.customize(top_kernel)
+    s_top.compose(s)
+    mod = s_top.build()
+
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    np_C = np.zeros((8, 8), dtype="int")
+
+    for y in range(0, 8):
+        for x in range(0, 8):
+            np_C[y][x] = np_A[y][x] + np_A[y + 1][x + 1] + np_A[y + 2][x + 2]
+            np_C[y][x] *= 2
+
+    np_B = mod(np_A)
+
+    assert np.array_equal(np_B, np_C)
+
+
+def test_two_reuse_at_compose():
+    def blur_A(A: int32[10, 10]) -> int32[8, 8]:
+        B: int32[8, 8] = 0
+        for y, x in allo.grid(8, 8):
+            B[y, x] = A[y, x] + A[y + 1, x + 1] + A[y + 2, x + 2]
+        return B
+
+    def blur_B(B: int32[8, 8]) -> int32[6, 6]:
+        C: int32[6, 6] = 0
+        for y, x in allo.grid(6, 6):
+            C[y, x] = B[y, x] + B[y + 1, x + 1] + B[y + 2, x + 2]
+        return C
+
+    s0 = allo.customize(blur_A)
+    RB_y = s0.reuse_at(s0.A, "y")
+    RB_x = s0.reuse_at(RB_y, "x")
+
+    s1 = allo.customize(blur_B)
+    RB_y = s1.reuse_at(s1.B, "y")
+    RB_x = s1.reuse_at(RB_y, "x")
+
+    def top_kernel(A: int32[10, 10]) -> int32[6, 6]:
+        B = blur_A(A)
+        C = blur_B(B)
+        return C
+
+    s_top = allo.customize(top_kernel)
+    s_top.compose([s0, s1])
+    mod = s_top.build()
+    print(s_top.module)
+
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    np_B = np.zeros((8, 8), dtype="int")
+    np_C = np.zeros((6, 6), dtype="int")
+    np_C_ref = np.zeros((6, 6), dtype="int")
+
+    for y in range(0, 8):
+        for x in range(0, 8):
+            np_B[y][x] = np_A[y][x] + np_A[y + 1][x + 1] + np_A[y + 2][x + 2]
+
+    for y in range(0, 6):
+        for x in range(0, 6):
+            np_C_ref[y][x] = np_B[y][x] + np_B[y + 1][x + 1] + np_B[y + 2][x + 2]
+
+    np_C = mod(np_A)
+
+    assert np.array_equal(np_C, np_C_ref)
+
+
 def test_reuse_function_1():
     M, N = 2, 2
 

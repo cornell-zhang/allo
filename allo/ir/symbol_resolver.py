@@ -24,6 +24,13 @@ class ASTResolver:
         Returns:
             object: The actual Python object that ``node`` resolves to.
         """
+        if isinstance(node, ast.Constant):
+            return node.value
+
+        if isinstance(node, ast.BinOp):
+            # pylint: disable=eval-used
+            return eval(compile(ast.Expression(node), "", "eval"), scope)
+
         if isinstance(node, ast.Name):
             return scope.get(node.id)
 
@@ -57,7 +64,7 @@ class ASTResolver:
 
     @staticmethod
     def resolve_slice(node, ctx):
-        if isinstance(node, ast.ExtSlice):
+        if isinstance(node, (ast.ExtSlice, ast.Tuple)):
             return list(ASTResolver.resolve_slice(s, ctx) for s in node.dims)
         if isinstance(node, ast.Slice):
             return tuple(
@@ -81,3 +88,11 @@ class ASTResolver:
         # pylint: disable=broad-exception-caught
         except Exception:
             return None
+
+    @staticmethod
+    def resolve_param_types(node, global_vars):
+        if isinstance(node, ast.Tuple):
+            return list(ASTResolver.resolve(n, global_vars) for n in node.elts)
+        if isinstance(node, ast.Name):
+            return [ASTResolver.resolve(node, global_vars)]
+        raise RuntimeError(f"Unsupported node type: {type(node)}")

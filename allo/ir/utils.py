@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
+import ast
 from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
@@ -20,6 +21,7 @@ from hcl_mlir.dialects import (
     tensor as tensor_d,
 )
 from .types import AlloType, Int, UInt, Fixed, UFixed
+from .symbol_resolver import ASTResolver
 
 
 def get_extra_type_hints(dtype: AlloType):
@@ -36,6 +38,41 @@ def get_kwarg(kwargs, name):
         if keyword.arg == name:
             return keyword.value
     raise RuntimeError(f"Keyword argument {name} not found")
+
+
+def parse_ast(src, verbose=False):
+    tree = ast.parse(src)
+    if verbose:
+        print(src)
+        try:
+            import astpretty
+
+            astpretty.pprint(tree, indent=2, show_offsets=False)
+        except ImportError:
+            print(ast.dump(tree))
+    return tree
+
+
+def get_func_id_from_param_types(param_types):
+    for param_type in param_types:
+        if isinstance(param_type, str):
+            return param_type
+    return None
+
+
+def resolve_generic_types(ctx, type_var, call_val):
+    name = type_var.name
+    if type_var.bound is None:
+        return name, call_val
+    constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
+    for ty in constrained_types:
+        if (
+            (isinstance(ty, AlloType) and type(ty).isinstance(call_val))
+            or ty == call_val
+            or (hasattr(ty, "isinstance") and ty.isinstance(call_val))
+        ):
+            return name, call_val
+    raise RuntimeError(f"Cannot resolve type {name} with {call_val}")
 
 
 class MockOp:
