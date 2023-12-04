@@ -1505,7 +1505,6 @@ class ASTTransformer(ASTBuilder):
                     func_dict = ctx.func_name2id.setdefault(obj_name, {})
                     func_dict[func_id] = tuple(ctx.inst)
                 ctx.func_id = func_id
-                print(ctx.func_name2id)
         else:
             raise RuntimeError("Unsupported function call")
 
