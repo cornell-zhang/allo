@@ -459,5 +459,4 @@ def test_reuse_function_2():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_two_reuse_at_compose()
+    pytest.main([__file__])
