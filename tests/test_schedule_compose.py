@@ -310,6 +310,38 @@ def test_nested_compose_partition():
     print(s.module)
 
 
+def test_reuse_at_compose():
+    def reuse_blur_x_y(A: int32[10, 10]) -> int32[8, 8]:
+        B: int32[8, 8] = 0
+        for y, x in allo.grid(8, 8):
+            B[y, x] = A[y, x] + A[y + 1, x + 1] + A[y + 2, x + 2]
+        return B
+
+    s = allo.customize(reuse_blur_x_y)
+    RB_y = s.reuse_at(s.A, "y")
+    RB_x = s.reuse_at(RB_y, "x")
+
+    def top_kernel(A: int32[10, 10]) -> int32[8, 8]:
+        B = reuse_blur_x_y(A)
+        return B * 2
+
+    s_top = allo.customize(top_kernel)
+    s_top.compose(s)
+    mod = s_top.build()
+
+    np_A = np.random.randint(0, 10, size=(10, 10)).astype(np.int32)
+    np_C = np.zeros((8, 8), dtype="int")
+
+    for y in range(0, 8):
+        for x in range(0, 8):
+            np_C[y][x] = np_A[y][x] + np_A[y + 1][x + 1] + np_A[y + 2][x + 2]
+            np_C[y][x] *= 2
+
+    np_B = mod(np_A)
+
+    assert np.array_equal(np_B, np_C)
+
+
 def test_reuse_function_1():
     M, N = 2, 2
 
