@@ -691,6 +691,7 @@ class Schedule:
         # TODO: use a class to wrap the results
         return axes
 
+    # pylint: disable=redefined-builtin
     @wrapped_apply
     def compose(self, schs: list, id=None, instantiate=None):
         def get_name(arg):

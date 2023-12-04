@@ -28,6 +28,7 @@ class ASTResolver:
             return node.value
 
         if isinstance(node, ast.BinOp):
+            # pylint: disable=eval-used
             return eval(compile(ast.Expression(node), "", "eval"), scope)
 
         if isinstance(node, ast.Name):
