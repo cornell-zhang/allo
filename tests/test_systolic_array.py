@@ -314,6 +314,35 @@ def test_ffn():
         hls_mod()
 
 
+def test_int8_packed_gemm():
+    from allo.library.systolic import packed_systolic
+
+    # (seq, hidden) x (hidden, 4*hidden) = (seq, 4*hidden)
+    # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
+    L, D = 8, 8
+    M0, M1 = 4, 4
+    PP = 4
+    W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
+    W_A_packed = W_A_cst.view(np.int32)
+
+    def top(X: int32[L, D // PP]) -> int32[L, 4 * D // PP]:
+        Z: int32[L, 4 * D // PP]
+        W_A: int32[D, 4 * D // PP] = W_A_packed
+        packed_systolic[int32, int32, int32, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
+        return Z
+
+    s_top = allo.customize(top)
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
+    packed_X = X.view(np.int32)
+    allo_C = mod(packed_X)
+    np_C = X @ W_A_cst
+    np_C_packed = np_C.view(np.int32)
+    np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    print("Passed!")
+
+
 def test_subview_systolic_dsp_packed_int4xint4():
     M, N, K = 2, 2, 2
 

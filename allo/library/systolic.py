@@ -104,33 +104,28 @@ def packed_systolic[
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
-        for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
+        for ak, ai in dsl.grid(K // P, Mt, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
-                local_A[ai, ak] = A[mi * Mt + ai, ak]
-                # for p in range(P):
-                #     local_A[ai * P + p, ak] = A[mi * Mt + ai, ak][p * 8 : (p + 1) * 8 - 1]
+                for p in range(P):
+                    local_A[ai, ak * P + p] = A[mi * Mt + ai, ak][p * 8 : (p + 1) * 8]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
             for p in range(P):
-                local_B[bk, bj * P + p] = B[bk, ni * Nt // P + bj][
-                    p * 8 : (p + 1) * 8
-                ]
+                local_B[bk, bj * P + p] = B[bk, ni * Nt // P + bj][p * 8 : (p + 1) * 8]
         systolic_tile[int8, int8, int8, K, Mt, Nt](
             local_A,
             local_B,
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
-        for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
-            C[mi * Mt + si, ni * Nt + sj] = local_C[si, sj]
-        # for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
-        #     for p in range(P):
-        #         C[mi * Mt + si, ni * Nt + sj][p * 8 : (p + 1) * 8 - 1] = local_C[
-        #             si * P + p, sj
-        #         ]
+        for sj, si in dsl.grid(Nt // P, Mt, name="store_C_tile"):
+            for p in range(P):
+                C[mi * Mt + si, ni * Nt // P + sj][p * 8 : (p + 1) * 8] = local_C[
+                    si, sj * P + p
+                ]
 
 
 def schedule_systolic(s):
