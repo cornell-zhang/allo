@@ -5,6 +5,7 @@
 import ast
 import inspect
 import textwrap
+import warnings
 import numpy as np
 
 from .visitor import ASTVisitor
@@ -361,24 +362,28 @@ class TypeInferer(ASTVisitor):
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
-            if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
+            if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name, ast.BinOp)):
                 visit_stmt(ctx, node.slice)
                 node.shape = tuple()
                 node.dtype = uint1
             elif isinstance(node.slice, ast.Slice):
-                assert isinstance(
-                    node.slice.lower, ast.Constant
-                ), "lower bound of bit slicing must be constant"
-                assert isinstance(
+                if isinstance(node.slice.lower, ast.Constant) and isinstance(
                     node.slice.upper, ast.Constant
-                ), "upper bound of bit slicing must be constant"
-                lower = visit_stmt(ctx, node.slice.lower)
-                upper = visit_stmt(ctx, node.slice.upper)
-                assert (
-                    upper.value > lower.value
-                ), "upper bound must be greater than lower bound"
+                ):
+                    lower = visit_stmt(ctx, node.slice.lower)
+                    upper = visit_stmt(ctx, node.slice.upper)
+                    assert (
+                        upper.value > lower.value
+                    ), "upper bound must be greater than lower bound"
+                    node.dtype = UInt(upper.value - lower.value)
+                else:
+                    warnings.warn(
+                        "Cannot infer the bitwidth of the slice, use UInt(32) as default"
+                    )
+                    node.dtype = UInt(32)
+                    lower = visit_stmt(ctx, node.slice.lower)
+                    upper = visit_stmt(ctx, node.slice.upper)
                 node.shape = tuple()
-                node.dtype = UInt(upper.value - lower.value)
             else:
                 raise RuntimeError(f"Unsupported bit operation {node.slice}")
         else:
@@ -424,7 +429,7 @@ class TypeInferer(ASTVisitor):
         ):
             assert (
                 ctx.global_vars[node.value.id].shape == target_shape
-            ), f"Shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
+            ), f"`{node.value.id}` shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
             TypeInferer.visit_constant_tensor(
                 ctx, node, ctx.global_vars[node.value.id], dtype=target_dtype
             )

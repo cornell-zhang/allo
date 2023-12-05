@@ -101,6 +101,30 @@ def test_set_slice():
     assert np.array_equal(golden, np_B)
 
 
+def test_dynamic_index():
+    def kernel(A: int32, B: int32[11]):
+        for i in range(1, 12):
+            B[i - 1] = A[i - 1]
+
+    s = allo.customize(kernel)
+    np_B = np.zeros((11,), dtype=np.int32)
+    mod = s.build()
+    mod(1234, np_B)
+    assert bin(1234) == "0b" + "".join([str(np_B[i]) for i in range(10, -1, -1)])
+
+
+def test_dynamic_slice():
+    def kernel(A: int32, B: int32[11]):
+        for i in range(1, 12):
+            B[i - 1] = A[i - 1 : i]
+
+    s = allo.customize(kernel)
+    np_B = np.zeros((11,), dtype=np.int32)
+    mod = s.build()
+    mod(1234, np_B)
+    assert bin(1234) == "0b" + "".join([str(np_B[i]) for i in range(10, -1, -1)])
+
+
 def test_packed_bconv2D_nchw():
     bs = 4
     ic, oc = 16, 32
