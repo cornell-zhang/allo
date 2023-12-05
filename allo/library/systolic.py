@@ -131,17 +131,17 @@ def packed_systolic[
 
 
 def schedule_systolic(s):
-    assert len(s.inst_list) == 8
+    assert len(s.inst_list) in [8, 9]
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)
-    load_A_loop = s.get_loops("systolic")["outer_tile"]["ai"]
+    load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ai"]
     s.pipeline(load_A_loop)
-    load_B_loop = s.get_loops("systolic")["outer_tile"]["bj"]
+    load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bj"]
     s.pipeline(load_B_loop)
-    store_C_loop = s.get_loops("systolic")["outer_tile"]["si"]
+    store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["si"]
     s.pipeline(store_C_loop)
-    tile_loop = s.get_loops("systolic")["outer_tile"]["ni"]
+    tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     s.dataflow(tile_loop)
     pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
     s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=s.inst_list[-2] + 1)
