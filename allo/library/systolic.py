@@ -3,7 +3,7 @@
 # pylint: disable=used-before-assignment, unsubscriptable-object, unused-import
 
 from .. import dsl
-from ..ir.types import int32, index
+from ..ir.types import int8, int32, index, Int
 from ..ir.utils import MockBuffer
 
 
@@ -18,6 +18,7 @@ def PE_kernel[
     i: index,
     j: index,
 ):
+    # Be careful, need to use high precision for accumulation
     v: TyC = 0
     for k in range(K):
         a: TyA = A_in[k]
@@ -82,6 +83,54 @@ def systolic[
         # reversed traversal, better for cascading systolic arrays with FIFOs
         for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
             C[mi * Mt + si, ni * Nt + sj] = local_C[si, sj]
+
+
+def packed_systolic[
+    TyA: Int,
+    TyB: Int,
+    TyC: Int,
+    M: int32,
+    K: int32,
+    N: int32,
+    Mt: int32,
+    Nt: int32,
+    P: int32,
+](A: "TyA[M, K]", B: "TyB[K, N // P]", C: "TyC[M, N]"):
+    local_A: int8[Mt, K]
+    local_B: int8[K, Nt]
+    local_C: int8[Mt, Nt]
+
+    # k needs not be tiled, since it is temporal dimension
+    for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
+        # reversed traversal, better for cascading systolic arrays with FIFOs
+        # corresponds to the order of the previous `store_C_tile` output
+        for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
+            # reuse along the ni dimension
+            if ni == 0:
+                local_A[ai, ak] = A[mi * Mt + ai, ak]
+                # for p in range(P):
+                #     local_A[ai * P + p, ak] = A[mi * Mt + ai, ak][p * 8 : (p + 1) * 8 - 1]
+        for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
+            # reuse along the mi dimension
+            # since the inner access order is different from the outer one,
+            # we cannot cache as a line buffer
+            for p in range(P):
+                local_B[bk, bj * P + p] = B[bk, ni * Nt // P + bj][
+                    p * 8 : (p + 1) * 8
+                ]
+        systolic_tile[int8, int8, int8, K, Mt, Nt](
+            local_A,
+            local_B,
+            local_C,
+        )
+        # reversed traversal, better for cascading systolic arrays with FIFOs
+        for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
+            C[mi * Mt + si, ni * Nt + sj] = local_C[si, sj]
+        # for sj, si in dsl.grid(Nt, Mt, name="store_C_tile"):
+        #     for p in range(P):
+        #         C[mi * Mt + si, ni * Nt + sj][p * 8 : (p + 1) * 8 - 1] = local_C[
+        #             si * P + p, sj
+        #         ]
 
 
 def schedule_systolic(s):
