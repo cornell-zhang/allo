@@ -107,14 +107,16 @@ def packed_systolic[
         for ak, ai in dsl.grid(K // P, Mt, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
+                a: TyA = A[mi * Mt + ai, ak]
                 for p in range(P):
-                    local_A[ai, ak * P + p] = A[mi * Mt + ai, ak][p * 8 : (p + 1) * 8]
+                    local_A[ai, ak * P + p] = a[p * 8 : (p + 1) * 8]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
+            b: TyB = B[bk, ni * Nt // P + bj]
             for p in range(P):
-                local_B[bk, bj * P + p] = B[bk, ni * Nt // P + bj][p * 8 : (p + 1) * 8]
+                local_B[bk, bj * P + p] = b[p * 8 : (p + 1) * 8]
         systolic_tile[int8, int8, int8, K, Mt, Nt](
             local_A,
             local_B,
@@ -122,10 +124,10 @@ def packed_systolic[
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
         for sj, si in dsl.grid(Nt // P, Mt, name="store_C_tile"):
+            c: TyC = 0
             for p in range(P):
-                C[mi * Mt + si, ni * Nt // P + sj][p * 8 : (p + 1) * 8] = local_C[
-                    si, sj * P + p
-                ]
+                c[p * 8 : (p + 1) * 8] = local_C[si, sj * P + p]
+            C[mi * Mt + si, ni * Nt // P + sj] = c
 
 
 def schedule_systolic(s):
