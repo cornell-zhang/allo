@@ -1,23 +1,38 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import allo
+import os
+import json
+import pytest
 import numpy as np
-from allo.ir.types import float32
+import allo
+import allo.ir.types as T
+from allo.ir.types import float32, int32
 
 
-def top_covariance(size="mini"):
-    if size == "mini" or size is None:
-        M = 28
-        N = 32
-    elif size == "small":
-        M = 80
-        N = 100
-    elif size == "medium":
-        M = 240
-        N = 260
+def covariance_np(data, mean, cov, M, N):
+    for j in range(M):
+        mean[j] = 0.0
+        for i in range(N):
+            mean[j] += data[i, j]
+        mean[j] /= float(N)
+    for i in range(N):
+        for j in range(M):
+            data[i, j] -= mean[j]
 
-    def kernel_covariance(data: float32[N, M], mean: float32[M], cov: float32[M, M]):
+    for i in range(M):
+        for j in range(M):
+            cov[i, j] = 0.0
+            for k in range(N):
+                cov[i, j] += data[k, i] * data[k, j]
+            cov[i, j] /= float(N - 1)
+            cov[j, i] = cov[i, j]
+
+
+def covariance(type, m, n):
+    def kernel_covariance[
+        T: (float32, int32), M: int32, N: int32
+    ](data: "T[N, M]", mean: "T[M]", cov: "T[M, M]"):
         # Compute mean
         for x in allo.grid(M):
             total: float32 = 0.0
@@ -32,20 +47,32 @@ def top_covariance(size="mini"):
                 covariance += (data[p, i] - mean[i]) * (data[p, j] - mean[j])
             cov[i, j] = covariance / (N - 1)
 
-    s0 = allo.customize(kernel_covariance)
-    orig = s0.build("vhls")
+    s = allo.customize(kernel_covariance, instantiate=[type, m, n])
+    mod = s.build()
+    return mod
 
-    s = allo.customize(kernel_covariance)
-    s.split("i", factor=2)
-    s.reorder("j", "i.inner", "i.outer")
-    s.pipeline("i.inner")
-    opt = s.build("vhls")
 
-    return orig, opt
+def test_covariance():
+    # read problem size settings
+    setting_path = os.path.join(os.path.dirname(__file__), "psize.json")
+    with open(setting_path, "r") as fp:
+        psize = json.load(fp)
+    # for CI test we use small problem size
+    test_psize = "small"
+    M = psize["covariance"][test_psize]["M"]
+    N = psize["covariance"][test_psize]["N"]
+    mod = covariance(float32, M, N)
+    data = np.random.randint(-10, 10, (N, M)).astype(np.float32)
+    mean = np.zeros((M,), dtype=np.float32)
+    cov = np.zeros((M, M), dtype=np.float32)
+    mean_ref = np.zeros((M,), dtype=np.float32)
+    cov_ref = np.zeros((M, M), dtype=np.float32)
+    covariance_np(data.copy(), mean_ref, cov_ref, M, N)
+    mod(data, mean, cov)
+    np.testing.assert_allclose(mean, mean_ref, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(cov, cov_ref, rtol=1e-5, atol=1e-5)
+    print("Test passed.")
 
 
 if __name__ == "__main__":
-    orig, opt = top_covariance()
-    from cedar.verify import verify_pair
-
-    verify_pair(orig, opt, "covariance", liveout_vars="v2")
+    pytest.main([__file__])
