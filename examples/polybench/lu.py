@@ -1,22 +1,30 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import json
+import pytest
 import allo
 import numpy as np
-from allo.ir.types import float32, int32
+from allo.ir.types import int32, float32
+import allo.ir.types as T
 
 
-def top_lu(size="tiny"):
-    if size == "mini":
-        N = 40
-    elif size == "small":
-        N = 120
-    elif size == "medium":
-        N = 400
-    elif size is None or size == "tiny":
-        N = 4
+def lu_np(A):
+    N = A.shape[0]
+    for i in range(N):
+        for j in range(i):
+            for k in range(j):
+                A[i, j] -= A[i, k] * A[k, j]
+            A[i, j] /= A[j, j]
 
-    def kernel_lu(A: float32[N, N]):
+        for j in range(i, N):
+            for k in range(i):
+                A[i, j] -= A[i, k] * A[k, j]
+
+
+def lu(concrete_type, n):
+    def kernel_lu[T: (float32, int32), N: int32](A: "T[N, N]"):
         for i in range(N):
             for j in range(i):
                 for k in range(j):
@@ -27,17 +35,33 @@ def top_lu(size="tiny"):
                 for k in range(i):
                     A[i, j] -= A[i, k] * A[k, j]
 
-    s0 = allo.customize(kernel_lu)
-    orig = s0.build("vhls")
+    s0 = allo.customize(kernel_lu, instantiate=[concrete_type, n])
+    return s0.build()
 
-    s = allo.customize(kernel_lu)
-    opt = s.build("vhls")
 
-    return orig, opt
+def test_lu():
+    # read problem size settings
+    setting_path = os.path.join(os.path.dirname(__file__), "psize.json")
+    with open(setting_path, "r") as fp:
+        psize = json.load(fp)
+    # for CI test we use small problem size
+    test_psize = "small"
+
+    # generate input data
+    N = psize["lu"][test_psize]["N"]
+    A = np.random.rand(N, N).astype(np.float32)
+
+    # run reference
+    A_ref = A.copy()
+    lu_np(A_ref)
+
+    # run allo
+    A_opt = A.copy()
+    lu(float32, N)(A_opt)
+
+    # verify
+    np.testing.assert_allclose(A_ref, A_opt, rtol=1e-4, atol=1e-4)
 
 
 if __name__ == "__main__":
-    orig, opt = top_lu(size="tiny")
-    from cedar.verify import verify_pair
-
-    verify_pair(orig, opt, "lu", liveout_vars="v0")
+    pytest.main([__file__])

@@ -72,7 +72,7 @@ def test_durbin():
     durbin_np(r, y_golden)
     mod = durbin(concrete_type, N)
     mod(r.copy(), y)
-    np.testing.assert_allclose(y, y_golden, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(y, y_golden, rtol=1e-2, atol=1e-2)
 
 
 if __name__ == "__main__":

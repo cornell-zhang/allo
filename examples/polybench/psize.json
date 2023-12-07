@@ -320,7 +320,7 @@
             "N": 500
         }
     },
-    "seidel": {
+    "seidel_2d": {
         "tiny": {
             "TSTEPS": 2,
             "N": 4

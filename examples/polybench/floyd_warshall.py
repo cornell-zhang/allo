@@ -1,48 +1,50 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import json
+import pytest
 import allo
 import numpy as np
-from allo.ir.types import float32, int32
+from allo.ir.types import int32, float32
+import allo.ir.types as T
 
 
-def top_floyd_warshall(size="tiny"):
-    if size == "mini":
-        N = 60
-    elif size == "small":
-        N = 180
-    elif size == "medium":
-        N = 500
-    elif size is None or size == "tiny":
-        N = 2
+def floyd_warshall_np(path):
+    N = path.shape[0]
+    for k in range(N):
+        for i in range(N):
+            for j in range(N):
+                path[i, j] = min(path[i, j], path[i, k] + path[k, j])
 
-    def kernel_floyd_warshall(path: float32[N, N]):
+
+def floyd_warshall(concrete_type, N):
+    def kernel_floyd_warshall[T: (float32, int32), N: int32](path: "T[N, N]"):
         for k, i, j in allo.grid(N, N, N):
-            path_: float32 = path[i, k] + path[k, j]
+            path_: T = path[i, k] + path[k, j]
             if path[i, j] >= path_:
                 path[i, j] = path_
 
-    s0 = allo.customize(kernel_floyd_warshall)
-    orig = s0.build("vhls")
+    s0 = allo.customize(kernel_floyd_warshall, instantiate=[concrete_type, N])
+    return s0.build()
 
-    s = allo.customize(kernel_floyd_warshall)
-    if N > 2:
-        s.split("k", factor=2)
-    opt = s.build("vhls")
 
-    return orig, opt
+def test_floyd_warshall():
+    # read problem size settings
+    setting_path = os.path.join(os.path.dirname(__file__), "psize.json")
+    with open(setting_path, "r") as fp:
+        psize = json.load(fp)
+    # for CI test we use small problem size
+    test_psize = "small"
+    N = psize["floyd_warshall"][test_psize]["N"]
+    concrete_type = float32
+    mod = floyd_warshall(concrete_type, N)
+    path = np.random.rand(N, N).astype(np.float32)
+    path_ref = path.copy()
+    floyd_warshall_np(path_ref)
+    mod(path)
+    np.testing.assert_allclose(path, path_ref, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":
-    orig, opt = top_floyd_warshall()
-    # print(orig)
-    # print(opt)
-    from cedar.verify import verify_pair
-
-    verify_pair(
-        orig,
-        opt,
-        "floyd_warshall",
-        options="--symbolic-conditionals",
-        liveout_vars="v0",
-    )
+    pytest.main([__file__])

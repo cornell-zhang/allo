@@ -1,29 +1,46 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import json
+import pytest
 import allo
 import numpy as np
-from allo.ir.types import float32, int32
+from allo.ir.types import int32, float32
+import allo.ir.types as T
 
 
-def top_gemver(size="mini", alpha=0.1, beta=0.1):
-    if size == "mini" or size is None:
-        N = 40
-    elif size == "small":
-        N = 120
-    elif size == "medium":
-        N = 400
+def gemver_np(A, u1, u2, v1, v2, x, y, w, z, alpha, beta):
+    N = A.shape[0]
+    for i in range(N):
+        for j in range(N):
+            A[i, j] = A[i, j] + u1[i] * v1[j] + u2[i] * v2[j]
 
-    def kernel_gemver(
-        A: float32[N, N],
-        u1: float32[N],
-        u2: float32[N],
-        v1: float32[N],
-        v2: float32[N],
-        x: float32[N],
-        y: float32[N],
-        w: float32[N],
-        z: float32[N],
+    for i in range(N):
+        for j in range(N):
+            x[i] = x[i] + beta * A[j, i] * y[j]
+
+    for i in range(N):
+        x[i] = x[i] + z[i]
+
+    for i in range(N):
+        for j in range(N):
+            w[i] = w[i] + alpha * A[i, j] * x[j]
+
+
+def gemver(concrete_type, n, alpha=0.1, beta=0.1):
+    def kernel_gemver[
+        T: (float32, int32), N: int32
+    ](
+        A: "T[N, N]",
+        u1: "T[N]",
+        u2: "T[N]",
+        v1: "T[N]",
+        v2: "T[N]",
+        x: "T[N]",
+        y: "T[N]",
+        w: "T[N]",
+        z: "T[N]",
     ):
         for i, j in allo.grid(N, N):
             A[i, j] = A[i, j] + u1[i] * v1[j] + u2[i] * v2[j]
@@ -37,17 +54,46 @@ def top_gemver(size="mini", alpha=0.1, beta=0.1):
         for i, j in allo.grid(N, N):
             w[i] = w[i] + alpha * A[i, j] * x[j]
 
-    s0 = allo.customize(kernel_gemver)
-    orig = s0.build("vhls")
+    s0 = allo.customize(kernel_gemver, instantiate=[concrete_type, n])
+    return s0.build()
 
-    s = allo.customize(kernel_gemver)
-    opt = s.build("vhls")
 
-    return orig, opt
+def test_gemver():
+    # read problem size settings
+    setting_path = os.path.join(os.path.dirname(__file__), "psize.json")
+    with open(setting_path, "r") as fp:
+        psize = json.load(fp)
+    # for CI test we use small problem size
+    test_psize = "small"
+    N = psize["gemver"][test_psize]["N"]
+    concrete_type = float32
+    alpha = 0.1
+    beta = 0.1
+    mod = gemver(concrete_type, N, alpha, beta)
+
+    # generate input data
+    A = np.random.rand(N, N).astype(np.float32)
+    u1 = np.random.rand(N).astype(np.float32)
+    u2 = np.random.rand(N).astype(np.float32)
+    v1 = np.random.rand(N).astype(np.float32)
+    v2 = np.random.rand(N).astype(np.float32)
+    x = np.random.rand(N).astype(np.float32)
+    y = np.random.rand(N).astype(np.float32)
+    w = np.random.rand(N).astype(np.float32)
+    z = np.random.rand(N).astype(np.float32)
+    A_golden = A.copy()
+    y_golden = y.copy()
+    x_golden = x.copy()
+    w_golden = w.copy()
+
+    gemver_np(A_golden, u1, u2, v1, v2, x_golden, y_golden, w_golden, z, alpha, beta)
+    mod(A, u1, u2, v1, v2, x, y, w, z)
+
+    np.testing.assert_allclose(A, A_golden, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(y, y_golden, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(x, x_golden, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(w, w_golden, rtol=1e-3, atol=1e-3)
 
 
 if __name__ == "__main__":
-    orig, opt = top_gemver()
-    from cedar.verify import verify_pair
-
-    verify_pair(orig, opt, "gemver", liveout_vars="v0,v5,v7")
+    pytest.main([__file__])
