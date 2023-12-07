@@ -23,41 +23,31 @@ def symm_np(A, B, C, alpha, beta, M, N):
 def symm(concrete_type, M, N, alpha=1.5, beta=1.2):
     def compute_sum[
         T: (float32, int32), M: int32, N: int32
-    ](
-        A: "T[M, M]", B: "T[M, N]",
-        summ: "T[M, N]"
-    ):
+    ](A: "T[M, M]", B: "T[M, N]", summ: "T[M, N]"):
         for i1, j1 in allo.grid(M, N, name="sum"):
             for k1 in allo.reduction(M, name="k1"):
-                if k1 < i1: 
+                if k1 < i1:
                     summ[i1, j1] += B[k1, j1] * A[i1, k1]
-        
+
     def update_C[
         T: (float32, int32), M: int32, N: int32
-    ](
-        A: "T[M, M]", B: "T[M, N]",
-        summ: "T[M, N]",
-        C: "T[M, N]",
-    ): 
+    ](A: "T[M, M]", B: "T[M, N]", summ: "T[M, N]", C: "T[M, N]",):
         for i in range(M):
-            for k in range(i): # pipeline
-                for j in range(N): # unroll
+            for k in range(i):  # pipeline
+                for j in range(N):  # unroll
                     C[k, j] = C[k, j] + alpha * B[i, j] * A[i, k]
             for j1 in range(N):
-                C[i, j1] = beta * C[i, j1] + alpha * B[i, j1] * A[i, i] + alpha * summ[i, j1]            
+                C[i, j1] = (
+                    beta * C[i, j1] + alpha * B[i, j1] * A[i, i] + alpha * summ[i, j1]
+                )
 
     def kernel_symm[
         T: (float32, int32), M: int32, N: int32
-    ](
-        A0: "T[M, M]", A1: "T[M, M]",
-        B0: "T[M, N]", B1: "T[M, N]",
-        C: "T[M, N]"
-    ):
-        #dataflow
+    ](A0: "T[M, M]", A1: "T[M, M]", B0: "T[M, N]", B1: "T[M, N]", C: "T[M, N]"):
+        # dataflow
         summ: T[M, N]
         compute_sum(A0, B0, summ)
         update_C(A1, B1, summ, C)
-
 
     s0 = allo.customize(update_C, instantiate=[concrete_type, M, N])
     s0.pipeline("k")

@@ -9,6 +9,7 @@ import numpy as np
 from allo.ir.types import int32, float32
 import allo.ir.types as T
 
+
 def gesummv_np(A, B, x, y, alpha, beta):
     tmp = np.zeros_like(y)
     for i in range(A.shape[0]):
@@ -19,15 +20,11 @@ def gesummv_np(A, B, x, y, alpha, beta):
             y[i] += B[i, j] * x[j]
         y[i] = alpha * tmp[i] + beta * y[i]
 
-def gesummv(concrete_type, N, alpha=0.1, beta=0.1):
 
+def gesummv(concrete_type, N, alpha=0.1, beta=0.1):
     def compute_tmp[
         T: (float32, int32), N: int32
-    ](
-        y_in: "T[N]", y_out: "T[N]",
-        A: "T[N, N]", B: "T[N, N]",
-        x: "T[N]", tmp: "T[N]"     
-    ):
+    ](y_in: "T[N]", y_out: "T[N]", A: "T[N, N]", B: "T[N, N]", x: "T[N]", tmp: "T[N]"):
         tt: T[N] = 0.0
         yy: T[N]
         for i0 in allo.grid(N, name="load"):
@@ -41,18 +38,13 @@ def gesummv(concrete_type, N, alpha=0.1, beta=0.1):
 
     def compute_y[
         T: (float32, int32), N: int32
-    ](
-        y_in: "T[N]", y_out: "T[N]",
-        tmp: "T[N]"
-    ):
+    ](y_in: "T[N]", y_out: "T[N]", tmp: "T[N]"):
         for i0 in allo.grid(N, name="load"):
             y_out[i0] = alpha * tmp[i0] + beta * y_in[i0]
 
     def kernel_gesummv[
         T: (float32, int32), N: int32
-    ](
-        A: "T[N, N]", B: "T[N, N]", x: "T[N]", y: "T[N]"
-    ):
+    ](A: "T[N, N]", B: "T[N, N]", x: "T[N]", y: "T[N]"):
         y_init: T[N] = 0.0
         y_fifo: T[N]
         tmp: T[N]
@@ -61,7 +53,7 @@ def gesummv(concrete_type, N, alpha=0.1, beta=0.1):
 
     sch0 = allo.customize(compute_tmp, instantiate=[concrete_type, N])
     sch0.reorder("j", "i")
-    
+
     sch1 = allo.customize(compute_y, instantiate=[concrete_type, N])
     sch1.pipeline("i0")
 

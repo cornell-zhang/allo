@@ -94,7 +94,7 @@ def adi(ttype, TSTEPS, N):
                     ) / (a * p[i, j - 1] + b)
 
                 v[N - 1, i] = 1.0
-                for j_rev in range(N-1):
+                for j_rev in range(N - 1):
                     j: index = N - 2 - j_rev
                     v[j, i] = p[i, j] * v[j + 1, i] + q[i, j]
             for i in range(1, N - 1):
@@ -110,7 +110,7 @@ def adi(ttype, TSTEPS, N):
                         - d * q[i, j - 1]
                     ) / (d * p[i, j - 1] + e)
                 u[i, N - 1] = 1.0
-                for j_rev in range(N-1):
+                for j_rev in range(N - 1):
                     j: index = N - 2 - j_rev
                     u[i, j] = p[i, j] * u[i, j + 1] + q[i, j]
 

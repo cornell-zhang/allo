@@ -10,9 +10,7 @@ from allo.ir.types import int32, float32
 import allo.ir.types as T
 
 
-def correlation_np(
-    data, mean, stddev, corr, M, N, N_float, epsilon
-):
+def correlation_np(data, mean, stddev, corr, M, N, N_float, epsilon):
     # Compute mean
     for x in range(M):
         total = 0.0
@@ -49,7 +47,6 @@ def correlation_np(
 
 
 def correlation(concrete_type, M, N, N_float, epsilon):
-
     def compute_mean[
         T: (float32, int32), M: int32, N: int32
     ](data: "T[N, M]", mean: "T[M]"):
@@ -113,7 +110,6 @@ def correlation(concrete_type, M, N, N_float, epsilon):
         data_centered: T[N, M]
         center_reduce(data_for_center, data_centered, mean_passed_on, stddev)
         compute_corr(data_centered, corr)
-        
 
     s0 = allo.customize(compute_mean, instantiate=[concrete_type, M, N])
     s0.pipeline("x")
@@ -140,6 +136,7 @@ def correlation(concrete_type, M, N, N_float, epsilon):
     sch.compose(s3)
 
     return sch
+
 
 def test_correlation():
     # read problem size settings

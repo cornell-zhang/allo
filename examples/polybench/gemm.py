@@ -8,20 +8,22 @@ import allo
 import numpy as np
 from allo.ir.types import int32, float32
 import allo.ir.types as T
+
+
 def gemm_np(A, B, C, beta):
     out_AB = np.dot(A, B)
     out_ABC = beta * C + out_AB
     return out_ABC
 
-def gemm(concrete_type, p, r, q, beta=0.1):
 
+def gemm(concrete_type, p, r, q, beta=0.1):
     def mm1[
         T: (float32, int32), P: int32, Q: int32, R: int32
     ](A: "T[P, Q]", B: "T[Q, R]", out_AB: "T[P, R]"):
         for i0, j0 in allo.grid(P, R, name="mm1"):
             for k0 in allo.reduction(Q):
                 out_AB[i0, j0] += A[i0, k0] * B[k0, j0]
-    
+
     def ele_add[
         T: (float32, int32), P: int32, R: int32
     ](out_AB: "T[P, R]", C: "T[P, R]", output: "T[P, R]"):
@@ -39,7 +41,7 @@ def gemm(concrete_type, p, r, q, beta=0.1):
     sch0.reorder("k0", "j0")
     sch0.buffer_at(sch0.out_AB, axis="i0")
     sch0.pipeline("k0")
-    i0 = sch0.get_loops("mm1")['mm1']['i0']
+    i0 = sch0.get_loops("mm1")["mm1"]["i0"]
 
     sch1 = allo.customize(ele_add, instantiate=[concrete_type, p, r])
     sch1.pipeline("j2")
@@ -49,6 +51,7 @@ def gemm(concrete_type, p, r, q, beta=0.1):
     sch.compose(sch1)
 
     return sch
+
 
 def test_gemm():
     # read problem size settings

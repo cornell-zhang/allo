@@ -71,7 +71,6 @@ def test_covariance():
     mod(data, mean, cov)
     np.testing.assert_allclose(mean, mean_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(cov, cov_ref, rtol=1e-5, atol=1e-5)
-    print("Test passed.")
 
 
 if __name__ == "__main__":

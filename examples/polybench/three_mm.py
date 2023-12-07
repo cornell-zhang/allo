@@ -9,6 +9,7 @@ import numpy as np
 from allo.ir.types import int32, float32
 import allo.ir.types as T
 
+
 def three_mm_np(A, B, C, D):
     out_AB = np.dot(A, B)
     out_CD = np.dot(C, D)
@@ -17,7 +18,6 @@ def three_mm_np(A, B, C, D):
 
 
 def three_mm(concrete_type, p, r, q, t, s):
-
     def mm1[
         DType: (float32, int32), P: int32, Q: int32, R: int32
     ](A: "DType[P, Q]", B: "DType[Q, R]", out_AB: "DType[P, R]"):
@@ -85,12 +85,12 @@ def three_mm(concrete_type, p, r, q, t, s):
     sch.partition(sch.C, dim=2)
     sch.partition(sch.out_CD, dim=0)
 
-
     sch.dataflow("mm1")
     sch.dataflow("mm2")
     sch.dataflow("mm3")
 
     return sch
+
 
 def test_three_mm():
     # read problem size settings

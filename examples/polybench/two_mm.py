@@ -9,6 +9,7 @@ import numpy as np
 from allo.ir.types import int32, float32
 import allo.ir.types as T
 
+
 def two_mm_np(A, B, C, D, alpha, beta):
     out_AB = np.dot(A, B)
     out_ABC = np.dot(out_AB, C)
@@ -17,7 +18,6 @@ def two_mm_np(A, B, C, D, alpha, beta):
 
 
 def two_mm(concrete_type, p, r, q, s):
-
     alpha = 0.1
     beta = 0.5
 
@@ -56,16 +56,16 @@ def two_mm(concrete_type, p, r, q, s):
     sch0.reorder("k0", "j0")
     sch0.buffer_at(sch0.out_AB, axis="i0")
     sch0.pipeline("k0")
-    i0 = sch0.get_loops("mm1")['mm1']['i0']
+    i0 = sch0.get_loops("mm1")["mm1"]["i0"]
     sch0.dataflow(i0)
-    
+
     sch1 = allo.customize(mm2, instantiate=[concrete_type, p, r, s])
     sch1.reorder("k1", "j1")
     sch1.buffer_at(sch1.out_ABC, axis="i1")
     sch1.pipeline("k1")
-    i1 = sch1.get_loops("mm2")['mm2']['i1']
+    i1 = sch1.get_loops("mm2")["mm2"]["i1"]
     sch1.dataflow(i1)
-    
+
     sch2 = allo.customize(ele_add, instantiate=[concrete_type, p, s])
     sch2.pipeline("j2")
 
@@ -73,7 +73,7 @@ def two_mm(concrete_type, p, r, q, s):
     sch.compose(sch0)
     sch.compose(sch1)
     sch.compose(sch2)
-    
+
     # sch.to(sch.out_AB, "mm2")
     # sch.to(sch.out_ABC, "ele_add")
 

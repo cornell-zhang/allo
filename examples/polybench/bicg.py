@@ -21,15 +21,13 @@ def bicg_np(A, s, q, p, r):
 
 
 def top_bicg(concrete_type, M, N):
-
     def stageS[
         T: (float32, int32), M: int32, N: int32
     ](A: "T[N, M]", r: "T[N]", s: "T[M]"):
-        for i0 in range(N): # pipeline
+        for i0 in range(N):  # pipeline
             r: T = r[i0]
-            for j0 in range(M): # unroll 
+            for j0 in range(M):  # unroll
                 s[j0] += r * A[i0, j0]
-
 
     def stageQ[
         T: (float32, int32), M: int32, N: int32
@@ -37,13 +35,10 @@ def top_bicg(concrete_type, M, N):
         for i1 in range(N):
             for j1 in range(M):
                 q[i1] += A[i1, j1] * p[j1]
-    
-    
+
     def kernel_bicg[
         T: (float32, int32), M: int32, N: int32
-    ](
-        A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"
-    ):  
+    ](A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"):
         stageS(A, r, s)
         stageQ(A_copy, p, q)
 
