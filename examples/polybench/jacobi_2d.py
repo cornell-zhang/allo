@@ -97,7 +97,4 @@ def test_jacobi_2d():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-
-    sch = jacobi_2d(float32, 100, 100)
-    sch.build(target="vhls", mode="csynth", project="jacobi_2d_vitis.prj")
+    pytest.main([__file__])
