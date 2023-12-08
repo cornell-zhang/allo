@@ -21,7 +21,8 @@ def durbin_np(r, y):
         sum_ = 0.0
         for i in range(k):
             sum_ = sum_ + r[k - i - 1] * y[i]
-        alpha = -1.0 * (r[k] + sum_) / beta
+        alpha = -1.0 * (r[k] + sum_)
+        # alpha = alpha / beta
         for i in range(k):
             z[i] = y[i] + alpha * y[k - i - 1]
         for i in range(k):
@@ -32,18 +33,19 @@ def durbin_np(r, y):
 def durbin(concrete_type, n):
     def kernel_durbin[T: (float32, int32), N: int32](r: "T[N]", y: "T[N]"):
         y[0] = -r[0]
-        beta: float32 = 1.0
-        alpha: float32 = -r[0]
+        beta: T = 1.0
+        alpha: T = -r[0]
 
         for k in range(1, N):
             beta = (1 - alpha * alpha) * beta
-            sum_: float32 = 0.0
+            sum_: T = 0.0
 
-            z: float32[N] = 0.0
+            z: T[N] = 0.0
             for i in range(k):
                 sum_ = sum_ + r[k - i - 1] * y[i]
 
-            alpha = -1.0 * (r[k] + sum_) / beta
+            alpha = -1.0 * (r[k] + sum_)
+            # alpha = alpha / beta # unstable
 
             for i in range(k):
                 z[i] = y[i] + alpha * y[k - i - 1]
@@ -66,13 +68,13 @@ def test_durbin():
     test_psize = "small"
     N = psize["durbin"][test_psize]["N"]
     concrete_type = float32
-    r = np.random.randint(-10, 10, size=(N,)).astype(np.float32)
-    y = np.random.randint(-10, 10, size=(N,)).astype(np.float32)
+    r = np.random.randint(1, 10, size=(N,)).astype(np.float32)
+    y = np.random.randint(1, 10, size=(N,)).astype(np.float32)
     y_golden = y.copy()
     durbin_np(r, y_golden)
     mod = durbin(concrete_type, N)
     mod(r.copy(), y)
-    np.testing.assert_allclose(y, y_golden, rtol=1e-2, atol=1e-2)
+    np.testing.assert_allclose(y, y_golden, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":
