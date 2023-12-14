@@ -94,11 +94,15 @@ def packed_systolic[
     N: int32,
     Mt: int32,
     Nt: int32,
-    P: int32,
-](A: "TyA[M, K]", B: "TyB[K, N // P]", C: "TyC[M, N]"):
-    local_A: int8[Mt, K]
-    local_B: int8[K, Nt]
-    local_C: int8[Mt, Nt]
+    P: int32,  # packing factor
+](
+    A: "Int(TyA.bits * P)[M, K]",
+    B: "Int(TyB.bits * P)[K, N // P]",
+    C: "Int(TyC.bits * P)[M, N]",
+):
+    local_A: TyA[Mt, K]
+    local_B: TyB[K, Nt]
+    local_C: TyC[Mt, Nt]
 
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
@@ -107,26 +111,26 @@ def packed_systolic[
         for ak, ai in dsl.grid(K // P, Mt, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
-                a: TyA = A[mi * Mt + ai, ak]
+                a: Int(TyA.bits * P) = A[mi * Mt + ai, ak]
                 for p in range(P):
-                    local_A[ai, ak * P + p] = a[p * 8 : (p + 1) * 8]
+                    local_A[ai, ak * P + p] = a[p * TyA.bits : (p + 1) * TyA.bits]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
-            b: TyB = B[bk, ni * Nt // P + bj]
+            b: Int(TyB.bits * P) = B[bk, ni * Nt // P + bj]
             for p in range(P):
-                local_B[bk, bj * P + p] = b[p * 8 : (p + 1) * 8]
-        systolic_tile[int8, int8, int8, K, Mt, Nt](
+                local_B[bk, bj * P + p] = b[p * TyB.bits : (p + 1) * TyB.bits]
+        systolic_tile[TyA, TyB, TyC, K, Mt, Nt](
             local_A,
             local_B,
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
         for sj, si in dsl.grid(Nt // P, Mt, name="store_C_tile"):
-            c: TyC = 0
+            c: Int(TyC.bits * P) = 0
             for p in range(P):
-                c[p * 8 : (p + 1) * 8] = local_C[si, sj * P + p]
+                c[p * TyC.bits : (p + 1) * TyC.bits] = local_C[si, sj * P + p]
             C[mi * Mt + si, ni * Nt // P + sj] = c
 
 

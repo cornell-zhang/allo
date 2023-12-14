@@ -71,7 +71,7 @@ def test_int8_gemm():
     def top(X: int32[L, D // PP]) -> int32[L, 4 * D // PP]:
         Z: int32[L, 4 * D // PP]
         W_A: int32[D, 4 * D // PP] = W_A_packed
-        packed_systolic[int32, int32, int32, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
+        packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
         return Z
 
     s_top = allo.customize(top)
