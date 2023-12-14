@@ -200,7 +200,6 @@ def test_fixed_compare():
 
 
 def test_dynamic_type():
-
     def kernel[Ty]() -> int32:
         A: int32 = Ty.bits
         B: UInt(Ty.bits + 2) = 0

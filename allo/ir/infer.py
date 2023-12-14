@@ -140,7 +140,7 @@ class TypeInferer(ASTVisitor):
             node.dtype = res.dtype
             node.shape = res.shape
             return node
-        if (node.attr == "bits" or node.attr == "fracs") and isinstance(res, ast.Name):
+        if node.attr in {"bits", "fracs"} and isinstance(res, ast.Name):
             node.dtype = res.dtype
             node.shape = res.shape
             return node
