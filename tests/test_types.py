@@ -199,6 +199,16 @@ def test_fixed_compare():
     # FIXME: FixedType kernels cannot be lowered
 
 
+def test_dynamic_type():
+
+    def kernel[Ty]() -> int32:
+        B: int32 = Ty.bits
+        return B
+
+    s = allo.customize(kernel, instantiate=[Int(7)], verbose=True)
+    print(s.module)
+
+
 def test_select_typing():
     def kernel(flt: float32, itg: int32) -> float32:
         # if correctly typed, the select should have float32 result
