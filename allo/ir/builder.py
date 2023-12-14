@@ -169,6 +169,8 @@ class ASTTransformer(ASTBuilder):
 
         if node.attr == "bits":
             return MockConstant(value.val.bits, ctx, dtype=Index())
+        if node.attr == "fracs":
+            return MockConstant(value.val.fracs, ctx, dtype=Index())
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod

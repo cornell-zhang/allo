@@ -204,7 +204,8 @@ def test_dynamic_type():
     def kernel[Ty]() -> int32:
         A: int32 = Ty.bits
         B: UInt(Ty.bits + 2) = 0
-        return B
+        C: UInt(Ty.fracs + 3) = 1
+        return A + B + C
 
     s = allo.customize(kernel, instantiate=[Int(7)], verbose=True)
     print(s.module)
@@ -419,5 +420,4 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_dynamic_type()
+    pytest.main([__file__])
