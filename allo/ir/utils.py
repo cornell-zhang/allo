@@ -20,7 +20,7 @@ from hcl_mlir.dialects import (
     arith as arith_d,
     tensor as tensor_d,
 )
-from .types import AlloType, Int, UInt, Fixed, UFixed
+from .types import AlloType, Int, UInt, Fixed, UFixed, Index
 from .symbol_resolver import ASTResolver
 
 
@@ -117,14 +117,21 @@ class MockBuffer(MockOp):
 
 
 class MockConstant(MockOp):
-    def __init__(self, val, ctx):
+    def __init__(self, val, ctx, dtype=None):
         self.val = val
         self.ctx = ctx
+        assert dtype is None or isinstance(
+            dtype, AlloType
+        ), f"Expect AlloType, got {dtype}"
+        self.dtype = dtype
 
     @property
     def result(self):
-        # TODO: Support other types
-        if isinstance(self.val, int):
+        if self.dtype is not None:
+            assert isinstance(self.dtype, Index)
+            dtype = self.dtype.build()
+            value_attr = IntegerAttr.get(dtype, self.val)
+        elif isinstance(self.val, int):
             dtype = IntegerType.get_signless(32)
             value_attr = IntegerAttr.get(dtype, self.val)
         else:

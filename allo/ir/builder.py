@@ -166,6 +166,11 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_library_op(
                 ctx, node=node, attr="copy", new_args=[value]
             )
+
+        if node.attr == "bits":
+            return MockConstant(value.val.bits, ctx, dtype=Index())
+        if node.attr == "fracs":
+            return MockConstant(value.val.fracs, ctx, dtype=Index())
         raise RuntimeError("Unsupported Attribute")
 
     @staticmethod
@@ -2000,19 +2005,21 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
+        res = ret.result
         if (
-            isinstance(ret.result.type, MemRefType)
-            and ret.result.type.layout != ctx.top_func.type.results[0].layout
+            isinstance(res.type, MemRefType)
+            and res.type.layout != ctx.top_func.type.results[0].layout
         ):
             # memref.subview is involved, we need to copy the values from the original buffer
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
             memref_d.CopyOp(
-                ret.result,
+                res,
                 alloc_op.result,
                 ip=ctx.get_ip(),
             )
             ret = alloc_op
-        return func_d.ReturnOp([ret.result], ip=ctx.pop_ip())
+            res = ret.result
+        return func_d.ReturnOp([res], ip=ctx.pop_ip())
 
     @staticmethod
     def build_Expr(ctx, node):

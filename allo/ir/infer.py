@@ -9,7 +9,7 @@ import numpy as np
 
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
-from .types import Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
+from .types import AlloType, Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
 from ..utils import (
@@ -81,11 +81,15 @@ class TypeInferer(ASTVisitor):
             node.shape = var.shape
             return node
         if node.id in ctx.global_vars:
-            if isinstance(ctx.global_vars[node.id], int):
+            var = ctx.global_vars[node.id]
+            if isinstance(var, int):
                 node.dtype = int32
                 node.shape = tuple()
-            elif isinstance(ctx.global_vars[node.id], float):
+            elif isinstance(var, float):
                 node.dtype = float32
+                node.shape = tuple()
+            elif isinstance(var, AlloType):
+                node.dtype = Index()
                 node.shape = tuple()
             else:
                 raise RuntimeError(f"Unsupported global variable {node.id}")
@@ -133,6 +137,10 @@ class TypeInferer(ASTVisitor):
             node.shape = res.shape
             return node
         if node.attr == "copy":
+            node.dtype = res.dtype
+            node.shape = res.shape
+            return node
+        if node.attr in {"bits", "fracs"} and isinstance(res, ast.Name):
             node.dtype = res.dtype
             node.shape = res.shape
             return node
