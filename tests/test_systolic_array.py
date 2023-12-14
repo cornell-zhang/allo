@@ -341,6 +341,18 @@ def test_int8_packed_gemm():
     np_C_packed = np_C.view(np.int32)
     np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
     print("Passed!")
+    # Compose with submodule
+    s_top.compose(
+        packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
+    )
+    code = s_top.build("vhls")
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s_top.build(
+            target="vitis_hls",
+            mode="hw",
+            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+        )
+        hls_mod()
 
 
 def test_subview_systolic_dsp_packed_int4xint4():
