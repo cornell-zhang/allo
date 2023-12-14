@@ -114,14 +114,14 @@ class ASTTransformer(ASTBuilder):
         return MockConstant(node.value, ctx)
 
     @staticmethod
-    def build_shaped_type(ctx, dtype, shape):
+    def build_shaped_type(ctx, dtype, shape, layout=None):
         if len(shape) == 0:
             return dtype.build()
         if not ctx.enable_tensor:
             shape = [
                 ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
             ]
-            return MemRefType.get(shape, dtype.build())
+            return MemRefType.get(shape, dtype.build(), layout)
         return RankedTensorType.get(shape, dtype.build())
 
     @staticmethod
@@ -1220,12 +1220,16 @@ class ASTTransformer(ASTBuilder):
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
-            if len(ctx.call_args) == 0:
-                input_types.append(
-                    ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
+            layout = (
+                ctx.call_args[i].type.layout
+                if len(ctx.call_args) > 0 and hasattr(ctx.call_args[i].type, "layout")
+                else None
+            )
+            input_types.append(
+                ASTTransformer.build_shaped_type(
+                    ctx, arg.dtype, arg.shape, layout=layout
                 )
-            else:
-                input_types.append(ctx.call_args[i].type)
+            )
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 

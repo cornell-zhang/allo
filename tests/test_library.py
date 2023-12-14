@@ -66,5 +66,17 @@ def test_same_function():
     print("Passed!")
 
 
+def test_expr_type():
+    def kernel[Ty, M, N](A: "Ty[M + 1, N * 2]") -> "Ty[M, N]":
+        B: Ty[M, N] = 0
+        return B
+
+    def top[Ty](X: "Ty[17, 64]") -> "Ty[16, 32]":
+        return kernel[Ty, 16, 32](X)
+
+    s = allo.customize(top, instantiate=[float32])
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
