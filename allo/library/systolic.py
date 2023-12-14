@@ -96,9 +96,9 @@ def packed_systolic[
     Nt: int32,
     P: int32,  # packing factor
 ](
-    A: "Int(TyA.bits * P)[M, K]",
+    A: "Int(TyA.bits * P)[M, K // P]",
     B: "Int(TyB.bits * P)[K, N // P]",
-    C: "Int(TyC.bits * P)[M, N]",
+    C: "Int(TyC.bits * P)[M, N // P]",
 ):
     local_A: TyA[Mt, K]
     local_B: TyB[K, Nt]

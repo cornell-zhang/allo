@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int4, int8, int16, int32, index, UInt
+from allo.ir.types import int4, int8, int16, int32, int64, index, UInt
 from allo.ir.utils import MockBuffer
 
 
@@ -321,24 +321,35 @@ def test_int8_packed_gemm():
     # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
     L, D = 8, 8
     M0, M1 = 4, 4
-    PP = 4
+    PP = 2
+    if PP == 2:
+        np_type = np.int16
+        allo_type = int16
+    elif PP == 4:
+        np_type = np.int32
+        allo_type = int32
+    elif PP == 8:
+        np_type = np.int64
+        allo_type = int64
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
-    W_A_packed = W_A_cst.view(np.int32)
+    W_A_packed = W_A_cst.view(np_type)
 
-    def top(X: int32[L, D // PP]) -> int32[L, 4 * D // PP]:
-        Z: int32[L, 4 * D // PP]
-        W_A: int32[D, 4 * D // PP] = W_A_packed
-        packed_systolic[int32, int32, int32, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
+    def top[Ty](X: "Ty[L, D // PP]") -> "Ty[L, 4 * D // PP]":
+        Z: Ty[L, 4 * D // PP]
+        W_A: Ty[D, 4 * D // PP] = W_A_packed
+        packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
         return Z
 
-    s_top = allo.customize(top)
+    s_top = allo.customize(top, instantiate=[allo_type])
+    if L < 20:
+        print(s_top.module)
     # CPU testing
     mod = s_top.build()
     X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
-    packed_X = X.view(np.int32)
+    packed_X = X.view(np_type)
     allo_C = mod(packed_X)
     np_C = X @ W_A_cst
-    np_C_packed = np_C.view(np.int32)
+    np_C_packed = np_C.view(np_type)
     np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
     print("Passed!")
     # Compose with submodule
@@ -438,7 +449,7 @@ def test_subview_systolic_dsp_packed_int4xint8():
         B_in: int8[K],  # bit-packed, each element is 4 bits
         A_out: int8[K],
         B_out: int8[K],
-        C: int32[M, N],  # bit-packed, each element is 16 bits
+        C: int32[M, half_N],  # bit-packed, each element is 16 bits
         i: index,
         j: index,
     ):

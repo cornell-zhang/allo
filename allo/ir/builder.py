@@ -1220,6 +1220,14 @@ class ASTTransformer(ASTBuilder):
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
+            if (
+                len(ctx.call_args) > 0
+                and isinstance(ctx.call_args[i].type, MemRefType)
+                and arg.shape != tuple(ctx.call_args[i].type.shape)
+            ):
+                raise DTypeError(
+                    f"Argument shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
+                )
             layout = (
                 ctx.call_args[i].type.layout
                 if len(ctx.call_args) > 0 and hasattr(ctx.call_args[i].type, "layout")
