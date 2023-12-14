@@ -349,6 +349,7 @@ class TypeInferer(ASTVisitor):
                 ast.BitAnd: lambda l, r: l & r,
             }.get(type(node.op))
             return op(lhs, rhs)
+        # pylint: disable=raising-bad-type
         raise None
 
     @staticmethod

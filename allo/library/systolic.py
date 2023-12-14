@@ -130,12 +130,13 @@ def packed_systolic[
         for sj, si in dsl.grid(Nt // P, Mt, name="store_C_tile"):
             c: Int(TyC.bits * P) = 0
             for p in range(P):
+                # pylint: disable=unsupported-assignment-operation
                 c[p * TyC.bits : (p + 1) * TyC.bits] = local_C[si, sj * P + p]
             C[mi * Mt + si, ni * Nt // P + sj] = c
 
 
 def schedule_systolic(s):
-    assert len(s.inst_list) in [8, 9]
+    assert len(s.inst_list) in {8, 9}
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)

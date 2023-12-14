@@ -66,7 +66,7 @@ def test_int8_gemm():
     M0, M1 = 16, 16
     # L, D = 16, 16
     # M0, M1 = 4, 4
-    PP = 2
+    PP = 8
     if PP == 2:
         np_type = np.int16
         allo_type = int16
