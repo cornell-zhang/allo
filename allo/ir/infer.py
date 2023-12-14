@@ -6,6 +6,7 @@ import ast
 import inspect
 import textwrap
 import warnings
+import sympy
 import numpy as np
 
 from .visitor import ASTVisitor
@@ -318,6 +319,39 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_symbol(ctx, node):
+        if isinstance(node, ast.Name):
+            return sympy.symbols(node.id)
+        if isinstance(node, ast.Constant):
+            return sympy.Integer(node.value)
+        if isinstance(node, ast.Attribute):
+            assert isinstance(node.value, ast.Name)
+            var = ctx.global_vars[node.value.id]
+            if node.attr == "bits":
+                return sympy.Integer(var.bits)
+            if node.attr == "fracs":
+                return sympy.Integer(var.fracs)
+        if isinstance(node, ast.BinOp):
+            lhs = TypeInferer.visit_symbol(ctx, node.left)
+            rhs = TypeInferer.visit_symbol(ctx, node.right)
+            op = {
+                ast.Add: lambda l, r: l + r,
+                ast.Sub: lambda l, r: l - r,
+                ast.Mult: lambda l, r: l * r,
+                ast.Div: lambda l, r: l / r,
+                ast.FloorDiv: lambda l, r: l // r,
+                ast.Mod: lambda l, r: l % r,
+                ast.Pow: lambda l, r: l**r,
+                ast.LShift: lambda l, r: l << r,
+                ast.RShift: lambda l, r: l >> r,
+                ast.BitOr: lambda l, r: l | r,
+                ast.BitXor: lambda l, r: l ^ r,
+                ast.BitAnd: lambda l, r: l & r,
+            }.get(type(node.op))
+            return op(lhs, rhs)
+        raise None
+
+    @staticmethod
     def visit_Subscript(ctx, node):
         value = visit_stmt(ctx, node.value)
         if len(value.shape) > 0:
@@ -367,22 +401,23 @@ class TypeInferer(ASTVisitor):
                 node.shape = tuple()
                 node.dtype = uint1
             elif isinstance(node.slice, ast.Slice):
-                if isinstance(node.slice.lower, ast.Constant) and isinstance(
-                    node.slice.upper, ast.Constant
+                lower_sym = TypeInferer.visit_symbol(ctx, node.slice.lower)
+                upper_sym = TypeInferer.visit_symbol(ctx, node.slice.upper)
+                if (
+                    lower_sym is not None
+                    and upper_sym is not None
+                    and isinstance(upper_sym - lower_sym, sympy.core.numbers.Integer)
                 ):
-                    lower = visit_stmt(ctx, node.slice.lower)
-                    upper = visit_stmt(ctx, node.slice.upper)
-                    assert (
-                        upper.value > lower.value
-                    ), "upper bound must be greater than lower bound"
-                    node.dtype = UInt(upper.value - lower.value)
+                    stride = int(upper_sym - lower_sym)
+                    assert stride > 0, "upper bound must be greater than lower bound"
+                    node.dtype = UInt(stride)
                 else:
                     warnings.warn(
                         "Cannot infer the bitwidth of the slice, use UInt(32) as default"
                     )
                     node.dtype = UInt(32)
-                    lower = visit_stmt(ctx, node.slice.lower)
-                    upper = visit_stmt(ctx, node.slice.upper)
+                lower = visit_stmt(ctx, node.slice.lower)
+                upper = visit_stmt(ctx, node.slice.upper)
                 node.shape = tuple()
             else:
                 raise RuntimeError(f"Unsupported bit operation {node.slice}")
