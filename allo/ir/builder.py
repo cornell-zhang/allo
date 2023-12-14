@@ -2018,6 +2018,7 @@ class ASTTransformer(ASTBuilder):
                 ip=ctx.get_ip(),
             )
             ret = alloc_op
+            res = ret.result
         return func_d.ReturnOp([res], ip=ctx.pop_ip())
 
     @staticmethod
