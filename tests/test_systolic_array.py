@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int4, int8, int16, int32, index, UInt
+from allo.ir.types import int4, int8, int16, int32, int64, index, UInt
 from allo.ir.utils import MockBuffer
 
 
@@ -314,6 +314,63 @@ def test_ffn():
         hls_mod()
 
 
+def test_int8_packed_gemm():
+    from allo.library.systolic import packed_systolic
+
+    # (seq, hidden) x (hidden, 4*hidden) = (seq, 4*hidden)
+    # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
+    L, D = 16, 16
+    M0, M1 = 4, 4
+    PP = 2
+    if PP == 2:
+        np_type = np.int16
+        allo_type = int16
+    else:
+        raise ValueError(f"Unsupported packing factor: {PP}")
+    W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
+    W_A_packed = W_A_cst.view(np_type)
+
+    def top[Ty](X: "Ty[L // PP, D]") -> "Ty[L // PP, 4 * D]":
+        Z: Ty[L // PP, 4 * D]
+        W_A: Ty[D, 4 * D // PP] = W_A_packed
+        packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
+        return Z
+
+    s_top = allo.customize(top, instantiate=[allo_type])
+    if L < 20:
+        print(s_top.module)
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
+    packed_X = np.ascontiguousarray(
+        np.ascontiguousarray(X.transpose()).view(np_type).transpose()
+    )
+    allo_C = mod(packed_X)
+    np_C = X @ W_A_cst
+    np_C_packed = np.ascontiguousarray(
+        np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
+    )
+    if PP <= 8:
+        np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    else:
+        np.testing.assert_equal(allo_C, np_C_packed)
+    print("Passed!")
+    # Compose with submodule
+    s_top.compose(
+        packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
+    )
+    s_top.dataflow("top")  # important
+    # TODO: Fix input loop ordering
+    code = s_top.build("vhls")
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s_top.build(
+            target="vitis_hls",
+            mode="hw",
+            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+        )
+        hls_mod()
+
+
 def test_subview_systolic_dsp_packed_int4xint4():
     M, N, K = 2, 2, 2
 
@@ -397,7 +454,7 @@ def test_subview_systolic_dsp_packed_int4xint8():
         B_in: int8[K],  # bit-packed, each element is 4 bits
         A_out: int8[K],
         B_out: int8[K],
-        C: int32[M, N],  # bit-packed, each element is 16 bits
+        C: int32[M, half_N],  # bit-packed, each element is 16 bits
         i: index,
         j: index,
     ):

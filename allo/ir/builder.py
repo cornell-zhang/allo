@@ -114,14 +114,14 @@ class ASTTransformer(ASTBuilder):
         return MockConstant(node.value, ctx)
 
     @staticmethod
-    def build_shaped_type(ctx, dtype, shape):
+    def build_shaped_type(ctx, dtype, shape, layout=None):
         if len(shape) == 0:
             return dtype.build()
         if not ctx.enable_tensor:
             shape = [
                 ShapedType.get_dynamic_size() if s == Ellipsis else s for s in shape
             ]
-            return MemRefType.get(shape, dtype.build())
+            return MemRefType.get(shape, dtype.build(), layout)
         return RankedTensorType.get(shape, dtype.build())
 
     @staticmethod
@@ -851,8 +851,8 @@ class ASTTransformer(ASTBuilder):
                 ast.Add: lambda l, r: l + r,
                 ast.Sub: lambda l, r: l - r,
                 ast.Mult: lambda l, r: l * r,
-                ast.Div: lambda l, r: l / r,
-                ast.FloorDiv: lambda l, r: l // r,
+                ast.Div: AffineExpr.get_floor_div,
+                ast.FloorDiv: AffineExpr.get_floor_div,
                 ast.Mod: lambda l, r: l % r,
                 ast.Pow: lambda l, r: l**r,
                 ast.LShift: lambda l, r: l << r,
@@ -1062,7 +1062,7 @@ class ASTTransformer(ASTBuilder):
         # >>> a[28:32].reverse()
         # 0x5
         value = build_stmt(ctx, node.value)
-        if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
+        if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name, ast.BinOp)):
             index = build_stmt(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -1098,9 +1098,12 @@ class ASTTransformer(ASTBuilder):
         if isinstance(node.slice, ast.Slice):
             # The backend implementation is different from the Python convention
             # The lower bound is inclusive and the upper bound is also inclusive
-            node.slice.upper.value -= 1
             lower = build_stmt(ctx, node.slice.lower)
             upper = build_stmt(ctx, node.slice.upper)
+            cst = ASTTransformer.build_cast_op(
+                ctx, MockConstant(1, ctx), Int(32), node.slice.upper.dtype
+            )
+            upper = arith_d.SubIOp(upper.result, cst.result, ip=ctx.get_ip())
             lower = ASTTransformer.build_cast_op(
                 ctx, lower, node.slice.lower.dtype, Index()
             )
@@ -1217,12 +1220,24 @@ class ASTTransformer(ASTBuilder):
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
-            if len(ctx.call_args) == 0:
-                input_types.append(
-                    ASTTransformer.build_shaped_type(ctx, arg.dtype, arg.shape)
+            if (
+                len(ctx.call_args) > 0
+                and isinstance(ctx.call_args[i].type, MemRefType)
+                and arg.shape != tuple(ctx.call_args[i].type.shape)
+            ):
+                raise DTypeError(
+                    f"Argument shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
                 )
-            else:
-                input_types.append(ctx.call_args[i].type)
+            layout = (
+                ctx.call_args[i].type.layout
+                if len(ctx.call_args) > 0 and hasattr(ctx.call_args[i].type, "layout")
+                else None
+            )
+            input_types.append(
+                ASTTransformer.build_shaped_type(
+                    ctx, arg.dtype, arg.shape, layout=layout
+                )
+            )
             input_typehints.append(get_extra_type_hints(arg.dtype))
             arg_names.append(arg.arg)
 

@@ -58,7 +58,7 @@ def correlation(concrete_type, M, N, N_float, epsilon):
 
     def compute_stddev[
         T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[N]", stddev: "T[M]"):
+    ](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"):
         for x in allo.grid(M):
             variance: T = 0.0
             for m in allo.grid(N):

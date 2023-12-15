@@ -5,6 +5,8 @@
 import ast
 import inspect
 import textwrap
+import warnings
+import sympy
 import numpy as np
 
 from .visitor import ASTVisitor
@@ -285,8 +287,9 @@ class TypeInferer(ASTVisitor):
         dtype = str(dtype)
         if is_anywidth_int_type_and_not_np(dtype):
             bitwidth = get_bitwidth_from_type(dtype)
-            np_arr = handle_overflow(np_values, bitwidth, dtype)
-            np_values = make_anywidth_numpy_array(np_arr, bitwidth)
+            if bitwidth <= 64:
+                np_arr = handle_overflow(np_values, bitwidth, dtype)
+                np_values = make_anywidth_numpy_array(np_arr, bitwidth)
         elif dtype in np_supported_types:
             target_np_type = np_supported_types[dtype]
             if np_values.dtype != target_np_type:
@@ -315,6 +318,40 @@ class TypeInferer(ASTVisitor):
         node.dtype = lhs.dtype
         node.shape = lhs.shape
         return node
+
+    @staticmethod
+    def visit_symbol(ctx, node):
+        if isinstance(node, ast.Name):
+            return sympy.symbols(node.id)
+        if isinstance(node, ast.Constant):
+            return sympy.Integer(node.value)
+        if isinstance(node, ast.Attribute):
+            assert isinstance(node.value, ast.Name)
+            var = ctx.global_vars[node.value.id]
+            if node.attr == "bits":
+                return sympy.Integer(var.bits)
+            if node.attr == "fracs":
+                return sympy.Integer(var.fracs)
+        if isinstance(node, ast.BinOp):
+            lhs = TypeInferer.visit_symbol(ctx, node.left)
+            rhs = TypeInferer.visit_symbol(ctx, node.right)
+            op = {
+                ast.Add: lambda l, r: l + r,
+                ast.Sub: lambda l, r: l - r,
+                ast.Mult: lambda l, r: l * r,
+                ast.Div: lambda l, r: l / r,
+                ast.FloorDiv: lambda l, r: l // r,
+                ast.Mod: lambda l, r: l % r,
+                ast.Pow: lambda l, r: l**r,
+                ast.LShift: lambda l, r: l << r,
+                ast.RShift: lambda l, r: l >> r,
+                ast.BitOr: lambda l, r: l | r,
+                ast.BitXor: lambda l, r: l ^ r,
+                ast.BitAnd: lambda l, r: l & r,
+            }.get(type(node.op))
+            return op(lhs, rhs)
+        # pylint: disable=raising-bad-type
+        raise None
 
     @staticmethod
     def visit_Subscript(ctx, node):
@@ -361,24 +398,29 @@ class TypeInferer(ASTVisitor):
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
-            if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name)):
+            if isinstance(node.slice, (ast.Index, ast.Constant, ast.Name, ast.BinOp)):
                 visit_stmt(ctx, node.slice)
                 node.shape = tuple()
                 node.dtype = uint1
             elif isinstance(node.slice, ast.Slice):
-                assert isinstance(
-                    node.slice.lower, ast.Constant
-                ), "lower bound of bit slicing must be constant"
-                assert isinstance(
-                    node.slice.upper, ast.Constant
-                ), "upper bound of bit slicing must be constant"
+                lower_sym = TypeInferer.visit_symbol(ctx, node.slice.lower)
+                upper_sym = TypeInferer.visit_symbol(ctx, node.slice.upper)
+                if (
+                    lower_sym is not None
+                    and upper_sym is not None
+                    and isinstance(upper_sym - lower_sym, sympy.core.numbers.Integer)
+                ):
+                    stride = int(upper_sym - lower_sym)
+                    assert stride > 0, "upper bound must be greater than lower bound"
+                    node.dtype = UInt(stride)
+                else:
+                    warnings.warn(
+                        "Cannot infer the bitwidth of the slice, use UInt(32) as default"
+                    )
+                    node.dtype = UInt(32)
                 lower = visit_stmt(ctx, node.slice.lower)
                 upper = visit_stmt(ctx, node.slice.upper)
-                assert (
-                    upper.value > lower.value
-                ), "upper bound must be greater than lower bound"
                 node.shape = tuple()
-                node.dtype = UInt(upper.value - lower.value)
             else:
                 raise RuntimeError(f"Unsupported bit operation {node.slice}")
         else:
@@ -424,7 +466,7 @@ class TypeInferer(ASTVisitor):
         ):
             assert (
                 ctx.global_vars[node.value.id].shape == target_shape
-            ), f"Shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
+            ), f"`{node.value.id}` shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
             TypeInferer.visit_constant_tensor(
                 ctx, node, ctx.global_vars[node.value.id], dtype=target_dtype
             )
