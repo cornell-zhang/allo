@@ -54,6 +54,7 @@ ctype_map = {
     "i16": "short",
     "i32": "int",
     "i64": "long",
+    "i128": "__int128_t",  # unverified
     "ui8": "unsigned char",
     "ui16": "unsigned short",
     "ui32": "unsigned int",

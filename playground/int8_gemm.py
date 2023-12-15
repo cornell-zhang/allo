@@ -92,9 +92,8 @@ def test_int8_gemm():
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
 
-    def top[Ty](X: "Ty[L // PP, D]") -> "Ty[L // PP, 4 * D]":
+    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[D, 4 * D // PP]") -> "Ty[L // PP, 4 * D]":
         Z: Ty[L // PP, 4 * D]
-        W_A: Ty[D, 4 * D // PP] = W_A_packed
         packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
         return Z
 
@@ -107,7 +106,7 @@ def test_int8_gemm():
     packed_X = np.ascontiguousarray(
         np.ascontiguousarray(X.transpose()).view(np_type).transpose()
     )
-    allo_C = mod(packed_X)
+    allo_C = mod(packed_X, W_A_packed)
     np_C = X @ W_A_cst
     np_C_packed = np.ascontiguousarray(
         np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
