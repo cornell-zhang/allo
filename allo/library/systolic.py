@@ -96,9 +96,9 @@ def packed_systolic[
     Nt: int32,
     P: int32,  # packing factor
 ](
-    A: "Int(TyA.bits * P)[M, K // P]",
+    A: "Int(TyA.bits * P)[M // P, K]",
     B: "Int(TyB.bits * P)[K, N // P]",
-    C: "Int(TyC.bits * P)[M, N // P]",
+    C: "Int(TyC.bits * P)[M // P, N]",
 ):
     local_A: TyA[Mt, K]
     local_B: TyB[K, Nt]
@@ -108,12 +108,12 @@ def packed_systolic[
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
-        for ak, ai in dsl.grid(K // P, Mt, name="load_A_tile"):
+        for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
-                a: Int(TyA.bits * P) = A[mi * Mt + ai, ak]
+                a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
                 for p in range(P):
-                    local_A[ai, ak * P + p] = a[p * TyA.bits : (p + 1) * TyA.bits]
+                    local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -127,12 +127,12 @@ def packed_systolic[
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
-        for sj, si in dsl.grid(Nt // P, Mt, name="store_C_tile"):
+        for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
             c: Int(TyC.bits * P) = 0
             for p in range(P):
                 # pylint: disable=unsupported-assignment-operation
-                c[p * TyC.bits : (p + 1) * TyC.bits] = local_C[si, sj * P + p]
-            C[mi * Mt + si, ni * Nt // P + sj] = c
+                c[p * TyC.bits : (p + 1) * TyC.bits] = local_C[si * P + p, sj]
+            C[mi * Mt // P + si, ni * Nt + sj] = c
 
 
 def schedule_systolic(s):
@@ -149,6 +149,8 @@ def schedule_systolic(s):
     tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     s.dataflow(tile_loop)
     pe = s.unfold("systolic_tile:PE", [0, 1])  # specify which are spatial loops
-    s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=s.inst_list[-2] + 1)
-    s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=s.inst_list[-1] + 1)
+    M0 = s.inst_list[-2] if len(s.inst_list) == 8 else s.inst_list[-3]
+    M1 = s.inst_list[-1] if len(s.inst_list) == 8 else s.inst_list[-2]
+    s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=M0 + 1)
+    s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=M1 + 1)
     return s
