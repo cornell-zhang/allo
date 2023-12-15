@@ -4,7 +4,8 @@
 import os
 import numpy as np
 import allo
-from allo.ir.types import int8, int16, int32, int64
+from allo.ir.types import int8, int16, int32, int64, int128, int256, int512
+from allo.utils import get_np_struct_type
 
 
 def test_cascaded_int8_gemm():
@@ -64,7 +65,7 @@ def test_int8_gemm():
     # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
     L, D = 512, 768
     M0, M1 = 16, 16
-    PP = 8
+    PP = 16
     # L, D = 16, 16
     # M0, M1 = 4, 4
     # PP = 2
@@ -77,6 +78,17 @@ def test_int8_gemm():
     elif PP == 8:
         np_type = np.int64
         allo_type = int64
+    elif PP == 16:
+        np_type = get_np_struct_type(128)
+        allo_type = int128
+    elif PP == 32:
+        np_type = get_np_struct_type(256)
+        allo_type = int256
+    elif PP == 64:
+        np_type = get_np_struct_type(512)
+        allo_type = int512
+    else:
+        raise ValueError(f"Unsupported packing factor: {PP}")
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
 
@@ -100,7 +112,10 @@ def test_int8_gemm():
     np_C_packed = np.ascontiguousarray(
         np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
     )
-    np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    if PP <= 8:
+        np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    else:
+        np.testing.assert_equal(allo_C, np_C_packed)
     print("Passed!")
     # Compose with submodule
     s_top.compose(

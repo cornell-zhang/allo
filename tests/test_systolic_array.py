@@ -325,12 +325,8 @@ def test_int8_packed_gemm():
     if PP == 2:
         np_type = np.int16
         allo_type = int16
-    elif PP == 4:
-        np_type = np.int32
-        allo_type = int32
-    elif PP == 8:
-        np_type = np.int64
-        allo_type = int64
+    else:
+        raise ValueError(f"Unsupported packing factor: {PP}")
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
 
@@ -354,7 +350,10 @@ def test_int8_packed_gemm():
     np_C_packed = np.ascontiguousarray(
         np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
     )
-    np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    if PP <= 8:
+        np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    else:
+        np.testing.assert_equal(allo_C, np_C_packed)
     print("Passed!")
     # Compose with submodule
     s_top.compose(

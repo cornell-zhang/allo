@@ -12,6 +12,7 @@ from hcl_mlir.ir import (
     F32Type,
     F64Type,
 )
+from hcl_mlir.exceptions import DTypeWarning
 from hcl_mlir.runtime import to_numpy
 from hcl_mlir.dialects import hcl as hcl_d
 
@@ -290,7 +291,10 @@ def struct_array_to_int_array(array, bitwidth, signed=True):
     shape = array.shape
     n_bytes = int(np.ceil(bitwidth / 8))
     if bitwidth > 64:
-        raise RuntimeError("Cannot convert data with bitwidth > 64 to numpy array")
+        DTypeWarning(
+            "Coverting data with bitwidth > 64 to numpy array, "
+            "which may lead to possible incorrect results."
+        ).warn()
     target_bytes = max(get_clostest_pow2(bitwidth), 8) // 8
     if n_bytes == 1:
         _bytes = [array] if array.dtype == np.uint8 else [array["f0"]]
@@ -316,7 +320,10 @@ def struct_array_to_int_array(array, bitwidth, signed=True):
     # -> flatten: 144*i8
     array = array.flatten()
     # -> view: 36*i32
-    array = array.view(get_np_pow2_type(bitwidth))
+    if bitwidth <= 64:
+        array = array.view(get_np_pow2_type(bitwidth))
+    else:
+        array = array.view(get_np_struct_type(bitwidth))
     # -> reshape: 6*6*i32
     array = array.reshape(shape)
     return array

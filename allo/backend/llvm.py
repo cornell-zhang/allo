@@ -162,14 +162,14 @@ class LLVMModule:
                         " data types are needed as inputs."
                     )
             else:  # memref
-                np_type = np_type_to_str(arg.dtype)
-                if np_type != target_in_type:
-                    DTypeWarning(
-                        f"Input type mismatch: {np_type} vs {target_in_type}"
-                    ).warn()
+                if not isinstance(arg.dtype, np.dtypes.VoidDType):
+                    np_type = np_type_to_str(arg.dtype)
+                    if np_type != target_in_type:
+                        DTypeWarning(
+                            f"Input type mismatch: {np_type} vs {target_in_type}"
+                        ).warn()
                 if is_anywidth_int_type_and_not_np(target_in_type):
                     bitwidth = get_bitwidth_from_type(target_in_type)
-                    arg = handle_overflow(arg, bitwidth, target_in_type)
                     # This is to be compliant with MLIR's anywidth int type alignment
                     # e.g. i1-i8 -> int8
                     #      i9-i16 -> int16
@@ -178,7 +178,9 @@ class LLVMModule:
                     #      i65-i128 -> int128
                     #      i129-i256 -> int256
                     # pylint: disable=redefined-variable-type
-                    arg = make_anywidth_numpy_array(arg, bitwidth)
+                    if bitwidth <= 64:
+                        arg = handle_overflow(arg, bitwidth, target_in_type)
+                        arg = make_anywidth_numpy_array(arg, bitwidth)
                 elif target_in_type in np_supported_types:
                     target_np_type = np_supported_types[target_in_type]
                     if arg.dtype != target_np_type:
