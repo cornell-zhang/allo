@@ -12,10 +12,10 @@ def test_cascaded_int8_gemm():
 
     # (seq, hidden) x (hidden, 4*hidden) = (seq, 4*hidden)
     # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
-    # L, D = 512, 768
-    # M0, M1 = 16, 16
-    L, D = 4, 4
-    M0, M1 = 2, 2
+    L, D = 512, 768
+    M0, M1 = 16, 16
+    # L, D = 4, 4
+    # M0, M1 = 2, 2
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_B_cst = np.random.randint(-4, 4, size=(4 * D, D)).astype(np.int8)
 
