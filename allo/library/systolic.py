@@ -141,10 +141,16 @@ def schedule_systolic(s):
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)
     load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ai"]
+    if str(load_A_loop.loop.attributes["upper_bound"]) == "affine_map<() -> (1)>":
+        load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
     s.pipeline(load_A_loop)
     load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bj"]
+    if str(load_B_loop.loop.attributes["upper_bound"]) == "affine_map<() -> (1)>":
+        load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
     s.pipeline(load_B_loop)
     store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["si"]
+    if str(store_C_loop.loop.attributes["upper_bound"]) == "affine_map<() -> (1)>":
+        store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
     s.pipeline(store_C_loop)
     tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     s.dataflow(tile_loop)
