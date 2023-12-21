@@ -461,6 +461,14 @@ class Schedule:
         hcl_d.ParallelOp(loop_hdl.result, ip=ip)
 
     @wrapped_apply
+    def inline(self, axis=None):
+        assert axis is None or isinstance(axis, str), "Function name must be a string"
+        if axis is None:
+            axis = self.top_func_name
+        func = self._find_function(axis)
+        func.attributes["inline"] = UnitAttr.get()
+
+    @wrapped_apply
     def dataflow(self, axis):
         if isinstance(axis, str):
             # function
