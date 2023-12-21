@@ -132,5 +132,56 @@ def test_int8_gemm():
         hls_mod()
 
 
+def test_int8_gemm_dsp_packing():
+    from allo.library.systolic import packed_int8xint8_systolic
+
+    # (seq, hidden) x (hidden, 4*hidden) = (seq, 4*hidden)
+    # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
+    L, D = 512, 768
+    M0, M1 = 16, 16
+    PP = 16
+    np_type = get_np_struct_type(128)
+    allo_type = int128
+    W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
+    W_A_packed = W_A_cst.view(np_type)
+
+    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[D, 4 * D // PP]") -> "Ty[L // PP, 4 * D]":
+        Z: Ty[L // PP, 4 * D]
+        packed_int8xint8_systolic[L, D, 4 * D, M0, M1, PP](X, W_A, Z)
+        return Z
+
+    s_top = allo.customize(top, instantiate=[allo_type])
+    if L < 20:
+        print(s_top.module)
+    # CPU testing
+    mod = s_top.build()
+    X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
+    packed_X = np.ascontiguousarray(
+        np.ascontiguousarray(X.transpose()).view(np_type).transpose()
+    )
+    allo_C = mod(packed_X, W_A_packed)
+    np_C = X @ W_A_cst
+    np_C_packed = np.ascontiguousarray(
+        np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
+    )
+    if PP <= 8:
+        np.testing.assert_allclose(allo_C, np_C_packed, atol=1e-3)
+    else:
+        np.testing.assert_equal(allo_C, np_C_packed)
+    print("Passed!")
+    # Compose with submodule
+    s_top.compose(packed_int8xint8_systolic, instantiate=[L, D, 4 * D, M0, M1, PP])
+    s_top.dataflow("top")  # important
+    # TODO: Fix input loop ordering
+    code = s_top.build("vhls")
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        hls_mod = s_top.build(
+            target="vitis_hls",
+            mode="hw",
+            project=f"DSP_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+        )
+        hls_mod()
+
+
 if __name__ == "__main__":
-    test_int8_gemm()
+    test_int8_gemm_dsp_packing()
