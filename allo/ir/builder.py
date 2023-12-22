@@ -1212,7 +1212,9 @@ class ASTTransformer(ASTBuilder):
                 node.type_params
             ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
             for type_var, call_val in zip(node.type_params, ctx.inst):
-                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                name, call_val = resolve_generic_types(
+                    ctx.global_vars, type_var, call_val
+                )
                 ctx.global_vars[name] = call_val
 
         # Build input types

@@ -834,7 +834,7 @@ def customize(
                 new_global_vars.update(_get_global_vars(var))
         global_vars = new_global_vars
     # Use-def chain analysis
-    use_def_chain = UseDefChain(global_vars.copy())
+    use_def_chain = UseDefChain(global_vars.copy(), instantiate)
     use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(

@@ -78,5 +78,17 @@ def test_expr_type():
     print(s.module)
 
 
+def test_expr_param():
+    def kernel[Ty, M, N](A: "Ty[M + 1, N * 2]") -> "Ty[M, N]":
+        B: Ty[M, N] = 0
+        return B
+
+    def top[Ty, M, N](X: "Ty[M + 3, N]") -> "Ty[M + 2, N // 2]":
+        return kernel[Ty, M + 2, N // 2](X)
+
+    s = allo.customize(top, instantiate=[float32, 16, 16])
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

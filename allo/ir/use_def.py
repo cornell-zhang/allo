@@ -7,7 +7,7 @@ import inspect
 import textwrap
 
 from .symbol_resolver import ASTResolver
-from .utils import get_func_id_from_param_types
+from .utils import get_func_id_from_param_types, resolve_generic_types
 
 
 class VarNode:
@@ -36,10 +36,11 @@ class VarNode:
 
 
 class UseDefChain(ast.NodeVisitor):
-    def __init__(self, global_vars):
+    def __init__(self, global_vars, instantiate):
         self.buffers = {}
         self.path = ""
         self.global_vars = global_vars
+        self.inst = instantiate
         # Used for nested functions
         self.arg_nodes = []
         # Used for unique function identification when calling the same function
@@ -158,22 +159,24 @@ class UseDefChain(ast.NodeVisitor):
             obj = ASTResolver.resolve(node.func.value, self.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
+            self.inst = ASTResolver.resolve_param_types(
+                node.func.slice, self.global_vars
+            )
             if self.func_id is None:
-                func_id = get_func_id_from_param_types(inst)
+                func_id = get_func_id_from_param_types(self.inst)
                 if func_id is None:
                     func_dict = self.func_name2id.setdefault(obj_name, {})
                     for key, value in func_dict.items():
-                        if value == tuple(inst):
+                        if value == tuple(self.inst):
                             func_id = key
                             break
                     else:
                         func_id = len(func_dict) if len(func_dict) > 0 else None
-                        func_dict[func_id] = tuple(inst)
+                        func_dict[func_id] = tuple(self.inst)
                 else:
-                    inst.remove(func_id)
+                    self.inst.remove(func_id)
                     func_dict = self.func_name2id.setdefault(obj_name, {})
-                    func_dict[func_id] = tuple(inst)
+                    func_dict[func_id] = tuple(self.inst)
                 self.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
@@ -271,6 +274,22 @@ class UseDefChain(ast.NodeVisitor):
             self.path = node.name
         else:
             self.path = node.name + "_" + str(self.func_id)
+
+        # Generic function
+        if (
+            len(self.inst) > 0
+            and hasattr(node, "type_params")
+            and len(node.type_params) > 0
+        ):
+            assert len(self.inst) == len(
+                node.type_params
+            ), f"Type parameters mismatch, got {self.inst} and {node.type_params}"
+            for type_var, call_val in zip(node.type_params, self.inst):
+                name, call_val = resolve_generic_types(
+                    self.global_vars, type_var, call_val
+                )
+                self.global_vars[name] = call_val
+
         if original_path == "":  # top-level function
             # create initial variables
             for i, arg in enumerate(node.args.args):
