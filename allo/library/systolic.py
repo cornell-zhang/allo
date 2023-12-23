@@ -29,6 +29,85 @@ def PE_kernel[
     C[i, j] = v
 
 
+def PE_kernel_packed_int4xint8[
+    K: int32, Mt: int32, Nt: int32
+](
+    A_in: "int8[K]",  # not bit-packed
+    B_in: "int8[K]",  # bit-packed, each element is 4 bits
+    A_out: "int8[K]",
+    B_out: "int8[K]",
+    C: "int16[Mt, Nt // 2]",  # bit-packed, each element is 8 bits
+    i: index,
+    j: index,
+):
+    v: int32 = 0
+    for k in range(K):
+        a: int8 = A_in[k]
+        b_packed: int8 = B_in[k]
+        b0: int4 = b_packed[0:4]
+        b1: int4 = b_packed[4:8]
+        s0: UInt(1) = a[7] ^ b0[3]
+        s1: UInt(1) = a[7] ^ b1[3]
+        au: UInt(8) = dsl.abs(a)
+        b0u: UInt(4) = dsl.abs(b0)
+        b1u: UInt(4) = dsl.abs(b1)
+        op0: UInt(18) = 0
+        op1: UInt(27) = 0
+        op0[0:8] = au
+        op1[0:4] = b0u
+        op1[13:17] = b1u
+        res: UInt(48) = op0 * op1
+        res0u: UInt(12) = res[0:12]
+        res1u: UInt(12) = res[13:25]
+        res0: int16 = -res0u if s0 else res0u
+        res1: int16 = -res1u if s1 else res1u
+        v[0:16] += res0
+        v[16:32] += res1
+        A_out[k] = a
+        B_out[k] = b_packed
+    C[i, j] = v
+
+
+def PE_kernel_packed_int8xint8[
+    K: int32, Mt: int32, Nt: int32
+](
+    A_in: "int8[K]",  # not bit-packed
+    B_in: "int16[K]",  # bit-packed, each element is 8 bits
+    A_out: "int8[K]",
+    B_out: "int16[K]",
+    C: "int32[Mt, Nt]",  # bit-packed, each element is 16 bits
+    i: index,
+    j: index,
+):
+    v: int32 = 0
+    for k in range(K):
+        a: int8 = A_in[k]
+        b_packed: int16 = B_in[k]
+        b0: int8 = b_packed[0:8]
+        b1: int8 = b_packed[8:16]
+        s0: UInt(1) = a[7] ^ b0[7]
+        s1: UInt(1) = a[7] ^ b1[7]
+        au: UInt(8) = dsl.abs(a)
+        b0u: UInt(8) = dsl.abs(b0)
+        b1u: UInt(8) = dsl.abs(b1)
+        # DSP48E1: 18x27 multiplier -> 45-bit result
+        op0: UInt(18) = 0
+        op1: UInt(27) = 0
+        op0[0:8] = au
+        op1[0:8] = b0u
+        op1[17:25] = b1u
+        res: UInt(45) = op0 * op1
+        res0u: UInt(16) = res[0:16]
+        res1u: UInt(16) = res[17:33]
+        res0: int16 = -res0u if s0 else res0u
+        res1: int16 = -res1u if s1 else res1u
+        v[0:16] += res0
+        v[16:32] += res1
+        A_out[k] = a
+        B_out[k] = b_packed
+    C[i, j] = v
+
+
 def systolic_tile[
     TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
 ](A: "TyA[Mt, K]", B: "TyB[K, Nt]", C: "TyC[Mt, Nt]"):
@@ -49,7 +128,7 @@ def systolic_tile[
             PE_kernel_packed_int8xint8[K, Mt, Nt](
                 A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
             )
-        with template.meta_if(not(TyA == int8 and TyB == int16 and TyC == int32)):
+        with template.meta_if(not (TyA == int8 and TyB == int16 and TyC == int32)):
             PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
                 A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
             )
@@ -140,46 +219,6 @@ def packed_systolic[
             C[mi * Mt // P + si, ni * Nt + sj] = c
 
 
-def PE_kernel_packed_int8xint8[
-    K: int32, Mt: int32, Nt: int32
-](
-    A_in: "int8[K]",  # not bit-packed
-    B_in: "int16[K]",  # bit-packed, each element is 8 bits
-    A_out: "int8[K]",
-    B_out: "int16[K]",
-    C: "int32[Mt, Nt]",  # bit-packed, each element is 16 bits
-    i: index,
-    j: index,
-):
-    v: int32 = 0
-    for k in range(K):
-        a: int8 = A_in[k]
-        b_packed: int16 = B_in[k]
-        b0: int8 = b_packed[0:8]
-        b1: int8 = b_packed[8:16]
-        s0: UInt(1) = a[7] ^ b0[7]
-        s1: UInt(1) = a[7] ^ b1[7]
-        au: UInt(8) = dsl.abs(a)
-        b0u: UInt(8) = dsl.abs(b0)
-        b1u: UInt(8) = dsl.abs(b1)
-        # DSP48E1: 18x27 multiplier -> 45-bit result
-        op0: UInt(18) = 0
-        op1: UInt(27) = 0
-        op0[0:8] = au
-        op1[0:8] = b0u
-        op1[17:25] = b1u
-        res: UInt(45) = op0 * op1
-        res0u: UInt(16) = res[0:16]
-        res1u: UInt(16) = res[17:33]
-        res0: int16 = -res0u if s0 else res0u
-        res1: int16 = -res1u if s1 else res1u
-        v[0:16] += res0
-        v[16:32] += res1
-        A_out[k] = a
-        B_out[k] = b_packed
-    C[i, j] = v
-
-
 def packed_int8xint8_systolic[
     M: int32,
     K: int32,
@@ -225,45 +264,6 @@ def packed_int8xint8_systolic[
                 c1[p * 8 : (p + 1) * 8] = x[16:32]
             C[mi * Mt // P + si, ni * Nt + 2 * sj] = c0
             C[mi * Mt // P + si, ni * Nt + 2 * sj + 1] = c1
-
-
-def PE_kernel_packed_int4xint8[
-    K: int32, Mt: int32, Nt: int32
-](
-    A_in: "int8[K]",  # not bit-packed
-    B_in: "int8[K]",  # bit-packed, each element is 4 bits
-    A_out: "int8[K]",
-    B_out: "int8[K]",
-    C: "int16[Mt, Nt // 2]",  # bit-packed, each element is 8 bits
-    i: index,
-    j: index,
-):
-    v: int32 = 0
-    for k in range(K):
-        a: int8 = A_in[k]
-        b_packed: int8 = B_in[k]
-        b0: int4 = b_packed[0:4]
-        b1: int4 = b_packed[4:8]
-        s0: UInt(1) = a[7] ^ b0[3]
-        s1: UInt(1) = a[7] ^ b1[3]
-        au: UInt(8) = dsl.abs(a)
-        b0u: UInt(4) = dsl.abs(b0)
-        b1u: UInt(4) = dsl.abs(b1)
-        op0: UInt(18) = 0
-        op1: UInt(27) = 0
-        op0[0:8] = au
-        op1[0:4] = b0u
-        op1[13:17] = b1u
-        res: UInt(48) = op0 * op1
-        res0u: UInt(12) = res[0:12]
-        res1u: UInt(12) = res[13:25]
-        res0: int16 = -res0u if s0 else res0u
-        res1: int16 = -res1u if s1 else res1u
-        v[0:16] += res0
-        v[16:32] += res1
-        A_out[k] = a
-        B_out[k] = b_packed
-    C[i, j] = v
 
 
 def schedule_systolic(s):
