@@ -109,6 +109,9 @@ class UseDefChain(ast.NodeVisitor):
             res += list(self.visit(elt))
         return set(res)
 
+    def visit_BoolOp(self, node):
+        return set()
+
     def visit_List(self, node):
         return set()
 
@@ -322,6 +325,36 @@ class UseDefChain(ast.NodeVisitor):
         for stmt in node.body:
             res.append(self.visit(stmt))
         return res[0]
+
+    def visit_With(self, node):
+        assert len(node.items) == 1, "Only support one context manager"
+        assert isinstance(
+            node.items[0].context_expr, ast.Call
+        ), "Only support `with allo.meta_if()`"
+        assert isinstance(
+            node.items[0].context_expr.func, ast.Attribute
+        ), "Only support `with allo.meta_if()`"
+        assert (
+            node.items[0].context_expr.func.attr == "meta_if"
+        ), "Only support `with allo.meta_if()`"
+        assert (
+            len(node.items[0].context_expr.args) == 1
+        ), "Only support one argument for `allo.meta_if()`"
+        # Compile-time comparison
+        try:
+            cond = eval(
+                compile(ast.Expression(node.items[0].context_expr.args[0]), "", "eval"),
+                self.global_vars,
+            )
+        # pylint: disable=broad-exception-caught
+        except Exception:
+            return None
+        if cond:
+            res = []
+            for stmt in node.body:
+                res.append(self.visit(stmt))
+            return res[-1]
+        return None
 
     def visit_Return(self, node):
         if node.value is None:

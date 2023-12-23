@@ -868,7 +868,6 @@ class TypeInferer(ASTVisitor):
             len(node.items[0].context_expr.args) == 1
         ), "Only support one argument for `allo.meta_if()`"
         # Compile-time comparison
-        # wait for builder to resolve the expression
         cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
         if cond:
             visit_stmts(ctx, node.body)

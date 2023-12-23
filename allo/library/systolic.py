@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=used-before-assignment, unsubscriptable-object, unused-import, unsupported-assignment-operation
 
-from .. import dsl
+from .. import dsl, template
 from ..ir.types import int4, int8, int16, int32, index, Int, UInt
 from ..ir.utils import MockBuffer
 
@@ -45,9 +45,14 @@ def systolic_tile[
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
     for i, j in dsl.grid(Mt, Nt, name="PE"):
-        PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
-            A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
-        )
+        with template.meta_if(TyA == int8 and TyB == int16 and TyC == int32):
+            PE_kernel_packed_int8xint8[K, Mt, Nt](
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
+        with template.meta_if(not(TyA == int8 and TyB == int16 and TyC == int32)):
+            PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
     for k in range(K, name="data_drain"):
         for m in range(Mt):
             A_drain[m] = A_fifo[m, Nt, k]
@@ -175,32 +180,6 @@ def PE_kernel_packed_int8xint8[
     C[i, j] = v
 
 
-def systolic_tile_packed_int8xint8[
-    K: int32, Mt: int32, Nt: int32
-](A: "int8[Mt, K]", B: "int16[K, Nt]", C: "int32[Mt, Nt]"):
-    A_fifo: int8[Mt, Nt + 1, K]
-    B_fifo: int16[Nt, Mt + 1, K]
-    A_drain: int8[Mt]
-    B_drain: int16[Nt]
-
-    for k in range(K, name="data_load"):
-        # Can be fully unrolled inside this loop,
-        # once A and B are correctly partitioned
-        for m in range(Mt):
-            A_fifo[m, 0, k] = A[m, k]
-        for n in range(Nt):
-            B_fifo[n, 0, k] = B[k, n]
-    for i, j in dsl.grid(Mt, Nt, name="PE"):
-        PE_kernel_packed_int8xint8[K, Mt, Nt](
-            A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
-        )
-    for k in range(K, name="data_drain"):
-        for m in range(Mt):
-            A_drain[m] = A_fifo[m, Nt, k]
-        for n in range(Nt):
-            B_drain[n] = B_fifo[n, Mt, k]
-
-
 def packed_int8xint8_systolic[
     M: int32,
     K: int32,
@@ -230,7 +209,7 @@ def packed_int8xint8_systolic[
             b: Int(8 * P) = B[bk, ni * Nt // P + bj]
             for p in range(P // 2):
                 local_B[bk, bj * P + p] = b[p * 16 : (p + 1) * 16]
-        systolic_tile_packed_int8xint8[K, Mt, Nt // 2](
+        systolic_tile[int8, int16, int32, K, Mt, Nt // 2](
             local_A,
             local_B,
             local_C,
@@ -298,7 +277,7 @@ def schedule_systolic(s):
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
-        tile_name = "systolic_tile_packed_int8xint8"
+        tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
     else:
         raise ValueError(
