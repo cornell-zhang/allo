@@ -8,3 +8,4 @@ from .backend.llvm import invoke_mlir_parser, LLVMModule
 from .backend.hls import HLSModule
 from .backend.ip import IPModule
 from .dsl import *
+from .template import *

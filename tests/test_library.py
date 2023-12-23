@@ -103,12 +103,16 @@ def test_meta_if():
         with allo.meta_if(Ty == int8):
             return kernel_int8[M, N]()
         with allo.meta_if(Ty == int32):
-            return kernel_int32[M, N]()
+            with allo.meta_if(M + 2 == N + 2):
+                A = kernel_int32[M * 2, N * 2]()
+            B: int32[M, N] = 0
+            return B
 
     s = allo.customize(top, instantiate=[int8, 16, 16])
     assert "i8" in str(s.module)
     s = allo.customize(top, instantiate=[int32, 32, 32])
     assert "i32" in str(s.module)
+    print(s.module)
 
 
 if __name__ == "__main__":
