@@ -857,19 +857,36 @@ class TypeInferer(ASTVisitor):
         assert len(node.items) == 1, "Only support one context manager"
         assert isinstance(
             node.items[0].context_expr, ast.Call
-        ), "Only support `with allo.meta_if()`"
+        ), "Only support `with allo.meta_if/elif/else()`"
         assert isinstance(
             node.items[0].context_expr.func, ast.Attribute
-        ), "Only support `with allo.meta_if()`"
+        ), "Only support `with allo.meta_if/elif/else()`"
         assert (
-            node.items[0].context_expr.func.attr == "meta_if"
-        ), "Only support `with allo.meta_if()`"
-        assert (
-            len(node.items[0].context_expr.args) == 1
-        ), "Only support one argument for `allo.meta_if()`"
+            len(node.items[0].context_expr.args) <= 1
+        ), "Only support one argument for `allo.meta_if/elif/else()`"
         # Compile-time comparison
-        cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-        if cond:
+        if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
+            cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            if node.items[0].context_expr.func.attr == "meta_if":
+                final_cond = cond
+                ctx.meta_if_stack.append(final_cond)
+            else:  # meta_elif
+                assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
+                if ctx.meta_if_stack[-1]:  # previous `if` has already satisfied
+                    ctx.meta_if_stack.pop()
+                    ctx.meta_if_stack.append(True)
+                    final_cond = False
+                else:
+                    ctx.meta_if_stack.pop()
+                    ctx.meta_if_stack.append(cond)
+                    final_cond = cond
+        elif node.items[0].context_expr.func.attr == "meta_else":
+            assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_else()"
+            final_cond = not ctx.meta_if_stack[-1]
+            ctx.meta_if_stack.pop()
+        else:
+            raise RuntimeError("Unsupported meta function")
+        if final_cond:
             visit_stmts(ctx, node.body)
         node.dtype = None
         node.shape = None

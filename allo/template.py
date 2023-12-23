@@ -3,6 +3,17 @@
 
 from contextlib import contextmanager
 
+
 @contextmanager
 def meta_if(cond):
+    pass
+
+
+@contextmanager
+def meta_elif(cond):
+    pass
+
+
+@contextmanager
+def meta_else():
     pass
