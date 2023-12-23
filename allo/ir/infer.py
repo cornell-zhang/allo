@@ -853,6 +853,30 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_With(ctx, node):
+        assert len(node.items) == 1, "Only support one context manager"
+        assert isinstance(
+            node.items[0].context_expr, ast.Call
+        ), "Only support `with allo.meta_if()`"
+        assert isinstance(
+            node.items[0].context_expr.func, ast.Attribute
+        ), "Only support `with allo.meta_if()`"
+        assert (
+            node.items[0].context_expr.func.attr == "meta_if"
+        ), "Only support `with allo.meta_if()`"
+        assert (
+            len(node.items[0].context_expr.args) == 1
+        ), "Only support one argument for `allo.meta_if()`"
+        # Compile-time comparison
+        # wait for builder to resolve the expression
+        cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+        if cond:
+            visit_stmts(ctx, node.body)
+        node.dtype = None
+        node.shape = None
+        return node
+
+    @staticmethod
     def visit_Expr(ctx, node):
         visit_stmt(ctx, node.value)
         node.dtype = None

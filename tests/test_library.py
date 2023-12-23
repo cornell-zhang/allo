@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import int8, int32, float32
 
 
 def kernel[
@@ -88,6 +88,27 @@ def test_expr_param():
 
     s = allo.customize(top, instantiate=[float32, 16, 16])
     print(s.module)
+
+
+def test_meta_if():
+    def kernel_int8[M, N]() -> "int8[M, N]":
+        B: int8[M, N] = 0
+        return B
+
+    def kernel_int32[M, N]() -> "int32[M, N]":
+        B: int32[M, N] = 0
+        return B
+
+    def top[Ty, M, N]() -> "Ty[M, N]":
+        with allo.meta_if(Ty == int8):
+            return kernel_int8[M, N]()
+        with allo.meta_if(Ty == int32):
+            return kernel_int32[M, N]()
+
+    s = allo.customize(top, instantiate=[int8, 16, 16])
+    assert "i8" in str(s.module)
+    s = allo.customize(top, instantiate=[int32, 32, 32])
+    assert "i32" in str(s.module)
 
 
 if __name__ == "__main__":

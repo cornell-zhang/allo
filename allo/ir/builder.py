@@ -1282,8 +1282,10 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[name] = MockArg(arg, idx=i)
         ctx.func_args[func_name] = arg_names
         ctx.set_ip(func_op.entry_block)
-        stmts = build_stmts(ctx, node.body)
-        if not isinstance(stmts[-1], func_d.ReturnOp):
+        build_stmts(ctx, node.body)
+        if (
+            isinstance(node.returns, ast.Constant) and node.returns.value is None
+        ) or node.returns is None:
             func_d.ReturnOp([], ip=ctx.pop_ip())
         # Recover the old context
         if old_ctx is not None:
@@ -2037,6 +2039,14 @@ class ASTTransformer(ASTBuilder):
             ret = alloc_op
             res = ret.result
         return func_d.ReturnOp([res], ip=ctx.pop_ip())
+
+    @staticmethod
+    def build_With(ctx, node):
+        # Compile-time comparison
+        cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+        if cond:
+            stmts = build_stmts(ctx, node.body)
+            return stmts[-1]
 
     @staticmethod
     def build_Expr(ctx, node):
