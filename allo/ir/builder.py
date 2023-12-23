@@ -1228,7 +1228,7 @@ class ASTTransformer(ASTBuilder):
                 and arg.shape != tuple(ctx.call_args[i].type.shape)
             ):
                 raise DTypeError(
-                    f"Argument shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
+                    f"Argument {i} of {node.name} shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
                 )
             layout = (
                 ctx.call_args[i].type.layout
