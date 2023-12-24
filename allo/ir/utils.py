@@ -60,11 +60,11 @@ def get_func_id_from_param_types(param_types):
     return None
 
 
-def resolve_generic_types(ctx, type_var, call_val):
+def resolve_generic_types(global_vars, type_var, call_val):
     name = type_var.name
     if type_var.bound is None:
         return name, call_val
-    constrained_types = ASTResolver.resolve_param_types(type_var.bound, ctx.global_vars)
+    constrained_types = ASTResolver.resolve_param_types(type_var.bound, global_vars)
     for ty in constrained_types:
         if (
             (isinstance(ty, AlloType) and type(ty).isinstance(call_val))

@@ -7,7 +7,7 @@ import inspect
 import textwrap
 
 from .symbol_resolver import ASTResolver
-from .utils import get_func_id_from_param_types
+from .utils import get_func_id_from_param_types, resolve_generic_types
 
 
 class VarNode:
@@ -36,10 +36,11 @@ class VarNode:
 
 
 class UseDefChain(ast.NodeVisitor):
-    def __init__(self, global_vars):
+    def __init__(self, global_vars, instantiate):
         self.buffers = {}
         self.path = ""
         self.global_vars = global_vars
+        self.inst = instantiate
         # Used for nested functions
         self.arg_nodes = []
         # Used for unique function identification when calling the same function
@@ -51,6 +52,8 @@ class UseDefChain(ast.NodeVisitor):
         # name -> id -> (param_type1, param_type2, ...)
         self.func_name2id = {}
         self.func_id = None
+        # Used for metaprogramming
+        self.meta_if_stack = []
 
     def __getitem__(self, key):
         return self.buffers[key]
@@ -108,6 +111,9 @@ class UseDefChain(ast.NodeVisitor):
             res += list(self.visit(elt))
         return set(res)
 
+    def visit_BoolOp(self, node):
+        return set()
+
     def visit_List(self, node):
         return set()
 
@@ -158,22 +164,24 @@ class UseDefChain(ast.NodeVisitor):
             obj = ASTResolver.resolve(node.func.value, self.global_vars)
             assert obj is not None, "Unsupported function call"
             obj_name = node.func.value.id
-            inst = ASTResolver.resolve_param_types(node.func.slice, self.global_vars)
+            self.inst = ASTResolver.resolve_param_types(
+                node.func.slice, self.global_vars
+            )
             if self.func_id is None:
-                func_id = get_func_id_from_param_types(inst)
+                func_id = get_func_id_from_param_types(self.inst)
                 if func_id is None:
                     func_dict = self.func_name2id.setdefault(obj_name, {})
                     for key, value in func_dict.items():
-                        if value == tuple(inst):
+                        if value == tuple(self.inst):
                             func_id = key
                             break
                     else:
                         func_id = len(func_dict) if len(func_dict) > 0 else None
-                        func_dict[func_id] = tuple(inst)
+                        func_dict[func_id] = tuple(self.inst)
                 else:
-                    inst.remove(func_id)
+                    self.inst.remove(func_id)
                     func_dict = self.func_name2id.setdefault(obj_name, {})
-                    func_dict[func_id] = tuple(inst)
+                    func_dict[func_id] = tuple(self.inst)
                 self.func_id = func_id
         else:
             raise RuntimeError("Unsupported function call")
@@ -271,6 +279,22 @@ class UseDefChain(ast.NodeVisitor):
             self.path = node.name
         else:
             self.path = node.name + "_" + str(self.func_id)
+
+        # Generic function
+        if (
+            len(self.inst) > 0
+            and hasattr(node, "type_params")
+            and len(node.type_params) > 0
+        ):
+            assert len(self.inst) == len(
+                node.type_params
+            ), f"Type parameters mismatch, got {self.inst} and {node.type_params}"
+            for type_var, call_val in zip(node.type_params, self.inst):
+                name, call_val = resolve_generic_types(
+                    self.global_vars, type_var, call_val
+                )
+                self.global_vars[name] = call_val
+
         if original_path == "":  # top-level function
             # create initial variables
             for i, arg in enumerate(node.args.args):
@@ -303,6 +327,56 @@ class UseDefChain(ast.NodeVisitor):
         for stmt in node.body:
             res.append(self.visit(stmt))
         return res[0]
+
+    def visit_With(self, node):
+        assert len(node.items) == 1, "Only support one context manager"
+        assert isinstance(
+            node.items[0].context_expr, ast.Call
+        ), "Only support `with allo.meta_if/elif/else()`"
+        assert isinstance(
+            node.items[0].context_expr.func, ast.Attribute
+        ), "Only support `with allo.meta_if/elif/else()`"
+        assert (
+            len(node.items[0].context_expr.args) <= 1
+        ), "Only support one argument for `allo.meta_if/elif/else()`"
+        # Compile-time comparison
+        if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
+            try:
+                # pylint: disable=eval-used
+                cond = eval(
+                    compile(
+                        ast.Expression(node.items[0].context_expr.args[0]), "", "eval"
+                    ),
+                    self.global_vars,
+                )
+            # pylint: disable=broad-exception-caught
+            except Exception:
+                return None
+            if node.items[0].context_expr.func.attr == "meta_if":
+                final_cond = cond
+                self.meta_if_stack.append(final_cond)
+            else:  # meta_elif
+                assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
+                if self.meta_if_stack[-1]:  # previous `if` has already satisfied
+                    self.meta_if_stack.pop()
+                    self.meta_if_stack.append(True)
+                    final_cond = False
+                else:
+                    self.meta_if_stack.pop()
+                    self.meta_if_stack.append(cond)
+                    final_cond = cond
+        elif node.items[0].context_expr.func.attr == "meta_else":
+            assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_else()"
+            final_cond = not self.meta_if_stack[-1]
+            self.meta_if_stack.pop()
+        else:
+            raise RuntimeError("Unsupported meta function")
+        if final_cond:
+            res = []
+            for stmt in node.body:
+                res.append(self.visit(stmt))
+            return res[-1]
+        return None
 
     def visit_Return(self, node):
         if node.value is None:

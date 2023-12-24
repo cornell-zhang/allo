@@ -62,6 +62,8 @@ class ASTContext:
         self.verbose = verbose
         # libraries for external IPs
         self.ext_libs = []
+        # metaprogramming
+        self.meta_if_stack = []
 
     def copy(self):
         ctx = ASTContext(

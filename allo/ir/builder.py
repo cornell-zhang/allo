@@ -1212,7 +1212,9 @@ class ASTTransformer(ASTBuilder):
                 node.type_params
             ), f"Type parameters mismatch, got {ctx.inst} and {node.type_params}"
             for type_var, call_val in zip(node.type_params, ctx.inst):
-                name, call_val = resolve_generic_types(ctx, type_var, call_val)
+                name, call_val = resolve_generic_types(
+                    ctx.global_vars, type_var, call_val
+                )
                 ctx.global_vars[name] = call_val
 
         # Build input types
@@ -1226,7 +1228,7 @@ class ASTTransformer(ASTBuilder):
                 and arg.shape != tuple(ctx.call_args[i].type.shape)
             ):
                 raise DTypeError(
-                    f"Argument shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
+                    f"Argument {i} of {node.name} shape mismatch, got {arg.shape} and {tuple(ctx.call_args[i].type.shape)}"
                 )
             layout = (
                 ctx.call_args[i].type.layout
@@ -1280,8 +1282,10 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[name] = MockArg(arg, idx=i)
         ctx.func_args[func_name] = arg_names
         ctx.set_ip(func_op.entry_block)
-        stmts = build_stmts(ctx, node.body)
-        if not isinstance(stmts[-1], func_d.ReturnOp):
+        build_stmts(ctx, node.body)
+        if (
+            isinstance(node.returns, ast.Constant) and node.returns.value is None
+        ) or node.returns is None:
             func_d.ReturnOp([], ip=ctx.pop_ip())
         # Recover the old context
         if old_ctx is not None:
@@ -2035,6 +2039,34 @@ class ASTTransformer(ASTBuilder):
             ret = alloc_op
             res = ret.result
         return func_d.ReturnOp([res], ip=ctx.pop_ip())
+
+    @staticmethod
+    def build_With(ctx, node):
+        # Compile-time comparison
+        if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
+            cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            if node.items[0].context_expr.func.attr == "meta_if":
+                final_cond = cond
+                ctx.meta_if_stack.append(final_cond)
+            else:  # meta_elif
+                assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
+                if ctx.meta_if_stack[-1]:  # previous `if` has already satisfied
+                    ctx.meta_if_stack.pop()
+                    ctx.meta_if_stack.append(True)
+                    final_cond = False
+                else:
+                    ctx.meta_if_stack.pop()
+                    ctx.meta_if_stack.append(cond)
+                    final_cond = cond
+        elif node.items[0].context_expr.func.attr == "meta_else":
+            assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_else()"
+            final_cond = not ctx.meta_if_stack[-1]
+            ctx.meta_if_stack.pop()
+        else:
+            raise RuntimeError("Unsupported meta function")
+        if final_cond:
+            stmts = build_stmts(ctx, node.body)
+            return stmts[-1]
 
     @staticmethod
     def build_Expr(ctx, node):

@@ -1,9 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unused-import, unsupported-assignment-operation
+# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
 
-from .. import dsl
-from ..ir.types import int8, int16, int32, index, Int, UInt
+from .. import dsl, template
+from ..ir.types import int4, int8, int16, int32, index, Int, UInt
 from ..ir.utils import MockBuffer
 
 
@@ -29,6 +29,85 @@ def PE_kernel[
     C[i, j] = v
 
 
+def PE_kernel_packed_int4xint8[
+    K: int32, Mt: int32, Nt: int32
+](
+    A_in: "int8[K]",  # not bit-packed
+    B_in: "int8[K]",  # bit-packed, each element is 4 bits
+    A_out: "int8[K]",
+    B_out: "int8[K]",
+    C: "int16[Mt, Nt // 2]",  # bit-packed, each element is 8 bits
+    i: index,
+    j: index,
+):
+    v: int32 = 0
+    for k in range(K):
+        a: int8 = A_in[k]
+        b_packed: int8 = B_in[k]
+        b0: int4 = b_packed[0:4]
+        b1: int4 = b_packed[4:8]
+        s0: UInt(1) = a[7] ^ b0[3]
+        s1: UInt(1) = a[7] ^ b1[3]
+        au: UInt(8) = dsl.abs(a)
+        b0u: UInt(4) = dsl.abs(b0)
+        b1u: UInt(4) = dsl.abs(b1)
+        op0: UInt(18) = 0
+        op1: UInt(27) = 0
+        op0[0:8] = au
+        op1[0:4] = b0u
+        op1[13:17] = b1u
+        res: UInt(48) = op0 * op1
+        res0u: UInt(12) = res[0:12]
+        res1u: UInt(12) = res[13:25]
+        res0: int16 = -res0u if s0 else res0u
+        res1: int16 = -res1u if s1 else res1u
+        v[0:16] += res0
+        v[16:32] += res1
+        A_out[k] = a
+        B_out[k] = b_packed
+    C[i, j] = v
+
+
+def PE_kernel_packed_int8xint8[
+    K: int32, Mt: int32, Nt: int32
+](
+    A_in: "int8[K]",  # not bit-packed
+    B_in: "int16[K]",  # bit-packed, each element is 8 bits
+    A_out: "int8[K]",
+    B_out: "int16[K]",
+    C: "int32[Mt, Nt]",  # bit-packed, each element is 16 bits
+    i: index,
+    j: index,
+):
+    v: int32 = 0
+    for k in range(K):
+        a: int8 = A_in[k]
+        b_packed: int16 = B_in[k]
+        b0: int8 = b_packed[0:8]
+        b1: int8 = b_packed[8:16]
+        s0: UInt(1) = a[7] ^ b0[7]
+        s1: UInt(1) = a[7] ^ b1[7]
+        au: UInt(8) = dsl.abs(a)
+        b0u: UInt(8) = dsl.abs(b0)
+        b1u: UInt(8) = dsl.abs(b1)
+        # DSP48E1: 18x27 multiplier -> 45-bit result
+        op0: UInt(18) = 0
+        op1: UInt(27) = 0
+        op0[0:8] = au
+        op1[0:8] = b0u
+        op1[17:25] = b1u
+        res: UInt(45) = op0 * op1
+        res0u: UInt(16) = res[0:16]
+        res1u: UInt(16) = res[17:33]
+        res0: int16 = -res0u if s0 else res0u
+        res1: int16 = -res1u if s1 else res1u
+        v[0:16] += res0
+        v[16:32] += res1
+        A_out[k] = a
+        B_out[k] = b_packed
+    C[i, j] = v
+
+
 def systolic_tile[
     TyA, TyB, TyC, K: int32, Mt: int32, Nt: int32
 ](A: "TyA[Mt, K]", B: "TyB[K, Nt]", C: "TyC[Mt, Nt]"):
@@ -45,9 +124,14 @@ def systolic_tile[
         for n in range(Nt):
             B_fifo[n, 0, k] = B[k, n]
     for i, j in dsl.grid(Mt, Nt, name="PE"):
-        PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
-            A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
-        )
+        with template.meta_if(TyA == int8 and TyB == int16 and TyC == int32):
+            PE_kernel_packed_int8xint8[K, Mt, Nt](
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
+        with template.meta_else():
+            PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
+                A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
+            )
     for k in range(K, name="data_drain"):
         for m in range(Mt):
             A_drain[m] = A_fifo[m, Nt, k]
@@ -135,72 +219,6 @@ def packed_systolic[
             C[mi * Mt // P + si, ni * Nt + sj] = c
 
 
-def PE_kernel_packed_int8xint8[
-    K: int32, Mt: int32, Nt: int32
-](
-    A_in: "int8[K]",  # not bit-packed
-    B_in: "int16[K]",  # bit-packed, each element is 8 bits
-    A_out: "int8[K]",
-    B_out: "int16[K]",
-    C: "int32[Mt, Nt // 2]",  # bit-packed, each element is 16 bits
-    i: index,
-    j: index,
-):
-    v: int32 = 0
-    for k in range(K):
-        a: int8 = A_in[k]
-        b_packed: int16 = B_in[k]
-        b0: int8 = b_packed[0:8]
-        b1: int8 = b_packed[8:16]
-        s0: UInt(1) = a[7] ^ b0[7]
-        s1: UInt(1) = a[7] ^ b1[7]
-        au: UInt(8) = dsl.abs(a)
-        b0u: UInt(8) = dsl.abs(b0)
-        b1u: UInt(8) = dsl.abs(b1)
-        # DSP48E1: 18x27 multiplier -> 45-bit result
-        op0: UInt(18) = 0
-        op1: UInt(27) = 0
-        op0[0:8] = au
-        op1[0:8] = b0u
-        op1[17:25] = b1u
-        res: UInt(45) = op0 * op1
-        res0u: UInt(16) = res[0:16]
-        res1u: UInt(16) = res[17:33]
-        res0: int16 = -res0u if s0 else res0u
-        res1: int16 = -res1u if s1 else res1u
-        v[0:16] += res0
-        v[16:32] += res1
-        A_out[k] = a
-        B_out[k] = b_packed
-    C[i, j] = v
-
-
-def systolic_tile_packed_int8xint8[
-    K: int32, Mt: int32, Nt: int32
-](A: "int8[Mt, K]", B: "int16[K, Nt // 2]", C: "int32[Mt, Nt // 2]"):
-    A_fifo: int8[Mt, Nt // 2 + 1, K]
-    B_fifo: int16[Nt // 2, Mt + 1, K]
-    A_drain: int8[Mt]
-    B_drain: int16[Nt // 2]
-
-    for k in range(K, name="data_load"):
-        # Can be fully unrolled inside this loop,
-        # once A and B are correctly partitioned
-        for m in range(Mt):
-            A_fifo[m, 0, k] = A[m, k]
-        for n in range(Nt // 2):
-            B_fifo[n, 0, k] = B[k, n]
-    for i, j in dsl.grid(Mt, Nt // 2, name="PE"):
-        PE_kernel_packed_int8xint8[K, Mt, Nt](
-            A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
-        )
-    for k in range(K, name="data_drain"):
-        for m in range(Mt):
-            A_drain[m] = A_fifo[m, Nt // 2, k]
-        for n in range(Nt // 2):
-            B_drain[n] = B_fifo[n, Mt, k]
-
-
 def packed_int8xint8_systolic[
     M: int32,
     K: int32,
@@ -230,7 +248,7 @@ def packed_int8xint8_systolic[
             b: Int(8 * P) = B[bk, ni * Nt // P + bj]
             for p in range(P // 2):
                 local_B[bk, bj * P + p] = b[p * 16 : (p + 1) * 16]
-        systolic_tile_packed_int8xint8[K, Mt, Nt](
+        systolic_tile[int8, int16, int32, K, Mt, Nt // 2](
             local_A,
             local_B,
             local_C,
@@ -259,7 +277,7 @@ def schedule_systolic(s):
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
-        tile_name = "systolic_tile_packed_int8xint8"
+        tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
     else:
         raise ValueError(
