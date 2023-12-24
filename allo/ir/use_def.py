@@ -342,6 +342,7 @@ class UseDefChain(ast.NodeVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             try:
+                # pylint: disable=eval-used
                 cond = eval(
                     compile(
                         ast.Expression(node.items[0].context_expr.args[0]), "", "eval"

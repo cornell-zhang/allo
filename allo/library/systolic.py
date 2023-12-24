@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unused-import, unsupported-assignment-operation
+# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
 
 from .. import dsl, template
 from ..ir.types import int4, int8, int16, int32, index, Int, UInt
@@ -128,7 +128,7 @@ def systolic_tile[
             PE_kernel_packed_int8xint8[K, Mt, Nt](
                 A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
             )
-        with template.meta_if(not (TyA == int8 and TyB == int16 and TyC == int32)):
+        with template.meta_else():
             PE_kernel[TyA, TyB, TyC, K, Mt, Nt](
                 A_fifo[i, j], B_fifo[j, i], A_fifo[i, j + 1], B_fifo[j, i + 1], C, i, j
             )
