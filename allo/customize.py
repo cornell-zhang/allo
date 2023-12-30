@@ -441,11 +441,15 @@ class Schedule:
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
 
     @wrapped_apply
-    def pipeline(self, axis, initiation_interval=1):
+    def pipeline(self, axis, initiation_interval=1, rewind=False):
         i32 = IntegerType.get_unsigned(32)
         ii = IntegerAttr.get(i32, initiation_interval)
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
+        if rewind:
+            self.get_loops(func)[band_name][axis].loop.attributes[
+                "rewind"
+            ] = UnitAttr.get()
         ip = InsertionPoint.at_block_terminator(func.entry_block)
         op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
