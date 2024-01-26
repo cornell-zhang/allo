@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import numpy as np
 import pytest
 import allo
@@ -46,6 +47,20 @@ def test_grid_for_gemm():
     loop_labels = ["l_C_i_outer", "l_j_outer", "l_i_inner", "l_j_inner", "l_k"]
     for label in loop_labels:
         assert label in hls_code
+
+    # 5. HLS CSIM
+    if os.system(f"which vitis_hls >> /dev/null") != 0:
+        print("Vitis HLS not found, skipping...")
+        return
+    hls_mod = s.build(
+        target="vitis_hls",
+        mode="csim",
+        project=f"test_gemm.prj",
+    )
+    csim_out = np.zeros((32, 32), dtype=np.int32)
+    hls_mod(np_A, np_B, csim_out)
+    np.testing.assert_allclose(csim_out, np_C, atol=1e-3)
+    print("Passed HLS csim test!")
 
 
 def test_all_gemm():
