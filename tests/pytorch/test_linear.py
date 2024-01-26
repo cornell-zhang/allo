@@ -1,3 +1,5 @@
+import os
+import sys
 import torch
 from torch import nn
 import allo
@@ -57,3 +59,17 @@ np.testing.assert_allclose(allo_out, np_x @ np_w, atol=1e-3)
 print("Passed Numpy test!")
 np.testing.assert_allclose(allo_out, out.numpy().astype(np.int8), atol=1e-3)
 print("Passed PyTorch test!")
+
+s_linear.compose(systolic, instantiate=[int8, int8, int8, L, D, 4 * D, 2, 2])
+hls_mod = s_linear.build(
+    target="vitis_hls",
+    mode="csim",
+    project=f"test_linear.prj",
+)
+csim_out = np.zeros((L, 4 * D), dtype=np.int8)
+if os.system(f"which vitis_hls >> /dev/null") != 0:
+    print("Vitis HLS not found, skipping...")
+    sys.exit()
+hls_mod(np_x, np_w, csim_out)
+np.testing.assert_allclose(csim_out, allo_out, atol=1e-3)
+print("Passed HLS csim test!")
