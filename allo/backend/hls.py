@@ -122,8 +122,7 @@ def separate_header(hls_code, top=None):
             arg_type = line.strip()
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
             ele_type = c2allo_type[ele_type]
-            # pylint: disable=eval-used
-            shape = tuple([s.split("]")[0] for s in arg_type.split("[")[1:]])
+            shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((ele_type, shape))
             sig_str += line + "\n"
     sig_str += "\n#endif // KERNEL_H\n"
