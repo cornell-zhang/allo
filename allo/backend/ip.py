@@ -7,7 +7,7 @@ import importlib
 import subprocess
 import traceback
 
-type_map = {
+allo2c_type = {
     "float32": "float",
     "float64": "double",
     "int1": "bool",
@@ -19,6 +19,10 @@ type_map = {
     "uint16": "uint16_t",
     "uint32": "unsigned int",
 }
+
+c2allo_type = {v: k for k, v in allo2c_type.items()}
+c2allo_type["int32_t"] = "int32"
+c2allo_type["uint32_t"] = "uint32"
 
 
 class IPModule:
@@ -78,7 +82,7 @@ class IPModule:
         # Generate function interface
         out_str += f"void {self.lib_name}(\n"
         for i, (arg_type, _) in enumerate(self.args):
-            resolved_type = type_map.get(arg_type)
+            resolved_type = allo2c_type.get(arg_type)
             out_str += f"  py::array_t<{resolved_type}> &arg{i}"
             out_str += ",\n" if i < len(self.args) - 1 else ") {\n"
         # Generate function body
@@ -91,7 +95,7 @@ class IPModule:
         for i, (arg_type, arg_shape) in enumerate(self.args):
             if len(arg_shape) > 2:
                 raise RuntimeError("Only support 1D and 2D arrays for now")
-            resolved_type = type_map.get(arg_type)
+            resolved_type = allo2c_type.get(arg_type)
             out_str += f"  {resolved_type} *p_arg{i} = ({resolved_type} *)buf{i}.ptr;\n"
             if len(arg_shape) == 1:
                 in_ptrs.append(f"p_arg{i}")
@@ -149,7 +153,7 @@ class IPModule:
         for i, (arg_type, arg_shape) in enumerate(self.args):
             if len(arg_shape) > 2:
                 raise RuntimeError("Only support 1D and 2D arrays for now")
-            resolved_type = type_map.get(arg_type)
+            resolved_type = allo2c_type.get(arg_type)
             out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank_{i}, ptr_{i}}};\n"
             out_str += f"  DynamicMemRefType<{resolved_type}> ranked_in{i}(in{i});\n"
             out_str += f"  {resolved_type} *in{i}_ptr = ({resolved_type} *)ranked_in{i}.data;\n"

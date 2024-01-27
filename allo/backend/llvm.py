@@ -162,6 +162,10 @@ class LLVMModule:
                         " data types are needed as inputs."
                     )
             else:  # memref
+                if not arg.flags["C_CONTIGUOUS"]:
+                    raise RuntimeError(
+                        "The input data is not contiguous. Please use np.ascontiguousarray to change the layout first."
+                    )
                 if not isinstance(arg.dtype, np.dtypes.VoidDType):
                     np_type = np_type_to_str(arg.dtype)
                     if np_type != target_in_type:

@@ -20,6 +20,7 @@ from .vitis import (
     generate_description_file,
     update_makefile,
 )
+from .ip import IPModule, c2allo_type
 from .report import parse_xml
 from ..passes import (
     _mlir_lower_pipeline,
@@ -104,6 +105,30 @@ def copy_ext_libs(ext_libs, project):
             impls.append(cpp_file)
 
 
+def separate_header(hls_code, top=None):
+    func_decl = False
+    sig_str = "#ifndef KERNEL_H\n"
+    sig_str += "#define KERNEL_H\n\n"
+    args = []
+    for line in hls_code.split("\n"):
+        if line.startswith(f"void {top}"):
+            func_decl = True
+            sig_str += line + "\n"
+        elif func_decl and line.startswith(") {"):
+            func_decl = False
+            sig_str += ");\n"
+            break
+        elif func_decl:
+            arg_type = line.strip()
+            ele_type = arg_type.split("[")[0].split(" ")[0].strip()
+            ele_type = c2allo_type[ele_type]
+            shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
+            args.append((ele_type, shape))
+            sig_str += line + "\n"
+    sig_str += "\n#endif // KERNEL_H\n"
+    return sig_str, args
+
+
 class HLSModule:
     def __init__(
         self,
@@ -147,7 +172,7 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
-                assert self.mode in {"sw_emu", "hw_emu", "hw"}, "Invalid mode"
+                assert self.mode in {"csim", "sw_emu", "hw_emu", "hw"}, "Invalid mode"
                 assert (
                     self.top_func_name != "kernel"
                 ), "kernel is a reserved keyword for vitis_hls"
@@ -164,7 +189,17 @@ class HLSModule:
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
                     )
-                self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+                if self.mode == "csim":
+                    header, self.args = separate_header(
+                        self.hls_code, self.top_func_name
+                    )
+                    with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
+                        outfile.write(header)
+                else:
+                    self.args = None
+                    self.hls_code = postprocess_hls_code(
+                        self.hls_code, self.top_func_name
+                    )
                 for lib in self.ext_libs:
                     for header in lib.headers:
                         header = header.split("/")[-1]
@@ -234,7 +269,7 @@ class HLSModule:
             return self.hls_code
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
-    def __call__(self, shell=True):
+    def __call__(self, *args, shell=True):
         if self.platform == "vivado_hls":
             assert (
                 os.system(f"which {self.platform} >> /dev/null") == 0
@@ -276,6 +311,19 @@ class HLSModule:
             assert (
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
+            if self.mode == "csim":
+                cwd = os.getcwd()
+                mod = IPModule(
+                    top=self.top_func_name,
+                    headers=[f"{cwd}/{self.project}/kernel.h"],
+                    impls=[f"{cwd}/{self.project}/kernel.cpp"],
+                    signature=[
+                        f"{dtype}[{', '.join(shape)}]" for dtype, shape in self.args
+                    ],
+                    link_hls=True,
+                )
+                mod(*args)
+                return
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
             cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
             print(cmd)
