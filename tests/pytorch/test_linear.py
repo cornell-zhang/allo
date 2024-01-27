@@ -3,8 +3,6 @@
 
 import os
 import pytest
-import torch
-from torch import nn
 import allo
 from allo.library.systolic import systolic
 from allo.ir.types import int8
@@ -14,31 +12,37 @@ device = "cpu"
 N, L, D = 1, 4, 4
 
 
-class TestModule(nn.Module):
-    def __init__(self, hidden_size: int, bias: bool = True):
-        super().__init__()
-        self.fc = nn.Linear(hidden_size, 4 * hidden_size, bias=bias, device=device)
-        self.fc.weight = nn.Parameter(
-            torch.randint(
-                -10,
-                10,
-                (hidden_size * 4, hidden_size),
-                device=device,
-                dtype=torch.float32,
-            )
-        )
-        if bias:
-            self.fc.bias = nn.Parameter(
+def test_int8_linear():
+    try:
+        import torch
+        from torch import nn
+    except ImportError:
+        print("PyTorch not found, skipping...")
+        return
+
+    class TestModule(nn.Module):
+        def __init__(self, hidden_size: int, bias: bool = True):
+            super().__init__()
+            self.fc = nn.Linear(hidden_size, 4 * hidden_size, bias=bias, device=device)
+            self.fc.weight = nn.Parameter(
                 torch.randint(
-                    -10, 10, (hidden_size * 4,), device=device, dtype=torch.float32
+                    -10,
+                    10,
+                    (hidden_size * 4, hidden_size),
+                    device=device,
+                    dtype=torch.float32,
                 )
             )
+            if bias:
+                self.fc.bias = nn.Parameter(
+                    torch.randint(
+                        -10, 10, (hidden_size * 4,), device=device, dtype=torch.float32
+                    )
+                )
 
-    def forward(self, hidden_states: torch.Tensor):
-        return self.fc(hidden_states)
+        def forward(self, hidden_states: torch.Tensor):
+            return self.fc(hidden_states)
 
-
-def test_int8_linear():
     model = TestModule(D, bias=False)
     model.eval()
     x = torch.randint(-10, 10, (L, D), device=device, dtype=torch.float32)
