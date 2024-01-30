@@ -12,8 +12,6 @@ on:
       - 'docs/**'
       - 'tutorials/**'
   pull_request:
-    branches:
-      - main
     paths:
       - '.github/workflows/**'
       - 'docs/**'
