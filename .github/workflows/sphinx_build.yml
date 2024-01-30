@@ -29,11 +29,6 @@ jobs:
     - uses: actions/checkout@v3
       with:
         ref: ${{ github.ref }}
-    # - name: Patch LLVM Project
-    #   run: |
-    #     cp externals/llvm_patch /root/llvm-project
-    #     cd /root/llvm-project
-    #     git apply llvm_patch
     - name: Build HCL-MLIR
       shell: bash
       run: |
