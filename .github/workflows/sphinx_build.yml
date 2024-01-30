@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: "Build documentation"
-# This workflow is triggered on pushes to the repository.
 on:
   push:
     branches:
@@ -12,10 +11,6 @@ on:
       - 'docs/**'
       - 'tutorials/**'
   pull_request:
-    paths:
-      - '.github/workflows/**'
-      - 'docs/**'
-      - 'tutorials/**'
 
 jobs:
   build:
