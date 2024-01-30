@@ -1,4 +1,4 @@
-sphinx==4.5.0
+sphinx
 sphinx-gallery
 sphinx-copybutton
 autodocsumm
