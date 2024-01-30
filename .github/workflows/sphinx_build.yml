@@ -26,7 +26,6 @@ jobs:
       image: chhzh123/hcl-dialect:llvm-18.x-py3.12
 
     steps:
-    - shell: bash
     - uses: actions/checkout@v3
       with:
         ref: ${{ github.ref }}
@@ -36,6 +35,7 @@ jobs:
     #     cd /root/llvm-project
     #     git apply llvm_patch
     - name: Build HCL-MLIR
+      shell: bash
       run: |
         source activate hcl-dev
         export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
@@ -48,6 +48,7 @@ jobs:
         cd tools/hcl/python_packages/hcl_core
         python3 -m pip install -e .
     - name: Build docs
+      shell: bash
       run: |
         source activate hcl-dev
         export ALLO_HOME=$(pwd)
