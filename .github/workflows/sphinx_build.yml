@@ -26,6 +26,7 @@ jobs:
       image: chhzh123/hcl-dialect:llvm-18.x-py3.12
 
     steps:
+    - shell: bash
     - uses: actions/checkout@v3
       with:
         ref: ${{ github.ref }}
