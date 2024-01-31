@@ -27,8 +27,9 @@ Installation
 To install and use Allo, we need to have the LLVM compiler infrastructure installed on our system.
 We have already prepared a prebuilt version of LLVM on our server, so you can directly export it to your system path.
 Please follow the instruction below to set up the environment.
+If you want to install Allo on your local machine, you can refer to the [README](https://github.com/cornell-zhang/allo) guideline in the Allo repository.
 
-Make sure you have the access to the :code:`brg-zhang` or :code:`zhang-21` server. You can log into the server by
+Make sure you have the access to the :code:`brg-zhang` or other Zhang group server. You can log into the server by
 SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`_
 for more details on configuring VSCode. Those servers are only accessible from the campus network.
 
@@ -39,14 +40,14 @@ After the installation, you can create a new environment for Allo by running the
 
 .. code-block:: console
 
-  $ conda create -n allo python=3.8
+  $ conda create -n allo python=3.12
   $ conda activate allo
 
 We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory and run it
 
 .. code-block:: console
 
-  $ cp /work/shared/common/allo/setup.sh ~/
+  $ cp /work/shared/common/allo/setup-py312.sh ~/
   $ source ~/setup.sh
 
 .. note::

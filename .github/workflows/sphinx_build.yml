@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: "Build documentation"
-# This workflow is triggered on pushes to the repository.
 on:
   push:
     branches:
@@ -36,6 +35,7 @@ jobs:
     #     cd /root/llvm-project
     #     git apply llvm_patch
     - name: Build HCL-MLIR
+      shell: bash
       run: |
         source activate hcl-dev
         export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
@@ -48,6 +48,7 @@ jobs:
         cd tools/hcl/python_packages/hcl_core
         python3 -m pip install -e .
     - name: Build docs
+      shell: bash
       run: |
         source activate hcl-dev
         export ALLO_HOME=$(pwd)
@@ -77,6 +78,7 @@ jobs:
     - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
       uses: cpina/github-action-push-to-another-repository@main
+      if: github.event_name == 'push'
       env:
         SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
       with:
