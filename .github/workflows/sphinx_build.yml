@@ -26,9 +26,10 @@ jobs:
       image: chhzh123/hcl-dialect:llvm-18.x-py3.12
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.ref }}
+        fetch-depth: 0
     # - name: Patch LLVM Project
     #   run: |
     #     cp externals/llvm_patch /root/llvm-project
@@ -69,7 +70,8 @@ jobs:
       run: |
         apt-get update && apt-get install -y rsync
     - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@releases/v3
+      shell: bash
+      uses: JamesIves/github-pages-deploy-action@v4
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
@@ -77,6 +79,7 @@ jobs:
         FOLDER: docs/build/html
     - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
+      shell: bash
       uses: cpina/github-action-push-to-another-repository@main
       if: github.event_name == 'push'
       env:
