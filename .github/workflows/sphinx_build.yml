@@ -73,6 +73,7 @@ jobs:
       shell: bash
       run: |
         apt-get update && apt-get install -y rsync
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@releases/v3
       with:
