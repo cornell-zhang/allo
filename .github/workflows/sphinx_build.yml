@@ -73,18 +73,25 @@ jobs:
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-        BRANCH: gh-pages
-        FOLDER: docs/build/html
-    - run: touch docs/build/html/.nojekyll
-    - name: Deploy docs to website
-      uses: cpina/github-action-push-to-another-repository@main
-      env:
-        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
-      with:
-        source-directory: 'docs/build/html'
-        destination-github-username: 'chhzh123'
-        destination-repository-name: 'allo-docs'
-        user-email: hc676@cornell.edu
-        target-branch: gh-pages
-        target-directory: ""
+        git-config-name: chhzh123
+        git-config-email: hc676@cornell.edu
+        repository-name: chhzh123/allo-docs
+        token: ${{ secrets.ACCESS_TOKEN }}
+    # - name: Deploy docs
+    #   uses: JamesIves/github-pages-deploy-action@v4
+    #   with:
+    #     ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+    #     BRANCH: gh-pages
+    #     FOLDER: docs/build/html
+    # - run: touch docs/build/html/.nojekyll
+    # - name: Deploy docs to website
+    #   uses: cpina/github-action-push-to-another-repository@main
+    #   env:
+    #     SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
+    #   with:
+    #     source-directory: 'docs/build/html'
+    #     destination-github-username: 'chhzh123'
+    #     destination-repository-name: 'allo-docs'
+    #     user-email: hc676@cornell.edu
+    #     target-branch: gh-pages
+    #     target-directory: ""
