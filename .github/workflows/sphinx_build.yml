@@ -75,7 +75,7 @@ jobs:
         apt-get update && apt-get install -y rsync
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@v4
+      uses: JamesIves/github-pages-deploy-action@v4.5.0
       with:
         # https://github.com/JamesIves/github-pages-deploy-action/issues/1179#issuecomment-1209272847
         token: ${{ secrets.GITHUB_TOKEN }}
