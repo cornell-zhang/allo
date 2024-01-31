@@ -181,7 +181,7 @@ def packed_systolic[
     P: int32,  # packing factor
 ](
     A: "Int(TyA.bits * P)[M // P, K]",
-    B: "Int(TyB.bits * P)[K, N // P]",
+    B: "Int(TyB.bits * P)[N // P, K]",
     C: "Int(TyC.bits * P)[M // P, N]",
 ):
     local_A: TyA[Mt, K]
@@ -192,17 +192,19 @@ def packed_systolic[
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
-        for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
+        # for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
+        for ai, ak in dsl.grid(Mt // P, K, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
                 a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
                 for p in range(P):
                     local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
-        for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
+        # for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
+        for bj, bk in dsl.grid(Nt // P, K, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
-            b: Int(TyB.bits * P) = B[bk, ni * Nt // P + bj]
+            b: Int(TyB.bits * P) = B[ni * Nt // P + bj, bk]
             for p in range(P):
                 local_B[bk, bj * P + p] = b[p * TyB.bits : (p + 1) * TyB.bits]
         systolic_tile[TyA, TyB, TyC, K, Mt, Nt](
@@ -211,7 +213,8 @@ def packed_systolic[
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
-        for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
+        # for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
+        for si, sj in dsl.grid(Mt // P, Nt, name="store_C_tile"):
             c: Int(TyC.bits * P) = 0
             for p in range(P):
                 # pylint: disable=unsupported-assignment-operation

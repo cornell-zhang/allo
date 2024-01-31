@@ -66,9 +66,9 @@ def test_int8_gemm():
     L, D = 512, 768
     M0, M1 = 16, 16
     PP = 16
-    # L, D = 16, 16
-    # M0, M1 = 4, 4
-    # PP = 2
+    L, D = 16, 16
+    M0, M1 = 4, 4
+    PP = 2
     if PP == 2:
         np_type = np.int16
         allo_type = int16
@@ -91,8 +91,9 @@ def test_int8_gemm():
         raise ValueError(f"Unsupported packing factor: {PP}")
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
+    W_A_packed = np.ascontiguousarray(W_A_packed.T)
 
-    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[D, 4 * D // PP]") -> "Ty[L // PP, 4 * D]":
+    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[4 * D // PP, D]") -> "Ty[L // PP, 4 * D]":
         Z: Ty[L // PP, 4 * D]
         packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
         return Z
@@ -121,15 +122,39 @@ def test_int8_gemm():
         packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
     )
     s_top.dataflow("top")  # important
-    # TODO: Fix input loop ordering
     code = s_top.build("vhls")
     if os.system("which vitis_hls >> /dev/null") == 0:
+        # hls_mod = s_top.build(
+        #     target="vitis_hls",
+        #     mode="hw",
+        #     project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+        # )
+        # hls_mod()
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
-            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+            mode="csim",
+            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}_csim.prj",
+            configs={
+                "mappings": [
+                    None,
+                    (
+                        (L // M0, 4 * D // PP, D),
+                        f"d1 * {D} + d2",
+                        f"d1, d2",
+                    ),
+                    (
+                        (L // M0, 4 * D // M1, M0 // PP, M1),
+                        f"d0 * {M0 // PP} + d2, d1 * {M1} + d3",
+                        f"(d0 * {M0 // PP} + d2) * {4 * D} + d1 * {M1} + d3",
+                    ),
+                ]
+            },
         )
-        hls_mod()
+        # Be careful about the NumPy type
+        csim_C = np.zeros((L // PP, 4 * D), dtype=np_type)
+        hls_mod(packed_X, W_A_packed, csim_C)
+        np.testing.assert_allclose(csim_C, allo_C, atol=1e-3)
+        print("Passed!")
 
 
 def test_int8_gemm_dsp_packing():
@@ -184,4 +209,5 @@ def test_int8_gemm_dsp_packing():
 
 
 if __name__ == "__main__":
-    test_int8_gemm_dsp_packing()
+    # test_int8_gemm_dsp_packing()
+    test_int8_gemm()

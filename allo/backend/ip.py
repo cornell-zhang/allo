@@ -118,7 +118,7 @@ class IPModule:
 
     def compile_pybind11(self):
         self.generate_pybind11_wrapper()
-        cmd = "g++ -shared -std=c++11 -fPIC"
+        cmd = "g++ -shared -std=c++14 -fPIC"
         cmd += " `python3 -m pybind11 --includes` "
         cmd += " ".join(
             ["-I" + (path if path != "" else ".") for path in self.include_paths]
@@ -175,7 +175,7 @@ class IPModule:
         self.generate_mlir_c_wrapper()
         if os.system("which llvm-config >> /dev/null") != 0:
             raise RuntimeError("Please install LLVM and add it to your PATH")
-        cmd = "g++ -c -std=c++11 -fpic "
+        cmd = "g++ -c -std=c++14 -fpic "
         # suppose the build directory is under llvm-project
         self.include_paths.append(
             "/".join(os.popen("which llvm-config").read().split("/")[:-3])

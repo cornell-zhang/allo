@@ -112,14 +112,18 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
-def generate_input_output_buffers(top_func, flatten=False):
+def generate_input_output_buffers(top_func, flatten=False, mappings=None):
     res = {"inputs": [], "outputs": []}
     top_func_name = top_func.attributes["sym_name"].value
+    if mappings is None:
+        mappings = [None] * len(top_func.arguments)
     with top_func.context, Location.unknown():
         first_op = top_func.entry_block.operations[0]
         new_in_types = []
         for i, arg in enumerate(top_func.arguments):
-            create_buffer(arg, f"buf{i}", ip=first_op, flatten=flatten)
+            create_buffer(
+                arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
+            )
             if flatten:
                 old_memref = MemRefType(arg.type)
                 new_memref = MemRefType.get(
@@ -135,6 +139,8 @@ def generate_input_output_buffers(top_func, flatten=False):
         new_out_types = []
         for op in top_func.entry_block.operations:
             if isinstance(op, func_d.ReturnOp):
+                if len(mappings) < len(op.operands) + len(top_func.arguments):
+                    mappings += [None] * len(op.operands)
                 for i, arg in enumerate(op.operands):
                     buf = create_buffer(
                         arg,
@@ -142,6 +148,7 @@ def generate_input_output_buffers(top_func, flatten=False):
                         ip=op,
                         alloc_ip=first_op,
                         flatten=flatten,
+                        mapping=mappings[len(top_func.arguments) + i],
                     )
                     # update returnop
                     op.operation.replace_uses_of_with(arg, buf.result)
