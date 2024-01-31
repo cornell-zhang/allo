@@ -80,6 +80,8 @@ jobs:
         token: ${{ secrets.ACCESS_TOKEN }}
         branch: gh-pages
         folder: docs/build/html
+        git-config-name: chhzh123
+        git-config-email: hc676@cornell.edu
     - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
       uses: cpina/github-action-push-to-another-repository@main
