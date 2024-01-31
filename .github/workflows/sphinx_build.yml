@@ -75,11 +75,11 @@ jobs:
         apt-get update && apt-get install -y rsync
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@releases/v3
+      uses: JamesIves/github-pages-deploy-action@v4
       with:
-        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-        BRANCH: gh-pages
-        FOLDER: docs/build/html
+        token: ${{ secrets.ACCESS_TOKEN }}
+        branch: gh-pages
+        folder: docs/build/html
     - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
       uses: cpina/github-action-push-to-another-repository@main
