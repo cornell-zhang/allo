@@ -76,8 +76,10 @@ jobs:
         git-config-name: chhzh123
         git-config-email: hc676@cornell.edu
         repository-name: chhzh123/allo-docs
+        branch: gh-pages
+        ssh-key: ${{ secrets.DEPLOY_KEY }}
         token: ${{ secrets.ACCESS_TOKEN }}
-        folder: .
+        folder: docs/build/html
     # - name: Deploy docs
     #   uses: JamesIves/github-pages-deploy-action@v4
     #   with:
