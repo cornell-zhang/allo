@@ -18,6 +18,9 @@ on:
       - 'docs/**'
       - 'tutorials/**'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     # This job runs on Linux
@@ -78,7 +81,6 @@ jobs:
         repository-name: chhzh123/allo-docs
         branch: gh-pages
         ssh-key: ${{ secrets.DEPLOY_KEY }}
-        token: ${{ secrets.ACCESS_TOKEN }}
         folder: docs/build/html
     # - name: Deploy docs
     #   uses: JamesIves/github-pages-deploy-action@v4
