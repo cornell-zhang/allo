@@ -72,7 +72,6 @@ jobs:
     - name: Deploy docs
       shell: bash
       uses: JamesIves/github-pages-deploy-action@v4
-      if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
@@ -81,7 +80,6 @@ jobs:
     - name: Deploy docs to website
       shell: bash
       uses: cpina/github-action-push-to-another-repository@main
-      if: github.event_name == 'push'
       env:
         SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
       with:
