@@ -18,6 +18,9 @@ on:
       - 'docs/**'
       - 'tutorials/**'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     # This job runs on Linux
@@ -26,9 +29,10 @@ jobs:
       image: chhzh123/hcl-dialect:llvm-18.x-py3.12
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.ref }}
+        fetch-depth: 0
     # - name: Patch LLVM Project
     #   run: |
     #     cp externals/llvm_patch /root/llvm-project
@@ -66,19 +70,22 @@ jobs:
         name: DocumentationHTML
         path: docs/build/html/
     - name: Install rsync
+      shell: bash
       run: |
         apt-get update && apt-get install -y rsync
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@releases/v3
-      if: github.event_name == 'push'
+      uses: JamesIves/github-pages-deploy-action@v4.5.0
       with:
-        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-        BRANCH: gh-pages
-        FOLDER: docs/build/html
+        # https://github.com/JamesIves/github-pages-deploy-action/issues/1179#issuecomment-1209272847
+        token: ${{ secrets.GITHUB_TOKEN }}
+        branch: gh-pages
+        folder: docs/build/html
+        git-config-name: chhzh123
+        git-config-email: hc676@cornell.edu
     - run: touch docs/build/html/.nojekyll
     - name: Deploy docs to website
       uses: cpina/github-action-push-to-another-repository@main
-      if: github.event_name == 'push'
       env:
         SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
       with:
