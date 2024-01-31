@@ -77,7 +77,8 @@ jobs:
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-        token: ${{ secrets.ACCESS_TOKEN }}
+        # https://github.com/JamesIves/github-pages-deploy-action/issues/1179#issuecomment-1209272847
+        token: ${{ secrets.GITHUB_TOKEN }}
         branch: gh-pages
         folder: docs/build/html
         git-config-name: chhzh123
