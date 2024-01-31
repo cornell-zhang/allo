@@ -73,21 +73,21 @@ jobs:
       shell: bash
       run: |
         apt-get update && apt-get install -y rsync
-    - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@v4
-      with:
-        git-config-name: chhzh123
-        git-config-email: hc676@cornell.edu
-        repository-name: chhzh123/allo-docs
-        branch: gh-pages
-        ssh-key: ${{ secrets.DEPLOY_KEY }}
-        folder: docs/build/html
     # - name: Deploy docs
     #   uses: JamesIves/github-pages-deploy-action@v4
     #   with:
-    #     ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
-    #     BRANCH: gh-pages
-    #     FOLDER: docs/build/html
+    #     git-config-name: chhzh123
+    #     git-config-email: hc676@cornell.edu
+    #     repository-name: chhzh123/allo-docs
+    #     branch: gh-pages
+    #     ssh-key: ${{ secrets.DEPLOY_KEY }}
+    #     folder: docs/build/html
+    - name: Deploy docs
+      uses: JamesIves/github-pages-deploy-action@v4
+      with:
+        ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
+        BRANCH: gh-pages
+        FOLDER: docs/build/html
     # - run: touch docs/build/html/.nojekyll
     # - name: Deploy docs to website
     #   uses: cpina/github-action-push-to-another-repository@main
