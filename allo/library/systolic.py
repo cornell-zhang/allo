@@ -213,8 +213,7 @@ def packed_systolic[
             local_C,
         )
         # reversed traversal, better for cascading systolic arrays with FIFOs
-        # for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
-        for si, sj in dsl.grid(Mt // P, Nt, name="store_C_tile"):
+        for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
             c: Int(TyC.bits * P) = 0
             for p in range(P):
                 # pylint: disable=unsupported-assignment-operation
