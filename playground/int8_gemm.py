@@ -91,7 +91,6 @@ def test_int8_gemm():
         raise ValueError(f"Unsupported packing factor: {PP}")
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
-    # W_A_packed = np.ascontiguousarray(W_A_packed.T)
 
     def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[D, 4 * D // PP]") -> "Ty[L // PP, 4 * D]":
         Z: Ty[L // PP, 4 * D]
@@ -136,7 +135,11 @@ def test_int8_gemm():
             project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}_csim.prj",
             configs={
                 "mappings": [
-                    None,
+                    (
+                        (L // M0, D, M0 // PP),
+                        f"(d0 * {M0 // PP} + d2) * {D} + d1",
+                        f"d0 * {M0 // PP} + d2, d1",
+                    ),
                     (
                         (L // M0, 4 * D // M1, D, M1 // PP),
                         f"d2 * {4 * D // PP} + d1 * {M1 // PP} + d3",

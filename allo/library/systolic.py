@@ -192,8 +192,7 @@ def packed_systolic[
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
-        # for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
-        for ai, ak in dsl.grid(Mt // P, K, name="load_A_tile"):
+        for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
             # reuse along the ni dimension
             if ni == 0:
                 a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
