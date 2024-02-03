@@ -91,9 +91,9 @@ def test_int8_gemm():
         raise ValueError(f"Unsupported packing factor: {PP}")
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_A_packed = W_A_cst.view(np_type)
-    W_A_packed = np.ascontiguousarray(W_A_packed.T)
+    # W_A_packed = np.ascontiguousarray(W_A_packed.T)
 
-    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[4 * D // PP, D]") -> "Ty[L // PP, 4 * D]":
+    def top[Ty](X: "Ty[L // PP, D]", W_A: "Ty[D, 4 * D // PP]") -> "Ty[L // PP, 4 * D]":
         Z: Ty[L // PP, 4 * D]
         packed_systolic[int8, int8, int8, L, D, 4 * D, M0, M1, PP](X, W_A, Z)
         return Z
@@ -139,8 +139,8 @@ def test_int8_gemm():
                     None,
                     (
                         (L // M0, 4 * D // M1, D, M1 // PP),
-                        f"(d1 * {M1 // PP} + d3) * {D} + d2",
-                        f"d1 * {M1 // PP} + d3, d2",  # does not matter a lot in FIFO
+                        f"d2 * {4 * D // PP} + d1 * {M1 // PP} + d3",
+                        f"d2, d1 * {M1 // PP} + d3",  # does not matter a lot in FIFO
                     ),
                     (
                         (L // M0, 4 * D // M1, M1, M0 // PP),

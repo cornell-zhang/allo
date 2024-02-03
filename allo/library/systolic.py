@@ -181,7 +181,7 @@ def packed_systolic[
     P: int32,  # packing factor
 ](
     A: "Int(TyA.bits * P)[M // P, K]",
-    B: "Int(TyB.bits * P)[N // P, K]",
+    B: "Int(TyB.bits * P)[K, N // P]",
     C: "Int(TyC.bits * P)[M // P, N]",
 ):
     local_A: TyA[Mt, K]
@@ -203,7 +203,7 @@ def packed_systolic[
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
-            b: Int(TyB.bits * P) = B[ni * Nt // P + bj, bk]
+            b: Int(TyB.bits * P) = B[bk, ni * Nt // P + bj]
             for p in range(P):
                 local_B[bk, bj * P + p] = b[p * TyB.bits : (p + 1) * TyB.bits]
         systolic_tile[TyA, TyB, TyC, K, Mt, Nt](
