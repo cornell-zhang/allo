@@ -138,13 +138,13 @@ def test_int8_gemm():
                 "mappings": [
                     None,
                     (
-                        (L // M0, D, 4 * D // PP),
-                        f"d1 * {4 * D // PP} + d2",
-                        f"d1, d2",
+                        (L // M0, 4 * D // M1, D, M1 // PP),
+                        f"(d1 * {M1 // PP} + d3) * {D} + d2",
+                        f"d1 * {M1 // PP} + d3, d2",  # does not matter a lot in FIFO
                     ),
                     (
                         (L // M0, 4 * D // M1, M1, M0 // PP),
-                        f"d0 * {M0 // PP} + d3, d1 * {M1} + d2", # does not matter a lot in FIFO
+                        f"d0 * {M0 // PP} + d3, d1 * {M1} + d2",  # does not matter a lot in FIFO
                         f"(d0 * {M0 // PP} + d3) * {4 * D} + d1 * {M1} + d2",
                     ),
                 ]

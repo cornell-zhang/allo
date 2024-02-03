@@ -199,8 +199,7 @@ def packed_systolic[
                 a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
                 for p in range(P):
                     local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
-        # for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
-        for bj, bk in dsl.grid(Nt // P, K, name="load_B_tile"):
+        for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
             # we cannot cache as a line buffer
