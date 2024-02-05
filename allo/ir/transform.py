@@ -282,11 +282,11 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
             else:  # store back results to outputs
                 in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
                 if src_pattern is not None:
-                    out_str = src_pattern
+                    load_str = src_pattern
                 else:
-                    out_str = in_str
+                    load_str = in_str
                 affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
+                    f"affine_map<({in_str})->({load_str})>"
                 )
                 load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
                 if dst_pattern is not None:

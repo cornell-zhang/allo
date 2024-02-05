@@ -121,14 +121,15 @@ def test_int8_gemm():
         packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
     )
     s_top.dataflow("top")  # important
-    code = s_top.build("vhls")
     if os.system("which vitis_hls >> /dev/null") == 0:
-        # hls_mod = s_top.build(
-        #     target="vitis_hls",
-        #     mode="hw",
-        #     project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
-        # )
-        # hls_mod()
+        if L > 32:
+            hls_mod = s_top.build(
+                target="vitis_hls",
+                mode="hw",
+                project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+            )
+            hls_mod()
+            return
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="csim",
