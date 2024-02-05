@@ -7,6 +7,7 @@ import importlib
 import subprocess
 import traceback
 
+# https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
 allo2c_type = {
     "float32": "float",
     "float64": "double",
@@ -14,10 +15,13 @@ allo2c_type = {
     "int8": "int8_t",
     "int16": "int16_t",
     "int32": "int",
+    "int64": "int64_t",
+    # bitwidth larger than 64 is not supported by numpy+pybind11
     "uint1": "bool",
     "uint8": "uint8_t",
     "uint16": "uint16_t",
     "uint32": "unsigned int",
+    "uint64": "uint64_t",
 }
 
 c2allo_type = {v: k for k, v in allo2c_type.items()}
@@ -118,7 +122,7 @@ class IPModule:
 
     def compile_pybind11(self):
         self.generate_pybind11_wrapper()
-        cmd = "g++ -shared -std=c++11 -fPIC"
+        cmd = "g++ -shared -std=c++14 -fPIC"
         cmd += " `python3 -m pybind11 --includes` "
         cmd += " ".join(
             ["-I" + (path if path != "" else ".") for path in self.include_paths]
@@ -175,7 +179,7 @@ class IPModule:
         self.generate_mlir_c_wrapper()
         if os.system("which llvm-config >> /dev/null") != 0:
             raise RuntimeError("Please install LLVM and add it to your PATH")
-        cmd = "g++ -c -std=c++11 -fpic "
+        cmd = "g++ -c -std=c++14 -fpic "
         # suppose the build directory is under llvm-project
         self.include_paths.append(
             "/".join(os.popen("which llvm-config").read().split("/")[:-3])

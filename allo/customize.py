@@ -784,7 +784,7 @@ class Schedule:
                     primitive_func.__wrapped__(self, *args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
-    def build(self, target=None, mode=None, project=None):
+    def build(self, target=None, mode=None, project=None, configs=None):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -794,7 +794,13 @@ class Schedule:
             )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
             if target == "vitis_hls":
-                buffers = generate_input_output_buffers(self.top_func, flatten=True)
+                if configs is not None:
+                    mappings = configs.get("mappings", None)
+                else:
+                    mappings = None
+                buffers = generate_input_output_buffers(
+                    self.top_func, flatten=True, mappings=mappings
+                )
                 if "dataflow" in self.top_func.attributes:
                     for inp in buffers["inputs"]:
                         self.to(inp, "", depth=4)

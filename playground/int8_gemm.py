@@ -66,9 +66,9 @@ def test_int8_gemm():
     L, D = 512, 768
     M0, M1 = 16, 16
     PP = 16
-    # L, D = 16, 16
-    # M0, M1 = 4, 4
-    # PP = 2
+    L, D = 16, 16
+    M0, M1 = 4, 4
+    PP = 2
     if PP == 2:
         np_type = np.int16
         allo_type = int16
@@ -121,15 +121,44 @@ def test_int8_gemm():
         packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
     )
     s_top.dataflow("top")  # important
-    # TODO: Fix input loop ordering
-    code = s_top.build("vhls")
     if os.system("which vitis_hls >> /dev/null") == 0:
+        if L > 64:
+            hls_mod = s_top.build(
+                target="vitis_hls",
+                mode="hw",
+                project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+            )
+            hls_mod()
+            return
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
-            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
+            mode="csim",
+            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}_csim.prj",
+            configs={
+                "mappings": [
+                    (
+                        (L // M0, D, M0 // PP),
+                        f"(d0 * {M0 // PP} + d2) * {D} + d1",
+                        f"d0 * {M0 // PP} + d2, d1",
+                    ),
+                    (
+                        (L // M0, 4 * D // M1, D, M1 // PP),
+                        f"d2 * {4 * D // PP} + d1 * {M1 // PP} + d3",
+                        f"d2, d1 * {M1 // PP} + d3",  # does not matter a lot in FIFO
+                    ),
+                    (
+                        (L // M0, 4 * D // M1, M1, M0 // PP),
+                        f"d0 * {M0 // PP} + d3, d1 * {M1} + d2",  # does not matter a lot in FIFO
+                        f"(d0 * {M0 // PP} + d3) * {4 * D} + d1 * {M1} + d2",
+                    ),
+                ]
+            },
         )
-        hls_mod()
+        # Be careful about the NumPy type
+        csim_C = np.zeros((L // PP, 4 * D), dtype=np_type)
+        hls_mod(packed_X, W_A_packed, csim_C)
+        np.testing.assert_allclose(csim_C, allo_C, atol=1e-3)
+        print("Passed!")
 
 
 def test_int8_gemm_dsp_packing():
@@ -184,4 +213,5 @@ def test_int8_gemm_dsp_packing():
 
 
 if __name__ == "__main__":
-    test_int8_gemm_dsp_packing()
+    # test_int8_gemm_dsp_packing()
+    test_int8_gemm()

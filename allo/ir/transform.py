@@ -209,7 +209,7 @@ def update_streaming_interface(module, target, depth=-1):
             func.attributes["function_type"] = TypeAttr.get(func_type)
 
 
-def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
+def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
     with InsertionPoint(ip if alloc_ip is None else alloc_ip):
         shape = MemRefType(tensor.type).shape
         if not flatten or alloc_ip is None:
@@ -223,15 +223,23 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
         alloc_op.attributes["name"] = StringAttr.get(name)
     if alloc_ip is None:  # load
         tensor.replace_all_uses_with(alloc_op.result)
-    for_loops = build_for_loops(shape, ip, name)
+    if mapping is not None:
+        loop_bounds, src_pattern, dst_pattern = mapping
+    else:
+        loop_bounds, src_pattern, dst_pattern = shape, None, None
+    for_loops = build_for_loops(loop_bounds, ip, name)
     for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
         IntegerType.get_unsigned(32), 1
     )
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
         if not flatten:
-            var_str = ", ".join([f"d{i}" for i in range(len(shape))])
-            affine_attr = AffineMapAttr.parse(f"affine_map<({var_str})->({var_str})>")
+            var_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
+            if dst_pattern is None:
+                dst_pattern = var_str
+            affine_attr = AffineMapAttr.parse(
+                f"affine_map<({var_str})->({dst_pattern})>"
+            )
             load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
             affine_d.AffineStoreOp(
                 load.result,
@@ -240,7 +248,6 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
                 affine_attr,
             )
         else:
-            in_str = ", ".join([f"d{i}" for i in range(len(shape))])
             out_str = ""
             reversed_shape = list(shape)[::-1]
             for i in range(len(shape)):
@@ -252,11 +259,20 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
                 if i != len(shape) - 1:
                     out_str = " + " + out_str
             if alloc_ip is None:  # load from inputs
+                in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
+                if src_pattern is not None:
+                    out_str = src_pattern
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({out_str})>"
                 )
                 load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
-                affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+                if dst_pattern is not None:
+                    out_str = dst_pattern
+                else:
+                    out_str = in_str
+                affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({out_str})>"
+                )
                 affine_d.AffineStoreOp(
                     load.result,
                     alloc_op.result,
@@ -264,8 +280,17 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False):
                     affine_attr,
                 )
             else:  # store back results to outputs
-                affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({in_str})>")
+                in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
+                if src_pattern is not None:
+                    load_str = src_pattern
+                else:
+                    load_str = in_str
+                affine_attr = AffineMapAttr.parse(
+                    f"affine_map<({in_str})->({load_str})>"
+                )
                 load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                if dst_pattern is not None:
+                    out_str = dst_pattern
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({out_str})>"
                 )
