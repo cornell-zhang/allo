@@ -5,6 +5,9 @@
 # Pull the LLVM project and hcl-mlir dialect
 git submodule update --init --recursive
 
+# Install the required Python packages
+python3 -m pip install -r requirements.txt
+
 # Note: we need to patch the LLVM project to add additional
 # supports for Python binding
 echo "Patching LLVM project ..."
@@ -15,7 +18,7 @@ git apply llvm_patch
 # Install LLVM v18.x
 # Make sure you are in the correct Python environment
 echo "Installing LLVM v18.x ..."
-mkdir build && cd build
+mkdir -p build && cd build
 cmake -G "Unix Makefiles" ../llvm \
    -DLLVM_ENABLE_PROJECTS=mlir \
    -DLLVM_BUILD_EXAMPLES=ON \
@@ -34,7 +37,7 @@ echo "LLVM build directory: $LLVM_BUILD_DIR"
 # Build the hcl dialect
 echo "Building hcl dialect ..."
 cd ../../..
-mkdir build && cd build
+mkdir -p build && cd build
 cmake -G "Unix Makefiles" .. \
    -DMLIR_DIR=$LLVM_BUILD_DIR/lib/cmake/mlir \
    -DLLVM_EXTERNAL_LIT=$LLVM_BUILD_DIR/bin/llvm-lit \
