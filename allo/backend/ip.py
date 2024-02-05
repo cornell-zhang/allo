@@ -7,6 +7,7 @@ import importlib
 import subprocess
 import traceback
 
+# https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
 allo2c_type = {
     "float32": "float",
     "float64": "double",
@@ -14,10 +15,13 @@ allo2c_type = {
     "int8": "int8_t",
     "int16": "int16_t",
     "int32": "int",
+    "int64": "int64_t",
+    # bitwidth larger than 64 is not supported by numpy+pybind11
     "uint1": "bool",
     "uint8": "uint8_t",
     "uint16": "uint16_t",
     "uint32": "unsigned int",
+    "uint64": "uint64_t",
 }
 
 c2allo_type = {v: k for k, v in allo2c_type.items()}

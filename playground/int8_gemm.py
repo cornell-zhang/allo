@@ -122,7 +122,7 @@ def test_int8_gemm():
     )
     s_top.dataflow("top")  # important
     if os.system("which vitis_hls >> /dev/null") == 0:
-        if L > 32:
+        if L > 64:
             hls_mod = s_top.build(
                 target="vitis_hls",
                 mode="hw",
