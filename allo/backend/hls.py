@@ -110,6 +110,7 @@ def separate_header(hls_code, top=None):
     sig_str = "#ifndef KERNEL_H\n"
     sig_str += "#define KERNEL_H\n\n"
     args = []
+    sig_str += "extern \"C\" {\n"
     for line in hls_code.split("\n"):
         if line.startswith(f"void {top}"):
             func_decl = True
@@ -120,11 +121,15 @@ def separate_header(hls_code, top=None):
             break
         elif func_decl:
             arg_type = line.strip()
+            _, var = arg_type.rsplit(" ", 1)
+            comma = "," if var[-1] == "," else ""
+            var = var.split("[")[0]
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            ele_type = c2allo_type[ele_type]
+            allo_type = c2allo_type[ele_type]
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
-            args.append((ele_type, shape))
-            sig_str += line + "\n"
+            args.append((allo_type, shape))
+            sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+    sig_str += "} // extern \"C\"\n"
     sig_str += "\n#endif // KERNEL_H\n"
     return sig_str, args
 
@@ -189,17 +194,14 @@ class HLSModule:
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
                     )
-                if self.mode == "csim":
-                    header, self.args = separate_header(
-                        self.hls_code, self.top_func_name
-                    )
-                    with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
-                        outfile.write(header)
-                else:
-                    self.args = None
-                    self.hls_code = postprocess_hls_code(
-                        self.hls_code, self.top_func_name
-                    )
+                header, self.args = separate_header(
+                    self.hls_code, self.top_func_name
+                )
+                with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+                self.hls_code = postprocess_hls_code(
+                    self.hls_code, self.top_func_name
+                )
                 for lib in self.ext_libs:
                     for header in lib.headers:
                         header = header.split("/")[-1]
