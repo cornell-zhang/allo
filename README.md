@@ -1,9 +1,17 @@
 <!--- Copyright Allo authors. All Rights Reserved. -->
 <!--- SPDX-License-Identifier: Apache-2.0  -->
 
-# Allo DSL
+# Allo: A Programming Model for Composable Accelerator Design
 
-Please refer to [Documentation](https://chhzh123.github.io/allo-docs) for more details.
+[**Documentation**](https://cornell-zhang.github.io/allo) 
+
+![GitHub](https://img.shields.io/github/license/cornell-zhang/allo)
+[![CircleCI](https://circleci.com/gh/cornell-zhang/allo.svg?style=shield)](https://circleci.com/gh/cornell-zhang/allo.svg?style=shield)
+
+Allo is an Accelerator Design Language (ADL) and compiler that facilitates the construction of large-scale, high-performance hardware accelerators in a modular and composable manner. Allo has several key features:
+* **Progressive hardware customizations**: Allo decouples hardware customizations from algorithm specifications and treats each hardware customization as a primitive that performs a rewrite on the program. Allo not only decouples the loop-based transformations, but also extends the decoupling to memory, communication, and data types.
+* **Reusable parameterized kernel templates**: Allo supports declaring type variables during kernel creation and instantiating the kernel when building the hardware executable, which is an important feature for building reusable hardware kernel libraries. Allo introduces a concise grammar for creating kernel templates, eliminating the need for users to possess complicated metaprogramming expertise.
+* **Composable schedules**: Allo empowers users to construct kernels incrementally from the bottom up, adding customizations one at a time while validating the correctness of each submodule. Ultimately, multiple schedules are progressively integrated into a complete design using the `.compose()` primitive. This approach, unachievable by prior top-down methods, significantly enhances productivity and debuggability.
 
 
 ## Installation
@@ -15,7 +23,7 @@ git clone https://github.com/cornell-zhang/allo.git
 cd allo
 ```
 
-We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is 3.12.
+We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is **3.12**.
 
 ```bash
 conda create -n allo python=3.12
@@ -58,3 +66,43 @@ After installing LLVM and the hcl dialect, we can directly `pip install` Allo:
 # Under the root directory of Allo
 python3 -m pip install -e .
 ```
+
+## Getting Started
+Below is a minimal example of leveraging Allo to customize a GEMM kernel:
+```python
+import allo
+from allo.ir.types import int32
+
+# Allo kernel definition
+def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+    C: int32[32, 32] = 0
+    for i, j, k in allo.grid(32, 32, 32):
+        C[i, j] += A[i, k] * B[k, j]
+    return C
+
+# Schedule construction
+s = allo.customize(gemm)
+
+# Real-time transformation
+s.split("i", factor=8)
+print(s.module)
+
+# Compilation
+mod = s.build(target="llvm")
+
+# Execution
+import numpy as np
+np_A = np.random.randint(0, 100, (32, 32)).astype(np.int32)
+np_B = np.random.randint(0, 100, (32, 32)).astype(np.int32)
+np_C = mod(np_A, np_B)
+
+# Testing
+golden_C = np.matmul(np_A, np_B)
+np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
+```
+
+## Related Works
+* [MLIR](https://mlir.llvm.org/)
+* [HeteroCL](https://github.com/cornell-zhang/heterocl)
+* [TVM](https://github.com/apache/tvm)
+* [Exo](https://github.com/exo-lang/exo)
