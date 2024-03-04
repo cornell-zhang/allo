@@ -113,7 +113,7 @@ html_theme_options = {
     # "show_navbar_depth": 1,
     # "home_page_in_toc": True
 }
-html_title = "Allo Internal Documentation"
+html_title = "Allo Documentation"
 html_permalinks_icon = "<span>¶</span>"
 
 # Add any paths that contain custom static files (such as style sheets) here,
