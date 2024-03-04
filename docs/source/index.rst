@@ -19,10 +19,10 @@
     under the License.
 
 ###############################
-Allo Internal Documentation
+Allo Documentation
 ###############################
 
-Documentation for Allo DSL.
+Allo is an Accelerator Design Language (ADL) and compiler that facilitates the construction of large-scale, high-performance hardware accelerators in a modular and composable manner.
 
 
 .. toctree::
