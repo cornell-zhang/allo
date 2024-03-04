@@ -68,6 +68,7 @@ jobs:
     - name: Install rsync
       run: |
         apt-get update && apt-get install -y rsync
+    - run: touch docs/build/html/.nojekyll
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@releases/v3
       if: github.event_name == 'push'
@@ -75,16 +76,3 @@ jobs:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
         FOLDER: docs/build/html
-    - run: touch docs/build/html/.nojekyll
-    - name: Deploy docs to website
-      uses: cpina/github-action-push-to-another-repository@main
-      if: github.event_name == 'push'
-      env:
-        SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
-      with:
-        source-directory: 'docs/build/html'
-        destination-github-username: 'chhzh123'
-        destination-repository-name: 'allo-docs'
-        user-email: hc676@cornell.edu
-        target-branch: gh-pages
-        target-directory: ""
