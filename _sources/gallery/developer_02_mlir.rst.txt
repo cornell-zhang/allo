@@ -28,7 +28,7 @@ verify the correctness of a handwritten or generated MLIR program.
 
 .. GENERATED FROM PYTHON SOURCE LINES 13-17
 
-.. code-block:: default
+.. code-block:: Python
 
 
     import allo
@@ -56,7 +56,7 @@ for specific backends.
 
 .. GENERATED FROM PYTHON SOURCE LINES 28-40
 
-.. code-block:: default
+.. code-block:: Python
 
 
     test_mlir_program = """
@@ -90,7 +90,7 @@ program.
 
 .. GENERATED FROM PYTHON SOURCE LINES 48-52
 
-.. code-block:: default
+.. code-block:: Python
 
 
     mod = allo.invoke_mlir_parser(test_mlir_program)
@@ -106,11 +106,11 @@ program.
 
     module {
       func.func @matmul(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> {
-        %0 = memref.alloc() : memref<32x32xi32>
+        %alloc = memref.alloc() : memref<32x32xi32>
         %c0_i32 = arith.constant 0 : i32
-        linalg.fill ins(%c0_i32 : i32) outs(%0 : memref<32x32xi32>)
-        linalg.matmul ins(%arg0, %arg1 : memref<32x32xi32>, memref<32x32xi32>) outs(%0 : memref<32x32xi32>)
-        return %0 : memref<32x32xi32>
+        linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
+        linalg.matmul ins(%arg0, %arg1 : memref<32x32xi32>, memref<32x32xi32>) outs(%alloc : memref<32x32xi32>)
+        return %alloc : memref<32x32xi32>
       }
     }
 
@@ -160,7 +160,7 @@ Then we can directly invoke the module with random inputs, and see if the result
 
 .. GENERATED FROM PYTHON SOURCE LINES 90-97
 
-.. code-block:: default
+.. code-block:: Python
 
 
     llvm_mod = allo.LLVMModule(mod, "matmul")
@@ -205,7 +205,7 @@ shows an example of how to use the tensor dialect to define a matmul program:
 
 .. GENERATED FROM PYTHON SOURCE LINES 121-135
 
-.. code-block:: default
+.. code-block:: Python
 
 
     tensor_program = """
@@ -236,7 +236,7 @@ Again, we can invoke the MLIR parser to check if the program is valid.
 
 .. GENERATED FROM PYTHON SOURCE LINES 139-143
 
-.. code-block:: default
+.. code-block:: Python
 
 
     mod = allo.invoke_mlir_parser(tensor_program)
@@ -252,13 +252,13 @@ Again, we can invoke the MLIR parser to check if the program is valid.
 
     module {
       func.func @matmul(%arg0: tensor<32x32xi32>, %arg1: tensor<32x32xi32>) -> tensor<32x32xi32> {
-        %0 = tensor.generate  {
+        %generated = tensor.generate  {
         ^bb0(%arg2: index, %arg3: index):
           %c0_i32 = arith.constant 0 : i32
           tensor.yield %c0_i32 : i32
         } : tensor<32x32xi32>
-        %1 = linalg.matmul ins(%arg0, %arg1 : tensor<32x32xi32>, tensor<32x32xi32>) outs(%0 : tensor<32x32xi32>) -> tensor<32x32xi32>
-        return %1 : tensor<32x32xi32>
+        %0 = linalg.matmul ins(%arg0, %arg1 : tensor<32x32xi32>, tensor<32x32xi32>) outs(%generated : tensor<32x32xi32>) -> tensor<32x32xi32>
+        return %0 : tensor<32x32xi32>
       }
     }
 
@@ -289,7 +289,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.095 seconds)
+   **Total running time of the script:** (0 minutes 0.058 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_02_mlir.py:
@@ -298,16 +298,13 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
   .. container:: sphx-glr-footer sphx-glr-footer-example
 
+    .. container:: sphx-glr-download sphx-glr-download-jupyter
 
-
+      :download:`Download Jupyter notebook: developer_02_mlir.ipynb <developer_02_mlir.ipynb>`
 
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: developer_02_mlir.py <developer_02_mlir.py>`
-
-    .. container:: sphx-glr-download sphx-glr-download-jupyter
-
-      :download:`Download Jupyter notebook: developer_02_mlir.ipynb <developer_02_mlir.ipynb>`
 
 
 .. only:: html

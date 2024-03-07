@@ -33,7 +33,7 @@ First, we import the necessary packages.
 
 .. GENERATED FROM PYTHON SOURCE LINES 18-22
 
-.. code-block:: default
+.. code-block:: Python
 
 
     import allo
@@ -57,7 +57,7 @@ We can define the constants as follows, which denotes the matrix sizes:
 
 .. GENERATED FROM PYTHON SOURCE LINES 29-32
 
-.. code-block:: default
+.. code-block:: Python
 
 
     M, N, K = 1024, 1024, 1024
@@ -89,7 +89,7 @@ this information to generate correct intermediate buffers.
 
 .. GENERATED FROM PYTHON SOURCE LINES 48-58
 
-.. code-block:: default
+.. code-block:: Python
 
 
 
@@ -129,7 +129,7 @@ original dot-product.
 
 .. GENERATED FROM PYTHON SOURCE LINES 75-78
 
-.. code-block:: default
+.. code-block:: Python
 
 
     s = allo.customize(gemm)
@@ -148,7 +148,7 @@ This is used to change the computation order of matrix multiplication.
 
 .. GENERATED FROM PYTHON SOURCE LINES 81-85
 
-.. code-block:: default
+.. code-block:: Python
 
 
     s.reorder("k", "j")
@@ -163,23 +163,23 @@ This is used to change the computation order of matrix multiplication.
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
-        %0 = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%0 : memref<1024x1024xf32>)
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
         affine.for %arg2 = 0 to 1024 {
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %1 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %2 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
-              %3 = arith.mulf %1, %2 : f32
-              %4 = affine.load %0[%arg2, %arg4] {from = "C"} : memref<1024x1024xf32>
-              %5 = arith.addf %4, %3 : f32
-              affine.store %5, %0[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+              %2 = arith.mulf %0, %1 : f32
+              %3 = affine.load %alloc[%arg2, %arg4] {from = "C"} : memref<1024x1024xf32>
+              %4 = arith.addf %3, %2 : f32
+              affine.store %4, %alloc[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
             } {loop_name = "j"}
           } {loop_name = "k", op_name = "S_k_0", reduction}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %0 : memref<1024x1024xf32>
+        return %alloc : memref<1024x1024xf32>
       }
     }
 
@@ -201,14 +201,14 @@ This is used to change the computation order of matrix multiplication.
 Next, we create a new buffer for the output tensor ``C``.
 We provide a ``.buffer_at()`` primitive for users to quickly create a new buffer
 along a specific axis. Since Allo has attached all the tensors to the function,
-we can directly use ``<func>.<tensor>`` to access a specific tensor in the schedule.
+we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the schedule.
 
 .. GENERATED FROM PYTHON SOURCE LINES 98-102
 
-.. code-block:: default
+.. code-block:: Python
 
 
-    s.buffer_at(gemm.C, axis="i")
+    s.buffer_at(s.C, axis="i")
     print(s.module)
 
 
@@ -220,31 +220,31 @@ we can directly use ``<func>.<tensor>`` to access a specific tensor in the sched
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
-        %0 = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%0 : memref<1024x1024xf32>)
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
         affine.for %arg2 = 0 to 1024 {
-          %1 = memref.alloc() : memref<1024xf32>
+          %alloc_0 = memref.alloc() : memref<1024xf32>
           affine.for %arg3 = 0 to 1024 {
-            affine.store %cst, %1[%arg3] : memref<1024xf32>
+            affine.store %cst, %alloc_0[%arg3] : memref<1024xf32>
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %2 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %3 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
-              %4 = arith.mulf %2, %3 : f32
-              %5 = affine.load %1[%arg4] : memref<1024xf32>
-              %6 = arith.addf %5, %4 : f32
-              affine.store %6, %1[%arg4] : memref<1024xf32>
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+              %2 = arith.mulf %0, %1 : f32
+              %3 = affine.load %alloc_0[%arg4] : memref<1024xf32>
+              %4 = arith.addf %3, %2 : f32
+              affine.store %4, %alloc_0[%arg4] : memref<1024xf32>
             } {loop_name = "j"}
           } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 1024 {
-            %2 = affine.load %1[%arg3] : memref<1024xf32>
-            affine.store %2, %0[%arg2, %arg3] : memref<1024x1024xf32>
+            %0 = affine.load %alloc_0[%arg3] : memref<1024xf32>
+            affine.store %0, %alloc[%arg2, %arg3] : memref<1024x1024xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %0 : memref<1024x1024xf32>
+        return %alloc : memref<1024x1024xf32>
       }
     }
 
@@ -265,7 +265,7 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
 
 .. GENERATED FROM PYTHON SOURCE LINES 110-114
 
-.. code-block:: default
+.. code-block:: Python
 
 
     s.pipeline("j")
@@ -280,31 +280,31 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
-        %0 = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%0 : memref<1024x1024xf32>)
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
         affine.for %arg2 = 0 to 1024 {
-          %1 = memref.alloc() : memref<1024xf32>
+          %alloc_0 = memref.alloc() : memref<1024xf32>
           affine.for %arg3 = 0 to 1024 {
-            affine.store %cst, %1[%arg3] : memref<1024xf32>
+            affine.store %cst, %alloc_0[%arg3] : memref<1024xf32>
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
           affine.for %arg3 = 0 to 1024 {
             affine.for %arg4 = 0 to 1024 {
-              %2 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %3 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
-              %4 = arith.mulf %2, %3 : f32
-              %5 = affine.load %1[%arg4] : memref<1024xf32>
-              %6 = arith.addf %5, %4 : f32
-              affine.store %6, %1[%arg4] : memref<1024xf32>
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+              %2 = arith.mulf %0, %1 : f32
+              %3 = affine.load %alloc_0[%arg4] : memref<1024xf32>
+              %4 = arith.addf %3, %2 : f32
+              affine.store %4, %alloc_0[%arg4] : memref<1024xf32>
             } {loop_name = "j", pipeline_ii = 1 : i32}
           } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 1024 {
-            %2 = affine.load %1[%arg3] : memref<1024xf32>
-            affine.store %2, %0[%arg2, %arg3] : memref<1024x1024xf32>
+            %0 = affine.load %alloc_0[%arg3] : memref<1024xf32>
+            affine.store %0, %alloc[%arg2, %arg3] : memref<1024x1024xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %0 : memref<1024x1024xf32>
+        return %alloc : memref<1024x1024xf32>
       }
     }
 
@@ -322,7 +322,7 @@ Vivado HLS code, which will returns the generated code as a string.
 
 .. GENERATED FROM PYTHON SOURCE LINES 120-124
 
-.. code-block:: default
+.. code-block:: Python
 
 
     code = s.build(target="vhls")
@@ -355,33 +355,33 @@ Vivado HLS code, which will returns the generated code as a string.
       float v0[1024][1024],
       float v1[1024][1024],
       float v2[1024][1024]
-    ) {     //
-      for (int v3 = 0; v3 < 1024; v3++) {   //
-        for (int v4 = 0; v4 < 1024; v4++) { //
-          v2[v3][v4] = 0.000000;    //
+    ) {     // L2
+      for (int v3 = 0; v3 < 1024; v3++) {   // L5
+        for (int v4 = 0; v4 < 1024; v4++) { // L5
+          v2[v3][v4] = 0.000000;    // L5
         }
       }
-      l_S_i_j_0_i: for (int i = 0; i < 1024; i++) { //
-        float v6[1024];     //
-        l_j_init: for (int j_init = 0; j_init < 1024; j_init++) {   //
+      l_S_i_j_0_i: for (int i = 0; i < 1024; i++) { // L6
+        float v6[1024];     // L7
+        l_j_init: for (int j_init = 0; j_init < 1024; j_init++) {   // L8
         #pragma HLS pipeline II=1
-          v6[j_init] = 0.000000;    //
+          v6[j_init] = 0.000000;    // L9
         }
-        l_S_k_0_k: for (int k = 0; k < 1024; k++) { //
-          l_j: for (int j = 0; j < 1024; j++) {     //
+        l_S_k_0_k: for (int k = 0; k < 1024; k++) { // L11
+          l_j: for (int j = 0; j < 1024; j++) {     // L12
           #pragma HLS pipeline II=1
-            float v10 = v0[i][k];   //
-            float v11 = v1[k][j];   //
-            float v12 = v10 * v11;  //
-            float v13 = v6[j];      //
-            float v14 = v13 + v12;  //
-            v6[j] = v14;    //
+            float v10 = v0[i][k];   // L13
+            float v11 = v1[k][j];   // L14
+            float v12 = v10 * v11;  // L15
+            float v13 = v6[j];      // L16
+            float v14 = v13 + v12;  // L17
+            v6[j] = v14;    // L18
           }
         }
-        l_j_back: for (int j_back = 0; j_back < 1024; j_back++) {   //
+        l_j_back: for (int j_back = 0; j_back < 1024; j_back++) {   // L21
         #pragma HLS pipeline II=1
-          float v16 = v6[j_back];   //
-          v2[i][j_back] = v16;      //
+          float v16 = v6[j_back];   // L22
+          v2[i][j_back] = v16;      // L23
         }
       }
     }
@@ -406,7 +406,7 @@ the HLS project and invoke the compiler to generate the RTL design.
 
 .. GENERATED FROM PYTHON SOURCE LINES 134-137
 
-.. code-block:: default
+.. code-block:: Python
 
 
     mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
@@ -484,7 +484,7 @@ with II=1.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** ( 0 minutes  0.100 seconds)
+   **Total running time of the script:** (0 minutes 0.309 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:
@@ -493,16 +493,13 @@ with II=1.
 
   .. container:: sphx-glr-footer sphx-glr-footer-example
 
+    .. container:: sphx-glr-download sphx-glr-download-jupyter
 
-
+      :download:`Download Jupyter notebook: tutorial_02_vhls.ipynb <tutorial_02_vhls.ipynb>`
 
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: tutorial_02_vhls.py <tutorial_02_vhls.py>`
-
-    .. container:: sphx-glr-download sphx-glr-download-jupyter
-
-      :download:`Download Jupyter notebook: tutorial_02_vhls.ipynb <tutorial_02_vhls.ipynb>`
 
 
 .. only:: html

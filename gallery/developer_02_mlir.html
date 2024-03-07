@@ -1,26 +1,24 @@
-
 <!DOCTYPE html>
 
-<html>
+<html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <title>MLIR Translation Guide &#8212; Allo Internal Documentation</title>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
-    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css" />
-    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-    <script src="../_static/jquery.js"></script>
-    <script src="../_static/underscore.js"></script>
-    <script src="../_static/doctools.js"></script>
-    <script src="../_static/clipboard.min.js"></script>
-    <script src="../_static/copybutton.js"></script>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=94a554c0" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=eafc0fe6" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="../_static/documentation_options.js?v=db78e746"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=30646c52"></script>
     <script src="../_static/js/theme.js"></script>
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
@@ -129,7 +127,7 @@
     </form>
     </div>
 </div>
-<script>$('#searchbox').show(0);</script>
+<script>document.getElementById('searchbox').style.display = "block"</script>
         </div>
     </nav>
 </div>
@@ -172,16 +170,16 @@
 to download the full example code</p>
 </div>
 <section class="sphx-glr-example-title" id="mlir-translation-guide">
-<span id="sphx-glr-gallery-developer-02-mlir-py"></span><h1>MLIR Translation Guide<a class="headerlink" href="#mlir-translation-guide" title="Permalink to this headline"><span>¶</span></a></h1>
+<span id="sphx-glr-gallery-developer-02-mlir-py"></span><h1>MLIR Translation Guide<a class="headerlink" href="#mlir-translation-guide" title="Link to this heading"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>This guide will give some examples on how to invoke the MLIR toolchain to
 verify the correctness of a handwritten or generated MLIR program.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 </pre></div>
 </div>
 <section id="define-an-mlir-program-with-linalg-dialect">
-<h2>Define an MLIR program with linalg dialect<a class="headerlink" href="#define-an-mlir-program-with-linalg-dialect" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Define an MLIR program with linalg dialect<a class="headerlink" href="#define-an-mlir-program-with-linalg-dialect" title="Link to this heading"><span>¶</span></a></h2>
 <p>Based on the <a class="reference external" href="https://mlir.llvm.org/docs/LangRef/">MLIR</a> syntax, we can define
 an MLIR program as follows. Currently our frontend is not able to generate this
 linalg program, but we can still use it to invoke the MLIR toolchain.</p>
@@ -189,7 +187,7 @@ linalg program, but we can still use it to invoke the MLIR toolchain.</p>
 more like the NumPy operations, so we do not need to explicitly express the
 for loops inside the program, which may be easier to conduct program transformations
 for specific backends.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">test_mlir_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">test_mlir_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">func.func @matmul(%A: memref&lt;32x32xi32&gt;, %B: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {</span>
 <span class="s2">  %C = memref.alloc() : memref&lt;32x32xi32&gt;</span>
 <span class="s2">  </span><span class="si">%c</span><span class="s2">0_i32 = arith.constant 0 : i32</span>
@@ -207,17 +205,17 @@ for specific backends.</p>
 </div>
 <p>We wrap the MLIR parser in allo, so we can directly invoke it to parse the MLIR
 program.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">test_mlir_program</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @matmul(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; {
-    %0 = memref.alloc() : memref&lt;32x32xi32&gt;
+    %alloc = memref.alloc() : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
-    linalg.fill ins(%c0_i32 : i32) outs(%0 : memref&lt;32x32xi32&gt;)
-    linalg.matmul ins(%arg0, %arg1 : memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) outs(%0 : memref&lt;32x32xi32&gt;)
-    return %0 : memref&lt;32x32xi32&gt;
+    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
+    linalg.matmul ins(%arg0, %arg1 : memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) outs(%alloc : memref&lt;32x32xi32&gt;)
+    return %alloc : memref&lt;32x32xi32&gt;
   }
 }
 </pre></div>
@@ -255,7 +253,7 @@ This is done inside the <code class="docutils literal notranslate"><span class="
 However, we only include several lowering passes from commonly used dialects in the module,
 so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.</p>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;matmul&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;matmul&quot;</span><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">allo_C</span></a> <span class="o">=</span> <span class="n">llvm_mod</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
@@ -275,14 +273,14 @@ Therefore, the frontend interface may look like this:</p>
 <p>Later, we want to figure out a way to lower this high-level program to the MLIR program we defined above.</p>
 </section>
 <section id="define-an-mlir-program-with-tensor-dialect">
-<h2>Define an MLIR program with Tensor dialect<a class="headerlink" href="#define-an-mlir-program-with-tensor-dialect" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Define an MLIR program with Tensor dialect<a class="headerlink" href="#define-an-mlir-program-with-tensor-dialect" title="Link to this heading"><span>¶</span></a></h2>
 <p>Not only for computation, we also need to raise the abstraction level for memory management.
 Currently we explicitly use <code class="docutils literal notranslate"><span class="pre">memref</span></code> to allocate memory and pass them to the operations.
 However, as users already write tensor programs, we should generate tensor interfaces instead.
 Thanks to the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/TensorOps">tensor dialect</a>, we can
 easily leverage it to conduct slicing, reshaping, and other tensor operations. Following
 shows an example of how to use the tensor dialect to define a matmul program:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tensor_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">tensor_program</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">func.func @matmul(%A: tensor&lt;32x32xi32&gt;, %B: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt; {</span>
 <span class="s2">  %C = tensor.generate {</span>
 <span class="s2">      ^bb0(</span><span class="si">%i</span><span class="s2"> : index, %j : index):</span>
@@ -299,19 +297,19 @@ shows an example of how to use the tensor dialect to define a matmul program:</p
 <p>It is very similar to the original one, but the main difference is that we use <code class="docutils literal notranslate"><span class="pre">tensor</span></code>
 instead of <code class="docutils literal notranslate"><span class="pre">memref</span></code> to define the input and output of the operations.
 Again, we can invoke the MLIR parser to check if the program is valid.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">tensor_program</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">invoke_mlir_parser</span><span class="p">(</span><span class="n">tensor_program</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @matmul(%arg0: tensor&lt;32x32xi32&gt;, %arg1: tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt; {
-    %0 = tensor.generate  {
+    %generated = tensor.generate  {
     ^bb0(%arg2: index, %arg3: index):
       %c0_i32 = arith.constant 0 : i32
       tensor.yield %c0_i32 : i32
     } : tensor&lt;32x32xi32&gt;
-    %1 = linalg.matmul ins(%arg0, %arg1 : tensor&lt;32x32xi32&gt;, tensor&lt;32x32xi32&gt;) outs(%0 : tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt;
-    return %1 : tensor&lt;32x32xi32&gt;
+    %0 = linalg.matmul ins(%arg0, %arg1 : tensor&lt;32x32xi32&gt;, tensor&lt;32x32xi32&gt;) outs(%generated : tensor&lt;32x32xi32&gt;) -&gt; tensor&lt;32x32xi32&gt;
+    return %0 : tensor&lt;32x32xi32&gt;
   }
 }
 </pre></div>
@@ -327,13 +325,13 @@ And we can also invoke the LLVM execution engine trying to execute the program.<
 </div>
 <p>Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.095 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.058 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-02-mlir-py">
-<div class="sphx-glr-download sphx-glr-download-python docutils container">
-<p><a class="reference download internal" download="" href="../_downloads/bb81218d893c4a00ae66024e545b162d/developer_02_mlir.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">developer_02_mlir.py</span></code></a></p>
-</div>
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/26d9fb3f431f94846c086960be43203e/developer_02_mlir.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">developer_02_mlir.ipynb</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/bb81218d893c4a00ae66024e545b162d/developer_02_mlir.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">developer_02_mlir.py</span></code></a></p>
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
@@ -347,11 +345,11 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
       </div>
     
         <div id="show_right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents<span></a></p>
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
         </div>
 
         <div id="right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:<span></a></p>
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
             <div class="page_toc">
                 <ul>
 <li><a class="reference internal" href="#">MLIR Translation Guide</a><ul>
@@ -386,8 +384,8 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
+    &#169; Copyright 2023, Allo Authors.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
