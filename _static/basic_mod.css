@@ -581,6 +581,7 @@ div.sphinxsidebar {
   width: 15rem;
   box-sizing: border-box;
   padding: var(--navbarHeight) 1rem 1rem;
+  z-index: 50;
 }
 @media (max-width: 50rem) {
   div.sphinxsidebar {

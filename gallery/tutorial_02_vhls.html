@@ -1,26 +1,24 @@
-
 <!DOCTYPE html>
 
-<html>
+<html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <title>Vivado HLS Backend &#8212; Allo Internal Documentation</title>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=0.7.0-1" />
-    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css" />
-    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-    <script src="../_static/jquery.js"></script>
-    <script src="../_static/underscore.js"></script>
-    <script src="../_static/doctools.js"></script>
-    <script src="../_static/clipboard.min.js"></script>
-    <script src="../_static/copybutton.js"></script>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=94a554c0" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=eafc0fe6" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="../_static/documentation_options.js?v=db78e746"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=30646c52"></script>
     <script src="../_static/js/theme.js"></script>
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
@@ -129,7 +127,7 @@
     </form>
     </div>
 </div>
-<script>$('#searchbox').show(0);</script>
+<script>document.getElementById('searchbox').style.display = "block"</script>
         </div>
     </nav>
 </div>
@@ -172,24 +170,24 @@
 to download the full example code</p>
 </div>
 <section class="sphx-glr-example-title" id="vivado-hls-backend">
-<span id="sphx-glr-gallery-tutorial-02-vhls-py"></span><h1>Vivado HLS Backend<a class="headerlink" href="#vivado-hls-backend" title="Permalink to this headline"><span>¶</span></a></h1>
+<span id="sphx-glr-gallery-tutorial-02-vhls-py"></span><h1>Vivado HLS Backend<a class="headerlink" href="#vivado-hls-backend" title="Link to this heading"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
 <p>In this tutorial, we will demonstrate how to leverage the Allo DSL to generate
 Vivado HLS code for FPGA.</p>
 <section id="import-allo">
-<h2>Import Allo<a class="headerlink" href="#import-allo" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Import Allo<a class="headerlink" href="#import-allo" title="Link to this heading"><span>¶</span></a></h2>
 <p>First, we import the necessary packages.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
 <span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">float32</span>
 </pre></div>
 </div>
 </section>
 <section id="algorithm-definition">
-<h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Algorithm Definition<a class="headerlink" href="#algorithm-definition" title="Link to this heading"><span>¶</span></a></h2>
 <p>We again define a general matrix multiplication (GEMM) in this tutorial.
 However, we will make some changes to demonstrate more features of the DSL.</p>
 <p>We can define the constants as follows, which denotes the matrix sizes:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span>
 </pre></div>
 </div>
 <p>Here, we define the main computation of the GEMM but use <code class="docutils literal notranslate"><span class="pre">float32</span></code> as the
@@ -205,7 +203,7 @@ In this example, we use <code class="docutils literal notranslate"><span class="
 computation of <code class="docutils literal notranslate"><span class="pre">C[i,</span> <span class="pre">j]</span></code> will be accumulated along the <code class="docutils literal notranslate"><span class="pre">k</span></code> dimension.
 This annotation is necessary for later optimizations, since Allo leverages
 this information to generate correct intermediate buffers.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]:</span>
     <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="n">K</span><span class="p">):</span>
@@ -215,7 +213,7 @@ this information to generate correct intermediate buffers.</p>
 </div>
 </section>
 <section id="scalar-vector-product-for-gemm">
-<h2>Scalar-Vector Product for GEMM<a class="headerlink" href="#scalar-vector-product-for-gemm" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Scalar-Vector Product for GEMM<a class="headerlink" href="#scalar-vector-product-for-gemm" title="Link to this heading"><span>¶</span></a></h2>
 <p>Next, we create a schedule for the GEMM and start to optimize the program.
 We try to implement the <strong>interleaving accumulation</strong> technique presented in
 <a class="reference external" href="https://arxiv.org/abs/1805.08288">this paper</a>, which is also viewed as
@@ -227,33 +225,33 @@ original dot-product.</p>
 <p>To get more rational of this technique, please refer to the above mentioned
 paper from Torsten Hoefler’s group.</p>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>We first reorder the inner reduction loop with the middle loop.
 This is used to change the computation order of matrix multiplication.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="s2">&quot;j&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; {
-    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%0 : memref&lt;1024x1024xf32&gt;)
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
     affine.for %arg2 = 0 to 1024 {
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %1 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %2 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
-          %3 = arith.mulf %1, %2 : f32
-          %4 = affine.load %0[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
-          %5 = arith.addf %4, %3 : f32
-          affine.store %5, %0[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+          %2 = arith.mulf %0, %1 : f32
+          %3 = affine.load %alloc[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          %4 = arith.addf %3, %2 : f32
+          affine.store %4, %alloc[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
         } {loop_name = &quot;j&quot;}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %0 : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;1024x1024xf32&gt;
   }
 }
 </pre></div>
@@ -268,37 +266,37 @@ loops.</p>
 <p>Next, we create a new buffer for the output tensor <code class="docutils literal notranslate"><span class="pre">C</span></code>.
 We provide a <code class="docutils literal notranslate"><span class="pre">.buffer_at()</span></code> primitive for users to quickly create a new buffer
 along a specific axis. Since Allo has attached all the tensors to the function,
-we can directly use <code class="docutils literal notranslate"><span class="pre">&lt;func&gt;.&lt;tensor&gt;</span></code> to access a specific tensor in the schedule.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">gemm</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+we can directly use <code class="docutils literal notranslate"><span class="pre">&lt;schedule&gt;.&lt;tensor&gt;</span></code> to access a specific tensor in the schedule.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; {
-    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%0 : memref&lt;1024x1024xf32&gt;)
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
     affine.for %arg2 = 0 to 1024 {
-      %1 = memref.alloc() : memref&lt;1024xf32&gt;
+      %alloc_0 = memref.alloc() : memref&lt;1024xf32&gt;
       affine.for %arg3 = 0 to 1024 {
-        affine.store %cst, %1[%arg3] : memref&lt;1024xf32&gt;
+        affine.store %cst, %alloc_0[%arg3] : memref&lt;1024xf32&gt;
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %2 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %3 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
-          %4 = arith.mulf %2, %3 : f32
-          %5 = affine.load %1[%arg4] : memref&lt;1024xf32&gt;
-          %6 = arith.addf %5, %4 : f32
-          affine.store %6, %1[%arg4] : memref&lt;1024xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+          %2 = arith.mulf %0, %1 : f32
+          %3 = affine.load %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          %4 = arith.addf %3, %2 : f32
+          affine.store %4, %alloc_0[%arg4] : memref&lt;1024xf32&gt;
         } {loop_name = &quot;j&quot;}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 1024 {
-        %2 = affine.load %1[%arg3] : memref&lt;1024xf32&gt;
-        affine.store %2, %0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
+        %0 = affine.load %alloc_0[%arg3] : memref&lt;1024xf32&gt;
+        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %0 : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;1024x1024xf32&gt;
   }
 }
 </pre></div>
@@ -308,47 +306,47 @@ creates an intermediate buffer <code class="docutils literal notranslate"><span 
 Also two additional loop nested named <code class="docutils literal notranslate"><span class="pre">j_init</span></code> and <code class="docutils literal notranslate"><span class="pre">j_back</span></code> are created to
 initialize and write the intermediate buffer back to output tensor.</p>
 <p>Lastly, we pipeline the <code class="docutils literal notranslate"><span class="pre">j</span></code> loop in order to achieve the best performance.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="s2">&quot;j&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; {
-    %0 = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%0 : memref&lt;1024x1024xf32&gt;)
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
     affine.for %arg2 = 0 to 1024 {
-      %1 = memref.alloc() : memref&lt;1024xf32&gt;
+      %alloc_0 = memref.alloc() : memref&lt;1024xf32&gt;
       affine.for %arg3 = 0 to 1024 {
-        affine.store %cst, %1[%arg3] : memref&lt;1024xf32&gt;
+        affine.store %cst, %alloc_0[%arg3] : memref&lt;1024xf32&gt;
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
       affine.for %arg3 = 0 to 1024 {
         affine.for %arg4 = 0 to 1024 {
-          %2 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %3 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
-          %4 = arith.mulf %2, %3 : f32
-          %5 = affine.load %1[%arg4] : memref&lt;1024xf32&gt;
-          %6 = arith.addf %5, %4 : f32
-          affine.store %6, %1[%arg4] : memref&lt;1024xf32&gt;
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+          %2 = arith.mulf %0, %1 : f32
+          %3 = affine.load %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          %4 = arith.addf %3, %2 : f32
+          affine.store %4, %alloc_0[%arg4] : memref&lt;1024xf32&gt;
         } {loop_name = &quot;j&quot;, pipeline_ii = 1 : i32}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 1024 {
-        %2 = affine.load %1[%arg3] : memref&lt;1024xf32&gt;
-        affine.store %2, %0[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
+        %0 = affine.load %alloc_0[%arg3] : memref&lt;1024xf32&gt;
+        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %0 : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;1024x1024xf32&gt;
   }
 }
 </pre></div>
 </div>
 </section>
 <section id="codegen-for-vivado-hls">
-<h2>Codegen for Vivado HLS<a class="headerlink" href="#codegen-for-vivado-hls" title="Permalink to this headline"><span>¶</span></a></h2>
+<h2>Codegen for Vivado HLS<a class="headerlink" href="#codegen-for-vivado-hls" title="Link to this heading"><span>¶</span></a></h2>
 <p>Similar to the CPU execution, we only need to change the target of the <code class="docutils literal notranslate"><span class="pre">.build()</span></code> function
 in order to target different backends. Here, we use <code class="docutils literal notranslate"><span class="pre">vhls</span></code> as the target to generate
 Vivado HLS code, which will returns the generated code as a string.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">code</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -370,33 +368,33 @@ void gemm(
   float v0[1024][1024],
   float v1[1024][1024],
   float v2[1024][1024]
-) {     //
-  for (int v3 = 0; v3 &lt; 1024; v3++) {   //
-    for (int v4 = 0; v4 &lt; 1024; v4++) { //
-      v2[v3][v4] = 0.000000;    //
+) {     // L2
+  for (int v3 = 0; v3 &lt; 1024; v3++) {   // L5
+    for (int v4 = 0; v4 &lt; 1024; v4++) { // L5
+      v2[v3][v4] = 0.000000;    // L5
     }
   }
-  l_S_i_j_0_i: for (int i = 0; i &lt; 1024; i++) { //
-    float v6[1024];     //
-    l_j_init: for (int j_init = 0; j_init &lt; 1024; j_init++) {   //
+  l_S_i_j_0_i: for (int i = 0; i &lt; 1024; i++) { // L6
+    float v6[1024];     // L7
+    l_j_init: for (int j_init = 0; j_init &lt; 1024; j_init++) {   // L8
     #pragma HLS pipeline II=1
-      v6[j_init] = 0.000000;    //
+      v6[j_init] = 0.000000;    // L9
     }
-    l_S_k_0_k: for (int k = 0; k &lt; 1024; k++) { //
-      l_j: for (int j = 0; j &lt; 1024; j++) {     //
+    l_S_k_0_k: for (int k = 0; k &lt; 1024; k++) { // L11
+      l_j: for (int j = 0; j &lt; 1024; j++) {     // L12
       #pragma HLS pipeline II=1
-        float v10 = v0[i][k];   //
-        float v11 = v1[k][j];   //
-        float v12 = v10 * v11;  //
-        float v13 = v6[j];      //
-        float v14 = v13 + v12;  //
-        v6[j] = v14;    //
+        float v10 = v0[i][k];   // L13
+        float v11 = v1[k][j];   // L14
+        float v12 = v10 * v11;  // L15
+        float v13 = v6[j];      // L16
+        float v14 = v13 + v12;  // L17
+        v6[j] = v14;    // L18
       }
     }
-    l_j_back: for (int j_back = 0; j_back &lt; 1024; j_back++) {   //
+    l_j_back: for (int j_back = 0; j_back &lt; 1024; j_back++) {   // L21
     #pragma HLS pipeline II=1
-      float v16 = v6[j_back];   //
-      v2[i][j_back] = v16;      //
+      float v16 = v6[j_back];   // L22
+      v2[i][j_back] = v16;      // L23
     }
   }
 }
@@ -409,7 +407,7 @@ to Vivado HLS to generate RTL designs.</p>
 the synthesis mode that are supported by Vivado HLS (e.g., <code class="docutils literal notranslate"><span class="pre">csim</span></code>, <code class="docutils literal notranslate"><span class="pre">csyn</span></code>, <code class="docutils literal notranslate"><span class="pre">cosim</span></code>,
 and <code class="docutils literal notranslate"><span class="pre">impl</span></code>), and the target project folder name. Allo will automatically generate
 the HLS project and invoke the compiler to generate the RTL design.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>You will see a <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code> folder is generated in the current directory:</p>
@@ -466,13 +464,13 @@ with II=1.</p>
 <p class="admonition-title">Note</p>
 <p>The results are also printed to a file named <code class="docutils literal notranslate"><span class="pre">report.json</span></code> for further analysis.</p>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> ( 0 minutes  0.100 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.309 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
-<div class="sphx-glr-download sphx-glr-download-python docutils container">
-<p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>
-</div>
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/861a23b0676093686f50a5f922fc6363/tutorial_02_vhls.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_02_vhls.ipynb</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../_downloads/50722c0e72e146713406dea7e2ab09f3/tutorial_02_vhls.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">tutorial_02_vhls.py</span></code></a></p>
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
@@ -486,11 +484,11 @@ with II=1.</p>
       </div>
     
         <div id="show_right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents<span></a></p>
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
         </div>
 
         <div id="right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:<span></a></p>
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
             <div class="page_toc">
                 <ul>
 <li><a class="reference internal" href="#">Vivado HLS Backend</a><ul>
@@ -527,8 +525,8 @@ with II=1.</p>
 
 
     <div class="footer" role="contentinfo">
-        &#169; Copyright 2023, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
+    &#169; Copyright 2023, Allo Authors.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
