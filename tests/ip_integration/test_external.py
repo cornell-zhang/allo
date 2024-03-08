@@ -24,6 +24,22 @@ def test_pybind11():
     print("Passed!")
 
 
+def test_extern_c():
+    vadd = allo.IPModule(
+        top="vadd",
+        headers=["vadd_extern.h"],
+        impls=["vadd_extern.cpp"],
+        signature=["int32[32]", "int32[32]", "int32[32]"],
+        link_hls=False,
+    )
+    np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
+    np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
+    np_C = np.zeros((32,), dtype=np.int32)
+    vadd(np_A, np_B, np_C)
+    np.testing.assert_allclose(np_A + np_B, np_C, atol=1e-6)
+    print("Passed!")
+
+
 def test_shared_lib():
     vadd = allo.IPModule(
         top="vadd",

@@ -45,6 +45,15 @@ def test_vitis_gemm():
     print(s.module)
     mod = s.build(target="vitis_hls", mode="sw_emu", project="gemm_vitis.prj")
     print(mod.hls_code)
+    if os.system("which vitis_hls >> /dev/null") == 0:
+        mod = s.build(target="vitis_hls", mode="csim", project="gemm_vitis_csim.prj")
+        np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+        np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = np.zeros((32, 32), dtype=np.int32)
+        mod(np_A, np_B, np_C_allo)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        print("Passed!")
 
 
 def test_vitis_io_stream():

@@ -22,6 +22,7 @@ from hcl_mlir.dialects import (
     scf as scf_d,
     func as func_d,
 )
+from .utils import MockArg, MockBuffer
 
 
 class LoopWrapper:
@@ -71,6 +72,50 @@ def get_loop_band_names(func):
         if isinstance(op, affine_d.AffineForOp):
             results.append(op.attributes["op_name"])
     return results
+
+
+def find_buffer(module, target, func_args):
+    assert isinstance(target, MockBuffer), "Target must be a buffer"
+    if target.op is not None:
+        return None, -1, target.op
+    func_name, target_name = target.path, target.name
+    target_func = None
+    for op in module.body.operations:
+        if (
+            isinstance(op, func_d.FuncOp)
+            and StringAttr(op.attributes["sym_name"]).value == func_name
+        ):
+            target_func = op
+            break
+    if target_func is None:
+        raise RuntimeError(f"Target function {func_name} not found")
+    # Find arguments
+    for idx, (name, op) in enumerate(zip(func_args[func_name], target_func.arguments)):
+        if name == target_name:
+            return target_func, idx, MockArg(op)
+    # Find inner intermediate buffers
+    for op in target_func.entry_block.operations:
+        if (
+            isinstance(op, memref_d.AllocOp)
+            and "name" in op.attributes
+            and StringAttr(op.attributes["name"]).value == target_name
+        ):
+            # verify if it is a return tensor
+            return_op = list(target_func.entry_block.operations)[-1]
+            if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
+                idx = len(target_func.arguments)
+            else:
+                idx = -1
+            return target_func, idx, op
+        if (
+            isinstance(op, func_d.CallOp)
+            and "name" in op.attributes
+            and StringAttr(op.attributes["name"]).value == target_name
+        ):
+            return target_func, -1, op
+        if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
+            return target_func, -1, op
+    raise RuntimeError(f"Target {target} not found")
 
 
 def find_loop_in_bands(func, axis):

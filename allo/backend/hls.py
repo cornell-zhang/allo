@@ -10,6 +10,7 @@ import time
 from hcl_mlir.dialects import hcl as hcl_d
 from hcl_mlir.ir import (
     Context,
+    Location,
     Module,
 )
 from hcl_mlir.passmanager import PassManager
@@ -25,9 +26,11 @@ from .report import parse_xml
 from ..passes import (
     _mlir_lower_pipeline,
     decompose_library_function,
+    generate_input_output_buffers,
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
+from .. import primitives as prim
 
 
 def run_process(cmd, pattern=None):
@@ -110,6 +113,7 @@ def separate_header(hls_code, top=None):
     sig_str = "#ifndef KERNEL_H\n"
     sig_str += "#define KERNEL_H\n\n"
     args = []
+    sig_str += 'extern "C" {\n'
     for line in hls_code.split("\n"):
         if line.startswith(f"void {top}"):
             func_decl = True
@@ -120,11 +124,15 @@ def separate_header(hls_code, top=None):
             break
         elif func_decl:
             arg_type = line.strip()
+            _, var = arg_type.rsplit(" ", 1)
+            comma = "," if var[-1] == "," else ""
+            var = var.split("[")[0]
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            ele_type = c2allo_type[ele_type]
+            allo_type = c2allo_type[ele_type]
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
-            args.append((ele_type, shape))
-            sig_str += line + "\n"
+            args.append((allo_type, shape))
+            sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+    sig_str += '} // extern "C"\n'
     sig_str += "\n#endif // KERNEL_H\n"
     return sig_str, args
 
@@ -138,16 +146,46 @@ class HLSModule:
         mode=None,
         project=None,
         ext_libs=None,
+        configs=None,
+        func_args=None,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
-        with Context() as ctx:
+        with Context() as ctx, Location.unknown():
             hcl_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
+            if platform == "vitis_hls":
+                if configs is not None:
+                    mappings = configs.get("mappings", None)
+                else:
+                    mappings = None
+                buffers = generate_input_output_buffers(
+                    self.func, flatten=True, mappings=mappings
+                )
+                if "dataflow" in self.func.attributes:
+                    assert func_args is not None, "Need to specify func_args"
+                    for inp in buffers["inputs"]:
+                        prim.to(
+                            self.module,
+                            inp,
+                            "",
+                            depth=4,
+                            func_args=func_args,
+                            top_func_name=top_func_name,
+                        )
+                    for out in buffers["outputs"]:
+                        prim.to(
+                            self.module,
+                            out,
+                            "",
+                            depth=4,
+                            func_args=func_args,
+                            top_func_name=top_func_name,
+                        )
             self.module = decompose_library_function(self.module)
             _mlir_lower_pipeline(self.module, lower_linalg=True)
             # Run through lowering passes
@@ -189,17 +227,10 @@ class HLSModule:
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
                     )
-                if self.mode == "csim":
-                    header, self.args = separate_header(
-                        self.hls_code, self.top_func_name
-                    )
-                    with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
-                        outfile.write(header)
-                else:
-                    self.args = None
-                    self.hls_code = postprocess_hls_code(
-                        self.hls_code, self.top_func_name
-                    )
+                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+                self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 for lib in self.ext_libs:
                     for header in lib.headers:
                         header = header.split("/")[-1]
