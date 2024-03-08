@@ -22,7 +22,6 @@ from hcl_mlir.ir import (
     IntegerType,
     IntegerAttr,
     TypeAttr,
-    FunctionType,
     F32Type,
     MemRefType,
     FlatSymbolRefAttr,
@@ -43,8 +42,8 @@ from hcl_mlir.dialects.affine import (
 from hcl_mlir.exceptions import (
     HCLValueError,
 )
-from hcl_mlir.ir import Type as MLIRType
 
+from . import primitives as prim
 from .ir.visitor import ASTContext
 from .ir.utils import MockArg, MockBuffer, parse_ast
 from .ir.builder import ASTTransformer
@@ -52,7 +51,7 @@ from .ir.infer import TypeInferer
 from .ir.transform import (
     get_affine_loop_nests,
     find_loop_in_bands,
-    update_streaming_interface,
+    find_buffer,
     LoopWrapper,
 )
 from .ir.types import AlloType
@@ -60,7 +59,6 @@ from .ir.use_def import UseDefChain
 from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
-    generate_input_output_buffers,
 )
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
@@ -248,51 +246,6 @@ class Schedule:
         arg_results = [arg.result for arg in loop_hdls]
         hcl_d.FuseOp(arg_results, ip=ip)
 
-    def _find_target(self, target):
-        assert isinstance(target, MockBuffer), "Target must be a buffer"
-        if target.op is not None:
-            return None, -1, target.op
-        func_name, target_name = target.path, target.name
-        target_func = None
-        for op in self.module.body.operations:
-            if (
-                isinstance(op, func_d.FuncOp)
-                and StringAttr(op.attributes["sym_name"]).value == func_name
-            ):
-                target_func = op
-                break
-        if target_func is None:
-            raise RuntimeError(f"Target function {func_name} not found")
-        # Find arguments
-        for idx, (name, op) in enumerate(
-            zip(self.func_args[func_name], target_func.arguments)
-        ):
-            if name == target_name:
-                return target_func, idx, MockArg(op)
-        # Find inner intermediate buffers
-        for op in target_func.entry_block.operations:
-            if (
-                isinstance(op, memref_d.AllocOp)
-                and "name" in op.attributes
-                and StringAttr(op.attributes["name"]).value == target_name
-            ):
-                # verify if it is a return tensor
-                return_op = list(target_func.entry_block.operations)[-1]
-                if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
-                    idx = len(target_func.arguments)
-                else:
-                    idx = -1
-                return target_func, idx, op
-            if (
-                isinstance(op, func_d.CallOp)
-                and "name" in op.attributes
-                and StringAttr(op.attributes["name"]).value == target_name
-            ):
-                return target_func, -1, op
-            if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
-                return target_func, -1, op
-        raise RuntimeError(f"Target {target} not found")
-
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         # TODO: test whether the partition has conflicts for different functions
@@ -335,7 +288,7 @@ class Schedule:
             if name in visited_target_names:
                 return
             visited_target_names.append(name)
-            _, _, mlir_target = self._find_target(inner_target)
+            _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
             for tensor in self.use_def_chain.get_equivalent_tensors(name):
                 recursive_partition(MockBuffer(tensor.path, tensor.name))
@@ -360,8 +313,10 @@ class Schedule:
 
         recursive_partition(target)
         for inner_target in visited_target_names:
-            func, _, mlir_target = self._find_target(
-                MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1])
+            func, _, mlir_target = find_buffer(
+                self.module,
+                MockBuffer(inner_target.split(":")[0], inner_target.split(":")[1]),
+                self.func_args,
             )
             if inner_target not in self.partitioned_arrays:
                 self.partitioned_arrays[inner_target] = [(partition_type, dim, factor)]
@@ -424,7 +379,7 @@ class Schedule:
 
     @wrapped_apply
     def buffer_at(self, target, axis):
-        _, _, target = self._find_target(target)
+        _, _, target = find_buffer(self.module, target, self.func_args)
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -435,7 +390,7 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
-        _, _, target = self._find_target(target)
+        _, _, target = find_buffer(self.module, target, self.func_args)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
         hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
@@ -514,7 +469,7 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
-        _, _, target = self._find_target(target)
+        _, _, target = find_buffer(self.module, target, self.func_args)
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -552,72 +507,9 @@ class Schedule:
 
     @wrapped_apply
     def to(self, target, dst, axis=None, depth=-1):
-        func, _, target = self._find_target(target)
-        func.attributes["dataflow"] = UnitAttr.get()
-        # pylint: disable=too-many-nested-blocks
-        if axis is None:
-            op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=self.ip)
-            i32 = IntegerType.get_signless(32)
-            hcl_d.InterKernelToOp(
-                target.result,
-                op_hdl.result,
-                fifo_depth=IntegerAttr.get(i32, depth),
-                ip=self.ip,
-            )
-            update_streaming_interface(self.module, target, depth=depth)
-        else:
-            assert dst is not None, "Need to specify dst"
-            # TODO: fix the ad-hoc logic here
-            memref = MemRefType(target.result.type)
-            space_time_label = ["T"] * len(memref.shape)
-            for idx in dst:
-                space_time_label[idx] = "S"
-            memory_space = f"stream:{depth};{''.join(space_time_label)}"
-            new_memref = MemRefType.get(
-                memref.shape,
-                memref.element_type,
-                memref.layout,
-                StringAttr.get(memory_space),
-            )
-            new_alloc = memref_d.AllocOp(new_memref, [], [], ip=InsertionPoint(target))
-            new_alloc.attributes["name"] = target.attributes["name"]
-            target.result.replace_all_uses_with(new_alloc.result)
-            for use in new_alloc.result.uses:
-                op = use.owner
-                if isinstance(op, memref_d.SubViewOp):
-                    subview_memref = MLIRType.parse(
-                        str(op.result.type)[:-1] + f', "{memory_space}">'
-                    )
-                    subview = memref_d.SubViewOp(
-                        source=op.source,
-                        result=subview_memref,
-                        static_offsets=op.static_offsets,
-                        static_sizes=op.static_sizes,
-                        static_strides=op.static_strides,
-                        offsets=op.offsets,
-                        sizes=[],
-                        strides=[],
-                        ip=InsertionPoint(op),
-                    )
-                    op.result.replace_all_uses_with(subview.result)
-                    op.operation.erase()
-            target.operation.erase()
-            # Find target in the top function
-            for op in func.entry_block.operations:
-                if isinstance(op, func_d.CallOp):
-                    for func in self.module.body.operations:
-                        if (
-                            isinstance(func, func_d.FuncOp)
-                            and func.name.value == op.attributes["callee"].value
-                        ):
-                            out_types = func.attributes["function_type"].value.results
-                            new_in_types = []
-                            for i, operand in enumerate(op.operands):
-                                new_in_types.append(operand.type)
-                            func_type = FunctionType.get(new_in_types, out_types)
-                            func.attributes["function_type"] = TypeAttr.get(func_type)
-                            for i, arg in enumerate(func.arguments):
-                                arg.set_type(new_in_types[i])
+        return prim.to(
+            self.module, target, dst, axis, depth, self.func_args, self.top_func_name
+        )
 
     @wrapped_apply
     def unfold(self, band_name, axes):
@@ -793,19 +685,6 @@ class Schedule:
                 ext_libs=self.ext_libs,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls"}:
-            if target == "vitis_hls":
-                if configs is not None:
-                    mappings = configs.get("mappings", None)
-                else:
-                    mappings = None
-                buffers = generate_input_output_buffers(
-                    self.top_func, flatten=True, mappings=mappings
-                )
-                if "dataflow" in self.top_func.attributes:
-                    for inp in buffers["inputs"]:
-                        self.to(inp, "", depth=4)
-                    for out in buffers["outputs"]:
-                        self.to(out, "", depth=4)
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
@@ -813,6 +692,8 @@ class Schedule:
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,
+                configs=configs,
+                func_args=self.func_args,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
