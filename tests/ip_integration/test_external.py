@@ -128,5 +128,4 @@ def test_systolic_stream():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_extern_c()
+    pytest.main([__file__])
