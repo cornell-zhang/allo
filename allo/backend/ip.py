@@ -51,7 +51,10 @@ class IPModule:
                     "/".join(os.popen("which vivado_hls").read().split("/")[:-2])
                     + "/include"
                 )
-            elif os.system("which vitis_hls >> /dev/null") == 0:
+            elif (
+                os.system("which vitis_hls >> /dev/null") == 0
+                and os.environ.get("XDEVICE", None) is not None
+            ):
                 self.include_paths.append(
                     "/".join(os.popen("which vitis_hls").read().split("/")[:-2])
                     + "/include"

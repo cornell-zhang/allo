@@ -5,7 +5,8 @@ import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int8, int16, int32, float32, index
+from allo.ir.types import int32, float32, index
+import allo.backend.hls as hls
 
 
 def test_grid_for_gemm():
@@ -49,7 +50,7 @@ def test_grid_for_gemm():
         assert label in hls_code
 
     # 5. HLS CSIM
-    if os.system(f"which vitis_hls >> /dev/null") != 0:
+    if not hls.is_available("vitis_hls"):
         print("Vitis HLS not found, skipping...")
         return
     hls_mod = s.build(

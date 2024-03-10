@@ -5,9 +5,10 @@ import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int4, int8, int16, int32, int64, int128, index, UInt
+from allo.ir.types import int4, int8, int16, int32, int128, index, UInt
 from allo.ir.utils import MockBuffer
 from allo.utils import get_np_struct_type
+import allo.backend.hls as hls
 
 
 def test_subview_systolic():
@@ -111,7 +112,7 @@ def test_subview_systolic_stream():
     s.to(s.B_fifo, pe, axis=0, depth=N + 1)
     code = s.build("vhls")
     assert "#pragma HLS dataflow" in str(code)
-    if os.system("which vivado_hls >> /dev/null") == 0:
+    if hls.is_available():
         hls_mod = s.build(
             target="vivado_hls", mode="debug", project="systolic_stream.prj"
         )
@@ -199,7 +200,7 @@ def test_cascade_systolic():
     # HLS testing
     code = s_top.build("vhls")
     print(code)
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
         )
@@ -259,7 +260,7 @@ def test_cascade_specialized_systolic():
     # HLS testing
     code = s_top.build("vhls")
     print(code)
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw_emu",
@@ -306,7 +307,7 @@ def test_ffn():
     # HLS testing
     code = s_top.build("vhls")
     print(code)
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw_emu",
@@ -363,7 +364,7 @@ def test_int8_packed_gemm():
     s_top.dataflow("top")  # important
     # TODO: Fix input loop ordering
     code = s_top.build("vhls")
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw",
@@ -411,7 +412,7 @@ def test_int8_gemm_dsp_packing():
     s_top.dataflow("top")  # important
     # TODO: Fix input loop ordering
     code = s_top.build("vhls")
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw",

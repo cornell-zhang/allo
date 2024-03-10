@@ -6,6 +6,7 @@ import numpy as np
 import allo
 from allo.ir.types import int8, int16, int32, int64, int128, int256, int512
 from allo.utils import get_np_struct_type
+import allo.backend.hls as hls
 
 
 def test_cascaded_int8_gemm():
@@ -49,7 +50,7 @@ def test_cascaded_int8_gemm():
     s_top.to(s_top.Z, "systolic_FFN2", depth=M0 * 4 * D)
     # HLS testing
     code = s_top.build("vhls")
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw",
@@ -121,7 +122,7 @@ def test_int8_gemm():
         packed_systolic, instantiate=[int32, int32, int32, L, D, 4 * D, M0, M1, PP]
     )
     s_top.dataflow("top")  # important
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         if L > 64:
             hls_mod = s_top.build(
                 target="vitis_hls",
@@ -203,7 +204,7 @@ def test_int8_gemm_dsp_packing():
     s_top.dataflow("top")  # important
     # TODO: Fix input loop ordering
     code = s_top.build("vhls")
-    if os.system("which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
             mode="hw",
