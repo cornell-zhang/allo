@@ -6,6 +6,7 @@ import pytest
 import numpy as np
 import allo
 from allo.ir.types import int32, float32
+import allo.backend.hls as hls
 
 
 def test_pybind11():
@@ -88,14 +89,14 @@ def test_lib_gemm():
     np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-6)
     print("Passed!")
 
-    if os.system(f"which vivado_hls >> /dev/null") == 0:
+    if hls.is_available():
         hls_mod = s.build(target="vivado_hls", mode="debug", project="gemm_ext.prj")
         print(hls_mod)
         hls_mod()
     else:
         print("Vivado HLS not found, skipping...")
 
-    if os.system(f"which vitis_hls >> /dev/null") == 0:
+    if hls.is_available("vitis_hls"):
         hls_mod = s.build(
             target="vitis_hls", mode="sw_emu", project="gemm_ext_vitis.prj"
         )
@@ -105,9 +106,7 @@ def test_lib_gemm():
         print("Vitis HLS not found, skipping...")
 
 
-@pytest.mark.skipif(
-    os.system(f"which vivado_hls >> /dev/null") != 0, reason="Vivado HLS not found"
-)
+@pytest.mark.skipif(not hls.is_available(), reason="Vivado HLS not found")
 def test_systolic_stream():
     M, N, K = 2, 2, 2
     sa = allo.IPModule(

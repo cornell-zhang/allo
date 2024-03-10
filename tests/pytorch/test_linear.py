@@ -7,6 +7,7 @@ import allo
 from allo.library.systolic import systolic
 from allo.ir.types import int8
 import numpy as np
+import allo.backend.hls as hls
 
 device = "cpu"
 N, L, D = 1, 4, 4
@@ -73,7 +74,7 @@ def test_int8_linear():
         project=f"test_linear.prj",
     )
     csim_out = np.zeros((L, 4 * D), dtype=np.int8)
-    if os.system(f"which vitis_hls >> /dev/null") != 0:
+    if not hls.is_available("vitis_hls"):
         print("Vitis HLS not found, skipping...")
         return
     hls_mod(np_x, np_w, csim_out)

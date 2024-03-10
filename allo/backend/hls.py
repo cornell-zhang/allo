@@ -33,6 +33,15 @@ from ..ir.transform import find_func_in_module
 from .. import primitives as prim
 
 
+def is_available(backend="vivado_hls"):
+    if backend == "vivado_hls":
+        return os.system("which vivado_hls >> /dev/null") == 0
+    return (
+        os.system("which vitis_hls >> /dev/null") == 0
+        and os.environ.get("XDEVICE", None) is not None
+    )
+
+
 def run_process(cmd, pattern=None):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
     out, err = p.communicate()
