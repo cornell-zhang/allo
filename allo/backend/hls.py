@@ -36,11 +36,10 @@ from .. import primitives as prim
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
-    else:
-        return (
-            os.system("which vitis_hls >> /dev/null") == 0
-            and os.environ.get("XDEVICE", None) is not None
-        )
+    return (
+        os.system("which vitis_hls >> /dev/null") == 0
+        and os.environ.get("XDEVICE", None) is not None
+    )
 
 
 def run_process(cmd, pattern=None):
