@@ -4,7 +4,7 @@
 import os
 import pytest
 import allo
-from allo.ir.types import int32
+from allo.ir.types import int32, float32
 import numpy as np
 import allo.backend.hls as hls
 
@@ -54,6 +54,36 @@ def test_vitis_gemm():
         np_C_allo = np.zeros((32, 32), dtype=np.int32)
         mod(np_A, np_B, np_C_allo)
         np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-5)
+        print("Passed!")
+
+
+def test_vitis_gemm_template():
+    def gemm[T, M, N, K](A: "T[M, K]", B: "T[K, N]") -> "T[M, N]":
+        C: T[M, N] = 0
+        for i, j, k in allo.grid(M, N, K, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm, instantiate=[int32, 32, 32, 32])
+    if hls.is_available("vitis_hls"):
+        mod = s.build(target="vitis_hls", mode="csim", project="gemm_vitis_csim.prj")
+        np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+        np_B = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = np.zeros((32, 32), dtype=np.int32)
+        mod(np_A, np_B, np_C_allo)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
+        print("Passed!")
+
+    s = allo.customize(gemm, instantiate=[float32, 64, 64, 64])
+    if hls.is_available("vitis_hls"):
+        mod = s.build(target="vitis_hls", mode="csim", project="gemm_vitis_csim.prj")
+        np_A = np.random.random(size=(64, 64)).astype(np.float32)
+        np_B = np.random.random(size=(64, 64)).astype(np.float32)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = np.zeros((64, 64), dtype=np.float32)
+        mod(np_A, np_B, np_C_allo)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-4)
         print("Passed!")
 
 
