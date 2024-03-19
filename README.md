@@ -101,8 +101,7 @@ golden_C = np.matmul(np_A, np_B)
 np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
 ```
 
-## Related Works
-* [MLIR](https://mlir.llvm.org/)
-* [HeteroCL](https://github.com/cornell-zhang/heterocl)
-* [TVM](https://github.com/apache/tvm)
-* [Exo](https://github.com/exo-lang/exo)
+## Related Projects
+* Accelerator Programming Languages: [Exo](https://github.com/exo-lang/exo), [Halide](https://github.com/halide/Halide), [TVM](https://github.com/apache/tvm)
+* Accelerator Design Languages: [Dahlia](https://github.com/cucapra/dahlia), [HeteroCL](https://github.com/cornell-zhang/heterocl), [PyLog](https://github.com/hst10/pylog), [ScaleHLS](https://github.com/hanchenye/scalehls), [Spatial](https://github.com/stanford-ppl/spatial)
+* Compiler Frameworks: [MLIR](https://mlir.llvm.org/)
