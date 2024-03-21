@@ -84,3 +84,6 @@ def test_gemm_grid_for():
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+a = 1

@@ -562,3 +562,6 @@ def test_dynamic_shape():
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+a = 1

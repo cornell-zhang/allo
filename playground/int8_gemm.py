@@ -216,3 +216,6 @@ def test_int8_gemm_dsp_packing():
 if __name__ == "__main__":
     # test_int8_gemm_dsp_packing()
     test_int8_gemm()
+
+
+a = 1
