@@ -331,3 +331,6 @@ def update_makefile(file_name, ext_libs):
     makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
     with open(file_name, "w", encoding="utf-8") as outfile:
         outfile.write(makefile)
+
+
+a = 1

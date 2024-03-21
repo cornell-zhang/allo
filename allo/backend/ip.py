@@ -220,3 +220,6 @@ class IPModule:
         sys.path.append(self.temp_path)
         self.lib = importlib.import_module(f"{self.lib_name}")
         return getattr(self.lib, f"{self.top}")(*args)
+
+
+a = 1

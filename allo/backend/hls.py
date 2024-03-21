@@ -373,3 +373,6 @@ class HLSModule:
                 subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
         else:
             raise RuntimeError("Not implemented")
+
+
+a = 1

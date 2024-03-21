@@ -359,3 +359,6 @@ class LLVMModule:
                     ret_i = np_arr
                 ret.append(ret_i)
         return ret
+
+
+a = 1

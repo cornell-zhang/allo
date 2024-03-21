@@ -503,3 +503,6 @@ def report_stats(target, folder):
         raise RuntimeError("Not found out.prj folder")
 
     raise RuntimeError(f"tool {target.tool.name} not yet supported")
+
+
+a = 1
