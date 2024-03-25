@@ -507,9 +507,11 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                     inputs=[op.result],
                     outputs=[alloc_op.result],
-                    result_tensors=[RankedTensorType.get(shape, mlir_type)]
-                    if ctx.enable_tensor
-                    else [],
+                    result_tensors=(
+                        [RankedTensorType.get(shape, mlir_type)]
+                        if ctx.enable_tensor
+                        else []
+                    ),
                     iterator_types=iterator_types_attr,
                 )
                 # create block
@@ -2070,7 +2072,12 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Expr(ctx, node):
-        return build_stmt(ctx, node.value)
+        if isinstance(node.value, ast.Constant):
+            # Python comments
+            return
+        if isinstance(node.value, ast.Call):
+            return build_stmt(ctx, node.value)
+        raise RuntimeError("Unsupported expression")
 
     @staticmethod
     def build_Pass(ctx, node):

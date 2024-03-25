@@ -894,10 +894,17 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Expr(ctx, node):
-        visit_stmt(ctx, node.value)
-        node.dtype = None
-        node.shape = None
-        return node
+        if isinstance(node.value, ast.Constant):
+            # Python comments
+            node.dtype = None
+            node.shape = None
+            return node
+        if isinstance(node.value, ast.Call):
+            visit_stmt(ctx, node.value)
+            node.dtype = None
+            node.shape = None
+            return node
+        raise RuntimeError(f"Unsupported expression: {node.value}")
 
     @staticmethod
     def visit_Pass(ctx, node):
