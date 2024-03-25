@@ -74,7 +74,7 @@ class IPModule:
             # pylint: disable=eval-used
             shape = eval(f'({arg_type.split("[")[1].split("]")[0].strip()},)')
             self.args.append((ele_type, shape))
-        self.lib_name = f"py{self.top}_{hash(time.time())}"
+        self.lib_name = f"py{self.top}_{hash(time.time_ns())}"
         self.c_wrapper_file = os.path.join(self.temp_path, f"{self.lib_name}.cpp")
 
     def generate_pybind11_wrapper(self):
