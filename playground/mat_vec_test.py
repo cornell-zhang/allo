@@ -46,9 +46,9 @@ def get_types(pp=1, csim=False):
     return table
 
 
-def test_basic_int8_gemvm_pe(runs=1, ll=4, dd=2, pp=1, p_loc=0):
+def test_basic_int8_gemv_pe(runs=1, ll=4, dd=2, pp=1, p_loc=0):
     """Runs selected test configuration on PE kernel."""
-    from allo.library.mat_vec import pe_kernel
+    from allo.library.gemv import pe_kernel
 
     np.random.seed(seed=1)
 
@@ -84,9 +84,9 @@ def test_basic_int8_gemvm_pe(runs=1, ll=4, dd=2, pp=1, p_loc=0):
 
 # Test setup for matrix vector multiply
 # For best perf P factor should equal MM
-def test_basic_int8_gemvm(ll=2, dd=2, pp=1, hw=False, runs=(1, 1)):
+def test_basic_int8_gemv(ll=2, dd=2, pp=1, hw=False, runs=(1, 1)):
     """Runs selected test configuration of mat vec multiply."""
-    from allo.library.mat_vec import int8xint8_mat_vec
+    from allo.library.gemv import int8xint8_mat_vec
 
     # np.random.seed(seed=400)
     np.set_printoptions(formatter={"int": hex})
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     # fmt: on
 
     processes = [
-        mp.Process(target=test_basic_int8_gemvm_pe, args=args) for args in PE_tests
+        mp.Process(target=test_basic_int8_gemv_pe, args=args) for args in PE_tests
     ]
     for p in processes:
         p.start()
@@ -212,7 +212,7 @@ if __name__ == "__main__":
 
     # Run each test in it's own process
     processes = [
-        mp.Process(target=test_basic_int8_gemvm, args=args) for args in full_tests
+        mp.Process(target=test_basic_int8_gemv, args=args) for args in full_tests
     ]
 
     for p in processes:

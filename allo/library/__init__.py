@@ -10,7 +10,7 @@ from .systolic import (
     schedule_systolic,
 )
 
-from .mat_vec import (
+from .gemv import (
     int8xint8_mat_vec,
     schedule_int8xint8_mat_vec,
 )
