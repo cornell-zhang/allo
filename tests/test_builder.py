@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32, index
+from allo.ir.types import int8, int32, float32, index
 import allo.backend.hls as hls
 
 
@@ -558,6 +558,14 @@ def test_dynamic_shape():
     np.testing.assert_allclose(np_A, allo_A)
     code = s.build(target="vhls")
     print(code)
+
+
+def test_comments():
+    def top(x_in: "int8[1]") -> "int8":
+        """Test text"""
+        return x_in[0]
+
+    print(allo.customize(top, verbose=True).build()(np.array([5], dtype=np.int8)))
 
 
 if __name__ == "__main__":
