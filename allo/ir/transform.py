@@ -276,6 +276,7 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
     for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
         IntegerType.get_unsigned(32), 1
     )
+    for_loops[-1].attributes["rewind"] = UnitAttr.get()
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
     with InsertionPoint(for_loops[-1].body.operations[0]):
         if not flatten:
