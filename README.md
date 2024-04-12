@@ -101,6 +101,26 @@ golden_C = np.matmul(np_A, np_B)
 np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
 ```
 
+## Publications
+Please refer to our [PLDI'24 paper](https://arxiv.org/abs/2404.04815) for more details. If you use Allo in your research, please use the following bibtex entry to cite us:
+```bibtex
+@article{chen2024allo,
+    author = {Hongzheng Chen and Niansong Zhang and Shaojie Xiang and Zhichen Zeng and Mengjia Dai and Zhiru Zhang},
+    title = {Allo: A Programming Model for Composable Accelerator Design},
+    journal = {Proc. ACM Program. Lang.},
+    year = {2024},
+    month = {jun},
+    url = {https://doi.org/10.1145/3656401},
+    doi = {10.1145/3656401},
+    articleno = {171},
+    volume = {8},
+    number = {PLDI},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    issue_date = {June 2024},
+}
+```
+
 ## Related Projects
 * Accelerator Programming Languages: [Exo](https://github.com/exo-lang/exo), [Halide](https://github.com/halide/Halide), [TVM](https://github.com/apache/tvm)
 * Accelerator Design Languages: [Dahlia](https://github.com/cucapra/dahlia), [HeteroCL](https://github.com/cornell-zhang/heterocl), [PyLog](https://github.com/hst10/pylog), [ScaleHLS](https://github.com/hanchenye/scalehls), [Spatial](https://github.com/stanford-ppl/spatial)
