@@ -1284,11 +1284,20 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[name] = MockArg(arg, idx=i)
         ctx.func_args[func_name] = arg_names
         ctx.set_ip(func_op.entry_block)
-        build_stmts(ctx, node.body)
-        if (
-            isinstance(node.returns, ast.Constant) and node.returns.value is None
-        ) or node.returns is None:
-            func_d.ReturnOp([], ip=ctx.pop_ip())
+        stmts = build_stmts(ctx, node.body)
+        # node.returns is the function definition, not the actual return operation
+        if len(stmts) > 0 and (
+            not (
+                isinstance(stmts[-1], func_d.ReturnOp)
+                or stmts[-1] == "WithStatementSkipped"
+            )
+        ):
+            if (
+                isinstance(node.returns, ast.Constant) and node.returns.value is None
+            ) or node.returns is None:
+                func_d.ReturnOp([], ip=ctx.pop_ip())
+            else:
+                raise RuntimeError("Missing return statement")
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
@@ -2003,7 +2012,13 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Return(ctx, node):
-        if node.value is not None and ctx.top_func_tree.dtype is None:
+        if node.value is None or (
+            isinstance(node.value, ast.Constant) and node.value.value is None
+        ):
+            if ctx.top_func_tree.dtype is not None:
+                raise RuntimeError("Mismatch in function signature")
+            return func_d.ReturnOp([], ip=ctx.pop_ip())
+        if ctx.top_func_tree.dtype is None:
             raise RuntimeError("Return value should have a dtype in function signature")
         if isinstance(node.value, ast.Tuple):
             # return multiple values
@@ -2069,6 +2084,7 @@ class ASTTransformer(ASTBuilder):
         if final_cond:
             stmts = build_stmts(ctx, node.body)
             return stmts[-1]
+        return "WithStatementSkipped"
 
     @staticmethod
     def build_Expr(ctx, node):

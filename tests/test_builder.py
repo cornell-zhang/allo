@@ -560,6 +560,50 @@ def test_dynamic_shape():
     print(code)
 
 
+def test_build_none_return():
+    def kernel0(A: int32[32]):
+        return None
+
+    s0 = allo.customize(kernel0)
+
+    def kernel1(A: int32[32]) -> None:
+        return None
+
+    s1 = allo.customize(kernel1)
+
+    def kernel2(A: int32[32]):
+        return
+
+    s2 = allo.customize(kernel2)
+
+    def kernel3(A: int32[32]) -> None:
+        return
+
+    s3 = allo.customize(kernel3)
+
+    def kernel4(A: int32[32]):
+        pass
+
+    s4 = allo.customize(kernel4)
+
+    def kernel5(A: int32[32]) -> None:
+        pass
+
+    s5 = allo.customize(kernel5)
+
+    def kernel6(A: int32[32]) -> int32:
+        return
+
+    with pytest.raises(RuntimeError):
+        s6 = allo.customize(kernel6)
+
+    def kernel7(A: int32[32]) -> int32:
+        pass
+
+    with pytest.raises(RuntimeError):
+        s7 = allo.customize(kernel7)
+
+
 def test_comments():
     def top(x_in: "int8[1]") -> "int8":
         """Test text"""
