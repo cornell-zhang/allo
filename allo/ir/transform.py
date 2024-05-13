@@ -159,7 +159,9 @@ def find_loop_in_bands(func, axis):
                 if name == axis_name:
                     results.append(op_name)
         if len(results) == 0:
-            raise RuntimeError(f"Cannot find the band of loop {axis_name}")
+            raise RuntimeError(
+                f"Cannot find the band of loop {axis_name} in function {func.sym_name}"
+            )
         if len(results) > 1:
             raise RuntimeError(f"Find multiple bands containing loop {axis_name}")
         return results[0], axis_name

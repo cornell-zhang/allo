@@ -669,7 +669,8 @@ class Schedule:
                         args[0] = get_name(args[0])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
-                    primitive_func.__wrapped__(self, *args, **kwargs)
+                    # directly apply primitives to new functions
+                    primitive_func(*args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
     def build(self, target=None, mode=None, project=None, configs=None):
