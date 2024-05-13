@@ -1,7 +1,8 @@
 <!--- Copyright Allo authors. All Rights Reserved. -->
 <!--- SPDX-License-Identifier: Apache-2.0  -->
 
-# Allo: A Programming Model for Composable Accelerator Design
+<img src="tutorials/allo-icon.png" width=128/> Accelerator Design Language
+==============================================================================
 
 [**Documentation**](https://cornell-zhang.github.io/allo) 
 
