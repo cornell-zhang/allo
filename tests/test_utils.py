@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import int32
 from allo.ir.transform import find_loop_in_bands

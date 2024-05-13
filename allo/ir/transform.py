@@ -193,7 +193,9 @@ def get_affine_loop_nests(func):
         if isinstance(op, affine_d.AffineForOp):  # outer-most
             band_name = StringAttr(op.attributes["op_name"]).value
             band = LoopBand()
-            band.add_loop(func_name, band_name, StringAttr(op.attributes["loop_name"]).value, op)
+            band.add_loop(
+                func_name, band_name, StringAttr(op.attributes["loop_name"]).value, op
+            )
             DFS(op.body.operations, band)
             results.add_loop(func_name, "", band_name, band)
     return results
