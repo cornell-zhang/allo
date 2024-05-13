@@ -29,8 +29,8 @@ class LoopWrapper:
     def __init__(self, name, loop):
         self.name = name
         self.loop = loop
-        # used for function name
-        self.path = None
+        self.func = self.name.split(":")[0]
+        self.band = self.name.split(":")[1].split(".")[0]
 
     def __repr__(self):
         return f"LoopWrapper({self.name})"
@@ -40,12 +40,12 @@ class LoopBand:
     def __init__(self):
         """
         Loops will be directly attached to this class as an attribute
+        Naming convention: `func:band.loop`
         """
         self.loops = {}
 
-    def add_loop(self, path, name, loop):
-        if path != "":
-            full_name = f"{path}.{name}"
+    def add_loop(self, func, band, name, loop):
+        full_name = f"{func}:{band}.{name}"
         if not isinstance(loop, LoopBand):
             loop = LoopWrapper(full_name, loop)
         self.loops[name] = loop
@@ -78,7 +78,7 @@ def find_buffer(module, target, func_args):
     assert isinstance(target, MockBuffer), "Target must be a buffer"
     if target.op is not None:
         return None, -1, target.op
-    func_name, target_name = target.path, target.name
+    func_name, target_name = target.func, target.name
     target_func = None
     for op in module.body.operations:
         if (
@@ -119,20 +119,33 @@ def find_buffer(module, target, func_args):
 
 
 def find_loop_in_bands(func, axis):
+    """
+    Parameters
+    ----------
+    func: hcl_mlir.ir.func.FuncOp
+        The function to search for the loop
+    axis: str or LoopWrapper
+        The name of the loop or the LoopWrapper object
+
+    Returns
+    -------
+    band_name, str
+        The name of the band containing the loop
+    axis_name: str
+        The name of the loop
+    """
     results = []
     bands = get_affine_loop_nests(func)
     # pylint: disable=no-else-return
     if isinstance(axis, LoopWrapper):
-        assert "." in axis.name
-        path, axis = axis.name.split(".", 1)
-        return path, axis
+        return axis.band, axis.name.split(".", 1)[1]
     elif isinstance(axis, affine_d.AffineForOp):
         axis_name = StringAttr(axis.attributes["loop_name"]).value
         for _, band in bands:
             op_name = None
             for i, (_, for_loop) in enumerate(band):
                 if i == 0:
-                    op_name = for_loop.attributes["op_name"]
+                    op_name = StringAttr(for_loop.attributes["op_name"]).value
                 if for_loop == axis:
                     return op_name, axis_name
         raise RuntimeError(f"Cannot find the band of loop {axis_name}")
@@ -142,11 +155,13 @@ def find_loop_in_bands(func, axis):
             op_name = None
             for i, (name, for_loop) in enumerate(band):
                 if i == 0:
-                    op_name = for_loop.loop.attributes["op_name"]
+                    op_name = StringAttr(for_loop.loop.attributes["op_name"]).value
                 if name == axis_name:
                     results.append(op_name)
         if len(results) == 0:
-            raise RuntimeError(f"Cannot find the band of loop {axis_name}")
+            raise RuntimeError(
+                f"Cannot find the band of loop {axis_name} in function {func.sym_name}"
+            )
         if len(results) > 1:
             raise RuntimeError(f"Find multiple bands containing loop {axis_name}")
         return results[0], axis_name
@@ -155,7 +170,7 @@ def find_loop_in_bands(func, axis):
 def get_affine_loop_nests(func):
     cnt_unnamed = 0
 
-    def DFS(operations, band, path=""):
+    def DFS(operations, band):
         nonlocal cnt_unnamed
         for op in operations:
             if isinstance(op, affine_d.AffineForOp):
@@ -164,23 +179,27 @@ def get_affine_loop_nests(func):
                     cnt_unnamed += 1
                 else:
                     name = StringAttr(op.attributes["loop_name"]).value
-                band.add_loop(path, name, op)
-                DFS(op.body.operations, band, path)
+                band.add_loop(func_name, band_name, name, op)
+                DFS(op.body.operations, band)
             elif isinstance(op, (affine_d.AffineIfOp, scf_d.IfOp)):
-                DFS(op.then_block.operations, band, path)
+                DFS(op.then_block.operations, band)
                 try:
-                    DFS(op.else_block.operations, band, path)
+                    DFS(op.else_block.operations, band)
                 except IndexError:
                     pass
 
     results = LoopBand()
+    # get function name
+    func_name = func.attributes["sym_name"].value
     for op in func.entry_block.operations:
         if isinstance(op, affine_d.AffineForOp):  # outer-most
             band_name = StringAttr(op.attributes["op_name"]).value
             band = LoopBand()
-            band.add_loop(band_name, StringAttr(op.attributes["loop_name"]).value, op)
-            DFS(op.body.operations, band, path=band_name)
-            results.add_loop("", band_name, band)
+            band.add_loop(
+                func_name, band_name, StringAttr(op.attributes["loop_name"]).value, op
+            )
+            DFS(op.body.operations, band)
+            results.add_loop(func_name, "", band_name, band)
     return results
 
 
@@ -354,3 +373,17 @@ def find_func_in_module(module, func_name):
         if isinstance(op, func_d.FuncOp) and op.name.value == func_name:
             return op
     return None
+
+
+def find_func_and_axis(self, axis):
+    if isinstance(axis, LoopWrapper):
+        func = (
+            self._find_function(axis.func) if axis.func is not None else self.top_func
+        )
+        return func, axis
+    if ":" in axis:
+        func_name, axis = axis.split(":")
+    else:
+        func_name = self.top_func_name
+    func = self._find_function(func_name)
+    return func, axis

@@ -458,5 +458,20 @@ def test_reuse_function_2():
     print(s.module)
 
 
+def test_dependent_primitives():
+    def kernel(A: int32[32]):
+        for i in range(32):
+            A[i] = i
+
+    def top(A: int32[32]):
+        kernel(A)
+
+    s0 = allo.customize(kernel)
+    s0.split("i", factor=2)
+    s0.pipeline("i.inner")
+    s = allo.customize(top)
+    s.compose(s0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

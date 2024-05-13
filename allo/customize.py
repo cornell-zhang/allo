@@ -179,11 +179,7 @@ class Schedule:
 
     def _get_func_and_axis(self, axis):
         if isinstance(axis, LoopWrapper):
-            func = (
-                self._find_function(axis.path)
-                if axis.path is not None
-                else self.top_func
-            )
+            func = self._find_function(axis.func)
             return func, axis
         if ":" in axis:
             func_name, axis = axis.split(":")
@@ -267,7 +263,7 @@ class Schedule:
         for parray, items in self.partitioned_arrays.items():
             for item in items:
                 if (
-                    parray.split(":")[0] == target.path
+                    parray.split(":")[0] == target.func
                     and parray.split(":")[1] == target.name
                 ):
                     if item[0] == Partition.Complete and item[1] == 0:
@@ -284,7 +280,7 @@ class Schedule:
         visited_func_calls = []
 
         def recursive_partition(inner_target):
-            name = f"{inner_target.path}:{inner_target.name}"
+            name = f"{inner_target.func}:{inner_target.name}"
             if name in visited_target_names:
                 return
             visited_target_names.append(name)
@@ -484,7 +480,7 @@ class Schedule:
                         if (
                             isinstance(op, memref_d.AllocOp)
                             and "name" in op.attributes
-                            and StringAttr(band_name).value + "_reuse"
+                            and band_name + "_reuse"
                             in StringAttr(op.attributes["name"]).value
                         ):
                             res.append(op)
@@ -603,13 +599,13 @@ class Schedule:
         def get_name(arg):
             if isinstance(arg, (LoopWrapper, MockBuffer)):
                 arg = copy.copy(arg)
-                orig_func_name = arg.path if arg.path is not None else sch.top_func_name
+                orig_func_name = arg.func if arg.func is not None else sch.top_func_name
                 func_name = (
                     orig_func_name if id is None else orig_func_name + "_" + str(id)
                 )
                 if self._find_function(func_name, error=False) is None:
                     func_name = orig_func_name + "_0"
-                arg.path = func_name
+                arg.func = func_name
                 return arg
             orig_func_name = arg.split(":")[0] if ":" in arg else sch.top_func_name
             arg = arg.split(":")[1] if ":" in arg else arg
@@ -673,7 +669,8 @@ class Schedule:
                         args[0] = get_name(args[0])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
-                    primitive_func.__wrapped__(self, *args, **kwargs)
+                    # directly apply primitives to new functions
+                    primitive_func(*args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
     def build(self, target=None, mode=None, project=None, configs=None):
