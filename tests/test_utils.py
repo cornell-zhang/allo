@@ -1,6 +1,7 @@
 import allo
 from allo.ir.types import int32
 from allo.ir.transform import find_loop_in_bands
+import pytest
 
 
 def test_get_loops():
@@ -48,4 +49,4 @@ def test_func_call():
 
 
 if __name__ == "__main__":
-    test_func_call()
+    pytest.main([__file__])

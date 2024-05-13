@@ -78,7 +78,7 @@ def find_buffer(module, target, func_args):
     assert isinstance(target, MockBuffer), "Target must be a buffer"
     if target.op is not None:
         return None, -1, target.op
-    func_name, target_name = target.path, target.name
+    func_name, target_name = target.func, target.name
     target_func = None
     for op in module.body.operations:
         if (
@@ -374,7 +374,7 @@ def find_func_in_module(module, func_name):
 def find_func_and_axis(self, axis):
     if isinstance(axis, LoopWrapper):
         func = (
-            self._find_function(axis.path) if axis.path is not None else self.top_func
+            self._find_function(axis.func) if axis.func is not None else self.top_func
         )
         return func, axis
     if ":" in axis:

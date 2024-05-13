@@ -98,8 +98,8 @@ class MockArg(MockOp):
 
 
 class MockBuffer(MockOp):
-    def __init__(self, path, name, idx=None, op=None):
-        self.path = path
+    def __init__(self, func, name, idx=None, op=None):
+        self.func = func
         self.name = name
         # Normally we do not use this attribute to avoid possible context conflicts
         # only when we need to access the op directly, we set this attribute (e.g., compose)
@@ -110,9 +110,9 @@ class MockBuffer(MockOp):
 
     def __repr__(self):
         return (
-            f"MockBuffer({self.path}:{self.name})"
+            f"MockBuffer({self.func}:{self.name})"
             if self.idx is None
-            else f"MockBuffer({self.path}:{self.name}:{self.idx})"
+            else f"MockBuffer({self.func}:{self.name}:{self.idx})"
         )
 
 
