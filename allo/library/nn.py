@@ -40,7 +40,21 @@ def layernorm[Ty, L, D](X: "Ty[L, D]", gamma: "Ty[D]", beta: "Ty[D]") -> "Ty[L, 
     return Z
 
 
-def residual_add[Ty, L, D](X1: Ty[L, D], X2: Ty[L, D]) -> Ty[L, D]:
+def gelu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
+    Z: Ty[L, D]
+    for i, j in dsl.grid(L, D):
+        Z[i, j] = (
+            0.5
+            * X[i, j]
+            * (
+                1.0
+                + dsl.tanh(0.797885 * (X[i, j] + 0.044715 * dsl.power(X[i, j], 3.0)))
+            )
+        )
+    return Z
+
+
+def residual_add[Ty, L, D](X1: "Ty[L, D]", X2: "Ty[L, D]") -> "Ty[L, D]":
     Z: Ty[L, D]
     for i, j in dsl.grid(L, D):
         Z[i, j] = X1[i, j] + X2[i, j]

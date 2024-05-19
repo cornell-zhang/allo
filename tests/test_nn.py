@@ -59,6 +59,20 @@ def test_layernorm():
     print(s.build(target="vhls"))
 
 
+def test_gelu():
+    from allo.library.nn import gelu
+
+    L, D = 8, 8
+    s = allo.customize(gelu, instantiate=[float32, L, D])
+    mod = s.build()
+    inp = np.random.randn(L, D).astype(np.float32)
+    allo_out = mod(inp)
+    np_out = 0.5 * inp * (1 + np.tanh(0.797885 * (inp + 0.044715 * inp ** 3)))
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
 def test_self_attention():
     def Self_attention[
         Ty, H, L, D
@@ -86,4 +100,4 @@ def test_self_attention():
 
 
 if __name__ == "__main__":
-    test_layernorm()
+    test_gelu()
