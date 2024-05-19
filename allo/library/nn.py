@@ -38,3 +38,10 @@ def layernorm[Ty, L, D](X: "Ty[L, D]", gamma: "Ty[D]", beta: "Ty[D]") -> "Ty[L, 
         Z[i, j] = gamma[j] * (X[i, j] - mean[i]) / dsl.sqrt(var[i] + 0.00001) + beta[j]
 
     return Z
+
+
+def residual_add[Ty, L, D](X1: Ty[L, D], X2: Ty[L, D]) -> Ty[L, D]:
+    Z: Ty[L, D]
+    for i, j in dsl.grid(L, D):
+        Z[i, j] = X1[i, j] + X2[i, j]
+    return Z
