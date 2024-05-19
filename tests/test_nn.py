@@ -40,6 +40,25 @@ def test_softmax():
     print(s.build(target="vhls"))
 
 
+def test_layernorm():
+    from allo.library.nn import layernorm
+
+    L, D = 8, 8
+    s = allo.customize(layernorm, instantiate=[float32, L, D])
+    mod = s.build()
+    inp = np.random.randn(L, D).astype(np.float32)
+    gamma = np.random.randn(D).astype(np.float32)
+    beta = np.random.randn(D).astype(np.float32)
+    allo_out = mod(inp, gamma, beta)
+    mean = inp.mean(axis=1)
+    mean2 = (inp ** 2).mean(axis=1)
+    var = mean2 - mean ** 2
+    np_out = gamma * (inp - mean[:, None]) / np.sqrt(var[:, None] + 1e-5) + beta
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
 def test_self_attention():
     def Self_attention[
         Ty, H, L, D
@@ -67,4 +86,4 @@ def test_self_attention():
 
 
 if __name__ == "__main__":
-    test_linear()
+    test_layernorm()
