@@ -3,6 +3,7 @@
 # pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
 
 from .. import dsl
+from .systolic import systolic
 
 
 def softmax[Ty, D](X: "Ty[D, D]") -> "Ty[D, D]":
@@ -58,4 +59,37 @@ def residual_add[Ty, L, D](X1: "Ty[L, D]", X2: "Ty[L, D]") -> "Ty[L, D]":
     Z: Ty[L, D]
     for i, j in dsl.grid(L, D):
         Z[i, j] = X1[i, j] + X2[i, j]
+    return Z
+
+
+def scaled_dot_product_attention[
+    Ty, H, L, D
+](Q: "Ty[L, D]", K: "Ty[L, D]", V: "Ty[L, D]") -> "Ty[L, D]":
+    # softmax(QK^T/sqrt(D // H))
+    Z: Ty[L, D]
+
+    for h in range(H):
+        Q_h: Ty[L, D // H]
+        K_h: Ty[D // H, L]
+        V_h: Ty[L, D // H]
+
+        # split Q, K, V
+        for i, j in dsl.grid(L, D // H, name="mha_split"):
+            Q_h[i, j] = Q[i, h * (D // H) + j]
+            # transposed
+            K_h[j, i] = K[i, h * (D // H) + j]
+            V_h[i, j] = V[i, h * (D // H) + j]
+
+        # QK^T = (L, D//H) x (D//H, L) = (L, L)
+        C_h: Ty[L, D // H] = 0
+        Y: Ty[L, L] = 0
+        systolic[Ty, Ty, Ty, L, D // H, L, 2, 2](Q_h, K_h, Y)
+        # Need to return a new value
+        S = softmax[Ty, L](Y)
+        # YV = (L, L) x (L, D//H) = (L, D//H)
+        systolic[Ty, Ty, Ty, L, L, D // H, 2, 2](S, V_h, C_h)
+
+        for i, j in dsl.grid(L, D // H, name="mha_merge"):
+            Z[i, h * (D // H) + j] = C_h[i, j]
+
     return Z
