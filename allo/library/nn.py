@@ -20,7 +20,7 @@ def softmax[Ty, D](X: "Ty[D, D]") -> "Ty[D, D]":
     return Z
 
 
-def layernorm[Ty, L, D](X: "Ty[L, D]", gamma: "Ty[D]", beta: "Ty[D]") -> "Ty[L, D]":
+def layer_norm[Ty, L, D](X: "Ty[L, D]", gamma: "Ty[D]", beta: "Ty[D]") -> "Ty[L, D]":
     Z: Ty[L, D]
     mean: Ty[L] = 0.0
     mean2: Ty[L] = 0.0
@@ -41,7 +41,7 @@ def layernorm[Ty, L, D](X: "Ty[L, D]", gamma: "Ty[D]", beta: "Ty[D]") -> "Ty[L, 
     return Z
 
 
-def gelu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
+def GeLU[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
     Z: Ty[L, D]
     for i, j in dsl.grid(L, D):
         Z[i, j] = (
