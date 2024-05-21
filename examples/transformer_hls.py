@@ -28,19 +28,22 @@ if func == "gemm":
     print(s.build(target="vhls"))
 elif func == "sdp":
     assert dtype == float32, "Only float32 is supported for SDP currently"
-    s = allo.customize(scaled_dot_product_attention, instantiate=[dtype, H, L, D])
-    s.compose(systolic, instantiate=[dtype, dtype, dtype, L, D, D, M0, M1])
+    s = allo.customize(
+        scaled_dot_product_attention, instantiate=[dtype, H, L, D, M0, M1]
+    )
+    s.compose(systolic, id="QKT", instantiate=[dtype, dtype, dtype, L, D, D, M0, M1])
+    s.compose(systolic, id="YV", instantiate=[dtype, dtype, dtype, L, D, D, M0, M1])
     print(s.build(target="vhls"))
 elif func == "softmax":
     assert dtype == float32, "Only float32 is supported for softmax currently"
     s = allo.customize(softmax, instantiate=[dtype, D])
     print(s.build(target="vhls"))
 elif func == "layernorm":
-    assert dtype == float32, "Only float32 is supported for softmax currently"
+    assert dtype == float32, "Only float32 is supported for layernorm currently"
     s = allo.customize(layer_norm, instantiate=[dtype, L, D])
     print(s.build(target="vhls"))
 elif func == "gelu":
-    assert dtype == float32, "Only float32 is supported for softmax currently"
+    assert dtype == float32, "Only float32 is supported for gelu currently"
     s = allo.customize(GeLU, instantiate=[dtype, L, D])
     print(s.build(target="vhls"))
 else:

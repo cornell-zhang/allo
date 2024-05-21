@@ -63,7 +63,7 @@ def residual_add[Ty, L, D](X1: "Ty[L, D]", X2: "Ty[L, D]") -> "Ty[L, D]":
 
 
 def scaled_dot_product_attention[
-    Ty, H, L, D
+    Ty, H, L, D, M0, M1
 ](Q: "Ty[L, D]", K: "Ty[L, D]", V: "Ty[L, D]") -> "Ty[L, D]":
     # softmax(QK^T/sqrt(D // H))
     Z: Ty[L, D]
@@ -83,11 +83,11 @@ def scaled_dot_product_attention[
         # QK^T = (L, D//H) x (D//H, L) = (L, L)
         C_h: Ty[L, D // H] = 0
         Y: Ty[L, L] = 0
-        systolic[Ty, Ty, Ty, L, D // H, L, 2, 2](Q_h, K_h, Y)
+        systolic[Ty, Ty, Ty, L, D // H, L, M0, M1, "QKT"](Q_h, K_h, Y)
         # Need to return a new value
         S = softmax[Ty, L](Y)
         # YV = (L, L) x (L, D//H) = (L, D//H)
-        systolic[Ty, Ty, Ty, L, L, D // H, 2, 2](S, V_h, C_h)
+        systolic[Ty, Ty, Ty, L, L, D // H, M0, M1, "YV"](S, V_h, C_h)
 
         for i, j in dsl.grid(L, D // H, name="mha_merge"):
             Z[i, h * (D // H) + j] = C_h[i, j]
