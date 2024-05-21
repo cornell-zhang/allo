@@ -37,14 +37,17 @@ elif func == "sdp":
 elif func == "softmax":
     assert dtype == float32, "Only float32 is supported for softmax currently"
     s = allo.customize(softmax, instantiate=[dtype, D])
+    s.compose(softmax, instantiate=[dtype, D])
     print(s.build(target="vhls"))
 elif func == "layernorm":
     assert dtype == float32, "Only float32 is supported for layernorm currently"
     s = allo.customize(layer_norm, instantiate=[dtype, L, D])
+    s.compose(layer_norm, instantiate=[dtype, L, D])
     print(s.build(target="vhls"))
 elif func == "gelu":
     assert dtype == float32, "Only float32 is supported for gelu currently"
     s = allo.customize(GeLU, instantiate=[dtype, L, D])
+    s.compose(GeLU, instantiate=[dtype, L, D])
     print(s.build(target="vhls"))
 else:
     raise ValueError(f"Unknown function: {func}")
