@@ -121,8 +121,11 @@ def sdp(Q, K, V, H, D):
 def test_sdp():
     from allo.library.nn import scaled_dot_product_attention
 
+    M0, M1 = 2, 2
     H, L, D = 2, 8, 8
-    s = allo.customize(scaled_dot_product_attention, instantiate=[float32, H, L, D])
+    s = allo.customize(
+        scaled_dot_product_attention, instantiate=[float32, H, L, D, M0, M1]
+    )
     mod = s.build()
     Q = np.random.randn(L, D).astype(np.float32)
     K = np.random.randn(L, D).astype(np.float32)
@@ -169,7 +172,7 @@ def test_bert():
         systolic[Ty, Ty, Ty, L, D, D, M0, M1, "K"](X, Wk, K)
         systolic[Ty, Ty, Ty, L, D, D, M0, M1, "V"](X, Wv, V)
         # 1.1 self attention
-        attn = scaled_dot_product_attention[Ty, H, L, D](Q, K, V)
+        attn = scaled_dot_product_attention[Ty, H, L, D, M0, M1](Q, K, V)
         # 1.2 output dense
         O_proj: Ty[L, D] = 0
         systolic[Ty, Ty, Ty, L, D, D, M0, M1, "P"](attn, Wp, O_proj)

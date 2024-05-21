@@ -15,6 +15,15 @@ from .gemv import (
     schedule_int8xint8_mat_vec,
 )
 
+from .nn import (
+    softmax,
+    schedule_softmax,
+    layer_norm,
+    schedule_layernorm,
+    GeLU,
+    schedule_gelu,
+)
+
 KERNEL2SCHEDULE = {}
 
 KERNEL2SCHEDULE.update(
@@ -26,3 +35,11 @@ KERNEL2SCHEDULE.update(
 )
 
 KERNEL2SCHEDULE[int8xint8_mat_vec] = schedule_int8xint8_mat_vec
+
+KERNEL2SCHEDULE.update(
+    {
+        softmax: schedule_softmax,
+        layer_norm: schedule_layernorm,
+        GeLU: schedule_gelu,
+    }
+)
