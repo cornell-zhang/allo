@@ -17,9 +17,9 @@ For comparison between Allo and other baseline systems, please refer to our [PLD
 ## Transformer Models
 We propose an analytical framework to predict the performance of FPGA-based spatial accelerators for large language model (LLM) inference. Please refer to our [FCCM'24 paper](https://arxiv.org/abs/2312.15159) for more details.
 
-We provide the Allo implementation of the Transformer kernel library under [nn.py](https://github.com/cornell-zhang/allo/tree/main/allo/library). Example usage can be found in [test_nn.py](https://github.com/cornell-zhang/allo/tree/main/tests/test_nn.py).
+Our implementation of the Transformer kernel library using Allo can be found in [nn.py](https://github.com/cornell-zhang/allo/blob/main/allo/library/nn.py). Example usage is demonstrated in [test_nn.py](https://github.com/cornell-zhang/allo/blob/main/tests/test_nn.py).
 
-To facilitate the usage of the HLS library, we also provide a script to quickly generate HLS code for each kernel. Please install Allo first following the [instruction](https://github.com/cornell-zhang/allo?tab=readme-ov-file#installation). Currently, we support the following arguments:
+To facilitate the use of the HLS library, we also provide a script for quickly generating HLS code for each kernel. Please install Allo first following the [instruction](https://github.com/cornell-zhang/allo?tab=readme-ov-file#installation). Currently, we support the following arguments:
 
 | Argument | Description |
 | --- | --- |
@@ -36,6 +36,8 @@ For example, you can generate the HLS code for the int8 GEMM kernel with a 16x16
 ```bash
 python3 transformer_hls.py --func gemm --dtype float --M0 16 --M1 16
 ```
+
+We plan to deploy our compiler on a website to provide more accesible HLS code generation in the future. Please stay tuned.
 
 If you use our framework in your research, please use the following bibtex entry to cite us:
 ```bibtex
