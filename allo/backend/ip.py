@@ -17,12 +17,14 @@ allo2c_type = {
     "int16": "int16_t",
     "int32": "int",
     "int64": "int64_t",
+    "int128": "ap_int<128>",
     # bitwidth larger than 64 is not supported by numpy+pybind11
     "uint1": "bool",
     "uint8": "uint8_t",
     "uint16": "uint16_t",
     "uint32": "unsigned int",
     "uint64": "uint64_t",
+    "uint128": "ap_uint<128>",
 }
 
 c2allo_type = {v: k for k, v in allo2c_type.items()}
