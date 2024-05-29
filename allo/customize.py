@@ -432,9 +432,12 @@ class Schedule:
             return
         func, _ = self._get_func_and_axis(axis)
         band_name, loop_name = axis.name.split(".", 1)
+        band_name = band_name.split(":")[1]
+        cnt = 0
 
         # TODO: Fix deep nested
         def DFS(op):
+            nonlocal cnt
             if isinstance(op, affine_d.AffineForOp):
                 if (
                     "op_name" in op.attributes
@@ -445,10 +448,14 @@ class Schedule:
                     "loop_name" in op.attributes
                     and op.attributes["loop_name"].value == loop_name
                 ):
+                    cnt += 1
                     op.attributes["dataflow"] = UnitAttr.get()
 
         for op in func.entry_block.operations:
             DFS(op)
+
+        if cnt == 0:
+            raise RuntimeError(f"Dataflow loop {band_name}.{loop_name} not found")
 
     @wrapped_apply
     def compute_at(self, from_loop, target_loop):
