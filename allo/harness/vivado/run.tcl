@@ -21,7 +21,7 @@ add_files -tb host.cpp -cflags "-std=gnu++0x"
 
 open_solution "solution1"
 # Use Zynq device
-set_part {xczu3eg-sbva484-1-i}
+set_part {xc7z020clg484-1}
 
 # Target clock period is 10ns
 create_clock -period 10
