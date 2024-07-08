@@ -314,7 +314,7 @@ class HLSModule:
             assert (
                 os.system(f"which {self.platform} >> /dev/null") == 0
             ), f"cannot find {self.platform} on system path"
-            ver = run_process("g++ --version", r"\d\.\d\.\d")[0].split(".")
+            ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
             assert (
                 int(ver[0]) * 10 + int(ver[1]) >= 48
             ), f"g++ version too old {ver[0]}.{ver[1]}.{ver[2]}"
