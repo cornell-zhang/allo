@@ -316,7 +316,7 @@ class HLSModule:
             ), f"cannot find {self.platform} on system path"
             ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
             assert (
-                int(ver[0]) * 4 + int(ver[1]) >= 48
+                int(ver[0]) * 10 + int(ver[1]) >= 48
             ), f"g++ version too old {ver[0]}.{ver[1]}.{ver[2]}"
 
             cmd = f"cd {self.project}; make "
