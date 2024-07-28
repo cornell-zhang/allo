@@ -65,6 +65,29 @@ def test_shared_lib():
     print("Passed!")
 
 
+def test_scalar():
+    vadd_int = allo.IPModule(
+        top="vadd_int",
+        headers=["vadd_int.h"],
+        impls=["vadd_int.cpp"],
+        signature=["int32[32]", "int32[32]", "int32"],
+        link_hls=False,
+    )
+
+    def kernel(A: int32[32]) -> int32[32]:
+        B: int32[32] = 0
+        vadd_int(A, B, 5)
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
+    allo_C = mod(np_A)
+    np.testing.assert_allclose(np_A + 5, allo_C, atol=1e-6)
+    print("Passed!")
+
+
 def test_lib_gemm():
     gemm = allo.IPModule(
         top="gemm",

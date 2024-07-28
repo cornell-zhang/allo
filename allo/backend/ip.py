@@ -72,6 +72,9 @@ class IPModule:
         self.args = []
         for arg_type in arg_types:
             arg_type = arg_type.strip()
+            if "[" not in arg_type:
+                self.args.append((arg_type, ()))
+                continue
             ele_type = arg_type.split("[")[0].strip()
             # pylint: disable=eval-used
             shape = eval(f'({arg_type.split("[")[1].split("]")[0].strip()},)')
@@ -155,14 +158,21 @@ class IPModule:
             out_str += f'#include "{header}"\n'
         out_str += "\n"
         # Generate function interface
-        unranked_memrefs = ", ".join(
-            [f"int64_t rank_{i}, void *ptr_{i}" for i in range(len(self.args))]
-        )
+        unranked_memrefs = []
+        for i, (arg_type, arg_shape) in enumerate(self.args):
+            if len(arg_shape) > 0:
+                unranked_memrefs.append(f"int64_t rank_{i}, void *ptr_{i}")
+            else:
+                unranked_memrefs.append(f"{allo2c_type.get(arg_type)} in{i}")
+        unranked_memrefs = ", ".join(unranked_memrefs)
         out_str += f'extern "C" void {self.lib_name}({unranked_memrefs}) {{\n'
         in_ptrs = []
         for i, (arg_type, arg_shape) in enumerate(self.args):
             if len(arg_shape) > 2:
                 raise RuntimeError("Only support 1D and 2D arrays for now")
+            if len(arg_shape) == 0:  # scalar
+                in_ptrs.append(f"in{i}")
+                continue
             resolved_type = allo2c_type.get(arg_type)
             out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank_{i}, ptr_{i}}};\n"
             out_str += f"  DynamicMemRefType<{resolved_type}> ranked_in{i}(in{i});\n"

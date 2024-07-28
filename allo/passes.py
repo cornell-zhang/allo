@@ -204,9 +204,12 @@ def call_ext_libs_in_ptr(module, ext_libs):
                 obj = lib_map[op.attributes["sym_name"].value]
                 # external functions, reconstruct func type
                 input_types = []
-                for arg_type, _ in obj.args:
+                for arg_type, shape in obj.args:
                     ele_type = get_mlir_dtype_from_str(arg_type)
-                    memref = UnrankedMemRefType.get(ele_type, None)
+                    if len(shape) == 0:
+                        memref = ele_type
+                    else:
+                        memref = UnrankedMemRefType.get(ele_type, None)
                     input_types.append(memref)
                 func_type = FunctionType.get(input_types, [])
                 func_op = func_d.FuncOp(
@@ -223,6 +226,8 @@ def call_ext_libs_in_ptr(module, ext_libs):
                     ):
                         obj = lib_map[body_op.attributes["callee"].value]
                         for arg in body_op.operands:
+                            if not isinstance(arg.type, MemRefType):
+                                continue
                             memref = UnrankedMemRefType.get(arg.type.element_type, None)
                             cast = memref_d.CastOp(
                                 memref, arg, ip=InsertionPoint(body_op)
