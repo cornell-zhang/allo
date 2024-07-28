@@ -94,20 +94,29 @@ class IPModule:
         out_str += "\nnamespace py = pybind11;\n\n"
         # Generate function interface
         out_str += f"void {self.lib_name}(\n"
-        for i, (arg_type, _) in enumerate(self.args):
+        for i, (arg_type, arg_shape) in enumerate(self.args):
             resolved_type = allo2c_type.get(arg_type)
-            out_str += f"  py::array_t<{resolved_type}> &arg{i}"
+            if len(arg_shape) == 0:
+                out_str += f"  {resolved_type} arg{i}"
+            else:
+                out_str += f"  py::array_t<{resolved_type}> &arg{i}"
             out_str += ",\n" if i < len(self.args) - 1 else ") {\n"
         # Generate function body
         out_str += "\n"
-        for i in range(len(self.args)):
-            out_str += f"  py::buffer_info buf{i} = arg{i}.request();\n"
+        for i, (arg_type, arg_shape) in enumerate(self.args):
+            if len(arg_shape) == 0:
+                out_str += f"  {resolved_type} p_arg{i} = arg{i};\n"
+            else:
+                out_str += f"  py::buffer_info buf{i} = arg{i}.request();\n"
         # Pointer reads and writes numpy.ndarray
         out_str += "\n"
         in_ptrs = []
         for i, (arg_type, arg_shape) in enumerate(self.args):
+            if len(arg_shape) == 0:
+                in_ptrs.append(f"p_arg{i}")
+                continue
             if len(arg_shape) > 2:
-                raise RuntimeError("Only support 1D and 2D arrays for now")
+                raise RuntimeError("Only support scalar, 1D and 2D arrays for now")
             resolved_type = allo2c_type.get(arg_type)
             out_str += f"  {resolved_type} *p_arg{i} = ({resolved_type} *)buf{i}.ptr;\n"
             if len(arg_shape) == 1:

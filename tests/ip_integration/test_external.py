@@ -88,6 +88,22 @@ def test_scalar():
     print("Passed!")
 
 
+def test_scalar_pybind():
+    vadd_int = allo.IPModule(
+        top="vadd_int",
+        headers=["vadd_int.h"],
+        impls=["vadd_int.cpp"],
+        signature=["int32[32]", "int32[32]", "int32"],
+        link_hls=False,
+    )
+
+    np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
+    np_B = np.zeros((32,), dtype=np.int32)
+    vadd_int(np_A, np_B, 5)
+    np.testing.assert_allclose(np_A + 5, np_B, atol=1e-6)
+    print("Passed!")
+
+
 def test_lib_gemm():
     gemm = allo.IPModule(
         top="gemm",
