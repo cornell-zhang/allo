@@ -1571,7 +1571,10 @@ class ASTTransformer(ASTBuilder):
                     input_types = []
                     for arg_type, shape in obj.args:
                         ele_type = get_mlir_dtype_from_str(arg_type)
-                        memref = MemRefType.get(shape, ele_type)
+                        if len(shape) != 0:
+                            memref = MemRefType.get(shape, ele_type)
+                        else:
+                            memref = ele_type
                         input_types.append(memref)
                     func_type = FunctionType.get(input_types, [])
                     func_op = func_d.FuncOp(
