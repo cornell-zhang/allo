@@ -164,8 +164,8 @@ class IPModule:
                 unranked_memrefs.append(f"int64_t rank_{i}, void *ptr_{i}")
             else:
                 unranked_memrefs.append(f"{allo2c_type.get(arg_type)} in{i}")
-        unranked_memrefs = ", ".join(unranked_memrefs)
-        out_str += f'extern "C" void {self.lib_name}({unranked_memrefs}) {{\n'
+        unranked_memrefs_str = ", ".join(unranked_memrefs)
+        out_str += f'extern "C" void {self.lib_name}({unranked_memrefs_str}) {{\n'
         in_ptrs = []
         for i, (arg_type, arg_shape) in enumerate(self.args):
             if len(arg_shape) > 2:
