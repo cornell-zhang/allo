@@ -76,14 +76,14 @@ jobs:
     steps:
     - name: Checkout 🛎️
       uses: actions/checkout@v4
-    - name: Download Artifacts 🔻 # The built project is downloaded into the 'site' folder.
+    - name: Download Artifacts 🔻 # The built project is downloaded into the 'DocumentationHTML' folder.
       uses: actions/download-artifact@v1
       with:
-        name: site
+        name: DocumentationHTML
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@releases/v3
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
-        FOLDER: site
+        FOLDER: 'DocumentationHTML'
