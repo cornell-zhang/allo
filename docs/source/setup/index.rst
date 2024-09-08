@@ -27,7 +27,7 @@ Installation
 To install and use Allo, we need to have the LLVM compiler infrastructure installed on our system.
 We have already prepared a prebuilt version of LLVM on our server, so you can directly export it to your system path.
 Please follow the instruction below to set up the environment.
-If you want to install Allo on your local machine, you can refer to the [README](https://github.com/cornell-zhang/allo) guideline in the Allo repository.
+If you want to install Allo on your local machine, you can refer to the `README <https://github.com/cornell-zhang/allo>`_ guideline in the Allo repository.
 
 Make sure you have the access to the :code:`brg-zhang` or other Zhang group server. You can log into the server by
 SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`_
