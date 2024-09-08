@@ -77,11 +77,12 @@ jobs:
     - name: Checkout 🛎️
       uses: actions/checkout@v4
     - name: Install rsync
-      run: apt-get update && apt-get install -y rsync
+      run: |
+        apt-get update && apt-get install -y rsync
     - name: Download Artifacts 🔻 # The built project is downloaded into the 'site' folder.
-        uses: actions/download-artifact@v1
-        with:
-          name: site
+      uses: actions/download-artifact@v1
+      with:
+        name: site
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@releases/v3
       if: github.event_name == 'push'
