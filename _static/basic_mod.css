@@ -123,30 +123,30 @@ body {
 
 /*****************************************************************************/
 /* Top nav */
-div#searchbox h3#searchlabel {
+#searchbox h3#searchlabel {
   display: none;
 }
-div#searchbox form.search {
+#searchbox form.search {
   display: flex;
   flex-direction: row;
 }
-div#searchbox form.search input {
+#searchbox form.search input {
   display: block;
   box-sizing: border-box;
   padding: 0.3rem;
   color: rgba(0, 0, 0, 0.7);
   border-radius: 0.2rem;
 }
-div#searchbox form.search input[type=text] {
+#searchbox form.search input[type=text] {
   border: none;
   background-color: rgba(255, 255, 255, 0.6);
   flex-grow: 1;
   margin-right: 0.2rem;
 }
-div#searchbox form.search input[type=text]::placeholder {
+#searchbox form.search input[type=text]::placeholder {
   color: rgba(0, 0, 0, 0.6);
 }
-div#searchbox form.search input[type=submit] {
+#searchbox form.search input[type=submit] {
   cursor: pointer;
   color: var(--mainNavColor);
   flex-grow: 0;
@@ -260,21 +260,21 @@ div#top_nav nav p.mobile_search_link a svg {
     display: none;
   }
 }
-div#top_nav nav div.searchbox_wrapper div#searchbox {
+div#top_nav nav div.searchbox_wrapper #searchbox {
   align-items: center;
   display: flex !important;
   flex-direction: row-reverse;
 }
-div#top_nav nav div.searchbox_wrapper div#searchbox p.highlight-link {
+div#top_nav nav div.searchbox_wrapper #searchbox p.highlight-link {
   margin: 0 0.5rem 0 0;
 }
-div#top_nav nav div.searchbox_wrapper div#searchbox p.highlight-link a {
+div#top_nav nav div.searchbox_wrapper #searchbox p.highlight-link a {
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.8em;
   padding-right: 0.5rem;
   text-decoration: underline;
 }
-div#top_nav nav div.searchbox_wrapper div#searchbox p.highlight-link a:hover {
+div#top_nav nav div.searchbox_wrapper #searchbox p.highlight-link a:hover {
   color: white;
 }
 
@@ -396,6 +396,21 @@ div.document li p {
 }
 div.document ul, div.document ol {
   padding-left: 2rem;
+}
+div.document ol.loweralpha {
+  list-style: lower-alpha;
+}
+div.document ol.arabic {
+  list-style: decimal;
+}
+div.document ol.lowerroman {
+  list-style: lower-roman;
+}
+div.document ol.upperalpha {
+  list-style: upper-alpha;
+}
+div.document ol.upperroman {
+  list-style: upper-roman;
 }
 div.document dd {
   margin-left: 1.5rem;
@@ -771,7 +786,7 @@ div.button_nav_wrapper div.button_nav div.right a span.icon {
 :root[data-mode=darkest] body[data-dark_mode_code_blocks=true] .highlight {
   --black: #000000;
   --red: #ff9393;
-  --darkBlue: #3a37ff;
+  --darkBlue: #6b83fe;
   --grey: #a8a8a8;
   --pink: #ff99d8;
   --torquoise: #68e9e9;

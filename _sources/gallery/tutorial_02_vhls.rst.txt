@@ -11,7 +11,7 @@
         :class: sphx-glr-download-link-note
 
         :ref:`Go to the end <sphx_glr_download_gallery_tutorial_02_vhls.py>`
-        to download the full example code
+        to download the full example code.
 
 .. rst-class:: sphx-glr-example-title
 
@@ -484,7 +484,7 @@ with II=1.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.309 seconds)
+   **Total running time of the script:** (0 minutes 0.260 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:
@@ -500,6 +500,10 @@ with II=1.
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: tutorial_02_vhls.py <tutorial_02_vhls.py>`
+
+    .. container:: sphx-glr-download sphx-glr-download-zip
+
+      :download:`Download zipped: tutorial_02_vhls.zip <tutorial_02_vhls.zip>`
 
 
 .. only:: html

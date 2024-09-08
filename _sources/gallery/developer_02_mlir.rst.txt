@@ -11,7 +11,7 @@
         :class: sphx-glr-download-link-note
 
         :ref:`Go to the end <sphx_glr_download_gallery_developer_02_mlir.py>`
-        to download the full example code
+        to download the full example code.
 
 .. rst-class:: sphx-glr-example-title
 
@@ -289,7 +289,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.058 seconds)
+   **Total running time of the script:** (0 minutes 0.111 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_02_mlir.py:
@@ -305,6 +305,10 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: developer_02_mlir.py <developer_02_mlir.py>`
+
+    .. container:: sphx-glr-download sphx-glr-download-zip
+
+      :download:`Download zipped: developer_02_mlir.zip <developer_02_mlir.zip>`
 
 
 .. only:: html

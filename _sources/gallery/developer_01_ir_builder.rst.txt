@@ -11,7 +11,7 @@
         :class: sphx-glr-download-link-note
 
         :ref:`Go to the end <sphx_glr_download_gallery_developer_01_ir_builder.py>`
-        to download the full example code
+        to download the full example code.
 
 .. rst-class:: sphx-glr-example-title
 
@@ -410,7 +410,7 @@ you can follow the definitions and add more amazing facilities to the new Allo f
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.012 seconds)
+   **Total running time of the script:** (0 minutes 0.005 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_01_ir_builder.py:
@@ -426,6 +426,10 @@ you can follow the definitions and add more amazing facilities to the new Allo f
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: developer_01_ir_builder.py <developer_01_ir_builder.py>`
+
+    .. container:: sphx-glr-download sphx-glr-download-zip
+
+      :download:`Download zipped: developer_01_ir_builder.zip <developer_01_ir_builder.zip>`
 
 
 .. only:: html

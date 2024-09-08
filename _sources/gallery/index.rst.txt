@@ -9,6 +9,7 @@ Allo Documentations
 
     <div class="sphx-glr-thumbnails">
 
+.. thumbnail-parent-div-open
 
 .. raw:: html
 
@@ -77,6 +78,8 @@ Allo Documentations
       <div class="sphx-glr-thumbnail-title">MLIR Translation Guide</div>
     </div>
 
+
+.. thumbnail-parent-div-close
 
 .. raw:: html
 
