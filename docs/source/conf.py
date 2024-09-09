@@ -39,7 +39,7 @@ sphinx.application.ExtensionError = sphinx.errors.ExtensionError
 
 project = "Allo"
 author = "Allo Authors"
-copyright = "2023, Allo Authors"
+copyright = "2024, Allo Authors"
 
 # The full version, including alpha/beta/rc tags
 release = "0.5"

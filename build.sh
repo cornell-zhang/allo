@@ -2,10 +2,19 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+export ALLO_HOME=$(pwd)
+
 # Pull the LLVM project and hcl-mlir dialect
 git submodule update --init --recursive
 
+# Check the Python version
+if ! python3 -c 'import sys; assert sys.version_info >= (3,12)' > /dev/null; then
+  echo "Error: Python 3.12 or later is required"
+  exit 1
+fi
+
 # Install the required Python packages
+echo "Installing the required Python packages ..."
 python3 -m pip install -r requirements.txt
 
 # Note: we need to patch the LLVM project to add additional
@@ -32,6 +41,7 @@ make -j8
 
 # Export the LLVM build directory
 export LLVM_BUILD_DIR=$(pwd)
+export PATH=$LLVM_BUILD_DIR/bin:$PATH
 echo "LLVM build directory: $LLVM_BUILD_DIR"
 
 # Build the hcl dialect
@@ -48,6 +58,12 @@ cmake -G "Unix Makefiles" .. \
 make -j8
 
 # Install hcl dialect
+echo "Installing hcl dialect ..."
 cd tools/hcl/python_packages/hcl_core
+python3 -m pip install -e .
+
+# Install allo
+echo "Installing allo ..."
+cd $ALLO_HOME
 python3 -m pip install -e .
 echo "Installation completed!"
