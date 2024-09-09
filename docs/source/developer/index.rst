@@ -24,12 +24,68 @@
 Developer Setup
 ###############
 
+Depending on which part of Allo you want to contribute to, you may set up the environment differently.
+
+Developer Installation
+----------------------
+
+If you only want to change the frontend part of Allo, you can install the Allo package following the `general guide <../setup/index.html>`_.
+
+If you need to change the backend part of Allo, you need to install the LLVM-18 project and make sure your LLVM commit is the same as `the one we referred to <https://github.com/cornell-zhang/hcl-dialect/tree/main/externals>`_.
+
+.. code-block:: bash
+
+    mkdir -p build && cd build
+    # Python 3.12 is required
+    cmake -G "Unix Makefiles" ../llvm \
+        -DLLVM_ENABLE_PROJECTS=mlir \
+        -DLLVM_BUILD_EXAMPLES=ON \
+        -DLLVM_TARGETS_TO_BUILD="host" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_ASSERTIONS=ON \
+        -DLLVM_INSTALL_UTILS=ON \
+        -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
+        -DPython3_EXECUTABLE=`which python3`
+    make -j8
+
+.. note::
+
+    For Zhang Group students, you can ``export LLVM_HOME=/work/shared/users/common/llvm-project-18.x`` and ``export PATH=$LLVM_HOME/build-patch/bin:$PATH`` to use the pre-installed LLVM-18 project.
+
+After installing the LLVM-18 project, you can build the hcl-mlir dialect from source:
+
+.. code-block:: bash
+
+    git clone https://github.com/cornell-zhang/hcl-dialect.git
+    cd hcl-dialect
+    mkdir -p build && cd build
+    cmake -G "Unix Makefiles" .. \
+        -DMLIR_DIR=$LLVM_BUILD_DIR/lib/cmake/mlir \
+        -DLLVM_EXTERNAL_LIT=$LLVM_BUILD_DIR/bin/llvm-lit \
+        -DPYTHON_BINDING=ON \
+        -DOPENSCOP=OFF \
+        -DPython3_EXECUTABLE=`which python3` \
+        -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
+    make -j8
+    cd tools/hcl/python_packages/hcl_core
+    python3 -m pip install -e .
+
+Every time you change the hcl-mlir dialect, you need to run ``make`` again to make the changes effective. Finally, you can install the Allo package:
+
+.. code-block:: bash
+
+    python3 -m pip install -e .
+
+It will connect the frontend with the backend.
+
+Upstream Changes
+----------------
+
 It would be good to maintain your own `fork <https://docs.github.com/en/get-started/quickstart/fork-a-repo>`_ of
 the Allo repository, which helps create a `PR (pull request) <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests>`_ and upstream changes easier.
 
 To create your own fork, click on the "Fork" button on the top right of the `Allo repository <https://github.com/cornell-zhang/allo>`_.
-This will create a copy of the repository under your own GitHub account. Please do *NOT* make it public
-at this time. (By default, fork from a private repository should be private.)
+This will create a copy of the repository under your own GitHub account.
 
 Next, you can clone your fork to your local machine OR if you have already cloned the Allo repository, you can add your fork as a remote:
 
@@ -62,7 +118,6 @@ Basically, the development workflow is as follows:
 8. Once the PR is approved, it will be merged into the ``main`` branch
 
 Most of the ``git`` features are integrated in VSCode, please refer to the `document <https://code.visualstudio.com/docs/sourcecontrol/intro-to-git>`_ if you want to use the GUI.
-
 
 Integration Tests
 -----------------

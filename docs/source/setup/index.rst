@@ -26,7 +26,6 @@ Installation
 
 To install and use Allo, we need to first install the `LLVM-18 project <https://github.com/llvm/llvm-project/tree/llvmorg-18-init>`_ and the `hcl-mlir dialect <https://github.com/cornell-zhang/hcl-dialect>`_. You can choose to use our provided docker or build from source.
 
-
 Install from Docker
 -------------------
 
@@ -36,7 +35,6 @@ To simplify the installation process, we provide a docker image that has already
 
   $ docker pull chhzh123/hcl-dialect:llvm-18.x-py3.12
   $ docker run --rm -it chhzh123/hcl-dialect:llvm-18.x-py3.12
-  # Please clone and install Allo in the docker container
   (docker) $ git clone https://github.com/cornell-zhang/allo.git && cd allo
   (docker) $ python3 -m pip install -e .
 
@@ -49,7 +47,6 @@ Please note that the hcl-mlir dialect is not up-to-date. You can pull the latest
   (docker) $ cd build && make -j8
   (docker) $ cd tools/hcl/python_packages/hcl_core
   (docker) $ python3 -m pip install -e .
-
 
 Install from Source
 -------------------
@@ -76,7 +73,6 @@ After creating the Python environment, you can install the required packages by 
 
 You should see "Installation completed!" if the installation is finished.
 
-
 Testing
 -------
 
@@ -85,7 +81,6 @@ To make sure the installation is successful, you can run the following command t
 .. code-block:: console
 
   $ python3 -m pytest tests/
-
 
 Internal Installation
 ---------------------
