@@ -166,17 +166,55 @@
             
   <section id="installation">
 <span id="setup"></span><h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"><span>¶</span></a></h1>
-<p>To install and use Allo, we need to have the LLVM compiler infrastructure installed on our system.
-We have already prepared a prebuilt version of LLVM on our server, so you can directly export it to your system path.
-Please follow the instruction below to set up the environment.
-If you want to install Allo on your local machine, you can refer to the <a class="reference external" href="https://github.com/cornell-zhang/allo">README</a> guideline in the Allo repository.</p>
-<p>Make sure you have the access to the <code class="code docutils literal notranslate"><span class="pre">brg-zhang</span></code> or other Zhang group server. You can log into the server by
-SSH or use VSCode Remote SSH extension. Please refer to <a class="reference external" href="https://code.visualstudio.com/docs/remote/ssh">this website</a>
-for more details on configuring VSCode. Those servers are only accessible from the campus network.</p>
-<p>After logging into the server, the first step is to install an Anaconda environment. We recommend you to install your own
-<a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html">Miniconda</a>, which is a lightweight version of Anaconda and contains
-only the necessary packages. You can download the installer from the link above and install it on your system.
-After the installation, you can create a new environment for Allo by running the following commands:</p>
+<p>To install and use Allo, we need to first install the <a class="reference external" href="https://github.com/llvm/llvm-project/tree/llvmorg-18-init">LLVM-18 project</a> and the <a class="reference external" href="https://github.com/cornell-zhang/hcl-dialect">hcl-mlir dialect</a>. You can choose to use our provided docker or build from source.</p>
+<section id="install-from-docker">
+<h2>Install from Docker<a class="headerlink" href="#install-from-docker" title="Link to this heading"><span>¶</span></a></h2>
+<p>To simplify the installation process, we provide a docker image that has already installed the LLVM-18 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the <code class="code docutils literal notranslate"><span class="pre">/root/llvm-project</span></code> folder in the docker image, and a prebuilt hcl-mlir dialect is installed in <code class="code docutils literal notranslate"><span class="pre">/root/hcl-dialect</span></code>.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>pull<span class="w"> </span>chhzh123/hcl-dialect:llvm-18.x-py3.12
+<span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>chhzh123/hcl-dialect:llvm-18.x-py3.12
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>allo
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Please note that the hcl-mlir dialect is not up-to-date. You can pull the latest hcl-mlir dialect and rebuild it if needed.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>/root/hcl-dialect
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>git<span class="w"> </span>remote<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>fetch
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>make<span class="w"> </span>-j8
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>tools/hcl/python_packages/hcl_core
+<span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="install-from-source">
+<h2>Install from Source<a class="headerlink" href="#install-from-source" title="Link to this heading"><span>¶</span></a></h2>
+<p>Please clone the Allo repository to your local machine.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>allo
+</pre></div>
+</div>
+<p>We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is <strong>3.12</strong>.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
+<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
+</pre></div>
+</div>
+<p>After creating the Python environment, you can install the required packages by running the following command.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>bash<span class="w"> </span>build.sh
+</pre></div>
+</div>
+<p>You should see “Installation completed!” if the installation is finished.</p>
+</section>
+<section id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Link to this heading"><span>¶</span></a></h2>
+<p>To make sure the installation is successful, you can run the following command to test the Allo package.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/
+</pre></div>
+</div>
+</section>
+<section id="internal-installation">
+<h2>Internal Installation<a class="headerlink" href="#internal-installation" title="Link to this heading"><span>¶</span></a></h2>
+<p>For Zhang Group students, we have already prepared a prebuilt version of LLVM on our server, so you do not need to build everything from source. Please follow the instruction below to set up the environment.</p>
+<p>Make sure you have the access to the <code class="code docutils literal notranslate"><span class="pre">brg-zhang</span></code> or other Zhang group server. You can log into the server by SSH or use VSCode Remote SSH extension. Please refer to <a class="reference external" href="https://code.visualstudio.com/docs/remote/ssh">this website</a> for more details on configuring VSCode. Those servers are only accessible from the campus network. Please use the VPN if you are off-campus.</p>
+<p>After logging into the server, the first step is to install an Anaconda environment. We recommend you to install your own <a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html">Miniconda</a>, which is a lightweight version of Anaconda and contains only the necessary packages. You can download the installer from the link above and install it on your system. After the installation, you can create a new environment for Allo by running the following commands:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
 <span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
 </pre></div>
@@ -202,12 +240,33 @@ After the installation, you can create a new environment for Allo by running the
 </div>
 <p>If you see no error message, then the installation is successful. Otherwise, please contact us for help.</p>
 </section>
+</section>
 
 
             <div class="clearer"></div>
           </div>
         </div>
       </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">Installation</a><ul>
+<li><a class="reference internal" href="#install-from-docker">Install from Docker</a></li>
+<li><a class="reference internal" href="#install-from-source">Install from Source</a></li>
+<li><a class="reference internal" href="#testing">Testing</a></li>
+<li><a class="reference internal" href="#internal-installation">Internal Installation</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
     
 
       <div class="clearer"></div>
@@ -231,7 +290,7 @@ After the installation, you can create a new environment for Allo by running the
 
 
     <div class="footer" role="contentinfo">
-    &#169; Copyright 2023, Allo Authors.
+    &#169; Copyright 2024, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
     </div>
 

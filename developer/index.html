@@ -166,11 +166,57 @@
             
   <section id="developer-setup">
 <span id="developer"></span><h1>Developer Setup<a class="headerlink" href="#developer-setup" title="Link to this heading"><span>¶</span></a></h1>
+<p>Depending on which part of Allo you want to contribute to, you may set up the environment differently.</p>
+<section id="developer-installation">
+<h2>Developer Installation<a class="headerlink" href="#developer-installation" title="Link to this heading"><span>¶</span></a></h2>
+<p>If you only want to change the frontend part of Allo, you can install the Allo package following the <a class="reference external" href="../setup/index.html">general guide</a>.</p>
+<p>If you need to change the backend part of Allo, you need to install the LLVM-18 project and make sure your LLVM commit is the same as <a class="reference external" href="https://github.com/cornell-zhang/hcl-dialect/tree/main/externals">the one we referred to</a>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
+<span class="c1"># Python 3.12 is required</span>
+cmake<span class="w"> </span>-G<span class="w"> </span><span class="s2">&quot;Unix Makefiles&quot;</span><span class="w"> </span>../llvm<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_ENABLE_PROJECTS<span class="o">=</span>mlir<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_BUILD_EXAMPLES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_TARGETS_TO_BUILD<span class="o">=</span><span class="s2">&quot;host&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_ENABLE_ASSERTIONS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_INSTALL_UTILS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DMLIR_ENABLE_BINDINGS_PYTHON<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPython3_EXECUTABLE<span class="o">=</span><span class="sb">`</span>which<span class="w"> </span>python3<span class="sb">`</span>
+make<span class="w"> </span>-j8
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For Zhang Group students, you can <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">LLVM_HOME=/work/shared/users/common/llvm-project-18.x</span></code> and <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">PATH=$LLVM_HOME/build-patch/bin:$PATH</span></code> to use the pre-installed LLVM-18 project.</p>
+</div>
+<p>After installing the LLVM-18 project, you can build the hcl-mlir dialect from source:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/hcl-dialect.git
+<span class="nb">cd</span><span class="w"> </span>hcl-dialect
+mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
+cmake<span class="w"> </span>-G<span class="w"> </span><span class="s2">&quot;Unix Makefiles&quot;</span><span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DMLIR_DIR<span class="o">=</span><span class="nv">$LLVM_BUILD_DIR</span>/lib/cmake/mlir<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_EXTERNAL_LIT<span class="o">=</span><span class="nv">$LLVM_BUILD_DIR</span>/bin/llvm-lit<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_BINDING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DOPENSCOP<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPython3_EXECUTABLE<span class="o">=</span><span class="sb">`</span>which<span class="w"> </span>python3<span class="sb">`</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_CXX_FLAGS<span class="o">=</span><span class="s2">&quot;-Wfatal-errors -std=c++17&quot;</span>
+make<span class="w"> </span>-j8
+<span class="nb">cd</span><span class="w"> </span>tools/hcl/python_packages/hcl_core
+python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Every time you change the hcl-mlir dialect, you need to run <code class="docutils literal notranslate"><span class="pre">make</span></code> again to make the changes effective. Finally, you can install the Allo package:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>It will connect the frontend with the backend.</p>
+</section>
+<section id="upstream-changes">
+<h2>Upstream Changes<a class="headerlink" href="#upstream-changes" title="Link to this heading"><span>¶</span></a></h2>
 <p>It would be good to maintain your own <a class="reference external" href="https://docs.github.com/en/get-started/quickstart/fork-a-repo">fork</a> of
 the Allo repository, which helps create a <a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests">PR (pull request)</a> and upstream changes easier.</p>
 <p>To create your own fork, click on the “Fork” button on the top right of the <a class="reference external" href="https://github.com/cornell-zhang/allo">Allo repository</a>.
-This will create a copy of the repository under your own GitHub account. Please do <em>NOT</em> make it public
-at this time. (By default, fork from a private repository should be private.)</p>
+This will create a copy of the repository under your own GitHub account.</p>
 <p>Next, you can clone your fork to your local machine OR if you have already cloned the Allo repository, you can add your fork as a remote:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Change OWNER to your GitHub username</span>
 $<span class="w"> </span>git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </span>origin<span class="w"> </span>https://github.com/OWNER/allo.git
@@ -198,6 +244,7 @@ $<span class="w"> </span>git<span class="w"> </span>remote<span class="w"> </spa
 <li><p>Once the PR is approved, it will be merged into the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch</p></li>
 </ol>
 <p>Most of the <code class="docutils literal notranslate"><span class="pre">git</span></code> features are integrated in VSCode, please refer to the <a class="reference external" href="https://code.visualstudio.com/docs/sourcecontrol/intro-to-git">document</a> if you want to use the GUI.</p>
+</section>
 <section id="integration-tests">
 <h2>Integration Tests<a class="headerlink" href="#integration-tests" title="Link to this heading"><span>¶</span></a></h2>
 <p>We have configured <a class="reference external" href="https://github.com/features/actions">GitHub Actions</a> to run the tests on every PR, so please
@@ -266,6 +313,8 @@ Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
             <div class="page_toc">
                 <ul>
 <li><a class="reference internal" href="#">Developer Setup</a><ul>
+<li><a class="reference internal" href="#developer-installation">Developer Installation</a></li>
+<li><a class="reference internal" href="#upstream-changes">Upstream Changes</a></li>
 <li><a class="reference internal" href="#integration-tests">Integration Tests</a></li>
 </ul>
 </li>
@@ -296,7 +345,7 @@ Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 
 
     <div class="footer" role="contentinfo">
-    &#169; Copyright 2023, Allo Authors.
+    &#169; Copyright 2024, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
     </div>
 
