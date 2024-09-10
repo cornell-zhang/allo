@@ -6,17 +6,24 @@ from .. import dsl
 from .systolic import systolic
 
 
-def softmax[Ty, D](X: "Ty[D, D]") -> "Ty[D, D]":
-    Z: Ty[D, D]
-    E: Ty[D, D]
-    S: Ty[D] = 0.0
+def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
+    Z: Ty[L, L]
+    E: Ty[L, L]
+    M: Ty[L] = -10000.0
+    S: Ty[L] = 0.0
 
-    for i, j in dsl.grid(D, D, name="exp_sum"):
-        E[i, j] = dsl.exp(X[i, j])
+    for i, j in dsl.grid(L, L, name="row_max"):
+        if X[i,j] > M[i]:
+            M[i] = X[i, j]
+
+    #compute exp and sum
+    for i, j in dsl.grid(L, L, name="exp_sum"):
+        E[i, j] = dsl.exp(X[i, j] - M[i])
         S[i] += E[i, j]
-
-    for i, j in dsl.grid(D, D, name="update"):
+    
+    for i, j in dsl.grid(L, L, name="update"):
         Z[i, j] = E[i, j] / S[i]
+    
     return Z
 
 
