@@ -51,14 +51,21 @@ def test_linear_float():
     print(s.build(target="vhls"))
 
 
+def np_softmax(x, axis=-1):
+    x_max = np.max(x, axis=axis, keepdims=True)
+    e_x = np.exp(x - x_max)
+    return e_x / np.sum(e_x, axis=axis, keepdims=True)
+
+
 def test_softmax():
     from allo.library.nn import softmax
 
     s = allo.customize(softmax, instantiate=[float32, 8])
     mod = s.build()
     inp = np.random.randn(8, 8).astype(np.float32)
+    inp = 1000 * inp
     allo_out = mod(inp)
-    np_out = np.exp(inp) / np.exp(inp).sum(axis=1, keepdims=True)
+    np_out = np_softmax(inp)
     np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
     print("Passed!")
     print(s.build(target="vhls"))
