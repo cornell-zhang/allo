@@ -56,6 +56,7 @@ def np_softmax(x, axis=-1):
     e_x = np.exp(x - x_max)
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
+
 def test_softmax():
     from allo.library.nn import softmax
 
