@@ -9,7 +9,7 @@ from .systolic import systolic
 def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
     Z: Ty[L, L]
     E: Ty[L, L]
-    M: Ty[L] = -10000.0
+    M: Ty[L] = -1000000000000.0
     S: Ty[L] = 0.0
 
     for i, j in dsl.grid(L, L, name="row_max"):

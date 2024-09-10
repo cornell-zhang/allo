@@ -63,6 +63,7 @@ def test_softmax():
     s = allo.customize(softmax, instantiate=[float32, 8])
     mod = s.build()
     inp = np.random.randn(8, 8).astype(np.float32)
+    inp = 1000 * inp
     allo_out = mod(inp)
     np_out = np_softmax(inp)
     np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
