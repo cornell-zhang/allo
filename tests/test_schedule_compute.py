@@ -4,7 +4,7 @@
 import allo
 import numpy as np
 import pytest
-from allo.ir.types import int32, float32
+from allo.ir.types import int32, float32, bool
 
 
 def test_gemm_grid_for():
@@ -309,7 +309,7 @@ def test_getloops_scf():
         for i in range(times, name="scf_loop"):
             for j in range(N, name="target"):
                 C[j] = C[j] + 1
-    
+
     def case2[N: int32](A: int32, B: int32, C: int32[N], s: bool):
         times_out: int32 = A if s else B
         times_in: int32 = B if s else A
@@ -317,7 +317,7 @@ def test_getloops_scf():
             for j in range(times_in, name="scf_in"):
                 for k in range(N, name="target"):
                     C[k] = C[k] + 1
-    
+
     s1 = allo.customize(case1, instantiate=[8])
     s1.get_loops(s1.top_func_name)["scf_loop"]["j"]
 
