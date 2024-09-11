@@ -173,7 +173,7 @@ def get_affine_loop_nests(func):
     def DFS(operations, band):
         nonlocal cnt_unnamed
         for op in operations:
-            if isinstance(op, affine_d.AffineForOp):
+            if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
                 if "loop_name" not in op.attributes:
                     name = f"L_{cnt_unnamed}"
                     cnt_unnamed += 1
@@ -192,7 +192,7 @@ def get_affine_loop_nests(func):
     # get function name
     func_name = func.attributes["sym_name"].value
     for op in func.entry_block.operations:
-        if isinstance(op, affine_d.AffineForOp):  # outer-most
+        if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):  # outer-most
             band_name = StringAttr(op.attributes["op_name"]).value
             band = LoopBand()
             band.add_loop(
