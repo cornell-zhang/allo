@@ -303,5 +303,25 @@ def test_access_imperfect_loops():
     print(s1.build("vhls"))
 
 
+def test_getloops_scf():
+    def case1[N: int32](A: int32, B: int32, C: int32[N]):
+        times: int32 = A - B
+        for i in range(times, name="scf_loop"):
+            for j in range(N, name="target"):
+                C[j] = C[j] + 1
+    
+    def case2[N: int32](A: int32, B: int32, C: int32[N], s: bool):
+        times: int32 = A if s else B
+        for i in range(times, name="scf_loop"):
+            for j in range(N, name="target"):
+                C[j] = C[j] + 1
+    
+    s1 = allo.customize(case1, instantiate=[8])
+    s1.get_loops(s1.top_func_name)["scf_loop"]["j"]
+
+    s2 = allo.customize(case2, instantiate=[8])
+    s2.get_loops(s2.top_func_name)["scf_loop"]["j"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
