@@ -433,11 +433,11 @@ class Schedule:
         band_name = band_name.split(":")[1]
         cnt = 0
 
-        def locateLoop(op):
+        def locate_loop(op):
             nonlocal cnt
             for ope in op.body.operations:
                 if isinstance(ope, (scf_d.ForOp, affine_d.AffineForOp)):
-                    locateLoop(ope)
+                    locate_loop(ope)
             if (
                 "loop_name" in op.attributes
                 and op.attributes["loop_name"].value == loop_name
@@ -451,7 +451,7 @@ class Schedule:
                     "op_name" in op.attributes
                     and op.attributes["op_name"].value == band_name
                 ):
-                    locateLoop(op)
+                    locate_loop(op)
 
         if cnt == 0:
             raise RuntimeError(f"Dataflow loop {band_name}.{loop_name} not found")
