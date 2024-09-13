@@ -32,6 +32,7 @@ from hcl_mlir.dialects import (
     hcl as hcl_d,
     memref as memref_d,
     affine as affine_d,
+    scf as scf_d,
     arith as arith_d,
     func as func_d,
 )
@@ -401,10 +402,7 @@ class Schedule:
             self.get_loops(func)[band_name][axis].loop.attributes[
                 "rewind"
             ] = UnitAttr.get()
-        ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
-        hcl_d.PipelineOp(loop_hdl.result, ii=ii, ip=ip)
+        self.get_loops(func)[band_name][axis].loop.attributes["pipeline_ii"] = ii
 
     @wrapped_apply
     def parallel(self, axis):
@@ -435,24 +433,25 @@ class Schedule:
         band_name = band_name.split(":")[1]
         cnt = 0
 
-        # TODO: Fix deep nested
-        def DFS(op):
+        def locate_loop(op):
             nonlocal cnt
-            if isinstance(op, affine_d.AffineForOp):
+            for ope in op.body.operations:
+                if isinstance(ope, (scf_d.ForOp, affine_d.AffineForOp)):
+                    locate_loop(ope)
+            if (
+                "loop_name" in op.attributes
+                and op.attributes["loop_name"].value == loop_name
+            ):
+                cnt += 1
+                op.attributes["dataflow"] = UnitAttr.get()
+
+        for op in func.entry_block.operations:
+            if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
                 if (
                     "op_name" in op.attributes
                     and op.attributes["op_name"].value == band_name
                 ):
-                    DFS(op.body.operations[0])
-                if (
-                    "loop_name" in op.attributes
-                    and op.attributes["loop_name"].value == loop_name
-                ):
-                    cnt += 1
-                    op.attributes["dataflow"] = UnitAttr.get()
-
-        for op in func.entry_block.operations:
-            DFS(op)
+                    locate_loop(op)
 
         if cnt == 0:
             raise RuntimeError(f"Dataflow loop {band_name}.{loop_name} not found")

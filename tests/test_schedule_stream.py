@@ -120,5 +120,46 @@ def test_fork_join_function():
     assert "#pragma HLS stream variable=C1 depth=200" in code
 
 
+def test_dataflow_function():
+    T = int32
+
+    def func1(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] + 1
+
+    def func2(A: T[10, 20], B: T[10, 20]):
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] - 1
+        for i, j in allo.grid(10, 20):
+            B[i, j] = A[i, j] * 2
+
+    def top(A: T[10, 20], B: T[10, 20], C: T[10, 20], D: T[10, 20]):
+        func1(A, B)
+        func2(C, D)
+
+    s = allo.customize(top, instantiate=[8])
+    s.dataflow("func2")
+    code = s.build(target="vhls").hls_code
+    assert "#pragma HLS dataflow" in code
+
+
+def test_dataflow_loop():
+    def case1[N: int32](A: int32, B: int32, C: int32[N]):
+        times_out: int32 = A + B
+        for i1 in range(times_out, name="out1"):
+            for i2 in range(A, name="out2"):
+                for j in range(B, name="target"):
+                    for k in range(N, name="in1"):
+                        C[k] = C[k] + 1
+                    for k in range(N, name="in2"):
+                        C[k] = C[k] - 1
+
+    s1 = allo.customize(case1, instantiate=[8])
+    target_loop = s1.get_loops(s1.top_func_name)["out1"]["j"]
+    s1.dataflow(target_loop)
+    code = s1.build(target="vhls").hls_code
+    assert "#pragma HLS dataflow" in code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
