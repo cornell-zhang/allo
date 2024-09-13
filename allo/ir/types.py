@@ -7,7 +7,7 @@ from collections import OrderedDict
 
 from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
 from hcl_mlir.dialects import hcl as hcl_d
-from hcl_mlir.exceptions import DTypeError
+from hcl_mlir.exceptions import DTypeError, DTypeWarning
 
 
 class AlloType:
@@ -16,8 +16,10 @@ class AlloType:
             raise DTypeError("Bitwidth must be an integer.")
         if not isinstance(fracs, numbers.Integral):
             raise DTypeError("Number of fractional bits must be an integer.")
-        if bits > 2047:
-            raise DTypeError("The maximum supported total bitwidth is 2047 bits.")
+        if bits > 512:
+            DTypeWarning(
+                "NumPy does not support bitwidths larger than 512, so you cannot use NumPy for simulation, but you can still generate the corresponding MLIR module."
+            ).warn()
         if fracs > 255:
             raise DTypeError("The maximum supported fractional bitwidth is 255 bits.")
         self.bits = bits
