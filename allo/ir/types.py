@@ -17,9 +17,9 @@ class AlloType:
         if not isinstance(fracs, numbers.Integral):
             raise DTypeError("Number of fractional bits must be an integer.")
         if bits > 512:
-            raise DTypeWarning(
+            DTypeWarning(
                 "NumPy does not support bitwidths larger than 512, so you cannot use NumPy for simulation, but you can still generate the corresponding MLIR module."
-            )
+            ).warn()
         if fracs > 255:
             raise DTypeError("The maximum supported fractional bitwidth is 255 bits.")
         self.bits = bits
