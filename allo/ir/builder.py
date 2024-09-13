@@ -665,6 +665,18 @@ class ASTTransformer(ASTBuilder):
                 ctx, value, node.operand.dtype, node.dtype
             )
             return arith_d.NegFOp(value.result, ip=ctx.get_ip())
+        if isinstance(node.op, ast.Not):
+            if not (
+                isinstance(value.result.type, IntegerType)
+                and value.result.type.width == 1
+            ):
+                raise RuntimeError("The operand of 'not' should be a boolean value")
+            # test if value.val is a bool value
+            # pylint: disable=too-many-function-args
+            c0 = arith_d.ConstantOp(IntegerType.get_signless(1), 0, ip=ctx.get_ip())
+            # predicate=0 means "eq"
+            predicate = IntegerAttr.get(IntegerType.get_signless(64), 0)
+            return arith_d.CmpIOp(predicate, value.result, c0, ip=ctx.get_ip())
         # ast.UAdd
         return value
 

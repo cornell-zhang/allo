@@ -1,11 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int8, int32, float32, index
+from allo.ir.types import bool, int8, int32, float32, index
 import allo.backend.hls as hls
 
 
@@ -281,6 +280,33 @@ def test_unary():
     print(s.module)
     mod = s.build()
     np.testing.assert_allclose(mod(), kernel())
+
+
+def test_not():
+    def kernel[Ty](flag: bool) -> "Ty":
+        X: Ty
+        if not flag:
+            X = 1
+        else:
+            X = 0
+        return X
+
+    s = allo.customize(kernel, instantiate=[int8])
+    print(s.module)
+    mod = s.build()
+    assert mod(True) == 0
+    assert mod(False) == 1
+
+
+def test_complex_not():
+    def kernel[Ty](inp: Ty) -> "Ty":
+        return 3 if not (inp + 1 > 5) else 4
+
+    s = allo.customize(kernel, instantiate=[int8])
+    print(s.module)
+    mod = s.build()
+    assert mod(4) == 3
+    assert mod(5) == 4
 
 
 def test_rhs_binaryop():
