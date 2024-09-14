@@ -255,6 +255,12 @@ class ASTTransformer(ASTBuilder):
                 ub_expr = build_stmt(
                     ctx, iter_args[1] if len(iter_args) >= 2 else iter_args[0]
                 )
+                # https://mlir.llvm.org/docs/Dialects/SCFDialect/#scffor-scfforop
+                # The step is a value of same type but required to be positive.
+                if step is not None and step <= 0:
+                    raise RuntimeError(
+                        "Step in for loop range should be positive, got: ", step
+                    )
                 step = build_stmt(
                     ctx, iter_args[2] if len(iter_args) >= 3 else ast.Constant(1)
                 )
@@ -661,10 +667,21 @@ class ASTTransformer(ASTBuilder):
     def build_UnaryOp(ctx, node):
         value = build_stmt(ctx, node.operand)
         if isinstance(node.op, ast.USub):
-            value = ASTTransformer.build_cast_op(
-                ctx, value, node.operand.dtype, node.dtype
-            )
-            return arith_d.NegFOp(value.result, ip=ctx.get_ip())
+            # MLIR does not provide integer negation
+            if isinstance(node.dtype, (Int, UInt)):
+                value = ASTTransformer.build_cast_op(
+                    ctx, value, node.operand.dtype, node.dtype
+                )
+                return arith_d.SubIOp(
+                    arith_d.ConstantOp(node.dtype.build(), 0, ip=ctx.get_ip()).result,
+                    value.result,
+                    ip=ctx.get_ip(),
+                )
+            else:
+                value = ASTTransformer.build_cast_op(
+                    ctx, value, node.operand.dtype, node.dtype
+                )
+                return arith_d.NegFOp(value.result, ip=ctx.get_ip())
         if isinstance(node.op, ast.Not):
             if not (
                 isinstance(value.result.type, IntegerType)

@@ -245,9 +245,7 @@ class TypeInferer(ASTVisitor):
     def visit_UnaryOp(ctx, node):
         operand = visit_stmt(ctx, node.operand)
         node.shape = operand.shape
-        # A bit tricky here, since MLIR only has arith.negf op but not arith.negi
-        # https://mlir.llvm.org/docs/Dialects/ArithOps/#arithnegf-arithnegfop
-        node.dtype = float32
+        node.dtype = operand.dtype
         return node
 
     @staticmethod
