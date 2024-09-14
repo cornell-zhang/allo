@@ -166,6 +166,17 @@ def test_scf_for():
     np.testing.assert_allclose(np_B, np_D)
 
 
+def test_negative_step_for():
+    N = 256
+
+    def kernel(x: int32[N], y: int32[N]):
+        for i in range(N - 1, -1, -1):
+            y[i] = x[i]
+
+    with pytest.raises(RuntimeError):
+        s = allo.customize(kernel)
+
+
 def test_nested_if():
     def kernel(a: int32, b: int32) -> int32:
         r: int32 = 0
