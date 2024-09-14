@@ -673,15 +673,16 @@ class ASTTransformer(ASTBuilder):
                     ctx, value, node.operand.dtype, node.dtype
                 )
                 return arith_d.SubIOp(
+                    # pylint: disable=too-many-function-args
                     arith_d.ConstantOp(node.dtype.build(), 0, ip=ctx.get_ip()).result,
                     value.result,
                     ip=ctx.get_ip(),
                 )
-            else:
-                value = ASTTransformer.build_cast_op(
-                    ctx, value, node.operand.dtype, node.dtype
-                )
-                return arith_d.NegFOp(value.result, ip=ctx.get_ip())
+            # float
+            value = ASTTransformer.build_cast_op(
+                ctx, value, node.operand.dtype, node.dtype
+            )
+            return arith_d.NegFOp(value.result, ip=ctx.get_ip())
         if isinstance(node.op, ast.Not):
             if not (
                 isinstance(value.result.type, IntegerType)

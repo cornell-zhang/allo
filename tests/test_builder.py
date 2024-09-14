@@ -661,5 +661,4 @@ def test_size1_array():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_negative_step_for()
+    pytest.main([__file__])
