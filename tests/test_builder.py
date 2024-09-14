@@ -638,5 +638,16 @@ def test_comments():
     print(allo.customize(top, verbose=True).build()(np.array([5], dtype=np.int8)))
 
 
+def test_size1_array():
+    def kernel[Ty](X: "Ty[1]"):
+        a: Ty
+
+    def top[Ty](X_buf: "Ty[2, 2, 1]"):
+        kernel[Ty](X_buf[0, 0])
+
+    s = allo.customize(top, instantiate=[int8], verbose=True)
+    print(s.module)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
