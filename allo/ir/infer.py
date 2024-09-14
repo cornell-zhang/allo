@@ -245,7 +245,11 @@ class TypeInferer(ASTVisitor):
     def visit_UnaryOp(ctx, node):
         operand = visit_stmt(ctx, node.operand)
         node.shape = operand.shape
-        node.dtype = operand.dtype
+        if isinstance(operand.dtype, UInt):
+            # need to create a corresponding Int type
+            node.dtype = Int(operand.dtype.bits)
+        else:
+            node.dtype = operand.dtype
         return node
 
     @staticmethod
