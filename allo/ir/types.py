@@ -5,7 +5,15 @@
 import numbers
 from collections import OrderedDict
 
-from hcl_mlir.ir import IntegerType, IndexType, F16Type, F32Type, F64Type
+from hcl_mlir.ir import (
+    IntegerType,
+    IndexType,
+    F16Type,
+    F32Type,
+    F64Type,
+    MemRefType,
+    StringAttr,
+)
 from hcl_mlir.dialects import hcl as hcl_d
 from hcl_mlir.exceptions import DTypeError, DTypeWarning
 
@@ -163,6 +171,26 @@ class Struct(AlloType):
 
     def build(self):
         raise NotImplementedError("TODO")
+
+
+class Stream(AlloType):
+    def __init__(self, dtype, depth=2, size=1):
+        assert isinstance(dtype, AlloType), f"dtype must be an AlloType, got {dtype}"
+        self.dtype = dtype
+        self.depth = depth
+        self.size = size
+        super().__init__(0, 0, f"stream<{dtype}>")
+
+    def build(self):
+        return MemRefType.get(
+            (self.size,),
+            self.dtype.build(),
+            None,
+            StringAttr.get(f"stream:{self.depth}"),
+        )
+
+    def __repr__(self):
+        return f"Stream({self.dtype})"
 
 
 bool = Int(1)
