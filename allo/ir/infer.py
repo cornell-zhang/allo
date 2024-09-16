@@ -385,7 +385,9 @@ class TypeInferer(ASTVisitor):
             elts = (
                 size.elts
                 if isinstance(size, ast.Tuple)
-                else size.dims if isinstance(size, ast.ExtSlice) else [size]
+                else size.dims
+                if isinstance(size, ast.ExtSlice)
+                else [size]
             )
             access_dim = len(elts)
             total_dim = len(value.shape)
