@@ -660,5 +660,32 @@ def test_size1_array():
     print(s.module)
 
 
+def test_tuple():
+    def callee(a: float32, b: float32) -> (float32, float32):
+        c: float32 = a + b
+        d: float32 = a - b
+        return c, d
+
+    def kernel(A: float32[10], B: float32[10]) -> (float32[10], float32[10]):
+        C: float32[10] = 0
+        D: float32[10] = 0
+        for i in range(10):
+            C[i], D[i] = callee(A[i], B[i])
+        return C, D
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((10,)).astype(np.float32)
+    np_B = np.random.random((10,)).astype(np.float32)
+    np_C, np_D = mod(np_A, np_B)
+    np_C_ref = np.zeros((10,), dtype=np.float32)
+    np_D_ref = np.zeros((10,), dtype=np.float32)
+    for i in range(10):
+        np_C_ref[i], np_D_ref[i] = callee(np_A[i], np_B[i])
+    np.testing.assert_allclose(np_C, np_C_ref)
+    np.testing.assert_allclose(np_D, np_D_ref)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

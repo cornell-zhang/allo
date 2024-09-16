@@ -11,7 +11,17 @@ import numpy as np
 
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
-from .types import AlloType, Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
+from .types import (
+    AlloType,
+    Int,
+    UInt,
+    Fixed,
+    UFixed,
+    Index,
+    uint1,
+    int32,
+    float32,
+)
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
 from ..utils import (
@@ -262,14 +272,21 @@ class TypeInferer(ASTVisitor):
     def visit_Assign(ctx, node):
         # Compute RHS
         rhs = visit_stmt(ctx, node.value)
-        if len(node.targets) > 1:
-            raise RuntimeError("Cannot assign to multiple targets")
-        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and isinstance(
-            node.targets[0], ast.Name
+        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and not isinstance(
+            node.targets[0], ast.Subscript
         ):
-            ctx.buffers[node.targets[0].id] = rhs
-            node.dtype = rhs.dtype
-            node.shape = rhs.shape
+            targets = []
+            if isinstance(node.targets[0], ast.Tuple):
+                targets = node.targets[0].elts
+            else:
+                targets = [node.targets[0]]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    ctx.buffers[target.id] = rhs
+                else:
+                    lhs = visit_stmt(ctx, target)
+                node.dtype = rhs.dtype
+                node.shape = rhs.shape
             return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
@@ -368,9 +385,7 @@ class TypeInferer(ASTVisitor):
             elts = (
                 size.elts
                 if isinstance(size, ast.Tuple)
-                else size.dims
-                if isinstance(size, ast.ExtSlice)
-                else [size]
+                else size.dims if isinstance(size, ast.ExtSlice) else [size]
             )
             access_dim = len(elts)
             total_dim = len(value.shape)
@@ -919,5 +934,9 @@ visit_stmt = TypeInferer()
 def visit_stmts(ctx, stmts):
     results = []
     for stmt in stmts:
-        results.append(visit_stmt(ctx, stmt))
+        try:
+            results.append(visit_stmt(ctx, stmt))
+        except Exception as e:
+            raise e
+            # raise RuntimeError(f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}" + f" {e}")
     return results

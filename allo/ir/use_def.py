@@ -239,12 +239,18 @@ class UseDefChain(ast.NodeVisitor):
                 return subnode.id
             return get_name(subnode.value)
 
-        name = get_name(node.targets[0])
-        var = VarNode(self.path, name)
-        for parent in parents:
-            parent.add_user(var)
-        if self.get_name(name) not in self.buffers:
-            self.buffers[self.get_name(name)] = var
+        targets = []
+        if isinstance(node.targets[0], ast.Tuple):
+            targets = node.targets[0].elts
+        else:
+            targets = [node.targets[0]]
+        for target in targets:
+            name = get_name(target)
+            var = VarNode(self.path, name)
+            for parent in parents:
+                parent.add_user(var)
+            if self.get_name(name) not in self.buffers:
+                self.buffers[self.get_name(name)] = var
 
     def visit_AnnAssign(self, node):
         var = VarNode(self.path, node.target.id)
