@@ -288,10 +288,14 @@ class TypeInferer(ASTVisitor):
                 targets = [node.targets[0]]
             for i, target in enumerate(targets):
                 if isinstance(target, ast.Name):
-                    target.dtype = rhs.dtype[i] if isinstance(rhs.dtype, tuple) else rhs.dtype
+                    target.dtype = (
+                        rhs.dtype[i] if isinstance(rhs.dtype, tuple) else rhs.dtype
+                    )
                     # notice here needs to test whether dtype is a tuple instead of shape
                     # as shape is always a tuple
-                    target.shape = rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
+                    target.shape = (
+                        rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
+                    )
                     ctx.buffers[target.id] = target
                 else:
                     lhs = visit_stmt(ctx, target)
