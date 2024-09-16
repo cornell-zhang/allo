@@ -80,8 +80,9 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: DocumentationHTML
+        path: DocumentationHTML
     - name: Deploy docs
-      uses: JamesIves/github-pages-deploy-action@releases/v3
+      uses: JamesIves/github-pages-deploy-action@v4
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
