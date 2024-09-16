@@ -748,14 +748,23 @@ class ASTTransformer(ASTBuilder):
         rhs = build_stmt(ctx, node.value)
         if (
             isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-        ) and isinstance(node.targets[0], ast.Name):
-            if hasattr(rhs, "attributes"):
-                rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
-            if node.targets[0].id in ctx.buffers:
-                raise RuntimeError(
-                    f"Variable `{node.targets[0].id}` has already been defined, please use a different name"
-                )
-            ctx.buffers[node.targets[0].id] = rhs
+        ) and not isinstance(node.targets[0], ast.Subscript):
+            targets = []
+            if isinstance(node.targets[0], ast.Tuple):
+                targets = node.targets[0].elts
+            else:
+                targets = [node.targets[0]]
+            for idx, target in enumerate(targets):
+                if isinstance(target, ast.Name):
+                    if hasattr(rhs, "attributes"):
+                        rhs.attributes["name"] = StringAttr.get(target.id)
+                    if target.id in ctx.buffers:
+                        raise RuntimeError(
+                            f"Variable `{target.id}` has already been defined, please use a different name"
+                        )
+                    ctx.buffers[target.id] = rhs
+                else:
+                    store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(
@@ -937,7 +946,8 @@ class ASTTransformer(ASTBuilder):
         return static_offsets, static_sizes, static_strides
 
     @staticmethod
-    def build_tensor_access(ctx, node, val=None):
+    def build_tensor_access(ctx, node, val=None, idx=0):
+        # TODO: Fix tuple idx
         value = build_stmt(ctx, node.value)
         if len(node.shape) > 1:
             dtype = RankedTensorType(value.result.type).element_type
@@ -992,7 +1002,7 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported load subscript")
 
     @staticmethod
-    def build_memory_access(ctx, node, val=None):
+    def build_memory_access(ctx, node, val=None, idx=0):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
         if len(node.value.shape) > len(new_indices):  # partial access
@@ -1059,7 +1069,7 @@ class ASTTransformer(ASTBuilder):
                 )
             else:  # ast.Store
                 op = affine_d.AffineStoreOp(
-                    val.result, value.result, ivs, affine_attr, ip=ctx.get_ip()
+                    val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
                 )
         else:  # Not affine
             # pylint: disable=else-if-used
@@ -1079,7 +1089,8 @@ class ASTTransformer(ASTBuilder):
 
     # pylint: disable=inconsistent-return-statements
     @staticmethod
-    def build_bit_operation(ctx, node, val=None):
+    def build_bit_operation(ctx, node, val=None, idx=0):
+        # TODO: Fix tuple idx
         if not (
             len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt))
         ):
@@ -1166,14 +1177,14 @@ class ASTTransformer(ASTBuilder):
                 return store_op
 
     @staticmethod
-    def build_Subscript(ctx, node, val=None):
+    def build_Subscript(ctx, node, val=None, idx=0):
         # pylint: disable=no-else-return
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
-            return ASTTransformer.build_memory_access(ctx, node, val=val)
+            return ASTTransformer.build_memory_access(ctx, node, val=val, idx=idx)
         elif len(node.value.shape) > 0 and ctx.enable_tensor:
-            return ASTTransformer.build_tensor_access(ctx, node, val=val)
+            return ASTTransformer.build_tensor_access(ctx, node, val=val, idx=idx)
         else:  # bit operation
-            return ASTTransformer.build_bit_operation(ctx, node, val=val)
+            return ASTTransformer.build_bit_operation(ctx, node, val=val, idx=idx)
 
     @staticmethod
     def build_AnnAssign(ctx, node):
