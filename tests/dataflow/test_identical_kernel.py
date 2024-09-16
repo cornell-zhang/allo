@@ -4,6 +4,7 @@
 from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
+import pytest
 
 M, N, K = 32, 32, 32
 P0, P1 = 2, 2
@@ -19,9 +20,14 @@ def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
                 C[i, j] += A[i, k] * B[k, j]
 
 
-A = np.random.rand(M, K).astype(np.float32)
-B = np.random.rand(K, N).astype(np.float32)
-C = np.zeros((M, N), dtype=np.float32)
-gemm(A, B, C)
-np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
-print("Success!")
+def test_tiled_gemm():
+    A = np.random.rand(M, K).astype(np.float32)
+    B = np.random.rand(K, N).astype(np.float32)
+    C = np.zeros((M, N), dtype=np.float32)
+    gemm(A, B, C)
+    np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
+    print("Success!")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])
