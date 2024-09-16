@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:00.558** total execution time for 4 files **from all galleries**:
+**00:00.556** total execution time for 4 files **from all galleries**:
 
 .. container::
 
@@ -36,10 +36,10 @@ Computation times
      - 00:00.262
      - 0.0
    * - :ref:`sphx_glr_gallery_tutorial_01_get_started.py` (``../../tutorials/tutorial_01_get_started.py``)
-     - 00:00.198
+     - 00:00.196
      - 0.0
    * - :ref:`sphx_glr_gallery_developer_02_mlir.py` (``../../tutorials/developer_02_mlir.py``)
-     - 00:00.093
+     - 00:00.094
      - 0.0
    * - :ref:`sphx_glr_gallery_developer_01_ir_builder.py` (``../../tutorials/developer_01_ir_builder.py``)
      - 00:00.005

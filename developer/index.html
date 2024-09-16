@@ -187,9 +187,9 @@ make<span class="w"> </span>-j8
 </div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>For Zhang Group students, you can <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">LLVM_HOME=/work/shared/users/common/llvm-project-18.x</span></code> and <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">PATH=$LLVM_HOME/build-patch/bin:$PATH</span></code> to use the pre-installed LLVM-18 project.</p>
+<p>For Zhang Group students, you can run the following commands to use the pre-installed LLVM-18 project.</p>
 </div>
-<p>After installing the LLVM-18 project, you can build the hcl-mlir dialect from source:</p>
+<p>After installing the LLVM-18 project, you can build the hcl-mlir dialect from source. Need to export <code class="docutils literal notranslate"><span class="pre">$LLVM_BUILD_DIR</span></code> to system path first.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/hcl-dialect.git
 <span class="nb">cd</span><span class="w"> </span>hcl-dialect
 mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
@@ -238,15 +238,16 @@ $<span class="w"> </span>git<span class="w"> </span>remote<span class="w"> </spa
 <li><p>Make changes to the code</p></li>
 <li><p>Commit the changes to your <em>local</em> branch (<code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">commit</span> <span class="pre">-m</span> <span class="pre">&quot;commit</span> <span class="pre">message&quot;</span></code>)</p></li>
 <li><p>Push the changes to your <em>fork</em> (<code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">push</span> <span class="pre">origin</span> <span class="pre">&lt;branch_name&gt;</span></code>)</p></li>
-<li><p>Create a PR from your fork to the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the Allo repository (see <a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork">here</a> for more details)</p></li>
+<li><p>Make sure your changes do not break the existing facilities, see <a class="reference external" href="#integration-tests">Integration Tests</a> for more details</p></li>
+<li><p>Create a <a class="reference external" href="https://github.com/cornell-zhang/allo/pulls">PR</a> from your fork to the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the Allo repository (see <a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork">here</a> for more details)</p></li>
 <li><p>Wait for the PR to be reviewed</p></li>
 <li><p>If there are any changes requested, make the changes and push to your fork</p></li>
 <li><p>Once the PR is approved, it will be merged into the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch</p></li>
 </ol>
 <p>Most of the <code class="docutils literal notranslate"><span class="pre">git</span></code> features are integrated in VSCode, please refer to the <a class="reference external" href="https://code.visualstudio.com/docs/sourcecontrol/intro-to-git">document</a> if you want to use the GUI.</p>
 </section>
-<section id="integration-tests">
-<h2>Integration Tests<a class="headerlink" href="#integration-tests" title="Link to this heading"><span>¶</span></a></h2>
+<section id="id1">
+<h2>Integration Tests<a class="headerlink" href="#id1" title="Link to this heading"><span>¶</span></a></h2>
 <p>We have configured <a class="reference external" href="https://github.com/features/actions">GitHub Actions</a> to run the tests on every PR, so please
 make sure you have passed the tests locally before creating a PR or pushing to your fork.</p>
 <p>There are several tests for our project:</p>
@@ -268,22 +269,22 @@ all checks passed...
 Check Python formats using black...
 ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
 ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
-Version Information: black, 23.1.0 (compiled: yes)
-Python (CPython) 3.8.17
+Version Information: black, 24.8.0 (compiled: yes)
+Python (CPython) 3.12.0
 Read returned 0
-Files: allo/customize.py allo/module.py allo/runtime.py
+Files: allo/ir/types.py
 Running black in checking mode
 All done! ✨ 🍰 ✨
-3 files would be left unchanged.
-./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+1 file would be left unchanged.
+./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)    : No such file or directory
 ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
-Version Information: black, 23.1.0 (compiled: yes)
-Python (CPython) 3.8.17
+Version Information: black, 24.8.0 (compiled: yes)
+Python (CPython) 3.12.0
 Read returned 0
-Files: allo/customize.py allo/module.py allo/report.py allo/runtime.py setup.py tutorials/developer_01_ir_builder.py tutorials/tutorial_01_get_started.py tutorials/tutorial_02_vhls.py
+Files: allo/ir/types.py
 Running black in checking mode
 All done! ✨ 🍰 ✨
-8 files would be left unchanged.
+1 file would be left unchanged.
 Running pylint on allo
 
 --------------------------------------------------------------------
@@ -315,7 +316,7 @@ Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 <li><a class="reference internal" href="#">Developer Setup</a><ul>
 <li><a class="reference internal" href="#developer-installation">Developer Installation</a></li>
 <li><a class="reference internal" href="#upstream-changes">Upstream Changes</a></li>
-<li><a class="reference internal" href="#integration-tests">Integration Tests</a></li>
+<li><a class="reference internal" href="#id1">Integration Tests</a></li>
 </ul>
 </li>
 </ul>

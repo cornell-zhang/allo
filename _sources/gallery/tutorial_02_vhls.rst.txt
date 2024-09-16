@@ -297,7 +297,7 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
               %3 = affine.load %alloc_0[%arg4] : memref<1024xf32>
               %4 = arith.addf %3, %2 : f32
               affine.store %4, %alloc_0[%arg4] : memref<1024xf32>
-            } {loop_name = "j", pipeline_ii = 1 : i32}
+            } {loop_name = "j", pipeline_ii = 1 : ui32}
           } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 1024 {
             %0 = affine.load %alloc_0[%arg3] : memref<1024xf32>

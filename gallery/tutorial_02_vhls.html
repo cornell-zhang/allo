@@ -328,7 +328,7 @@ initialize and write the intermediate buffer back to output tensor.</p>
           %3 = affine.load %alloc_0[%arg4] : memref&lt;1024xf32&gt;
           %4 = arith.addf %3, %2 : f32
           affine.store %4, %alloc_0[%arg4] : memref&lt;1024xf32&gt;
-        } {loop_name = &quot;j&quot;, pipeline_ii = 1 : i32}
+        } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 1024 {
         %0 = affine.load %alloc_0[%arg3] : memref&lt;1024xf32&gt;
