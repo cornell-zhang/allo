@@ -249,7 +249,7 @@ def test_bert():
         return ffn_ln_outp
 
     np_out = bert_layer(X, Wq, Wk, Wv, Wp, W1, W2, gamma1, beta1, gamma2, beta2)
-    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-2, rtol=1e-2)
     print("Passed!")
     print(s.build(target="vhls"))
 

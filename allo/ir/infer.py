@@ -11,7 +11,17 @@ import numpy as np
 
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
-from .types import AlloType, Int, UInt, Fixed, UFixed, Index, uint1, int32, float32
+from .types import (
+    AlloType,
+    Int,
+    UInt,
+    Fixed,
+    UFixed,
+    Index,
+    uint1,
+    int32,
+    float32,
+)
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
 from ..utils import (
@@ -245,9 +255,11 @@ class TypeInferer(ASTVisitor):
     def visit_UnaryOp(ctx, node):
         operand = visit_stmt(ctx, node.operand)
         node.shape = operand.shape
-        # A bit tricky here, since MLIR only has arith.negf op but not arith.negi
-        # https://mlir.llvm.org/docs/Dialects/ArithOps/#arithnegf-arithnegfop
-        node.dtype = float32
+        if isinstance(operand.dtype, UInt):
+            # need to create a corresponding Int type
+            node.dtype = Int(operand.dtype.bits)
+        else:
+            node.dtype = operand.dtype
         return node
 
     @staticmethod
@@ -260,14 +272,21 @@ class TypeInferer(ASTVisitor):
     def visit_Assign(ctx, node):
         # Compute RHS
         rhs = visit_stmt(ctx, node.value)
-        if len(node.targets) > 1:
-            raise RuntimeError("Cannot assign to multiple targets")
-        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and isinstance(
-            node.targets[0], ast.Name
+        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and not isinstance(
+            node.targets[0], ast.Subscript
         ):
-            ctx.buffers[node.targets[0].id] = rhs
-            node.dtype = rhs.dtype
-            node.shape = rhs.shape
+            targets = []
+            if isinstance(node.targets[0], ast.Tuple):
+                targets = node.targets[0].elts
+            else:
+                targets = [node.targets[0]]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    ctx.buffers[target.id] = rhs
+                else:
+                    lhs = visit_stmt(ctx, target)
+                node.dtype = rhs.dtype
+                node.shape = rhs.shape
             return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
@@ -391,8 +410,6 @@ class TypeInferer(ASTVisitor):
                         size = (upper - lower) // step
                         if size > 0:
                             shape.append(size)
-            if sum(shape) == len(shape):  # all ones
-                shape = tuple()
             node.shape = tuple(shape)
             node.dtype = ctx.buffers[node.value.id].dtype
         elif len(value.shape) == 0 and isinstance(
@@ -919,5 +936,9 @@ visit_stmt = TypeInferer()
 def visit_stmts(ctx, stmts):
     results = []
     for stmt in stmts:
-        results.append(visit_stmt(ctx, stmt))
+        try:
+            results.append(visit_stmt(ctx, stmt))
+        except Exception as e:
+            raise e
+            # raise RuntimeError(f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}" + f" {e}")
     return results

@@ -255,6 +255,12 @@ class ASTTransformer(ASTBuilder):
                 ub_expr = build_stmt(
                     ctx, iter_args[1] if len(iter_args) >= 2 else iter_args[0]
                 )
+                # https://mlir.llvm.org/docs/Dialects/SCFDialect/#scffor-scfforop
+                # The step is a value of same type but required to be positive.
+                if step is not None and step <= 0:
+                    raise RuntimeError(
+                        "Step in for loop range should be positive, got: ", step
+                    )
                 step = build_stmt(
                     ctx, iter_args[2] if len(iter_args) >= 3 else ast.Constant(1)
                 )
@@ -661,10 +667,34 @@ class ASTTransformer(ASTBuilder):
     def build_UnaryOp(ctx, node):
         value = build_stmt(ctx, node.operand)
         if isinstance(node.op, ast.USub):
+            # MLIR does not provide integer negation
+            if isinstance(node.dtype, (Int, UInt)):
+                value = ASTTransformer.build_cast_op(
+                    ctx, value, node.operand.dtype, node.dtype
+                )
+                return arith_d.SubIOp(
+                    # pylint: disable=too-many-function-args
+                    arith_d.ConstantOp(node.dtype.build(), 0, ip=ctx.get_ip()).result,
+                    value.result,
+                    ip=ctx.get_ip(),
+                )
+            # float
             value = ASTTransformer.build_cast_op(
                 ctx, value, node.operand.dtype, node.dtype
             )
             return arith_d.NegFOp(value.result, ip=ctx.get_ip())
+        if isinstance(node.op, ast.Not):
+            if not (
+                isinstance(value.result.type, IntegerType)
+                and value.result.type.width == 1
+            ):
+                raise RuntimeError("The operand of 'not' should be a boolean value")
+            # test if value.val is a bool value
+            # pylint: disable=too-many-function-args
+            c0 = arith_d.ConstantOp(IntegerType.get_signless(1), 0, ip=ctx.get_ip())
+            # predicate=0 means "eq"
+            predicate = IntegerAttr.get(IntegerType.get_signless(64), 0)
+            return arith_d.CmpIOp(predicate, value.result, c0, ip=ctx.get_ip())
         # ast.UAdd
         return value
 
@@ -718,14 +748,23 @@ class ASTTransformer(ASTBuilder):
         rhs = build_stmt(ctx, node.value)
         if (
             isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-        ) and isinstance(node.targets[0], ast.Name):
-            if hasattr(rhs, "attributes"):
-                rhs.attributes["name"] = StringAttr.get(node.targets[0].id)
-            if node.targets[0].id in ctx.buffers:
-                raise RuntimeError(
-                    f"Variable `{node.targets[0].id}` has already been defined, please use a different name"
-                )
-            ctx.buffers[node.targets[0].id] = rhs
+        ) and not isinstance(node.targets[0], ast.Subscript):
+            targets = []
+            if isinstance(node.targets[0], ast.Tuple):
+                targets = node.targets[0].elts
+            else:
+                targets = [node.targets[0]]
+            for idx, target in enumerate(targets):
+                if isinstance(target, ast.Name):
+                    if hasattr(rhs, "attributes"):
+                        rhs.attributes["name"] = StringAttr.get(target.id)
+                    if target.id in ctx.buffers:
+                        raise RuntimeError(
+                            f"Variable `{target.id}` has already been defined, please use a different name"
+                        )
+                    ctx.buffers[target.id] = rhs
+                else:
+                    store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(
@@ -907,7 +946,8 @@ class ASTTransformer(ASTBuilder):
         return static_offsets, static_sizes, static_strides
 
     @staticmethod
-    def build_tensor_access(ctx, node, val=None):
+    def build_tensor_access(ctx, node, val=None, idx=0):
+        # TODO: Fix tuple idx
         value = build_stmt(ctx, node.value)
         if len(node.shape) > 1:
             dtype = RankedTensorType(value.result.type).element_type
@@ -962,7 +1002,7 @@ class ASTTransformer(ASTBuilder):
         raise RuntimeError("Unsupported load subscript")
 
     @staticmethod
-    def build_memory_access(ctx, node, val=None):
+    def build_memory_access(ctx, node, val=None, idx=0):
         new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
         if len(node.value.shape) > len(new_indices):  # partial access
@@ -1029,7 +1069,7 @@ class ASTTransformer(ASTBuilder):
                 )
             else:  # ast.Store
                 op = affine_d.AffineStoreOp(
-                    val.result, value.result, ivs, affine_attr, ip=ctx.get_ip()
+                    val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
                 )
         else:  # Not affine
             # pylint: disable=else-if-used
@@ -1049,7 +1089,8 @@ class ASTTransformer(ASTBuilder):
 
     # pylint: disable=inconsistent-return-statements
     @staticmethod
-    def build_bit_operation(ctx, node, val=None):
+    def build_bit_operation(ctx, node, val=None, idx=0):
+        # TODO: Fix tuple idx
         if not (
             len(node.value.shape) == 0 and isinstance(node.value.dtype, (Int, UInt))
         ):
@@ -1136,14 +1177,14 @@ class ASTTransformer(ASTBuilder):
                 return store_op
 
     @staticmethod
-    def build_Subscript(ctx, node, val=None):
+    def build_Subscript(ctx, node, val=None, idx=0):
         # pylint: disable=no-else-return
         if len(node.value.shape) > 0 and not ctx.enable_tensor:
-            return ASTTransformer.build_memory_access(ctx, node, val=val)
+            return ASTTransformer.build_memory_access(ctx, node, val=val, idx=idx)
         elif len(node.value.shape) > 0 and ctx.enable_tensor:
-            return ASTTransformer.build_tensor_access(ctx, node, val=val)
+            return ASTTransformer.build_tensor_access(ctx, node, val=val, idx=idx)
         else:  # bit operation
-            return ASTTransformer.build_bit_operation(ctx, node, val=val)
+            return ASTTransformer.build_bit_operation(ctx, node, val=val, idx=idx)
 
     @staticmethod
     def build_AnnAssign(ctx, node):

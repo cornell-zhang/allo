@@ -1,11 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int8, int32, float32, index
+from allo.ir.types import bool, int8, int32, float32, index
 import allo.backend.hls as hls
 
 
@@ -167,6 +166,17 @@ def test_scf_for():
     np.testing.assert_allclose(np_B, np_D)
 
 
+def test_negative_step_for():
+    N = 256
+
+    def kernel(x: int32[N], y: int32[N]):
+        for i in range(N - 1, -1, -1):
+            y[i] = x[i]
+
+    with pytest.raises(RuntimeError):
+        s = allo.customize(kernel)
+
+
 def test_nested_if():
     def kernel(a: int32, b: int32) -> int32:
         r: int32 = 0
@@ -281,6 +291,33 @@ def test_unary():
     print(s.module)
     mod = s.build()
     np.testing.assert_allclose(mod(), kernel())
+
+
+def test_not():
+    def kernel[Ty](flag: bool) -> "Ty":
+        X: Ty
+        if not flag:
+            X = 1
+        else:
+            X = 0
+        return X
+
+    s = allo.customize(kernel, instantiate=[int8])
+    print(s.module)
+    mod = s.build()
+    assert mod(True) == 0
+    assert mod(False) == 1
+
+
+def test_complex_not():
+    def kernel[Ty](inp: Ty) -> "Ty":
+        return 3 if not (inp + 1 > 5) else 4
+
+    s = allo.customize(kernel, instantiate=[int8])
+    print(s.module)
+    mod = s.build()
+    assert mod(4) == 3
+    assert mod(5) == 4
 
 
 def test_rhs_binaryop():
@@ -610,6 +647,44 @@ def test_comments():
         return x_in[0]
 
     print(allo.customize(top, verbose=True).build()(np.array([5], dtype=np.int8)))
+
+
+def test_size1_array():
+    def kernel[Ty](X: "Ty[1]"):
+        a: Ty
+
+    def top[Ty](X_buf: "Ty[2, 2, 1]"):
+        kernel[Ty](X_buf[0, 0])
+
+    s = allo.customize(top, instantiate=[int8], verbose=True)
+    print(s.module)
+
+
+def test_tuple():
+    def callee(a: float32, b: float32) -> (float32, float32):
+        c: float32 = a + b
+        d: float32 = a - b
+        return c, d
+
+    def kernel(A: float32[10], B: float32[10]) -> (float32[10], float32[10]):
+        C: float32[10] = 0
+        D: float32[10] = 0
+        for i in range(10):
+            C[i], D[i] = callee(A[i], B[i])
+        return C, D
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((10,)).astype(np.float32)
+    np_B = np.random.random((10,)).astype(np.float32)
+    np_C, np_D = mod(np_A, np_B)
+    np_C_ref = np.zeros((10,), dtype=np.float32)
+    np_D_ref = np.zeros((10,), dtype=np.float32)
+    for i in range(10):
+        np_C_ref[i], np_D_ref[i] = callee(np_A[i], np_B[i])
+    np.testing.assert_allclose(np_C, np_C_ref)
+    np.testing.assert_allclose(np_D, np_D_ref)
 
 
 if __name__ == "__main__":

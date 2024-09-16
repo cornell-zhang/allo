@@ -41,6 +41,22 @@ def test_int32_float32_casting():
     assert mod(1) == kernel(1)
 
 
+def test_large_bitwidth():
+    def kernel(a: Int(65536)[1], b: Int(345)[1], c: Int(65536)[1]):
+        c[0] = a[0] + b[0]
+
+    s = allo.customize(kernel)
+    print(s.module)
+    # Note: Not supported by NumPy
+    # mod = s.build()
+    # a = np.array([0x3F3F3F3F], dtype=np.int64)
+    # b = np.array([501], dtype=np.int64)
+    # c = np.array([0], dtype=np.int64)
+    # mod(a, b, c)
+    # assert c[0] == a[0] + b[0]
+    # print("Passed!")
+
+
 def test_load_type():
     def kernel(A: allo.ir.types.Float(32)[32, 32]) -> Int(32)[32, 32]:
         B: int32[32, 32] = 0
