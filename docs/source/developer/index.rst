@@ -50,9 +50,15 @@ If you need to change the backend part of Allo, you need to install the LLVM-18 
 
 .. note::
 
-    For Zhang Group students, you can ``export LLVM_HOME=/work/shared/users/common/llvm-project-18.x`` and ``export PATH=$LLVM_HOME/build-patch/bin:$PATH`` to use the pre-installed LLVM-18 project.
+    For Zhang Group students, you can run the following commands to use the pre-installed LLVM-18 project.
 
-After installing the LLVM-18 project, you can build the hcl-mlir dialect from source:
+    .. code-block:: bash
+        export LLVM_HOME=/work/shared/users/common/llvm-project-18.x
+        export PATH=$LLVM_HOME/build-patch/bin:$PATH
+        export PATH=/work/shared/users/common/cmake-3.27.9/bin/:$PATH
+        export LLVM_BUILD_DIR=$LLVM_HOME/build-patch
+
+After installing the LLVM-18 project, you can build the hcl-mlir dialect from source. Need to export ``$LLVM_BUILD_DIR`` to system path first.
 
 .. code-block:: bash
 
@@ -112,10 +118,11 @@ Basically, the development workflow is as follows:
 2. Make changes to the code
 3. Commit the changes to your *local* branch (``git commit -m "commit message"``)
 4. Push the changes to your *fork* (``git push origin <branch_name>``)
-5. Create a PR from your fork to the ``main`` branch of the Allo repository (see `here <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`_ for more details)
-6. Wait for the PR to be reviewed
-7. If there are any changes requested, make the changes and push to your fork
-8. Once the PR is approved, it will be merged into the ``main`` branch
+5. Make sure your changes do not break the existing facilities, see `Integration Tests <#integration-tests>`_ for more details
+6. Create a `PR <https://github.com/cornell-zhang/allo/pulls>`_ from your fork to the ``main`` branch of the Allo repository (see `here <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`_ for more details)
+7. Wait for the PR to be reviewed
+8. If there are any changes requested, make the changes and push to your fork
+9. Once the PR is approved, it will be merged into the ``main`` branch
 
 Most of the ``git`` features are integrated in VSCode, please refer to the `document <https://code.visualstudio.com/docs/sourcecontrol/intro-to-git>`_ if you want to use the GUI.
 
@@ -148,22 +155,22 @@ Following is an example output:
     Check Python formats using black...
     ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
     ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
-    Version Information: black, 23.1.0 (compiled: yes)
-    Python (CPython) 3.8.17
+    Version Information: black, 24.8.0 (compiled: yes)
+    Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/customize.py allo/module.py allo/runtime.py
+    Files: allo/ir/types.py
     Running black in checking mode
     All done! ✨ 🍰 ✨
-    3 files would be left unchanged.
-    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+    1 file would be left unchanged.
+    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)    : No such file or directory
     ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
-    Version Information: black, 23.1.0 (compiled: yes)
-    Python (CPython) 3.8.17
+    Version Information: black, 24.8.0 (compiled: yes)
+    Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/customize.py allo/module.py allo/report.py allo/runtime.py setup.py tutorials/developer_01_ir_builder.py tutorials/tutorial_01_get_started.py tutorials/tutorial_02_vhls.py
+    Files: allo/ir/types.py
     Running black in checking mode
     All done! ✨ 🍰 ✨
-    8 files would be left unchanged.
+    1 file would be left unchanged.
     Running pylint on allo
 
     --------------------------------------------------------------------

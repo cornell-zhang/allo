@@ -22,7 +22,7 @@ If you encounter any problems, please feel free to open an [issue](https://githu
 
 
 ## Publications
-Please refer to our [PLDI'24 paper](https://arxiv.org/abs/2404.04815) for more details. If you use Allo in your research, please use the following bibtex entry to cite us:
+Please refer to our [PLDI'24 paper](https://dl.acm.org/doi/10.1145/3656401) for more details. If you use Allo in your research, please use the following bibtex entry to cite us:
 ```bibtex
 @article{chen2024allo,
     author = {Hongzheng Chen and Niansong Zhang and Shaojie Xiang and Zhichen Zeng and Mengjia Dai and Zhiru Zhang},
