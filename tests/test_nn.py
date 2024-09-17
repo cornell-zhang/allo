@@ -119,7 +119,7 @@ def sdp(Q, K, V, H, D):
         V_h = V[:, i * h_d : (i + 1) * h_d]
         # compute attention
         attention = np.matmul(Q_h, K_h.T)
-        Y = np.exp(attention) / np.exp(attention).sum(axis=1, keepdims=True)
+        Y = np_softmax(attention)
         context_i = np.matmul(Y, V_h)
         context[:, i * h_d : (i + 1) * h_d] = context_i
     return context
