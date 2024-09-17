@@ -55,7 +55,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
+from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, Stream
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
@@ -762,7 +762,7 @@ class ASTTransformer(ASTBuilder):
                         raise RuntimeError(
                             f"Variable `{target.id}` has already been defined, please use a different name"
                         )
-                    ctx.buffers[target.id] = rhs
+                    ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
                 else:
                     store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
@@ -1219,6 +1219,11 @@ class ASTTransformer(ASTBuilder):
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
         else:
+            if isinstance(node.dtype, Stream):
+                ctx.buffers[node.target.id] = node.dtype
+                memref_type = node.dtype.build()
+                memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                return
             # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
@@ -1644,6 +1649,11 @@ class ASTTransformer(ASTBuilder):
                     # pylint: disable=unexpected-keyword-arg
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
+            if len(new_args) == 0:
+                return (
+                    MockConstant(ctx.global_vars["df.pi"], ctx, dtype=Index()),
+                    MockConstant(ctx.global_vars["df.pj"], ctx, dtype=Index()),
+                )
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {

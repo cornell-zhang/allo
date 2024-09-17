@@ -708,6 +708,7 @@ def customize(
     lower_linalg: bool = False,
     global_vars: dict = None,
     instantiate: list = None,
+    context: Context = None,
 ):
     # Get Python AST
     if isinstance(fn, str):
@@ -733,7 +734,7 @@ def customize(
     # Type construction
     ctx_type_inf = ASTContext(
         global_vars=global_vars.copy(),
-        mlir_ctx=Context(),
+        mlir_ctx=Context() if context is None else context,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
@@ -743,7 +744,7 @@ def customize(
     # Start building IR
     ctx = ASTContext(
         global_vars=global_vars,
-        mlir_ctx=Context(),
+        mlir_ctx=Context() if context is None else context,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )

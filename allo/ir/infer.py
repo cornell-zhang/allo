@@ -21,6 +21,7 @@ from .types import (
     uint1,
     int32,
     float32,
+    Stream,
 )
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
@@ -67,6 +68,11 @@ class TypeInferer(ASTVisitor):
                 dtype = TypeInferer.visit_call_type(ctx, node.value)
             else:
                 dtype = ASTResolver.resolve(node.value, ctx.global_vars)
+            if dtype is Stream:
+                # create an actual class instance
+                dtype = Stream(ASTResolver.resolve(node.slice, ctx.global_vars))
+                shape = tuple()
+                return dtype, shape
             assert dtype is not None, f"Unsupported type {node.value.id}"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
@@ -280,13 +286,21 @@ class TypeInferer(ASTVisitor):
                 targets = node.targets[0].elts
             else:
                 targets = [node.targets[0]]
-            for target in targets:
+            for i, target in enumerate(targets):
                 if isinstance(target, ast.Name):
-                    ctx.buffers[target.id] = rhs
+                    target.dtype = (
+                        rhs.dtype[i] if isinstance(rhs.dtype, tuple) else rhs.dtype
+                    )
+                    # notice here needs to test whether dtype is a tuple instead of shape
+                    # as shape is always a tuple
+                    target.shape = (
+                        rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
+                    )
+                    ctx.buffers[target.id] = target
                 else:
                     lhs = visit_stmt(ctx, target)
-                node.dtype = rhs.dtype
-                node.shape = rhs.shape
+            node.dtype = rhs.dtype
+            node.shape = rhs.shape
             return rhs
         # store LHS
         lhs = visit_stmt(ctx, node.targets[0])
@@ -385,9 +399,7 @@ class TypeInferer(ASTVisitor):
             elts = (
                 size.elts
                 if isinstance(size, ast.Tuple)
-                else size.dims
-                if isinstance(size, ast.ExtSlice)
-                else [size]
+                else size.dims if isinstance(size, ast.ExtSlice) else [size]
             )
             access_dim = len(elts)
             total_dim = len(value.shape)
@@ -693,6 +705,11 @@ class TypeInferer(ASTVisitor):
                 node.dtype = None
                 return node
             fn_name = obj.__name__
+            if len(new_args) == 0:
+                # No argument
+                node.shape = (tuple(), tuple())
+                node.dtype = (Index(), Index())
+                return node
             if len(new_args[0].shape) == 0:
                 # element-wise operation
                 node.shape = tuple()

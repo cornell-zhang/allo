@@ -47,7 +47,7 @@ jobs:
           name: Formatting Check
           command: |
             source activate hcl-dev
-            python3 -m pip install black==23.11.0 pylint==3.0.2
+            python3 -m pip install black==24.8.0 pylint==3.0.2
             bash ./.circleci/task_lint.sh
       - run: 
           name: Allo Tests
