@@ -32,13 +32,18 @@ def kernel(mapping=None):
                 new_global_vars.update(_get_global_vars(var))
         # call different PE kernels
         with s_top.module.context, Location.unknown():
+            assert len(mapping) <= 2, "Only support 1D/2D mapping now."
             for dim in np.ndindex(*mapping):
                 global_vars = new_global_vars.copy()
-                global_vars.update({"df.pi": dim[0], "df.pj": dim[1]})
+                if len(dim) == 1:
+                    global_vars.update({"df.pi": dim[0]})
+                    new_func_name = func.__name__ + f"_{dim[0]}"
+                else:
+                    global_vars.update({"df.pi": dim[0], "df.pj": dim[1]})
+                    new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
                 s = customize(
                     func, global_vars=global_vars, context=s_top.module.context
                 )
-                new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
                 s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                 s.top_func.operation.clone(InsertionPoint(s_top.top_func))
             top_func = func_d.FuncOp(
@@ -49,7 +54,7 @@ def kernel(mapping=None):
             top_func.attributes["otypes"] = s.top_func.attributes["otypes"]
             func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
             for dim in np.ndindex(*mapping):
-                new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
+                new_func_name = func.__name__ + f"_{'_'.join(map(str, dim))}"
                 func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(new_func_name),
@@ -67,4 +72,8 @@ def kernel(mapping=None):
 
 
 def get_pid():
+    raise NotImplementedError("This function should be called in a kernel function.")
+
+
+def pipe():
     raise NotImplementedError("This function should be called in a kernel function.")

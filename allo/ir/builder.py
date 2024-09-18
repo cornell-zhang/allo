@@ -1220,9 +1220,10 @@ class ASTTransformer(ASTBuilder):
             )
         else:
             if isinstance(node.dtype, Stream):
-                ctx.buffers[node.target.id] = node.dtype
                 memref_type = node.dtype.build()
-                memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                ctx.buffers[node.target.id] = memref_d.AllocOp(
+                    memref_type, [], [], ip=ctx.get_ip()
+                )
                 return
             # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
@@ -1591,8 +1592,35 @@ class ASTTransformer(ASTBuilder):
 
         if obj is None:
             if isinstance(node.func, ast.Attribute):
-                # x.T or x.reverse
-                return build_stmt(ctx, node.func)
+                if node.func.attr in {"T", "reverse"}:
+                    # x.T or x.reverse
+                    return build_stmt(ctx, node.func)
+                elif node.func.attr == "put":
+                    stmts = build_stmts(ctx, node.args)
+                    affine_map = AffineMap.get(
+                        dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+                    )
+                    affine_attr = AffineMapAttr.get(affine_map)
+                    op = affine_d.AffineStoreOp(
+                        stmts[0].result,
+                        ctx.buffers[node.func.value.id].result,
+                        [],
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                    return
+                elif node.func.attr == "get":
+                    affine_map = AffineMap.get(
+                        dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
+                    )
+                    affine_attr = AffineMapAttr.get(affine_map)
+                    op = affine_d.AffineLoadOp(
+                        ctx.buffers[node.func.value.id].result,
+                        [],
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                    return op
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 stmts = build_stmts(ctx, node.args)
@@ -1649,11 +1677,13 @@ class ASTTransformer(ASTBuilder):
                     # pylint: disable=unexpected-keyword-arg
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
-            if len(new_args) == 0:
+            if fn_name == "get_pid":
                 return (
                     MockConstant(ctx.global_vars["df.pi"], ctx, dtype=Index()),
                     MockConstant(ctx.global_vars["df.pj"], ctx, dtype=Index()),
                 )
+            elif fn_name == "pipe":
+                return Stream(node.dtype)
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
