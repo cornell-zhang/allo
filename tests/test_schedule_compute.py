@@ -15,7 +15,6 @@ def test_gemm_grid_for():
         return C
 
     s = allo.customize(gemm)
-    print(s.module)
     # transformations are applied immediately
     s.split("i", 8)
     s.split("j", 8)
