@@ -56,7 +56,7 @@ def move_stream_to_interface(func):
     for i, arg in enumerate(func.arguments):
         arg.replace_all_uses_with(func_op.arguments[i])
     func.operation.erase()
-    return func_op
+    return func_op, stream_types
 
 
 def kernel(mapping=None):
@@ -90,7 +90,7 @@ def kernel(mapping=None):
                     s = customize(
                         func, global_vars=global_vars, context=s_top.module.context
                     )
-                    s.top_func = move_stream_to_interface(s.top_func)
+                    s.top_func, _ = move_stream_to_interface(s.top_func)
                     s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                     s.top_func.operation.clone(InsertionPoint(s_top.top_func))
                 top_func = func_d.FuncOp(
@@ -136,8 +136,40 @@ def build(funcs):
     # construct a common module
     s_top = customize(top)
     with s_top.module.context, Location.unknown():
+        input_types = []
+        func_info = {}
         for func in funcs:
             s = customize(func.__wrapped__, context=s_top.module.context)
-            s.top_func = move_stream_to_interface(s.top_func)
+            input_types += s.top_func.attributes["function_type"].value.inputs
+            s.top_func, stream_types = move_stream_to_interface(s.top_func)
             s.top_func.operation.clone(InsertionPoint(s_top.top_func))
+            func_info[s.top_func.attributes["sym_name"].value] = [stream_types[0]]
+        func_type = FunctionType.get(input_types, [])
+        top_func = func_d.FuncOp(
+            name="top", type=func_type, ip=InsertionPoint(s_top.top_func)
+        )
+        top_func.attributes["itypes"] = s.top_func.attributes["itypes"]
+        top_func.attributes["otypes"] = s.top_func.attributes["otypes"]
+        top_func.add_entry_block()
+        func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
+        # create global stream ops
+        for func_name, stream_types in func_info.items():
+            new_op = memref_d.AllocOp(
+                stream_types[0],
+                [],
+                [],
+                ip=InsertionPoint.at_block_terminator(top_func.entry_block),
+            )
+            func_info[func_name] = [new_op.result]
+            break
+        for i, (func_name, stream_op) in enumerate(func_info.items()):
+            func_d.CallOp(
+                [],
+                FlatSymbolRefAttr.get(func_name),
+                [top_func.arguments[i]] + [func_info["producer"][0]],
+                ip=InsertionPoint.at_block_terminator(top_func.entry_block),
+            )
+        s_top.top_func.attributes["dataflow"] = UnitAttr.get()
+        s_top.top_func.operation.erase()
+        s_top.top_func = top_func
     print(s_top.module)
