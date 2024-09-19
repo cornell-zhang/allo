@@ -690,6 +690,10 @@ class TypeInferer(ASTVisitor):
                     node.shape = ctx.buffers[node.func.value.id].shape
                     # get element type of Stream
                     node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                else:
+                    raise RuntimeError(
+                        f"Unsupported function call or attribute method {node.func.attr}"
+                    )
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 assert (

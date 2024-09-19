@@ -64,7 +64,7 @@ def test_linalg_matmul():
     def kernel3(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:
         return allo.matmul_error(A, B)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RuntimeError):
         s = allo.customize(kernel3)
 
     def kernel4(A: int32[M, K], B: int32[K, N]) -> int32[M, N]:

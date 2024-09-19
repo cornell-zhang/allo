@@ -30,7 +30,7 @@ def move_stream_to_interface(func):
             stream_ops.append(op)
             stream_types.append(MemRefType(op.result.type))
     if len(stream_ops) == 0:
-        return func
+        return func, stream_types
     in_types = func.attributes["function_type"].value.inputs
     out_types = func.attributes["function_type"].value.results
     in_types += stream_types
