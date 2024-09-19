@@ -15,10 +15,23 @@ def test_gemm_grid_for():
         return C
 
     s = allo.customize(gemm)
+    print(s.module)
     # transformations are applied immediately
     s.split("i", 8)
     s.split("j", 8)
     s.reorder("i.outer", "j.outer", "i.inner", "j.inner")
+    print(s.module)
+
+
+def test_grid_scf():
+    def case1[A: int32, B: int32](X: int32) -> int32:
+        T1: int32 = A + B
+        T2: int32 = A - B
+        for i, j in allo.grid(T1, T2):
+            X += 1
+        return X
+
+    s = allo.customize(case1, instantiate=[3, 2])
     print(s.module)
 
 

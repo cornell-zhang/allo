@@ -201,8 +201,74 @@ class ASTTransformer(ASTBuilder):
         is_affine = True
         iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
-            grid = [ASTResolver.resolve_constant(x, ctx) for x in iter_args]
-            for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
+            for_loops = []
+            if stage_name is None:
+                stage_name = "S_" + "_".join(names)
+
+            ip_handle = ctx.get_ip()
+            for ind, arg in enumerate(iter_args):  # Traversal
+                with ip_handle:
+                    lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(
+                        ctx, ast.Constant(value=0)
+                    )
+                    ub_expr, ub_map_attr = ASTTransformer.build_affine_map_attr(
+                        ctx, arg
+                    )
+                    step = 1
+                    if (
+                        lb_map_attr is not None
+                        and ub_map_attr is not None
+                        and isinstance(step, int)
+                    ):  # build AffineForOp
+                        for_handle = affine_d.AffineForOp(
+                            lb_expr[0] if len(lb_expr) > 0 else None,
+                            ub_expr[0] if len(ub_expr) > 0 else None,
+                            IntegerAttr.get(IntegerType.get_signless(32), step),
+                            lb_map_attr,
+                            ub_map_attr,
+                            name=StringAttr.get(names[ind]),
+                            stage=StringAttr.get(stage_name),
+                            reduction=None,
+                            ip=ip_handle,
+                        )
+                        affine_d.AffineYieldOp([], ip=InsertionPoint(for_handle.body))
+                    else:  # build SCFForOp
+                        is_affine = False
+                        lb_expr = build_stmt(ctx, ast.Constant(0))
+                        ub_expr = build_stmt(ctx, arg)
+                        step = build_stmt(ctx, ast.Constant(1))
+                        lb_expr = ASTTransformer.build_cast_op(
+                            ctx,
+                            lb_expr,
+                            Int(32),
+                            Index(),
+                        )
+                        ub_expr = ASTTransformer.build_cast_op(
+                            ctx,
+                            ub_expr,
+                            arg.dtype,
+                            Index(),
+                        )
+                        step = ASTTransformer.build_cast_op(
+                            ctx,
+                            step,
+                            Int(32),
+                            Index(),
+                        )
+                        for_handle = scf_d.ForOp(
+                            lb_expr.result,
+                            ub_expr.result,
+                            step.result,
+                            ip=ip_handle,
+                        )
+                        for_handle.attributes["loop_name"] = StringAttr.get(names[ind])
+                        for_handle.attributes["op_name"] = StringAttr.get(stage_name)
+                        scf_d.YieldOp([], ip=InsertionPoint(for_handle.body))
+
+                # Iteration Update
+                ip_handle = InsertionPoint(for_handle.body.operations[0])
+                for_loops.append(for_handle)
+
         elif attr == "range":
             if len(iter_args) == 1:
                 # e.g., for i in range(10)
