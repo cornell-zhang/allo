@@ -238,6 +238,7 @@ class ASTTransformer(ASTBuilder):
                         affine_d.AffineYieldOp([], ip=InsertionPoint(for_handle.body))
                     else:  # build SCFForOp
                         is_affine = False
+                        ctx.set_ip(ip_handle)
                         lb_expr = build_stmt(ctx, ast.Constant(0))
                         ub_expr = build_stmt(ctx, arg)
                         step = build_stmt(ctx, ast.Constant(1))
@@ -259,6 +260,8 @@ class ASTTransformer(ASTBuilder):
                             Int(32),
                             Index(),
                         )
+                        ctx.pop_ip()
+
                         for_handle = scf_d.ForOp(
                             lb_expr.result,
                             ub_expr.result,
