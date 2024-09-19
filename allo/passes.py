@@ -35,7 +35,7 @@ from hcl_mlir.dialects import (
 )
 from hcl_mlir.ir import StringAttr
 from hcl_mlir.passmanager import PassManager as mlir_pass_manager
-from .ir.transform import create_buffer
+from .ir.transform import create_buffer, store_tensor
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
 
@@ -120,10 +120,12 @@ def generate_input_output_buffers(top_func, flatten=False, mappings=None):
     with top_func.context, Location.unknown():
         first_op = top_func.entry_block.operations[0]
         new_in_types = []
+        in_bufs = []
         for i, arg in enumerate(top_func.arguments):
-            create_buffer(
+            buf = create_buffer(
                 arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
             )
+            in_bufs.append(buf)
             if flatten:
                 old_memref = MemRefType(arg.type)
                 new_memref = MemRefType.get(
@@ -141,20 +143,34 @@ def generate_input_output_buffers(top_func, flatten=False, mappings=None):
             if isinstance(op, func_d.ReturnOp):
                 if len(mappings) < len(op.operands) + len(top_func.arguments):
                     mappings += [None] * len(op.operands)
-                for i, arg in enumerate(op.operands):
-                    buf = create_buffer(
-                        arg,
-                        f"result{i+len(top_func.arguments)}",
+                if len(op.operands) > 0:
+                    for i, arg in enumerate(op.operands):
+                        buf = create_buffer(
+                            arg,
+                            f"result{i+len(top_func.arguments)}",
+                            ip=op,
+                            alloc_ip=first_op,
+                            flatten=flatten,
+                            mapping=mappings[len(top_func.arguments) + i],
+                        )
+                        # update returnop
+                        op.operation.replace_uses_of_with(arg, buf.result)
+                        new_out_types.append(buf.result.type)
+                        res["outputs"].append(
+                            MockBuffer(
+                                top_func_name, arg.owner.attributes["name"].value
+                            )
+                        )
+                else:
+                    # the last argument is set as the return value by default
+                    store_tensor(
+                        in_bufs[-1].result,
+                        top_func.arguments[-1],
+                        f"result{len(top_func.arguments)}",
                         ip=op,
-                        alloc_ip=first_op,
-                        flatten=flatten,
-                        mapping=mappings[len(top_func.arguments) + i],
                     )
-                    # update returnop
-                    op.operation.replace_uses_of_with(arg, buf.result)
-                    new_out_types.append(buf.result.type)
                     res["outputs"].append(
-                        MockBuffer(top_func_name, arg.owner.attributes["name"].value)
+                        MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
                     )
                 break
         func_type = FunctionType.get(new_in_types, new_out_types)
