@@ -104,5 +104,22 @@ def test_vitis_io_stream():
         hls_mod()
 
 
+def test_csim_write_back():
+    N = 256
+
+    def compute(x: int32[N], y: int32[N]):
+        for i in range(N):
+            y[i] = x[i]
+
+    s = allo.customize(compute)
+    if hls.is_available("vitis_hls"):
+        mod = s.build(target="vitis_hls", mode="csim", project="test.prj")
+        A = np.random.randint(0, 10, size=(N)).astype(np.int32)
+        B = np.zeros((N), dtype=np.int32)
+        mod(A, B)
+        np.testing.assert_allclose(A, B, rtol=1e-5)
+        print("Passed!")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

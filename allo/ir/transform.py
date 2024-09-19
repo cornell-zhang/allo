@@ -368,6 +368,39 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
     return alloc_op
 
 
+def store_tensor(tensor, target, name, ip):
+    shape = MemRefType(tensor.type).shape
+    loop_bounds = shape
+    for_loops = build_for_loops(loop_bounds, ip, name)
+    for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
+        IntegerType.get_unsigned(32), 1
+    )
+    for_loops[-1].attributes["rewind"] = UnitAttr.get()
+    induction_vars = [for_loop.induction_variable for for_loop in for_loops]
+    with InsertionPoint(for_loops[-1].body.operations[0]):
+        in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
+        load_str = in_str
+        affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
+        load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+        out_str = ""
+        reversed_shape = list(shape)[::-1]
+        for i in range(len(shape)):
+            s_str = " * ".join([str(s) for s in reversed_shape[:i]])
+            if s_str != "":
+                out_str = s_str + f" * d{len(shape) - i - 1}" + out_str
+            else:
+                out_str = f" d{len(shape) - i - 1}" + out_str
+            if i != len(shape) - 1:
+                out_str = " + " + out_str
+        affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
+        affine_d.AffineStoreOp(
+            load.result,
+            target,
+            induction_vars,
+            affine_attr,
+        )
+
+
 def find_func_in_module(module, func_name):
     for op in module.body.operations:
         if isinstance(op, func_d.FuncOp) and op.name.value == func_name:
