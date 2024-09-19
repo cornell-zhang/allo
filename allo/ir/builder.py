@@ -44,7 +44,6 @@ from hcl_mlir.dialects import (
     linalg as linalg_d,
 )
 from hcl_mlir.exceptions import DTypeError
-from .transform import build_for_loops
 from .utils import (
     MockArg,
     MockScalar,
