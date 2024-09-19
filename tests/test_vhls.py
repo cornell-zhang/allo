@@ -107,10 +107,7 @@ def test_vitis_io_stream():
 def test_csim_write_back():
     N = 256
 
-    def compute(
-        x: int32[N],
-        y: int32[N]
-    ):
+    def compute(x: int32[N], y: int32[N]):
         for i in range(N):
             y[i] = x[i]
 
