@@ -639,6 +639,7 @@ class TypeInferer(ASTVisitor):
         node.shape = None
         return node
 
+    # pylint: disable=too-many-branches
     @staticmethod
     def visit_Call(ctx, node):
         original_func_id = ctx.func_id
