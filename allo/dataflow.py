@@ -169,7 +169,7 @@ def build(funcs):
                 [top_func.arguments[i]] + [func_info["producer"][0]],
                 ip=InsertionPoint.at_block_terminator(top_func.entry_block),
             )
-        # top_func.attributes["dataflow"] = UnitAttr.get()
+        top_func.attributes["dataflow"] = UnitAttr.get()
         s_top.top_func.operation.erase()
         s_top.top_func = top_func
     print(s_top.module)
