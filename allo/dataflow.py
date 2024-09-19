@@ -9,11 +9,44 @@ from hcl_mlir.ir import (
     FlatSymbolRefAttr,
     Location,
     UnitAttr,
+    MemRefType,
+    FunctionType,
 )
-from hcl_mlir.dialects import func as func_d
+from hcl_mlir.dialects import func as func_d, memref as memref_d
 import numpy as np
 
 from .customize import customize, _get_global_vars
+
+
+def move_stream_to_interface(func):
+    stream_ops = []
+    stream_types = []
+    for op in func.entry_block.operations:
+        if isinstance(op, memref_d.AllocOp) and "stream" in MemRefType(op.result.type).memory_space.value:
+            stream_ops.append(op)
+            stream_types.append(MemRefType(op.result.type))
+    in_types = func.attributes["function_type"].value.inputs
+    out_types = func.attributes["function_type"].value.results
+    in_types += stream_types
+    func_type = FunctionType.get(in_types, out_types)
+    func_op = func_d.FuncOp(
+        name=func.attributes["sym_name"].value,
+        type=func_type,
+        ip=InsertionPoint(func),
+    )
+    func_op.add_entry_block()
+    # copy function operations
+    cnt_stream = 0
+    for op in func.entry_block.operations:
+        if op in stream_ops:
+            op.result.replace_all_uses_with(func_op.arguments[len(func_op.entry_block.arguments) - 1 + cnt_stream])
+            cnt_stream += 1
+            continue
+        op.operation.clone(InsertionPoint(func_op.entry_block))
+    for i, arg in enumerate(func.arguments):
+        arg.replace_all_uses_with(func_op.arguments[i])
+    func.operation.erase()
+    return func_op
 
 
 def kernel(mapping=None):
@@ -44,6 +77,9 @@ def kernel(mapping=None):
                 s = customize(
                     func, global_vars=global_vars, context=s_top.module.context
                 )
+                s.top_func = move_stream_to_interface(s.top_func)
+                print(s.module)
+                sys.exit()
                 s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                 s.top_func.operation.clone(InsertionPoint(s_top.top_func))
             top_func = func_d.FuncOp(
