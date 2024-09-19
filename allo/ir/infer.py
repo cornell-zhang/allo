@@ -639,6 +639,7 @@ class TypeInferer(ASTVisitor):
         node.shape = None
         return node
 
+    # pylint: disable=too-many-branches
     @staticmethod
     def visit_Call(ctx, node):
         original_func_id = ctx.func_id
@@ -674,13 +675,26 @@ class TypeInferer(ASTVisitor):
 
         if obj is None:
             if isinstance(node.func, ast.Attribute):
-                # x.T or x.reverse
-                assert (
-                    len(node.args) == 0
-                ), "Only support zero argument for attribute methods"
-                attr = visit_stmt(ctx, node.func)
-                node.shape = attr.shape
-                node.dtype = attr.dtype
+                if node.func.attr in {"T", "reverse"}:
+                    # x.T or x.reverse
+                    assert (
+                        len(node.args) == 0
+                    ), "Only support zero argument for attribute methods"
+                    attr = visit_stmt(ctx, node.func)
+                    node.shape = attr.shape
+                    node.dtype = attr.dtype
+                elif node.func.attr == "put":
+                    new_args = visit_stmts(ctx, node.args)
+                    node.shape = tuple()
+                    node.dtype = None
+                elif node.func.attr == "get":
+                    node.shape = ctx.buffers[node.func.value.id].shape
+                    # get element type of Stream
+                    node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                else:
+                    raise RuntimeError(
+                        f"Unsupported function call or attribute method {node.func.attr}"
+                    )
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 assert (
@@ -707,8 +721,12 @@ class TypeInferer(ASTVisitor):
             fn_name = obj.__name__
             if len(new_args) == 0:
                 # No argument
-                node.shape = (tuple(), tuple())
-                node.dtype = (Index(), Index())
+                if fn_name == "get_pid":
+                    node.shape = (tuple(), tuple())
+                    node.dtype = (Index(), Index())
+                else:
+                    node.shape = tuple()
+                    node.dtype = Stream(float32)
                 return node
             if len(new_args[0].shape) == 0:
                 # element-wise operation
