@@ -4,7 +4,9 @@
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
+import allo.backend.hls as hls
 import numpy as np
+import pytest
 
 Ty = float32
 M, N, K = 16, 16, 16
@@ -30,9 +32,15 @@ def consumer(B: Ty[M, N]):
         B[i, j] = data + 1
 
 
-A = np.random.rand(M, N).astype(np.float32)
-B = np.zeros((M, N), dtype=np.float32)
-top = df.build([producer, consumer])
-top(A, B)
-np.testing.assert_allclose(A + 1, B)
-print("Passed!")
+def test_producer_consumer():
+    A = np.random.rand(M, N).astype(np.float32)
+    B = np.zeros((M, N), dtype=np.float32)
+    top = df.build([producer, consumer])
+    if hls.is_available("vitis_hls"):
+        top(A, B)
+        np.testing.assert_allclose(A + 1, B)
+        print("Passed!")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])
