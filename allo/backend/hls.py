@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
+# pylint: disable=consider-using-with, no-name-in-module, unused-argument
 
 import os
 import re
@@ -30,7 +30,8 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
-from .. import primitives as prim
+
+# from .. import primitives as prim
 
 
 def is_available(backend="vivado_hls"):
@@ -172,7 +173,8 @@ class HLSModule:
                     mappings = configs.get("mappings", None)
                 else:
                     mappings = None
-                buffers = generate_input_output_buffers(
+                # buffers = generate_input_output_buffers(
+                generate_input_output_buffers(
                     self.func, flatten=True, mappings=mappings
                 )
                 # TODO: Fix dataflow!

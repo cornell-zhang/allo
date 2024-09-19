@@ -101,6 +101,7 @@ def kernel(mapping=None):
                 top_func.attributes["otypes"] = s.top_func.attributes["otypes"]
                 func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
                 for dim in np.ndindex(*mapping):
+                    # pylint: disable=bad-builtin
                     new_func_name = func.__name__ + f"_{'_'.join(map(str, dim))}"
                     func_d.CallOp(
                         [],
@@ -162,7 +163,7 @@ def build(funcs):
             )
             func_info[func_name] = [new_op.result]
             break
-        for i, (func_name, stream_op) in enumerate(func_info.items()):
+        for i, (func_name, _) in enumerate(func_info.items()):
             func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(func_name),
@@ -176,6 +177,6 @@ def build(funcs):
     hls_mod = s_top.build(
         target="vitis_hls",
         mode="csim",
-        project=f"top.prj",
+        project="top.prj",
     )
     return hls_mod

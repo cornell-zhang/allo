@@ -1557,6 +1557,7 @@ class ASTTransformer(ASTBuilder):
         ctx.pop_ip()
         return module
 
+    # pylint: disable=too-many-return-statements
     @staticmethod
     def build_Call(ctx, node):
         original_func_id = ctx.func_id
@@ -1595,7 +1596,7 @@ class ASTTransformer(ASTBuilder):
                 if node.func.attr in {"T", "reverse"}:
                     # x.T or x.reverse
                     return build_stmt(ctx, node.func)
-                elif node.func.attr == "put":
+                if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
                     affine_map = AffineMap.get(
                         dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
@@ -1609,18 +1610,17 @@ class ASTTransformer(ASTBuilder):
                         ip=ctx.get_ip(),
                     )
                     return
-                elif node.func.attr == "get":
+                if node.func.attr == "get":
                     affine_map = AffineMap.get(
                         dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
                     )
                     affine_attr = AffineMapAttr.get(affine_map)
-                    op = affine_d.AffineLoadOp(
+                    return affine_d.AffineLoadOp(
                         ctx.buffers[node.func.value.id].result,
                         [],
                         affine_attr,
                         ip=ctx.get_ip(),
                     )
-                    return op
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 stmts = build_stmts(ctx, node.args)
@@ -1682,7 +1682,7 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.pi"], ctx, dtype=Index()),
                     MockConstant(ctx.global_vars["df.pj"], ctx, dtype=Index()),
                 )
-            elif fn_name == "pipe":
+            if fn_name == "pipe":
                 return Stream(node.dtype)
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
