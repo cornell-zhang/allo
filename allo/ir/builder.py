@@ -201,12 +201,16 @@ class ASTTransformer(ASTBuilder):
         is_affine = True
         iter_args = node.iter.args
         if attr in {"grid", "reduction"}:
+            # grid = [ASTResolver.resolve_constant(x, ctx) for x in iter_args]
+            # for_loops = build_for_loops(grid, ctx.get_ip(), names, stage_name)
+
             for_loops = []
             if stage_name is None:
                 stage_name = "S_" + "_".join(names)
 
             ip_handle = ctx.get_ip()
             for ind, arg in enumerate(iter_args):  # Traversal
+                stage_handle = StringAttr.get(stage_name) if ind == 0 else ""
                 with ip_handle:
                     lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(
                         ctx, ast.Constant(value=0)
@@ -227,7 +231,7 @@ class ASTTransformer(ASTBuilder):
                             lb_map_attr,
                             ub_map_attr,
                             name=StringAttr.get(names[ind]),
-                            stage=StringAttr.get(stage_name),
+                            stage=stage_handle,
                             reduction=None,
                             ip=ip_handle,
                         )
@@ -262,7 +266,8 @@ class ASTTransformer(ASTBuilder):
                             ip=ip_handle,
                         )
                         for_handle.attributes["loop_name"] = StringAttr.get(names[ind])
-                        for_handle.attributes["op_name"] = StringAttr.get(stage_name)
+                        if ind == 0:
+                            for_handle.attributes["op_name"] = stage_handle
                         scf_d.YieldOp([], ip=InsertionPoint(for_handle.body))
 
                 # Iteration Update
