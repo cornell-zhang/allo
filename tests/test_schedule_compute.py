@@ -22,6 +22,54 @@ def test_gemm_grid_for():
     print(s.module)
 
 
+def test_grid_scf():
+    def case1[A: int32, B: int32](X: int32[1]) -> int32[1]:
+        T1: int32 = A + B
+        T2: int32 = A - B if A > B else B - A
+        for i, j in allo.grid(T1, T2):  # nested scf for
+            X[0] += 1
+        return X
+
+    def case2[A: int32, B: int32](X: int32[1]) -> int32[1]:
+        T1: int32 = A + 1
+        T2: int32 = B * 2
+        for i, j, k in allo.grid(T1, 10, T2):  # nested scf and affine for
+            X[0] += 1
+        return X
+
+    def golden1(x, a, b):
+        for i in range(a + b):
+            for j in range(abs(a - b)):
+                x[0] += 1
+        return x
+
+    def golden2(x, a, b):
+        for i in range(a + 1):
+            for j in range(10):
+                for k in range(b * 2):
+                    x[0] += 1
+        return x
+
+    A0 = 5
+    B0 = 2
+    x0 = np.random.rand(1).astype(np.int32)
+
+    s1 = allo.customize(case1, instantiate=[A0, B0])
+    mod = s1.build()
+    result1 = mod(np.int32(x0))
+    truth1 = golden1(x0, A0, B0)
+    assert result1 == truth1
+
+    s2 = allo.customize(case2, instantiate=[A0, B0])
+    mod = s2.build()
+    result2 = mod(np.int32(x0))
+    truth2 = golden2(x0, A0, B0)
+    assert result2 == truth2
+
+    print(s1.module)
+    print(s2.module)
+
+
 def test_schedule():
     def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
         C: int32[32, 32] = 0
