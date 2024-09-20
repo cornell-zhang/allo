@@ -778,6 +778,10 @@ class ASTTransformer(ASTBuilder):
                             f"Variable `{target.id}` has already been defined, please use a different name"
                         )
                     ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
+                    if node.value.func.attr == "get_pid":
+                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                            f"df.p{idx}"
+                        ]
                 else:
                     store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
@@ -1348,12 +1352,7 @@ class ASTTransformer(ASTBuilder):
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         # node.returns is the function definition, not the actual return operation
-        if len(stmts) > 0 and (
-            not (
-                isinstance(stmts[-1], func_d.ReturnOp)
-                or stmts[-1] == "WithStatementSkipped"
-            )
-        ):
+        if len(stmts) > 0 and not ctx.has_return:
             if (
                 isinstance(node.returns, ast.Constant) and node.returns.value is None
             ) or node.returns is None:
@@ -1694,8 +1693,8 @@ class ASTTransformer(ASTBuilder):
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
                 return (
-                    MockConstant(ctx.global_vars["df.pi"], ctx, dtype=Index()),
-                    MockConstant(ctx.global_vars["df.pj"], ctx, dtype=Index()),
+                    MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),
+                    MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
                 return Stream(node.dtype)
@@ -2111,6 +2110,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Return(ctx, node):
+        ctx.has_return = True
         if node.value is None or (
             isinstance(node.value, ast.Constant) and node.value.value is None
         ):

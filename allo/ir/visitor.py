@@ -64,6 +64,7 @@ class ASTContext:
         self.ext_libs = []
         # metaprogramming
         self.meta_if_stack = []
+        self.has_return = False
 
     def copy(self):
         ctx = ASTContext(
