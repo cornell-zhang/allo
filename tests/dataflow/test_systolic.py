@@ -6,10 +6,11 @@ from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import numpy as np
 
-M, N, K = 16, 16, 16
+M, N, K = 2, 2, 2
+P0, P1 = M, N
 
 
-@df.kernel(mapping=[2, 2])
+@df.kernel(mapping=[P0, P1])
 def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
     i, j = df.get_pid()
     in_A: Stream[float32] = df.pipe(src=(i, j - 1), dst=(i, j))
@@ -42,3 +43,5 @@ A = np.random.rand(M, K).astype(np.float32)
 B = np.random.rand(K, N).astype(np.float32)
 C = np.zeros((M, N), dtype=np.float32)
 gemm(A, B, C)
+np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+print("Passed!")

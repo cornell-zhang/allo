@@ -53,11 +53,12 @@ def _get_global_vars(_func):
 
 def get_global_vars(func):
     global_vars =_get_global_vars(func)
+    new_global_vars = global_vars.copy()
     for var in global_vars.values():
         # import functions from other files
         if isinstance(var, PyFunctionType):
-            global_vars.update(_get_global_vars(var))
-    return global_vars
+            new_global_vars.update(_get_global_vars(var))
+    return new_global_vars
 
 
 def get_extra_type_hints(dtype: AlloType):

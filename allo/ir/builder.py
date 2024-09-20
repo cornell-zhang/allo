@@ -1237,13 +1237,9 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
+        elif isinstance(node.dtype, Stream):
+            ctx.buffers[node.target.id] = rhs
         else:
-            if isinstance(node.dtype, Stream):
-                memref_type = node.dtype.build()
-                ctx.buffers[node.target.id] = memref_d.AllocOp(
-                    memref_type, [], [], ip=ctx.get_ip()
-                )
-                return
             # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
@@ -1697,7 +1693,15 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
-                return Stream(node.dtype)
+                src = ASTResolver.resolve_constant(node.keywords[0].value, ctx)
+                dst = ASTResolver.resolve_constant(node.keywords[1].value, ctx)
+                src = ctx.top_func.attributes["sym_name"].value + f"_{src[0]}_{src[1]}"
+                dst = ctx.top_func.attributes["sym_name"].value + f"_{dst[0]}_{dst[1]}"
+                memref_type = node.dtype.build()
+                stream_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                stream_op.attributes["src"] = StringAttr.get(src)
+                stream_op.attributes["dst"] = StringAttr.get(dst)
+                return stream_op
             arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
