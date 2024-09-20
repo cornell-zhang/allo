@@ -3,7 +3,6 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import functools
-from types import FunctionType as PyFunctionType
 from hcl_mlir.ir import (
     StringAttr,
     InsertionPoint,
@@ -16,7 +15,8 @@ from hcl_mlir.ir import (
 from hcl_mlir.dialects import func as func_d, memref as memref_d
 import numpy as np
 
-from .customize import customize, _get_global_vars
+from .customize import customize
+from .ir.utils import get_global_vars
 
 
 def move_stream_to_interface(func):
@@ -74,17 +74,11 @@ def kernel(mapping=None):
             # *args and **kwargs are the actual arguments that are passed into the kernel function
             # construct a common module
             s_top = customize(top)
-            global_vars = _get_global_vars(func)
-            new_global_vars = global_vars.copy()
-            for var in global_vars.values():
-                # import functions from other files
-                if isinstance(var, PyFunctionType):
-                    new_global_vars.update(_get_global_vars(var))
+            global_vars = get_global_vars(func)
             # call different PE kernels
             with s_top.module.context, Location.unknown():
                 assert len(mapping) <= 2, "Only support 1D/2D mapping now."
                 for dim in np.ndindex(*mapping):
-                    global_vars = new_global_vars.copy()
                     if len(dim) == 1:
                         global_vars.update({"df.p0": dim[0]})
                         new_func_name = func.__name__ + f"_{dim[0]}"
@@ -97,8 +91,6 @@ def kernel(mapping=None):
                     s.top_func, _ = move_stream_to_interface(s.top_func)
                     s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                     s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-                    print(s.module)
-                sys.exit()
                 top_func = func_d.FuncOp(
                     name="top", type=s.top_func.type, ip=InsertionPoint(s_top.top_func)
                 )
