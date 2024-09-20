@@ -181,7 +181,7 @@ class ASTTransformer(ASTBuilder):
         return build_stmts(ctx, node.elts)
 
     @staticmethod
-    def build_single_for(ctx, args, stage_name, name):
+    def build_single_for(ctx, args, stage, name):
         if len(args) == 1:
             # e.g., for i in range(10) // for i, j in grid(10, 10)
             lb_expr, lb_map_attr = ASTTransformer.build_affine_map_attr(
@@ -213,7 +213,7 @@ class ASTTransformer(ASTBuilder):
                 lb_map_attr,
                 ub_map_attr,
                 name=StringAttr.get(name),
-                stage=StringAttr.get(stage_name),
+                stage=("" if stage == "" else StringAttr.get(stage)),
                 reduction=None,
                 ip=ctx.get_ip(),
             )
@@ -253,8 +253,8 @@ class ASTTransformer(ASTBuilder):
                 ip=ctx.get_ip(),
             )
             for_op.attributes["loop_name"] = StringAttr.get(name)
-            if stage_name:
-                for_op.attributes["op_name"] = StringAttr.get(stage_name)
+            if stage:
+                for_op.attributes["op_name"] = StringAttr.get(stage)
             scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
         return for_op
 
@@ -293,6 +293,8 @@ class ASTTransformer(ASTBuilder):
                 # Iteration Update
                 ip_handle = InsertionPoint(for_op.body.operations[0])
                 for_loops.append(for_op)
+                if not isinstance(for_op, affine_d.AffineForOp):
+                    is_affine = False
 
         elif attr == "range":
             if stage_name is None:
@@ -302,6 +304,8 @@ class ASTTransformer(ASTBuilder):
                 ctx, iter_args, stage_name, names[0]
             )
             for_loops = [for_op]
+            if not isinstance(for_op, affine_d.AffineForOp):
+                is_affine = False
 
         ivs = [loop.induction_variable for loop in for_loops]
         for name, iv in zip(names, ivs):
