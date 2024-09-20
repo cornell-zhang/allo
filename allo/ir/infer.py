@@ -297,6 +297,10 @@ class TypeInferer(ASTVisitor):
                         rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
                     )
                     ctx.buffers[target.id] = target
+                    if node.value.func.attr == "get_pid":
+                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                            f"df.p{i}"
+                        ]
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype

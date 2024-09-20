@@ -25,10 +25,12 @@ def move_stream_to_interface(func):
     for op in func.entry_block.operations:
         if (
             isinstance(op, memref_d.AllocOp)
+            and MemRefType(op.result.type).memory_space is not None
             and "stream" in MemRefType(op.result.type).memory_space.value
         ):
             stream_ops.append(op)
             stream_types.append(MemRefType(op.result.type))
+    print(stream_types)
     if len(stream_ops) == 0:
         return func, stream_types
     in_types = func.attributes["function_type"].value.inputs
@@ -82,17 +84,19 @@ def kernel(mapping=None):
                 for dim in np.ndindex(*mapping):
                     global_vars = new_global_vars.copy()
                     if len(dim) == 1:
-                        global_vars.update({"df.pi": dim[0]})
+                        global_vars.update({"df.p0": dim[0]})
                         new_func_name = func.__name__ + f"_{dim[0]}"
                     else:
-                        global_vars.update({"df.pi": dim[0], "df.pj": dim[1]})
+                        global_vars.update({"df.p0": dim[0], "df.p1": dim[1]})
                         new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
                     s = customize(
                         func, global_vars=global_vars, context=s_top.module.context
                     )
-                    s.top_func, _ = move_stream_to_interface(s.top_func)
+                    print(s.module)
+                    # s.top_func, _ = move_stream_to_interface(s.top_func)
                     s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                     s.top_func.operation.clone(InsertionPoint(s_top.top_func))
+                sys.exit()
                 top_func = func_d.FuncOp(
                     name="top", type=s.top_func.type, ip=InsertionPoint(s_top.top_func)
                 )
