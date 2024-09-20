@@ -30,7 +30,6 @@ def move_stream_to_interface(func):
         ):
             stream_ops.append(op)
             stream_types.append(MemRefType(op.result.type))
-    print(stream_types)
     if len(stream_ops) == 0:
         return func, stream_types
     in_types = func.attributes["function_type"].value.inputs
@@ -45,16 +44,19 @@ def move_stream_to_interface(func):
     func_op.add_entry_block()
     func_op.attributes["itypes"] = func.attributes["itypes"]
     func_op.attributes["otypes"] = func.attributes["otypes"]
+    ip = func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
     # copy function operations
     cnt_stream = 0
     for op in func.entry_block.operations:
+        if isinstance(op, func_d.ReturnOp):
+            break
         if op in stream_ops:
             op.result.replace_all_uses_with(
-                func_op.arguments[len(func_op.entry_block.arguments) - 1 + cnt_stream]
+                func_op.arguments[len(in_types) - len(stream_types) + cnt_stream]
             )
             cnt_stream += 1
             continue
-        op.operation.clone(InsertionPoint(func_op.entry_block))
+        op.operation.move_before(ip)
     for i, arg in enumerate(func.arguments):
         arg.replace_all_uses_with(func_op.arguments[i])
     func.operation.erase()
@@ -92,10 +94,10 @@ def kernel(mapping=None):
                     s = customize(
                         func, global_vars=global_vars, context=s_top.module.context
                     )
-                    print(s.module)
-                    # s.top_func, _ = move_stream_to_interface(s.top_func)
+                    s.top_func, _ = move_stream_to_interface(s.top_func)
                     s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                     s.top_func.operation.clone(InsertionPoint(s_top.top_func))
+                    print(s.module)
                 sys.exit()
                 top_func = func_d.FuncOp(
                     name="top", type=s.top_func.type, ip=InsertionPoint(s_top.top_func)
