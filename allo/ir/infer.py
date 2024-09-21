@@ -509,6 +509,13 @@ class TypeInferer(ASTVisitor):
             )
             node.value.shape = node.np_values.shape
             node.value.dtype = target_dtype
+        elif (
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and node.value.func.attr == "pipe"
+        ):
+            node.value.shape = target_shape
+            node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
@@ -733,8 +740,8 @@ class TypeInferer(ASTVisitor):
                     node.shape = (tuple(), tuple())
                     node.dtype = (Index(), Index())
                 else:
-                    node.shape = tuple()
-                    node.dtype = Stream(float32)
+                    node.shape = None
+                    node.dtype = None
                 return node
             if len(new_args[0].shape) == 0:
                 # element-wise operation

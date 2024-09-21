@@ -113,7 +113,6 @@ def _build_top(s_top, input_types, stream_info):
     top_func.attributes["dataflow"] = UnitAttr.get()
     s_top.top_func.operation.erase()
     s_top.top_func = top_func
-    print(s_top.module)
     hls_mod = s_top.build(
         target="vitis_hls",
         mode="csim",
@@ -181,7 +180,6 @@ def build(funcs):
             input_types += s.top_func.attributes["function_type"].value.inputs
             s.top_func, stream_info = move_stream_to_interface(s.top_func)
             all_stream_info[func.__name__] = (stream_info, start_idx, size)
-            print(s.module)
             s.top_func.operation.clone(InsertionPoint(s_top.top_func))
         hls_mod = _build_top(s_top, input_types, all_stream_info)
     return hls_mod
