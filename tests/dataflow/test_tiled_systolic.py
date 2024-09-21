@@ -8,8 +8,8 @@ import allo.backend.hls as hls
 import numpy as np
 import pytest
 
-M, N, K = 36, 36, 36
-Mt, Nt = 6, 6
+M, N, K = 8, 8, 8
+Mt, Nt = 2, 2
 P0, P1 = Mt + 1, Nt + 1
 
 
@@ -41,6 +41,13 @@ def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
                     out_A.put(a)
                     out_B.put(b)
                 C[m * Mt + i - 1, n * Nt + j - 1] = c
+            # drain
+            with allo.meta_if(i == Mt and j > 0):
+                for k in range(K):
+                    b: int32 = out_B.get()
+            with allo.meta_if(j == Nt and i > 0):
+                for k in range(K):
+                    a: int32 = out_A.get()
 
 
 def test_tiled_systolic():
