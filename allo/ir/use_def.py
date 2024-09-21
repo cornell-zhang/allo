@@ -244,9 +244,15 @@ class UseDefChain(ast.NodeVisitor):
             targets = node.targets[0].elts
         else:
             targets = [node.targets[0]]
-        for target in targets:
+        for i, target in enumerate(targets):
             name = get_name(target)
             var = VarNode(self.path, name)
+            if (
+                isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "get_pid"
+            ):
+                self.global_vars[ast.unparse(target)] = self.global_vars[f"df.p{i}"]
             for parent in parents:
                 parent.add_user(var)
             if self.get_name(name) not in self.buffers:

@@ -3,6 +3,9 @@
 # pylint: disable=no-name-in-module
 
 import ast
+import inspect
+from collections.abc import Callable
+from types import FunctionType as PyFunctionType
 from hcl_mlir.ir import (
     MemRefType,
     IntegerType,
@@ -22,6 +25,40 @@ from hcl_mlir.dialects import (
 )
 from .types import AlloType, Int, UInt, Fixed, UFixed, Index
 from .symbol_resolver import ASTResolver
+
+
+def _get_global_vars(_func):
+    if isinstance(_func, Callable):
+        # Discussions: https://github.com/taichi-dev/taichi/issues/282
+        global_vars = _func.__globals__.copy()
+    else:
+        global_vars = {}
+
+    # Get back to the outer-most scope (user-defined function)
+    # Mainly used to get the annotation definitions (shape and type),
+    # which are probably not defined in __globals__
+    for name, var in inspect.stack()[3][0].f_locals.items():
+        if isinstance(var, (int, float, AlloType)) or inspect.isfunction(var):
+            global_vars[name] = var
+
+    if isinstance(_func, Callable):
+        freevar_names = _func.__code__.co_freevars
+        closure = _func.__closure__
+        if closure:
+            freevar_values = [x.cell_contents for x in closure]
+            for name, value in zip(freevar_names, freevar_values):
+                global_vars[name] = value
+    return global_vars
+
+
+def get_global_vars(func):
+    global_vars = _get_global_vars(func)
+    new_global_vars = global_vars.copy()
+    for var in global_vars.values():
+        # import functions from other files
+        if isinstance(var, PyFunctionType):
+            new_global_vars.update(_get_global_vars(var))
+    return new_global_vars
 
 
 def get_extra_type_hints(dtype: AlloType):

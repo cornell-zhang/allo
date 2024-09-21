@@ -46,7 +46,7 @@ from hcl_mlir.exceptions import (
 
 from . import primitives as prim
 from .ir.visitor import ASTContext
-from .ir.utils import MockArg, MockBuffer, parse_ast
+from .ir.utils import MockArg, MockBuffer, parse_ast, get_global_vars
 from .ir.builder import ASTTransformer
 from .ir.infer import TypeInferer
 from .ir.transform import (
@@ -55,7 +55,6 @@ from .ir.transform import (
     find_buffer,
     LoopWrapper,
 )
-from .ir.types import AlloType
 from .ir.use_def import UseDefChain
 from .passes import (
     _mlir_lower_pipeline,
@@ -75,30 +74,6 @@ def getsourcefile(obj):
 
 def getsourcelines(obj):
     return inspect.getsourcelines(obj)
-
-
-def _get_global_vars(_func):
-    if isinstance(_func, Callable):
-        # Discussions: https://github.com/taichi-dev/taichi/issues/282
-        global_vars = _func.__globals__.copy()
-    else:
-        global_vars = {}
-
-    # Get back to the outer-most scope (user-defined function)
-    # Mainly used to get the annotation definitions (shape and type),
-    # which are probably not defined in __globals__
-    for name, var in inspect.stack()[2][0].f_locals.items():
-        if isinstance(var, (int, float, AlloType)) or inspect.isfunction(var):
-            global_vars[name] = var
-
-    if isinstance(_func, Callable):
-        freevar_names = _func.__code__.co_freevars
-        closure = _func.__closure__
-        if closure:
-            freevar_values = [x.cell_contents for x in closure]
-            for name, value in zip(freevar_names, freevar_values):
-                global_vars[name] = value
-    return global_vars
 
 
 def wrapped_apply(fn):
@@ -721,13 +696,7 @@ def customize(
     if instantiate is None:
         instantiate = []
     if global_vars is None:
-        global_vars = _get_global_vars(fn)
-        new_global_vars = global_vars.copy()
-        for var in global_vars.values():
-            # import functions from other files
-            if isinstance(var, PyFunctionType):
-                new_global_vars.update(_get_global_vars(var))
-        global_vars = new_global_vars
+        global_vars = get_global_vars(fn)
     # Use-def chain analysis
     use_def_chain = UseDefChain(global_vars.copy(), instantiate)
     use_def_chain.visit(tree)

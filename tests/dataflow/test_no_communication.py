@@ -3,6 +3,7 @@
 
 from allo.ir.types import float32
 import allo.dataflow as df
+import allo.backend.hls as hls
 import numpy as np
 import pytest
 
@@ -24,9 +25,10 @@ def test_tiled_gemm():
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
-    gemm(A, B, C)
-    np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
-    print("Success!")
+    if hls.is_available("vitis_hls"):
+        gemm(A, B, C)
+        np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
+        print("Success!")
 
 
 if __name__ == "__main__":
