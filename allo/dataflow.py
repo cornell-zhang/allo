@@ -88,7 +88,7 @@ def _build_top(s_top, input_types, stream_info):
     func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
     # create global stream ops
     stream_dict = {}
-    for func_name, stream_lst in stream_info.items():
+    for func_name, (stream_lst, start_idx, size) in stream_info.items():
         arg_lst = []
         for src, dst, stream_type in stream_lst:
             if (src, dst) not in stream_dict:
@@ -107,7 +107,7 @@ def _build_top(s_top, input_types, stream_info):
         func_d.CallOp(
             [],
             FlatSymbolRefAttr.get(func_name),
-            list(top_func.arguments) + arg_lst,
+            list(top_func.arguments[start_idx : start_idx + size]) + arg_lst,
             ip=InsertionPoint.at_block_terminator(top_func.entry_block),
         )
     top_func.attributes["dataflow"] = UnitAttr.get()
@@ -134,7 +134,7 @@ def kernel(mapping=None):
             # construct a common module
             s_top = customize(top)
             global_vars = get_global_vars(func)
-            # call different PE kernels
+            # call same PE kernel with different location IDs
             with s_top.module.context, Location.unknown():
                 assert len(mapping) <= 2, "Only support 1D/2D mapping now."
                 all_stream_info = {}
@@ -150,7 +150,7 @@ def kernel(mapping=None):
                     )
                     input_types = s.top_func.attributes["function_type"].value.inputs
                     s.top_func, stream_info = move_stream_to_interface(s.top_func)
-                    all_stream_info[new_func_name] = stream_info
+                    all_stream_info[new_func_name] = (stream_info, 0, len(input_types))
                     s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                     s.top_func.operation.clone(InsertionPoint(s_top.top_func))
                 hls_mod = _build_top(s_top, input_types, all_stream_info)
@@ -170,12 +170,18 @@ def build(funcs):
     s_top = customize(top)
     with s_top.module.context, Location.unknown():
         input_types = []
-        stream_info = {}
+        all_stream_info = {}
         for func in funcs:
-            s = customize(func.__wrapped__, context=s_top.module.context)
+            global_vars = get_global_vars(func)
+            s = customize(
+                func.__wrapped__, global_vars=global_vars, context=s_top.module.context
+            )
+            start_idx = len(input_types)
+            size = len(s.top_func.attributes["function_type"].value.inputs)
             input_types += s.top_func.attributes["function_type"].value.inputs
-            s.top_func, stream_types = move_stream_to_interface(s.top_func)
+            s.top_func, stream_info = move_stream_to_interface(s.top_func)
+            all_stream_info[func.__name__] = (stream_info, start_idx, size)
+            print(s.module)
             s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-            stream_info[s.top_func.attributes["sym_name"].value] = [stream_types[0]]
-        hls_mod = _build_top(s_top, input_types, stream_info)
+        hls_mod = _build_top(s_top, input_types, all_stream_info)
     return hls_mod

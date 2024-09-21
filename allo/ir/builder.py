@@ -1695,8 +1695,15 @@ class ASTTransformer(ASTBuilder):
             if fn_name == "pipe":
                 src = ASTResolver.resolve_constant(node.keywords[0].value, ctx)
                 dst = ASTResolver.resolve_constant(node.keywords[1].value, ctx)
-                src = ctx.top_func.attributes["sym_name"].value + f"_{src[0]}_{src[1]}"
-                dst = ctx.top_func.attributes["sym_name"].value + f"_{dst[0]}_{dst[1]}"
+                if not (isinstance(src, str) and isinstance(dst, str)):
+                    src = (
+                        ctx.top_func.attributes["sym_name"].value
+                        + f"_{src[0]}_{src[1]}"
+                    )
+                    dst = (
+                        ctx.top_func.attributes["sym_name"].value
+                        + f"_{dst[0]}_{dst[1]}"
+                    )
                 memref_type = node.dtype.build()
                 stream_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
                 stream_op.attributes["src"] = StringAttr.get(src)
