@@ -247,7 +247,11 @@ class UseDefChain(ast.NodeVisitor):
         for i, target in enumerate(targets):
             name = get_name(target)
             var = VarNode(self.path, name)
-            if isinstance(node.value, ast.Call) and node.value.func.attr == "get_pid":
+            if (
+                isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "get_pid"
+            ):
                 self.global_vars[ast.unparse(target)] = self.global_vars[f"df.p{i}"]
             for parent in parents:
                 parent.add_user(var)

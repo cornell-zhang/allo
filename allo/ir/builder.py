@@ -778,7 +778,11 @@ class ASTTransformer(ASTBuilder):
                             f"Variable `{target.id}` has already been defined, please use a different name"
                         )
                     ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
-                    if node.value.func.attr == "get_pid":
+                    if (
+                        isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and node.value.func.attr == "get_pid"
+                    ):
                         ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
                             f"df.p{idx}"
                         ]

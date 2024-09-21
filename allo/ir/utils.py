@@ -37,7 +37,7 @@ def _get_global_vars(_func):
     # Get back to the outer-most scope (user-defined function)
     # Mainly used to get the annotation definitions (shape and type),
     # which are probably not defined in __globals__
-    for name, var in inspect.stack()[2][0].f_locals.items():
+    for name, var in inspect.stack()[3][0].f_locals.items():
         if isinstance(var, (int, float, AlloType)) or inspect.isfunction(var):
             global_vars[name] = var
 
