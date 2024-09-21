@@ -52,7 +52,7 @@ def _get_global_vars(_func):
 
 
 def get_global_vars(func):
-    global_vars =_get_global_vars(func)
+    global_vars = _get_global_vars(func)
     new_global_vars = global_vars.copy()
     for var in global_vars.values():
         # import functions from other files
