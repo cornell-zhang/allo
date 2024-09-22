@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import functools
+import gc
 from hcl_mlir.ir import (
     StringAttr,
     InsertionPoint,
@@ -113,7 +114,6 @@ def _build_top(s_top, input_types, stream_info):
     top_func.attributes["dataflow"] = UnitAttr.get()
     s_top.top_func.operation.erase()
     s_top.top_func = top_func
-    print(s_top.module)
     hls_mod = s_top.build(
         target="vitis_hls",
         mode="csim",
@@ -139,6 +139,9 @@ def kernel(mapping=None):
                 assert len(mapping) <= 2, "Only support 1D/2D mapping now."
                 all_stream_info = {}
                 for dim in np.ndindex(*mapping):
+                    # A randomly crashed bug
+                    # https://github.com/cornell-zhang/allo/issues/196
+                    gc.collect()
                     if len(dim) == 1:
                         global_vars.update({"df.p0": dim[0]})
                         new_func_name = func.__name__ + f"_{dim[0]}"
@@ -181,7 +184,6 @@ def build(funcs):
             input_types += s.top_func.attributes["function_type"].value.inputs
             s.top_func, stream_info = move_stream_to_interface(s.top_func)
             all_stream_info[func.__name__] = (stream_info, start_idx, size)
-            print(s.module)
             s.top_func.operation.clone(InsertionPoint(s_top.top_func))
         hls_mod = _build_top(s_top, input_types, all_stream_info)
     return hls_mod

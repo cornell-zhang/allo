@@ -125,5 +125,31 @@ def test_meta_if():
     print(s.module)
 
 
+def test_double_meta_if():
+    M, N = 32, 32
+
+    def top(A: int32[M]):
+        with allo.meta_if(M == 1):
+            for i in range(M):
+                A[i] = A[i] // 2
+        with allo.meta_elif(M == 64):
+            for i in range(M):
+                A[i] = A[i] * 2
+        with allo.meta_else():
+            for i in range(M):
+                A[i] = A[i] + 1
+        with allo.meta_if(N == 32):
+            for i in range(M):
+                A[i] = A[i] - 1
+
+    s = allo.customize(top)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randn(M).astype(np.int32)
+    np_golden = np_A.copy()
+    mod(np_A)
+    np.testing.assert_allclose(np_A, np_golden, rtol=1e-4, atol=1e-4)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
