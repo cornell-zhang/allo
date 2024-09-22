@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import functools
+import gc
 from hcl_mlir.ir import (
     StringAttr,
     InsertionPoint,
@@ -138,6 +139,9 @@ def kernel(mapping=None):
                 assert len(mapping) <= 2, "Only support 1D/2D mapping now."
                 all_stream_info = {}
                 for dim in np.ndindex(*mapping):
+                    # A randomly crashed bug
+                    # https://github.com/cornell-zhang/allo/issues/196
+                    gc.collect()
                     if len(dim) == 1:
                         global_vars.update({"df.p0": dim[0]})
                         new_func_name = func.__name__ + f"_{dim[0]}"

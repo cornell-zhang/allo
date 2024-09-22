@@ -8,8 +8,12 @@ import allo.backend.hls as hls
 import numpy as np
 import pytest
 
-M, N, K = 8, 8, 8
-Mt, Nt = 2, 2
+# M, N, K = 512, 512, 512
+# Mt, Nt = 16, 16
+M, N, K = 16, 16, 16
+Mt, Nt = 4, 4
+# M, N, K = 4, 4, 4
+# Mt, Nt = 1, 1
 P0, P1 = Mt + 1, Nt + 1
 
 
@@ -54,11 +58,11 @@ def test_tiled_systolic():
     A = np.random.randint(0, 10, (M, K)).astype(np.int32)
     B = np.random.randint(0, 10, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
-    gemm(A, B, C)
-    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
-    print("Passed!")
+    if hls.is_available("vitis_hls"):
+        gemm(A, B, C)
+        np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+        print("Passed!")
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_tiled_systolic()
+    pytest.main([__file__])
