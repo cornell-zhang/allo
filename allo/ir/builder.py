@@ -1717,6 +1717,10 @@ class ASTTransformer(ASTBuilder):
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
+                # 1D mesh
+                if "df.p1" not in ctx.global_vars:
+                    return (MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),)
+                # 2D mesh
                 return (
                     MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
