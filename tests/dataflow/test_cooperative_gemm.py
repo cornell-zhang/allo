@@ -1,12 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 Ty = float32
 M, N, K = 16, 16, 16
@@ -53,5 +51,4 @@ def test_cooperative_gemm():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
     test_cooperative_gemm()

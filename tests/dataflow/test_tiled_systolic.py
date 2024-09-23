@@ -6,7 +6,6 @@ from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 # M, N, K = 512, 512, 512
 # Mt, Nt = 16, 16
@@ -65,4 +64,4 @@ def test_tiled_systolic():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_tiled_systolic()

@@ -5,7 +5,6 @@ from allo.ir.types import float32
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 M, N, K = 32, 32, 32
 P0, P1 = 2, 2
@@ -32,4 +31,4 @@ def test_tiled_gemm():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_tiled_gemm()
