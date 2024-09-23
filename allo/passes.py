@@ -168,6 +168,7 @@ def generate_input_output_buffers(top_func, flatten=False, mappings=None):
                         top_func.arguments[-1],
                         f"result{len(top_func.arguments)}",
                         ip=op,
+                        flatten=flatten,
                     )
                     res["outputs"].append(
                         MockBuffer(top_func_name, f"result{len(top_func.arguments)}")

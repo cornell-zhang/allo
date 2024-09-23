@@ -274,12 +274,14 @@ def update_streaming_interface(module, target, depth=-1):
 
 
 def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
-    if not isinstance(ip, InsertionPoint):
-        ip = InsertionPoint(ip if alloc_ip is None else alloc_ip)
-    with ip:
+    new_ip = ip if alloc_ip is None else alloc_ip
+    if not isinstance(new_ip, InsertionPoint):
+        new_ip = InsertionPoint(new_ip)
+    with new_ip:
         shape = MemRefType(tensor.type).shape
         if not flatten or alloc_ip is None:
             alloc_op = memref_d.AllocOp(
+                # remove layout & memory_space info
                 MemRefType.get(
                     MemRefType(tensor.type).shape, MemRefType(tensor.type).element_type
                 ),
