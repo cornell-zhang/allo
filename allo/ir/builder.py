@@ -54,6 +54,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
+from .transform import store_tensor, create_buffer
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, Stream
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
@@ -1612,29 +1613,53 @@ class ASTTransformer(ASTBuilder):
                     return build_stmt(ctx, node.func)
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
-                    affine_map = AffineMap.get(
-                        dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-                    )
-                    affine_attr = AffineMapAttr.get(affine_map)
-                    op = affine_d.AffineStoreOp(
-                        stmts[0].result,
-                        ctx.buffers[node.func.value.id].result,
-                        [],
-                        affine_attr,
-                        ip=ctx.get_ip(),
-                    )
+                    if len(node.func.value.shape) == 0:
+                        affine_map = AffineMap.get(
+                            dim_count=0,
+                            symbol_count=0,
+                            exprs=[AffineConstantExpr.get(0)],
+                        )
+                        affine_attr = AffineMapAttr.get(affine_map)
+                        op = affine_d.AffineStoreOp(
+                            stmts[0].result,
+                            ctx.buffers[node.func.value.id].result,
+                            [],
+                            affine_attr,
+                            ip=ctx.get_ip(),
+                        )
+                    else:
+                        store_tensor(
+                            stmts[0].result,
+                            ctx.buffers[node.func.value.id].result,
+                            "put",
+                            ip=ctx.get_ip(),
+                            flatten=False,
+                        )
                     return
                 if node.func.attr == "get":
-                    affine_map = AffineMap.get(
-                        dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-                    )
-                    affine_attr = AffineMapAttr.get(affine_map)
-                    return affine_d.AffineLoadOp(
-                        ctx.buffers[node.func.value.id].result,
-                        [],
-                        affine_attr,
-                        ip=ctx.get_ip(),
-                    )
+                    # pylint: disable=no-else-return
+                    if len(node.func.value.shape) == 0:
+                        affine_map = AffineMap.get(
+                            dim_count=0,
+                            symbol_count=0,
+                            exprs=[AffineConstantExpr.get(0)],
+                        )
+                        affine_attr = AffineMapAttr.get(affine_map)
+                        return affine_d.AffineLoadOp(
+                            ctx.buffers[node.func.value.id].result,
+                            [],
+                            affine_attr,
+                            ip=ctx.get_ip(),
+                        )
+                    else:
+                        return create_buffer(
+                            ctx.buffers[node.func.value.id].result,
+                            "get",
+                            ip=ctx.get_ip(),
+                            alloc_ip=None,
+                            flatten=False,
+                        )
+
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 stmts = build_stmts(ctx, node.args)

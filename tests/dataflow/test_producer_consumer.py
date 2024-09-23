@@ -6,7 +6,6 @@ from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 Ty = float32
 M, N, K = 16, 16, 16
@@ -43,4 +42,4 @@ def test_producer_consumer():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_producer_consumer()

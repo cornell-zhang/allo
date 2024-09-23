@@ -70,7 +70,8 @@ class TypeInferer(ASTVisitor):
                 dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             if dtype is Stream:
                 # create an actual class instance
-                dtype = Stream(ASTResolver.resolve(node.slice, ctx.global_vars))
+                base_type, base_shape = TypeInferer.visit_type_hint(ctx, node.slice)
+                dtype = Stream(base_type, base_shape)
                 shape = tuple()
                 return dtype, shape
             assert dtype is not None, f"Unsupported type {node.value.id}"
@@ -702,10 +703,14 @@ class TypeInferer(ASTVisitor):
                     new_args = visit_stmts(ctx, node.args)
                     node.shape = tuple()
                     node.dtype = None
+                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
+                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
                 elif node.func.attr == "get":
-                    node.shape = ctx.buffers[node.func.value.id].shape
-                    # get element type of Stream
+                    # get dtype and shape inside Stream
+                    node.shape = ctx.buffers[node.func.value.id].dtype.shape
                     node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
+                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method {node.func.attr}"
@@ -990,5 +995,8 @@ def visit_stmts(ctx, stmts):
             results.append(visit_stmt(ctx, stmt))
         except Exception as e:
             raise e
-            # raise RuntimeError(f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}" + f" {e}")
+            # raise RuntimeError(
+            #     f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}"
+            #     + f" {e}"
+            # )
     return results

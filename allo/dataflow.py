@@ -89,7 +89,7 @@ def _build_top(s_top, input_types, stream_info):
     func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
     # create global stream ops
     stream_dict = {}
-    for func_name, (stream_lst, start_idx, size) in stream_info.items():
+    for func_name, (stream_lst, indices) in stream_info.items():
         arg_lst = []
         for src, dst, stream_type in stream_lst:
             if (src, dst) not in stream_dict:
@@ -105,10 +105,13 @@ def _build_top(s_top, input_types, stream_info):
             else:
                 new_op = stream_dict[(src, dst)]
             arg_lst.append(new_op.result)
+        arguments = []
+        for idx in indices:
+            arguments.append(top_func.arguments[idx])
         func_d.CallOp(
             [],
             FlatSymbolRefAttr.get(func_name),
-            list(top_func.arguments[start_idx : start_idx + size]) + arg_lst,
+            arguments + arg_lst,
             ip=InsertionPoint.at_block_terminator(top_func.entry_block),
         )
     top_func.attributes["dataflow"] = UnitAttr.get()
@@ -123,42 +126,16 @@ def _build_top(s_top, input_types, stream_info):
 
 
 def kernel(mapping=None):
-    def top():
-        # Just for locating insertion point
-        pass
 
     def actual_decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # *args and **kwargs are the actual arguments that are passed into the kernel function
-            # construct a common module
-            s_top = customize(top)
-            global_vars = get_global_vars(func)
-            # call same PE kernel with different location IDs
-            with s_top.module.context, Location.unknown():
-                assert len(mapping) <= 2, "Only support 1D/2D mapping now."
-                all_stream_info = {}
-                for dim in np.ndindex(*mapping):
-                    # A randomly crashed bug
-                    # https://github.com/cornell-zhang/allo/issues/196
-                    gc.collect()
-                    if len(dim) == 1:
-                        global_vars.update({"df.p0": dim[0]})
-                        new_func_name = func.__name__ + f"_{dim[0]}"
-                    else:
-                        global_vars.update({"df.p0": dim[0], "df.p1": dim[1]})
-                        new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
-                    s = customize(
-                        func, global_vars=global_vars, context=s_top.module.context
-                    )
-                    input_types = s.top_func.attributes["function_type"].value.inputs
-                    s.top_func, stream_info = move_stream_to_interface(s.top_func)
-                    all_stream_info[new_func_name] = (stream_info, 0, len(input_types))
-                    s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
-                    s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-                hls_mod = _build_top(s_top, input_types, all_stream_info)
+            func.mapping = mapping
+            hls_mod = build(funcs=[func])
             return hls_mod(*args, **kwargs)
 
+        wrapper.mapping = mapping
         return wrapper
 
     return actual_decorator
@@ -171,19 +148,41 @@ def build(funcs):
 
     # construct a common module
     s_top = customize(top)
+    input_types = []
+    all_stream_info = {}
+    # mapping from arg name to arg index
+    top_func_arg_mapping = {}
     with s_top.module.context, Location.unknown():
-        input_types = []
-        all_stream_info = {}
         for func in funcs:
             global_vars = get_global_vars(func)
-            s = customize(
-                func.__wrapped__, global_vars=global_vars, context=s_top.module.context
-            )
-            start_idx = len(input_types)
-            size = len(s.top_func.attributes["function_type"].value.inputs)
-            input_types += s.top_func.attributes["function_type"].value.inputs
-            s.top_func, stream_info = move_stream_to_interface(s.top_func)
-            all_stream_info[func.__name__] = (stream_info, start_idx, size)
-            s.top_func.operation.clone(InsertionPoint(s_top.top_func))
+            mapping = func.mapping
+            assert len(mapping) <= 2, "Only support 1D/2D mapping now."
+            for dim in np.ndindex(*mapping):
+                # A randomly crashed bug
+                # https://github.com/cornell-zhang/allo/issues/196
+                gc.collect()
+                if len(dim) == 1:
+                    global_vars.update({"df.p0": dim[0]})
+                    new_func_name = func.__name__ + f"_{dim[0]}"
+                else:
+                    global_vars.update({"df.p0": dim[0], "df.p1": dim[1]})
+                    new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
+                s = customize(
+                    func.__wrapped__ if hasattr(func, "__wrapped__") else func,
+                    global_vars=global_vars,
+                    context=s_top.module.context,
+                )
+                indices = []
+                for idx, arg in enumerate(s.func_args[func.__name__]):
+                    if not arg in top_func_arg_mapping:
+                        top_func_arg_mapping[arg] = len(top_func_arg_mapping)
+                        input_types.append(
+                            s.top_func.attributes["function_type"].value.inputs[idx]
+                        )
+                    indices.append(top_func_arg_mapping[arg])
+                s.top_func, stream_info = move_stream_to_interface(s.top_func)
+                all_stream_info[new_func_name] = (stream_info, indices)
+                s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
+                s.top_func.operation.clone(InsertionPoint(s_top.top_func))
         hls_mod = _build_top(s_top, input_types, all_stream_info)
     return hls_mod

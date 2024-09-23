@@ -6,7 +6,6 @@ from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 M, N, K = 4, 4, 4
 P0, P1 = M + 1, N + 1
@@ -53,4 +52,4 @@ def test_systolic():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_systolic()

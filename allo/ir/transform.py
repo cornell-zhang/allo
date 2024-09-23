@@ -274,10 +274,20 @@ def update_streaming_interface(module, target, depth=-1):
 
 
 def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
-    with InsertionPoint(ip if alloc_ip is None else alloc_ip):
+    new_ip = ip if alloc_ip is None else alloc_ip
+    if not isinstance(new_ip, InsertionPoint):
+        new_ip = InsertionPoint(new_ip)
+    with new_ip:
         shape = MemRefType(tensor.type).shape
         if not flatten or alloc_ip is None:
-            alloc_op = memref_d.AllocOp(tensor.type, [], [])
+            alloc_op = memref_d.AllocOp(
+                # remove layout & memory_space info
+                MemRefType.get(
+                    MemRefType(tensor.type).shape, MemRefType(tensor.type).element_type
+                ),
+                [],
+                [],
+            )
         else:  # store back to results
             alloc_op = memref_d.AllocOp(
                 MemRefType.get((np.prod(shape),), MemRefType(tensor.type).element_type),
@@ -368,7 +378,7 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
     return alloc_op
 
 
-def store_tensor(tensor, target, name, ip):
+def store_tensor(tensor, target, name, ip, flatten=True):
     shape = MemRefType(tensor.type).shape
     loop_bounds = shape
     for_loops = build_for_loops(loop_bounds, ip, name)
@@ -382,16 +392,19 @@ def store_tensor(tensor, target, name, ip):
         load_str = in_str
         affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
         load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
-        out_str = ""
-        reversed_shape = list(shape)[::-1]
-        for i in range(len(shape)):
-            s_str = " * ".join([str(s) for s in reversed_shape[:i]])
-            if s_str != "":
-                out_str = s_str + f" * d{len(shape) - i - 1}" + out_str
-            else:
-                out_str = f" d{len(shape) - i - 1}" + out_str
-            if i != len(shape) - 1:
-                out_str = " + " + out_str
+        if not flatten:
+            out_str = in_str
+        else:
+            out_str = ""
+            reversed_shape = list(shape)[::-1]
+            for i in range(len(shape)):
+                s_str = " * ".join([str(s) for s in reversed_shape[:i]])
+                if s_str != "":
+                    out_str = s_str + f" * d{len(shape) - i - 1}" + out_str
+                else:
+                    out_str = f" d{len(shape) - i - 1}" + out_str
+                if i != len(shape) - 1:
+                    out_str = " + " + out_str
         affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
         affine_d.AffineStoreOp(
             load.result,
