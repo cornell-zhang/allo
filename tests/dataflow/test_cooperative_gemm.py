@@ -10,7 +10,7 @@ import pytest
 
 Ty = float32
 M, N, K = 16, 16, 16
-P0, P1 = 1, 1
+P0, P1 = 2, 2
 Mt, Nt = M // P0, N // P1
 
 
@@ -47,7 +47,7 @@ def test_cooperative_gemm():
     C = np.zeros((M, N), dtype=np.float32)
     top = df.build([gemm0, gemm1])
     if hls.is_available("vitis_hls"):
-        top(A, B, A, B, C)
+        top(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")
 
