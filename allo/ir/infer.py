@@ -70,7 +70,8 @@ class TypeInferer(ASTVisitor):
                 dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             if dtype is Stream:
                 # create an actual class instance
-                dtype = Stream(ASTResolver.resolve(node.slice, ctx.global_vars))
+                base_type, base_shape = TypeInferer.visit_type_hint(ctx, node.slice)
+                dtype = Stream(base_type, base_shape)
                 shape = tuple()
                 return dtype, shape
             assert dtype is not None, f"Unsupported type {node.value.id}"
@@ -990,5 +991,8 @@ def visit_stmts(ctx, stmts):
             results.append(visit_stmt(ctx, stmt))
         except Exception as e:
             raise e
-            # raise RuntimeError(f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}" + f" {e}")
+            # raise RuntimeError(
+            #     f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}"
+            #     + f" {e}"
+            # )
     return results

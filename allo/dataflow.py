@@ -176,6 +176,9 @@ def build(funcs):
         all_stream_info = {}
         for func in funcs:
             global_vars = get_global_vars(func)
+            dim = (0, 0)
+            global_vars.update({"df.p0": dim[0], "df.p1": dim[1]})
+            new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
             s = customize(
                 func.__wrapped__, global_vars=global_vars, context=s_top.module.context
             )
@@ -183,7 +186,8 @@ def build(funcs):
             size = len(s.top_func.attributes["function_type"].value.inputs)
             input_types += s.top_func.attributes["function_type"].value.inputs
             s.top_func, stream_info = move_stream_to_interface(s.top_func)
-            all_stream_info[func.__name__] = (stream_info, start_idx, size)
+            all_stream_info[new_func_name] = (stream_info, start_idx, size)
+            s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
             s.top_func.operation.clone(InsertionPoint(s_top.top_func))
         hls_mod = _build_top(s_top, input_types, all_stream_info)
     return hls_mod

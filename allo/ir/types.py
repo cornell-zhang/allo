@@ -174,23 +174,28 @@ class Struct(AlloType):
 
 
 class Stream(AlloType):
-    def __init__(self, dtype, depth=2, size=1):
+    def __init__(self, dtype, shape, depth=2, size=1):
         assert isinstance(dtype, AlloType), f"dtype must be an AlloType, got {dtype}"
         self.dtype = dtype
+        if shape == tuple():
+            self.shape = (1,)
+        else:
+            self.shape = shape
         self.depth = depth
         self.size = size
         super().__init__(0, 0, f"stream<{dtype}>")
 
     def build(self):
         return MemRefType.get(
-            (self.size,),
+            self.shape,
             self.dtype.build(),
             None,
             StringAttr.get(f"stream:{self.depth}"),
         )
 
     def __repr__(self):
-        return f"Stream({self.dtype})"
+        shape = ", ".join(str(s) for s in self.shape)
+        return f"Stream({self.dtype}[{shape}])"
 
 
 bool = Int(1)
