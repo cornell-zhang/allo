@@ -1637,6 +1637,7 @@ class ASTTransformer(ASTBuilder):
                         )
                     return
                 if node.func.attr == "get":
+                    # pylint: disable=no-else-return
                     if len(node.func.value.shape) == 0:
                         affine_map = AffineMap.get(
                             dim_count=0,
