@@ -177,17 +177,14 @@ class Stream(AlloType):
     def __init__(self, dtype, shape, depth=2, size=1):
         assert isinstance(dtype, AlloType), f"dtype must be an AlloType, got {dtype}"
         self.dtype = dtype
-        if shape == tuple():
-            self.shape = (1,)
-        else:
-            self.shape = shape
+        self.shape = shape
         self.depth = depth
         self.size = size
         super().__init__(0, 0, f"stream<{dtype}>")
 
     def build(self):
         return MemRefType.get(
-            self.shape,
+            self.shape if len(self.shape) > 0 else (1,),
             self.dtype.build(),
             None,
             StringAttr.get(f"stream:{self.depth}"),
