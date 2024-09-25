@@ -44,10 +44,11 @@ public:
             memref::AllocOp, memref::AllocaOp, memref::LoadOp, memref::StoreOp,
             memref::GetGlobalOp, hcl::GetGlobalFixedOp, memref::GlobalOp,
             memref::DeallocOp, memref::DmaStartOp, memref::DmaWaitOp,
-            memref::ViewOp, memref::SubViewOp, memref::ReinterpretCastOp, memref::AtomicRMWOp,
+            memref::ViewOp, memref::SubViewOp, memref::ReinterpretCastOp,
+            memref::AtomicRMWOp,
             // Tensor-related statements.
-            tensor::ExtractOp, tensor::InsertOp, memref::TensorStoreOp,
-            tensor::SplatOp, memref::DimOp, memref::RankOp,
+            tensor::ExtractOp, tensor::InsertOp, tensor::SplatOp, memref::DimOp,
+            memref::RankOp,
             // Unary expressions.
             math::AbsFOp, math::AbsIOp, math::CeilOp, math::CosOp, math::SinOp,
             math::TanhOp, math::SqrtOp, math::RsqrtOp, math::ExpOp,
@@ -142,7 +143,6 @@ public:
   // Tensor-related statements.
   HANDLE(tensor::ExtractOp);
   HANDLE(tensor::InsertOp);
-  HANDLE(memref::TensorStoreOp);
   HANDLE(tensor::SplatOp);
   HANDLE(memref::DimOp);
   HANDLE(memref::RankOp);

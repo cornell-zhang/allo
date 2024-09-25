@@ -300,7 +300,7 @@ hcl::getBoundOfAffineBound(AffineBound bound) {
 
     auto lb = ifOp.getConstantLowerBound();
     auto ub = ifOp.getConstantUpperBound();
-    auto step = ifOp.getStep();
+    auto step = ifOp.getStepAsInt();
 
     lbs.push_back(lb);
     ubs.push_back(ub - 1 - (ub - 1 - lb) % step);
@@ -748,7 +748,7 @@ Value hcl::castInteger(OpBuilder builder, Location loc, Value input,
  * from oldMemRef to newMemRef.
  */
 Value hcl::castIntMemRef(OpBuilder &builder, Location loc,
-                         const Value &oldMemRef, size_t newWidth, bool unsign,
+                         Value &oldMemRef, size_t newWidth, bool unsign,
                          bool replace, const Value &dstMemRef) {
   // If newWidth == oldWidth, no need to cast.
   if (newWidth == oldMemRef.getType()

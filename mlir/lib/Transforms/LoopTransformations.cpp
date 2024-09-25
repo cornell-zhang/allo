@@ -858,7 +858,7 @@ LogicalResult runFusing(func::FuncOp &f, FuseOp &fuseOp) {
 
   // 4) Construct new loop
   MutableArrayRef<AffineForOp> fusedLoops =
-      llvm::makeMutableArrayRef(band.data(), sizeOfFusedLoops);
+      llvm::MutableArrayRef(band.data(), sizeOfFusedLoops);
   if (failed(coalesceLoops(fusedLoops, rootForOp)))
     return failure();
   if (isOuterMost)
@@ -878,7 +878,7 @@ LogicalResult runFusing(func::FuncOp &f, FuseOp &fuseOp) {
       SmallVector<AffineExpr> newSymbols{builder.getAffineConstantExpr(cstVal)};
       auto newMap = applyMap.replaceDimsAndSymbols(newDims, newSymbols, 1, 0);
       auto newApplyOp = builder.create<AffineApplyOp>(
-          applyOp.getLoc(), newMap, llvm::makeArrayRef(applyOp.getOperand(0)));
+          applyOp.getLoc(), newMap, llvm::ArrayRef(applyOp.getOperand(0)));
       applyOp.getResult().replaceAllUsesWith(newApplyOp);
       opToRemove.push_back(applyOp);
     }

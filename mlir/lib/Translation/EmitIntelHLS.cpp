@@ -799,7 +799,7 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
         os << " = ";
         emitValue(op.getOperand(resultIdx++), rank);
         break;
-      case (arith::AtomicRMWKind::maxf):
+      case (arith::AtomicRMWKind::maximumf):
       case (arith::AtomicRMWKind::maxs):
       case (arith::AtomicRMWKind::maxu):
         os << " = max(";
@@ -808,7 +808,7 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
         emitValue(op.getOperand(resultIdx++), rank);
         os << ")";
         break;
-      case (arith::AtomicRMWKind::minf):
+      case (arith::AtomicRMWKind::minimumf):
       case (arith::AtomicRMWKind::mins):
       case (arith::AtomicRMWKind::minu):
         os << " = min(";

@@ -1,7 +1,7 @@
 # Copyright HeteroCL authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.13.4)
+cmake_minimum_required(VERSION 3.20.0)
 cmake_policy(SET CMP0116 NEW)
 
 project(hcl-dialect LANGUAGES CXX C)
@@ -9,7 +9,7 @@ project(hcl-dialect LANGUAGES CXX C)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
-add_compile_options ( -Wtype-limits -Waddress )
+add_compile_options ( -w )
 
 set(CMAKE_BUILD_TYPE Debug)
 
@@ -38,21 +38,7 @@ add_definitions(${LLVM_DEFINITIONS})
 
 message(STATUS "Using Python binding")
 include(MLIRDetectPythonEnv)
-find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
-message(STATUS "Found Python include dirs: ${Python3_INCLUDE_DIRS}")
-message(STATUS "Found Python libraries: ${Python3_LIBRARIES}")
-message(STATUS "Found Python executable: ${Python3_EXECUTABLE}")
-message(STATUS "Found numpy v${Python3_NumPy_VERSION}: ${Python3_NumPy_INCLUDE_DIRS}")
-include_directories(${Python3_INCLUDE_DIRS})
-include_directories(${Python3_NumPy_INCLUDE_DIRS})
-
-mlir_detect_pybind11_install()
-find_package(pybind11 REQUIRED)
-message(STATUS "Found pybind11 v${pybind11_VERSION}: ${pybind11_INCLUDE_DIR}")
-message(STATUS "Python prefix = '${PYTHON_MODULE_PREFIX}', "
-                "suffix = '${PYTHON_MODULE_SUFFIX}', "
-                "extension = '${PYTHON_MODULE_EXTENSION}'")
-include_directories(${pybind11_INCLUDE_DIR})
+mlir_configure_python_dev_packages()
 
 add_subdirectory(include)
 add_subdirectory(lib)

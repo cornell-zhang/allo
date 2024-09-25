@@ -115,8 +115,9 @@ void updateTopFunctionSignature(func::FuncOp &funcOp) {
           is_unsigned = itypes[i] == 'u';
         }
 
+        auto blockArgI = block.getArgument(i);
         Value newMemRef =
-            castIntMemRef(builder, funcOp->getLoc(), block.getArgument(i),
+            castIntMemRef(builder, funcOp->getLoc(), blockArgI,
                           et.cast<IntegerType>().getWidth(), is_unsigned);
         newMemRefs.push_back(newMemRef);
         blockArgs.push_back(block.getArgument(i));
@@ -144,8 +145,9 @@ void updateTopFunctionSignature(func::FuncOp &funcOp) {
             if (i < otypes.length()) {
               is_unsigned = otypes[i] == 'u';
             }
+            auto result = allocOp.getResult();
             Value newMemRef =
-                castIntMemRef(returnRewriter, op->getLoc(), allocOp.getResult(),
+                castIntMemRef(returnRewriter, op->getLoc(), result,
                               64, is_unsigned, false);
             // Only replace the single use of oldMemRef: returnOp
             op->setOperand(i, newMemRef);

@@ -16,7 +16,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
-include "mlir/IR/FunctionInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -192,19 +192,19 @@ def ApplyOp : HeteroCL_Op<"apply", [CallOpInterface,
 
   // The apply operation takes a symbol reference attribute as the
   // callee, and inputs for the call.
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$inputs);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
 
   // The apply operation has no results, just a placeholder below.
   let results = (outs Variadic<AnyType>);
 
   // Specialize assembly printing and parsing using a declarative format.
   let assemblyFormat = [{
-    $callee `(` $inputs `)` attr-dict `:` functional-type($inputs, results)
+    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
 
   // Add custom build methods for the apply operation.
   let builders = [
-    OpBuilder<(ins "StringRef":$callee, "ArrayRef<Value>":$arguments)>
+    OpBuilder<(ins "StringRef":$callee, "ArrayRef<Value>":$operands)>
   ];
 
   let extraClassDeclaration = [{
@@ -213,6 +213,10 @@ def ApplyOp : HeteroCL_Op<"apply", [CallOpInterface,
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {
       return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    MutableOperandRange getArgOperandsMutable() {
+      return getOperandsMutable();
     }
 
     operand_iterator arg_operand_begin() { return operand_begin(); }

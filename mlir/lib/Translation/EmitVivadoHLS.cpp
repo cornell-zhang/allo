@@ -132,7 +132,6 @@ public:
   /// Tensor-related statement emitters.
   void emitTensorExtract(tensor::ExtractOp op);
   void emitTensorInsert(tensor::InsertOp op);
-  void emitTensorStore(memref::TensorStoreOp op);
   void emitDim(memref::DimOp op);
   void emitRank(memref::RankOp op);
 
@@ -320,9 +319,6 @@ public:
   }
   bool visitOp(tensor::InsertOp op) {
     return emitter.emitTensorInsert(op), true;
-  }
-  bool visitOp(memref::TensorStoreOp op) {
-    return emitter.emitTensorStore(op), true;
   }
   bool visitOp(memref::DimOp op) { return emitter.emitDim(op), true; }
   bool visitOp(memref::RankOp op) { return emitter.emitRank(op), true; }
@@ -1046,7 +1042,7 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
         os << " = ";
         emitValue(op.getOperand(resultIdx++), rank);
         break;
-      case (arith::AtomicRMWKind::maxf):
+      case (arith::AtomicRMWKind::maximumf):
       case (arith::AtomicRMWKind::maxs):
       case (arith::AtomicRMWKind::maxu):
         os << " = max(";
@@ -1055,7 +1051,7 @@ void ModuleEmitter::emitAffineYield(AffineYieldOp op) {
         emitValue(op.getOperand(resultIdx++), rank);
         os << ")";
         break;
-      case (arith::AtomicRMWKind::minf):
+      case (arith::AtomicRMWKind::minimumf):
       case (arith::AtomicRMWKind::mins):
       case (arith::AtomicRMWKind::minu):
         os << " = min(";
@@ -1318,19 +1314,6 @@ void ModuleEmitter::emitTensorInsert(tensor::InsertOp op) {
   emitValue(op.getScalar());
   os << ";";
   emitInfoAndNewLine(op);
-}
-
-/// Tensor-related statement emitters.
-void ModuleEmitter::emitTensorStore(memref::TensorStoreOp op) {
-  // TODO: stream interface for tensor?
-  auto rank = emitNestedLoopHead(op.getOperand(0));
-  indent();
-  emitValue(op.getOperand(1), rank);
-  os << " = ";
-  emitValue(op.getOperand(0), rank);
-  os << ";";
-  emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
 }
 
 void ModuleEmitter::emitDim(memref::DimOp op) {

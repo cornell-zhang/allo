@@ -42,7 +42,7 @@ LLVM::LLVMFuncOp getOrInsertPrintf(OpBuilder &rewriter, ModuleOp module) {
   // Create a function declaration for printf, the signature is:
   //   * `i32 (i8*, ...)`
   auto llvmI32Ty = IntegerType::get(context, 32);
-  auto llvmI8PtrTy = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+  auto llvmI8PtrTy = LLVM::LLVMPointerType::get(context, 8);
   auto llvmFnType = LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy,
                                                 /*isVarArg=*/true);
 
@@ -76,9 +76,8 @@ Value getOrCreateGlobalString(Location loc, OpBuilder &builder, StringRef name,
       loc, IntegerType::get(builder.getContext(), 64),
       builder.getIntegerAttr(builder.getIndexType(), 0));
   return builder.create<LLVM::GEPOp>(
-      loc,
-      LLVM::LLVMPointerType::get(IntegerType::get(builder.getContext(), 8)),
-      globalPtr, ArrayRef<Value>({cst0, cst0}));
+      loc, LLVM::LLVMPointerType::get(builder.getContext(), 8),
+      global.getType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
 }
 
 void lowerPrintOpToPrintf(Operation *op, int idx) {
@@ -146,8 +145,9 @@ void lowerPrintMemRef(Operation *op) {
   builder.setInsertionPoint(op);
   Value srcMemRef;
   if (srcElementType.isa<IntegerType>()) {
-    srcMemRef = castIntMemRef(builder, op->getLoc(), op->getOperand(0), 64,
-                              unsign, /*replace*/ false);
+    Value operand = op->getOperand(0);
+    srcMemRef = castIntMemRef(builder, op->getLoc(), operand, 64, unsign,
+                              /*replace*/ false);
     srcElementType = IntegerType::get(builder.getContext(), 64);
   } else {
     srcMemRef = op->getOperand(0);

@@ -5,7 +5,7 @@
 
 #include "PassDetail.h"
 #include "hcl/Transforms/Passes.h"
-#include "mlir/Dialect/Transform/IR/TransformInterfaces.h"
+#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 
 using namespace mlir;
 using namespace hcl;
