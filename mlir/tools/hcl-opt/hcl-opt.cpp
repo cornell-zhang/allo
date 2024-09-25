@@ -141,11 +141,6 @@ static llvm::cl::opt<bool>
               llvm::cl::desc("Remove memrefs that are never loaded from"),
               llvm::cl::init(false));
 
-static llvm::cl::opt<bool>
-    applyTransform("apply-transform",
-                   llvm::cl::desc("Apply pattern-based transformations"),
-                   llvm::cl::init(false));
-
 int loadMLIR(mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module) {
   module = parseSourceFile<mlir::ModuleOp>(inputFilename, &context);
@@ -344,9 +339,6 @@ int main(int argc, char **argv) {
     // Generic common sub expression elimination.
     // pm.addPass(mlir::createCSEPass());
   }
-
-  if (applyTransform)
-    pm.addPass(mlir::hcl::createTransformInterpreterPass());
 
   if (runJiT || lowerToLLVM) {
     if (!removeStrideMap) {

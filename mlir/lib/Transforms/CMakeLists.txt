@@ -10,7 +10,6 @@ add_mlir_library(MLIRHCLPasses
     RemoveStrideMap.cpp
     MemRefDCE.cpp
     DataPlacement.cpp
-    TransformInterpreter.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/hcl
