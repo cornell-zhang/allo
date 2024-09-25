@@ -78,7 +78,7 @@ class LLVMModule:
                 # used for lowering tensor.empty
                 "empty-tensor-to-alloc-tensor,"
                 # translate tensor dialect (virtual) to memref dialect (physical)
-                "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                "one-shot-bufferize{bufferize-function-boundaries},"
                 # used for lowering memref.subview
                 "expand-strided-metadata,"
                 # common lowering passes
@@ -97,6 +97,8 @@ class LLVMModule:
             func.attributes["top"] = UnitAttr.get()
             # Final lowering
             hcl_d.lower_hcl_to_llvm(self.module, ctx)
+            pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")
+            pm.run(self.module.operation)
             # Add shared library
             if os.getenv("LLVM_BUILD_DIR") is not None:
                 shared_libs = [

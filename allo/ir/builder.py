@@ -208,16 +208,17 @@ class ASTTransformer(ASTBuilder):
             and isinstance(step, int)
         ):  # build AffineForOp
             for_op = affine_d.AffineForOp(
-                lb_expr[0] if len(lb_expr) > 0 else None,
-                ub_expr[0] if len(ub_expr) > 0 else None,
-                IntegerAttr.get(IntegerType.get_signless(32), step),
-                lb_map_attr,
-                ub_map_attr,
-                name=StringAttr.get(name),
-                stage=("" if stage == "" else StringAttr.get(stage)),
-                reduction=None,
+                lower_bound=lb_map_attr,
+                upper_bound=ub_map_attr,
+                step=step,
+                iter_args=[],
+                lower_bound_operands=lb_expr[0] if len(lb_expr) > 0 else None,
+                upper_bound_operands=ub_expr[0] if len(ub_expr) > 0 else None,
                 ip=ctx.get_ip(),
             )
+            for_op.attributes["loop_name"] = StringAttr.get(name)
+            if stage != "":
+                for_op.attributes["op_name"] = StringAttr.get(stage) 
             affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
         else:  # build SCFForOp
             lb_expr = build_stmt(ctx, args[0] if len(args) > 1 else ast.Constant(0))
@@ -871,7 +872,8 @@ class ASTTransformer(ASTBuilder):
                 affine_map = AffineMap.get(
                     dim_count=ctx.dim_count, symbol_count=0, exprs=[expr]
                 )
-                attr = AffineMapAttr.get(affine_map)
+                # attr = AffineMapAttr.get(affine_map)
+                attr = affine_map
             else:
                 variables, attr = [], None
         return variables, attr
@@ -1086,6 +1088,7 @@ class ASTTransformer(ASTBuilder):
             ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
             if isinstance(node.ctx, ast.Load):
                 op = affine_d.AffineLoadOp(
+                    IntegerType.get_signless(32),
                     value.result,
                     ivs,
                     affine_attr,
