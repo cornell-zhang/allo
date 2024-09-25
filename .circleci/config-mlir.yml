@@ -1,0 +1,46 @@
+# Copyright HeteroCL authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Python CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-python/ for more details
+
+version: 2
+jobs:
+  build:
+    working_directory: ~/hcl-dialect
+    docker:
+      - image: chhzh123/llvm-project:18.x
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
+    resource_class: large
+    steps:
+      - checkout  # checkout source code to working directory
+      - run:
+          name: Build HCL-MLIR
+          command: |
+            export BUILD_DIR=/root/llvm-project/build
+            export PREFIX=/root/llvm-project/build
+            source activate hcl-dev
+            mkdir -p build && cd build
+            cmake -G "Unix Makefiles" .. \
+                -DMLIR_DIR=$PREFIX/lib/cmake/mlir \
+                -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit \
+                -DPYTHON_BINDING=ON \
+                -DPython3_EXECUTABLE=`which python3` \
+                -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
+            make -j4
+            export PYTHONPATH=$(pwd)/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
+      - run:
+          name: Formatting Check
+          command: |
+            source activate hcl-dev
+            python3 -m pip install clang-format
+            bash ./.circleci/task_format.sh
+      - run:
+          name: Test
+          command: |
+            source activate hcl-dev
+            cd build
+            cmake --build . --target check-hcl
