@@ -1,3 +1,0 @@
-[submodule "externals/hcl_mlir"]
-	path = externals/hcl_mlir
-	url = https://github.com/cornell-zhang/hcl-dialect.git
