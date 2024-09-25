@@ -107,12 +107,6 @@ add_mlir_python_modules(HCLMLIRPythonModules
     HCLMLIRAggregateCAPI
   )
 
-add_custom_command(
-        TARGET HCLMLIRPythonModules POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        ${HCL_MLIR_PYTHON_ROOT_DIR}/dialects/_linalg_ops_ext.py
-        ${HCL_MLIR_PYTHON_PACKAGES_DIR}/hcl_core/hcl_mlir/dialects)
-
 ################################################################################
 # Add setup script
 ################################################################################

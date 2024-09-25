@@ -17,5 +17,3 @@ add_mlir_dialect_library(MLIRHeteroCL
 	LINK_LIBS PUBLIC
 	MLIRIR
 	)
-
-add_subdirectory(TransformOps)

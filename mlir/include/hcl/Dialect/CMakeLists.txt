@@ -26,5 +26,3 @@ add_public_tablegen_target(MLIRHeteroCLEnumsIncGen)
 
 add_mlir_doc(HeteroCLDialect HeteroCLDialect HeteroCL/ -gen-dialect-doc)
 add_mlir_doc(HeteroCLOps HeteroCLOps HeteroCL/ -gen-op-doc)
-
-add_subdirectory(TransformOps)

@@ -30,7 +30,6 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 #include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/TransformOps/HCLTransformOps.h"
 
 #include "hcl/Conversion/Passes.h"
 #include "hcl/Support/Utils.h"
@@ -243,7 +242,6 @@ int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   registry.insert<mlir::hcl::HeteroCLDialect>();
-  mlir::hcl::registerTransformDialectExtension(registry);
 
   mlir::MLIRContext context;
   context.appendDialectRegistry(registry);

@@ -14,7 +14,6 @@
 #include "hcl-c/Translation/EmitVivadoHLS.h"
 #include "hcl/Conversion/Passes.h"
 #include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/TransformOps/HCLTransformOps.h"
 #include "hcl/Transforms/Passes.h"
 #include "mlir-c/Bindings/Python/Interop.h"
 #include "mlir/Bindings/Python/PybindAdaptors.h"
@@ -177,7 +176,6 @@ PYBIND11_MODULE(_hcl, m) {
       [](MlirContext context) {
         MlirDialectHandle hcl = mlirGetDialectHandle__hcl__();
         mlir::DialectRegistry registry;
-        mlir::hcl::registerTransformDialectExtension(registry);
         unwrap(context)->appendDialectRegistry(registry);
         mlirDialectHandleRegisterDialect(hcl, context);
         mlirDialectHandleLoadDialect(hcl, context);
