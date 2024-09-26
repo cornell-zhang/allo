@@ -12,7 +12,7 @@ from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 
-from hcl_mlir.ir import (
+from allo._mlir.ir import (
     Context,
     Location,
     InsertionPoint,
@@ -28,19 +28,19 @@ from hcl_mlir.ir import (
     AffineMap,
     AffineMapAttr,
 )
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
+from allo._mlir.dialects import (
+    allo as allo_d,
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
     arith as arith_d,
     func as func_d,
 )
-from hcl_mlir.dialects.affine import (
+from allo._mlir.dialects.affine import (
     AffineExpr,
     AffineDimExpr,
 )
-from hcl_mlir.exceptions import (
+from allo._mlir.exceptions import (
     HCLValueError,
 )
 
@@ -169,54 +169,54 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         i32 = IntegerType.get_unsigned(32)
         factor = IntegerAttr.get(i32, factor)
-        hcl_d.SplitOp(loop_hdl.result, factor, ip=ip)
+        allo_d.SplitOp(loop_hdl.result, factor, ip=ip)
 
     @wrapped_apply
     def reorder(self, *args):
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
         for arg in args:
             func, axis = self._get_func_and_axis(arg)
             band_name, axis = find_loop_in_bands(func, axis)
             loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+                allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
         arg_results = [arg.result for arg in loop_hdls]
-        hcl_d.ReorderOp(arg_results, ip=ip)
+        allo_d.ReorderOp(arg_results, ip=ip)
 
     @wrapped_apply
     def unroll(self, axis, factor=0):
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         i32 = IntegerType.get_unsigned(32)
         factor = IntegerAttr.get(i32, factor)
-        hcl_d.UnrollOp(loop_hdl.result, factor=factor, ip=ip)
+        allo_d.UnrollOp(loop_hdl.result, factor=factor, ip=ip)
 
     @wrapped_apply
     def fuse(self, *args):
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, args[0])
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
         for arg in args:
             func, axis = self._get_func_and_axis(args)
             band_name, axis = find_loop_in_bands(func, arg)
             loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+                allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
         arg_results = [arg.result for arg in loop_hdls]
-        hcl_d.FuseOp(arg_results, ip=ip)
+        allo_d.FuseOp(arg_results, ip=ip)
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
@@ -296,7 +296,7 @@ class Schedule:
                 self.partitioned_arrays[inner_target].append(
                     (partition_type, dim, factor)
                 )
-            hcl_d.PartitionOp(
+            allo_d.PartitionOp(
                 mlir_target.result,
                 partition_kind=IntegerAttr.get(i32, partition_type),
                 dim=IntegerAttr.get(ui32, dim),
@@ -355,17 +355,17 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         memref_type = MemRefType.get((1,), F32Type.get())
-        hcl_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
+        allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
 
     @wrapped_apply
     def reshape(self, target, shape):
         _, _, target = find_buffer(self.module, target, self.func_args)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
-        hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
+        allo_d.ReshapeOp(memref_type, target.result, ip=self.ip)
 
     @wrapped_apply
     def pipeline(self, axis, initiation_interval=1, rewind=False):
@@ -384,9 +384,9 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
-        hcl_d.ParallelOp(loop_hdl.result, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        allo_d.ParallelOp(loop_hdl.result, ip=ip)
 
     @wrapped_apply
     def inline(self, axis=None):
@@ -435,12 +435,12 @@ class Schedule:
     def compute_at(self, from_loop, target_loop):
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
         target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
-        from_hdl = hcl_d.CreateOpHandleOp(from_band, ip=self.ip)
-        target_hdl = hcl_d.CreateOpHandleOp(target_band, ip=self.ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(
+        from_hdl = allo_d.CreateOpHandleOp(from_band, ip=self.ip)
+        target_hdl = allo_d.CreateOpHandleOp(target_band, ip=self.ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(
             target_hdl.result, StringAttr.get(target_axis), ip=self.ip
         )
-        hcl_d.ComputeAtOp(
+        allo_d.ComputeAtOp(
             from_hdl.result, target_hdl.result, loop_hdl.result, ip=self.ip
         )
 
@@ -450,8 +450,8 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         memref_type = MemRefType.get((1,), F32Type.get())
 
         def find_reuse_buffers(res):
@@ -468,7 +468,7 @@ class Schedule:
 
         prev_reuse_buffers = []
         find_reuse_buffers(prev_reuse_buffers)
-        hcl_d.ReuseAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
+        allo_d.ReuseAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
         _mlir_lower_pipeline(self.module)
         new_reuse_buffers = []
         find_reuse_buffers(new_reuse_buffers)

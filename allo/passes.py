@@ -8,7 +8,7 @@ import math
 import numpy as np
 from tabulate import tabulate
 
-from hcl_mlir.ir import (
+from allo._mlir.ir import (
     Location,
     MemRefType,
     UnrankedMemRefType,
@@ -24,8 +24,8 @@ from hcl_mlir.ir import (
     IntegerType,
     IndexType,
 )
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
+from allo._mlir.dialects import (
+    allo as allo_d,
     func as func_d,
     affine as affine_d,
     memref as memref_d,
@@ -33,15 +33,15 @@ from hcl_mlir.dialects import (
     arith as arith_d,
     scf as scf_d,
 )
-from hcl_mlir.ir import StringAttr
-from hcl_mlir.passmanager import PassManager as mlir_pass_manager
+from allo._mlir.ir import StringAttr
+from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer, store_tensor
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
 
 
 def _mlir_lower_pipeline(module, **kwargs):
-    hcl_d.loop_transformation(module)
+    allo_d.loop_transformation(module)
     passes = ["affine-loop-normalize", "cse", "affine-simplify-structures"]
     if "canonicalize" in kwargs:
         passes += ["canonicalize"]

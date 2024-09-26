@@ -4,7 +4,7 @@
 
 import functools
 import gc
-from hcl_mlir.ir import (
+from allo._mlir.ir import (
     StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -13,7 +13,7 @@ from hcl_mlir.ir import (
     MemRefType,
     FunctionType,
 )
-from hcl_mlir.dialects import func as func_d, memref as memref_d
+from allo._mlir.dialects import func as func_d, memref as memref_d
 import numpy as np
 
 from .customize import customize

@@ -5,20 +5,20 @@
 import os
 import ctypes
 import numpy as np
-from hcl_mlir.ir import (
+from allo._mlir.ir import (
     Context,
     Location,
     Module,
     UnitAttr,
 )
-from hcl_mlir.dialects import hcl as hcl_d
-from hcl_mlir.passmanager import PassManager
-from hcl_mlir.execution_engine import ExecutionEngine
-from hcl_mlir.runtime import (
+from allo._mlir.dialects import allo as allo_d
+from allo._mlir.passmanager import PassManager
+from allo._mlir.execution_engine import ExecutionEngine
+from allo._mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
 )
-from hcl_mlir.exceptions import DTypeWarning
+from allo._mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
 from ..passes import (
     _mlir_lower_pipeline,
@@ -46,7 +46,7 @@ from ..utils import (
 
 def invoke_mlir_parser(mod: str):
     with Context() as ctx, Location.unknown():
-        hcl_d.register_dialect(ctx)
+        allo_d.register_dialect(ctx)
         module = Module.parse(str(mod), ctx)
     return module
 
@@ -55,7 +55,7 @@ class LLVMModule:
     def __init__(self, mod, top_func_name, ext_libs=None):
         # Copy the module to avoid modifying the original one
         with Context() as ctx:
-            hcl_d.register_dialect(ctx)
+            allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.top_func_name = top_func_name
             func = find_func_in_module(self.module, top_func_name)
@@ -68,10 +68,10 @@ class LLVMModule:
             if len(ext_libs) > 0:
                 call_ext_libs_in_ptr(self.module, ext_libs)
             # Remove .partition() annotation
-            hcl_d.remove_stride_map(self.module)
+            allo_d.remove_stride_map(self.module)
             # Resolve FixedType
-            hcl_d.lower_fixed_to_int(self.module)
-            hcl_d.lower_bit_ops(self.module)
+            allo_d.lower_fixed_to_int(self.module)
+            allo_d.lower_bit_ops(self.module)
             # Run through lowering passes
             pm = PassManager.parse(
                 "builtin.module("
@@ -96,7 +96,7 @@ class LLVMModule:
             func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
             func.attributes["top"] = UnitAttr.get()
             # Final lowering
-            hcl_d.lower_hcl_to_llvm(self.module, ctx)
+            allo_d.lower_allo_to_llvm(self.module, ctx)
             pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")
             pm.run(self.module.operation)
             # Add shared library

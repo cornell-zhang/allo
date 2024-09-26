@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, too-many-instance-attributes
 
-from hcl_mlir import InsertionPoint
-from hcl_mlir.dialects import hcl as hcl_d
+from allo._mlir import InsertionPoint
+from allo._mlir.dialects import allo as allo_d
 
 
 class LoopScopeGuard:
@@ -41,7 +41,7 @@ class ASTContext:
         self.top_func_tree = None
         self.global_vars = global_vars
         self.mlir_ctx = mlir_ctx
-        hcl_d.register_dialect(mlir_ctx)
+        allo_d.register_dialect(mlir_ctx)
         # map from function name to function arguments
         self.func_args = {} if func_args is None else func_args
         self.func_id = None
