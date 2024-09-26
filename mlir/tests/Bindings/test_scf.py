@@ -1,13 +1,13 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s | FileCheck %s
 
-from hcl_mlir.ir import *
-from hcl_mlir.dialects import arith
-# from hcl_mlir.dialects import func
-from hcl_mlir.dialects import scf
-from hcl_mlir.dialects import func
+from allo_mlir.ir import *
+from allo_mlir.dialects import arith
+# from allo_mlir.dialects import func
+from allo_mlir.dialects import scf
+from allo_mlir.dialects import func
 
 
 def constructAndPrintInModule(f):

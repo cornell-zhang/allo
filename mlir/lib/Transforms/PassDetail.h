@@ -1,21 +1,21 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef HCL_MLIR_PASSDETAIL_H
-#define HCL_MLIR_PASSDETAIL_H
+#ifndef Allo_MLIR_PASSDETAIL_H
+#define Allo_MLIR_PASSDETAIL_H
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 #define GEN_PASS_CLASSES
-#include "hcl/Transforms/Passes.h.inc"
+#include "allo/Transforms/Passes.h.inc"
 
-} // namespace hcl
+} // namespace allo
 } // end namespace mlir
 
-#endif // HCL_MLIR_PASSDETAIL_H
+#endif // Allo_MLIR_PASSDETAIL_H

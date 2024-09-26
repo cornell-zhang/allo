@@ -1,8 +1,8 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-add_mlir_library(hcl_runtime_utils
+add_mlir_library(allo_runtime_utils
     SHARED
-    HCLRuntimeUtils.cpp
+    AlloRuntimeUtils.cpp
 )
-target_compile_definitions(hcl_runtime_utils PRIVATE hcl_runtime_utils_EXPORTS)
+target_compile_definitions(allo_runtime_utils PRIVATE allo_runtime_utils_EXPORTS)

@@ -1,14 +1,14 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  * Modification: ScaleHLS
  * https://github.com/hanchenye/scalehls
  */
 
-#include "hcl/Translation/EmitVivadoHLS.h"
-#include "hcl/Dialect/Visitor.h"
-#include "hcl/Support/Utils.h"
-#include "hcl/Translation/Utils.h"
+#include "allo/Translation/EmitVivadoHLS.h"
+#include "allo/Dialect/Visitor.h"
+#include "allo/Support/Utils.h"
+#include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/AffineExprVisitor.h"
@@ -17,11 +17,11 @@
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 //===----------------------------------------------------------------------===//
 // Utils
@@ -73,12 +73,12 @@ static SmallString<16> getTypeName(Type valType) {
   }
 
   // Handle (custom) fixed point types.
-  else if (auto fixedType = valType.dyn_cast<hcl::FixedType>())
+  else if (auto fixedType = valType.dyn_cast<allo::FixedType>())
     return SmallString<16>(
         "ap_fixed<" + std::to_string(fixedType.getWidth()) + ", " +
         std::to_string(fixedType.getWidth() - fixedType.getFrac()) + ">");
 
-  else if (auto ufixedType = valType.dyn_cast<hcl::UFixedType>())
+  else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>())
     return SmallString<16>(
         "ap_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
@@ -99,10 +99,10 @@ static SmallString<16> getTypeName(Value val) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-class ModuleEmitter : public HCLEmitterBase {
+class ModuleEmitter : public AlloEmitterBase {
 public:
   using operand_range = Operation::operand_range;
-  explicit ModuleEmitter(HCLEmitterState &state) : HCLEmitterBase(state) {}
+  explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
 
   /// SCF statement emitters.
   void emitScfFor(scf::ForOp op);
@@ -125,7 +125,7 @@ public:
   void emitLoad(memref::LoadOp op);
   void emitStore(memref::StoreOp op);
   void emitGetGlobal(memref::GetGlobalOp op);
-  void emitGetGlobalFixed(hcl::GetGlobalFixedOp op);
+  void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);
   void emitSubView(memref::SubViewOp op);
 
@@ -147,11 +147,11 @@ public:
   void emitConstant(arith::ConstantOp op);
   template <typename CastOpType> void emitCast(CastOpType op);
   void emitGeneralCast(UnrealizedConversionCastOp op);
-  void emitGetBit(hcl::GetIntBitOp op);
-  void emitSetBit(hcl::SetIntBitOp op);
-  void emitGetSlice(hcl::GetIntSliceOp op);
-  void emitSetSlice(hcl::SetIntSliceOp op);
-  void emitBitReverse(hcl::BitReverseOp op);
+  void emitGetBit(allo::GetIntBitOp op);
+  void emitSetBit(allo::SetIntBitOp op);
+  void emitGetSlice(allo::GetIntSliceOp op);
+  void emitSetSlice(allo::SetIntSliceOp op);
+  void emitBitReverse(allo::BitReverseOp op);
   void emitBitcast(arith::BitcastOp op);
 
   /// Top-level MLIR module emitter.
@@ -181,13 +181,13 @@ private:
 //===----------------------------------------------------------------------===//
 
 namespace {
-class AffineExprEmitter : public HCLEmitterBase,
+class AffineExprEmitter : public AlloEmitterBase,
                           public AffineExprVisitor<AffineExprEmitter> {
 public:
   using operand_range = Operation::operand_range;
-  explicit AffineExprEmitter(HCLEmitterState &state, unsigned numDim,
+  explicit AffineExprEmitter(AlloEmitterState &state, unsigned numDim,
                              operand_range operands)
-      : HCLEmitterBase(state), numDim(numDim), operands(operands) {}
+      : AlloEmitterBase(state), numDim(numDim), operands(operands) {}
 
   void visitAddExpr(AffineBinaryOpExpr expr) { emitAffineBinary(expr, "+"); }
   void visitMulExpr(AffineBinaryOpExpr expr) { emitAffineBinary(expr, "*"); }
@@ -306,7 +306,7 @@ public:
   bool visitOp(memref::GetGlobalOp op) {
     return emitter.emitGetGlobal(op), true;
   }
-  bool visitOp(hcl::GetGlobalFixedOp op) {
+  bool visitOp(allo::GetGlobalFixedOp op) {
     return emitter.emitGetGlobalFixed(op), true;
   }
   bool visitOp(memref::GlobalOp op) { return emitter.emitGlobal(op), true; }
@@ -371,11 +371,11 @@ public:
   bool visitOp(arith::ShLIOp op) { return emitter.emitBinary(op, "<<"), true; }
   bool visitOp(arith::ShRSIOp op) { return emitter.emitBinary(op, ">>"), true; }
   bool visitOp(arith::ShRUIOp op) { return emitter.emitBinary(op, ">>"), true; }
-  bool visitOp(hcl::GetIntBitOp op) { return emitter.emitGetBit(op), true; }
-  bool visitOp(hcl::SetIntBitOp op) { return emitter.emitSetBit(op), true; }
-  bool visitOp(hcl::GetIntSliceOp op) { return emitter.emitGetSlice(op), true; }
-  bool visitOp(hcl::SetIntSliceOp op) { return emitter.emitSetSlice(op), true; }
-  bool visitOp(hcl::BitReverseOp op) {
+  bool visitOp(allo::GetIntBitOp op) { return emitter.emitGetBit(op), true; }
+  bool visitOp(allo::SetIntBitOp op) { return emitter.emitSetBit(op), true; }
+  bool visitOp(allo::GetIntSliceOp op) { return emitter.emitGetSlice(op), true; }
+  bool visitOp(allo::SetIntSliceOp op) { return emitter.emitSetSlice(op), true; }
+  bool visitOp(allo::BitReverseOp op) {
     return emitter.emitBitReverse(op), true;
   }
 
@@ -435,40 +435,40 @@ public:
   bool visitOp(arith::ExtFOp op) {
     return emitter.emitCast<arith::ExtFOp>(op), true;
   }
-  bool visitOp(hcl::FixedToFloatOp op) {
-    return emitter.emitCast<hcl::FixedToFloatOp>(op), true;
+  bool visitOp(allo::FixedToFloatOp op) {
+    return emitter.emitCast<allo::FixedToFloatOp>(op), true;
   }
-  bool visitOp(hcl::FloatToFixedOp op) {
-    return emitter.emitCast<hcl::FloatToFixedOp>(op), true;
+  bool visitOp(allo::FloatToFixedOp op) {
+    return emitter.emitCast<allo::FloatToFixedOp>(op), true;
   }
-  bool visitOp(hcl::IntToFixedOp op) {
-    return emitter.emitCast<hcl::IntToFixedOp>(op), true;
+  bool visitOp(allo::IntToFixedOp op) {
+    return emitter.emitCast<allo::IntToFixedOp>(op), true;
   }
-  bool visitOp(hcl::FixedToIntOp op) {
-    return emitter.emitCast<hcl::FixedToIntOp>(op), true;
+  bool visitOp(allo::FixedToIntOp op) {
+    return emitter.emitCast<allo::FixedToIntOp>(op), true;
   }
-  bool visitOp(hcl::FixedToFixedOp op) {
-    return emitter.emitCast<hcl::FixedToFixedOp>(op), true;
+  bool visitOp(allo::FixedToFixedOp op) {
+    return emitter.emitCast<allo::FixedToFixedOp>(op), true;
   }
   bool visitOp(arith::BitcastOp op) { return emitter.emitBitcast(op), true; }
   bool visitOp(UnrealizedConversionCastOp op) {
     return emitter.emitGeneralCast(op), true;
   }
 
-  /// HCL operations.
-  bool visitOp(hcl::CreateLoopHandleOp op) { return true; }
-  bool visitOp(hcl::CreateOpHandleOp op) { return true; }
+  /// Allo operations.
+  bool visitOp(allo::CreateLoopHandleOp op) { return true; }
+  bool visitOp(allo::CreateOpHandleOp op) { return true; }
 
   /// Fixed points
-  bool visitOp(hcl::AddFixedOp op) { return emitter.emitBinary(op, "+"), true; }
-  bool visitOp(hcl::SubFixedOp op) { return emitter.emitBinary(op, "-"), true; }
-  bool visitOp(hcl::MulFixedOp op) { return emitter.emitBinary(op, "*"), true; }
-  bool visitOp(hcl::DivFixedOp op) { return emitter.emitBinary(op, "/"), true; }
-  bool visitOp(hcl::CmpFixedOp op);
-  bool visitOp(hcl::MinFixedOp op) {
+  bool visitOp(allo::AddFixedOp op) { return emitter.emitBinary(op, "+"), true; }
+  bool visitOp(allo::SubFixedOp op) { return emitter.emitBinary(op, "-"), true; }
+  bool visitOp(allo::MulFixedOp op) { return emitter.emitBinary(op, "*"), true; }
+  bool visitOp(allo::DivFixedOp op) { return emitter.emitBinary(op, "/"), true; }
+  bool visitOp(allo::CmpFixedOp op);
+  bool visitOp(allo::MinFixedOp op) {
     return emitter.emitMaxMin(op, "min"), true;
   }
-  bool visitOp(hcl::MaxFixedOp op) {
+  bool visitOp(allo::MaxFixedOp op) {
     return emitter.emitMaxMin(op, "max"), true;
   }
 
@@ -526,23 +526,23 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
   return false;
 }
 
-bool ExprVisitor::visitOp(hcl::CmpFixedOp op) {
+bool ExprVisitor::visitOp(allo::CmpFixedOp op) {
   switch (op.getPredicate()) {
-  case hcl::CmpFixedPredicate::eq:
+  case allo::CmpFixedPredicate::eq:
     return emitter.emitBinary(op, "=="), true;
-  case hcl::CmpFixedPredicate::ne:
+  case allo::CmpFixedPredicate::ne:
     return emitter.emitBinary(op, "!="), true;
-  case hcl::CmpFixedPredicate::slt:
-  case hcl::CmpFixedPredicate::ult:
+  case allo::CmpFixedPredicate::slt:
+  case allo::CmpFixedPredicate::ult:
     return emitter.emitBinary(op, "<"), true;
-  case hcl::CmpFixedPredicate::sle:
-  case hcl::CmpFixedPredicate::ule:
+  case allo::CmpFixedPredicate::sle:
+  case allo::CmpFixedPredicate::ule:
     return emitter.emitBinary(op, "<="), true;
-  case hcl::CmpFixedPredicate::sgt:
-  case hcl::CmpFixedPredicate::ugt:
+  case allo::CmpFixedPredicate::sgt:
+  case allo::CmpFixedPredicate::ugt:
     return emitter.emitBinary(op, ">"), true;
-  case hcl::CmpFixedPredicate::sge:
-  case hcl::CmpFixedPredicate::uge:
+  case allo::CmpFixedPredicate::sge:
+  case allo::CmpFixedPredicate::uge:
     return emitter.emitBinary(op, ">="), true;
   default:
     op.emitError("has unsupported compare type.");
@@ -1200,7 +1200,7 @@ void ModuleEmitter::emitGetGlobal(memref::GetGlobalOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetGlobalFixed(hcl::GetGlobalFixedOp op) {
+void ModuleEmitter::emitGetGlobalFixed(allo::GetGlobalFixedOp op) {
   indent();
   os << "// const ";
   Value result = op.getResult();
@@ -1407,7 +1407,7 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
-void ModuleEmitter::emitGetBit(hcl::GetIntBitOp op) {
+void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1428,7 +1428,7 @@ void ModuleEmitter::emitGetBit(hcl::GetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitSetBit(hcl::SetIntBitOp op) {
+void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
   // generate ap_int types
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
@@ -1453,7 +1453,7 @@ void ModuleEmitter::emitSetBit(hcl::SetIntBitOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitGetSlice(hcl::GetIntSliceOp op) {
+void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -1476,7 +1476,7 @@ void ModuleEmitter::emitGetSlice(hcl::GetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitSetSlice(hcl::SetIntSliceOp op) {
+void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   indent();
   // T v;
   // v(a, b) = x;
@@ -1506,7 +1506,7 @@ void ModuleEmitter::emitSetSlice(hcl::SetIntSliceOp op) {
   emitInfoAndNewLine(op);
 }
 
-void ModuleEmitter::emitBitReverse(hcl::BitReverseOp op) {
+void ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
@@ -2249,22 +2249,22 @@ using namespace std;
 }
 
 //===----------------------------------------------------------------------===//
-// Entry of hcl-translate
+// Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult hcl::emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os) {
-  HCLEmitterState state(os);
+LogicalResult allo::emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os) {
+  AlloEmitterState state(os);
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
-void hcl::registerEmitVivadoHLSTranslation() {
+void allo::registerEmitVivadoHLSTranslation() {
   static TranslateFromMLIRRegistration toVivadoHLS(
       "emit-vivado-hls", "Emit Vivado HLS", emitVivadoHLS,
       [&](DialectRegistry &registry) {
         // clang-format off
         registry.insert<
-          mlir::hcl::HeteroCLDialect,
+          mlir::allo::AlloDialect,
           mlir::func::FuncDialect,
           mlir::arith::ArithDialect,
           mlir::tensor::TensorDialect,

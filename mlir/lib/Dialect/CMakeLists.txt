@@ -1,18 +1,18 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-add_mlir_dialect_library(MLIRHeteroCL
-        HeteroCLDialect.cpp
-        HeteroCLOps.cpp
+add_mlir_dialect_library(MLIRAllo
+        AlloDialect.cpp
+        AlloOps.cpp
 
         ADDITIONAL_HEADER_DIRS
-        ${PROJECT_SOURCE_DIR}/include/hcl
+        ${PROJECT_SOURCE_DIR}/include/allo
 
         DEPENDS
-        MLIRHeteroCLOpsIncGen
-        MLIRHeteroCLTypesIncGen
-        MLIRHeteroCLAttrsIncGen
-        MLIRHeteroCLEnumsIncGen
+        MLIRAlloOpsIncGen
+        MLIRAlloTypesIncGen
+        MLIRAlloAttrsIncGen
+        MLIRAlloEnumsIncGen
 
 	LINK_LIBS PUBLIC
 	MLIRIR

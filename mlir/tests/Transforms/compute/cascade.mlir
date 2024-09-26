@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 // CHECK: #map = affine_map<(d0) -> (d0 * 16)>
 // CHECK: #map1 = affine_map<(d0, d1) -> (d1 + d0)>
@@ -31,10 +31,10 @@ module {
     }
     func.func @matrix_multiply(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>)
     {
-        %s = hcl.create_op_handle "s"
-        %l1 = hcl.create_loop_handle %s, "i"
-        %l2 = hcl.create_loop_handle %s, "j"
-        %l3 = hcl.create_loop_handle %s, "k"
+        %s = allo.create_op_handle "s"
+        %l1 = allo.create_loop_handle %s, "i"
+        %l2 = allo.create_loop_handle %s, "j"
+        %l3 = allo.create_loop_handle %s, "k"
         // CHECK: affine.for %[[ARG:.*]] = 0 to 128 {
         // CHECK:   affine.for %[[ARG1:.*]] = 0 to 8 {
         affine.for %i = 0 to 1024 {
@@ -54,9 +54,9 @@ module {
                 } { loop_name = "k" }
             } { loop_name = "j" }
         } { loop_name = "i", op_name = "s" }
-        %l4, %l5 = hcl.split (%l1, 8)
-        %l6, %l7, %l8, %l9 = hcl.tile (%l2, %l3, 2, 4) // split & tile
-        %l10, %l11 = hcl.split (%l6, 16)
+        %l4, %l5 = allo.split (%l1, 8)
+        %l6, %l7, %l8, %l9 = allo.tile (%l2, %l3, 2, 4) // split & tile
+        %l10, %l11 = allo.split (%l6, 16)
         return
     }
 }

@@ -1,7 +1,7 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-add_mlir_public_c_api_library(MLIRHCLCAPIEmitHLSCpp
+add_mlir_public_c_api_library(MLIRAlloCAPIEmitHLSCpp
   EmitVivadoHLS.cpp
   EmitIntelHLS.cpp
 
@@ -10,5 +10,5 @@ add_mlir_public_c_api_library(MLIRHCLCAPIEmitHLSCpp
 
   LINK_LIBS PUBLIC
   MLIRCAPIIR
-  MLIRHCLEmitHLSCpp
+  MLIRAlloEmitHLSCpp
   )

@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt %s --return-to-input
+// RUN: allo-opt %s --return-to-input
 module {
   func.func @top(%arg0: memref<10xi32>) -> (memref<10xi32>, memref<10xi32>) attributes {itypes = "s", otypes = "ss", top} {
     %0 = memref.alloc() {name = "compute_1"} : memref<10xi32>

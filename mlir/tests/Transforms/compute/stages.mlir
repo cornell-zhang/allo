@@ -1,19 +1,19 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 module {
     func.func @matrix_multiply(%A: memref<1024x1024xf32>, %B: memref<1024x1024xf32>, %C: memref<1024x1024xf32>)
     {
-        %s1 = hcl.create_op_handle "s1"
-        %l1 = hcl.create_loop_handle %s1, "i"
-        %l2 = hcl.create_loop_handle %s1, "j"
-        %l3 = hcl.create_loop_handle %s1, "k"
-        %s2 = hcl.create_op_handle "s2"
-        %l11 = hcl.create_loop_handle %s2, "i1"
-        %l21 = hcl.create_loop_handle %s2, "j1"
-        %l31 = hcl.create_loop_handle %s2, "k1"
+        %s1 = allo.create_op_handle "s1"
+        %l1 = allo.create_loop_handle %s1, "i"
+        %l2 = allo.create_loop_handle %s1, "j"
+        %l3 = allo.create_loop_handle %s1, "k"
+        %s2 = allo.create_op_handle "s2"
+        %l11 = allo.create_loop_handle %s2, "i1"
+        %l21 = allo.create_loop_handle %s2, "j1"
+        %l31 = allo.create_loop_handle %s2, "k1"
         affine.for %i = 0 to 1024 {
             affine.for %j = 0 to 1024 {
                 affine.for %k = 0 to 1024 {
@@ -44,8 +44,8 @@ module {
             } { loop_name = "j1" }
         // CHECK: } {loop_name = "k1", op_name = "s2"}
         } { loop_name = "i1", op_name = "s2"}
-        hcl.reorder (%l3, %l2)
-        hcl.reorder (%l31, %l21, %l11)
+        allo.reorder (%l3, %l2)
+        allo.reorder (%l31, %l21, %l11)
         return
     }
 }

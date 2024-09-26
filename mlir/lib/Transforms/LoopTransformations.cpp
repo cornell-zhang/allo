@@ -1,14 +1,14 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "PassDetail.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Support/Utils.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Support/Utils.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopFusionUtils.h"
@@ -30,7 +30,7 @@
 #include <set>
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 using AffineLoopBand = SmallVector<AffineForOp, 6>;
 
@@ -39,7 +39,7 @@ using AffineLoopBand = SmallVector<AffineForOp, 6>;
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 struct ExprCompare {
   int findConstantExpr(const AffineExpr &exp) const {
@@ -812,8 +812,8 @@ LogicalResult coalesceLoops(MutableArrayRef<AffineForOp> loops,
   return success();
 }
 
-// Notice hcl.fuse (fuses nested loops) is different from affine.fuse,
-// which fuses contiguous loops. This is actually the case of hcl.compute_at.
+// Notice allo.fuse (fuses nested loops) is different from affine.fuse,
+// which fuses contiguous loops. This is actually the case of allo.compute_at.
 LogicalResult runFusing(func::FuncOp &f, FuseOp &fuseOp) {
   // 1) Get the schedule
   const auto loopsToFuse = fuseOp.getLoops(); // operand_range
@@ -1138,7 +1138,7 @@ LogicalResult runComputeAt(func::FuncOp &f, ComputeAtOp &computeAtOp) {
   } else {
     // strategy = FusionStrategy::Sibling;
     computeAtOp.emitWarning(
-        "MLIR loop fusion pass failed. Attempt using HCL's loop fusion pass.");
+        "MLIR loop fusion pass failed. Attempt using Allo's loop fusion pass.");
     // get inner loops
     AffineForOp secondForOp = consumerFor;
     getLoop(secondForOp, loop_name);
@@ -2849,7 +2849,7 @@ void getInputMemRefs(AffineForOp stage, SmallVector<Value> &allMemrefs,
     auto target = op.getOperand(opId);
     auto defOp = target.getDefiningOp();
     if (defOp && (llvm::isa<memref::GetGlobalOp>(defOp) ||
-                  llvm::isa<hcl::GetGlobalFixedOp>(defOp))) {
+                  llvm::isa<allo::GetGlobalFixedOp>(defOp))) {
       opToMove.insert(defOp);
     } else {
       if (std::find(allMemrefs.begin(), allMemrefs.end(), target) ==
@@ -3202,7 +3202,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
           targetLoadOp->setAttr("map", AffineMapAttr::get(map));
           if (isMod) {
             // See the issue:
-            // https://github.com/cornell-zhang/hcl-dialect/issues/127
+            // https://github.com/cornell-zhang/allo-dialect/issues/127
             OpBuilder builder(targetLoadOp);
             SmallVector<Value> indices(targetLoadOp.getIndices());
             int pos = -1;
@@ -3542,7 +3542,7 @@ LogicalResult runReform(func::FuncOp &f, ReformOp &reformOp, Value &array) {
   return success();
 }
 
-bool isHCLOp(Operation &op) {
+bool isAlloOp(Operation &op) {
   return llvm::isa<SplitOp, TileOp, ReorderOp, UnrollOp, UnfoldOp,
                    IntraKernelToOp, PipelineOp, ParallelOp, FuseOp, ComputeAtOp,
                    PartitionOp, ReuseAtOp, BufferAtOp, OutlineOp, ReshapeOp,
@@ -3557,7 +3557,7 @@ void eraseScheduleOp(func::FuncOp &f,
   }
   SmallVector<Operation *, 10> handleToRemove;
   for (Operation &op : f.getOps()) {
-    if (llvm::isa<hcl::CreateLoopHandleOp, hcl::CreateOpHandleOp>(op))
+    if (llvm::isa<allo::CreateLoopHandleOp, allo::CreateOpHandleOp>(op))
       handleToRemove.push_back(&op);
   }
   std::reverse(handleToRemove.begin(), handleToRemove.end());
@@ -3569,20 +3569,20 @@ void eraseScheduleOp(func::FuncOp &f,
 
 void applyCustomization(
     func::FuncOp &top_func,
-    std::map<std::string, hcl::CustomizationOp> &customizationMap,
+    std::map<std::string, allo::CustomizationOp> &customizationMap,
     SmallVector<Operation *, 10> &opToRemove) {
   // skip if top_func has no body
   if (top_func.getBlocks().size() == 0)
     return;
   auto builder = OpBuilder::atBlockTerminator(&(top_func.getBody().front()));
-  for (auto applyOp : top_func.getOps<hcl::ApplyOp>()) {
+  for (auto applyOp : top_func.getOps<allo::ApplyOp>()) {
     auto c = customizationMap[applyOp.getCallee().str()];
     DenseMap<Value, Value> arg2operand;
     for (auto item : llvm::enumerate(c.getArguments())) {
       arg2operand[item.value()] = applyOp.getOperand(item.index());
     }
     for (Operation &op : c.getOps()) {
-      if (llvm::isa<hcl::EndOp>(op))
+      if (llvm::isa<allo::EndOp>(op))
         continue;
       mlir::IRMapping mapping;
       for (auto item : llvm::enumerate(op.getOperands())) {
@@ -3601,13 +3601,13 @@ void applyCustomization(
 
 bool applyLoopTransformationOnSingleFunction(
     ModuleOp &mod, func::FuncOp &f,
-    std::map<std::string, hcl::CustomizationOp> &customizationMap) {
+    std::map<std::string, allo::CustomizationOp> &customizationMap) {
   SmallVector<Operation *, 10> opToRemove;
   applyCustomization(f, customizationMap, opToRemove);
   // schedule should preverse orders, thus traverse one by one
   // the following shows the dispatching logic
   for (Operation &op : f.getOps()) {
-    if (isHCLOp(op)) {
+    if (isAlloOp(op)) {
       if (auto new_op = dyn_cast<SplitOp>(op)) {
         if (failed(runSplitting(f, new_op)))
           return false;
@@ -3709,8 +3709,8 @@ bool applyLoopTransformationOnSingleFunction(
 }
 
 bool applyLoopTransformation(ModuleOp &mod) {
-  std::map<std::string, hcl::CustomizationOp> customizationMap;
-  for (auto c : mod.getOps<hcl::CustomizationOp>()) {
+  std::map<std::string, allo::CustomizationOp> customizationMap;
+  for (auto c : mod.getOps<allo::CustomizationOp>()) {
     customizationMap[c.getName().str()] = c;
   }
   // apply schedule
@@ -3720,13 +3720,13 @@ bool applyLoopTransformation(ModuleOp &mod) {
   return true;
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
 
-struct HCLLoopTransformation
-    : public LoopTransformationBase<HCLLoopTransformation> {
+struct AlloLoopTransformation
+    : public LoopTransformationBase<AlloLoopTransformation> {
 
   void runOnOperation() override {
     auto mod = getOperation();
@@ -3738,12 +3738,12 @@ struct HCLLoopTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 // Create A Loop Transformation Pass
 std::unique_ptr<OperationPass<ModuleOp>> createLoopTransformationPass() {
-  return std::make_unique<HCLLoopTransformation>();
+  return std::make_unique<AlloLoopTransformation>();
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

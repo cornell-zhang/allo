@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # -*- Python -*-
@@ -60,15 +60,15 @@ llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 
 tool_dirs = [config.standalone_tools_dir, config.llvm_tools_dir]
 tools = [
-    'hcl-opt',
-    'hcl-translate',
+    'allo-opt',
+    'allo-translate',
     ToolSubst('%PYTHON', config.python_executable, unresolved='ignore'),
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 llvm_config.with_environment('PYTHONPATH', [
-    os.path.join(config.mlir_binary_dir, 'tools/hcl/python_packages/hcl_core'),
+    os.path.join(config.mlir_binary_dir, 'tools/allo/python_packages/allo_core'),
 ], append_path=True)
 llvm_config.with_environment('LLVM_BUILD_DIR', 
     os.path.join(config.llvm_tools_dir, ".."),

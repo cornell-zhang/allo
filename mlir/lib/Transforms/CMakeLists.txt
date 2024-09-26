@@ -1,7 +1,7 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-add_mlir_library(MLIRHCLPasses
+add_mlir_library(MLIRAlloPasses
     LoopTransformations.cpp
     AnyWidthInteger.cpp
     MoveReturnToInput.cpp
@@ -12,12 +12,12 @@ add_mlir_library(MLIRHCLPasses
     DataPlacement.cpp
 
     ADDITIONAL_HEADER_DIRS
-    ${PROJECT_SOURCE_DIR}/include/hcl
+    ${PROJECT_SOURCE_DIR}/include/allo
 
     DEPENDS
-    MLIRHeteroCLOpsIncGen
-    MLIRHeteroCLTypesIncGen
-    MLIRHeteroCLPassesIncGen
+    MLIRAlloOpsIncGen
+    MLIRAlloTypesIncGen
+    MLIRAlloPassesIncGen
 
     LINK_COMPONENTS
     Core
@@ -25,6 +25,6 @@ add_mlir_library(MLIRHCLPasses
     LINK_LIBS PUBLIC
     MLIRIR
     MLIRPass
-    MLIRHeteroCL
-    MLIRHCLSupport
+    MLIRAllo
+    MLIRAlloSupport
 )

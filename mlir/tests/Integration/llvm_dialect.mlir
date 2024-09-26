@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt %s
+// RUN: allo-opt %s
 module {
   llvm.func @malloc(i64) -> !llvm.ptr<i8>
   llvm.func @top(%arg0: !llvm.ptr<f32>, %arg1: !llvm.ptr<f32>, %arg2: i64, %arg3: i64, %arg4: i64, %arg5: i64, %arg6: i64, %arg7: !llvm.ptr<f32>, %arg8: !llvm.ptr<f32>, %arg9: i64, %arg10: i64, %arg11: i64, %arg12: i64, %arg13: i64, %arg14: !llvm.ptr<f32>, %arg15: !llvm.ptr<f32>, %arg16: i64, %arg17: i64, %arg18: i64, %arg19: i64, %arg20: i64, %arg21: !llvm.ptr<f32>, %arg22: !llvm.ptr<f32>, %arg23: i64, %arg24: i64, %arg25: i64, %arg26: i64, %arg27: i64) -> !llvm.struct<(ptr<f32>, ptr<f32>, i64, array<2 x i64>, array<2 x i64>)> attributes {llvm.emit_c_interface, top} {

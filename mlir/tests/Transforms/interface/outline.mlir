@@ -1,14 +1,14 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 module {
   func.func @top(%arg0: memref<10x32xi32>) -> memref<10x32xi32> attributes {itypes = "s", otypes = "s"} {
     %0 = memref.alloc() {name = "C"} : memref<10x32xi32>
-    %3 = hcl.create_op_handle "C"
-    %1 = hcl.create_loop_handle %3, "i"
-    %2 = hcl.create_loop_handle %3, "j"
+    %3 = allo.create_op_handle "C"
+    %1 = allo.create_loop_handle %3, "i"
+    %2 = allo.create_loop_handle %3, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %arg0[%arg1, %arg2] {from = "A"} : memref<10x32xi32>
@@ -18,9 +18,9 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "C"}
     %4 = memref.alloc() {name = "D"} : memref<10x32xi32>
-    %7 = hcl.create_op_handle "D"
-    %5 = hcl.create_loop_handle %7, "i"
-    %6 = hcl.create_loop_handle %7, "j"
+    %7 = allo.create_op_handle "D"
+    %5 = allo.create_loop_handle %7, "i"
+    %6 = allo.create_loop_handle %7, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %0[%arg1, %arg2] {from = "C"} : memref<10x32xi32>
@@ -30,9 +30,9 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "D"}
     %8 = memref.alloc() {name = "E"} : memref<10x32xi32>
-    %11 = hcl.create_op_handle "E"
-    %9 = hcl.create_loop_handle %11, "i"
-    %10 = hcl.create_loop_handle %11, "j"
+    %11 = allo.create_op_handle "E"
+    %9 = allo.create_loop_handle %11, "i"
+    %10 = allo.create_loop_handle %11, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %4[%arg1, %arg2] {from = "D"} : memref<10x32xi32>
@@ -42,16 +42,16 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "E"}
     // CHECK: call @Stage_C
-    hcl.outline (%3)
+    allo.outline (%3)
     // CHECK: call @Stage_D_E
-    hcl.outline (%7, %11)
+    allo.outline (%7, %11)
     return %8 : memref<10x32xi32>
   }
   func.func @top2(%arg0: memref<10x32xi32>) -> memref<10x32xi32> attributes {itypes = "s", otypes = "s"} {
     %0 = memref.alloc() {name = "C1"} : memref<10x32xi32>
-    %3 = hcl.create_op_handle "C1"
-    %1 = hcl.create_loop_handle %3, "i"
-    %2 = hcl.create_loop_handle %3, "j"
+    %3 = allo.create_op_handle "C1"
+    %1 = allo.create_loop_handle %3, "i"
+    %2 = allo.create_loop_handle %3, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %arg0[%arg1, %arg2] {from = "A1"} : memref<10x32xi32>
@@ -61,9 +61,9 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "C1"}
     %4 = memref.alloc() {name = "D"} : memref<10x32xi32>
-    %7 = hcl.create_op_handle "D1"
-    %5 = hcl.create_loop_handle %7, "i"
-    %6 = hcl.create_loop_handle %7, "j"
+    %7 = allo.create_op_handle "D1"
+    %5 = allo.create_loop_handle %7, "i"
+    %6 = allo.create_loop_handle %7, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %0[%arg1, %arg2] {from = "C1"} : memref<10x32xi32>
@@ -73,9 +73,9 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "D1"}
     %8 = memref.alloc() {name = "E1"} : memref<10x32xi32>
-    %11 = hcl.create_op_handle "E1"
-    %9 = hcl.create_loop_handle %11, "i"
-    %10 = hcl.create_loop_handle %11, "j"
+    %11 = allo.create_op_handle "E1"
+    %9 = allo.create_loop_handle %11, "i"
+    %10 = allo.create_loop_handle %11, "j"
     affine.for %arg1 = 0 to 10 {
       affine.for %arg2 = 0 to 32 {
         %12 = affine.load %4[%arg1, %arg2] {from = "D1"} : memref<10x32xi32>
@@ -85,13 +85,13 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name = "E1"}
     // CHECK: call @Stage_C1
-    hcl.outline (%3)
+    allo.outline (%3)
     // CHECK: call @Stage_C1
-    hcl.outline (%7) {unify="Stage_C1"}
+    allo.outline (%7) {unify="Stage_C1"}
     // CHECK: affine.for %[[ARG:.*]] = 0 to 10 {
     // CHECK:   affine.for %[[ARG1:.*]] = 0 to 32 {
     // CHECK:     call @Stage_E1
-    hcl.outline (%11) {axis = "j"}
+    allo.outline (%11) {axis = "j"}
     return %8 : memref<10x32xi32>
   }
 }

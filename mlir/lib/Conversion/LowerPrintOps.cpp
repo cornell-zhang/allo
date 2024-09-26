@@ -1,5 +1,5 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,21 +13,21 @@
 // - Print memref. Note that memref printing doesn't support formating.
 //===----------------------------------------------------------------------===//
 
-#include "hcl/Conversion/Passes.h"
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Support/Utils.h"
+#include "allo/Conversion/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Support/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include <string>
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 /// Helper functions to decalare C printf function and format string
 /// Return a symbol reference to the printf function, inserting it into the
@@ -215,12 +215,12 @@ bool applyLowerPrintOps(ModuleOp &module) {
   }
   return true;
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLLowerPrintOpsTransformation
-    : public LowerPrintOpsBase<HCLLowerPrintOpsTransformation> {
+struct AlloLowerPrintOpsTransformation
+    : public LowerPrintOpsBase<AlloLowerPrintOpsTransformation> {
   void runOnOperation() override {
     auto module = getOperation();
     if (!applyLowerPrintOps(module)) {
@@ -231,10 +231,10 @@ struct HCLLowerPrintOpsTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 std::unique_ptr<OperationPass<ModuleOp>> createLowerPrintOpsPass() {
-  return std::make_unique<HCLLowerPrintOpsTransformation>();
+  return std::make_unique<AlloLowerPrintOpsTransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

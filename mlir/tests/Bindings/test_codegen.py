@@ -1,11 +1,11 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s
 
 import io
-from hcl_mlir.ir import Context, Module
-from hcl_mlir.dialects import hcl as hcl_d
+from allo_mlir.ir import Context, Module
+from allo_mlir.dialects import allo as allo_d
 
 
 def test_codegen():
@@ -32,7 +32,7 @@ def test_codegen():
     ctx = Context()
     mod = Module.parse(mlir_code, ctx)
     buf = io.StringIO()
-    res = hcl_d.emit_vhls(mod, buf)
+    res = allo_d.emit_vhls(mod, buf)
     if res:
         buf.seek(0)
         hls_code = buf.read()

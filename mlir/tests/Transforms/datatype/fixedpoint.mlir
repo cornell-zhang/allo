@@ -1,21 +1,21 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt %s --fixed-to-integer | FileCheck %s
+// RUN: allo-opt %s --fixed-to-integer | FileCheck %s
 module {
 
-  func.func @issue_56(%arg0: memref<1000x!hcl.Fixed<8, 6>>) -> memref<1000x!hcl.Fixed<8, 6>> attributes {itypes = "_", otypes = "_", llvm.emit_c_interface, top} {
-    %0 = memref.alloc() {name = "compute_1"} : memref<1000x!hcl.Fixed<8, 6>>
+  func.func @issue_56(%arg0: memref<1000x!allo.Fixed<8, 6>>) -> memref<1000x!allo.Fixed<8, 6>> attributes {itypes = "_", otypes = "_", llvm.emit_c_interface, top} {
+    %0 = memref.alloc() {name = "compute_1"} : memref<1000x!allo.Fixed<8, 6>>
     affine.for %arg1 = 0 to 1000 {
-      %2 = affine.load %arg0[%arg1] {from = "compute_0"} : memref<1000x!hcl.Fixed<8, 6>>
-      affine.store %2, %0[%arg1] {to = "compute_1"} : memref<1000x!hcl.Fixed<8, 6>>
+      %2 = affine.load %arg0[%arg1] {from = "compute_0"} : memref<1000x!allo.Fixed<8, 6>>
+      affine.store %2, %0[%arg1] {to = "compute_1"} : memref<1000x!allo.Fixed<8, 6>>
     } {loop_name = "x", op_name = "compute_1"}
-    %1 = memref.alloc() {name = "compute_2"} : memref<1000x!hcl.Fixed<8, 6>>
+    %1 = memref.alloc() {name = "compute_2"} : memref<1000x!allo.Fixed<8, 6>>
     affine.for %arg1 = 0 to 1000 {
-      %2 = affine.load %0[%arg1] {from = "compute_1"} : memref<1000x!hcl.Fixed<8, 6>>
-      affine.store %2, %1[%arg1] {to = "compute_2"} : memref<1000x!hcl.Fixed<8, 6>>
+      %2 = affine.load %0[%arg1] {from = "compute_1"} : memref<1000x!allo.Fixed<8, 6>>
+      affine.store %2, %1[%arg1] {to = "compute_2"} : memref<1000x!allo.Fixed<8, 6>>
     } {loop_name = "x", op_name = "compute_2"}
-    return %1 : memref<1000x!hcl.Fixed<8, 6>>
+    return %1 : memref<1000x!allo.Fixed<8, 6>>
   }
 
   func.func @func_call(%arg0: memref<10xi32>, %arg1: memref<10xi32>) attributes {itypes = "ss", otypes = ""} {
@@ -35,37 +35,37 @@ module {
   }
 
 
-  func.func @no_return(%arg0: memref<10x!hcl.Fixed<32, 2>>, %arg1: memref<10x!hcl.Fixed<32, 2>>, %arg3: memref<10x!hcl.Fixed<32, 2>>) -> () {
+  func.func @no_return(%arg0: memref<10x!allo.Fixed<32, 2>>, %arg1: memref<10x!allo.Fixed<32, 2>>, %arg3: memref<10x!allo.Fixed<32, 2>>) -> () {
     affine.for %arg2 = 0 to 10 {
-      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!hcl.Fixed<32, 2>>
-      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!hcl.Fixed<32, 2>>
-      %3 = "hcl.add_fixed"(%1, %2) : (!hcl.Fixed<32, 2>, !hcl.Fixed<32, 2>) -> !hcl.Fixed<32, 2>
-      affine.store %3, %arg3[%arg2] {to = "compute_2"} : memref<10x!hcl.Fixed<32, 2>>
+      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!allo.Fixed<32, 2>>
+      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!allo.Fixed<32, 2>>
+      %3 = "allo.add_fixed"(%1, %2) : (!allo.Fixed<32, 2>, !allo.Fixed<32, 2>) -> !allo.Fixed<32, 2>
+      affine.store %3, %arg3[%arg2] {to = "compute_2"} : memref<10x!allo.Fixed<32, 2>>
     } {loop_name = "x", op_name = "compute_2"}
     return
   }
 
-  func.func @top_vadd(%arg0: memref<10x!hcl.Fixed<32, 2>>, %arg1: memref<10x!hcl.Fixed<32, 2>>) -> memref<10x!hcl.Fixed<32, 2>> {
-    %0 = memref.alloc() {name = "compute_2"} : memref<10x!hcl.Fixed<32, 2>>
+  func.func @top_vadd(%arg0: memref<10x!allo.Fixed<32, 2>>, %arg1: memref<10x!allo.Fixed<32, 2>>) -> memref<10x!allo.Fixed<32, 2>> {
+    %0 = memref.alloc() {name = "compute_2"} : memref<10x!allo.Fixed<32, 2>>
     affine.for %arg2 = 0 to 10 {
-      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!hcl.Fixed<32, 2>>
-      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!hcl.Fixed<32, 2>>
-      %3 = "hcl.add_fixed"(%1, %2) : (!hcl.Fixed<32, 2>, !hcl.Fixed<32, 2>) -> !hcl.Fixed<32, 2>
-      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<10x!hcl.Fixed<32, 2>>
+      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!allo.Fixed<32, 2>>
+      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!allo.Fixed<32, 2>>
+      %3 = "allo.add_fixed"(%1, %2) : (!allo.Fixed<32, 2>, !allo.Fixed<32, 2>) -> !allo.Fixed<32, 2>
+      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<10x!allo.Fixed<32, 2>>
     } {loop_name = "x", op_name = "compute_2"}
-    return %0 : memref<10x!hcl.Fixed<32, 2>>
+    return %0 : memref<10x!allo.Fixed<32, 2>>
   }
 
 
-  func.func @top_vmul(%arg0: memref<10x!hcl.Fixed<32, 2>>, %arg1: memref<10x!hcl.Fixed<32, 2>>) -> memref<10x!hcl.Fixed<32, 2>> {
-    %0 = memref.alloc() {name = "compute_2"} : memref<10x!hcl.Fixed<32, 2>>
+  func.func @top_vmul(%arg0: memref<10x!allo.Fixed<32, 2>>, %arg1: memref<10x!allo.Fixed<32, 2>>) -> memref<10x!allo.Fixed<32, 2>> {
+    %0 = memref.alloc() {name = "compute_2"} : memref<10x!allo.Fixed<32, 2>>
     affine.for %arg2 = 0 to 10 {
-      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!hcl.Fixed<32, 2>>
-      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!hcl.Fixed<32, 2>>
-      %3 = "hcl.mul_fixed"(%1, %2) : (!hcl.Fixed<32, 2>, !hcl.Fixed<32, 2>) -> !hcl.Fixed<32, 2>
-      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<10x!hcl.Fixed<32, 2>>
+      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<10x!allo.Fixed<32, 2>>
+      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<10x!allo.Fixed<32, 2>>
+      %3 = "allo.mul_fixed"(%1, %2) : (!allo.Fixed<32, 2>, !allo.Fixed<32, 2>) -> !allo.Fixed<32, 2>
+      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<10x!allo.Fixed<32, 2>>
     } {loop_name = "x", op_name = "compute_2"}
-    return %0 : memref<10x!hcl.Fixed<32, 2>>
+    return %0 : memref<10x!allo.Fixed<32, 2>>
   }
 
   func.func @no_change_int(%arg0: memref<10xi32>) -> memref<10xi32> attributes {itypes = "s", otypes = "s"} {
@@ -92,28 +92,28 @@ module {
     return %0 : memref<10xf32>
   }
 
-  func.func @fixed_div(%arg0: memref<100x!hcl.Fixed<6, 2>>, %arg1: memref<100x!hcl.Fixed<6, 2>>) -> memref<100x!hcl.Fixed<6, 2>> attributes {itypes = "__", otypes = "_"} {
-    %0 = memref.alloc() {name = "compute_2"} : memref<100x!hcl.Fixed<6, 2>>
+  func.func @fixed_div(%arg0: memref<100x!allo.Fixed<6, 2>>, %arg1: memref<100x!allo.Fixed<6, 2>>) -> memref<100x!allo.Fixed<6, 2>> attributes {itypes = "__", otypes = "_"} {
+    %0 = memref.alloc() {name = "compute_2"} : memref<100x!allo.Fixed<6, 2>>
     affine.for %arg2 = 0 to 100 {
-      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<100x!hcl.Fixed<6, 2>>
-      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<100x!hcl.Fixed<6, 2>>
-      %3 = "hcl.div_fixed"(%1, %2) : (!hcl.Fixed<6, 2>, !hcl.Fixed<6, 2>) -> !hcl.Fixed<6, 2>
-      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<100x!hcl.Fixed<6, 2>>
+      %1 = affine.load %arg0[%arg2] {from = "compute_0"} : memref<100x!allo.Fixed<6, 2>>
+      %2 = affine.load %arg1[%arg2] {from = "compute_1"} : memref<100x!allo.Fixed<6, 2>>
+      %3 = "allo.div_fixed"(%1, %2) : (!allo.Fixed<6, 2>, !allo.Fixed<6, 2>) -> !allo.Fixed<6, 2>
+      affine.store %3, %0[%arg2] {to = "compute_2"} : memref<100x!allo.Fixed<6, 2>>
     } {loop_name = "x", op_name = "compute_2"}
-    return %0 : memref<100x!hcl.Fixed<6, 2>>
+    return %0 : memref<100x!allo.Fixed<6, 2>>
   }
 
-  func.func @select_op(%arg0: memref<10x!hcl.Fixed<8, 4>>, %arg1: memref<10x!hcl.Fixed<8, 4>>) attributes {itypes = "__", otypes = ""} {
+  func.func @select_op(%arg0: memref<10x!allo.Fixed<8, 4>>, %arg1: memref<10x!allo.Fixed<8, 4>>) attributes {itypes = "__", otypes = ""} {
     affine.for %arg2 = 0 to 10 {
-      %0 = affine.load %arg0[%arg2] {from = "tensor_0"} : memref<10x!hcl.Fixed<8, 4>>
+      %0 = affine.load %arg0[%arg2] {from = "tensor_0"} : memref<10x!allo.Fixed<8, 4>>
       %c0_i32 = arith.constant 0 : i32
-      %1 = hcl.fixed_to_fixed(%0) : !hcl.Fixed<8, 4> -> !hcl.Fixed<36, 4>
-      %2 = hcl.int_to_fixed(%c0_i32) : i32 -> !hcl.Fixed<36, 4>
-      %3 = hcl.cmp_fixed sgt, %1, %2 : !hcl.Fixed<36, 4>
-      %4 = affine.load %arg0[%arg2] {from = "tensor_0"} : memref<10x!hcl.Fixed<8, 4>>
-      %5 = hcl.int_to_fixed(%c0_i32) : i32 -> !hcl.Fixed<8, 4>
-      %6 = arith.select %3, %4, %5 : !hcl.Fixed<8, 4> // CHECK: i8
-      affine.store %6, %arg1[%arg2] {to = "tensor_1"} : memref<10x!hcl.Fixed<8, 4>>
+      %1 = allo.fixed_to_fixed(%0) : !allo.Fixed<8, 4> -> !allo.Fixed<36, 4>
+      %2 = allo.int_to_fixed(%c0_i32) : i32 -> !allo.Fixed<36, 4>
+      %3 = allo.cmp_fixed sgt, %1, %2 : !allo.Fixed<36, 4>
+      %4 = affine.load %arg0[%arg2] {from = "tensor_0"} : memref<10x!allo.Fixed<8, 4>>
+      %5 = allo.int_to_fixed(%c0_i32) : i32 -> !allo.Fixed<8, 4>
+      %6 = arith.select %3, %4, %5 : !allo.Fixed<8, 4> // CHECK: i8
+      affine.store %6, %arg1[%arg2] {to = "tensor_1"} : memref<10x!allo.Fixed<8, 4>>
     } {loop_name = "x", op_name = "tensor_1"}
     return
   }
@@ -138,23 +138,23 @@ module {
     return %alloc : memref<10xi32>
   }
 
-  func.func @issue_194(%arg0: !hcl.Fixed<8, 3>) -> i32 attributes {itypes = "s", otypes = "s"} {
-    %alloc = memref.alloc() {name = "B"} : memref<1x!hcl.Fixed<8, 3>>
+  func.func @issue_194(%arg0: !allo.Fixed<8, 3>) -> i32 attributes {itypes = "s", otypes = "s"} {
+    %alloc = memref.alloc() {name = "B"} : memref<1x!allo.Fixed<8, 3>>
     %c0_i32 = arith.constant 0 : i32
-    %0 = hcl.int_to_fixed(%c0_i32) : i32 -> !hcl.Fixed<8, 3>
-    affine.store %0, %alloc[0] {to = "B"} : memref<1x!hcl.Fixed<8, 3>>
-    %1 = affine.load %alloc[0] {from = "B"} : memref<1x!hcl.Fixed<8, 3>>
-    %2 = hcl.cmp_fixed ugt, %arg0, %1 : !hcl.Fixed<8, 3>
-    %3 = hcl.fixed_to_fixed(%arg0) : !hcl.Fixed<8, 3> -> !hcl.Fixed<35, 3>
+    %0 = allo.int_to_fixed(%c0_i32) : i32 -> !allo.Fixed<8, 3>
+    affine.store %0, %alloc[0] {to = "B"} : memref<1x!allo.Fixed<8, 3>>
+    %1 = affine.load %alloc[0] {from = "B"} : memref<1x!allo.Fixed<8, 3>>
+    %2 = allo.cmp_fixed ugt, %arg0, %1 : !allo.Fixed<8, 3>
+    %3 = allo.fixed_to_fixed(%arg0) : !allo.Fixed<8, 3> -> !allo.Fixed<35, 3>
     %c0_i32_0 = arith.constant 0 : i32
-    %4 = hcl.int_to_fixed(%c0_i32_0) : i32 -> !hcl.Fixed<35, 3>
-    %5 = hcl.cmp_fixed ugt, %3, %4 : !hcl.Fixed<35, 3>
+    %4 = allo.int_to_fixed(%c0_i32_0) : i32 -> !allo.Fixed<35, 3>
+    %5 = allo.cmp_fixed ugt, %3, %4 : !allo.Fixed<35, 3>
     %6 = arith.andi %2, %5 : i1
     scf.if %6 {
-      affine.store %arg0, %alloc[0] {to = "B"} : memref<1x!hcl.Fixed<8, 3>>
+      affine.store %arg0, %alloc[0] {to = "B"} : memref<1x!allo.Fixed<8, 3>>
     }
-    %7 = affine.load %alloc[0] {from = "B"} : memref<1x!hcl.Fixed<8, 3>>
-    %8 = hcl.fixed_to_int(%7) : !hcl.Fixed<8, 3> -> i32
+    %7 = affine.load %alloc[0] {from = "B"} : memref<1x!allo.Fixed<8, 3>>
+    %8 = allo.fixed_to_int(%7) : !allo.Fixed<8, 3> -> i32
     return %8 : i32
   }
 

@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 // Explanation: this test checks if the induction variable is correctly updated
 // when the non-reduction loop bound is updated in a strided convolution.
@@ -159,12 +159,12 @@ module {
         } {loop_name = "yy"}
       } {loop_name = "ff"}
     } {loop_name = "nn", op_name = "conv1"}
-    %2 = hcl.create_op_handle "conv1"
-    %3 = hcl.create_loop_handle %2, "yy"
-    %4 = hcl.reuse_at(%0 : memref<1x1x18x18xi1>, %3) -> memref<1xf32>
-    %5 = hcl.create_op_handle "conv1"
-    %6 = hcl.create_loop_handle %5, "xx"
-    %7 = hcl.reuse_at(%4 : memref<1xf32>, %6) -> memref<1xf32>
+    %2 = allo.create_op_handle "conv1"
+    %3 = allo.create_loop_handle %2, "yy"
+    %4 = allo.reuse_at(%0 : memref<1x1x18x18xi1>, %3) -> memref<1xf32>
+    %5 = allo.create_op_handle "conv1"
+    %6 = allo.create_loop_handle %5, "xx"
+    %7 = allo.reuse_at(%4 : memref<1xf32>, %6) -> memref<1xf32>
     return %1 : memref<1x16x8x8xi8>
   }
 }

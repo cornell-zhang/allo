@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s
@@ -6,10 +6,10 @@ import os
 import ctypes
 import numpy as np
 
-from hcl_mlir.ir import *
-from hcl_mlir.passmanager import *
-from hcl_mlir.execution_engine import *
-from hcl_mlir.runtime import *
+from allo_mlir.ir import *
+from allo_mlir.passmanager import *
+from allo_mlir.execution_engine import *
+from allo_mlir.runtime import *
 
 
 def lowerToLLVM(module):

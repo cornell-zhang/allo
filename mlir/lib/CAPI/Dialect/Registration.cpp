@@ -1,11 +1,11 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "hcl-c/Dialect/Registration.h"
-#include "hcl/Conversion/Passes.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo-c/Dialect/Registration.h"
+#include "allo/Conversion/Passes.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Affine/Passes.h"
@@ -16,12 +16,12 @@
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
+#include "allo/Dialect/AlloDialect.h"
 #include "mlir/InitAllDialects.h"
 
-void hclMlirRegisterAllDialects(MlirContext context) {
+void alloMlirRegisterAllDialects(MlirContext context) {
   mlir::DialectRegistry registry;
-  registry.insert<mlir::hcl::HeteroCLDialect, mlir::func::FuncDialect,
+  registry.insert<mlir::allo::AlloDialect, mlir::func::FuncDialect,
                   mlir::arith::ArithDialect, mlir::tensor::TensorDialect,
                   mlir::affine::AffineDialect, mlir::math::MathDialect,
                   mlir::memref::MemRefDialect, mlir::pdl::PDLDialect,
@@ -30,7 +30,7 @@ void hclMlirRegisterAllDialects(MlirContext context) {
   unwrap(context)->loadAllAvailableDialects();
 }
 
-void hclMlirRegisterAllPasses() {
+void alloMlirRegisterAllPasses() {
   // General passes
   mlir::registerTransformsPasses();
 
@@ -44,6 +44,6 @@ void hclMlirRegisterAllPasses() {
   mlir::memref::registerMemRefPasses();
   mlir::registerLinalgPasses();
 
-  mlir::hcl::registerHCLPasses();
-  mlir::hcl::registerHCLConversionPasses();
+  mlir::allo::registerAlloPasses();
+  mlir::allo::registerAlloConversionPasses();
 }

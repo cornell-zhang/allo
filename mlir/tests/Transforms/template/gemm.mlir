@@ -1,31 +1,31 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 module {
     // define a customization template
-    hcl.customization @gemm_opt(
-        %AA: memref<?x?x!hcl.Type>,
-        %BB: memref<?x?x!hcl.Type>,
-        %CC: memref<?x?x!hcl.Type>,
-        %i: !hcl.LoopHandle,
-        %j: !hcl.LoopHandle,
-        %k: !hcl.LoopHandle
+    allo.customization @gemm_opt(
+        %AA: memref<?x?x!allo.Type>,
+        %BB: memref<?x?x!allo.Type>,
+        %CC: memref<?x?x!allo.Type>,
+        %i: !allo.LoopHandle,
+        %j: !allo.LoopHandle,
+        %k: !allo.LoopHandle
     ) {
-        hcl.pipeline(%j, 1)
-        hcl.partition(%AA: memref<?x?x!hcl.Type>, "CompletePartition", 2)
-        hcl.partition(%BB: memref<?x?x!hcl.Type>, "CompletePartition", 2)
-        hcl.partition(%CC: memref<?x?x!hcl.Type>, "CompletePartition", 2)
-        hcl.end
+        allo.pipeline(%j, 1)
+        allo.partition(%AA: memref<?x?x!allo.Type>, "CompletePartition", 2)
+        allo.partition(%BB: memref<?x?x!allo.Type>, "CompletePartition", 2)
+        allo.partition(%CC: memref<?x?x!allo.Type>, "CompletePartition", 2)
+        allo.end
     }
 
     // CHECK: #map = affine_map<(d0, d1) -> (0, d1, d0, 0)>
     func.func @top(%A: memref<64x32xi32>, %B: memref<32x64xi32>, %C: memref<64x64xi32>) -> memref<64x64xi32>
     {   
-        %s1 = hcl.create_op_handle "s1"
-        %i1 = hcl.create_loop_handle %s1, "i1"
-        %j1 = hcl.create_loop_handle %s1, "j1"
-        %k1 = hcl.create_loop_handle %s1,  "k1"
+        %s1 = allo.create_op_handle "s1"
+        %i1 = allo.create_loop_handle %s1, "i1"
+        %j1 = allo.create_loop_handle %s1, "j1"
+        %k1 = allo.create_loop_handle %s1,  "k1"
         // D = A * B
         %D = memref.alloc() : memref<64x64xi32>
         affine.for %i = 0 to 64 {
@@ -41,10 +41,10 @@ module {
             // CHECK: pipeline_ii = 1 : i32
             } { loop_name = "j1" }
         } { loop_name = "i1", op_name = "s1" }
-        %s2 = hcl.create_op_handle "s2"
-        %i2 = hcl.create_loop_handle %s2, "i2"
-        %j2 = hcl.create_loop_handle %s2, "j2"
-        %k2 = hcl.create_loop_handle %s2, "k2"
+        %s2 = allo.create_op_handle "s2"
+        %i2 = allo.create_loop_handle %s2, "i2"
+        %j2 = allo.create_loop_handle %s2, "j2"
+        %k2 = allo.create_loop_handle %s2, "k2"
         // E = C * D
         %E = memref.alloc() : memref<64x64xi32>
         affine.for %i = 0 to 64 {
@@ -62,8 +62,8 @@ module {
         } { loop_name = "i2", op_name = "s2" }
 
         // apply the customization template
-        hcl.apply @gemm_opt(%A, %B, %D, %i1, %j1, %k1) : (memref<64x32xi32>, memref<32x64xi32>, memref<64x64xi32>, !hcl.LoopHandle, !hcl.LoopHandle, !hcl.LoopHandle) -> ()
-        hcl.apply @gemm_opt(%C, %D, %E, %i2, %j2, %k2) : (memref<64x64xi32>, memref<64x64xi32>, memref<64x64xi32>, !hcl.LoopHandle, !hcl.LoopHandle, !hcl.LoopHandle) -> ()
+        allo.apply @gemm_opt(%A, %B, %D, %i1, %j1, %k1) : (memref<64x32xi32>, memref<32x64xi32>, memref<64x64xi32>, !allo.LoopHandle, !allo.LoopHandle, !allo.LoopHandle) -> ()
+        allo.apply @gemm_opt(%C, %D, %E, %i2, %j2, %k2) : (memref<64x64xi32>, memref<64x64xi32>, memref<64x64xi32>, !allo.LoopHandle, !allo.LoopHandle, !allo.LoopHandle) -> ()
         return %E : memref<64x64xi32>
     }
 }

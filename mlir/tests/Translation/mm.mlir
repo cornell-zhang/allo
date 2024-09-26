@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt --opt -jit %s | FileCheck %s
+// RUN: allo-opt --opt -jit %s | FileCheck %s
 
 module {
 
@@ -11,10 +11,10 @@ module {
 
   func.func @matrix_multiply(%A: memref<4x4xf32>, %B: memref<4x4xf32>, %C: memref<4x4xf32>)
   { 
-    %s = hcl.create_op_handle "s"
-    %li = hcl.create_loop_handle %s, "i"
-    %lj = hcl.create_loop_handle %s, "j"
-    %lk = hcl.create_loop_handle %s, "k"
+    %s = allo.create_op_handle "s"
+    %li = allo.create_loop_handle %s, "i"
+    %lj = allo.create_loop_handle %s, "j"
+    %lk = allo.create_loop_handle %s, "k"
     // CHECK: llvm.func @matrix_multiply(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: i64, %arg3: i64, %arg4: i64, %arg5: i64, %arg6: i64, %arg7: !llvm.ptr, %arg8: !llvm.ptr, %arg9: i64, %arg10: i64, %arg11: i64, %arg12: i64, %arg13: i64, %arg14: !llvm.ptr, %arg15: !llvm.ptr, %arg16: i64, %arg17: i64, %arg18: i64, %arg19: i64, %arg20: i64) {
     affine.for %i = 0 to 4 {          
       affine.for %j = 0 to 4 {      
@@ -29,11 +29,11 @@ module {
       } {loop_name = "j"}
     } {loop_name = "i", op_name="s"}
       
-    %li0, %li1 = hcl.split (%li, 2)
-    %lj0, %lj1 = hcl.split (%lj, 2)
-    hcl.reorder(%li0, %lj0, %li1,%lj1)
-    hcl.unroll(%lj1)
-    hcl.pipeline(%lj1, 1)
+    %li0, %li1 = allo.split (%li, 2)
+    %lj0, %lj1 = allo.split (%lj, 2)
+    allo.reorder(%li0, %lj0, %li1,%lj1)
+    allo.unroll(%lj1)
+    allo.pipeline(%lj1, 1)
     return
   }
 

@@ -1,30 +1,30 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 //===----------------------------------------------------------------------===//
 // LowerCompositeType Pass
 // This file defines the lowering of composite types such as structs.
-// This pass is separated from HCLToLLVM because it could be used
+// This pass is separated from AlloToLLVM because it could be used
 // in other backends as well, such as HLS backend.
 //===----------------------------------------------------------------------===//
 
-#include "hcl/Conversion/Passes.h"
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Conversion/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 void deadStructConstructElimination(func::FuncOp &func) {
   SmallVector<Operation *, 8> structConstructOps;
@@ -195,7 +195,7 @@ Value buildStructFromInt(OpBuilder &builder, Location loc, Value int_value,
       Value hi_idx = builder.create<mlir::arith::ConstantIndexOp>(loc, hi);
       Value lo_idx = builder.create<mlir::arith::ConstantIndexOp>(loc, lo);
       lo += field_bitwidth;
-      Value field_value = builder.create<mlir::hcl::GetIntSliceOp>(
+      Value field_value = builder.create<mlir::allo::GetIntSliceOp>(
           loc, field_type, int_value, hi_idx, lo_idx);
       struct_elements.push_back(field_value);
     } else if (field_type.isa<StructType>()) {
@@ -275,12 +275,12 @@ bool applyLowerCompositeType(ModuleOp &mod) {
   }
   return true;
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLLowerCompositeTypeTransformation
-    : public LowerCompositeTypeBase<HCLLowerCompositeTypeTransformation> {
+struct AlloLowerCompositeTypeTransformation
+    : public LowerCompositeTypeBase<AlloLowerCompositeTypeTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLowerCompositeType(mod)) {
@@ -291,10 +291,10 @@ struct HCLLowerCompositeTypeTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 std::unique_ptr<OperationPass<ModuleOp>> createLowerCompositeTypePass() {
-  return std::make_unique<HCLLowerCompositeTypeTransformation>();
+  return std::make_unique<AlloLowerCompositeTypeTransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

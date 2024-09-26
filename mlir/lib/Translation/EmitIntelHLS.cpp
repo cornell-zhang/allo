@@ -1,12 +1,12 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "hcl/Translation/EmitIntelHLS.h"
-#include "hcl/Dialect/Visitor.h"
-#include "hcl/Support/Utils.h"
-#include "hcl/Translation/Utils.h"
+#include "allo/Translation/EmitIntelHLS.h"
+#include "allo/Dialect/Visitor.h"
+#include "allo/Support/Utils.h"
+#include "allo/Translation/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/AffineExprVisitor.h"
@@ -15,11 +15,11 @@
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 //===----------------------------------------------------------------------===//
 // Utils
@@ -71,12 +71,12 @@ static SmallString<16> getTypeName(Value val) {
   }
 
   // Handle (custom) fixed point types.
-  else if (auto fixedType = valType.dyn_cast<hcl::FixedType>())
+  else if (auto fixedType = valType.dyn_cast<allo::FixedType>())
     return SmallString<16>(
         "ac_fixed<" + std::to_string(fixedType.getWidth()) + ", " +
         std::to_string(fixedType.getWidth() - fixedType.getFrac()) + ">");
 
-  else if (auto ufixedType = valType.dyn_cast<hcl::UFixedType>())
+  else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>())
     return SmallString<16>(
         "ac_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
@@ -91,10 +91,10 @@ static SmallString<16> getTypeName(Value val) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-class ModuleEmitter : public HCLEmitterBase {
+class ModuleEmitter : public AlloEmitterBase {
 public:
   using operand_range = Operation::operand_range;
-  explicit ModuleEmitter(HCLEmitterState &state) : HCLEmitterBase(state) {}
+  explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
 
   /// Affine statement emitters.
   void emitAffineFor(AffineForOp op);
@@ -143,13 +143,13 @@ private:
 //===----------------------------------------------------------------------===//
 
 namespace {
-class AffineExprEmitter : public HCLEmitterBase,
+class AffineExprEmitter : public AlloEmitterBase,
                           public AffineExprVisitor<AffineExprEmitter> {
 public:
   using operand_range = Operation::operand_range;
-  explicit AffineExprEmitter(HCLEmitterState &state, unsigned numDim,
+  explicit AffineExprEmitter(AlloEmitterState &state, unsigned numDim,
                              operand_range operands)
-      : HCLEmitterBase(state), numDim(numDim), operands(operands) {}
+      : AlloEmitterBase(state), numDim(numDim), operands(operands) {}
 
   void visitAddExpr(AffineBinaryOpExpr expr) { emitAffineBinary(expr, "+"); }
   void visitMulExpr(AffineBinaryOpExpr expr) { emitAffineBinary(expr, "*"); }
@@ -336,9 +336,9 @@ public:
     return emitter.emitCast<arith::ExtFOp>(op), true;
   }
 
-  /// HCL operations.
-  bool visitOp(hcl::CreateLoopHandleOp op) { return true; }
-  bool visitOp(hcl::CreateOpHandleOp op) { return true; }
+  /// Allo operations.
+  bool visitOp(allo::CreateLoopHandleOp op) { return true; }
+  bool visitOp(allo::CreateOpHandleOp op) { return true; }
 
 private:
   ModuleEmitter &emitter;
@@ -1203,22 +1203,22 @@ int main() {
 }
 
 //===----------------------------------------------------------------------===//
-// Entry of hcl-translate
+// Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult hcl::emitIntelHLS(ModuleOp module, llvm::raw_ostream &os) {
-  HCLEmitterState state(os);
+LogicalResult allo::emitIntelHLS(ModuleOp module, llvm::raw_ostream &os) {
+  AlloEmitterState state(os);
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
-void hcl::registerEmitIntelHLSTranslation() {
+void allo::registerEmitIntelHLSTranslation() {
   TranslateFromMLIRRegistration toIntelHLS(
       "emit-intel-hls", "Emit Intel HLS", emitIntelHLS,
       [](DialectRegistry &registry) {
         // clang-format off
         registry.insert<
-          mlir::hcl::HeteroCLDialect,
+          mlir::allo::AlloDialect,
           mlir::func::FuncDialect,
           mlir::arith::ArithDialect,
           mlir::tensor::TensorDialect,

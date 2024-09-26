@@ -1,15 +1,15 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 module {
     func.func @gemm_buffer_at_axis_0(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>)
     {
-        %s = hcl.create_op_handle "s"
-        %li = hcl.create_loop_handle %s, "i"
-        %lj = hcl.create_loop_handle %s, "j"
-        %lk = hcl.create_loop_handle %s, "k"
+        %s = allo.create_op_handle "s"
+        %li = allo.create_loop_handle %s, "i"
+        %lj = allo.create_loop_handle %s, "j"
+        %lk = allo.create_loop_handle %s, "k"
         affine.for %i = 0 to 1024 {
             // CHECK: {{.*}} = memref.alloc() : memref<1024xf32>
             // CHECK: %cst = arith.constant 0.000000e+00 : f32
@@ -33,15 +33,15 @@ module {
             // CHECK:     affine.store %[[RES]], {{.*}}[{{.*}}, {{.*}}] : memref<1024x1024xf32>
             // CHECK: } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } { loop_name = "i", op_name = "s" }
-        %buf = hcl.buffer_at(%C: memref<1024x1024xf32>, %li) -> memref<1024xf32>
+        %buf = allo.buffer_at(%C: memref<1024x1024xf32>, %li) -> memref<1024xf32>
         return
     }
     func.func @gemm_buffer_at_axis_1(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>)
     {
-        %s = hcl.create_op_handle "s"
-        %li = hcl.create_loop_handle %s, "i"
-        %lj = hcl.create_loop_handle %s, "j"
-        %lk = hcl.create_loop_handle %s, "k"
+        %s = allo.create_op_handle "s"
+        %li = allo.create_loop_handle %s, "i"
+        %lj = allo.create_loop_handle %s, "j"
+        %lk = allo.create_loop_handle %s, "k"
         affine.for %i = 0 to 1024 {
             affine.for %j = 0 to 1024 {
                 // CHECK: %[[VAR:.*]] = memref.alloc() : memref<1xf32>
@@ -61,16 +61,16 @@ module {
                 // CHECK: affine.store %[[RES]], {{.*}}[{{.*}}, {{.*}}] : memref<1024x1024xf32>
             } { loop_name = "j" }
         } { loop_name = "i", op_name = "s" }
-        %buf = hcl.buffer_at(%C: memref<1024x1024xf32>, %lj) -> memref<1xf32>
+        %buf = allo.buffer_at(%C: memref<1024x1024xf32>, %lj) -> memref<1xf32>
         return
     }
     // Notice: storing at reduction axis is prohibited
     // func @gemm_buffer_at_axis_2(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>)
     // {
-    //     %s = hcl.create_op_handle "s"
-    //     %li = hcl.create_loop_handle %s, "i"
-    //     %lj = hcl.create_loop_handle %s, "j"
-    //     %lk = hcl.create_loop_handle %s, "k"
+    //     %s = allo.create_op_handle "s"
+    //     %li = allo.create_loop_handle %s, "i"
+    //     %lj = allo.create_loop_handle %s, "j"
+    //     %lk = allo.create_loop_handle %s, "k"
     //     affine.for %i = 0 to 1024 {
     //         affine.for %j = 0 to 1024 {
     //             affine.for %k = 0 to 512 {
@@ -83,15 +83,15 @@ module {
     //             } { loop_name = "k", reduction = 1 : i32}
     //         } { loop_name = "j" }
     //     } { loop_name = "i", op_name = "s" }
-    //     %buf = hcl.buffer_at(%C: memref<1024x1024xf32>, 2) -> memref<1xf32>
+    //     %buf = allo.buffer_at(%C: memref<1024x1024xf32>, 2) -> memref<1xf32>
     //     return
     // }
     func.func @gemm_interleaving_accu(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>)
     {
-        %s = hcl.create_op_handle "s"
-        %li = hcl.create_loop_handle %s, "i"
-        %lj = hcl.create_loop_handle %s, "j"
-        %lk = hcl.create_loop_handle %s, "k"
+        %s = allo.create_op_handle "s"
+        %li = allo.create_loop_handle %s, "i"
+        %lj = allo.create_loop_handle %s, "j"
+        %lk = allo.create_loop_handle %s, "k"
         affine.for %i = 0 to 1024 {
             // CHECK: {{.*}} = memref.alloc() : memref<1024xf32>
             // CHECK: %cst = arith.constant 0.000000e+00 : f32
@@ -112,17 +112,17 @@ module {
             // CHECK: affine.for %[[VAR]] = 0 to 1024 {
             // CHECK: } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } { loop_name = "i", op_name = "s" }
-        hcl.reorder(%lk, %lj)
-        %buf = hcl.buffer_at(%C: memref<1024x1024xf32>, %li) -> memref<1024xf32>
-        hcl.pipeline(%lj, 1)
+        allo.reorder(%lk, %lj)
+        %buf = allo.buffer_at(%C: memref<1024x1024xf32>, %li) -> memref<1024xf32>
+        allo.pipeline(%lj, 1)
         return
     }
     // func @tiled_gemm_interleaving_accu(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>, %C: memref<1024x1024xf32>) -> memref<1024x1024xf32>
     // {
-    //     %s = hcl.create_op_handle "s"
-    //     %li = hcl.create_loop_handle %s, "i"
-    //     %lj = hcl.create_loop_handle %s, "j"
-    //     %lk = hcl.create_loop_handle %s, "k"
+    //     %s = allo.create_op_handle "s"
+    //     %li = allo.create_loop_handle %s, "i"
+    //     %lj = allo.create_loop_handle %s, "j"
+    //     %lk = allo.create_loop_handle %s, "k"
     //     affine.for %i = 0 to 1024 {
     //         affine.for %j = 0 to 1024 {
     //             affine.for %k = 0 to 512 {
@@ -135,10 +135,10 @@ module {
     //             } { loop_name = "k", reduction = 1 : i32}
     //         } { loop_name = "j" }
     //     } { loop_name = "i", op_name = "s" }
-    //     %lj_out, %lj_in = hcl.split(%lj, 2)
-    //     hcl.reorder(%lk, %lj_in)
-    //     %buf = hcl.buffer_at(%C: memref<1024x1024xf32>, %lj) -> memref<1024xf32>
-    //     hcl.pipeline(%lj_in, 1)
+    //     %lj_out, %lj_in = allo.split(%lj, 2)
+    //     allo.reorder(%lk, %lj_in)
+    //     %buf = allo.buffer_at(%C: memref<1024x1024xf32>, %lj) -> memref<1024xf32>
+    //     allo.pipeline(%lj_in, 1)
     //     return %C : memref<1024x1024xf32>
     // }
 }

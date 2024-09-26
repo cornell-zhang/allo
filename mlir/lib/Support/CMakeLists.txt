@@ -1,9 +1,9 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 file(GLOB globbed *.cpp)
 
-add_mlir_library(MLIRHCLSupport
+add_mlir_library(MLIRAlloSupport
   ${globbed}
 
   LINK_LIBS PUBLIC
@@ -12,7 +12,7 @@ add_mlir_library(MLIRHCLSupport
   MLIRPass
   MLIRSPIRVDialect
   MLIRTranslateLib
-  MLIRHeteroCL
+  MLIRAllo
   MLIRMemRefDialect
   MLIRAnalysis
   MLIRAffineAnalysis

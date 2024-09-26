@@ -1,5 +1,5 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,10 +13,10 @@
 // - BitReverse
 //===----------------------------------------------------------------------===//
 
-#include "hcl/Conversion/Passes.h"
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
+#include "allo/Conversion/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -24,10 +24,10 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 void lowerBitReverseOps(func::FuncOp &func) {
   SmallVector<Operation *, 8> bitReverseOps;
@@ -68,10 +68,10 @@ void lowerBitReverseOps(func::FuncOp &func) {
           Value reverse_idx = nestedBuilder.create<mlir::arith::SubIOp>(
               loc, const_width, ivs[0]);
           Type one_bit_type = nestedBuilder.getIntegerType(1);
-          Value bit = nestedBuilder.create<mlir::hcl::GetIntBitOp>(
+          Value bit = nestedBuilder.create<mlir::allo::GetIntBitOp>(
               loc, one_bit_type, input, reverse_idx);
           // Set the bit at the current position
-          Value new_val = nestedBuilder.create<mlir::hcl::SetIntBitOp>(
+          Value new_val = nestedBuilder.create<mlir::allo::SetIntBitOp>(
               loc, res.getType(), res, ivs[0], bit);
           nestedBuilder.create<affine::AffineStoreOp>(
               loc, new_val, resultMemRef, const_0_indices);
@@ -145,7 +145,7 @@ void lowerSetSliceOps(func::FuncOp &func) {
           } else {
             bit = val_shifted;
           }
-          Value res = builder.create<mlir::hcl::SetIntBitOp>(
+          Value res = builder.create<mlir::allo::SetIntBitOp>(
               loc, ivs[0].getType(), ivs[0], iv, bit);
           builder.create<scf::YieldOp>(loc, res);
         });
@@ -172,12 +172,12 @@ bool applyLowerBitOps(ModuleOp &mod) {
   }
   return true;
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLLowerBitOpsTransformation
-    : public LowerBitOpsBase<HCLLowerBitOpsTransformation> {
+struct AlloLowerBitOpsTransformation
+    : public LowerBitOpsBase<AlloLowerBitOpsTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLowerBitOps(mod)) {
@@ -188,10 +188,10 @@ struct HCLLowerBitOpsTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 std::unique_ptr<OperationPass<ModuleOp>> createLowerBitOpsPass() {
-  return std::make_unique<HCLLowerBitOpsTransformation>();
+  return std::make_unique<AlloLowerBitOpsTransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

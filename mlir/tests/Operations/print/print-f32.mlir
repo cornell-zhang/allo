@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt --lower-print-ops --jit %s | FileCheck %s
+// RUN: allo-opt --lower-print-ops --jit %s | FileCheck %s
 
 module {
 
@@ -13,7 +13,7 @@ module {
 // CHECK: 1,   2,   3,   4
 // CHECK: 1,   2,   3,   4
 // CHECK: 1,   2,   3,   4
-    hcl.print_memref(%0) : memref<4x4xf32>
+    allo.print_memref(%0) : memref<4x4xf32>
     return
   }
 }

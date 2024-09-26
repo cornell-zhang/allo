@@ -1,13 +1,13 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "hcl/Conversion/Passes.h"
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Support/Utils.h"
+#include "allo/Conversion/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Support/Utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Utils.h"
@@ -19,10 +19,10 @@
 #include "mlir/IR/MLIRContext.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 struct FixedTypeInfo {
   size_t width;
@@ -181,9 +181,9 @@ void updateSelectOp(arith::SelectOp &selectOp) {
   }
 }
 
-/* Update hcl.print (PrintOp) operations.
+/* Update allo.print (PrintOp) operations.
  * Create a float64 memref to store the real value
- * of hcl.print's operand memref
+ * of allo.print's operand memref
  */
 void lowerPrintMemRefOp(func::FuncOp &funcOp) {
   SmallVector<Operation *, 4> printOps;
@@ -408,43 +408,43 @@ void lowerFixedCmp(CmpFixedOp &op) {
   auto loc = op->getLoc();
   arith::CmpIOp newOp;
   switch (prednum) {
-  case hcl::CmpFixedPredicate::eq:
+  case allo::CmpFixedPredicate::eq:
     newOp =
         rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, lhs, rhs);
     break;
-  case hcl::CmpFixedPredicate::ne:
+  case allo::CmpFixedPredicate::ne:
     newOp =
         rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, lhs, rhs);
     break;
-  case hcl::CmpFixedPredicate::slt:
+  case allo::CmpFixedPredicate::slt:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::slt, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::sle:
+  case allo::CmpFixedPredicate::sle:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sle, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::sgt:
+  case allo::CmpFixedPredicate::sgt:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::sge:
+  case allo::CmpFixedPredicate::sge:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sge, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::ult:
+  case allo::CmpFixedPredicate::ult:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::ule:
+  case allo::CmpFixedPredicate::ule:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ule, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::ugt:
+  case allo::CmpFixedPredicate::ugt:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ugt, lhs,
                                            rhs);
     break;
-  case hcl::CmpFixedPredicate::uge:
+  case allo::CmpFixedPredicate::uge:
     newOp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, lhs,
                                            rhs);
     break;
@@ -891,13 +891,13 @@ bool applyFixedPointToInteger(ModuleOp &mod) {
 
   return true;
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
 
-struct HCLFixedToIntegerTransformation
-    : public FixedToIntegerBase<HCLFixedToIntegerTransformation> {
+struct AlloFixedToIntegerTransformation
+    : public FixedToIntegerBase<AlloFixedToIntegerTransformation> {
 
   void runOnOperation() override {
     auto mod = getOperation();
@@ -909,12 +909,12 @@ struct HCLFixedToIntegerTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 // Create A Fixed-Point to Integer Pass
 std::unique_ptr<OperationPass<ModuleOp>> createFixedPointToIntegerPass() {
-  return std::make_unique<HCLFixedToIntegerTransformation>();
+  return std::make_unique<AlloFixedToIntegerTransformation>();
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

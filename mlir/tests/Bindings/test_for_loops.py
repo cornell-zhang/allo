@@ -1,33 +1,33 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s
 
-from hcl_mlir.ir import *
-from hcl_mlir.dialects import func, arith, memref, affine
-from hcl_mlir.dialects import hcl as hcl_d
-import hcl_mlir
+from allo_mlir.ir import *
+from allo_mlir.dialects import func, arith, memref, affine
+from allo_mlir.dialects import allo as allo_d
+import allo_mlir
 
 with Context() as ctx, Location.unknown() as loc:
-    hcl_d.register_dialect(ctx)
+    allo_d.register_dialect(ctx)
     module = Module.create()
     f32 = F32Type.get()
     i32 = IntegerType.get_signless(32)
     memref_type = MemRefType.get((1024, 1024), f32)
 
     with InsertionPoint(module.body):
-        op = hcl_d.CreateOpHandleOp(StringAttr.get("s"))
-        hcl_d.CreateLoopHandleOp(op.result, StringAttr.get("i"))
-        hcl_d.CreateLoopHandleOp(op.result, StringAttr.get("j"))
-        hcl_d.CreateLoopHandleOp(op.result, StringAttr.get("k"))
+        op = allo_d.CreateOpHandleOp(StringAttr.get("s"))
+        allo_d.CreateLoopHandleOp(op.result, StringAttr.get("i"))
+        allo_d.CreateLoopHandleOp(op.result, StringAttr.get("j"))
+        allo_d.CreateLoopHandleOp(op.result, StringAttr.get("k"))
 
         @func.FuncOp.from_py_func(memref_type, memref_type, memref_type)
         def gemm(A, B, C):
-            for_i = hcl_mlir.make_for(0, 1024, name="i")
+            for_i = allo_mlir.make_for(0, 1024, name="i")
             with InsertionPoint(for_i.body.operations[0]):
-                for_j = hcl_mlir.make_for(0, 1024, name="j")
+                for_j = allo_mlir.make_for(0, 1024, name="j")
                 with InsertionPoint(for_j.body.operations[0]):
-                    for_k = hcl_mlir.make_for(0, 1024, name="k")
+                    for_k = allo_mlir.make_for(0, 1024, name="k")
                     with InsertionPoint(for_k.body.operations[0]):
                         a = memref.LoadOp(
                             A, [for_i.induction_variable,
@@ -49,17 +49,17 @@ with Context() as ctx, Location.unknown() as loc:
                             [for_i.induction_variable, for_j.induction_variable],
                         )
 
-            for_i = hcl_mlir.make_for(0, 1024, name="i")
+            for_i = allo_mlir.make_for(0, 1024, name="i")
             with InsertionPoint(for_i.body.operations[0]):
-                for_j = hcl_mlir.make_for(0, 1024, name="j")
+                for_j = allo_mlir.make_for(0, 1024, name="j")
                 with InsertionPoint(for_j.body.operations[0]):
-                    for_k = hcl_mlir.make_for(0, 1024, name="k")
+                    for_k = allo_mlir.make_for(0, 1024, name="k")
                     with InsertionPoint(for_k.body.operations[0]):
                         # make if
                         d0 = AffineDimExpr.get(0)
                         d1 = AffineDimExpr.get(1)
                         if_cond_set = IntegerSet.get(2, 0, [d0 - d1], [False])
-                        attr = hcl_d.IntegerSetAttr.get(if_cond_set)
+                        attr = allo_d.IntegerSetAttr.get(if_cond_set)
                         set_operands = [
                             for_i.induction_variable,
                             for_j.induction_variable,

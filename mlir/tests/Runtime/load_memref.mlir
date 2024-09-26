@@ -1,9 +1,9 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt  %s 
+// RUN: allo-opt  %s 
 
-// check https://github.com/zzzDavid/hcl-debug/tree/main/read_write_file for full runnable examples.
+// check https://github.com/zzzDavid/allo-debug/tree/main/read_write_file for full runnable examples.
 // this test is only to make sure the generated IR is correct.
 // the IR here is not runnable, because read/write requires absolute path.
 

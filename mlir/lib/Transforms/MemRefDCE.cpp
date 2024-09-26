@@ -1,5 +1,5 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,17 +10,17 @@
 // Global memrefs and memrefs in function args are not removed.
 //===----------------------------------------------------------------------===//
 #include "PassDetail.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 void cleanUpUnusedOps(func::FuncOp &func) {
   func.walk([&](Operation *op) {
@@ -74,12 +74,12 @@ bool applyMemRefDCE(ModuleOp &mod) {
   }
   return true;
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLMemRefDCETransformation
-    : public MemRefDCEBase<HCLMemRefDCETransformation> {
+struct AlloMemRefDCETransformation
+    : public MemRefDCEBase<AlloMemRefDCETransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyMemRefDCE(mod)) {
@@ -90,10 +90,10 @@ struct HCLMemRefDCETransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 std::unique_ptr<OperationPass<ModuleOp>> createMemRefDCEPass() {
-  return std::make_unique<HCLMemRefDCETransformation>();
+  return std::make_unique<AlloMemRefDCETransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

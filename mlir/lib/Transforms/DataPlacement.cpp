@@ -1,15 +1,15 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "PassDetail.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Support/Utils.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Support/Utils.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -20,10 +20,10 @@
 #include <set>
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 class Node {
   // Member variables
@@ -392,12 +392,12 @@ bool applyDataPlacement(ModuleOp &module) {
   return true;
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLDataPlacementTransformation
-    : public DataPlacementBase<HCLDataPlacementTransformation> {
+struct AlloDataPlacementTransformation
+    : public DataPlacementBase<AlloDataPlacementTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyDataPlacement(mod)) {
@@ -408,9 +408,9 @@ struct HCLDataPlacementTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 std::unique_ptr<OperationPass<ModuleOp>> createDataPlacementPass() {
-  return std::make_unique<HCLDataPlacementTransformation>();
+  return std::make_unique<AlloDataPlacementTransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

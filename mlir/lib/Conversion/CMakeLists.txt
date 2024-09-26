@@ -1,27 +1,27 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 file(GLOB globbed *.cpp)
 
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-add_mlir_dialect_library(MLIRHCLConversion
+add_mlir_dialect_library(MLIRAlloConversion
     ${globbed}
 
     ADDITIONAL_HEADER_DIRS
-    ${PROJECT_SOURCE_DIR}/include/hcl
+    ${PROJECT_SOURCE_DIR}/include/allo
 
     DEPENDS
-    MLIRHeteroCLOpsIncGen
-    MLIRHeteroCLTypesIncGen
-    MLIRHeteroCLPassesIncGen
-    MLIRHeteroCLConversionPassesIncGen
+    MLIRAlloOpsIncGen
+    MLIRAlloTypesIncGen
+    MLIRAlloPassesIncGen
+    MLIRAlloConversionPassesIncGen
 
     LINK_LIBS PUBLIC
     ${conversion_libs}
     MLIRIR
     MLIRPass
     MLIRMathTransforms
-    MLIRHeteroCL
-    MLIRHCLSupport
+    MLIRAllo
+    MLIRAlloSupport
 )

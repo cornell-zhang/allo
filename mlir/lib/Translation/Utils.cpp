@@ -1,16 +1,16 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "hcl/Translation/Utils.h"
+#include "allo/Translation/Utils.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 // TODO: update naming rule.
-SmallString<8> HCLEmitterBase::addName(Value val, bool isPtr,
+SmallString<8> AlloEmitterBase::addName(Value val, bool isPtr,
                                        std::string name) {
   assert(!isDeclared(val) && "has been declared before.");
 
@@ -34,7 +34,7 @@ SmallString<8> HCLEmitterBase::addName(Value val, bool isPtr,
   return valName;
 };
 
-SmallString<8> HCLEmitterBase::getName(Value val) {
+SmallString<8> AlloEmitterBase::getName(Value val) {
   // For constant scalar operations, the constant number will be returned
   // rather than the value name.
   if (auto defOp = val.getDefiningOp()) {

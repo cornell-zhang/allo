@@ -1,44 +1,44 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  * Modification: ScaleHLS
  * https://github.com/hanchenye/scalehls
  */
 
-#include "hcl/Support/Utils.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
+#include "allo/Support/Utils.h"
+#include "allo/Dialect/AlloTypes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Utils.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 //===----------------------------------------------------------------------===//
 // HLSCpp attribute utils
 //===----------------------------------------------------------------------===//
 
 /// Parse loop directives.
-Attribute hcl::getLoopDirective(Operation *op, std::string name) {
+Attribute allo::getLoopDirective(Operation *op, std::string name) {
   return op->getAttr(name);
 }
 
-StringRef hcl::getLoopName(AffineForOp &forOp) {
+StringRef allo::getLoopName(AffineForOp &forOp) {
   if (forOp->hasAttr("loop_name"))
     return forOp->getAttr("loop_name").cast<StringAttr>().getValue();
   else
     return "";
 }
 
-void hcl::setLoopName(AffineForOp &forOp, std::string loop_name) {
+void allo::setLoopName(AffineForOp &forOp, std::string loop_name) {
   forOp->setAttr("loop_name", StringAttr::get(forOp->getContext(), loop_name));
 }
 
-void hcl::setStageName(AffineForOp &forOp, StringRef op_name) {
+void allo::setStageName(AffineForOp &forOp, StringRef op_name) {
   forOp->setAttr("op_name", StringAttr::get(forOp->getContext(), op_name));
 }
 
-std::vector<std::string> hcl::split_names(const std::string &arg_names) {
+std::vector<std::string> allo::split_names(const std::string &arg_names) {
   std::stringstream ss(arg_names);
   std::vector<std::string> args;
   while (ss.good()) {
@@ -50,7 +50,7 @@ std::vector<std::string> hcl::split_names(const std::string &arg_names) {
 }
 
 /// Parse other attributes.
-SmallVector<int64_t, 8> hcl::getIntArrayAttrValue(Operation *op,
+SmallVector<int64_t, 8> allo::getIntArrayAttrValue(Operation *op,
                                                   StringRef name) {
   SmallVector<int64_t, 8> array;
   if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
@@ -64,7 +64,7 @@ SmallVector<int64_t, 8> hcl::getIntArrayAttrValue(Operation *op,
     return SmallVector<int64_t, 8>();
 }
 
-bool hcl::setIntAttr(SmallVector<AffineForOp, 6> &forOps,
+bool allo::setIntAttr(SmallVector<AffineForOp, 6> &forOps,
                      const SmallVector<int, 6> &attr_arr,
                      const std::string attr_name) {
   assert(forOps.size() == attr_arr.size());
@@ -81,7 +81,7 @@ bool hcl::setIntAttr(SmallVector<AffineForOp, 6> &forOps,
   return true;
 }
 
-bool hcl::setLoopNames(SmallVector<AffineForOp, 6> &forOps,
+bool allo::setLoopNames(SmallVector<AffineForOp, 6> &forOps,
                        const SmallVector<std::string, 6> &nameArr) {
   assert(forOps.size() == nameArr.size());
   unsigned cnt_loop = 0;
@@ -97,7 +97,7 @@ bool hcl::setLoopNames(SmallVector<AffineForOp, 6> &forOps,
 // Memory and loop analysis utils
 //===----------------------------------------------------------------------===//
 
-LogicalResult hcl::getStage(func::FuncOp &func, AffineForOp &forOp,
+LogicalResult allo::getStage(func::FuncOp &func, AffineForOp &forOp,
                             StringRef op_name) {
   for (auto rootForOp : func.getOps<AffineForOp>()) {
     if (op_name ==
@@ -141,7 +141,7 @@ void recursivelyFindLoop(AffineForOp forOp, int depth, StringRef loop_name,
                               loops);
 }
 
-int hcl::getLoop(AffineForOp &forOp, StringRef loop_name) {
+int allo::getLoop(AffineForOp &forOp, StringRef loop_name) {
   // return the axis id
   AffineForOp currentLoop = forOp;
   int cnt = -1;
@@ -150,12 +150,12 @@ int hcl::getLoop(AffineForOp &forOp, StringRef loop_name) {
   return cnt;
 }
 
-void hcl::getLoops(AffineForOp &forOp, SmallVector<AffineForOp> &forOpList) {
+void allo::getLoops(AffineForOp &forOp, SmallVector<AffineForOp> &forOpList) {
   int cnt = -1;
   recursivelyFindLoop(forOp, 0, "_placeholder_", forOp, cnt, forOpList);
 }
 
-bool hcl::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
+bool allo::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
                                     SmallVector<AffineForOp, 6> &resForOps,
                                     SmallVector<StringRef, 6> &nameArr,
                                     int depth, bool countReductionLoops) {
@@ -197,7 +197,7 @@ bool hcl::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
 }
 
 /// Collect all load and store operations in the block and return them in "map".
-// void hcl::getMemAccessesMap(Block &block, MemAccessesMap &map) {
+// void allo::getMemAccessesMap(Block &block, MemAccessesMap &map) {
 //   for (auto &op : block) {
 //     if (isa<AffineReadOpInterface, AffineWriteOpInterface>(op))
 //       map[MemRefAccess(&op).memref].push_back(&op);
@@ -215,7 +215,7 @@ bool hcl::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
 // ancestors that are located at the same block. Note that in this check,
 // AffineIfOp is transparent.
 std::optional<std::pair<Operation *, Operation *>>
-hcl::checkSameLevel(Operation *lhsOp, Operation *rhsOp) {
+allo::checkSameLevel(Operation *lhsOp, Operation *rhsOp) {
   // If lhsOp and rhsOp are already at the same level, return true.
   if (lhsOp->getBlock() == rhsOp->getBlock())
     return std::pair<Operation *, Operation *>(lhsOp, rhsOp);
@@ -252,7 +252,7 @@ hcl::checkSameLevel(Operation *lhsOp, Operation *rhsOp) {
 
 /// Returns the number of surrounding loops common to 'loopsA' and 'loopsB',
 /// where each lists loops from outer-most to inner-most in loop nest.
-unsigned hcl::getCommonSurroundingLoops(Operation *A, Operation *B,
+unsigned allo::getCommonSurroundingLoops(Operation *A, Operation *B,
                                         AffineLoopBand *band) {
   SmallVector<AffineForOp, 4> loopsA, loopsB;
   getAffineForIVs(*A, &loopsA);
@@ -272,7 +272,7 @@ unsigned hcl::getCommonSurroundingLoops(Operation *A, Operation *B,
 
 /// Calculate the upper and lower bound of "bound" if possible.
 std::optional<std::pair<int64_t, int64_t>>
-hcl::getBoundOfAffineBound(AffineBound bound) {
+allo::getBoundOfAffineBound(AffineBound bound) {
   auto boundMap = bound.getMap();
   if (boundMap.isSingleConstant()) {
     auto constBound = boundMap.getSingleConstantResult();
@@ -331,7 +331,7 @@ hcl::getBoundOfAffineBound(AffineBound bound) {
 }
 
 /// Return the layout map of "memrefType".
-AffineMap hcl::getLayoutMap(MemRefType memrefType) {
+AffineMap allo::getLayoutMap(MemRefType memrefType) {
   // Check whether the memref has layout map.
   auto memrefMaps = memrefType.getLayout();
   if (memrefMaps.getAffineMap().isIdentity())
@@ -340,7 +340,7 @@ AffineMap hcl::getLayoutMap(MemRefType memrefType) {
   return memrefMaps.getAffineMap();
 }
 
-bool hcl::isFullyPartitioned(MemRefType memrefType, int axis) {
+bool allo::isFullyPartitioned(MemRefType memrefType, int axis) {
   if (memrefType.getRank() == 0)
     return true;
 
@@ -380,7 +380,7 @@ bool hcl::isFullyPartitioned(MemRefType memrefType, int axis) {
 // Calculate partition factors through analyzing the "memrefType" and return
 // them in "factors". Meanwhile, the overall partition number is calculated and
 // returned as well.
-int64_t hcl::getPartitionFactors(MemRefType memrefType,
+int64_t allo::getPartitionFactors(MemRefType memrefType,
                                  SmallVector<int64_t, 8> *factors) {
   auto shape = memrefType.getShape();
   auto layoutMap = getLayoutMap(memrefType);
@@ -446,7 +446,7 @@ static void getLoopBandFromInnermost(AffineForOp forOp, AffineLoopBand &band) {
 
 /// Get the whole loop band given the outermost loop and return it in "band".
 /// Meanwhile, the return value is the innermost loop of this loop band.
-AffineForOp hcl::getLoopBandFromOutermost(AffineForOp forOp,
+AffineForOp allo::getLoopBandFromOutermost(AffineForOp forOp,
                                           AffineLoopBand &band) {
   band.clear();
   auto currentLoop = forOp;
@@ -465,7 +465,7 @@ AffineForOp hcl::getLoopBandFromOutermost(AffineForOp forOp,
 /// "allowHavingChilds" is true, loop bands containing more than 1 other loop
 /// bands are also collected. Otherwise, only loop bands that contains no child
 /// loops are collected.
-void hcl::getLoopBands(Block &block, AffineLoopBands &bands,
+void allo::getLoopBands(Block &block, AffineLoopBands &bands,
                        bool allowHavingChilds) {
   bands.clear();
   block.walk([&](AffineForOp loop) {
@@ -479,7 +479,7 @@ void hcl::getLoopBands(Block &block, AffineLoopBands &bands,
   });
 }
 
-void hcl::getArrays(Block &block, SmallVectorImpl<Value> &arrays,
+void allo::getArrays(Block &block, SmallVectorImpl<Value> &arrays,
                     bool allowArguments) {
   // Collect argument arrays.
   if (allowArguments)
@@ -495,7 +495,7 @@ void hcl::getArrays(Block &block, SmallVectorImpl<Value> &arrays,
   }
 }
 
-std::optional<unsigned> hcl::getAverageTripCount(AffineForOp forOp) {
+std::optional<unsigned> allo::getAverageTripCount(AffineForOp forOp) {
   if (auto optionalTripCount = getConstantTripCount(forOp))
     return optionalTripCount.value();
   else {
@@ -516,7 +516,7 @@ std::optional<unsigned> hcl::getAverageTripCount(AffineForOp forOp) {
   }
 }
 
-bool hcl::checkDependence(Operation *A, Operation *B) {
+bool allo::checkDependence(Operation *A, Operation *B) {
   return true;
   // TODO: Fix the following
   //   AffineLoopBand commonLoops;
@@ -559,7 +559,7 @@ static bool gatherLoadOpsAndStoreOps(AffineForOp forOp,
   return !hasIfOp;
 }
 
-bool hcl::analyzeDependency(const AffineForOp &forOpA,
+bool allo::analyzeDependency(const AffineForOp &forOpA,
                             const AffineForOp &forOpB,
                             SmallVectorImpl<Dependency> &dependency) {
   SmallVector<Operation *, 4> readOpsA;
@@ -701,7 +701,7 @@ inline static unsigned getBlockIndex(Operation &op) {
 
 // Returns a string representation of 'sliceUnion'.
 std::string
-hcl::getSliceStr(const mlir::affine::ComputationSliceState &sliceUnion) {
+allo::getSliceStr(const mlir::affine::ComputationSliceState &sliceUnion) {
   std::string result;
   llvm::raw_string_ostream os(result);
   // Slice insertion point format [loop-depth, operation-block-index]
@@ -721,7 +721,7 @@ hcl::getSliceStr(const mlir::affine::ComputationSliceState &sliceUnion) {
   return os.str();
 }
 
-Value hcl::castInteger(OpBuilder builder, Location loc, Value input,
+Value allo::castInteger(OpBuilder builder, Location loc, Value input,
                        Type srcType, Type tgtType, bool is_signed) {
   int oldWidth = srcType.cast<IntegerType>().getWidth();
   int newWidth = tgtType.cast<IntegerType>().getWidth();
@@ -747,7 +747,7 @@ Value hcl::castInteger(OpBuilder builder, Location loc, Value input,
  * AffineForOp loop nest to load, cast, store the elements
  * from oldMemRef to newMemRef.
  */
-Value hcl::castIntMemRef(OpBuilder &builder, Location loc,
+Value allo::castIntMemRef(OpBuilder &builder, Location loc,
                          Value &oldMemRef, size_t newWidth, bool unsign,
                          bool replace, const Value &dstMemRef) {
   // If newWidth == oldWidth, no need to cast.
@@ -805,7 +805,7 @@ Value hcl::castIntMemRef(OpBuilder &builder, Location loc,
   return newMemRef;
 }
 
-bool mlir::hcl::replace(std::string &str, const std::string &from,
+bool mlir::allo::replace(std::string &str, const std::string &from,
                         const std::string &to) {
   size_t start_pos = str.find(from);
   if (start_pos == std::string::npos)
@@ -814,7 +814,7 @@ bool mlir::hcl::replace(std::string &str, const std::string &from,
   return true;
 }
 
-Value mlir::hcl::castToF64(OpBuilder &rewriter, const Value &src,
+Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
                            bool hasUnsignedAttr) {
   Type t = src.getType();
   Type I64 = rewriter.getIntegerType(64);
@@ -902,7 +902,7 @@ Value mlir::hcl::castToF64(OpBuilder &rewriter, const Value &src,
   return casted;
 }
 
-bool mlir::hcl::getEnv(const std::string &key, std::string &value) {
+bool mlir::allo::getEnv(const std::string &key, std::string &value) {
   char *env = std::getenv(key.c_str());
   if (env) {
     value = env;
@@ -911,7 +911,7 @@ bool mlir::hcl::getEnv(const std::string &key, std::string &value) {
   return false;
 }
 
-int mlir::hcl::getIndex(SmallVector<Operation *, 4> v, Operation *target) {
+int mlir::allo::getIndex(SmallVector<Operation *, 4> v, Operation *target) {
   auto it = std::find(v.begin(), v.end(), target);
 
   // If element was found
@@ -950,7 +950,7 @@ bool chaseAffineApply(Value iv, Value target) {
 //      affine.store %some_value %some_memref[%ii, %j]
 // If we want to find the memref axis of %some_memref that
 // %i operates on, the return result is 0.
-int mlir::hcl::findMemRefAxisFromIV(AffineStoreOp store, Value iv) {
+int mlir::allo::findMemRefAxisFromIV(AffineStoreOp store, Value iv) {
   auto memrefRank = store.getMemRef().getType().cast<MemRefType>().getRank();
   auto indices = store.getIndices();
   for (int i = 0; i < memrefRank; i++) {

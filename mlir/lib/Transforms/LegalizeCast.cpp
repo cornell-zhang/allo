@@ -1,23 +1,23 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "PassDetail.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 void legalizeCast(func::FuncOp &func) {
   SmallVector<Operation *, 8> IntToFPOps;
@@ -76,12 +76,12 @@ bool applyLegalizeCast(ModuleOp &module) {
   return true;
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
-struct HCLLegalizeCastTransformation
-    : public LegalizeCastBase<HCLLegalizeCastTransformation> {
+struct AlloLegalizeCastTransformation
+    : public LegalizeCastBase<AlloLegalizeCastTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLegalizeCast(mod)) {
@@ -92,9 +92,9 @@ struct HCLLegalizeCastTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 std::unique_ptr<OperationPass<ModuleOp>> createLegalizeCastPass() {
-  return std::make_unique<HCLLegalizeCastTransformation>();
+  return std::make_unique<AlloLegalizeCastTransformation>();
 }
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

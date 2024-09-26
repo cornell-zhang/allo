@@ -1,13 +1,13 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s
 
-from hcl_mlir.ir import *
-from hcl_mlir.dialects import hcl as hcl_d
+from allo_mlir.ir import *
+from allo_mlir.dialects import allo as allo_d
 
 with Context() as ctx:
-    hcl_d.register_dialect()
+    allo_d.register_dialect()
     print("Registration done!")
 
     mod = Module.parse(
@@ -22,7 +22,7 @@ with Context() as ctx:
     print(str(mod))
     print("Done module parsing!")
 
-    res = hcl_d.lower_hcl_to_llvm(mod, ctx)
+    res = allo_d.lower_allo_to_llvm(mod, ctx)
     if res:
         print(str(mod))
         print("Done LLVM conversion")

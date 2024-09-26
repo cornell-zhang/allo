@@ -1,4 +1,4 @@
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # RUN: %PYTHON %s
@@ -6,11 +6,11 @@ import os
 import ctypes
 import numpy as np
 
-from hcl_mlir.ir import *
-from hcl_mlir.passmanager import *
-from hcl_mlir.execution_engine import *
-from hcl_mlir.runtime import *
-from hcl_mlir.dialects import hcl as hcl_d
+from allo_mlir.ir import *
+from allo_mlir.passmanager import *
+from allo_mlir.execution_engine import *
+from allo_mlir.runtime import *
+from allo_mlir.dialects import allo as allo_d
 
 
 def get_assembly(filename):
@@ -56,7 +56,7 @@ def test_execution_engine(P=16, Q=22, R=18, S=24):
 
     with Context() as ctx:
         module = Module.parse(code)
-        hcl_d.lower_hcl_to_llvm(module, ctx)
+        allo_d.lower_allo_to_llvm(module, ctx)
         if shared_libs is not None:
             execution_engine = ExecutionEngine(
                 module, opt_level=3, shared_libs=shared_libs)

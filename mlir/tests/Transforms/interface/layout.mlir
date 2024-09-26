@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt -opt %s | FileCheck %s
+// RUN: allo-opt -opt %s | FileCheck %s
 
 module {
     func.func @gemm(%A: memref<1024x512xf32>, %B: memref<512x1024xf32>) -> memref<1024x1024xf32>
@@ -23,7 +23,7 @@ module {
                 } { loop_name = "k", reduction = 1 : i32}
             } { loop_name = "j" }
         } { loop_name = "i", stage_name = "s" }
-        hcl.reform(%B : memref<512x1024xf32>) {layout=affine_map<(d0,d1)->(d1,d0)>} -> memref<1024x512xf32>
+        allo.reform(%B : memref<512x1024xf32>) {layout=affine_map<(d0,d1)->(d1,d0)>} -> memref<1024x512xf32>
         return %C : memref<1024x1024xf32>
     }
 }

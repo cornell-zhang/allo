@@ -1,5 +1,5 @@
 /*
- * Copyright HeteroCL authors. All Rights Reserved.
+ * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,11 +12,11 @@
 
 #include "PassDetail.h"
 
-#include "hcl/Dialect/HeteroCLDialect.h"
-#include "hcl/Dialect/HeteroCLOps.h"
-#include "hcl/Dialect/HeteroCLTypes.h"
-#include "hcl/Support/Utils.h"
-#include "hcl/Transforms/Passes.h"
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloTypes.h"
+#include "allo/Support/Utils.h"
+#include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Utils.h"
@@ -26,10 +26,10 @@
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
 
 using namespace mlir;
-using namespace hcl;
+using namespace allo;
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 void updateTopFunctionSignature(func::FuncOp &funcOp) {
   FunctionType functionType = funcOp.getFunctionType();
@@ -194,13 +194,13 @@ bool applyAnyWidthInteger(ModuleOp &mod) {
   return true;
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir
 
 namespace {
 
-struct HCLAnyWidthIntegerTransformation
-    : public AnyWidthIntegerBase<HCLAnyWidthIntegerTransformation> {
+struct AlloAnyWidthIntegerTransformation
+    : public AnyWidthIntegerBase<AlloAnyWidthIntegerTransformation> {
 
   void runOnOperation() override {
     auto mod = getOperation();
@@ -211,11 +211,11 @@ struct HCLAnyWidthIntegerTransformation
 } // namespace
 
 namespace mlir {
-namespace hcl {
+namespace allo {
 
 std::unique_ptr<OperationPass<ModuleOp>> createAnyWidthIntegerPass() {
-  return std::make_unique<HCLAnyWidthIntegerTransformation>();
+  return std::make_unique<AlloAnyWidthIntegerTransformation>();
 }
 
-} // namespace hcl
+} // namespace allo
 } // namespace mlir

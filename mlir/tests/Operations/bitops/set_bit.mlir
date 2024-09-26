@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt %s --lower-print-ops --jit | FileCheck %s
+// RUN: allo-opt %s --lower-print-ops --jit | FileCheck %s
 // Input: 0x0000
 // By setting the third bit to 1, we get
 // Output: 0x0004
@@ -15,12 +15,12 @@ module {
       %c1_i32 = arith.constant 1 : i32
       %c2 = arith.constant 2 : index
       %val = arith.constant 1 : i1
-      %2 = hcl.set_bit(%1 : i32, %c2, %val : i1) -> i32
+      %2 = allo.set_bit(%1 : i32, %c2, %val : i1) -> i32
       affine.store %2, %res[%arg1] : memref<1xi32>
     } 
 // CHECK: 4
     %v = affine.load %res[0] : memref<1xi32>
-    hcl.print(%v) {format="%d\n"}: i32
+    allo.print(%v) {format="%d\n"}: i32
     return
   }
 }

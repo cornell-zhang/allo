@@ -1,7 +1,7 @@
-// Copyright HeteroCL authors. All Rights Reserved.
+// Copyright Allo authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: hcl-opt %s
+// RUN: allo-opt %s
 module {
   func.func @top(%arg0: memref<16x22xf32>, %arg1: memref<22x18xf32>, %arg2: memref<18x24xf32>, %arg3: memref<16x24xf32>) -> memref<16x24xf32> attributes {llvm.emit_c_interface} {
     %0 = memref.alloc() {name = "out_AB"} : memref<16x18xf32>
