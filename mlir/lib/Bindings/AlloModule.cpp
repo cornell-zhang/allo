@@ -5,7 +5,7 @@
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
-#include "allo/Bindings/Python/AlloModule.h"
+#include "allo/Bindings/AlloModule.h"
 #include "allo-c/Dialect/Dialects.h"
 #include "allo-c/Dialect/AlloAttributes.h"
 #include "allo-c/Dialect/AlloTypes.h"

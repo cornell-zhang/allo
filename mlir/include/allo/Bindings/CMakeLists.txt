@@ -8,8 +8,8 @@ include(AddMLIRPython)
 # argument.
 set(ALLO_MLIR_PYTHON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/allo")
 set(ALLO_MLIR_PYTHON_PACKAGES_DIR "${PROJECT_BINARY_DIR}/tools/allo/python_packages")
-set(MLIR_PYTHON_SOURCE_DIR "${MLIR_MAIN_SRC_DIR}/lib/Bindings/Python")
-set(ALLO_PYTHON_SOURCE_DIR "${PROJECT_SOURCE_DIR}/lib/Bindings/Python")
+set(MLIR_PYTHON_SOURCE_DIR "${MLIR_MAIN_SRC_DIR}/lib/Bindings")
+set(ALLO_PYTHON_SOURCE_DIR "${PROJECT_SOURCE_DIR}/lib/Bindings")
 
 include_directories(${MLIR_PYTHON_SOURCE_DIR})
 
@@ -31,26 +31,13 @@ declare_mlir_python_sources(AlloMLIRPythonSources.Dialects
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT AlloMLIRPythonSources.Dialects
   ROOT_DIR "${ALLO_MLIR_PYTHON_ROOT_DIR}"
-  TD_FILE dialects/AlloBinding.td
+  TD_FILE AlloBinding.td
   SOURCES
-    dialects/allo.py
+    allo.py
     exceptions.py
     __init__.py
   DIALECT_NAME allo
 )
-
-# Only a temporal solution for Affine dialect Python binding
-# Ref: https://github.com/llvm/llvm-project/commit/8c1b785ce110b754c2112906021a929ddd32f587
-# declare_mlir_dialect_python_bindings(
-#   ADD_TO_PARENT AlloMLIRPythonSources.Dialects
-#   ROOT_DIR "${ALLO_MLIR_PYTHON_ROOT_DIR}"
-#   #TD_FILE dialects/AffineOps.td
-#   SOURCES
-#     dialects/affine.py
-#     dialects/_affine_ops_ext.py
-#     dialects/_affine_ops_gen.py
-#   DIALECT_NAME affine
-# )
 
 ################################################################################
 # Extensions
@@ -114,5 +101,5 @@ add_mlir_python_modules(AlloMLIRPythonModules
 add_custom_command(
           TARGET AlloMLIRPythonModules POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy
-          ${ALLO_MLIR_PYTHON_ROOT_DIR}/setup.py
+          ${ALLO_MLIR_PYTHON_ROOT_DIR}/../setup.py
           ${ALLO_MLIR_PYTHON_PACKAGES_DIR}/allo_core)

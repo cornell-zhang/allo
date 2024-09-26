@@ -9,7 +9,7 @@
 #include "mlir/CAPI/IR.h"
 
 #include "allo-c/Dialect/AlloTypes.h"
-#include "allo/Bindings/Python/AlloModule.h"
+#include "allo/Bindings/AlloModule.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>

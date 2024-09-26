@@ -9,8 +9,8 @@
 #include "mlir/Bindings/Python/PybindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 
-#include "allo-c/Dialect/ALLOAttributes.h"
-#include "allo/Bindings/Python/ALLOModule.h"
+#include "allo-c/Dialect/AlloAttributes.h"
+#include "allo/Bindings/AlloModule.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -48,7 +48,7 @@ template <> struct type_caster<MlirIntegerSet> {
 } // namespace detail
 } // namespace pybind11
 
-void mlir::python::populateALLOAttributes(py::module &m) {
+void mlir::python::populateAlloAttributes(py::module &m) {
   mlir_attribute_subclass(m, "IntegerSetAttr", mlirAttributeIsAIntegerSet)
       .def_classmethod(
           "get",
