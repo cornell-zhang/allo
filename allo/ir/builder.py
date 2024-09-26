@@ -212,8 +212,8 @@ class ASTTransformer(ASTBuilder):
                 upper_bound=ub_map_attr,
                 step=step,
                 iter_args=[],
-                lower_bound_operands=lb_expr[0] if len(lb_expr) > 0 else None,
-                upper_bound_operands=ub_expr[0] if len(ub_expr) > 0 else None,
+                lower_bound_operands=lb_expr,
+                upper_bound_operands=ub_expr,
                 ip=ctx.get_ip(),
             )
             for_op.attributes["loop_name"] = StringAttr.get(name)
