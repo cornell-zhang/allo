@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, too-many-instance-attributes
 
-from allo._mlir import InsertionPoint
-from allo._mlir.dialects import allo as allo_d
+from .._mlir import InsertionPoint
+from .._mlir.dialects import allo as allo_d
 
 
 class LoopScopeGuard:

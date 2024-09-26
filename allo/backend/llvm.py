@@ -5,20 +5,20 @@
 import os
 import ctypes
 import numpy as np
-from allo._mlir.ir import (
+from .._mlir.ir import (
     Context,
     Location,
     Module,
     UnitAttr,
 )
-from allo._mlir.dialects import allo as allo_d
-from allo._mlir.passmanager import PassManager
-from allo._mlir.execution_engine import ExecutionEngine
-from allo._mlir.runtime import (
+from .._mlir.dialects import allo as allo_d
+from .._mlir.passmanager import PassManager
+from .._mlir.execution_engine import ExecutionEngine
+from .._mlir.runtime import (
     get_ranked_memref_descriptor,
     make_nd_memref_descriptor,
 )
-from allo._mlir.exceptions import DTypeWarning
+from .._mlir.exceptions import DTypeWarning
 from ..ir.transform import find_func_in_module
 from ..passes import (
     _mlir_lower_pipeline,

@@ -5,7 +5,7 @@
 import numbers
 from collections import OrderedDict
 
-from allo._mlir.ir import (
+from .._mlir.ir import (
     IntegerType,
     IndexType,
     F16Type,
@@ -14,8 +14,8 @@ from allo._mlir.ir import (
     MemRefType,
     StringAttr,
 )
-from allo._mlir.dialects import allo as allo_d
-from allo._mlir.exceptions import DTypeError, DTypeWarning
+from .._mlir.dialects import allo as allo_d
+from .._mlir.exceptions import DTypeError, DTypeWarning
 
 
 class AlloType:

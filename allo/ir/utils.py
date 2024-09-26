@@ -6,7 +6,7 @@ import ast
 import inspect
 from collections.abc import Callable
 from types import FunctionType as PyFunctionType
-from allo._mlir.ir import (
+from .._mlir.ir import (
     MemRefType,
     IntegerType,
     F32Type,
@@ -17,7 +17,7 @@ from allo._mlir.ir import (
     AffineMap,
     AffineMapAttr,
 )
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     arith as arith_d,

@@ -6,7 +6,7 @@
 import gc
 import ast
 import numpy as np
-from allo._mlir.ir import (
+from .._mlir.ir import (
     Module,
     Location,
     InsertionPoint,
@@ -31,8 +31,8 @@ from allo._mlir.ir import (
     ArrayAttr,
     Attribute,
 )
-from allo._mlir.ir import Type as MLIRType
-from allo._mlir.dialects import (
+from .._mlir.ir import Type as MLIRType
+from .._mlir.dialects import (
     allo as allo_d,
     func as func_d,
     memref as memref_d,
@@ -43,7 +43,7 @@ from allo._mlir.dialects import (
     math as math_d,
     linalg as linalg_d,
 )
-from allo._mlir.exceptions import DTypeError
+from .._mlir.exceptions import DTypeError
 from .utils import (
     MockArg,
     MockScalar,

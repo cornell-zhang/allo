@@ -8,7 +8,7 @@ import math
 import numpy as np
 from tabulate import tabulate
 
-from allo._mlir.ir import (
+from ._mlir.ir import (
     Location,
     MemRefType,
     UnrankedMemRefType,
@@ -24,7 +24,7 @@ from allo._mlir.ir import (
     IntegerType,
     IndexType,
 )
-from allo._mlir.dialects import (
+from ._mlir.dialects import (
     allo as allo_d,
     func as func_d,
     affine as affine_d,
@@ -33,8 +33,8 @@ from allo._mlir.dialects import (
     arith as arith_d,
     scf as scf_d,
 )
-from allo._mlir.ir import StringAttr
-from allo._mlir.passmanager import PassManager as mlir_pass_manager
+from ._mlir.ir import StringAttr
+from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer, store_tensor
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str

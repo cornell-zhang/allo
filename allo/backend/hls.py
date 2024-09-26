@@ -7,13 +7,13 @@ import re
 import io
 import subprocess
 import time
-from allo._mlir.dialects import allo as allo_d
-from allo._mlir.ir import (
+from .._mlir.dialects import allo as allo_d
+from .._mlir.ir import (
     Context,
     Location,
     Module,
 )
-from allo._mlir.passmanager import PassManager
+from .._mlir.passmanager import PassManager
 
 from .vitis import (
     codegen_host,

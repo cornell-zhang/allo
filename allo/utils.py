@@ -4,7 +4,7 @@
 
 import ctypes
 import numpy as np
-from allo._mlir.ir import (
+from ._mlir.ir import (
     MemRefType,
     RankedTensorType,
     IntegerType,
@@ -12,9 +12,9 @@ from allo._mlir.ir import (
     F32Type,
     F64Type,
 )
-from allo._mlir.exceptions import DTypeWarning
-from allo._mlir.runtime import to_numpy
-from allo._mlir.dialects import allo as allo_d
+from ._mlir.exceptions import DTypeWarning
+from ._mlir.runtime import to_numpy
+from ._mlir.dialects import allo as allo_d
 
 
 np_supported_types = {

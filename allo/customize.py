@@ -12,7 +12,7 @@ from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 
-from allo._mlir.ir import (
+from ._mlir.ir import (
     Context,
     Location,
     InsertionPoint,
@@ -28,7 +28,7 @@ from allo._mlir.ir import (
     AffineMap,
     AffineMapAttr,
 )
-from allo._mlir.dialects import (
+from ._mlir.dialects import (
     allo as allo_d,
     memref as memref_d,
     affine as affine_d,
@@ -36,12 +36,12 @@ from allo._mlir.dialects import (
     arith as arith_d,
     func as func_d,
 )
-from allo._mlir.dialects.affine import (
+from ._mlir.dialects.affine import (
     AffineExpr,
     AffineDimExpr,
 )
-from allo._mlir.exceptions import (
-    HCLValueError,
+from ._mlir.exceptions import (
+    AlloValueError,
 )
 
 from . import primitives as prim
@@ -222,11 +222,11 @@ class Schedule:
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         # TODO: test whether the partition has conflicts for different functions
         if partition_type > 2:
-            raise HCLValueError("Invalid partition type")
+            raise AlloValueError("Invalid partition type")
         if dim < 0:
-            raise HCLValueError("Invalid dimension")
+            raise AlloValueError("Invalid dimension")
         if factor < 0:
-            raise HCLValueError("Invalid factor")
+            raise AlloValueError("Invalid factor")
         if partition_type == Partition.Complete:
             partition_type = 0
         elif partition_type == Partition.Block:
@@ -234,7 +234,7 @@ class Schedule:
         elif partition_type == Partition.Cyclic:
             partition_type = 2
         else:
-            raise HCLValueError("Not supported partition type")
+            raise AlloValueError("Not supported partition type")
         # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
@@ -245,7 +245,7 @@ class Schedule:
                     if item[0] == Partition.Complete and item[1] == 0:
                         # this array has been completely partitioned along all the axes
                         return
-                    raise HCLValueError(
+                    raise AlloValueError(
                         f"Cannot partition the same array twice: {parray}, {item} vs ({partition_type}, {dim}, {factor})"
                     )
         # actual partition

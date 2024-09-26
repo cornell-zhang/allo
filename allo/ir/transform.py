@@ -3,8 +3,8 @@
 # pylint: disable=no-name-in-module
 
 import numpy as np
-import allo._mlir
-from allo._mlir.ir import (
+import .._mlir
+from .._mlir.ir import (
     UnitAttr,
     StringAttr,
     InsertionPoint,
@@ -16,7 +16,7 @@ from allo._mlir.ir import (
     FunctionType,
     TypeAttr,
 )
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
@@ -122,7 +122,7 @@ def find_loop_in_bands(func, axis):
     """
     Parameters
     ----------
-    func: allo._mlir.ir.func.FuncOp
+    func: .._mlir.ir.func.FuncOp
         The function to search for the loop
     axis: str or LoopWrapper
         The name of the loop or the LoopWrapper object
@@ -223,14 +223,14 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
         if idx == len(grid):
             return
         with InsertionPoint(for_handle.body.operations[0]):
-            new_for = allo._mlir.make_for(0, grid[idx], name=names[idx])
+            new_for = .._mlir.make_for(0, grid[idx], name=names[idx])
             for_loops.append(new_for)
             recursive_for(new_for, idx + 1)
 
     if not isinstance(ip, InsertionPoint):
         ip = InsertionPoint(ip)
     with ip:
-        for_handle = allo._mlir.make_for(0, grid[0], name=names[0], stage=stage_name)
+        for_handle = .._mlir.make_for(0, grid[0], name=names[0], stage=stage_name)
     for_loops.append(for_handle)
     recursive_for(for_handle, 1)
     return for_loops

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
-from allo._mlir.ir import (
+from .._mlir.ir import (
     InsertionPoint,
     StringAttr,
     UnitAttr,
@@ -12,12 +12,12 @@ from allo._mlir.ir import (
     FunctionType,
     MemRefType,
 )
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     allo as allo_d,
     memref as memref_d,
     func as func_d,
 )
-from allo._mlir.ir import Type as MLIRType
+from .._mlir.ir import Type as MLIRType
 from ..ir.transform import update_streaming_interface, find_buffer, find_func_in_module
 
 
