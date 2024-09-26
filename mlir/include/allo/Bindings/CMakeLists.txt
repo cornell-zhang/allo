@@ -13,8 +13,8 @@ set(ALLO_PYTHON_SOURCE_DIR "${PROJECT_SOURCE_DIR}/lib/Bindings")
 
 include_directories(${MLIR_PYTHON_SOURCE_DIR})
 
-# We vendor our own MLIR instance in the `_mlir` namespace.
-add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=_mlir.")
+# We vendor our own MLIR instance in the `allo._mlir` namespace.
+add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=allo._mlir.")
 
 ################################################################################
 # Sources

@@ -3,7 +3,6 @@
 # pylint: disable=no-name-in-module
 
 import numpy as np
-import .._mlir
 from .._mlir.ir import (
     UnitAttr,
     StringAttr,
@@ -223,14 +222,14 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
         if idx == len(grid):
             return
         with InsertionPoint(for_handle.body.operations[0]):
-            new_for = .._mlir.make_for(0, grid[idx], name=names[idx])
+            new_for = make_for(0, grid[idx], name=names[idx])
             for_loops.append(new_for)
             recursive_for(new_for, idx + 1)
 
     if not isinstance(ip, InsertionPoint):
         ip = InsertionPoint(ip)
     with ip:
-        for_handle = .._mlir.make_for(0, grid[0], name=names[0], stage=stage_name)
+        for_handle = make_for(0, grid[0], name=names[0], stage=stage_name)
     for_loops.append(for_handle)
     recursive_for(for_handle, 1)
     return for_loops
