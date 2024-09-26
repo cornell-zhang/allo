@@ -7,14 +7,14 @@ include(AddMLIRPython)
 # See documentation for `declare_mlir_python_sources`'s ROOT_DIR
 # argument.
 set(ALLO_MLIR_PYTHON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/allo")
-set(ALLO_MLIR_PYTHON_PACKAGES_DIR "${PROJECT_BINARY_DIR}/tools/allo/python_packages")
+set(ALLO_MLIR_PYTHON_PACKAGES_DIR "${PROJECT_BINARY_DIR}/tools/allo")
 set(MLIR_PYTHON_SOURCE_DIR "${MLIR_MAIN_SRC_DIR}/lib/Bindings")
 set(ALLO_PYTHON_SOURCE_DIR "${PROJECT_SOURCE_DIR}/lib/Bindings")
 
 include_directories(${MLIR_PYTHON_SOURCE_DIR})
 
-# We vendor our own MLIR instance in the `allo_mlir` namespace.
-add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=allo_mlir.")
+# We vendor our own MLIR instance in the `_mlir` namespace.
+add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=_mlir.")
 
 ################################################################################
 # Sources
@@ -31,9 +31,9 @@ declare_mlir_python_sources(AlloMLIRPythonSources.Dialects
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT AlloMLIRPythonSources.Dialects
   ROOT_DIR "${ALLO_MLIR_PYTHON_ROOT_DIR}"
-  TD_FILE AlloBinding.td
+  TD_FILE dialects/AlloBinding.td
   SOURCES
-    allo.py
+    dialects/allo.py
     exceptions.py
     __init__.py
   DIALECT_NAME allo
@@ -77,9 +77,9 @@ set(_source_components
 
 add_mlir_python_common_capi_library(AlloMLIRAggregateCAPI
   INSTALL_COMPONENT AlloMLIRPythonModules
-  INSTALL_DESTINATION python_packages/allo_core/allo_mlir/_mlir_libs
-  OUTPUT_DIRECTORY "${ALLO_MLIR_PYTHON_PACKAGES_DIR}/allo_core/allo_mlir/_mlir_libs"
-  RELATIVE_INSTALL_ROOT "../../../.."
+  INSTALL_DESTINATION _mlir
+  OUTPUT_DIRECTORY "${ALLO_MLIR_PYTHON_PACKAGES_DIR}/_mlir"
+  RELATIVE_INSTALL_ROOT "../.."
   DECLARED_HEADERS
     MLIRPythonCAPI.HeaderSources
   DECLARED_SOURCES
@@ -87,19 +87,9 @@ add_mlir_python_common_capi_library(AlloMLIRAggregateCAPI
 )
 
 add_mlir_python_modules(AlloMLIRPythonModules
-  ROOT_PREFIX "${ALLO_MLIR_PYTHON_PACKAGES_DIR}/allo_core/allo_mlir"
-  INSTALL_PREFIX "python_packages/allo_core/allo_mlir"
+  ROOT_PREFIX "${ALLO_MLIR_PYTHON_PACKAGES_DIR}/_mlir"
+  INSTALL_PREFIX "_mlir"
   DECLARED_SOURCES ${_source_components}
   COMMON_CAPI_LINK_LIBS
     AlloMLIRAggregateCAPI
   )
-
-################################################################################
-# Add setup script
-################################################################################
-
-add_custom_command(
-          TARGET AlloMLIRPythonModules POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy
-          ${ALLO_MLIR_PYTHON_ROOT_DIR}/../setup.py
-          ${ALLO_MLIR_PYTHON_PACKAGES_DIR}/allo_core)
