@@ -314,7 +314,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
             affine_attr = AffineMapAttr.parse(
                 f"affine_map<({var_str})->({dst_pattern})>"
             )
-            load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+            load = affine_d.AffineLoadOp(
+                MemRefType(tensor.type).element_type,
+                tensor,
+                induction_vars,
+                affine_attr,
+            )
             affine_d.AffineStoreOp(
                 load.result,
                 alloc_op.result,
@@ -339,7 +344,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({out_str})>"
                 )
-                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                load = affine_d.AffineLoadOp(
+                    MemRefType(tensor.type).element_type,
+                    tensor,
+                    induction_vars,
+                    affine_attr,
+                )
                 if dst_pattern is not None:
                     out_str = dst_pattern
                 else:
@@ -362,7 +372,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({load_str})>"
                 )
-                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                load = affine_d.AffineLoadOp(
+                    MemRefType(tensor.type).element_type,
+                    tensor,
+                    induction_vars,
+                    affine_attr,
+                )
                 if dst_pattern is not None:
                     out_str = dst_pattern
                 affine_attr = AffineMapAttr.parse(
@@ -390,7 +405,9 @@ def store_tensor(tensor, target, name, ip, flatten=True):
         in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
         load_str = in_str
         affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
-        load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+        load = affine_d.AffineLoadOp(
+            MemRefType(tensor.type).element_type, tensor, induction_vars, affine_attr
+        )
         if not flatten:
             out_str = in_str
         else:

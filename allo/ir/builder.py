@@ -218,7 +218,7 @@ class ASTTransformer(ASTBuilder):
             )
             for_op.attributes["loop_name"] = StringAttr.get(name)
             if stage != "":
-                for_op.attributes["op_name"] = StringAttr.get(stage) 
+                for_op.attributes["op_name"] = StringAttr.get(stage)
             affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
         else:  # build SCFForOp
             lb_expr = build_stmt(ctx, args[0] if len(args) > 1 else ast.Constant(0))
@@ -1088,7 +1088,7 @@ class ASTTransformer(ASTBuilder):
             ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
             if isinstance(node.ctx, ast.Load):
                 op = affine_d.AffineLoadOp(
-                    IntegerType.get_signless(32),
+                    node.value.dtype.build(),
                     value.result,
                     ivs,
                     affine_attr,
@@ -1467,7 +1467,9 @@ class ASTTransformer(ASTBuilder):
                     type(node.ops[0])
                 ]
                 predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return allo_d.CmpFixedOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
+                return allo_d.CmpFixedOp(
+                    predicate, lhs.result, rhs_res, ip=ctx.get_ip()
+                )
             if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
                 predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
@@ -1649,6 +1651,7 @@ class ASTTransformer(ASTBuilder):
                         )
                         affine_attr = AffineMapAttr.get(affine_map)
                         return affine_d.AffineLoadOp(
+                            node.func.value.dtype.build(),
                             ctx.buffers[node.func.value.id].result,
                             [],
                             affine_attr,

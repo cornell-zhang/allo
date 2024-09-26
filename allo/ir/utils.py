@@ -208,7 +208,11 @@ class MockScalar(MockOp):
             )
             affine_attr = AffineMapAttr.get(affine_map)
             load = affine_d.AffineLoadOp(
-                self.op.result, [], affine_attr, ip=self.ctx.get_ip()
+                self.dtype.build(),
+                self.op.result,
+                [],
+                affine_attr,
+                ip=self.ctx.get_ip(),
             )
             load.attributes["from"] = StringAttr.get(self.name)
             return load.result
