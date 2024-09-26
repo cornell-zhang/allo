@@ -30,6 +30,7 @@ from .._mlir.ir import (
     TypeAttr,
     ArrayAttr,
     Attribute,
+    OpResultList,
 )
 from .._mlir.ir import Type as MLIRType
 from .._mlir.dialects import (
@@ -150,12 +151,12 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "T":  # transpose
             shape = node.shape
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, shape)
-            transpose_op = linalg_d.TransposeOp(
-                inputs=[value.result],
-                outputs=[alloc_op.result],
-                permutation=list(range(len(shape)))[::-1],
-                ip=ctx.get_ip(),
-            )
+            with ctx.get_ip():
+                transpose_op = linalg_d.transpose(
+                    input=value.result,
+                    outs=[alloc_op.result],
+                    permutation=list(range(len(shape)))[::-1],
+                )
             ASTTransformer.attach_op_name(ctx, node, transpose_op, "transpose")
             return transpose_op if ctx.enable_tensor else alloc_op
 
@@ -569,12 +570,12 @@ class ASTTransformer(ASTBuilder):
             op = fill.owner if ctx.enable_tensor else in_cst
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
-        broadcast_op = linalg_d.BroadcastOp(
-            inputs=[op.result],
-            outputs=[alloc_op.result],
-            dimensions=dims,
-            ip=ctx.get_ip(),
-        )
+        with ctx.get_ip():
+            broadcast_op = linalg_d.broadcast(
+                input=op.result,
+                outs=[alloc_op.result],
+                dimensions=dims,
+            )
         return broadcast_op if ctx.enable_tensor else alloc_op
 
     @staticmethod
@@ -1754,7 +1755,10 @@ class ASTTransformer(ASTBuilder):
                 stream_op.attributes["src"] = StringAttr.get(src)
                 stream_op.attributes["dst"] = StringAttr.get(dst)
                 return stream_op
-            arg_type = new_args[0].result.type
+            if isinstance(new_args[0].result, OpResultList):
+                arg_type = new_args[0].result[0].type
+            else:
+                arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -2062,12 +2066,12 @@ class ASTTransformer(ASTBuilder):
                     )
                     op = op.owner
             elif attr == "transpose":
-                op = linalg_d.TransposeOp(
-                    inputs=[new_args[0].result],
-                    outputs=[result_tensor.result],
-                    permutation=tuple(x.val for x in new_args[1]),
-                    ip=ctx.get_ip(),
-                )
+                with ctx.get_ip():
+                    op = linalg_d.transpose(
+                        input=new_args[0].result,
+                        outs=[result_tensor.result],
+                        permutation=tuple(x.val for x in new_args[1]),
+                    )
             elif attr == "view":
                 view_op = (
                     tensor_d.ReshapeOp if ctx.enable_tensor else memref_d.ReshapeOp
@@ -2196,7 +2200,7 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
-        res = ret.result
+        res = ret.result if not isinstance(ret.result, OpResultList) else ret.result[0]
         if (
             isinstance(res.type, MemRefType)
             and res.type.layout != ctx.top_func.type.results[0].layout
