@@ -42,5 +42,3 @@ mlir_configure_python_dev_packages()
 
 add_subdirectory(include)
 add_subdirectory(lib)
-add_subdirectory(tests)
-add_subdirectory(tools)
