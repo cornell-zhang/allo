@@ -1512,12 +1512,15 @@ class ASTTransformer(ASTBuilder):
                 hasElse=len(node.orelse),
                 results_=[],
             )
+            # TODO: MLIR bug, need to create a then_block function
+            then_block = if_op.thenRegion.blocks[0]
         else:
             cond = build_stmt(ctx, node.test)
             if_op = scf_d.IfOp(
                 cond.result, results_=[], ip=ctx.get_ip(), hasElse=len(node.orelse)
             )
-        ctx.set_ip(if_op.then_block)
+            then_block = if_op.then_block
+        ctx.set_ip(then_block)
         build_stmts(ctx, node.body)
         if is_affine:
             affine_d.AffineYieldOp([], ip=ctx.get_ip())
@@ -1525,7 +1528,8 @@ class ASTTransformer(ASTBuilder):
             scf_d.YieldOp([], ip=ctx.get_ip())
         ctx.pop_ip()
         if len(node.orelse) > 0:
-            ctx.set_ip(if_op.else_block)
+            else_block = if_op.elseRegion.blocks[0]
+            ctx.set_ip(else_block)
             build_stmts(ctx, node.orelse)
             if is_affine:
                 affine_d.AffineYieldOp([], ip=ctx.get_ip())

@@ -180,7 +180,13 @@ def get_affine_loop_nests(func):
                     name = StringAttr(op.attributes["loop_name"]).value
                 band.add_loop(func_name, band_name, name, op)
                 DFS(op.body.operations, band)
-            elif isinstance(op, (affine_d.AffineIfOp, scf_d.IfOp)):
+            elif isinstance(op, affine_d.AffineIfOp):
+                DFS(op.thenRegion.blocks[0].operations, band)
+                try:
+                    DFS(op.elseRegion.blocks[0].operations, band)
+                except IndexError:
+                    pass
+            elif isinstance(op, scf_d.IfOp):
                 DFS(op.then_block.operations, band)
                 try:
                     DFS(op.else_block.operations, band)
