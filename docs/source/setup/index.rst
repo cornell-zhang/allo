@@ -24,29 +24,21 @@
 Installation
 ############
 
-To install and use Allo, we need to first install the `LLVM-18 project <https://github.com/llvm/llvm-project/tree/llvmorg-18-init>`_ and the `hcl-mlir dialect <https://github.com/cornell-zhang/hcl-dialect>`_. You can choose to use our provided docker or build from source.
+To install and use Allo, we need to first install the `LLVM-19 project <https://github.com/llvm/llvm-project/tree/fbec1c2a08ce2ae9750ddf3cecc86c5dd2bbc9d8>`_. You can choose to use our provided docker or build from source.
+
 
 Install from Docker
 -------------------
 
-To simplify the installation process, we provide a docker image that has already installed the LLVM-18 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the :code:`/root/llvm-project` folder in the docker image, and a prebuilt hcl-mlir dialect is installed in :code:`/root/hcl-dialect`.
+To simplify the installation process, we provide a docker image that has already installed the LLVM-19 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the :code:`/root/llvm-project` folder in the docker image.
 
 .. code-block:: console
 
-  $ docker pull chhzh123/hcl-dialect:llvm-18.x-py3.12
-  $ docker run --rm -it chhzh123/hcl-dialect:llvm-18.x-py3.12
+  $ docker pull chhzh123/allo:llvm-19.x-py3.12
+  $ docker run --rm -it chhzh123/allo:llvm-19.x-py3.12
   (docker) $ git clone https://github.com/cornell-zhang/allo.git && cd allo
-  (docker) $ python3 -m pip install -e .
+  (docker) $ python3 -m pip install -v -e .
 
-Please note that the hcl-mlir dialect is not up-to-date. You can pull the latest hcl-mlir dialect and rebuild it if needed.
-
-.. code-block:: console
-
-  (docker) $ cd /root/hcl-dialect
-  (docker) $ git remote update && git fetch
-  (docker) $ cd build && make -j8
-  (docker) $ cd tools/hcl/python_packages/hcl_core
-  (docker) $ python3 -m pip install -e .
 
 Install from Source
 -------------------
@@ -69,9 +61,10 @@ After creating the Python environment, you can install the required packages by 
 
 .. code-block:: console
 
-  $ bash build.sh
+  $ python3 -m pip install -v -e .
 
 You should see "Installation completed!" if the installation is finished.
+
 
 Testing
 -------
@@ -82,11 +75,12 @@ To make sure the installation is successful, you can run the following command t
 
   $ python3 -m pytest tests/
 
-Internal Installation
----------------------
+
+Internal Installation (Corenll)
+-------------------------------
 For Zhang Group students, we have already prepared a prebuilt version of LLVM on our server, so you do not need to build everything from source. Please follow the instruction below to set up the environment.
 
-Make sure you have the access to the :code:`brg-zhang` or other Zhang group server. You can log into the server by SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`_ for more details on configuring VSCode. Those servers are only accessible from the campus network. Please use the VPN if you are off-campus.
+Make sure you have the access to the :code:`brg-zhang` or other Zhang group servers. You can log into the server by SSH or use VSCode Remote SSH extension. Please refer to `this website <https://code.visualstudio.com/docs/remote/ssh>`_ for more details on configuring VSCode. Those servers are only accessible from the campus network. Please use the VPN if you are off-campus.
 
 After logging into the server, the first step is to install an Anaconda environment. We recommend you to install your own `Miniconda <https://docs.conda.io/en/latest/miniconda.html>`_, which is a lightweight version of Anaconda and contains only the necessary packages. You can download the installer from the link above and install it on your system. After the installation, you can create a new environment for Allo by running the following commands:
 
@@ -95,12 +89,11 @@ After logging into the server, the first step is to install an Anaconda environm
   $ conda create -n allo python=3.12
   $ conda activate allo
 
-We also provide a script to set up the backend LLVM compiler. You can copy the script to your home directory and run it
+We also provide a script to set up the backend LLVM compiler. You can simply run it
 
 .. code-block:: console
 
-  $ cp /work/shared/common/allo/setup-py312.sh ~/
-  $ source ~/setup.sh
+  $ source /work/shared/common/allo/setup-py312.sh
 
 .. note::
 
@@ -112,7 +105,7 @@ Then, you can pull the latest version of Allo from GitHub and install it by runn
 
   $ git clone https://github.com/cornell-zhang/allo.git
   $ cd allo
-  $ python3 -m pip install -e .
+  $ python3 -m pip install -v -e .
 
 Now, you can run the following command to test if the installation is successful
 
