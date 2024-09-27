@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright HeteroCL authors. All Rights Reserved.
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -e
@@ -11,14 +11,14 @@ set -e
 #
 # PASSWORD: The docker hub account password.
 #
-DOCKER_HUB_ACCOUNT=chhzh123
+DOCKER_HUB_ACCOUNT="$1"
 
 # Get the docker hub account password.
-PASSWORD="$1"
+PASSWORD="$2"
 shift 1
 
-LOCAL_IMAGE_NAME=hcl-dialect:latest
-REMOTE_IMAGE_NAME_VER=${DOCKER_HUB_ACCOUNT}/hcl-dialect:llvm-18.x-py3.12
+LOCAL_IMAGE_NAME=allo:latest
+REMOTE_IMAGE_NAME_VER=${DOCKER_HUB_ACCOUNT}/allo:llvm-19.x-py3.12
 
 echo "Login docker hub"
 docker login -u ${DOCKER_HUB_ACCOUNT} -p ${PASSWORD}
