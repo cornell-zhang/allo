@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
@@ -30,21 +31,26 @@ class CMakeBuild(build_ext):
             self.build_extension(ext)
 
     def build_extension(self, ext):
+        # Retrieve LLVM_BUILD_DIR from environment variable
+        llvm_build_dir = os.environ.get('LLVM_BUILD_DIR')
+        if not llvm_build_dir:
+            raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
+
         cmake_args = [
-            "-DMLIR_DIR=$LLVM_BUILD_DIR/lib/cmake/mlir",
-            "-DPython3_EXECUTABLE=`which python3`",
+            f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
+            f"-DPython3_EXECUTABLE={sys.executable}",
         ]
 
         build_temp = os.path.join(ext.sourcedir, "build")
         if not os.path.exists(build_temp):
             os.makedirs(build_temp)
 
-        subprocess.check_call(
+        subprocess.run(
             ["cmake", "-G Ninja", ext.sourcedir] + cmake_args,
             cwd=build_temp,
             check=True,
         )
-        subprocess.check_call(["ninja"], cwd=build_temp, check=True)
+        subprocess.run(["ninja"], cwd=build_temp, check=True)
 
 
 def parse_requirements(filename):
