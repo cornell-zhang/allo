@@ -511,9 +511,9 @@ class Schedule:
             op_to_remove = []
             _, loop_wrapper = loops[axis]
             loop = loop_wrapper.loop
-            lower_bound = loop.attributes["lower_bound"]
+            lower_bound = loop.attributes["lowerBoundMap"]
             assert str(lower_bound) == "affine_map<() -> (0)>", "Lower bound must be 0"
-            upper_bound = loop.attributes["upper_bound"]
+            upper_bound = loop.attributes["upperBoundMap"]
             upper_bound = int(
                 re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
             )

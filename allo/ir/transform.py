@@ -227,15 +227,36 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
     def recursive_for(for_handle, idx):
         if idx == len(grid):
             return
-        with InsertionPoint(for_handle.body.operations[0]):
-            new_for = make_for(0, grid[idx], name=names[idx])
+        with InsertionPoint(for_handle.body.operations[0]) as ip:
+            new_for = affine_d.AffineForOp(
+                lower_bound=0,
+                upper_bound=grid[idx],
+                step=1,
+                iter_args=[],
+                lower_bound_operands=None,
+                upper_bound_operands=None,
+                ip=ip,
+            )
+            new_for.attributes["loop_name"] = StringAttr.get(names[idx])
+            affine_d.AffineYieldOp([], ip=InsertionPoint(new_for.body))
             for_loops.append(new_for)
             recursive_for(new_for, idx + 1)
 
     if not isinstance(ip, InsertionPoint):
         ip = InsertionPoint(ip)
     with ip:
-        for_handle = make_for(0, grid[0], name=names[0], stage=stage_name)
+        for_handle = affine_d.AffineForOp(
+            lower_bound=0,
+            upper_bound=grid[0],
+            step=1,
+            iter_args=[],
+            lower_bound_operands=None,
+            upper_bound_operands=None,
+            ip=ip,
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(for_handle.body))
+        for_handle.attributes["loop_name"] = StringAttr.get(names[0])
+        for_handle.attributes["op_name"] = StringAttr.get(stage_name)
     for_loops.append(for_handle)
     recursive_for(for_handle, 1)
     return for_loops
