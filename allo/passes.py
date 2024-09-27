@@ -3,10 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks
 
 import os
-import re
-import math
 import numpy as np
-from tabulate import tabulate
 
 from ._mlir.ir import (
     Location,
@@ -22,7 +19,6 @@ from ._mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
-    IndexType,
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -31,7 +27,6 @@ from ._mlir.dialects import (
     memref as memref_d,
     linalg as linalg_d,
     arith as arith_d,
-    scf as scf_d,
 )
 from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager

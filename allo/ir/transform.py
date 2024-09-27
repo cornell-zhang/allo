@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import numpy as np
 from .._mlir.ir import (
@@ -121,7 +121,7 @@ def find_loop_in_bands(func, axis):
     """
     Parameters
     ----------
-    func: .._mlir.ir.func.FuncOp
+    func: _mlir.ir.func.FuncOp
         The function to search for the loop
     axis: str or LoopWrapper
         The name of the loop or the LoopWrapper object

@@ -565,7 +565,6 @@ class ASTTransformer(ASTBuilder):
             # Get zero-rank memref for constant
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
-                # pylint: disable=unexpected-keyword-arg
                 fill = linalg_d.fill(op.result, outs=[in_cst.result])
             op = fill.owner if ctx.enable_tensor else in_cst
         # target
@@ -1236,10 +1235,8 @@ class ASTTransformer(ASTBuilder):
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             with ctx.get_ip():
                 if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
                 elif rhs is not None:
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
                 else:
                     linalg_op = alloc_op.result
@@ -1511,15 +1508,12 @@ class ASTTransformer(ASTBuilder):
                 [var.result],
                 ip=ctx.get_ip(),
                 hasElse=len(node.orelse),
-                results_=[],
             )
             # TODO: MLIR bug, need to create a then_block function
             then_block = if_op.thenRegion.blocks[0]
         else:
             cond = build_stmt(ctx, node.test)
-            if_op = scf_d.IfOp(
-                cond.result, results_=[], ip=ctx.get_ip(), hasElse=len(node.orelse)
-            )
+            if_op = scf_d.IfOp(cond.result, ip=ctx.get_ip(), hasElse=len(node.orelse))
             then_block = if_op.then_block
         ctx.set_ip(then_block)
         build_stmts(ctx, node.body)
@@ -1726,7 +1720,6 @@ class ASTTransformer(ASTBuilder):
                         else MockConstant(0, ctx)
                     )
                     op = ASTTransformer.build_cast_op(ctx, res, Int(32), node.dtype)
-                    # pylint: disable=unexpected-keyword-arg
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
@@ -1958,7 +1951,6 @@ class ASTTransformer(ASTBuilder):
                 # init zero
                 zero = MockConstant(0, ctx)
                 zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-                # pylint: disable=unexpected-keyword-arg
                 linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
                 result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
                 ASTTransformer.attach_op_name(
@@ -2052,7 +2044,6 @@ class ASTTransformer(ASTBuilder):
                     # init zero
                     zero = MockConstant(0, ctx)
                     # TODO: support tensor
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
                     op = linalg_d.max(
                         new_args[0].result, zero_op.result, outs=[result_tensor]

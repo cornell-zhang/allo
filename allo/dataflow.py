@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
-import functools
 import gc
+import functools
+import numpy as np
+
 from ._mlir.ir import (
     StringAttr,
     InsertionPoint,
@@ -14,8 +16,6 @@ from ._mlir.ir import (
     FunctionType,
 )
 from ._mlir.dialects import func as func_d, memref as memref_d
-import numpy as np
-
 from .customize import customize
 from .ir.utils import get_global_vars
 
