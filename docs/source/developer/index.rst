@@ -101,23 +101,35 @@ Following is an example output:
     Version Information: black, 24.8.0 (compiled: yes)
     Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/ir/types.py
+    Files: setup.py
     Running black in checking mode
     All done! ✨ 🍰 ✨
     1 file would be left unchanged.
-    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)    : No such file or directory
+    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
     ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
     Version Information: black, 24.8.0 (compiled: yes)
     Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/ir/types.py
+    Files: ...
     Running black in checking mode
     All done! ✨ 🍰 ✨
-    1 file would be left unchanged.
+    22 files would be left unchanged.
+    Check C/C++ formats using clang-format...
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+    Version Information: clang-format version 19.1.0
+    Read returned 0
+    No changes in C/C++ files
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+    Version Information: clang-format version 19.1.0
+    Read returned 0
+    Files: ...
+    Running clang-format in checking mode
     Running pylint on allo
 
-    --------------------------------------------------------------------
-    Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+--------------------------------------------------------------------
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 
 Lastly run the unit tests:
 
