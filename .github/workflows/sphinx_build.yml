@@ -33,11 +33,13 @@ jobs:
       shell: bash
       run: |
         source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install -v -e .
     - name: Build docs
       shell: bash
       run: |
         source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
         cd docs
         python3 -m pip install -r requirements.txt
         make html

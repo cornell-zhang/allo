@@ -60,3 +60,6 @@ RUN cd /root/llvm-project && \
 ENV PATH="${PATH}:/root/miniconda/bin"
 RUN conda init bash && \
     echo "conda activate allo" >> ~/.bashrc
+
+ENV LLVM_BUILD_DIR="/root/llvm-project/build"
+ENV PATH="${PATH}:/root/llvm-project/build/bin"
