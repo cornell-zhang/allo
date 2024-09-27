@@ -53,6 +53,7 @@ from .ir.transform import (
     get_affine_loop_nests,
     find_loop_in_bands,
     find_buffer,
+    find_func_in_module,
     LoopWrapper,
 )
 from .ir.use_def import UseDefChain
@@ -721,6 +722,7 @@ def customize(
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
+        ctx.top_func = find_func_in_module(module, fn.__name__)
     sch = Schedule(
         module,
         ctx.top_func,
