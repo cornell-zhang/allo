@@ -26,7 +26,10 @@ jobs:
       image: chhzh123/allo:llvm-19.x-py3.12
 
     steps:
-    - name: Install git in container
+    - name: Install rsync 📚
+      run: |
+        apt-get update && apt-get install -y rsync
+    - name: Install git
       run: |
         apt-get install git
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
