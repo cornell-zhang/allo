@@ -9,6 +9,7 @@ project(allo-dialect LANGUAGES CXX C)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
+set(CMAKE_CXX_FLAGS "-Wfatal-errors -std=c++17")
 add_compile_options ( -w )
 
 set(CMAKE_BUILD_TYPE Debug)
