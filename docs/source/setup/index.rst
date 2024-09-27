@@ -24,7 +24,7 @@
 Installation
 ############
 
-To install and use Allo, we need to first install the `LLVM-19 project <https://github.com/llvm/llvm-project/tree/fbec1c2a08ce2ae9750ddf3cecc86c5dd2bbc9d8>`_. You can choose to use our provided docker or build from source.
+To install and use Allo, we need to first install the `LLVM-19 project <https://github.com/cornell-zhang/allo/tree/main/externals>`_. You can choose to use our provided docker or build from source.
 
 
 Install from Docker
@@ -47,11 +47,9 @@ Please follow the instructions below to build the LLVM-19 project from source. Y
 
 .. code-block:: bash
 
-    git clone https://github.com/llvm/llvm-project.git && cd /llvm-project
-    # Checkout the specific commit
-    git checkout fbec1c2
+    git submodule update --init --recursive && cd externals/llvm-project
     # Apply our patch
-    git apply /path/to/allo/externals/llvm_patch
+    git apply ../llvm_patch
     # Python 3.12 is required
     mkdir -p build && cd build
     cmake -G Ninja ../llvm \
