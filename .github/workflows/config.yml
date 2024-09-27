@@ -31,7 +31,7 @@ jobs:
       shell: bash
       run: |
         source activate allo
-        bash ./.circleci/task_lint.sh
+        bash scripts/lint/task_lint.sh
     - name: Testing
       shell: bash
       run: |

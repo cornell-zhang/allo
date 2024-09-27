@@ -32,7 +32,7 @@ class CMakeBuild(build_ext):
 
     def build_extension(self, ext):
         # Retrieve LLVM_BUILD_DIR from environment variable
-        llvm_build_dir = os.environ.get('LLVM_BUILD_DIR')
+        llvm_build_dir = os.environ.get("LLVM_BUILD_DIR")
         if not llvm_build_dir:
             raise RuntimeError("LLVM_BUILD_DIR environment variable is not set")
 
