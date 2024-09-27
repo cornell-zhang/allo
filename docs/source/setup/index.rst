@@ -43,7 +43,29 @@ To simplify the installation process, we provide a docker image that has already
 Install from Source
 -------------------
 
-Please clone the Allo repository to your local machine.
+Please follow the instructions below to build the LLVM-19 project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly.
+
+.. code-block:: bash
+
+    git clone https://github.com/llvm/llvm-project.git && cd /llvm-project
+    # Checkout the specific commit
+    git checkout fbec1c2
+    # Apply our patch
+    git apply /path/to/allo/externals/llvm_patch
+    # Python 3.12 is required
+    mkdir -p build && cd build
+    cmake -G Ninja ../llvm \
+        -DLLVM_ENABLE_PROJECTS=mlir \
+        -DLLVM_BUILD_EXAMPLES=ON \
+        -DLLVM_TARGETS_TO_BUILD="host" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_ASSERTIONS=ON \
+        -DLLVM_INSTALL_UTILS=ON \
+        -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
+        -DPython3_EXECUTABLE=`which python3`
+    ninja
+
+Then clone the Allo repository to your local machine.
 
 .. code-block:: console
   
@@ -57,13 +79,11 @@ We recommend creating a new conda environment for Allo. Since we are using the l
   $ conda create -n allo python=3.12
   $ conda activate allo
 
-After creating the Python environment, you can install the required packages by running the following command.
+You can now install Allo by running the following command.
 
 .. code-block:: console
 
   $ python3 -m pip install -v -e .
-
-You should see "Installation completed!" if the installation is finished.
 
 
 Testing
