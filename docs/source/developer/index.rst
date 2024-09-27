@@ -86,7 +86,7 @@ To run the tests, you can run the following command from the root of the reposit
 
 .. code-block:: bash
 
-    $ bash .circleci/task_lint.sh
+    $ bash .scripts/task_lint.sh
 
 Following is an example output:
 
