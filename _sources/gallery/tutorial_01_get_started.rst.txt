@@ -276,7 +276,7 @@ We can print out the IR again to see the effect of the transformation.
             } {loop_name = "j"}
           } {loop_name = "i.inner"}
         } {loop_name = "i.outer", op_name = "S_i_j_k_0"}
-        %0 = hcl.create_op_handle "S_i_j_k_0"
+        %0 = allo.create_op_handle "S_i_j_k_0"
         return %alloc : memref<32x32xi32>
       }
     }
@@ -336,7 +336,7 @@ Similarly, we can split the ``j`` loop:
             } {loop_name = "j.outer"}
           } {loop_name = "i.inner"}
         } {loop_name = "i.outer", op_name = "S_i_j_k_0"}
-        %0 = hcl.create_op_handle "S_i_j_k_0"
+        %0 = allo.create_op_handle "S_i_j_k_0"
         return %alloc : memref<32x32xi32>
       }
     }
@@ -509,7 +509,7 @@ Finally, we can do a sanity check to see if the results are correct.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.196 seconds)
+   **Total running time of the script:** (0 minutes 0.189 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_01_get_started.py:

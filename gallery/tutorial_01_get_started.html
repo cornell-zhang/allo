@@ -148,7 +148,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_02_mlir.html">MLIR Translation Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul>
@@ -317,7 +316,7 @@ module {
         } {loop_name = &quot;j&quot;}
       } {loop_name = &quot;i.inner&quot;}
     } {loop_name = &quot;i.outer&quot;, op_name = &quot;S_i_j_k_0&quot;}
-    %0 = hcl.create_op_handle &quot;S_i_j_k_0&quot;
+    %0 = allo.create_op_handle &quot;S_i_j_k_0&quot;
     return %alloc : memref&lt;32x32xi32&gt;
   }
 }
@@ -358,7 +357,7 @@ module {
         } {loop_name = &quot;j.outer&quot;}
       } {loop_name = &quot;i.inner&quot;}
     } {loop_name = &quot;i.outer&quot;, op_name = &quot;S_i_j_k_0&quot;}
-    %0 = hcl.create_op_handle &quot;S_i_j_k_0&quot;
+    %0 = allo.create_op_handle &quot;S_i_j_k_0&quot;
     return %alloc : memref&lt;32x32xi32&gt;
   }
 }
@@ -450,7 +449,7 @@ assign the output to a new variable.</p>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html#numpy.testing.assert_allclose" title="numpy.testing.assert_allclose" class="sphx-glr-backref-module-numpy-testing sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span></a><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_C</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">golden_C</span></a><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.196 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.189 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-01-get-started-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/addf17760130f22dafec92dedc62e16a/tutorial_01_get_started.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_01_get_started.ipynb</span></code></a></p>

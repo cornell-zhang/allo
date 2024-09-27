@@ -23,7 +23,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Frontend DSL Comparison" href="../developer/comparison.html" />
+    <link rel="next" title="Index" href="../genindex.html" />
     <link rel="prev" title="IR Builder Walkthrough" href="developer_01_ir_builder.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -148,7 +148,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">MLIR Translation Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer/comparison.html">Frontend DSL Comparison</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul>
@@ -234,15 +233,6 @@ of <code class="docutils literal notranslate"><span class="pre">C</span></code>,
 </div>
 <p>The first line gives the error message and the exact location (line 8, column 3) of the error.
 Then we know that there is a problem in the return value of our MLIR code, which helps us debug the program.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>We can also leverage the HCL-MLIR backend to parse an MLIR program from a text file.
-For example, we can save the above program to a file named <code class="docutils literal notranslate"><span class="pre">matmul.mlir</span></code>, and then
-invoke the following command to parse it: (Suppose you are using our provided server)</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>/work/shared/common/hcl-dialect/build/bin/hcl-opt<span class="w"> </span>matmul.mlir
-</pre></div>
-</div>
-</div>
 <p>We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
 The <code class="docutils literal notranslate"><span class="pre">LLVMMoudle</span></code> class takes the MLIR module and the name of the top function as input.
 Then we can directly invoke the module with random inputs, and see if the result is correct.</p>
@@ -325,7 +315,7 @@ And we can also invoke the LLVM execution engine trying to execute the program.<
 </div>
 <p>Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.094 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.073 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-02-mlir-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/26d9fb3f431f94846c086960be43203e/developer_02_mlir.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">developer_02_mlir.ipynb</span></code></a></p>
@@ -379,7 +369,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
             <div class="right">
                 
-                    <a href="../developer/comparison.html"><span>Frontend DSL Comparison</span><span class="icon">&gt;</span></a>
+                    <a href="../genindex.html"><span>Index</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
