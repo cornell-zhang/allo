@@ -7,7 +7,7 @@ set -e
 #
 # Push the docker image to docker hub.
 #
-# Usage: push.sh <PASSWORD>
+# Usage: push.sh <USERNAME> <PASSWORD>
 #
 # PASSWORD: The docker hub account password.
 #

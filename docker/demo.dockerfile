@@ -43,7 +43,7 @@ SHELL ["/root/miniconda/bin/conda", "run", "-n", "allo", "/bin/bash", "-c"]
 # download llvm-project
 RUN cd /root/ && git clone https://github.com/llvm/llvm-project.git
 
-# install llvm
+# install llvm (need to update the hash when the version changes)
 RUN cd /root/llvm-project && \
     git checkout fbec1c2 && \
     python3 -m pip install --upgrade pip && \
