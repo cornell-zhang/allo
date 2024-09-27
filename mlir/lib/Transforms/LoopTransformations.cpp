@@ -132,18 +132,17 @@ LogicalResult runSplitting(func::FuncOp &f, SplitOp &splitOp) {
     OpBuilder opBuilder(tiledNest[1]);
     tiledNest[1].setUpperBound({}, opBuilder.getConstantAffineMap(cstUb));
   } else {
-    auto addMap =
-        AffineMap::get(/*numDims=*/1, /*numSymbols=*/0, ubMap.getResult(1));
-    auto applyOp = dyn_cast<AffineApplyOp>(
-        tiledNest[1].getUpperBoundOperands()[0].getDefiningOp());
-    auto outerIV = applyOp.getOperand(0);
-    auto mulMap = applyOp.getAffineMap();
-    auto composedMap = addMap.compose(mulMap);
-    SmallVector<AffineExpr> newExprs{ubMap.getResult(0),
-                                     composedMap.getResult(0)};
-    auto finalMinMap = AffineMap::get(/*numDims=*/1, /*numSymbols=*/0, newExprs,
-                                      tiledNest[1].getContext());
-    tiledNest[1].setUpperBound(outerIV, finalMinMap);
+    // f.dump();
+    // auto addMap =
+    //     AffineMap::get(/*numDims=*/1, /*numSymbols=*/0, ubMap.getResult(1));
+    // auto outerIV = tiledNest[1].getUpperBoundOperands()[0];
+    // auto mulMap = tiledNest[1].getUpperBound().getMap();
+    // auto composedMap = addMap.compose(mulMap);
+    // SmallVector<AffineExpr> newExprs{ubMap.getResult(0),
+    //                                  composedMap.getResult(0)};
+    // auto finalMinMap = AffineMap::get(/*numDims=*/1, /*numSymbols=*/0, newExprs,
+    //                                   tiledNest[1].getContext());
+    // tiledNest[1].setUpperBound(outerIV, finalMinMap);
   }
 
   // 6) Sink AffineApply Operations
