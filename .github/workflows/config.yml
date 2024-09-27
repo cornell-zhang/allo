@@ -18,9 +18,15 @@ jobs:
       image: chhzh123/allo:llvm-19.x-py3.12
 
     steps:
-    - uses: actions/checkout@v3
+    # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
+    - name: Install git in container
+      run: |
+        apt-get install git
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.ref }}
+        fetch-depth: 0
     - name: Build Allo
       shell: bash
       run: |
