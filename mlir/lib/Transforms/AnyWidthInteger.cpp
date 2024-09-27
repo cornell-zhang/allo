@@ -146,9 +146,8 @@ void updateTopFunctionSignature(func::FuncOp &funcOp) {
               is_unsigned = otypes[i] == 'u';
             }
             auto result = allocOp.getResult();
-            Value newMemRef =
-                castIntMemRef(returnRewriter, op->getLoc(), result,
-                              64, is_unsigned, false);
+            Value newMemRef = castIntMemRef(returnRewriter, op->getLoc(),
+                                            result, 64, is_unsigned, false);
             // Only replace the single use of oldMemRef: returnOp
             op->setOperand(i, newMemRef);
           }

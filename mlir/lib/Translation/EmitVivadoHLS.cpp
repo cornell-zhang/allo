@@ -373,8 +373,12 @@ public:
   bool visitOp(arith::ShRUIOp op) { return emitter.emitBinary(op, ">>"), true; }
   bool visitOp(allo::GetIntBitOp op) { return emitter.emitGetBit(op), true; }
   bool visitOp(allo::SetIntBitOp op) { return emitter.emitSetBit(op), true; }
-  bool visitOp(allo::GetIntSliceOp op) { return emitter.emitGetSlice(op), true; }
-  bool visitOp(allo::SetIntSliceOp op) { return emitter.emitSetSlice(op), true; }
+  bool visitOp(allo::GetIntSliceOp op) {
+    return emitter.emitGetSlice(op), true;
+  }
+  bool visitOp(allo::SetIntSliceOp op) {
+    return emitter.emitSetSlice(op), true;
+  }
   bool visitOp(allo::BitReverseOp op) {
     return emitter.emitBitReverse(op), true;
   }
@@ -460,10 +464,18 @@ public:
   bool visitOp(allo::CreateOpHandleOp op) { return true; }
 
   /// Fixed points
-  bool visitOp(allo::AddFixedOp op) { return emitter.emitBinary(op, "+"), true; }
-  bool visitOp(allo::SubFixedOp op) { return emitter.emitBinary(op, "-"), true; }
-  bool visitOp(allo::MulFixedOp op) { return emitter.emitBinary(op, "*"), true; }
-  bool visitOp(allo::DivFixedOp op) { return emitter.emitBinary(op, "/"), true; }
+  bool visitOp(allo::AddFixedOp op) {
+    return emitter.emitBinary(op, "+"), true;
+  }
+  bool visitOp(allo::SubFixedOp op) {
+    return emitter.emitBinary(op, "-"), true;
+  }
+  bool visitOp(allo::MulFixedOp op) {
+    return emitter.emitBinary(op, "*"), true;
+  }
+  bool visitOp(allo::DivFixedOp op) {
+    return emitter.emitBinary(op, "/"), true;
+  }
   bool visitOp(allo::CmpFixedOp op);
   bool visitOp(allo::MinFixedOp op) {
     return emitter.emitMaxMin(op, "min"), true;

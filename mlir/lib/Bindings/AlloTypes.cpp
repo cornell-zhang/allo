@@ -48,7 +48,8 @@ void mlir::python::populateAlloIRTypes(py::module &m) {
           "Get an instance of FixedType in given context.", py::arg("cls"),
           py::arg("width"), py::arg("frac"), py::arg("context") = py::none())
       .def_property_readonly(
-          "width", [](MlirType type) { return alloMlirFixedTypeGetWidth(type); },
+          "width",
+          [](MlirType type) { return alloMlirFixedTypeGetWidth(type); },
           "Returns the width of the fixed point type")
       .def_property_readonly(
           "frac", [](MlirType type) { return alloMlirFixedTypeGetFrac(type); },

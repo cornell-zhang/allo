@@ -15,8 +15,8 @@ bash ./scripts/lint/git-black.sh HEAD~1
 bash ./scripts/lint/git-black.sh origin/main
 
 echo "Check C/C++ formats using clang-format..."
-bash ./scripts/git-clang-format.sh HEAD~1
-bash ./scripts/git-clang-format.sh origin/main
+bash ./scripts/lint/git-clang-format.sh HEAD~1
+bash ./scripts/lint/git-clang-format.sh origin/main
 
 echo "Running pylint on allo"
 python3 -m pylint allo --rcfile=./scripts/lint/pylintrc

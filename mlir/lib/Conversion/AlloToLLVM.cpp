@@ -129,7 +129,8 @@ public:
 class GetIntSliceOpLowering : public ConversionPattern {
 public:
   explicit GetIntSliceOpLowering(MLIRContext *context)
-      : ConversionPattern(allo::GetIntSliceOp::getOperationName(), 4, context) {}
+      : ConversionPattern(allo::GetIntSliceOp::getOperationName(), 4, context) {
+  }
   LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
@@ -166,9 +167,8 @@ public:
 class SetIntSliceOpLowering : public ConversionPattern {
 public:
   explicit SetIntSliceOpLowering(MLIRContext *context)
-      : ConversionPattern(allo::SetIntSliceOp::getOperationName(), 4, context) {}
-  LogicalResult
-  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
+      : ConversionPattern(allo::SetIntSliceOp::getOperationName(), 4, context)
+{} LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     // Three steps to implement setslice:
     // 1. Get higher slice
@@ -257,8 +257,8 @@ bool applyAlloToLLVMLoweringPass(ModuleOp &module, MLIRContext &context) {
 
   // Now that the conversion target has been defined, we need to provide the
   // patterns used for lowering. At this point of the compilation process, we
-  // have a combination of `allo`, `affine`, and `std` operations. Luckily, there
-  // are already exists a set of patterns to transform `affine` and `std`
+  // have a combination of `allo`, `affine`, and `std` operations. Luckily,
+  // there are already exists a set of patterns to transform `affine` and `std`
   // dialects. These patterns lowering in multiple stages, relying on transitive
   // lowerings. Transitive lowering, or A->B->C lowering, is when multiple
   // patterns must be applied to fully transform an illegal operation into a
@@ -279,7 +279,7 @@ bool applyAlloToLLVMLoweringPass(ModuleOp &module, MLIRContext &context) {
 
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-//   populateReconcileUnrealizedCastsPatterns(patterns);
+  //   populateReconcileUnrealizedCastsPatterns(patterns);
 
   patterns.add<CreateLoopHandleOpLowering>(&context);
   patterns.add<CreateOpHandleOpLowering>(&context);

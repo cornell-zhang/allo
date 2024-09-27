@@ -11,7 +11,7 @@ using namespace allo;
 
 // TODO: update naming rule.
 SmallString<8> AlloEmitterBase::addName(Value val, bool isPtr,
-                                       std::string name) {
+                                        std::string name) {
   assert(!isDeclared(val) && "has been declared before.");
 
   SmallString<8> valName;

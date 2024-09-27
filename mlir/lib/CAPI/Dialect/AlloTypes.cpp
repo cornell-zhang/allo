@@ -63,7 +63,7 @@ bool alloMlirTypeIsAStructType(MlirType type) {
 }
 
 MlirType alloMlirStructTypeGet(MlirContext ctx, intptr_t numElements,
-                              MlirType const *elements) {
+                               MlirType const *elements) {
   SmallVector<Type, 4> types;
   ArrayRef<Type> typeRef = unwrapList(numElements, elements, types);
   return wrap(allo::StructType::get(unwrap(ctx), typeRef));

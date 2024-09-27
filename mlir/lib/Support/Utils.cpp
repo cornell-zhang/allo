@@ -51,7 +51,7 @@ std::vector<std::string> allo::split_names(const std::string &arg_names) {
 
 /// Parse other attributes.
 SmallVector<int64_t, 8> allo::getIntArrayAttrValue(Operation *op,
-                                                  StringRef name) {
+                                                   StringRef name) {
   SmallVector<int64_t, 8> array;
   if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
     for (auto attr : arrayAttr)
@@ -65,8 +65,8 @@ SmallVector<int64_t, 8> allo::getIntArrayAttrValue(Operation *op,
 }
 
 bool allo::setIntAttr(SmallVector<AffineForOp, 6> &forOps,
-                     const SmallVector<int, 6> &attr_arr,
-                     const std::string attr_name) {
+                      const SmallVector<int, 6> &attr_arr,
+                      const std::string attr_name) {
   assert(forOps.size() == attr_arr.size());
   unsigned cnt_loop = 0;
   for (AffineForOp newForOp : forOps) {
@@ -82,7 +82,7 @@ bool allo::setIntAttr(SmallVector<AffineForOp, 6> &forOps,
 }
 
 bool allo::setLoopNames(SmallVector<AffineForOp, 6> &forOps,
-                       const SmallVector<std::string, 6> &nameArr) {
+                        const SmallVector<std::string, 6> &nameArr) {
   assert(forOps.size() == nameArr.size());
   unsigned cnt_loop = 0;
   for (AffineForOp newForOp : forOps) {
@@ -98,7 +98,7 @@ bool allo::setLoopNames(SmallVector<AffineForOp, 6> &forOps,
 //===----------------------------------------------------------------------===//
 
 LogicalResult allo::getStage(func::FuncOp &func, AffineForOp &forOp,
-                            StringRef op_name) {
+                             StringRef op_name) {
   for (auto rootForOp : func.getOps<AffineForOp>()) {
     if (op_name ==
         rootForOp->getAttr("op_name").cast<StringAttr>().getValue()) {
@@ -156,9 +156,9 @@ void allo::getLoops(AffineForOp &forOp, SmallVector<AffineForOp> &forOpList) {
 }
 
 bool allo::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
-                                    SmallVector<AffineForOp, 6> &resForOps,
-                                    SmallVector<StringRef, 6> &nameArr,
-                                    int depth, bool countReductionLoops) {
+                                     SmallVector<AffineForOp, 6> &resForOps,
+                                     SmallVector<StringRef, 6> &nameArr,
+                                     int depth, bool countReductionLoops) {
   // depth = -1 means traverses all the inner loops
   AffineForOp forOp = rootAffineForOp;
   unsigned int sizeNameArr = nameArr.size();
@@ -253,7 +253,7 @@ allo::checkSameLevel(Operation *lhsOp, Operation *rhsOp) {
 /// Returns the number of surrounding loops common to 'loopsA' and 'loopsB',
 /// where each lists loops from outer-most to inner-most in loop nest.
 unsigned allo::getCommonSurroundingLoops(Operation *A, Operation *B,
-                                        AffineLoopBand *band) {
+                                         AffineLoopBand *band) {
   SmallVector<AffineForOp, 4> loopsA, loopsB;
   getAffineForIVs(*A, &loopsA);
   getAffineForIVs(*B, &loopsB);
@@ -381,7 +381,7 @@ bool allo::isFullyPartitioned(MemRefType memrefType, int axis) {
 // them in "factors". Meanwhile, the overall partition number is calculated and
 // returned as well.
 int64_t allo::getPartitionFactors(MemRefType memrefType,
-                                 SmallVector<int64_t, 8> *factors) {
+                                  SmallVector<int64_t, 8> *factors) {
   auto shape = memrefType.getShape();
   auto layoutMap = getLayoutMap(memrefType);
   int64_t accumFactor = 1;
@@ -447,7 +447,7 @@ static void getLoopBandFromInnermost(AffineForOp forOp, AffineLoopBand &band) {
 /// Get the whole loop band given the outermost loop and return it in "band".
 /// Meanwhile, the return value is the innermost loop of this loop band.
 AffineForOp allo::getLoopBandFromOutermost(AffineForOp forOp,
-                                          AffineLoopBand &band) {
+                                           AffineLoopBand &band) {
   band.clear();
   auto currentLoop = forOp;
   while (true) {
@@ -466,7 +466,7 @@ AffineForOp allo::getLoopBandFromOutermost(AffineForOp forOp,
 /// bands are also collected. Otherwise, only loop bands that contains no child
 /// loops are collected.
 void allo::getLoopBands(Block &block, AffineLoopBands &bands,
-                       bool allowHavingChilds) {
+                        bool allowHavingChilds) {
   bands.clear();
   block.walk([&](AffineForOp loop) {
     auto childNum = getChildLoopNum(loop);
@@ -480,7 +480,7 @@ void allo::getLoopBands(Block &block, AffineLoopBands &bands,
 }
 
 void allo::getArrays(Block &block, SmallVectorImpl<Value> &arrays,
-                    bool allowArguments) {
+                     bool allowArguments) {
   // Collect argument arrays.
   if (allowArguments)
     for (auto arg : block.getArguments()) {
@@ -560,8 +560,8 @@ static bool gatherLoadOpsAndStoreOps(AffineForOp forOp,
 }
 
 bool allo::analyzeDependency(const AffineForOp &forOpA,
-                            const AffineForOp &forOpB,
-                            SmallVectorImpl<Dependency> &dependency) {
+                             const AffineForOp &forOpB,
+                             SmallVectorImpl<Dependency> &dependency) {
   SmallVector<Operation *, 4> readOpsA;
   SmallVector<Operation *, 4> writeOpsA;
   SmallVector<Operation *, 4> readOpsB;
@@ -722,7 +722,7 @@ allo::getSliceStr(const mlir::affine::ComputationSliceState &sliceUnion) {
 }
 
 Value allo::castInteger(OpBuilder builder, Location loc, Value input,
-                       Type srcType, Type tgtType, bool is_signed) {
+                        Type srcType, Type tgtType, bool is_signed) {
   int oldWidth = srcType.cast<IntegerType>().getWidth();
   int newWidth = tgtType.cast<IntegerType>().getWidth();
   Value casted;
@@ -747,9 +747,9 @@ Value allo::castInteger(OpBuilder builder, Location loc, Value input,
  * AffineForOp loop nest to load, cast, store the elements
  * from oldMemRef to newMemRef.
  */
-Value allo::castIntMemRef(OpBuilder &builder, Location loc,
-                         Value &oldMemRef, size_t newWidth, bool unsign,
-                         bool replace, const Value &dstMemRef) {
+Value allo::castIntMemRef(OpBuilder &builder, Location loc, Value &oldMemRef,
+                          size_t newWidth, bool unsign, bool replace,
+                          const Value &dstMemRef) {
   // If newWidth == oldWidth, no need to cast.
   if (newWidth == oldMemRef.getType()
                       .cast<MemRefType>()
@@ -806,7 +806,7 @@ Value allo::castIntMemRef(OpBuilder &builder, Location loc,
 }
 
 bool mlir::allo::replace(std::string &str, const std::string &from,
-                        const std::string &to) {
+                         const std::string &to) {
   size_t start_pos = str.find(from);
   if (start_pos == std::string::npos)
     return false;
@@ -815,7 +815,7 @@ bool mlir::allo::replace(std::string &str, const std::string &from,
 }
 
 Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
-                           bool hasUnsignedAttr) {
+                            bool hasUnsignedAttr) {
   Type t = src.getType();
   Type I64 = rewriter.getIntegerType(64);
   Type F64 = rewriter.getF64Type();

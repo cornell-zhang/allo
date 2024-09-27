@@ -140,7 +140,8 @@ LogicalResult runSplitting(func::FuncOp &f, SplitOp &splitOp) {
     // auto composedMap = addMap.compose(mulMap);
     // SmallVector<AffineExpr> newExprs{ubMap.getResult(0),
     //                                  composedMap.getResult(0)};
-    // auto finalMinMap = AffineMap::get(/*numDims=*/1, /*numSymbols=*/0, newExprs,
+    // auto finalMinMap = AffineMap::get(/*numDims=*/1, /*numSymbols=*/0,
+    // newExprs,
     //                                   tiledNest[1].getContext());
     // tiledNest[1].setUpperBound(outerIV, finalMinMap);
   }
