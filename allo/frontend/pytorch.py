@@ -19,7 +19,6 @@ from .library import CoreAttention_lib, KVCache_lib
 from .. import dsl
 from ..ir import types
 from ..customize import customize
-from ..passes import monitor_memory_usage
 
 
 def from_pytorch(
@@ -28,7 +27,6 @@ def from_pytorch(
     leaf_modules=None,
     verbose=False,
     enable_tensor=False,
-    monitor_memory=False,
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -67,9 +65,6 @@ def from_pytorch(
         code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
     )
     mod = s.build()
-    if monitor_memory:
-        monitor_memory_table = monitor_memory_usage(mod.intermediate_module)
-        print(monitor_memory_table)
     if verbose:
         print(s.module)
     return mod
