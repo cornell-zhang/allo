@@ -83,18 +83,18 @@ def test_extract_ele():
     np.testing.assert_allclose(extract_ele(np_A), mod(np_A), rtol=1e-5)
 
 
-# def test_insert():
-#     def insert(A: int32[3, 4, 5], B: int32[1, 2, 1]) -> int32[3, 4, 5]:
-#         A[1:2, 1:3, 0:1] = B
-#         return A
+def test_insert():
+    def insert(A: int32[3, 4, 5], B: int32[1, 2, 1]) -> int32[3, 4, 5]:
+        A[1:2, 1:3, 0:1] = B
+        return A
 
-#     s = allo.customize(insert, enable_tensor=True)
-#     print(s.module)
+    s = allo.customize(insert, enable_tensor=True)
+    print(s.module)
 
-#     mod = s.build()
-#     np_A = np.random.randint(0, 10, size=(3, 4, 5)).astype(np.int32)
-#     np_B = np.random.randint(0, 10, size=(1, 2, 1)).astype(np.int32)
-#     np.testing.assert_allclose(insert(np_A, np_B), mod(np_A, np_B), rtol=1e-5)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(3, 4, 5)).astype(np.int32)
+    np_B = np.random.randint(0, 10, size=(1, 2, 1)).astype(np.int32)
+    np.testing.assert_allclose(insert(np_A, np_B), mod(np_A, np_B), rtol=1e-5)
 
 
 def test_insert_ele():
