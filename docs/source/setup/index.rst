@@ -96,7 +96,7 @@ To make sure the installation is successful, you can run the following command t
   $ python3 -m pytest tests/
 
 
-Internal Installation (Corenll)
+Internal Installation (Cornell)
 -------------------------------
 For Zhang Group students, we have already prepared a prebuilt version of LLVM on our server, so you do not need to build everything from source. Please follow the instruction below to set up the environment.
 

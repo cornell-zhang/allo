@@ -26,7 +26,11 @@ jobs:
       image: chhzh123/allo:llvm-19.x-py3.12
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Install git in container
+      run: |
+        apt-get install git
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.ref }}
     - name: Build Allo
@@ -49,25 +53,10 @@ jobs:
       with:
         name: DocumentationHTML
         path: docs/build/html/
-
-  deploy:
-    # https://github.com/JamesIves/github-pages-deploy-action?tab=readme-ov-file#operating-system-support-
-    concurrency: ci-${{ github.ref }}
-    # Create a separate job that does not use the docker container
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-    - name: Checkout 🛎️
-      uses: actions/checkout@v4
-    - name: Download Artifacts 🔻 # The built project is downloaded into the 'DocumentationHTML' folder.
-      uses: actions/download-artifact@v4
-      with:
-        name: DocumentationHTML
-        path: DocumentationHTML
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@v4
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
-        FOLDER: 'DocumentationHTML'
+        FOLDER: docs/build/html/

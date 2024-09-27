@@ -37,7 +37,6 @@ jobs:
       shell: bash
       run: |
         source activate allo
-        export PATH=/root/llvm-project/build/bin:${PATH}
         bash scripts/lint/task_lint.sh
     - name: Testing
       shell: bash
