@@ -687,7 +687,7 @@ def pow_rule():
     }
     # Commutative=True here doesn't mean that power operation is commutative.
     # It means that the type rule is commutative, to reduce the number of rules.
-    # e.g. hcl.power(a, b) and hcl.power(b, a) will have the same type rule.
+    # e.g. allo.power(a, b) and allo.power(b, a) will have the same type rule.
     # because MLIR math op in LLVM 15 only has float pow op.
     return TypingRule(
         [int_rule, uint_rule, index_rule, fixed_rule, ufixed_rule, float_rule],

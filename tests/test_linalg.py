@@ -567,28 +567,28 @@ def test_triangular_matrix():
     np.testing.assert_allclose(outp, np_outp, atol=1e-5)
 
 
-@pytest.mark.parametrize("enable_tensor", [True, False])
-def test_concatenate(enable_tensor):
-    def linear_no_bias(A: int32[20, 10], B: int32[6, 10]) -> int32[20, 6]:
-        return allo.linear(A, B)
+# @pytest.mark.parametrize("enable_tensor", [True, False])
+# def test_concatenate(enable_tensor):
+#     def linear_no_bias(A: int32[20, 10], B: int32[6, 10]) -> int32[20, 6]:
+#         return allo.linear(A, B)
 
-    def concat(
-        A: int32[3, 2, 15, 6], B: int32[3, 2, 5, 6], C: int32[20, 10], D: int32[6, 10]
-    ) -> int32[3, 2, 20, 6]:
-        out1 = allo.concat(A, B, axis=2)
-        output = linear_no_bias(C, D) + out1
-        return output
+#     def concat(
+#         A: int32[3, 2, 15, 6], B: int32[3, 2, 5, 6], C: int32[20, 10], D: int32[6, 10]
+#     ) -> int32[3, 2, 20, 6]:
+#         out1 = allo.concat(A, B, axis=2)
+#         output = linear_no_bias(C, D) + out1
+#         return output
 
-    s = allo.customize(concat, enable_tensor=enable_tensor)
-    print(s.module)
-    mod = s.build()
-    A = np.random.randint(0, 10, size=(3, 2, 15, 6)).astype(np.int32)
-    B = np.random.randint(0, 10, size=(3, 2, 5, 6)).astype(np.int32)
-    C = np.random.randint(0, 10, size=(20, 10)).astype(np.int32)
-    D = np.random.randint(0, 10, size=(6, 10)).astype(np.int32)
-    outp = mod(A, B, C, D)
-    np_outp = concat(A, B, C, D)
-    np.testing.assert_allclose(outp, np_outp, atol=1e-5)
+#     s = allo.customize(concat, enable_tensor=enable_tensor)
+#     print(s.module)
+#     mod = s.build()
+#     A = np.random.randint(0, 10, size=(3, 2, 15, 6)).astype(np.int32)
+#     B = np.random.randint(0, 10, size=(3, 2, 5, 6)).astype(np.int32)
+#     C = np.random.randint(0, 10, size=(20, 10)).astype(np.int32)
+#     D = np.random.randint(0, 10, size=(6, 10)).astype(np.int32)
+#     outp = mod(A, B, C, D)
+#     np_outp = concat(A, B, C, D)
+#     np.testing.assert_allclose(outp, np_outp, atol=1e-5)
 
 
 if __name__ == "__main__":

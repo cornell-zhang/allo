@@ -2,10 +2,10 @@
 
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unused-import, unsupported-assignment-operation, missing-function-docstring
+# pylint: disable=used-before-assignment, unsubscriptable-object, missing-function-docstring
 
 from .. import dsl
-from ..ir.types import int8, int16, int32, index, Int, UInt
+from ..ir.types import int8
 from ..ir.utils import MockBuffer
 
 

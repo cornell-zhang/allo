@@ -24,65 +24,8 @@
 Developer Setup
 ###############
 
-Depending on which part of Allo you want to contribute to, you may set up the environment differently.
+To contribute to the Allo project, you need to follow the guideline below to make sure your changes are consistent with the existing codebase.
 
-Developer Installation
-----------------------
-
-If you only want to change the frontend part of Allo, you can install the Allo package following the `general guide <../setup/index.html>`_.
-
-If you need to change the backend part of Allo, you need to install the LLVM-18 project and make sure your LLVM commit is the same as `the one we referred to <https://github.com/cornell-zhang/hcl-dialect/tree/main/externals>`_.
-
-.. code-block:: bash
-
-    mkdir -p build && cd build
-    # Python 3.12 is required
-    cmake -G "Unix Makefiles" ../llvm \
-        -DLLVM_ENABLE_PROJECTS=mlir \
-        -DLLVM_BUILD_EXAMPLES=ON \
-        -DLLVM_TARGETS_TO_BUILD="host" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLLVM_ENABLE_ASSERTIONS=ON \
-        -DLLVM_INSTALL_UTILS=ON \
-        -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
-        -DPython3_EXECUTABLE=`which python3`
-    make -j8
-
-.. note::
-
-    For Zhang Group students, you can run the following commands to use the pre-installed LLVM-18 project.
-
-    .. code-block:: bash
-        export LLVM_HOME=/work/shared/users/common/llvm-project-18.x
-        export PATH=$LLVM_HOME/build-patch/bin:$PATH
-        export PATH=/work/shared/users/common/cmake-3.27.9/bin/:$PATH
-        export LLVM_BUILD_DIR=$LLVM_HOME/build-patch
-
-After installing the LLVM-18 project, you can build the hcl-mlir dialect from source. Need to export ``$LLVM_BUILD_DIR`` to system path first.
-
-.. code-block:: bash
-
-    git clone https://github.com/cornell-zhang/hcl-dialect.git
-    cd hcl-dialect
-    mkdir -p build && cd build
-    cmake -G "Unix Makefiles" .. \
-        -DMLIR_DIR=$LLVM_BUILD_DIR/lib/cmake/mlir \
-        -DLLVM_EXTERNAL_LIT=$LLVM_BUILD_DIR/bin/llvm-lit \
-        -DPYTHON_BINDING=ON \
-        -DOPENSCOP=OFF \
-        -DPython3_EXECUTABLE=`which python3` \
-        -DCMAKE_CXX_FLAGS="-Wfatal-errors -std=c++17"
-    make -j8
-    cd tools/hcl/python_packages/hcl_core
-    python3 -m pip install -e .
-
-Every time you change the hcl-mlir dialect, you need to run ``make`` again to make the changes effective. Finally, you can install the Allo package:
-
-.. code-block:: bash
-
-    python3 -m pip install -e .
-
-It will connect the frontend with the backend.
 
 Upstream Changes
 ----------------
@@ -134,7 +77,7 @@ make sure you have passed the tests locally before creating a PR or pushing to y
 There are several tests for our project:
 
 1. **License header check**: make sure all the source files have the license header, which is important for open source projects.
-2. **Code style check**: make sure the code style is consistent with the `PEP8 <https://www.python.org/dev/peps/pep-0008/>`_ standard. We use ``black`` for Python formatting, which should has been installed in your environment during the setup.
+2. **Code style check**: make sure the code style is consistent with the `PEP8 <https://www.python.org/dev/peps/pep-0008/>`_ standard. We use ``black`` for Python formatting, which should has been installed in your environment during the setup. ``clang-format`` is used for C/C++ formatting.
 3. **Linting check**: make sure the code is `linted <https://www.perforce.com/blog/qac/what-lint-code-and-what-linting-and-why-linting-important>`_ correctly. We use ``pylint`` for Python linting, which should also been installed during the setup.
 4. **Unit tests**: make sure the changes will not break the existing facilities. We use ``pytest`` for Python unit tests, and the test cases are under the ``tests`` folder.
 
@@ -143,7 +86,7 @@ To run the tests, you can run the following command from the root of the reposit
 
 .. code-block:: bash
 
-    $ bash .circleci/task_lint.sh
+    $ bash scripts/lint/task_lint.sh
 
 Following is an example output:
 
@@ -158,23 +101,35 @@ Following is an example output:
     Version Information: black, 24.8.0 (compiled: yes)
     Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/ir/types.py
+    Files: setup.py
     Running black in checking mode
     All done! ✨ 🍰 ✨
     1 file would be left unchanged.
-    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)    : No such file or directory
+    ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
     ./scripts/lint/git-black.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
     Version Information: black, 24.8.0 (compiled: yes)
     Python (CPython) 3.12.0
     Read returned 0
-    Files: allo/ir/types.py
+    Files: ...
     Running black in checking mode
     All done! ✨ 🍰 ✨
-    1 file would be left unchanged.
+    22 files would be left unchanged.
+    Check C/C++ formats using clang-format...
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+    Version Information: clang-format version 19.1.0
+    Read returned 0
+    No changes in C/C++ files
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
+    ./scripts/lint/git-clang-format.sh: line 31: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+    Version Information: clang-format version 19.1.0
+    Read returned 0
+    Files: ...
+    Running clang-format in checking mode
     Running pylint on allo
 
-    --------------------------------------------------------------------
-    Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+--------------------------------------------------------------------
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 
 Lastly run the unit tests:
 

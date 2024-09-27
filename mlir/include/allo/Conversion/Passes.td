@@ -1,0 +1,36 @@
+/*
+ * Copyright Allo authors. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef ALLO_MLIR_PASSES
+#define ALLO_MLIR_PASSES
+
+include "mlir/Pass/PassBase.td"
+
+def AlloToLLVMLowering : Pass<"allo-lower-to-llvm", "ModuleOp"> {
+  let summary = "Allo to LLVM conversion pass";
+  let constructor = "mlir::allo::createAlloToLLVMLoweringPass()";
+}
+
+def FixedToInteger : Pass<"fixed-to-integer", "ModuleOp"> {
+  let summary = "Fixed-point operations to integer";
+  let constructor = "mlir::allo::createFixedPointToIntegerPass()";
+}
+
+def LowerCompositeType : Pass<"lower-composite-type", "ModuleOp"> {
+  let summary = "Lower composite types";
+  let constructor = "mlir::allo::createLowerCompositeTypePass()";
+}
+
+def LowerBitOps : Pass<"lower-bit-ops", "ModuleOp"> {
+  let summary = "Lower bit operations";
+  let constructor = "mlir::allo::createLowerBitOpsPass()";
+}
+
+def LowerPrintOps : Pass<"lower-print-ops", "ModuleOp"> {
+  let summary = "Lower print operations";
+  let constructor = "mlir::allo::createLowerPrintOpsPass()";
+}
+
+#endif // ALLO_MLIR_PASSES

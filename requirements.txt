@@ -5,6 +5,7 @@ dataclasses
 xmltodict
 tabulate
 pytest
+clang-format
 black==24.8.0
 pylint==3.0.2
 matplotlib

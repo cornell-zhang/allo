@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable = unsubscriptable-object, unsupported-assignment-operation
 # This file is the library of Allo frontend functions, which is responsible for converting PyTorch leaf modules to Allo representation.
-from allo import dsl
-from allo.ir.types import float32, int32
+from .. import dsl
+from ..ir.types import float32, int32
 
 
 def KVCache_lib(s_0, s_1, s_2, s_3):

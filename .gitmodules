@@ -1,3 +1,3 @@
-[submodule "externals/hcl_mlir"]
-	path = externals/hcl_mlir
-	url = https://github.com/cornell-zhang/hcl-dialect.git
+[submodule "externals/llvm-project"]
+	path = externals/llvm-project
+	url = https://github.com/llvm/llvm-project.git

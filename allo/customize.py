@@ -12,7 +12,7 @@ from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
 
-from hcl_mlir.ir import (
+from ._mlir.ir import (
     Context,
     Location,
     InsertionPoint,
@@ -28,20 +28,20 @@ from hcl_mlir.ir import (
     AffineMap,
     AffineMapAttr,
 )
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
+from ._mlir.dialects import (
+    allo as allo_d,
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
     arith as arith_d,
     func as func_d,
 )
-from hcl_mlir.dialects.affine import (
+from ._mlir.dialects.affine import (
     AffineExpr,
     AffineDimExpr,
 )
-from hcl_mlir.exceptions import (
-    HCLValueError,
+from ._mlir.exceptions import (
+    AlloValueError,
 )
 
 from . import primitives as prim
@@ -53,6 +53,7 @@ from .ir.transform import (
     get_affine_loop_nests,
     find_loop_in_bands,
     find_buffer,
+    find_func_in_module,
     LoopWrapper,
 )
 from .ir.use_def import UseDefChain
@@ -169,64 +170,64 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         i32 = IntegerType.get_unsigned(32)
         factor = IntegerAttr.get(i32, factor)
-        hcl_d.SplitOp(loop_hdl.result, factor, ip=ip)
+        allo_d.SplitOp(loop_hdl.result, factor, ip=ip)
 
     @wrapped_apply
     def reorder(self, *args):
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
         for arg in args:
             func, axis = self._get_func_and_axis(arg)
             band_name, axis = find_loop_in_bands(func, axis)
             loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+                allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
         arg_results = [arg.result for arg in loop_hdls]
-        hcl_d.ReorderOp(arg_results, ip=ip)
+        allo_d.ReorderOp(arg_results, ip=ip)
 
     @wrapped_apply
     def unroll(self, axis, factor=0):
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         i32 = IntegerType.get_unsigned(32)
         factor = IntegerAttr.get(i32, factor)
-        hcl_d.UnrollOp(loop_hdl.result, factor=factor, ip=ip)
+        allo_d.UnrollOp(loop_hdl.result, factor=factor, ip=ip)
 
     @wrapped_apply
     def fuse(self, *args):
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, args[0])
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
         for arg in args:
             func, axis = self._get_func_and_axis(args)
             band_name, axis = find_loop_in_bands(func, arg)
             loop_hdls.append(
-                hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+                allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
         arg_results = [arg.result for arg in loop_hdls]
-        hcl_d.FuseOp(arg_results, ip=ip)
+        allo_d.FuseOp(arg_results, ip=ip)
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         # TODO: test whether the partition has conflicts for different functions
         if partition_type > 2:
-            raise HCLValueError("Invalid partition type")
+            raise AlloValueError("Invalid partition type")
         if dim < 0:
-            raise HCLValueError("Invalid dimension")
+            raise AlloValueError("Invalid dimension")
         if factor < 0:
-            raise HCLValueError("Invalid factor")
+            raise AlloValueError("Invalid factor")
         if partition_type == Partition.Complete:
             partition_type = 0
         elif partition_type == Partition.Block:
@@ -234,7 +235,7 @@ class Schedule:
         elif partition_type == Partition.Cyclic:
             partition_type = 2
         else:
-            raise HCLValueError("Not supported partition type")
+            raise AlloValueError("Not supported partition type")
         # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
@@ -245,7 +246,7 @@ class Schedule:
                     if item[0] == Partition.Complete and item[1] == 0:
                         # this array has been completely partitioned along all the axes
                         return
-                    raise HCLValueError(
+                    raise AlloValueError(
                         f"Cannot partition the same array twice: {parray}, {item} vs ({partition_type}, {dim}, {factor})"
                     )
         # actual partition
@@ -296,7 +297,7 @@ class Schedule:
                 self.partitioned_arrays[inner_target].append(
                     (partition_type, dim, factor)
                 )
-            hcl_d.PartitionOp(
+            allo_d.PartitionOp(
                 mlir_target.result,
                 partition_kind=IntegerAttr.get(i32, partition_type),
                 dim=IntegerAttr.get(ui32, dim),
@@ -355,17 +356,17 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         memref_type = MemRefType.get((1,), F32Type.get())
-        hcl_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
+        allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
 
     @wrapped_apply
     def reshape(self, target, shape):
         _, _, target = find_buffer(self.module, target, self.func_args)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
-        hcl_d.ReshapeOp(memref_type, target.result, ip=self.ip)
+        allo_d.ReshapeOp(memref_type, target.result, ip=self.ip)
 
     @wrapped_apply
     def pipeline(self, axis, initiation_interval=1, rewind=False):
@@ -384,9 +385,9 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
-        hcl_d.ParallelOp(loop_hdl.result, ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        allo_d.ParallelOp(loop_hdl.result, ip=ip)
 
     @wrapped_apply
     def inline(self, axis=None):
@@ -435,12 +436,12 @@ class Schedule:
     def compute_at(self, from_loop, target_loop):
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
         target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
-        from_hdl = hcl_d.CreateOpHandleOp(from_band, ip=self.ip)
-        target_hdl = hcl_d.CreateOpHandleOp(target_band, ip=self.ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(
+        from_hdl = allo_d.CreateOpHandleOp(from_band, ip=self.ip)
+        target_hdl = allo_d.CreateOpHandleOp(target_band, ip=self.ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(
             target_hdl.result, StringAttr.get(target_axis), ip=self.ip
         )
-        hcl_d.ComputeAtOp(
+        allo_d.ComputeAtOp(
             from_hdl.result, target_hdl.result, loop_hdl.result, ip=self.ip
         )
 
@@ -450,8 +451,8 @@ class Schedule:
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
-        op_hdl = hcl_d.CreateOpHandleOp(band_name, ip=ip)
-        loop_hdl = hcl_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
+        loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         memref_type = MemRefType.get((1,), F32Type.get())
 
         def find_reuse_buffers(res):
@@ -468,18 +469,18 @@ class Schedule:
 
         prev_reuse_buffers = []
         find_reuse_buffers(prev_reuse_buffers)
-        hcl_d.ReuseAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
+        allo_d.ReuseAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
         _mlir_lower_pipeline(self.module)
         new_reuse_buffers = []
         find_reuse_buffers(new_reuse_buffers)
         new_reuse_buffers = [
             buf for buf in new_reuse_buffers if buf not in prev_reuse_buffers
         ]
-        if len(new_reuse_buffers) != 1:
+        if len(new_reuse_buffers) - len(prev_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
         return MockBuffer(
             self.top_func_name,
-            StringAttr(new_reuse_buffers[0].attributes["name"]).value,
+            StringAttr(new_reuse_buffers[-1].attributes["name"]).value,
         )
 
     @wrapped_apply
@@ -511,9 +512,9 @@ class Schedule:
             op_to_remove = []
             _, loop_wrapper = loops[axis]
             loop = loop_wrapper.loop
-            lower_bound = loop.attributes["lower_bound"]
+            lower_bound = loop.attributes["lowerBoundMap"]
             assert str(lower_bound) == "affine_map<() -> (0)>", "Lower bound must be 0"
-            upper_bound = loop.attributes["upper_bound"]
+            upper_bound = loop.attributes["upperBoundMap"]
             upper_bound = int(
                 re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(upper_bound))[0]
             )
@@ -721,6 +722,7 @@ def customize(
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
+        ctx.top_func = find_func_in_module(module, fn.__name__)
     sch = Schedule(
         module,
         ctx.top_func,

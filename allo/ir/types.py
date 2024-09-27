@@ -5,7 +5,7 @@
 import numbers
 from collections import OrderedDict
 
-from hcl_mlir.ir import (
+from .._mlir.ir import (
     IntegerType,
     IndexType,
     F16Type,
@@ -14,8 +14,8 @@ from hcl_mlir.ir import (
     MemRefType,
     StringAttr,
 )
-from hcl_mlir.dialects import hcl as hcl_d
-from hcl_mlir.exceptions import DTypeError, DTypeWarning
+from .._mlir.dialects import allo as allo_d
+from .._mlir.exceptions import DTypeError, DTypeWarning
 
 
 class AlloType:
@@ -131,7 +131,7 @@ class Fixed(AlloType):
         super().__init__(bits, fracs, f"fixed({bits}, {fracs})")
 
     def build(self):
-        return hcl_d.FixedType.get(self.bits, self.fracs)
+        return allo_d.FixedType.get(self.bits, self.fracs)
 
 
 class UFixed(AlloType):
@@ -139,7 +139,7 @@ class UFixed(AlloType):
         super().__init__(bits, fracs, f"ufixed({bits}, {fracs})")
 
     def build(self):
-        return hcl_d.UFixedType.get(self.bits, self.fracs)
+        return allo_d.UFixedType.get(self.bits, self.fracs)
 
 
 class Struct(AlloType):

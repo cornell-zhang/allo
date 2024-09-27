@@ -23,40 +23,28 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/hcl-dialect:llvm-18.x-py3.12
+      image: chhzh123/allo:llvm-19.x-py3.12
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Install git in container
+      run: |
+        apt-get install git
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.ref }}
-    # - name: Patch LLVM Project
-    #   run: |
-    #     cp externals/llvm_patch /root/llvm-project
-    #     cd /root/llvm-project
-    #     git apply llvm_patch
-    - name: Build HCL-MLIR
+        fetch-depth: 0
+    - name: Build Allo
       shell: bash
       run: |
-        source activate hcl-dev
-        export SUBMOD_COMMIT=$(git rev-parse HEAD:externals/hcl_mlir)
-        cd /root/hcl-dialect
-        git remote update
-        git fetch
-        git checkout $SUBMOD_COMMIT
-        cd build
-        make -j4
-        cd tools/hcl/python_packages/hcl_core
-        python3 -m pip install -e .
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install -v -e .
     - name: Build docs
       shell: bash
       run: |
-        source activate hcl-dev
-        export ALLO_HOME=$(pwd)
-        export LLVM_BUILD_DIR=/root/llvm-project/build
-        export PATH=${LLVM_BUILD_DIR}/bin:${PATH}
-        export PYTHONPATH=$ALLO_HOME:${PYTHONPATH}
-        export PYTHONPATH=/root/hcl-dialect/build/tools/hcl/python_packages/hcl_core:${PYTHONPATH}
-        python3 -m pip install -r requirements.txt
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
         cd docs
         python3 -m pip install -r requirements.txt
         make html
@@ -66,25 +54,10 @@ jobs:
       with:
         name: DocumentationHTML
         path: docs/build/html/
-
-  deploy:
-    # https://github.com/JamesIves/github-pages-deploy-action?tab=readme-ov-file#operating-system-support-
-    concurrency: ci-${{ github.ref }}
-    # Create a separate job that does not use the docker container
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-    - name: Checkout 🛎️
-      uses: actions/checkout@v4
-    - name: Download Artifacts 🔻 # The built project is downloaded into the 'DocumentationHTML' folder.
-      uses: actions/download-artifact@v4
-      with:
-        name: DocumentationHTML
-        path: DocumentationHTML
     - name: Deploy docs
       uses: JamesIves/github-pages-deploy-action@v4
       if: github.event_name == 'push'
       with:
         ACCESS_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
         BRANCH: gh-pages
-        FOLDER: 'DocumentationHTML'
+        FOLDER: docs/build/html/

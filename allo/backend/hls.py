@@ -7,13 +7,13 @@ import re
 import io
 import subprocess
 import time
-from hcl_mlir.dialects import hcl as hcl_d
-from hcl_mlir.ir import (
+from .._mlir.dialects import allo as allo_d
+from .._mlir.ir import (
     Context,
     Location,
     Module,
 )
-from hcl_mlir.passmanager import PassManager
+from .._mlir.passmanager import PassManager
 
 from .vitis import (
     codegen_host,
@@ -165,7 +165,7 @@ class HLSModule:
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
         with Context() as ctx, Location.unknown():
-            hcl_d.register_dialect(ctx)
+            allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
@@ -206,7 +206,7 @@ class HLSModule:
                 # used for lowering tensor.empty
                 "empty-tensor-to-alloc-tensor,"
                 # translate tensor dialect (virtual) to memref dialect (physical)
-                "one-shot-bufferize{allow-return-allocs bufferize-function-boundaries},"
+                "one-shot-bufferize{bufferize-function-boundaries},"
                 # common lowering passes
                 "func.func(convert-linalg-to-affine-loops)"
                 # DO NOT LOWER AFFINE DIALECT
@@ -214,7 +214,7 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        hcl_d.emit_vhls(self.module, buf)
+        allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:

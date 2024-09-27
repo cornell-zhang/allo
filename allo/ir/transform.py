@@ -1,10 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import numpy as np
-import hcl_mlir
-from hcl_mlir.ir import (
+from .._mlir.ir import (
     UnitAttr,
     StringAttr,
     InsertionPoint,
@@ -16,7 +15,7 @@ from hcl_mlir.ir import (
     FunctionType,
     TypeAttr,
 )
-from hcl_mlir.dialects import (
+from .._mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
@@ -122,7 +121,7 @@ def find_loop_in_bands(func, axis):
     """
     Parameters
     ----------
-    func: hcl_mlir.ir.func.FuncOp
+    func: _mlir.ir.func.FuncOp
         The function to search for the loop
     axis: str or LoopWrapper
         The name of the loop or the LoopWrapper object
@@ -181,7 +180,13 @@ def get_affine_loop_nests(func):
                     name = StringAttr(op.attributes["loop_name"]).value
                 band.add_loop(func_name, band_name, name, op)
                 DFS(op.body.operations, band)
-            elif isinstance(op, (affine_d.AffineIfOp, scf_d.IfOp)):
+            elif isinstance(op, affine_d.AffineIfOp):
+                DFS(op.thenRegion.blocks[0].operations, band)
+                try:
+                    DFS(op.elseRegion.blocks[0].operations, band)
+                except IndexError:
+                    pass
+            elif isinstance(op, scf_d.IfOp):
                 DFS(op.then_block.operations, band)
                 try:
                     DFS(op.else_block.operations, band)
@@ -222,15 +227,36 @@ def build_for_loops(grid, ip, name="loop", stage_name=None):
     def recursive_for(for_handle, idx):
         if idx == len(grid):
             return
-        with InsertionPoint(for_handle.body.operations[0]):
-            new_for = hcl_mlir.make_for(0, grid[idx], name=names[idx])
+        with InsertionPoint(for_handle.body.operations[0]) as ip:
+            new_for = affine_d.AffineForOp(
+                lower_bound=0,
+                upper_bound=grid[idx],
+                step=1,
+                iter_args=[],
+                lower_bound_operands=None,
+                upper_bound_operands=None,
+                ip=ip,
+            )
+            new_for.attributes["loop_name"] = StringAttr.get(names[idx])
+            affine_d.AffineYieldOp([], ip=InsertionPoint(new_for.body))
             for_loops.append(new_for)
             recursive_for(new_for, idx + 1)
 
     if not isinstance(ip, InsertionPoint):
         ip = InsertionPoint(ip)
     with ip:
-        for_handle = hcl_mlir.make_for(0, grid[0], name=names[0], stage=stage_name)
+        for_handle = affine_d.AffineForOp(
+            lower_bound=0,
+            upper_bound=grid[0],
+            step=1,
+            iter_args=[],
+            lower_bound_operands=None,
+            upper_bound_operands=None,
+            ip=ip,
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(for_handle.body))
+        for_handle.attributes["loop_name"] = StringAttr.get(names[0])
+        for_handle.attributes["op_name"] = StringAttr.get(stage_name)
     for_loops.append(for_handle)
     recursive_for(for_handle, 1)
     return for_loops
@@ -315,7 +341,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
             affine_attr = AffineMapAttr.parse(
                 f"affine_map<({var_str})->({dst_pattern})>"
             )
-            load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+            load = affine_d.AffineLoadOp(
+                MemRefType(tensor.type).element_type,
+                tensor,
+                induction_vars,
+                affine_attr,
+            )
             affine_d.AffineStoreOp(
                 load.result,
                 alloc_op.result,
@@ -340,7 +371,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({out_str})>"
                 )
-                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                load = affine_d.AffineLoadOp(
+                    MemRefType(tensor.type).element_type,
+                    tensor,
+                    induction_vars,
+                    affine_attr,
+                )
                 if dst_pattern is not None:
                     out_str = dst_pattern
                 else:
@@ -363,7 +399,12 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                 affine_attr = AffineMapAttr.parse(
                     f"affine_map<({in_str})->({load_str})>"
                 )
-                load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+                load = affine_d.AffineLoadOp(
+                    MemRefType(tensor.type).element_type,
+                    tensor,
+                    induction_vars,
+                    affine_attr,
+                )
                 if dst_pattern is not None:
                     out_str = dst_pattern
                 affine_attr = AffineMapAttr.parse(
@@ -391,7 +432,9 @@ def store_tensor(tensor, target, name, ip, flatten=True):
         in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
         load_str = in_str
         affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
-        load = affine_d.AffineLoadOp(tensor, induction_vars, affine_attr)
+        load = affine_d.AffineLoadOp(
+            MemRefType(tensor.type).element_type, tensor, induction_vars, affine_attr
+        )
         if not flatten:
             out_str = in_str
         else:

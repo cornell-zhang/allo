@@ -67,16 +67,6 @@ print(mod)
 # The first line gives the error message and the exact location (line 8, column 3) of the error.
 # Then we know that there is a problem in the return value of our MLIR code, which helps us debug the program.
 #
-# .. note::
-#
-#    We can also leverage the HCL-MLIR backend to parse an MLIR program from a text file.
-#    For example, we can save the above program to a file named ``matmul.mlir``, and then
-#    invoke the following command to parse it: (Suppose you are using our provided server)
-#
-#    .. code-block:: bash
-#
-#       $ /work/shared/common/hcl-dialect/build/bin/hcl-opt matmul.mlir
-#
 # We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
 # The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.
 # Then we can directly invoke the module with random inputs, and see if the result is correct.

@@ -4,7 +4,7 @@
 
 import ctypes
 import numpy as np
-from hcl_mlir.ir import (
+from ._mlir.ir import (
     MemRefType,
     RankedTensorType,
     IntegerType,
@@ -12,9 +12,9 @@ from hcl_mlir.ir import (
     F32Type,
     F64Type,
 )
-from hcl_mlir.exceptions import DTypeWarning
-from hcl_mlir.runtime import to_numpy
-from hcl_mlir.dialects import hcl as hcl_d
+from ._mlir.exceptions import DTypeWarning
+from ._mlir.runtime import to_numpy
+from ._mlir.dialects import allo as allo_d
 
 
 np_supported_types = {
@@ -121,10 +121,10 @@ def get_mlir_dtype_from_str(dtype):
         return IntegerType.get_unsigned(bitwidth)
     if dtype.startswith("fixed"):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
-        return hcl_d.FixedType.get(bitwidth, frac)
+        return allo_d.FixedType.get(bitwidth, frac)
     if dtype.startswith("ufixed"):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
-        return hcl_d.UFixedType.get(bitwidth, frac)
+        return allo_d.UFixedType.get(bitwidth, frac)
     if dtype.startswith("f"):
         bitwidth = get_bitwidth_from_type("f" + dtype[5:])
         if bitwidth == 32:
@@ -154,12 +154,12 @@ def get_dtype_and_shape_from_type(dtype):
         return str(F32Type(dtype)), tuple()
     if F64Type.isinstance(dtype):
         return str(F64Type(dtype)), tuple()
-    if hcl_d.FixedType.isinstance(dtype):
-        dtype = hcl_d.FixedType(dtype)
+    if allo_d.FixedType.isinstance(dtype):
+        dtype = allo_d.FixedType(dtype)
         width, frac = dtype.width, dtype.frac
         return f"fixed({width}, {frac})", tuple()
-    if hcl_d.UFixedType.isinstance(dtype):
-        dtype = hcl_d.UFixedType(dtype)
+    if allo_d.UFixedType.isinstance(dtype):
+        dtype = allo_d.UFixedType(dtype)
         width, frac = dtype.width, dtype.frac
         return f"ufixed({width}, {frac})", tuple()
     raise RuntimeError("Unsupported type")
@@ -212,7 +212,7 @@ def make_anywidth_numpy_array(array, bitwidth):
     # Since MLIR-NumPy Python interface only supports byte-addressable data types,
     # we need to change the data type of the array to have the minimum number of bytes
     # that can represent the target bitwidth.
-    # e.g., hcl.const_tensor(arr, dtype=hcl.Int(20)) (6*6 array)
+    # e.g., allo.const_tensor(arr, dtype=allo.Int(20)) (6*6 array)
     #       which requires 20 bits (3 bytes) to represent each element
     # declaration: 6*6*i20
     # numpy input: 6*6*i64

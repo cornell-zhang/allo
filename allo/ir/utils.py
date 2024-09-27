@@ -6,7 +6,7 @@ import ast
 import inspect
 from collections.abc import Callable
 from types import FunctionType as PyFunctionType
-from hcl_mlir.ir import (
+from .._mlir.ir import (
     MemRefType,
     IntegerType,
     F32Type,
@@ -17,7 +17,7 @@ from hcl_mlir.ir import (
     AffineMap,
     AffineMapAttr,
 )
-from hcl_mlir.dialects import (
+from .._mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     arith as arith_d,
@@ -208,7 +208,11 @@ class MockScalar(MockOp):
             )
             affine_attr = AffineMapAttr.get(affine_map)
             load = affine_d.AffineLoadOp(
-                self.op.result, [], affine_attr, ip=self.ctx.get_ip()
+                self.dtype.build(),
+                self.op.result,
+                [],
+                affine_attr,
+                ip=self.ctx.get_ip(),
             )
             load.attributes["from"] = StringAttr.get(self.name)
             return load.result

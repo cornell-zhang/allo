@@ -9,7 +9,7 @@ func.func @softmax(%A: memref<2x16x32xf32>, %B: memref<2x16x32xf32>) -> memref<2
         linalg.generic {indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>], iterator_types = ["parallel",
       "parallel", "reduction"], name = "max"} ins(%A : memref<2x16x32xf32>) outs(%0 : memref<2x16xf32>) {
           ^bb0(%IN: f32, %OUT: f32):
-            %7 = arith.maxf %IN, %OUT : f32
+            %7 = arith.maximumf %IN, %OUT : f32
             linalg.yield %7 : f32
           }
         linalg.generic {indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>, affine_map<(d0, d1, d2) -> (d0, d1, d2)>], iterator_types =

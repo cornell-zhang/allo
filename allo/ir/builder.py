@@ -6,7 +6,7 @@
 import gc
 import ast
 import numpy as np
-from hcl_mlir.ir import (
+from .._mlir.ir import (
     Module,
     Location,
     InsertionPoint,
@@ -30,10 +30,11 @@ from hcl_mlir.ir import (
     TypeAttr,
     ArrayAttr,
     Attribute,
+    OpResultList,
 )
-from hcl_mlir.ir import Type as MLIRType
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
+from .._mlir.ir import Type as MLIRType
+from .._mlir.dialects import (
+    allo as allo_d,
     func as func_d,
     memref as memref_d,
     tensor as tensor_d,
@@ -43,7 +44,7 @@ from hcl_mlir.dialects import (
     math as math_d,
     linalg as linalg_d,
 )
-from hcl_mlir.exceptions import DTypeError
+from .._mlir.exceptions import DTypeError
 from .utils import (
     MockArg,
     MockScalar,
@@ -150,17 +151,17 @@ class ASTTransformer(ASTBuilder):
         if node.attr == "T":  # transpose
             shape = node.shape
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, shape)
-            transpose_op = linalg_d.TransposeOp(
-                inputs=[value.result],
-                outputs=[alloc_op.result],
-                permutation=list(range(len(shape)))[::-1],
-                ip=ctx.get_ip(),
-            )
+            with ctx.get_ip():
+                transpose_op = linalg_d.transpose(
+                    input=value.result,
+                    outs=[alloc_op.result],
+                    permutation=list(range(len(shape)))[::-1],
+                )
             ASTTransformer.attach_op_name(ctx, node, transpose_op, "transpose")
             return transpose_op if ctx.enable_tensor else alloc_op
 
         if node.attr == "reverse":
-            return hcl_d.BitReverseOp(value.result, ip=ctx.get_ip())
+            return allo_d.BitReverseOp(value.result, ip=ctx.get_ip())
 
         if node.attr == "copy":
             return ASTTransformer.build_library_op(
@@ -208,16 +209,17 @@ class ASTTransformer(ASTBuilder):
             and isinstance(step, int)
         ):  # build AffineForOp
             for_op = affine_d.AffineForOp(
-                lb_expr[0] if len(lb_expr) > 0 else None,
-                ub_expr[0] if len(ub_expr) > 0 else None,
-                IntegerAttr.get(IntegerType.get_signless(32), step),
-                lb_map_attr,
-                ub_map_attr,
-                name=StringAttr.get(name),
-                stage=("" if stage == "" else StringAttr.get(stage)),
-                reduction=None,
+                lower_bound=lb_map_attr,
+                upper_bound=ub_map_attr,
+                step=step,
+                iter_args=[],
+                lower_bound_operands=lb_expr,
+                upper_bound_operands=ub_expr,
                 ip=ctx.get_ip(),
             )
+            for_op.attributes["loop_name"] = StringAttr.get(name)
+            if stage != "":
+                for_op.attributes["op_name"] = StringAttr.get(stage)
             affine_d.AffineYieldOp([], ip=InsertionPoint(for_op.body))
         else:  # build SCFForOp
             lb_expr = build_stmt(ctx, args[0] if len(args) > 1 else ast.Constant(0))
@@ -371,24 +373,24 @@ class ASTTransformer(ASTBuilder):
             # (Float, Index): RuntimeError,
             # (Index, Float): RuntimeError,
             # Float <-> Fixed/UFixed
-            (Float, Fixed): hcl_d.FloatToFixedOp,
-            (Float, UFixed): hcl_d.FloatToFixedOp,
-            (Fixed, Float): hcl_d.FixedToFloatOp,
-            (UFixed, Float): hcl_d.FixedToFloatOp,
+            (Float, Fixed): allo_d.FloatToFixedOp,
+            (Float, UFixed): allo_d.FloatToFixedOp,
+            (Fixed, Float): allo_d.FixedToFloatOp,
+            (UFixed, Float): allo_d.FixedToFloatOp,
             # Int/UInt <-> Fixed/UFixed
-            (Fixed, Int): hcl_d.FixedToIntOp,
-            (Fixed, UInt): hcl_d.FixedToIntOp,
-            (UFixed, Int): hcl_d.FixedToIntOp,
-            (UFixed, UInt): hcl_d.FixedToIntOp,
-            (Int, Fixed): hcl_d.IntToFixedOp,
-            (Int, UFixed): hcl_d.IntToFixedOp,
-            (UInt, Fixed): hcl_d.IntToFixedOp,
-            (UInt, UFixed): hcl_d.IntToFixedOp,
+            (Fixed, Int): allo_d.FixedToIntOp,
+            (Fixed, UInt): allo_d.FixedToIntOp,
+            (UFixed, Int): allo_d.FixedToIntOp,
+            (UFixed, UInt): allo_d.FixedToIntOp,
+            (Int, Fixed): allo_d.IntToFixedOp,
+            (Int, UFixed): allo_d.IntToFixedOp,
+            (UInt, Fixed): allo_d.IntToFixedOp,
+            (UInt, UFixed): allo_d.IntToFixedOp,
             # Fixed/UFixed <-> Fixed/UFixed
-            (Fixed, Fixed): hcl_d.FixedToFixedOp,
-            (Fixed, UFixed): hcl_d.FixedToFixedOp,
-            (UFixed, Fixed): hcl_d.FixedToFixedOp,
-            (UFixed, UFixed): hcl_d.FixedToFixedOp,
+            (Fixed, Fixed): allo_d.FixedToFixedOp,
+            (Fixed, UFixed): allo_d.FixedToFixedOp,
+            (UFixed, Fixed): allo_d.FixedToFixedOp,
+            (UFixed, UFixed): allo_d.FixedToFixedOp,
         }
         if (type(src_type), type(res_type)) in cast_map:
             opcls = cast_map[(type(src_type), type(res_type))]
@@ -411,7 +413,7 @@ class ASTTransformer(ASTBuilder):
                 # pylint: disable=else-if-used
                 if (
                     isinstance(
-                        op, (hcl_d.GetIntBitOp, hcl_d.GetIntSliceOp, arith_d.ShLIOp)
+                        op, (allo_d.GetIntBitOp, allo_d.GetIntSliceOp, arith_d.ShLIOp)
                     )
                     or src_type.bits == 1
                 ):
@@ -491,7 +493,7 @@ class ASTTransformer(ASTBuilder):
                     "Casting from integer to struct with different width. "
                     + f"src type: {src_type}, dst type: {res_type}"
                 )
-            opcls = hcl_d.IntToStructOp
+            opcls = allo_d.IntToStructOp
         elif isinstance(src_type, Struct) and isinstance(res_type, (Int, UInt)):
             # Struct -> Int Cast
             raise NotImplementedError(
@@ -563,17 +565,16 @@ class ASTTransformer(ASTBuilder):
             # Get zero-rank memref for constant
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
-                # pylint: disable=unexpected-keyword-arg
                 fill = linalg_d.fill(op.result, outs=[in_cst.result])
             op = fill.owner if ctx.enable_tensor else in_cst
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
-        broadcast_op = linalg_d.BroadcastOp(
-            inputs=[op.result],
-            outputs=[alloc_op.result],
-            dimensions=dims,
-            ip=ctx.get_ip(),
-        )
+        with ctx.get_ip():
+            broadcast_op = linalg_d.broadcast(
+                input=op.result,
+                outs=[alloc_op.result],
+                dimensions=dims,
+            )
         return broadcast_op if ctx.enable_tensor else alloc_op
 
     @staticmethod
@@ -595,29 +596,29 @@ class ASTTransformer(ASTBuilder):
                 Float: arith_d.AddFOp,
                 Int: arith_d.AddIOp,
                 UInt: arith_d.AddIOp,
-                Fixed: hcl_d.AddFixedOp,
-                UFixed: hcl_d.AddFixedOp,
+                Fixed: allo_d.AddFixedOp,
+                UFixed: allo_d.AddFixedOp,
             },
             ast.Sub: {
                 Float: arith_d.SubFOp,
                 Int: arith_d.SubIOp,
                 UInt: arith_d.SubIOp,
-                Fixed: hcl_d.SubFixedOp,
-                UFixed: hcl_d.SubFixedOp,
+                Fixed: allo_d.SubFixedOp,
+                UFixed: allo_d.SubFixedOp,
             },
             ast.Mult: {
                 Float: arith_d.MulFOp,
                 Int: arith_d.MulIOp,
                 UInt: arith_d.MulIOp,
-                Fixed: hcl_d.MulFixedOp,
-                UFixed: hcl_d.MulFixedOp,
+                Fixed: allo_d.MulFixedOp,
+                UFixed: allo_d.MulFixedOp,
             },
             ast.Div: {
                 Float: arith_d.DivFOp,
                 Int: arith_d.DivSIOp,
                 UInt: arith_d.DivUIOp,
-                Fixed: hcl_d.DivFixedOp,
-                UFixed: hcl_d.DivFixedOp,
+                Fixed: allo_d.DivFixedOp,
+                UFixed: allo_d.DivFixedOp,
             },
             ast.FloorDiv: {
                 Float: RuntimeError,
@@ -871,7 +872,8 @@ class ASTTransformer(ASTBuilder):
                 affine_map = AffineMap.get(
                     dim_count=ctx.dim_count, symbol_count=0, exprs=[expr]
                 )
-                attr = AffineMapAttr.get(affine_map)
+                # attr = AffineMapAttr.get(affine_map)
+                attr = affine_map
             else:
                 variables, attr = [], None
         return variables, attr
@@ -1086,6 +1088,7 @@ class ASTTransformer(ASTBuilder):
             ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
             if isinstance(node.ctx, ast.Load):
                 op = affine_d.AffineLoadOp(
+                    node.value.dtype.build(),
                     value.result,
                     ivs,
                     affine_attr,
@@ -1136,7 +1139,7 @@ class ASTTransformer(ASTBuilder):
                 index = ASTTransformer.build_cast_op(
                     ctx, index, node.slice.dtype, Index()
                 )
-                return hcl_d.GetIntBitOp(
+                return allo_d.GetIntBitOp(
                     node.dtype.build(),
                     value.result,
                     index.result,
@@ -1150,7 +1153,7 @@ class ASTTransformer(ASTBuilder):
                 )
                 index = ASTTransformer.build_cast_op(ctx, index, value_dtype, Index())
                 # TODO: Test if rhs is uint1
-                set_bit_op = hcl_d.SetIntBitOp(
+                set_bit_op = allo_d.SetIntBitOp(
                     node.value.dtype.build(),
                     value.result,
                     index.result,
@@ -1179,7 +1182,7 @@ class ASTTransformer(ASTBuilder):
             )
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
-                return hcl_d.GetIntSliceOp(
+                return allo_d.GetIntSliceOp(
                     node.dtype.build(),
                     value.result,
                     upper.result,
@@ -1187,7 +1190,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
             else:  # ast.Store
-                set_slice_op = hcl_d.SetIntSliceOp(
+                set_slice_op = allo_d.SetIntSliceOp(
                     node.value.dtype.build(),
                     value.result,
                     upper.result,
@@ -1232,10 +1235,8 @@ class ASTTransformer(ASTBuilder):
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             with ctx.get_ip():
                 if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
                 elif rhs is not None:
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
                 else:
                     linalg_op = alloc_op.result
@@ -1440,7 +1441,7 @@ class ASTTransformer(ASTBuilder):
             )
             eq_flags.append(True)
             if_cond_set = IntegerSet.get(1, 0, exprs, eq_flags)
-            attr = hcl_d.IntegerSetAttr.get(if_cond_set)
+            attr = allo_d.IntegerSetAttr.get(if_cond_set)
             return attr, ctx.buffers[node.left.id]
         else:
             lhs = build_stmt(ctx, node.left)
@@ -1459,12 +1460,14 @@ class ASTTransformer(ASTBuilder):
                 ]
                 predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
                 return arith_d.CmpIOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
-            if dtype.startswith("!hcl.Fixed") or dtype.startswith("!hcl.UFixed"):
+            if dtype.startswith("!allo.Fixed") or dtype.startswith("!allo.UFixed"):
                 op = ATTR_MAP["fixed" if dtype.startswith("f") else "ufixed"][
                     type(node.ops[0])
                 ]
                 predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
-                return hcl_d.CmpFixedOp(predicate, lhs.result, rhs_res, ip=ctx.get_ip())
+                return allo_d.CmpFixedOp(
+                    predicate, lhs.result, rhs_res, ip=ctx.get_ip()
+                )
             if dtype.startswith("f"):
                 op = ATTR_MAP["float"][type(node.ops[0])]
                 predicate = IntegerAttr.get(IntegerType.get_signless(64), op)
@@ -1505,14 +1508,14 @@ class ASTTransformer(ASTBuilder):
                 [var.result],
                 ip=ctx.get_ip(),
                 hasElse=len(node.orelse),
-                results_=[],
             )
+            # TODO: MLIR bug, need to create a then_block function
+            then_block = if_op.thenRegion.blocks[0]
         else:
             cond = build_stmt(ctx, node.test)
-            if_op = scf_d.IfOp(
-                cond.result, results_=[], ip=ctx.get_ip(), hasElse=len(node.orelse)
-            )
-        ctx.set_ip(if_op.then_block)
+            if_op = scf_d.IfOp(cond.result, ip=ctx.get_ip(), hasElse=len(node.orelse))
+            then_block = if_op.then_block
+        ctx.set_ip(then_block)
         build_stmts(ctx, node.body)
         if is_affine:
             affine_d.AffineYieldOp([], ip=ctx.get_ip())
@@ -1520,7 +1523,8 @@ class ASTTransformer(ASTBuilder):
             scf_d.YieldOp([], ip=ctx.get_ip())
         ctx.pop_ip()
         if len(node.orelse) > 0:
-            ctx.set_ip(if_op.else_block)
+            else_block = if_op.elseRegion.blocks[0]
+            ctx.set_ip(else_block)
             build_stmts(ctx, node.orelse)
             if is_affine:
                 affine_d.AffineYieldOp([], ip=ctx.get_ip())
@@ -1646,6 +1650,7 @@ class ASTTransformer(ASTBuilder):
                         )
                         affine_attr = AffineMapAttr.get(affine_map)
                         return affine_d.AffineLoadOp(
+                            node.func.value.dtype.build(),
                             ctx.buffers[node.func.value.id].result,
                             [],
                             affine_attr,
@@ -1671,8 +1676,10 @@ class ASTTransformer(ASTBuilder):
                 )
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
-        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
-            "allo.library"
+        if (
+            obj.__module__.startswith("allo")
+            and not obj.__module__.startswith("allo.library")
+            and not obj.__module__.startswith("allo._mlir")
         ):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
@@ -1713,7 +1720,6 @@ class ASTTransformer(ASTBuilder):
                         else MockConstant(0, ctx)
                     )
                     op = ASTTransformer.build_cast_op(ctx, res, Int(32), node.dtype)
-                    # pylint: disable=unexpected-keyword-arg
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
@@ -1742,7 +1748,10 @@ class ASTTransformer(ASTBuilder):
                 stream_op.attributes["src"] = StringAttr.get(src)
                 stream_op.attributes["dst"] = StringAttr.get(dst)
                 return stream_op
-            arg_type = new_args[0].result.type
+            if isinstance(new_args[0].result, OpResultList):
+                arg_type = new_args[0].result[0].type
+            else:
+                arg_type = new_args[0].result.type
             if isinstance(arg_type, (F32Type, IntegerType)):
                 opcls = {
                     "exp": math_d.ExpOp,
@@ -1942,7 +1951,6 @@ class ASTTransformer(ASTBuilder):
                 # init zero
                 zero = MockConstant(0, ctx)
                 zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-                # pylint: disable=unexpected-keyword-arg
                 linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
                 result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
                 ASTTransformer.attach_op_name(
@@ -2036,7 +2044,6 @@ class ASTTransformer(ASTBuilder):
                     # init zero
                     zero = MockConstant(0, ctx)
                     # TODO: support tensor
-                    # pylint: disable=unexpected-keyword-arg
                     linalg_fill = linalg_d.fill(zero.result, outs=[zero_op.result])
                     op = linalg_d.max(
                         new_args[0].result, zero_op.result, outs=[result_tensor]
@@ -2050,12 +2057,12 @@ class ASTTransformer(ASTBuilder):
                     )
                     op = op.owner
             elif attr == "transpose":
-                op = linalg_d.TransposeOp(
-                    inputs=[new_args[0].result],
-                    outputs=[result_tensor.result],
-                    permutation=tuple(x.val for x in new_args[1]),
-                    ip=ctx.get_ip(),
-                )
+                with ctx.get_ip():
+                    op = linalg_d.transpose(
+                        input=new_args[0].result,
+                        outs=[result_tensor.result],
+                        permutation=tuple(x.val for x in new_args[1]),
+                    )
             elif attr == "view":
                 view_op = (
                     tensor_d.ReshapeOp if ctx.enable_tensor else memref_d.ReshapeOp
@@ -2184,7 +2191,7 @@ class ASTTransformer(ASTBuilder):
         ret = ASTTransformer.build_cast_op(
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
-        res = ret.result
+        res = ret.result if not isinstance(ret.result, OpResultList) else ret.result[0]
         if (
             isinstance(res.type, MemRefType)
             and res.type.layout != ctx.top_func.type.results[0].layout

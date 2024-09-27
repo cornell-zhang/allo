@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module
 
-from hcl_mlir.ir import (
+from .._mlir.ir import (
     InsertionPoint,
     StringAttr,
     UnitAttr,
@@ -12,12 +12,12 @@ from hcl_mlir.ir import (
     FunctionType,
     MemRefType,
 )
-from hcl_mlir.dialects import (
-    hcl as hcl_d,
+from .._mlir.dialects import (
+    allo as allo_d,
     memref as memref_d,
     func as func_d,
 )
-from hcl_mlir.ir import Type as MLIRType
+from .._mlir.ir import Type as MLIRType
 from ..ir.transform import update_streaming_interface, find_buffer, find_func_in_module
 
 
@@ -30,9 +30,9 @@ def _to(module, target, dst, axis=None, depth=-1, func_args=None, top_func_name=
     ip = InsertionPoint.at_block_terminator(top_func.entry_block)
     # pylint: disable=too-many-nested-blocks
     if axis is None:
-        op_hdl = hcl_d.CreateOpHandleOp(StringAttr.get(dst), ip=ip)
+        op_hdl = allo_d.CreateOpHandleOp(StringAttr.get(dst), ip=ip)
         i32 = IntegerType.get_signless(32)
-        hcl_d.InterKernelToOp(
+        allo_d.InterKernelToOp(
             target.result,
             op_hdl.result,
             fifo_depth=IntegerAttr.get(i32, depth),
