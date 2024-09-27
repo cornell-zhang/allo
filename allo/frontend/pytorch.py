@@ -106,9 +106,11 @@ class TorchBuilder:
                 self.input_shapes.append(None)
                 self.input_args.append(self.input_names[i])
         args = [
-            f"{name}: float32[{', '.join([str(s) for s in shape])}]"
-            if shape
-            else f"{name}: int32"
+            (
+                f"{name}: float32[{', '.join([str(s) for s in shape])}]"
+                if shape
+                else f"{name}: int32"
+            )
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
         res = ""

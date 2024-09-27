@@ -10,6 +10,7 @@ warnings.simplefilter("always", DeprecationWarning)
 
 PrintLog = ContextVar("PrintLog", default=False)
 
+
 class bcolors:
     """ANSI color escape codes for terminal output."""
 
@@ -108,7 +109,9 @@ class AlloError(AlloException):
     def error(self):
         raise self.message
 
+
 """ Inherited Error subclasses """
+
 
 class DTypeError(AlloError):
     """A subclass for specifying data type related exception"""
@@ -157,7 +160,9 @@ class AssertError(AlloError):
         category_str = bcolors.FAIL + "[Assert]" + bcolors.ENDC
         AlloError.__init__(self, msg, line, category_str)
 
+
 """ New Error subclasses """
+
 
 class AlloNotImplementedError(AlloError):
     """A subclass for specifying not implemented exception"""
@@ -166,12 +171,14 @@ class AlloNotImplementedError(AlloError):
         category_str = bcolors.FAIL + "[Not Implemented]" + bcolors.ENDC
         AlloError.__init__(self, msg, line, category_str)
 
+
 class MLIRLimitationError(AlloError):
     """A subclass for specifying MLIR limitation exception"""
 
     def __init__(self, msg, line=None):
         category_str = bcolors.FAIL + "[MLIR Limitation]" + bcolors.ENDC
         AlloError.__init__(self, msg, line, category_str)
+
 
 class AlloValueError(AlloError):
     """A subclass for specifying Allo value exception"""
@@ -180,7 +187,10 @@ class AlloValueError(AlloError):
         category_str = bcolors.FAIL + "[Value Error]" + bcolors.ENDC
         AlloError.__init__(self, msg, line, category_str)
 
+
 """ New Warning subclasses """
+
+
 class DTypeWarning(AlloWarning):
     """A subclass for specifying data type related warning"""
 
@@ -196,12 +206,14 @@ class AlloDeprecationWarning(AlloWarning):
         category_str = bcolors.WARNING + "[Deprecation]" + bcolors.ENDC
         AlloWarning.__init__(self, msg, line, category_str, DeprecationWarning)
 
+
 class APIWarning(AlloWarning):
     """A subclass for specifying API related warning"""
 
     def __init__(self, msg, line=None):
         category_str = bcolors.WARNING + "[API]" + bcolors.ENDC
         AlloWarning.__init__(self, msg, line, category_str, RuntimeWarning)
+
 
 class PassWarning(AlloWarning):
     """A subclass for specifying pass related warning"""
