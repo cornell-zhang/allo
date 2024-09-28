@@ -156,6 +156,14 @@ static bool memRefDCE(MlirModule &mlir_mod) {
   return applyMemRefDCE(mod);
 }
 
+static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2,
+                               MlirContext &mlir_context) {
+  auto mod1 = unwrap(mlir_mod1);
+  auto mod2 = unwrap(mlir_mod2);
+  auto context = unwrap(mlir_context);
+  return wrap(applyUnifyKernels(mod1, mod2, context));
+}
+
 //===----------------------------------------------------------------------===//
 // Allo Python module definition
 //===----------------------------------------------------------------------===//
@@ -257,4 +265,5 @@ PYBIND11_MODULE(_allo, m) {
 
   // Utility pass APIs.
   allo_m.def("memref_dce", &memRefDCE);
+  allo_m.def("unify_kernels", &UnifyKernels);
 }

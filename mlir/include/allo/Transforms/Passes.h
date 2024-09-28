@@ -27,6 +27,7 @@ bool applyLegalizeCast(ModuleOp &module);
 bool applyRemoveStrideMap(ModuleOp &module);
 bool applyMemRefDCE(ModuleOp &module);
 bool applyDataPlacement(ModuleOp &module);
+ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2, MLIRContext *context);
 
 /// Registers all Allo transformation passes
 void registerAlloPasses();
