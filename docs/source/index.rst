@@ -27,14 +27,14 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
 .. toctree::
    :maxdepth: 1
-   :caption: Getting Started
+   :caption: **Getting Started**
 
    setup/index.rst
 
 
 .. toctree::
    :maxdepth: 1
-   :caption: Tutorials
+   :caption: **Tutorials**
 
    gallery/tutorial_01_get_started.rst
    gallery/tutorial_02_vhls.rst
@@ -42,7 +42,7 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
 .. toctree::
    :maxdepth: 1
-   :caption: Developer Guide
+   :caption: **Developer Guide**
 
    developer/index.rst
    gallery/developer_01_ir_builder.rst
@@ -51,6 +51,6 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
 .. toctree::
    :maxdepth: 1
-   :caption: Reference
+   :caption: **Reference**
 
    genindex

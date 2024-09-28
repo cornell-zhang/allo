@@ -62,7 +62,7 @@ Basically, the development workflow is as follows:
 3. Commit the changes to your *local* branch (``git commit -m "commit message"``)
 4. Push the changes to your *fork* (``git push origin <branch_name>``)
 5. Make sure your changes do not break the existing facilities, see `Integration Tests <#integration-tests>`_ for more details
-6. Create a `PR <https://github.com/cornell-zhang/allo/pulls>`_ from your fork to the ``main`` branch of the Allo repository (see `here <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`_ for more details)
+6. Create a `Pull Request (PR) <https://github.com/cornell-zhang/allo/pulls>`_ from your fork to the ``main`` branch of the Allo repository (see `here <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`_ for more details)
 7. Wait for the PR to be reviewed
 8. If there are any changes requested, make the changes and push to your fork
 9. Once the PR is approved, it will be merged into the ``main`` branch
@@ -77,12 +77,12 @@ make sure you have passed the tests locally before creating a PR or pushing to y
 There are several tests for our project:
 
 1. **License header check**: make sure all the source files have the license header, which is important for open source projects.
-2. **Code style check**: make sure the code style is consistent with the `PEP8 <https://www.python.org/dev/peps/pep-0008/>`_ standard. We use ``black`` for Python formatting, which should has been installed in your environment during the setup. ``clang-format`` is used for C/C++ formatting.
+2. **Code style check**: make sure the Python code style is consistent with the `PEP8 <https://www.python.org/dev/peps/pep-0008/>`_ standard. We use ``black`` for Python formatting, which should has been installed in your environment during the setup. For the MLIR part, we use ``clang-format`` for C/C++ formatting.
 3. **Linting check**: make sure the code is `linted <https://www.perforce.com/blog/qac/what-lint-code-and-what-linting-and-why-linting-important>`_ correctly. We use ``pylint`` for Python linting, which should also been installed during the setup.
 4. **Unit tests**: make sure the changes will not break the existing facilities. We use ``pytest`` for Python unit tests, and the test cases are under the ``tests`` folder.
 
-If you are making changes to the code, please make sure to run those tests before pushing to your fork.
-To run the tests, you can run the following command from the root of the repository:
+If you are making changes to the code, please make sure to run those tests and checking before pushing to your fork.
+To run the format checker, you can execute the following command from the root of the repository:
 
 .. code-block:: bash
 
