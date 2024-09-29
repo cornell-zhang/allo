@@ -22,11 +22,11 @@ add_files kernel.cpp
 add_files -tb host.cpp -cflags "-std=gnu++0x"
 
 open_solution "solution1"
-# Use Zynq device
-set_part {xc7z020clg484-1}
+# Target device is Alveo U280
+set_part {xcu280-fsvh2892-2L-e}
 
-# Target clock period is 10ns
-create_clock -period 10
+# Target frequency is 300 MHz
+create_clock -period 3.33
 
 # Directives 
 
