@@ -98,6 +98,8 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
         with open(os.path.join(project, "run.tcl"), "w", encoding="utf-8") as tcl_file:
             tcl_file.write(new_tcl)
         return "success"
+    elif platform in {"ihls"}:
+        return "success"
     raise RuntimeError("Not implemented")
 
 
@@ -168,6 +170,23 @@ class HLSModule:
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
+
+            if platform == "ihls":
+                assert mode in {"fpga_emulator", "source_file_only", None}, "Invalid mode"
+
+                if project is not None:
+                    filename = f"{project}"
+                else:
+                    raise RuntimeError("Error: if platfrom is ihls, 'project' argument must not be None.")
+
+                
+                if mode == "fpga_emulator":
+                    result = subprocess.run([f' icpx -fintelfpga -DFPGA_EMULATOR .//{filename} -o {filename}.exe'], capture_output=True, text=True)
+                    print(result.stdout)
+                elif mode == "source_file_only":
+                    print(f"Generated Intel HLS source file kernel.cpp has been created successfully in your current directory under '{filename}' folder.")
+                    print("mode has been set to source_file_only, the output will only be the souce intel HLS code")
+
             if platform == "vitis_hls":
                 if configs is not None:
                     mappings = configs.get("mappings", None)
@@ -214,7 +233,12 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        allo_d.emit_vhls(self.module, buf)
+
+        if platform == "ihls":
+            allo_d.emit_ihls(self.module, buf)
+        else:
+            allo_d.emit_vhls(self.module, buf)
+
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:
@@ -278,8 +302,12 @@ class HLSModule:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.host_code)
+            if platform.lower() != 'ihls':
+                with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.host_code)
+            else:
+                print("Platform is intel HLS; skipping generation of host.cpp.")
+
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp

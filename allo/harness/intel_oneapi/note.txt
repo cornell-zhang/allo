@@ -1,0 +1,1 @@
+This directory contains utility header libraries optimized for SYCL*-compliant FPGA designs for DPC++ compiler version 2024.2.1.
