@@ -172,20 +172,36 @@ class HLSModule:
             self.func = find_func_in_module(self.module, top_func_name)
 
             if platform == "ihls":
-                assert mode in {"fpga_emulator", "source_file_only", None}, "Invalid mode"
+                assert mode in {
+                    "fpga_emulator",
+                    "source_file_only", 
+                    None,
+                }, "Invalid mode"
 
                 if project is not None:
                     filename = f"{project}"
                 else:
-                    raise RuntimeError("Error: if platfrom is ihls, 'project' argument must not be None.")
+                    raise RuntimeError(
+                        "Error: if platfrom is ihls, 'project' argument must not be None."
+                    )
 
                 
                 if mode == "fpga_emulator":
-                    result = subprocess.run([f' icpx -fintelfpga -DFPGA_EMULATOR .//{filename} -o {filename}.exe'], capture_output=True, text=True)
+                    result = subprocess.run(
+                        [
+                            f" icpx -fintelfpga -DFPGA_EMULATOR .//{filename} -o {filename}.exe"
+                        ], 
+                        capture_output=True, 
+                        text=True,
+                    )
                     print(result.stdout)
                 elif mode == "source_file_only":
-                    print(f"Generated Intel HLS source file kernel.cpp has been created successfully in your current directory under '{filename}' folder.")
-                    print("mode has been set to source_file_only, the output will only be the souce intel HLS code")
+                    print(
+                        f"Generated Intel HLS source file kernel.cpp has been created successfully in your current directory under '{filename}' folder."
+                    )
+                    print(
+                        "mode has been set to source_file_only, the output will only be the souce intel HLS code"
+                    )
 
             if platform == "vitis_hls":
                 if configs is not None:
@@ -302,7 +318,7 @@ class HLSModule:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            if platform.lower() != 'ihls':
+            if platform.lower() != "ihls":
                 with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                     outfile.write(self.host_code)
             else:
