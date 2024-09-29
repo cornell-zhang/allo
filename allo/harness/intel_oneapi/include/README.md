@@ -1,4 +1,7 @@
+<!--- Copyright Allo authors. All Rights Reserved. -->
+<!--- SPDX-License-Identifier: Apache-2.0  -->
 # reference: https://github.com/oneapi-src/oneAPI-samples/tree/master/DirectProgramming/C%2B%2BSYCL_FPGA/include
+
 # Include for Shared Header Libraries
 This directory contains utility header libraries optimized for SYCL*-compliant FPGA designs. Find usage examples in the **ReferenceDesigns** and **Tutorials** directories.
 
