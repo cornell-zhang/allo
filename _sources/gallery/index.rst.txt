@@ -41,7 +41,7 @@ Allo Documentations
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Vivado HLS Backend</div>
+      <div class="sphx-glr-thumbnail-title">Vivado/Vitis HLS Backend</div>
     </div>
 
 

@@ -134,22 +134,22 @@
 
     
       <div class="sphinxsidebar" role="navigation" aria-label="Main">
-        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">**Getting Started**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../setup/index.html">Installation</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Tutorials**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorial_01_get_started.html">Getting Started</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado HLS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Developer Guide**</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">MLIR Translation Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Reference**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../genindex.html">Index</a></li>
 </ul>
@@ -233,17 +233,50 @@ of <code class="docutils literal notranslate"><span class="pre">C</span></code>,
 </div>
 <p>The first line gives the error message and the exact location (line 8, column 3) of the error.
 Then we know that there is a problem in the return value of our MLIR code, which helps us debug the program.</p>
-<p>We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
-The <code class="docutils literal notranslate"><span class="pre">LLVMMoudle</span></code> class takes the MLIR module and the name of the top function as input.
-Then we can directly invoke the module with random inputs, and see if the result is correct.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>To execute the MLIR with an LLVM backend, we need to lower the MLIR program to LLVM dialect first.
-This is done inside the <code class="docutils literal notranslate"><span class="pre">LLVMModule</span></code> class, and you can check the details <a class="reference external" href="https://github.com/cornell-zhang/allo/blob/main/allo/module.py">here</a>.
-However, we only include several lowering passes from commonly used dialects in the module,
-so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.</p>
+<p>To further check what causes the error, we can print out the generic form of the MLIR program.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
+    <span class="n">large_elements_limit</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">enable_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">pretty_debug_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">print_generic_op_form</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">use_local_scope</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
 </div>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;matmul&quot;</span><span class="p">)</span>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>&quot;builtin.module&quot;() ({
+  &quot;func.func&quot;() &lt;{function_type = (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt;, sym_name = &quot;matmul&quot;}&gt; ({
+  ^bb0(%arg0: memref&lt;32x32xi32&gt; -:2:19, %arg1: memref&lt;32x32xi32&gt; -:2:42):
+    %0 = &quot;memref.alloc&quot;() &lt;{operandSegmentSizes = array&lt;i32: 0, 0&gt;}&gt; : () -&gt; memref&lt;32x32xi32&gt; -:3:8
+    %1 = &quot;arith.constant&quot;() &lt;{value = 0 : i32}&gt; : () -&gt; i32 -:4:13
+    &quot;linalg.fill&quot;(%1, %0) &lt;{operandSegmentSizes = array&lt;i32: 1, 1&gt;}&gt; ({
+    ^bb0(%arg5: i32 [unknown], %arg6: i32 [unknown]):
+      &quot;linalg.yield&quot;(%arg5) : (i32) -&gt; () [unknown]
+    }) : (i32, memref&lt;32x32xi32&gt;) -&gt; () -:5:3
+    &quot;linalg.matmul&quot;(%arg0, %arg1, %0) &lt;{operandSegmentSizes = array&lt;i32: 2, 1&gt;}&gt; ({
+    ^bb0(%arg2: i32 [unknown], %arg3: i32 [unknown], %arg4: i32 [unknown]):
+      %2 = &quot;arith.muli&quot;(%arg2, %arg3) &lt;{overflowFlags = #arith.overflow&lt;none&gt;}&gt; : (i32, i32) -&gt; i32 [unknown]
+      %3 = &quot;arith.addi&quot;(%arg4, %2) &lt;{overflowFlags = #arith.overflow&lt;none&gt;}&gt; : (i32, i32) -&gt; i32 [unknown]
+      &quot;linalg.yield&quot;(%3) : (i32) -&gt; () [unknown]
+    }) {linalg.memoized_indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d2, d1)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; () -:6:3
+    &quot;func.return&quot;(%0) : (memref&lt;32x32xi32&gt;) -&gt; () -:8:3
+  }) : () -&gt; () -:2:1
+}) : () -&gt; () -:0:0
+</pre></div>
+</div>
+<p>The generic form of the MLIR program is a more detailed representation of the MLIR program.
+However, if you see this form in your customized MLIR pass, it means your generated IR may not pass the MLIR verifier.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="c1"># We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.</span>
+<span class="c1"># The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.</span>
+<span class="c1"># Then we can directly invoke the module with random inputs, and see if the result is correct.</span>
+<span class="c1">#</span>
+<span class="c1"># .. note::</span>
+<span class="c1">#</span>
+<span class="c1">#    To execute the MLIR with an LLVM backend, we need to lower the MLIR program to LLVM dialect first.</span>
+<span class="c1">#    This is done inside the ``LLVMModule`` class, and you can check the details `here &lt;https://github.com/cornell-zhang/allo/blob/main/allo/module.py&gt;`_.</span>
+<span class="c1">#    However, we only include several lowering passes from commonly used dialects in the module,</span>
+<span class="c1">#    so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.</span>
+
+<span class="n">llvm_mod</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">LLVMModule</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="s2">&quot;matmul&quot;</span><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a> <span class="o">=</span> <a href="https://numpy.org/doc/stable/reference/random/generated/numpy.random.randint.html#numpy.random.randint" title="numpy.random.randint" class="sphx-glr-backref-module-numpy-random sphx-glr-backref-type-py-function"><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span></a><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><a href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.int32" title="numpy.int32" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute"><span class="n">np</span><span class="o">.</span><span class="n">int32</span></a><span class="p">)</span>
 <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">allo_C</span></a> <span class="o">=</span> <span class="n">llvm_mod</span><span class="p">(</span><a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_A</span></a><span class="p">,</span> <a href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray" class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">np_B</span></a><span class="p">)</span>
@@ -310,12 +343,14 @@ And we can also invoke the LLVM execution engine trying to execute the program.<
 </pre></div>
 </div>
 <p>You will see the following error message:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209: mlir::FailureOr&lt;llvm::SmallVector&lt;mlir::Operation*, 4&gt; &gt; linalgOpToLoopsImpl(mlir::PatternRewriter&amp;, mlir::linalg::LinalgOp) [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() &amp;&amp; &quot;expected linalg op with buffer semantics&quot;&#39; failed.
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209:
+         mlir::FailureOr&lt;llvm::SmallVector&lt;mlir::Operation*, 4&gt; &gt; linalgOpToLoopsImpl(mlir::PatternRewriter&amp;, mlir::linalg::LinalgOp)
+         [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() &amp;&amp; &quot;expected linalg op with buffer semantics&quot;&#39; failed.
 </pre></div>
 </div>
 <p>Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.073 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.069 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-02-mlir-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/26d9fb3f431f94846c086960be43203e/developer_02_mlir.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">developer_02_mlir.ipynb</span></code></a></p>

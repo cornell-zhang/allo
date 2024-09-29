@@ -24,7 +24,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="IR Builder Walkthrough" href="../gallery/developer_01_ir_builder.html" />
-    <link rel="prev" title="Vivado HLS Backend" href="../gallery/tutorial_02_vhls.html" /> 
+    <link rel="prev" title="Vivado/Vitis HLS Backend" href="../gallery/tutorial_02_vhls.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -134,22 +134,22 @@
 
     
       <div class="sphinxsidebar" role="navigation" aria-label="Main">
-        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">**Getting Started**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../setup/index.html">Installation</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Tutorials**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_01_get_started.html">Getting Started</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_02_vhls.html">Vivado HLS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Developer Guide**</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Developer Setup</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/developer_02_mlir.html">MLIR Translation Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<p class="caption" role="heading"><span class="caption-text">**Reference**</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../genindex.html">Index</a></li>
 </ul>
@@ -194,7 +194,7 @@ $<span class="w"> </span>git<span class="w"> </span>remote<span class="w"> </spa
 <li><p>Commit the changes to your <em>local</em> branch (<code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">commit</span> <span class="pre">-m</span> <span class="pre">&quot;commit</span> <span class="pre">message&quot;</span></code>)</p></li>
 <li><p>Push the changes to your <em>fork</em> (<code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">push</span> <span class="pre">origin</span> <span class="pre">&lt;branch_name&gt;</span></code>)</p></li>
 <li><p>Make sure your changes do not break the existing facilities, see <a class="reference external" href="#integration-tests">Integration Tests</a> for more details</p></li>
-<li><p>Create a <a class="reference external" href="https://github.com/cornell-zhang/allo/pulls">PR</a> from your fork to the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the Allo repository (see <a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork">here</a> for more details)</p></li>
+<li><p>Create a <a class="reference external" href="https://github.com/cornell-zhang/allo/pulls">Pull Request (PR)</a> from your fork to the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the Allo repository (see <a class="reference external" href="https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork">here</a> for more details)</p></li>
 <li><p>Wait for the PR to be reviewed</p></li>
 <li><p>If there are any changes requested, make the changes and push to your fork</p></li>
 <li><p>Once the PR is approved, it will be merged into the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch</p></li>
@@ -208,12 +208,12 @@ make sure you have passed the tests locally before creating a PR or pushing to y
 <p>There are several tests for our project:</p>
 <ol class="arabic simple">
 <li><p><strong>License header check</strong>: make sure all the source files have the license header, which is important for open source projects.</p></li>
-<li><p><strong>Code style check</strong>: make sure the code style is consistent with the <a class="reference external" href="https://www.python.org/dev/peps/pep-0008/">PEP8</a> standard. We use <code class="docutils literal notranslate"><span class="pre">black</span></code> for Python formatting, which should has been installed in your environment during the setup. <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> is used for C/C++ formatting.</p></li>
+<li><p><strong>Code style check</strong>: make sure the Python code style is consistent with the <a class="reference external" href="https://www.python.org/dev/peps/pep-0008/">PEP8</a> standard. We use <code class="docutils literal notranslate"><span class="pre">black</span></code> for Python formatting, which should has been installed in your environment during the setup. For the MLIR part, we use <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> for C/C++ formatting.</p></li>
 <li><p><strong>Linting check</strong>: make sure the code is <a class="reference external" href="https://www.perforce.com/blog/qac/what-lint-code-and-what-linting-and-why-linting-important">linted</a> correctly. We use <code class="docutils literal notranslate"><span class="pre">pylint</span></code> for Python linting, which should also been installed during the setup.</p></li>
 <li><p><strong>Unit tests</strong>: make sure the changes will not break the existing facilities. We use <code class="docutils literal notranslate"><span class="pre">pytest</span></code> for Python unit tests, and the test cases are under the <code class="docutils literal notranslate"><span class="pre">tests</span></code> folder.</p></li>
 </ol>
-<p>If you are making changes to the code, please make sure to run those tests before pushing to your fork.
-To run the tests, you can run the following command from the root of the repository:</p>
+<p>If you are making changes to the code, please make sure to run those tests and checking before pushing to your fork.
+To run the format checker, you can execute the following command from the root of the repository:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>bash<span class="w"> </span>scripts/lint/task_lint.sh
 </pre></div>
 </div>
@@ -295,7 +295,7 @@ Running pylint on allo
             <div class="left">
                 
                 <a href="../gallery/tutorial_02_vhls.html">
-                    <span class="icon">&lt;</span><span>Vivado HLS Backend</span></a>
+                    <span class="icon">&lt;</span><span>Vivado/Vitis HLS Backend</span></a>
                 
             </div>
 

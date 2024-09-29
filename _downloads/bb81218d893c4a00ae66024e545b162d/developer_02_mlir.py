@@ -67,6 +67,21 @@ print(mod)
 # The first line gives the error message and the exact location (line 8, column 3) of the error.
 # Then we know that there is a problem in the return value of our MLIR code, which helps us debug the program.
 #
+# To further check what causes the error, we can print out the generic form of the MLIR program.
+
+# %%
+mod.operation.print(
+    large_elements_limit=2,
+    enable_debug_info=True,
+    pretty_debug_info=True,
+    print_generic_op_form=True,
+    use_local_scope=True,
+)
+
+# %%
+# The generic form of the MLIR program is a more detailed representation of the MLIR program.
+# However, if you see this form in your customized MLIR pass, it means your generated IR may not pass the MLIR verifier.
+
 # We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
 # The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.
 # Then we can directly invoke the module with random inputs, and see if the result is correct.
@@ -142,7 +157,9 @@ print(mod)
 #
 # .. code-block::
 #
-#    python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209: mlir::FailureOr<llvm::SmallVector<mlir::Operation*, 4> > linalgOpToLoopsImpl(mlir::PatternRewriter&, mlir::linalg::LinalgOp) [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() && "expected linalg op with buffer semantics"' failed.
+#    python3: llvm-project/mlir/lib/Dialect/Linalg/Transforms/Loops.cpp:209:
+#             mlir::FailureOr<llvm::SmallVector<mlir::Operation*, 4> > linalgOpToLoopsImpl(mlir::PatternRewriter&, mlir::linalg::LinalgOp)
+#             [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() && "expected linalg op with buffer semantics"' failed.
 
 # %%
 # Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
