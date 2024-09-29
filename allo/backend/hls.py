@@ -222,7 +222,13 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
-                assert self.mode in {"csim", "sw_emu", "hw_emu", "hw"}, "Invalid mode"
+                assert self.mode in {
+                    "csim",
+                    "csyn",
+                    "sw_emu",
+                    "hw_emu",
+                    "hw",
+                }, "Invalid mode"
                 assert (
                     self.top_func_name != "kernel"
                 ), "kernel is a reserved keyword for vitis_hls"
@@ -314,9 +320,7 @@ class HLSModule:
 
     def __call__(self, *args, shell=True):
         if self.platform == "vivado_hls":
-            assert (
-                os.system(f"which {self.platform} >> /dev/null") == 0
-            ), f"cannot find {self.platform} on system path"
+            assert is_available("vivado_hls"), "vivado_hls is not available"
             ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
             assert (
                 int(ver[0]) * 10 + int(ver[1]) >= 48
@@ -351,9 +355,7 @@ class HLSModule:
             else:
                 raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
         elif self.platform == "vitis_hls":
-            assert (
-                os.system(f"which {self.platform} >> /dev/null") == 0
-            ), f"cannot find {self.platform} on system path"
+            assert is_available("vitis_hls"), "vitis_hls is not available"
             if self.mode == "csim":
                 cwd = os.getcwd()
                 mod = IPModule(
@@ -366,6 +368,16 @@ class HLSModule:
                     link_hls=True,
                 )
                 mod(*args)
+                return
+            if self.mode == "csyn":
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                if shell:
+                    subprocess.Popen(cmd, shell=True).wait()
+                else:
+                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
                 return
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
             cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"

@@ -22,7 +22,7 @@ from allo.ir.types import int32
 # leverage the `parsing <https://en.wikipedia.org/wiki/Parsing>`_ technique to
 # translate the Python code to an MLIR program. Therefore, the first
 # step is to parse the Python code to the
-# `AST <https://en.wikipedia.org/wiki/Abstract_syntax_tree>`_ representation.
+# `Abstract Syntax Tree (AST) <https://en.wikipedia.org/wiki/Abstract_syntax_tree>`_ representation.
 
 M, N = 1024, 1024
 
@@ -69,7 +69,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 #    We also wrap the above functions in ``allo.customize``, you can
 #    directly call ``s = allo.customize(matrix_add, verbose=True)`` to obtain
 #    the AST of the function. The entry point of the ``customize`` function is
-#    located in `allo/customize.py <https://github.com/cornell-zhang/allo/blob/3cd1680f929f84e88bd2bbff4909bf13d95696f3/allo/customize.py#L339>`_.
+#    located in `allo/customize.py <https://github.com/cornell-zhang/allo/blob/main/allo/customize.py>`_.
 
 ##############################################################################
 # Traverse the AST
@@ -170,7 +170,7 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 # support different loop structures, so we need to further dispatch the ``For`` node to the corresponding
 # builder function. For example, here we use ``allo.grid``, so it will be dispatched to ``build_grid_for``.
 #
-# We provide some helper functions in ``allo/ir/transform.py`` to make the IR creation easier.
+# We provide some helper functions in `allo/ir/transform.py <https://github.com/cornell-zhang/allo/blob/main/allo/ir/transform.py>`_ to make the IR creation easier.
 # In this case, we can just call ``build_for_loops`` and pass in the bounds and the names of the loops
 # to create a loop nest.
 # Before building the loop body, we need to update the insertion point:
@@ -188,9 +188,9 @@ astpretty.pprint(tree, indent=2, show_offsets=False)
 ##############################################################################
 # Other Nodes
 # ^^^^^^^^^^^
-# The build process is similar for other nodes, so I will not go into them one by one.
+# The build process is similar for other nodes, so we will not go into them one by one.
 # Please refer to the `source code <https://github.com/cornell-zhang/allo/blob/main/allo/ir/builder.py>`_ for more details.
 # After building the IR, you can call ``s.module`` to see the effect.
 #
 # Most of the MLIR operations can be found on this `webpage <https://mlir.llvm.org/docs/Dialects/>`_, and now
-# you can follow the definitions and add more amazing facilities to the new Allo frontend!
+# you can follow the definitions and add more amazing facilities to the new Allo compiler!

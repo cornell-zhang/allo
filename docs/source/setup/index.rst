@@ -111,7 +111,7 @@ We also provide a script to set up the backend LLVM compiler. You can simply run
 
 .. code-block:: console
 
-  $ source /work/shared/common/allo/setup-py312.sh
+  $ source /work/shared/common/allo/setup-llvm19.sh
 
 .. note::
 
