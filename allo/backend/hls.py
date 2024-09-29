@@ -174,7 +174,7 @@ class HLSModule:
             if platform == "ihls":
                 assert mode in {
                     "fpga_emulator",
-                    "source_file_only", 
+                    "source_file_only",
                     None,
                 }, "Invalid mode"
 
@@ -185,13 +185,12 @@ class HLSModule:
                         "Error: if platfrom is ihls, 'project' argument must not be None."
                     )
 
-                
                 if mode == "fpga_emulator":
                     result = subprocess.run(
                         [
                             f" icpx -fintelfpga -DFPGA_EMULATOR .//{filename} -o {filename}.exe"
-                        ], 
-                        capture_output=True, 
+                        ],
+                        capture_output=True,
                         text=True,
                     )
                     print(result.stdout)
