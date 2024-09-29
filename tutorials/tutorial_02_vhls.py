@@ -125,7 +125,7 @@ print(code)
 # We can see that the generated code preserves the same structure as the IR, and inserts
 # necessary headers and pragmas for Vivado/Vitis HLS. The generated code can be directly passed
 # to Vivado/Vitis HLS to generate RTL designs.
-# 
+#
 # .. note::
 #
 #    Vivado HLS was the previous name of Vitis HLS (before 2020.1). The previous HLS code
