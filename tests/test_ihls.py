@@ -7,7 +7,7 @@ from allo.ir.types import float32
 V = 10000
 
 
-#This test is using a vector add kernel
+# This test is using a vector add kernel
 def vector_add(A: float32[V], B: float32[V]) -> float32[V]:
     C: float32[V] = 0.0
     for i in allo.grid(V):
@@ -32,8 +32,8 @@ try:
         search_string2 = "h.single_task<Top>([=]() [[intel::kernel_args_restrict]]"  # Test if the kernel is created
 
         if (
-            search_string0 in content 
-            and search_string1 in content 
+            search_string0 in content
+            and search_string1 in content
             and search_string2 in content
         ):
             print(
