@@ -193,7 +193,7 @@ class HLSModule:
                         check=False,
                     )
                     print(result.stdout)
-                elif mode in ("fpga_simulator", "fpga_report", "fpga_hardware"):
+                elif mode in {"fpga_simulator", "fpga_report", "fpga_hardware"}:
                     raise RuntimeError("Error: this mode is currently not supported")
                 else:
                     print(
