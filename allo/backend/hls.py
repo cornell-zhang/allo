@@ -177,6 +177,7 @@ class HLSModule:
                     "fpga_simulator",
                     "fpga_report",
                     "fpga_hardware",
+                    "source_file_only",
                     None,
                 }, "Invalid mode"
 
