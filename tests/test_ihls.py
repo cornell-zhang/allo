@@ -6,6 +6,7 @@ from allo.ir.types import float32
 
 V = 10000
 
+
 #This test is using a vector add kernel
 def vector_add(A: float32[V], B: float32[V]) -> float32[V]:
     C: float32[V] = 0.0
@@ -30,10 +31,18 @@ try:
         search_string1 = "queue q(selector, dpc_common::exception_handler);"  # Test if a queue is created
         search_string2 = "h.single_task<Top>([=]() [[intel::kernel_args_restrict]]"  # Test if the kernel is created
 
-        if search_string0 in content and search_string1 in content and search_string2 in content:
-            print(f"\033[92mTest Case: 3 test cases passed in {kernel_file_path}\033[0m")
+        if (
+            search_string0 in content 
+            and search_string1 in content 
+            and search_string2 in content
+        ):
+            print(
+                f"\033[92mTest Case: 3 test cases passed in {kernel_file_path}\033[0m"
+            )
         else:
-            raise RuntimeError(f"\033[91mTest Case: failed in {kernel_file_path}\033[0m")
+            raise RuntimeError(
+                f"\033[91mTest Case: failed in {kernel_file_path}\033[0m"
+            )
 
 except FileNotFoundError:
     print(f"\033[91mTest Case: The file {kernel_file_path} does not exist.\033[0m")
