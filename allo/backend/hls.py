@@ -194,9 +194,7 @@ class HLSModule:
                     )
                     print(result.stdout)
                 elif mode in ("fpga_simulator", "fpga_report", "fpga_hardware"):
-                    raise RuntimeError(
-                        "Error: this mode is currently not supported"
-                    )
+                    raise RuntimeError("Error: this mode is currently not supported")
                 else:
                     print(
                         f"Generated Intel HLS source file kernel.cpp has been created successfully in your current directory under '{project}' folder."
