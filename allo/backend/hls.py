@@ -98,7 +98,7 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
         with open(os.path.join(project, "run.tcl"), "w", encoding="utf-8") as tcl_file:
             tcl_file.write(new_tcl)
         return "success"
-    elif platform in {"ihls"}:
+    if platform in {"ihls"}:
         return "success"
     raise RuntimeError("Not implemented")
 
@@ -192,6 +192,7 @@ class HLSModule:
                         ],
                         capture_output=True,
                         text=True,
+                        check=False,
                     )
                     print(result.stdout)
                 elif mode == "source_file_only":
