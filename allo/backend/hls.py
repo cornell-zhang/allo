@@ -174,7 +174,9 @@ class HLSModule:
             if platform == "ihls":
                 assert mode in {
                     "fpga_emulator",
-                    "source_file_only",
+                    "fpga_simulator",
+                    "fpga_report",
+                    "fpga_hardware",
                     None,
                 }, "Invalid mode"
 
@@ -200,7 +202,7 @@ class HLSModule:
                         f"Generated Intel HLS source file kernel.cpp has been created successfully in your current directory under '{project}' folder."
                     )
                     print(
-                        "mode has been set to source_file_only, the output will only be the souce intel HLS code"
+                        "current mode has been set to output the source file only, the output will only be the souce intel HLS code"
                     )
             if platform == "vitis_hls":
                 if configs is not None:
