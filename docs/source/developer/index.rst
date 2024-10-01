@@ -127,9 +127,8 @@ Following is an example output:
     Files: ...
     Running clang-format in checking mode
     Running pylint on allo
-
---------------------------------------------------------------------
-Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+    --------------------------------------------------------------------
+    Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 
 Lastly run the unit tests:
 

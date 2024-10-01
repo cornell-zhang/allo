@@ -82,6 +82,7 @@ mod.operation.print(
 # The generic form of the MLIR program is a more detailed representation of the MLIR program.
 # However, if you see this form in your customized MLIR pass, it means your generated IR may not pass the MLIR verifier.
 
+# %%
 # We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
 # The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.
 # Then we can directly invoke the module with random inputs, and see if the result is correct.
