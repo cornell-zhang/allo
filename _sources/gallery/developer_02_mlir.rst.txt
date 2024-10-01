@@ -185,21 +185,23 @@ To further check what causes the error, we can print out the generic form of the
 The generic form of the MLIR program is a more detailed representation of the MLIR program.
 However, if you see this form in your customized MLIR pass, it means your generated IR may not pass the MLIR verifier.
 
-.. GENERATED FROM PYTHON SOURCE LINES 84-102
+.. GENERATED FROM PYTHON SOURCE LINES 86-96
+
+We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
+The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.
+Then we can directly invoke the module with random inputs, and see if the result is correct.
+
+.. note::
+
+   To execute the MLIR with an LLVM backend, we need to lower the MLIR program to LLVM dialect first.
+   This is done inside the ``LLVMModule`` class, and you can check the details `here <https://github.com/cornell-zhang/allo/blob/main/allo/module.py>`_.
+   However, we only include several lowering passes from commonly used dialects in the module,
+   so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.
+
+.. GENERATED FROM PYTHON SOURCE LINES 96-103
 
 .. code-block:: Python
 
-
-    # We also wrap the LLVM execution engine in allo, so we can directly invoke it to execute the MLIR program.
-    # The ``LLVMMoudle`` class takes the MLIR module and the name of the top function as input.
-    # Then we can directly invoke the module with random inputs, and see if the result is correct.
-    #
-    # .. note::
-    #
-    #    To execute the MLIR with an LLVM backend, we need to lower the MLIR program to LLVM dialect first.
-    #    This is done inside the ``LLVMModule`` class, and you can check the details `here <https://github.com/cornell-zhang/allo/blob/main/allo/module.py>`_.
-    #    However, we only include several lowering passes from commonly used dialects in the module,
-    #    so not all the programs can be directly lowered. You will see some examples that cannot be lowered later.
 
     llvm_mod = allo.LLVMModule(mod, "matmul")
     np_A = np.random.randint(0, 10, size=(32, 32), dtype=np.int32)
@@ -214,7 +216,7 @@ However, if you see this form in your customized MLIR pass, it means your genera
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 103-116
+.. GENERATED FROM PYTHON SOURCE LINES 104-117
 
 We verify the correctness of our handwritten MLIR program, but we definitely don't want users to write
 these tedious IR code by hand, so we need to think about how to raise the abstraction level and let
@@ -230,7 +232,7 @@ Therefore, the frontend interface may look like this:
 
 Later, we want to figure out a way to lower this high-level program to the MLIR program we defined above.
 
-.. GENERATED FROM PYTHON SOURCE LINES 118-126
+.. GENERATED FROM PYTHON SOURCE LINES 119-127
 
 Define an MLIR program with Tensor dialect
 ------------------------------------------
@@ -241,7 +243,7 @@ Thanks to the `tensor dialect <https://mlir.llvm.org/docs/Dialects/TensorOps>`_,
 easily leverage it to conduct slicing, reshaping, and other tensor operations. Following
 shows an example of how to use the tensor dialect to define a matmul program:
 
-.. GENERATED FROM PYTHON SOURCE LINES 126-140
+.. GENERATED FROM PYTHON SOURCE LINES 127-141
 
 .. code-block:: Python
 
@@ -266,13 +268,13 @@ shows an example of how to use the tensor dialect to define a matmul program:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 141-144
+.. GENERATED FROM PYTHON SOURCE LINES 142-145
 
 It is very similar to the original one, but the main difference is that we use ``tensor``
 instead of ``memref`` to define the input and output of the operations.
 Again, we can invoke the MLIR parser to check if the program is valid.
 
-.. GENERATED FROM PYTHON SOURCE LINES 144-148
+.. GENERATED FROM PYTHON SOURCE LINES 145-149
 
 .. code-block:: Python
 
@@ -304,7 +306,7 @@ Again, we can invoke the MLIR parser to check if the program is valid.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 149-163
+.. GENERATED FROM PYTHON SOURCE LINES 150-164
 
 It outputs without any error, so we know that the program is valid.
 And we can also invoke the LLVM execution engine trying to execute the program.
@@ -321,7 +323,7 @@ You will see the following error message:
             mlir::FailureOr<llvm::SmallVector<mlir::Operation*, 4> > linalgOpToLoopsImpl(mlir::PatternRewriter&, mlir::linalg::LinalgOp)
             [with LoopTy = mlir::AffineForOp]: Assertion `linalgOp.hasBufferSemantics() && "expected linalg op with buffer semantics"' failed.
 
-.. GENERATED FROM PYTHON SOURCE LINES 165-167
+.. GENERATED FROM PYTHON SOURCE LINES 166-168
 
 Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.
@@ -329,7 +331,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.069 seconds)
+   **Total running time of the script:** (0 minutes 0.074 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_02_mlir.py:
