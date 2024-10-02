@@ -167,6 +167,16 @@ class Schedule:
 
     @wrapped_apply
     def split(self, axis, factor):
+        """
+        `split` will find the loop with loop index `axis` and tile it with each tile size `factor`
+        The new inner loop will be named `axis.inner` and the outer loop will be named `axis.outer`
+        
+        Parameters
+        ----------
+        axis: the name of an index in the kernel. 
+
+        factor: the size of each tile, e.g. the size of the inner nested loop
+        """ 
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -178,6 +188,12 @@ class Schedule:
 
     @wrapped_apply
     def reorder(self, *args):
+        """
+        Reorders nested loops with indices listed in `args` such that the outermost loop is the first
+        index listed in `args`, the second is the second outermost, and so on. 
+
+        This function is vardic, accepting each index as a separate argument.
+        """
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -194,6 +210,16 @@ class Schedule:
 
     @wrapped_apply
     def unroll(self, axis, factor=0):
+        """
+        Unrolls a loop with loop index `axis` by `factor`.
+        
+        Parameters:
+        ----------
+        axis: the name of an index in the kernel. 
+
+        factor: the factor to unroll by, for example a factor of 2 will cause the body to be duplicated once. 
+        """
+
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -205,6 +231,11 @@ class Schedule:
 
     @wrapped_apply
     def fuse(self, *args):
+        """
+        Combines loops with indices listed in `args` into a single loop over a single index.
+
+        This function is vardic, accepting each index as a separate argument.
+        """
         func, axis = self._get_func_and_axis(args[0])
         band_name, _ = find_loop_in_bands(func, args[0])
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -352,6 +383,17 @@ class Schedule:
 
     @wrapped_apply
     def buffer_at(self, target, axis):
+        """
+        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
+        instead of immediately writing them to memory.
+
+        Parameters:
+        ----------
+        target: an array written to in a loop.
+
+        axis: the loop index whose body contains writes to target
+        """
+
         _, _, target = find_buffer(self.module, target, self.func_args)
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
@@ -363,6 +405,16 @@ class Schedule:
 
     @wrapped_apply
     def reshape(self, target, shape):
+        """
+        Takes an array in the kernel, `target`, for example if the array is `B`, then would be `target` would be `<schedule>.B`, and reshapes it to tuple `shape`. As an example, if the desired shape is 32 by 4 by 8, the `<shape>` would be `(32, 4, 8)`.
+
+        Parameters:
+        ----------
+        target: The array, represented by a memory, to reshape.
+
+        shape: The new shape of the memory.
+        """
+
         _, _, target = find_buffer(self.module, target, self.func_args)
         eletype = MemRefType(target.result.type).element_type
         memref_type = MemRefType.get(shape, eletype)
@@ -370,6 +422,19 @@ class Schedule:
 
     @wrapped_apply
     def pipeline(self, axis, initiation_interval=1, rewind=False):
+        """
+        Pipelines a loop with index `axis` into `initiation_interval` stages.
+
+        Parameters:
+        ----------
+        axis: The index of the loop to pipeline.
+
+        initiation_interval: The initiation_interval to be used when pipelining.
+
+        rewind: If true, rewinding is allowed, allowing continuous loop pipelining.
+        This is only effective for perfect loop nests inside a top level function.
+        """
+
         i32 = IntegerType.get_unsigned(32)
         ii = IntegerAttr.get(i32, initiation_interval)
         func, axis = self._get_func_and_axis(axis)
@@ -382,6 +447,14 @@ class Schedule:
 
     @wrapped_apply
     def parallel(self, axis):
+        """
+        Instantiates a loop with index `axis` to be computed in parallel with the loops it is nested with.
+
+        Parameters:
+        ----------
+        axis: The index of the loop to be computed in parallel.
+        """
+
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -391,6 +464,14 @@ class Schedule:
 
     @wrapped_apply
     def inline(self, axis=None):
+        """
+        Inlines a function `axis`.
+
+        Parameters:
+        ----------
+        axis: The function to inline.
+        """
+
         assert axis is None or isinstance(axis, str), "Function name must be a string"
         if axis is None:
             axis = self.top_func_name
@@ -399,6 +480,14 @@ class Schedule:
 
     @wrapped_apply
     def dataflow(self, axis):
+        """
+        Applies a "dataflow" attribute to function `axis`. This allows for parallelism if the given function uses streams or the `to` schedule.
+
+        Parameters:
+        ----------
+        axis: The function to add the attribute to.
+        """
+
         if isinstance(axis, str):
             # function
             func = self._find_function(axis)
@@ -434,6 +523,17 @@ class Schedule:
 
     @wrapped_apply
     def compute_at(self, from_loop, target_loop):
+        """
+        If `from_loop` and `target_loop` are indices over the same range, `<schedule>.compute_at(from_loop, target_loop)` merges the two loops, taking
+        the body of `from_loop` and appending it to the body of `target_loop`.
+
+        Parameters:
+        ----------
+        from_loop: The loop whose body is being moved.
+
+        target_loop: The loop whose body is being appended to.
+        """
+
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
         target_band, target_axis = find_loop_in_bands(self.top_func, target_loop)
         from_hdl = allo_d.CreateOpHandleOp(from_band, ip=self.ip)
@@ -447,6 +547,17 @@ class Schedule:
 
     @wrapped_apply
     def reuse_at(self, target, axis):
+        """
+        Takes an array in a kernel, for example if the array is `B`, this would be `<schedule>.B`, accessed by index `axis` and creates a reuse buffer 
+        to reuse values from `target` which are accessed in a sequentially moving window.
+
+        Parameters:
+        ----------
+        target: The array being accessed.
+
+        axis: The loop index used to access values in `target`
+        """
+
         _, _, target = find_buffer(self.module, target, self.func_args)
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
@@ -485,12 +596,36 @@ class Schedule:
 
     @wrapped_apply
     def to(self, target, dst, axis=None, depth=-1):
+        """
+        Takes an array in the kernel, `target`, for example if the array is `B`, this would be `target` would be `<schedule>.B`, 
+        and converts it into a stream. `dst` is the name of the array any value of `target` is written to. 
+        For example if `C[i, j] = B[i, j]`, `dst` would be specified as `"C"`. If values of `<target>` get written to multiple arrays.
+        Multiple calls to `<schedule>.to(...)` may be needed.
+
+        Parameters:
+        ----------
+        target: The array to convert to a stream.
+
+        dst: An array which a value of `target` is written to.
+        """
+
         return prim.to(
             self.module, target, dst, axis, depth, self.func_args, self.top_func_name
         )
 
     @wrapped_apply
     def unfold(self, band_name, axes):
+        """
+        Finds a set of nested loops with name `band_name` and for every `<i>` in list `axes`. 
+        The `<i>th` nested loop is unfolded into a constant number of copies of it's loop body.
+
+        Parameters:
+        ----------
+        band_name: The set of nested loops to unroll.
+
+        axes: A list of the axes to unroll
+        """
+
         assert isinstance(axes, list), "Axes must be a list"
         axes.sort()
         assert axes == list(
@@ -578,6 +713,18 @@ class Schedule:
     # pylint: disable=redefined-builtin
     @wrapped_apply
     def compose(self, schs: list, id=None, instantiate=None):
+        """
+        Uses `schs`, a schedule for a kernel called in this kernel, in this kernel.
+
+        A kernel, `<k1>`, may call another kernel, `<k2>`. This means the output of `<k1>.customize()` will contain the MLIR for the compiled `<k2>`, `<s2'>`. `<s2'>` will not have any custom schedule. 
+        To use a custom schedule, `<s2>`, the compiled `<k2>` with some schedule can be created. 
+        This is inserted into the schedule for this kernel through `self.compose(<s2>)`.
+
+        Parameters:
+        ----------
+        schs: The schedule of a kernel used in `self`.
+        """
+
         def get_name(arg):
             if isinstance(arg, (LoopWrapper, MockBuffer)):
                 arg = copy.copy(arg)
