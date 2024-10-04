@@ -206,10 +206,11 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
   SmallVector<Type, 4> newInputTypes(oldInputTypes.begin(),
                                      oldInputTypes.end());
   auto newOutputTypes = oldFuncType.getResults();
-  Type i1Type = builder.getI1Type();
-  Type memrefType = MemRefType::get({2}, i1Type);
+  Type i8Type = builder.getI8Type();
+  Type memrefType = MemRefType::get({2}, i8Type);
   newInputTypes.push_back(memrefType);
   auto newFuncType = builder.getFunctionType(newInputTypes, newOutputTypes);
+  // Todo: Need to clone attribute
   auto newFuncOp = func::FuncOp::create(loc, newFuncName, newFuncType,
                                         ArrayRef<NamedAttribute>{});
 
@@ -221,8 +222,10 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
   auto outterLoop = builder.create<mlir::affine::AffineForOp>(loc, 0, 2, 1);
   mlir::Value loopIndex = outterLoop.getInductionVar();
   builder.setInsertionPointToStart(outterLoop.getBody());
-  mlir::Value conditionArg =
+  mlir::Value curInst =
       builder.create<mlir::affine::AffineLoadOp>(loc, inst, loopIndex);
+  mlir::Value zeroValue = builder.create<mlir::arith::ConstantOp>(loc, builder.getI8Type(), builder.getI8IntegerAttr(0));
+  mlir::Value conditionArg = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, curInst, zeroValue);
 
   auto &block1 = func1.front();
   auto &block2 = func2.front();
@@ -307,15 +310,14 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
 }
 
 /// Pass entry point
-ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2,
-                           MLIRContext *context) {
+ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2) {
   auto funcOps1 = module1.getOps<func::FuncOp>();
   auto funcOps2 = module2.getOps<func::FuncOp>();
 
   auto it1 = funcOps1.begin();
   auto it2 = funcOps2.begin();
 
-  ModuleOp newModule = ModuleOp::create(UnknownLoc::get(context));
+  ModuleOp newModule = ModuleOp::create(UnknownLoc::get(module1.getContext()));
   OpBuilder builder(newModule.getContext());
 
   while (it1 != funcOps1.end() && it2 != funcOps2.end()) {

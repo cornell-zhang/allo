@@ -156,12 +156,10 @@ static bool memRefDCE(MlirModule &mlir_mod) {
   return applyMemRefDCE(mod);
 }
 
-static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2,
-                               MlirContext &mlir_context) {
+static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2) {
   auto mod1 = unwrap(mlir_mod1);
   auto mod2 = unwrap(mlir_mod2);
-  auto context = unwrap(mlir_context);
-  return wrap(applyUnifyKernels(mod1, mod2, context));
+  return wrap(applyUnifyKernels(mod1, mod2));
 }
 
 //===----------------------------------------------------------------------===//
