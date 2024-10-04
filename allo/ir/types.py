@@ -195,7 +195,9 @@ class Stream(AlloType):
         return f"Stream({self.dtype}[{shape}])"
 
 
-bool = Int(1)
+# boolean type should not be used as i1!
+bool = UInt(1)
+# signed integer types
 int1 = Int(1)
 int8 = Int(8)
 int16 = Int(16)
@@ -217,6 +219,7 @@ int12 = Int(12)
 int13 = Int(13)
 int14 = Int(14)
 int15 = Int(15)
+# unsigned integer types
 uint1 = UInt(1)
 uint8 = UInt(8)
 uint16 = UInt(16)
@@ -238,7 +241,9 @@ uint12 = UInt(12)
 uint13 = UInt(13)
 uint14 = UInt(14)
 uint15 = UInt(15)
+# index type
 index = Index()
+# floating point types
 float16 = Float(16)
 float32 = Float(32)
 float64 = Float(64)

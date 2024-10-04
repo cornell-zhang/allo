@@ -10,6 +10,7 @@ from allo.ir.types import (
     Float,
     Fixed,
     UFixed,
+    bool,
     uint1,
     int32,
     float32,
@@ -405,6 +406,24 @@ def test_multiple_poly_types():
     np_B = np.random.randint(0, 10, (32, 32)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, rtol=1e-5)
+
+
+def test_boolean():
+    def kernel(A: bool[16]) -> bool[16]:
+        B: bool[16] = 0
+        for i in range(16):
+            if A[i]:
+                B[i] = 1
+            else:
+                B[i] = 0
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 2, size=(16)).astype(np.bool)
+    np_B = mod(np_A)
+    np.testing.assert_array_equal(np_A, np_B)
 
 
 ######################################################################
