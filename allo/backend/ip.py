@@ -72,8 +72,9 @@ class IPModule:
         self.args = []
         for arg_type in arg_types:
             arg_type = arg_type.strip()
-            if "[" not in arg_type:
-                self.args.append((arg_type, ()))
+            if "[" not in arg_type or "[]" in arg_type:
+                # scalar
+                self.args.append((arg_type.split("[")[0], ()))
                 continue
             ele_type = arg_type.split("[")[0].strip()
             # pylint: disable=eval-used
