@@ -137,6 +137,22 @@ def test_pointer_generation():
         print("Passed!")
 
 
+def test_scalar_not_array():
+    def top(inst: bool, C: int32[3]):
+        flag: bool = inst[0]
+        if flag:
+            C[0] = C[0] + 1
+
+    s = allo.customize(top)
+    mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
+    assert "bool v0," in mod.hls_code and ",," not in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        C = np.array([1, 2, 3], dtype=np.int32)
+        mod(1, C)
+        np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+        print("Passed!")
+
+
 def test_scalar():
     def case1(C: int32) -> int32:
         return C + 1
