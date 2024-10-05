@@ -137,5 +137,18 @@ def test_pointer_generation():
         print("Passed!")
 
 
+def test_scalar():
+    def case1(C: int32) -> int32:
+        return C + 1
+
+    s = allo.customize(case1)
+    mod = s.build()
+    assert mod(1) == 2
+    print("Passed CPU simulation!")
+    mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
+    assert "int32_t *v1" in mod.hls_code
+    # Note: Should not expect it to run using csim! Need to generate correct binding for mutable scalars in PyBind.
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
