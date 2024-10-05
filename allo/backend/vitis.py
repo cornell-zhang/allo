@@ -300,10 +300,11 @@ def postprocess_hls_code(hls_code, top=None):
             if "[" in var:  # array
                 var = var.split("[")[0]
                 out_str += "  " + dtype + " *" + var + f"{comma}\n"
+                # only add array to interface
+                func_args.append(var)
             else:  # scalar
                 var = var.split(",")[0]
                 out_str += "  " + dtype + " " + var + f"{comma}\n"
-            func_args.append(var)
         elif line.startswith("#endif"):
             out_str += '} // extern "C"\n\n'
             out_str += line + "\n"
