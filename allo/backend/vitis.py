@@ -297,9 +297,14 @@ def postprocess_hls_code(hls_code, top=None):
         elif func_decl:
             dtype, var = line.strip().rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
-            var = var.split("[")[0]
-            out_str += "  " + dtype + " *" + var + f"{comma}\n"
-            func_args.append(var)
+            if "[" in var:  # array
+                var = var.split("[")[0]
+                out_str += "  " + dtype + " *" + var + f"{comma}\n"
+                # only add array to interface
+                func_args.append(var)
+            else:  # scalar
+                var = var.split(",")[0]
+                out_str += "  " + dtype + " " + var + f"{comma}\n"
         elif line.startswith("#endif"):
             out_str += '} // extern "C"\n\n'
             out_str += line + "\n"

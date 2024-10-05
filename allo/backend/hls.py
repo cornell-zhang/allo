@@ -136,12 +136,16 @@ def separate_header(hls_code, top=None):
             arg_type = line.strip()
             _, var = arg_type.rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
-            var = var.split("[")[0]
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
             allo_type = c2allo_type[ele_type]
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((allo_type, shape))
-            sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+            if "[" in var:  # array
+                var = var.split("[")[0]
+                sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+            else:  # scalar
+                var = var.split(",")[0]
+                sig_str += "  " + ele_type + " " + var + f"{comma}\n"
     sig_str += '} // extern "C"\n'
     sig_str += "\n#endif // KERNEL_H\n"
     return sig_str, args

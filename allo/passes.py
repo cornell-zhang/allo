@@ -117,6 +117,9 @@ def generate_input_output_buffers(top_func, flatten=False, mappings=None):
         new_in_types = []
         in_bufs = []
         for i, arg in enumerate(top_func.arguments):
+            if not isinstance(arg.type, MemRefType):
+                new_in_types.append(arg.type)
+                continue
             buf = create_buffer(
                 arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
             )
@@ -140,6 +143,9 @@ def generate_input_output_buffers(top_func, flatten=False, mappings=None):
                     mappings += [None] * len(op.operands)
                 if len(op.operands) > 0:
                     for i, arg in enumerate(op.operands):
+                        if not isinstance(arg.type, MemRefType):
+                            new_out_types.append(arg.type)
+                            continue
                         buf = create_buffer(
                             arg,
                             f"result{i+len(top_func.arguments)}",
