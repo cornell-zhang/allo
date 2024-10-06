@@ -170,13 +170,13 @@ class Schedule:
         """
         `split` will find the loop with loop index `axis` and tile it with each tile size `factor`
         The new inner loop will be named `axis.inner` and the outer loop will be named `axis.outer`
-        
+
         Parameters
         ----------
-        axis: the name of an index in the kernel. 
+        axis: the name of an index in the kernel.
 
         factor: the size of each tile, e.g. the size of the inner nested loop
-        """ 
+        """
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
         ip = InsertionPoint.at_block_terminator(func.entry_block)
@@ -190,7 +190,7 @@ class Schedule:
     def reorder(self, *args):
         """
         Reorders nested loops with indices listed in `args` such that the outermost loop is the first
-        index listed in `args`, the second is the second outermost, and so on. 
+        index listed in `args`, the second is the second outermost, and so on.
 
         This function is vardic, accepting each index as a separate argument.
         """
@@ -212,12 +212,12 @@ class Schedule:
     def unroll(self, axis, factor=0):
         """
         Unrolls a loop with loop index `axis` by `factor`.
-        
+
         Parameters:
         ----------
-        axis: the name of an index in the kernel. 
+        axis: the name of an index in the kernel.
 
-        factor: the factor to unroll by, for example a factor of 2 will cause the body to be duplicated once. 
+        factor: the factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.
         """
 
         func, axis = self._get_func_and_axis(axis)
@@ -548,7 +548,7 @@ class Schedule:
     @wrapped_apply
     def reuse_at(self, target, axis):
         """
-        Takes an array in a kernel, for example if the array is `B`, this would be `<schedule>.B`, accessed by index `axis` and creates a reuse buffer 
+        Takes an array in a kernel, for example if the array is `B`, this would be `<schedule>.B`, accessed by index `axis` and creates a reuse buffer
         to reuse values from `target` which are accessed in a sequentially moving window.
 
         Parameters:
@@ -597,8 +597,8 @@ class Schedule:
     @wrapped_apply
     def to(self, target, dst, axis=None, depth=-1):
         """
-        Takes an array in the kernel, `target`, for example if the array is `B`, this would be `target` would be `<schedule>.B`, 
-        and converts it into a stream. `dst` is the name of the array any value of `target` is written to. 
+        Takes an array in the kernel, `target`, for example if the array is `B`, this would be `target` would be `<schedule>.B`,
+        and converts it into a stream. `dst` is the name of the array any value of `target` is written to.
         For example if `C[i, j] = B[i, j]`, `dst` would be specified as `"C"`. If values of `<target>` get written to multiple arrays.
         Multiple calls to `<schedule>.to(...)` may be needed.
 
@@ -616,7 +616,7 @@ class Schedule:
     @wrapped_apply
     def unfold(self, band_name, axes):
         """
-        Finds a set of nested loops with name `band_name` and for every `<i>` in list `axes`. 
+        Finds a set of nested loops with name `band_name` and for every `<i>` in list `axes`.
         The `<i>th` nested loop is unfolded into a constant number of copies of it's loop body.
 
         Parameters:
@@ -716,8 +716,8 @@ class Schedule:
         """
         Uses `schs`, a schedule for a kernel called in this kernel, in this kernel.
 
-        A kernel, `<k1>`, may call another kernel, `<k2>`. This means the output of `<k1>.customize()` will contain the MLIR for the compiled `<k2>`, `<s2'>`. `<s2'>` will not have any custom schedule. 
-        To use a custom schedule, `<s2>`, the compiled `<k2>` with some schedule can be created. 
+        A kernel, `<k1>`, may call another kernel, `<k2>`. This means the output of `<k1>.customize()` will contain the MLIR for the compiled `<k2>`, `<s2'>`. `<s2'>` will not have any custom schedule.
+        To use a custom schedule, `<s2>`, the compiled `<k2>` with some schedule can be created.
         This is inserted into the schedule for this kernel through `self.compose(<s2>)`.
 
         Parameters:
