@@ -55,6 +55,7 @@ ctype_map = {
     "i32": "int",
     "i64": "long",
     "i128": "__int128_t",  # unverified
+    "ui1": "bool",
     "ui8": "unsigned char",
     "ui16": "unsigned short",
     "ui32": "unsigned int",
@@ -92,21 +93,28 @@ def codegen_host(top, module):
             in_dtype = ctype_map[in_dtype]
         elif in_dtype.startswith("i") or in_dtype.startswith("ui"):
             prefix, bitwidth = in_dtype.split("i")
-            new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
-            in_dtype = ctype_map[new_int_type]
+            if int(bitwidth) == 1:
+                in_dtype = "bool"
+            else:
+                new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
+                in_dtype = ctype_map[new_int_type]
         elif in_dtype.startswith("fixed") or in_dtype.startswith("ufixed"):
             in_dtype = "float"
         else:
             raise ValueError(f"Unsupported input type: {in_dtype}")
         in_shape = [str(i) for i in in_shape]
-        out_str += format_str(
-            f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
-            strip=False,
-        )
-        out_str += format_str(
-            f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}({' * '.join(in_shape)});\n",
-            strip=False,
-        )
+        if len(in_shape) == 0:
+            # scalar
+            out_str += format_str(f"{in_dtype} source_in{i};\n", strip=False)
+        else:
+            out_str += format_str(
+                f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
+                strip=False,
+            )
+            out_str += format_str(
+                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}({' * '.join(in_shape)});\n",
+                strip=False,
+            )
     for i, (out_dtype, out_shape) in enumerate(outputs):
         if out_dtype in ctype_map:
             out_dtype = ctype_map[out_dtype]
@@ -177,11 +185,17 @@ def codegen_host(top, module):
         """
     )
     out_str += "\n"
-    for i in range(len(inputs)):
-        out_str += format_str(
-            f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_bytes_in{i}, source_in{i}.data(), &err));\n",
-            strip=False,
-        )
+    for i, (in_dtype, in_shape) in enumerate(inputs):
+        if i == len(inputs) - 1 and len(outputs) == 0:
+            # suppose the last input is also the output
+            flag = "CL_MEM_READ_WRITE"
+        else:
+            flag = "CL_MEM_READ_ONLY"
+        if len(in_shape) != 0:
+            out_str += format_str(
+                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, size_bytes_in{i}, source_in{i}.data(), &err));\n",
+                strip=False,
+            )
     for i in range(len(outputs)):
         out_str += format_str(
             f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_bytes_out{i}, source_out{i}.data(), &err));\n",
@@ -189,18 +203,27 @@ def codegen_host(top, module):
         )
     out_str += "\n"
     # Set kernel arguments
-    for i in range(len(inputs)):
-        out_str += format_str(
-            f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
-            strip=False,
-        )
+    buf_str = ""
+    for i, (in_dtype, in_shape) in enumerate(inputs):
+        if len(in_shape) == 0:
+            # scalar
+            out_str += format_str(
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, source_in{i}));\n",
+                strip=False,
+            )
+        else:
+            out_str += format_str(
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
+                strip=False,
+            )
+            buf_str += f"buffer_in{i}, "
     for i in range(len(outputs)):
         out_str += format_str(
             f"OCL_CHECK(err, err = krnl_{top}.setArg({len(inputs) + i}, buffer_out{i}));\n",
             strip=False,
         )
     out_str += format_str("// Copy input data to device global memory\n", strip=False)
-    buf_str = ", ".join([f"buffer_in{i}" for i in range(len(inputs))])
+    buf_str = buf_str.strip(", ")
     out_str += format_str(
         "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
         + buf_str
