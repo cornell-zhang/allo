@@ -399,12 +399,22 @@ class HLSModule:
                     f"in_data_{i}",
                     f"{self.project}/input_{i}.h",
                 )
-            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
-            print(cmd)
-            if shell:
-                subprocess.Popen(cmd, shell=True).wait()
+            # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(bitstream_folder):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    subprocess.Popen(cmd, shell=True).wait()
+                else:
+                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
             else:
-                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                print("Build folder exists, skip building")
+                # run the executable
+                cmd = f"cd {self.project}; ./top ../{bitstream_folder}/top.xclbin"
+                subprocess.Popen(cmd, shell=True).wait()
             # suppose the last argument is the output tensor
             args[-1][:] = read_tensor_from_file(
                 inputs[-1][0], inputs[-1][1], f"{self.project}/output.data"

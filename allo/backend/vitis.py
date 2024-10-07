@@ -414,4 +414,5 @@ def write_tensor_to_file(tensor, dtype, shape, name, file_path):
 
 
 def read_tensor_from_file(dtype, shape, file_path):
-    return np.fromfile(file_path, dtype=np_supported_types[dtype]).reshape(shape)
+    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
+    return arr.reshape(shape)
