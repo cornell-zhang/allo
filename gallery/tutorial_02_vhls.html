@@ -218,7 +218,8 @@ We try to implement the <strong>interleaving accumulation</strong> technique pre
 <a class="reference external" href="https://arxiv.org/abs/1805.08288">this paper</a>, which is also viewed as
 the <strong>scalar-vector product</strong> since it changes the computation order of the
 original dot-product.</p>
-<a class="reference internal image-reference" href="../_images/scalar-vector-product.png"><img alt="../_images/scalar-vector-product.png" src="../_images/scalar-vector-product.png" style="width: 600px;" /></a>
+<a class="reference internal image-reference" href="../_images/scalar-vector-product.png"><img alt="../_images/scalar-vector-product.png" src="../_images/scalar-vector-product.png" style="width: 600px;" />
+</a>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>To get more rational of this technique, please refer to the above mentioned
@@ -456,7 +457,45 @@ We have the Vitis environment configured on the Zhang group server, so you can d
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel (marked as <code class="docutils literal notranslate"><span class="pre">o</span></code>) are pipelined
 with Initiation Interval (II) equal to 1. You can also find more detailed information under the <code class="docutils literal notranslate"><span class="pre">report</span></code> folder.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.316 seconds)</p>
+</section>
+<section id="on-board-execution">
+<h2>On-board Execution<a class="headerlink" href="#on-board-execution" title="Link to this heading"><span>¶</span></a></h2>
+<p>After optimizing the design and make sure everything works correctly,
+we can push the generated RTL design to the backend synthesis flow to generate
+the bitstream for FPGA. In Allo, we can directly change the target to <code class="docutils literal notranslate"><span class="pre">hw</span></code>
+to launch the backend synthesis job. It may take several hours to generate the final
+bitstream, so it would be better to run it using <a class="reference external" href="https://github.com/tmux/tmux/wiki">tmux</a>.
+Also, since the C design cannot support returning a new array, we need to
+explicitly create an output array and pass it to the function.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">allo_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">),</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Finally, you should be able to see the generated bitstream under the <code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1</span></code> folder
+(actual board name may be different), and the above test should pass.</p>
+<p>To get more detailed information on the resource usage and performance of the generated design,
+you can check the following files:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.xclbin</span></code>: The generated bitstream.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.link.xclbin.info</span></code>: Frequency of the actual design, which can be found in <code class="docutils literal notranslate"><span class="pre">DATA_CLK</span></code>. By default, it is 300MHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/top/hls_reports/top_csynth.rpt</span></code>: The HLS synthesis report.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt</span></code>: The full utilization report after placement and routing. You can find the following resource usage:</p>
+<ul>
+<li><p>LUT: <code class="docutils literal notranslate"><span class="pre">1.</span> <span class="pre">CLB</span> <span class="pre">Logic</span> <span class="pre">--</span> <span class="pre">CLB</span> <span class="pre">LUTs</span></code></p></li>
+<li><p>FF: <code class="docutils literal notranslate"><span class="pre">1.</span> <span class="pre">CLB</span> <span class="pre">Logic</span> <span class="pre">--</span> <span class="pre">CLB</span> <span class="pre">Registers</span> <span class="pre">--</span> <span class="pre">Register</span> <span class="pre">as</span> <span class="pre">Flip</span> <span class="pre">Flop</span></code></p></li>
+<li><p>BRAM: <code class="docutils literal notranslate"><span class="pre">3.</span> <span class="pre">BLOCKRAM</span> <span class="pre">--</span> <span class="pre">Block</span> <span class="pre">RAM</span> <span class="pre">Tile</span></code></p></li>
+<li><p>DSP: <code class="docutils literal notranslate"><span class="pre">4.</span> <span class="pre">ARITHMETIC</span> <span class="pre">--</span> <span class="pre">DSPs</span></code></p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt</span></code>: The per SLR utilization report after placement and routing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/top/top_vitis_hls.log</span></code>: The log file of the Vitis HLS.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log</span></code>: The log file of the Vivado backend synthesis.</p></li>
+</ul>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.280 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/861a23b0676093686f50a5f922fc6363/tutorial_02_vhls.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_02_vhls.ipynb</span></code></a></p>
@@ -491,6 +530,7 @@ with Initiation Interval (II) equal to 1. You can also find more detailed inform
 <li><a class="reference internal" href="#algorithm-definition">Algorithm Definition</a></li>
 <li><a class="reference internal" href="#scalar-vector-product-for-gemm">Scalar-Vector Product for GEMM</a></li>
 <li><a class="reference internal" href="#codegen-for-vivado-vitis-hls">Codegen for Vivado/Vitis HLS</a></li>
+<li><a class="reference internal" href="#on-board-execution">On-board Execution</a></li>
 </ul>
 </li>
 </ul>
@@ -521,7 +561,7 @@ with Initiation Interval (II) equal to 1. You can also find more detailed inform
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2024, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.0.2.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
