@@ -21,6 +21,7 @@ from .vitis import (
     generate_description_file,
     update_makefile,
     write_tensor_to_file,
+    read_tensor_from_file,
 )
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
@@ -404,5 +405,10 @@ class HLSModule:
                 subprocess.Popen(cmd, shell=True).wait()
             else:
                 subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+            # suppose the last argument is the output tensor
+            args[-1][:] = read_tensor_from_file(
+                inputs[-1][0], inputs[-1][1], f"{self.project}/output.data"
+            )
+            return
         else:
             raise RuntimeError("Not implemented")

@@ -3,9 +3,10 @@
 
 import json
 import textwrap
+import numpy as np
 
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_clostest_pow2
+from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 
 header = """
 //=============================================================================
@@ -408,3 +409,7 @@ def write_tensor_to_file(tensor, dtype, shape, name, file_path):
             f.write(f"[{', '.join(map(str, shape))}] = {{")
             f.write(", ".join([str(i) for i in tensor.flatten()]))
             f.write("};\n")
+
+
+def read_tensor_from_file(dtype, shape, file_path):
+    return np.fromfile(file_path, dtype=np_supported_types[dtype]).reshape(shape)
