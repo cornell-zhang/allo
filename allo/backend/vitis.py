@@ -3,9 +3,10 @@
 
 import json
 import textwrap
+import numpy as np
 
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_clostest_pow2
+from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 
 header = """
 //=============================================================================
@@ -19,7 +20,11 @@ header = """
 #include <random>
 #include <vector>
 #include <iomanip>
+#include <fstream>
 
+"""
+
+main_header = """
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <XCLBIN File>" << std::endl;
@@ -55,6 +60,7 @@ ctype_map = {
     "i32": "int",
     "i64": "long",
     "i128": "__int128_t",  # unverified
+    "ui1": "bool",
     "ui8": "unsigned char",
     "ui16": "unsigned short",
     "ui32": "unsigned int",
@@ -68,11 +74,16 @@ def format_str(s, indent=4, strip=True):
     return textwrap.indent(textwrap.dedent(s), " " * indent)
 
 
+# pylint: disable=too-many-branches
 def codegen_host(top, module):
+    # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
     # Get input/output types
-    out_str = format_str(header, indent=0)
+    out_str = format_str(header, indent=0, strip=False)
+    for i in range(len(inputs)):
+        out_str += format_str(f'#include "input_{i}.h"\n', indent=0, strip=False)
+    out_str += format_str(main_header, indent=0, strip=False)
     out_str += format_str("\ncl::Kernel krnl_" + top + ";\n", strip=False)
     out_str += format_str(
         """
@@ -92,21 +103,30 @@ def codegen_host(top, module):
             in_dtype = ctype_map[in_dtype]
         elif in_dtype.startswith("i") or in_dtype.startswith("ui"):
             prefix, bitwidth = in_dtype.split("i")
-            new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
-            in_dtype = ctype_map[new_int_type]
+            if int(bitwidth) == 1:
+                in_dtype = "bool"
+            else:
+                new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
+                in_dtype = ctype_map[new_int_type]
         elif in_dtype.startswith("fixed") or in_dtype.startswith("ufixed"):
             in_dtype = "float"
         else:
             raise ValueError(f"Unsupported input type: {in_dtype}")
         in_shape = [str(i) for i in in_shape]
-        out_str += format_str(
-            f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
-            strip=False,
-        )
-        out_str += format_str(
-            f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}({' * '.join(in_shape)});\n",
-            strip=False,
-        )
+        if len(in_shape) == 0:
+            # scalar
+            out_str += format_str(
+                f"{in_dtype} source_in{i} = in_data_{i};\n", strip=False
+            )
+        else:
+            out_str += format_str(
+                f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
+                strip=False,
+            )
+            out_str += format_str(
+                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}(in_data_{i}, in_data_{i} + {' * '.join(in_shape)});\n",
+                strip=False,
+            )
     for i, (out_dtype, out_shape) in enumerate(outputs):
         if out_dtype in ctype_map:
             out_dtype = ctype_map[out_dtype]
@@ -177,11 +197,17 @@ def codegen_host(top, module):
         """
     )
     out_str += "\n"
-    for i in range(len(inputs)):
-        out_str += format_str(
-            f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_bytes_in{i}, source_in{i}.data(), &err));\n",
-            strip=False,
-        )
+    for i, (in_dtype, in_shape) in enumerate(inputs):
+        if i == len(inputs) - 1 and len(outputs) == 0:
+            # suppose the last input is also the output
+            flag = "CL_MEM_READ_WRITE"
+        else:
+            flag = "CL_MEM_READ_ONLY"
+        if len(in_shape) != 0:
+            out_str += format_str(
+                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, size_bytes_in{i}, source_in{i}.data(), &err));\n",
+                strip=False,
+            )
     for i in range(len(outputs)):
         out_str += format_str(
             f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_bytes_out{i}, source_out{i}.data(), &err));\n",
@@ -189,18 +215,27 @@ def codegen_host(top, module):
         )
     out_str += "\n"
     # Set kernel arguments
-    for i in range(len(inputs)):
-        out_str += format_str(
-            f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
-            strip=False,
-        )
+    buf_str = ""
+    for i, (in_dtype, in_shape) in enumerate(inputs):
+        if len(in_shape) == 0:
+            # scalar
+            out_str += format_str(
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, source_in{i}));\n",
+                strip=False,
+            )
+        else:
+            out_str += format_str(
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
+                strip=False,
+            )
+            buf_str += f"buffer_in{i}, "
     for i in range(len(outputs)):
         out_str += format_str(
             f"OCL_CHECK(err, err = krnl_{top}.setArg({len(inputs) + i}, buffer_out{i}));\n",
             strip=False,
         )
     out_str += format_str("// Copy input data to device global memory\n", strip=False)
-    buf_str = ", ".join([f"buffer_in{i}" for i in range(len(inputs))])
+    buf_str = buf_str.strip(", ")
     out_str += format_str(
         "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
         + buf_str
@@ -225,15 +260,21 @@ def codegen_host(top, module):
         strip=False,
     )
     out_str += "\n"
-    buf_str = ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
-    if buf_str != "":
-        out_str += format_str(
-            "// Copy Result from Device Global Memory to Host Local Memory\n",
-            strip=False,
-        )
+    out_str += format_str(
+        "// Copy Result from Device Global Memory to Host Local Memory\n",
+        strip=False,
+    )
+    if len(outputs) > 0:
         out_str += format_str(
             "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
-            + buf_str
+            + ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
+            + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+            strip=False,
+        )
+    else:
+        out_str += format_str(
+            "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+            + ", ".join([f"buffer_in{len(inputs) - 1}"])
             + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
             strip=False,
         )
@@ -266,11 +307,31 @@ def codegen_host(top, module):
                   << "only, not for emulation.\\n";
         std::cout << "Please refer to profile summary for kernel execution time for "
                   << "hardware emulation.\\n";
-        std::cout << "TEST PASSED\\n\\n";
+        std::cout << "Finished execution!\\n\\n";
         """,
     )
-    out_str += "\n"
-    out_str += format_str("return EXIT_SUCCESS;\n", strip=False)
+    out_str += "\n\n"
+    assert len(outputs) <= 1, "Only support one output for now"
+    if len(outputs) == 0:
+        out_buf = "source_in" + str(len(inputs) - 1)
+    else:
+        out_buf = "source_out" + str(len(outputs) - 1)
+    out_str += format_str(
+        f"""
+        // Write the output data to file
+        std::ofstream ofile;
+        ofile.open("output.data");
+        if (!ofile) {{
+            std::cerr << "Failed to open output file!" << std::endl;
+            return EXIT_FAILURE;
+        }}
+        for (unsigned i = 0; i < {out_buf}.size(); i++) {{
+            ofile << {out_buf}[i] << std::endl;
+        }}
+        ofile.close();
+        """
+    )
+    out_str += format_str("\nreturn EXIT_SUCCESS;\n", strip=False)
     out_str += "}\n"
     return out_str
 
@@ -336,3 +397,22 @@ def update_makefile(file_name, ext_libs):
     makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
     with open(file_name, "w", encoding="utf-8") as outfile:
         outfile.write(makefile)
+
+
+def write_tensor_to_file(tensor, dtype, shape, name, file_path):
+    # generate C buffers
+    with open(file_path, "w", encoding="utf-8") as f:
+        if len(shape) == 0:
+            # scalar
+            f.write(f"const {ctype_map[dtype]} {name} = {tensor};\n")
+        else:
+            f.write(f"const {ctype_map[dtype]} {name}")
+            # pylint: disable=bad-builtin
+            f.write(f"[{', '.join(map(str, shape))}] = {{")
+            f.write(", ".join([str(i) for i in tensor.flatten()]))
+            f.write("};\n")
+
+
+def read_tensor_from_file(dtype, shape, file_path):
+    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
+    return arr.reshape(shape)

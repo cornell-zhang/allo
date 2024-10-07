@@ -20,6 +20,8 @@ from .vitis import (
     postprocess_hls_code,
     generate_description_file,
     update_makefile,
+    write_tensor_to_file,
+    read_tensor_from_file,
 )
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
@@ -30,6 +32,7 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
+from ..utils import get_func_inputs_outputs
 
 # from .. import primitives as prim
 
@@ -383,12 +386,39 @@ class HLSModule:
                 else:
                     subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
                 return
+            # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
-            print(cmd)
-            if shell:
-                subprocess.Popen(cmd, shell=True).wait()
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, _ = get_func_inputs_outputs(func)
+            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_dtype,
+                    in_shape,
+                    f"in_data_{i}",
+                    f"{self.project}/input_{i}.h",
+                )
+            # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(bitstream_folder):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    subprocess.Popen(cmd, shell=True).wait()
+                else:
+                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
             else:
-                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                print("Build folder exists, skip building")
+                # run the executable
+                cmd = f"cd {self.project}; ./top ../{bitstream_folder}/top.xclbin"
+                subprocess.Popen(cmd, shell=True).wait()
+            # suppose the last argument is the output tensor
+            args[-1][:] = read_tensor_from_file(
+                inputs[-1][0], inputs[-1][1], f"{self.project}/output.data"
+            )
+            return
         else:
             raise RuntimeError("Not implemented")
