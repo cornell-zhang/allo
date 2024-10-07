@@ -173,9 +173,9 @@ class Schedule:
 
         Parameters
         ----------
-        axis: the name of an index in the kernel.
+        axis: The name of an index in the kernel.
 
-        factor: the size of each tile, e.g. the size of the inner nested loop
+        factor: The size of each tile, e.g. the size of the inner nested loop.
         """
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
@@ -215,9 +215,9 @@ class Schedule:
 
         Parameters:
         ----------
-        axis: the name of an index in the kernel.
+        axis: The name of an index in the kernel.
 
-        factor: the factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.
+        factor: The factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.
         """
 
         func, axis = self._get_func_and_axis(axis)
@@ -265,7 +265,7 @@ class Schedule:
 
         partition_type: The type of partition.
 
-        factor: the number of arrays created by a block or cyclic partition.
+        factor: The number of arrays created by a block or cyclic partition.
 
         dim: The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.
         """
@@ -406,9 +406,9 @@ class Schedule:
 
         Parameters:
         ----------
-        target: an array written to in a loop.
+        target: An array written to in a loop.
 
-        axis: the loop index whose body contains writes to target
+        axis: The loop index whose body contains writes to target
         """
 
         _, _, target = find_buffer(self.module, target, self.func_args)
