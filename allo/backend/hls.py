@@ -20,6 +20,7 @@ from .vitis import (
     postprocess_hls_code,
     generate_description_file,
     update_makefile,
+    write_tensor_to_file,
 )
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
@@ -30,6 +31,7 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
+from ..utils import get_func_inputs_outputs
 
 # from .. import primitives as prim
 
@@ -383,7 +385,19 @@ class HLSModule:
                 else:
                     subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
                 return
+            # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, _ = get_func_inputs_outputs(func)
+            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_dtype,
+                    in_shape,
+                    f"in_data_{i}",
+                    f"{self.project}/input_{i}.h",
+                )
             cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
             print(cmd)
             if shell:

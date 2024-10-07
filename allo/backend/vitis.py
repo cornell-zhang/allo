@@ -19,7 +19,11 @@ header = """
 #include <random>
 #include <vector>
 #include <iomanip>
+#include <fstream>
 
+"""
+
+main_header = """
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <XCLBIN File>" << std::endl;
@@ -73,7 +77,10 @@ def codegen_host(top, module):
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
     # Get input/output types
-    out_str = format_str(header, indent=0)
+    out_str = format_str(header, indent=0, strip=False)
+    for i in range(len(inputs)):
+        out_str += format_str(f'#include "input_{i}.h"\n', indent=0, strip=False)
+    out_str += format_str(main_header, indent=0, strip=False)
     out_str += format_str("\ncl::Kernel krnl_" + top + ";\n", strip=False)
     out_str += format_str(
         """
@@ -105,14 +112,16 @@ def codegen_host(top, module):
         in_shape = [str(i) for i in in_shape]
         if len(in_shape) == 0:
             # scalar
-            out_str += format_str(f"{in_dtype} source_in{i};\n", strip=False)
+            out_str += format_str(
+                f"{in_dtype} source_in{i} = in_data_{i};\n", strip=False
+            )
         else:
             out_str += format_str(
                 f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
                 strip=False,
             )
             out_str += format_str(
-                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}({' * '.join(in_shape)});\n",
+                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}(in_data_{i}, in_data_{i} + {' * '.join(in_shape)});\n",
                 strip=False,
             )
     for i, (out_dtype, out_shape) in enumerate(outputs):
@@ -289,11 +298,31 @@ def codegen_host(top, module):
                   << "only, not for emulation.\\n";
         std::cout << "Please refer to profile summary for kernel execution time for "
                   << "hardware emulation.\\n";
-        std::cout << "TEST PASSED\\n\\n";
+        std::cout << "Finished execution!\\n\\n";
         """,
     )
-    out_str += "\n"
-    out_str += format_str("return EXIT_SUCCESS;\n", strip=False)
+    out_str += "\n\n"
+    assert len(outputs) <= 1, "Only support one output for now"
+    if len(outputs) == 0:
+        out_buf = "source_in" + str(len(inputs) - 1)
+    else:
+        out_buf = "source_out" + str(len(outputs) - 1)
+    out_str += format_str(
+        f"""
+        // Write the output data to file
+        std::ofstream ofile;
+        ofile.open("output.data");
+        if (!ofile) {{
+            std::cerr << "Failed to open output file!" << std::endl;
+            return EXIT_FAILURE;
+        }}
+        for (unsigned i = 0; i < {out_buf}.size(); i++) {{
+            ofile << {out_buf}[i] << std::endl;
+        }}
+        ofile.close();
+        """
+    )
+    out_str += format_str("\nreturn EXIT_SUCCESS;\n", strip=False)
     out_str += "}\n"
     return out_str
 
@@ -359,3 +388,16 @@ def update_makefile(file_name, ext_libs):
     makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
     with open(file_name, "w", encoding="utf-8") as outfile:
         outfile.write(makefile)
+
+
+def write_tensor_to_file(tensor, dtype, shape, name, file_path):
+    # generate C buffers
+    with open(file_path, "w", encoding="utf-8") as f:
+        if len(shape) == 0:
+            # scalar
+            f.write(f"const {ctype_map[dtype]} {name} = {tensor};\n")
+        else:
+            f.write(f"const {ctype_map[dtype]} {name}")
+            f.write(f"[{', '.join(map(str, shape))}] = {{")
+            f.write(", ".join([str(i) for i in tensor.flatten()]))
+            f.write("};\n")
