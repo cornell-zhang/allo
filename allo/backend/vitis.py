@@ -74,6 +74,7 @@ def format_str(s, indent=4, strip=True):
 
 
 def codegen_host(top, module):
+    # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
     # Get input/output types
@@ -257,15 +258,21 @@ def codegen_host(top, module):
         strip=False,
     )
     out_str += "\n"
-    buf_str = ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
-    if buf_str != "":
-        out_str += format_str(
-            "// Copy Result from Device Global Memory to Host Local Memory\n",
-            strip=False,
-        )
+    out_str += format_str(
+        "// Copy Result from Device Global Memory to Host Local Memory\n",
+        strip=False,
+    )
+    if len(outputs) > 0:
         out_str += format_str(
             "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
-            + buf_str
+            + ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
+            + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+            strip=False,
+        )
+    else:
+        out_str += format_str(
+            "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+            + ", ".join([f"buffer_in{len(inputs) - 1}"])
             + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
             strip=False,
         )
