@@ -207,24 +207,24 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 #    allo_C = np.zeros((M, N), dtype=np.float32)
 #    mod(np_A, np_B, allo_C)
 #    np.testing.assert_allclose(allo_C, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
-# 
+#
 # Finally, you should be able to see the generated bitstream under the ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1`` folder
 # (actual board name may be different), and the above test should pass.
 
 # %%
 # To get more detailed information on the resource usage and performance of the generated design,
 # you can check the following files:
-# 
+#
 # - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.xclbin``: The generated bitstream.
 # - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/top/hls_reports/top_csynth.rpt``: The HLS synthesis report.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt``: The full utilization report after placement and routing. You can find the following resource usage:
-# 
+#
 #   - LUT: ``1. CLB Logic -- CLB LUTs``
 #   - FF: ``1. CLB Logic -- CLB Registers -- Register as Flip Flop``
 #   - BRAM: ``3. BLOCKRAM -- Block RAM Tile``
 #   - DSP: ``4. ARITHMETIC -- DSPs``
-# 
+#
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt``: The per SLR utilization report after placement and routing.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/top/top_vitis_hls.log``: The log file of the Vitis HLS.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log``: The log file of the Vivado backend synthesis.

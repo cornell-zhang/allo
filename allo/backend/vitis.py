@@ -74,6 +74,7 @@ def format_str(s, indent=4, strip=True):
     return textwrap.indent(textwrap.dedent(s), " " * indent)
 
 
+# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
@@ -406,6 +407,7 @@ def write_tensor_to_file(tensor, dtype, shape, name, file_path):
             f.write(f"const {ctype_map[dtype]} {name} = {tensor};\n")
         else:
             f.write(f"const {ctype_map[dtype]} {name}")
+            # pylint: disable=bad-builtin
             f.write(f"[{', '.join(map(str, shape))}] = {{")
             f.write(", ".join([str(i) for i in tensor.flatten()]))
             f.write("};\n")
