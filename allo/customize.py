@@ -252,6 +252,23 @@ class Schedule:
 
     @wrapped_apply
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
+        """
+        Partitions a given array, for example if the array is `B`, this would be `<schedule>.B`.
+        There are three types, `Partition.Complete`, `Partition.Block`, and `Partition.cyclic`.
+        block: The original array is split into `factor` equally sized blocks of consecutive elements of the original array
+        cyclic:The original array is split into `factor` equally sized blocks interleaving the elements of the original array.
+        complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.
+
+        Parameters:
+        ----------
+        target: The array to partition.
+
+        partition_type: The type of partition.
+
+        factor: the number of arrays created by a block or cyclic partition.
+
+        dim: The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.
+        """
         # TODO: test whether the partition has conflicts for different functions
         if partition_type > 2:
             raise AlloValueError("Invalid partition type")
