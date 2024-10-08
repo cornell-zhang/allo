@@ -1,16 +1,16 @@
 ..  Copyright Allo authors. All Rights Reserved.
     SPDX-License-Identifier: Apache-2.0
 
-allo.customize
-==============
+Schedule Primitives
+===================
 
 .. autoclass:: allo.customize.Schedule
     :members:
     :autosummary:
 
-allo.ir
-==============
+Data Types
+==========
 
-.. autoclass:: allo.ir
+.. autoclass:: allo.ir.types
     :members:
     :autosummary:
