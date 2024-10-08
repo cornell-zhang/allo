@@ -31,13 +31,14 @@ Import Allo
 -----------
 First, we import the necessary packages.
 
-.. GENERATED FROM PYTHON SOURCE LINES 18-22
+.. GENERATED FROM PYTHON SOURCE LINES 18-23
 
 .. code-block:: Python
 
 
     import allo
     from allo.ir.types import float32
+    import numpy as np
 
 
 
@@ -46,7 +47,7 @@ First, we import the necessary packages.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 23-29
+.. GENERATED FROM PYTHON SOURCE LINES 24-30
 
 Algorithm Definition
 --------------------
@@ -55,12 +56,12 @@ However, we will make some changes to demonstrate more features of the DSL.
 
 We can define the constants as follows, which denotes the matrix sizes:
 
-.. GENERATED FROM PYTHON SOURCE LINES 29-32
+.. GENERATED FROM PYTHON SOURCE LINES 30-33
 
 .. code-block:: Python
 
 
-    M, N, K = 1024, 1024, 1024
+    M, N, K = 32, 32, 32
 
 
 
@@ -69,7 +70,7 @@ We can define the constants as follows, which denotes the matrix sizes:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 33-48
+.. GENERATED FROM PYTHON SOURCE LINES 34-49
 
 Here, we define the main computation of the GEMM but use ``float32`` as the
 data type. Notice that users can easily leverage the previously defined arguments
@@ -87,7 +88,7 @@ computation of ``C[i, j]`` will be accumulated along the ``k`` dimension.
 This annotation is necessary for later optimizations, since Allo leverages
 this information to generate correct intermediate buffers.
 
-.. GENERATED FROM PYTHON SOURCE LINES 48-58
+.. GENERATED FROM PYTHON SOURCE LINES 49-59
 
 .. code-block:: Python
 
@@ -108,7 +109,7 @@ this information to generate correct intermediate buffers.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 59-75
+.. GENERATED FROM PYTHON SOURCE LINES 60-76
 
 Scalar-Vector Product for GEMM
 ------------------------------
@@ -127,7 +128,7 @@ original dot-product.
    To get more rational of this technique, please refer to the above mentioned
    paper from Torsten Hoefler's group.
 
-.. GENERATED FROM PYTHON SOURCE LINES 75-78
+.. GENERATED FROM PYTHON SOURCE LINES 76-79
 
 .. code-block:: Python
 
@@ -141,12 +142,12 @@ original dot-product.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 79-81
+.. GENERATED FROM PYTHON SOURCE LINES 80-82
 
 We first reorder the inner reduction loop with the middle loop.
 This is used to change the computation order of matrix multiplication.
 
-.. GENERATED FROM PYTHON SOURCE LINES 81-85
+.. GENERATED FROM PYTHON SOURCE LINES 82-86
 
 .. code-block:: Python
 
@@ -163,23 +164,23 @@ This is used to change the computation order of matrix multiplication.
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
-        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
-        affine.for %arg2 = 0 to 1024 {
-          affine.for %arg3 = 0 to 1024 {
-            affine.for %arg4 = 0 to 1024 {
-              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
+        affine.for %arg2 = 0 to 32 {
+          affine.for %arg3 = 0 to 32 {
+            affine.for %arg4 = 0 to 32 {
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<32x32xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<32x32xf32>
               %2 = arith.mulf %0, %1 : f32
-              %3 = affine.load %alloc[%arg2, %arg4] {from = "C"} : memref<1024x1024xf32>
+              %3 = affine.load %alloc[%arg2, %arg4] {from = "C"} : memref<32x32xf32>
               %4 = arith.addf %3, %2 : f32
-              affine.store %4, %alloc[%arg2, %arg4] {to = "C"} : memref<1024x1024xf32>
+              affine.store %4, %alloc[%arg2, %arg4] {to = "C"} : memref<32x32xf32>
             } {loop_name = "j"}
           } {loop_name = "k", op_name = "S_k_0", reduction}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %alloc : memref<1024x1024xf32>
+        return %alloc : memref<32x32xf32>
       }
     }
 
@@ -187,7 +188,7 @@ This is used to change the computation order of matrix multiplication.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 86-92
+.. GENERATED FROM PYTHON SOURCE LINES 87-93
 
 .. note::
 
@@ -196,14 +197,14 @@ This is used to change the computation order of matrix multiplication.
    the ``j`` loop becomes imperfect, while MLIR only supports reordering perfect
    loops.
 
-.. GENERATED FROM PYTHON SOURCE LINES 94-98
+.. GENERATED FROM PYTHON SOURCE LINES 95-99
 
 Next, we create a new buffer for the output tensor ``C``.
 We provide a ``.buffer_at()`` primitive for users to quickly create a new buffer
 along a specific axis. Since Allo has attached all the tensors to the function,
 we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the schedule.
 
-.. GENERATED FROM PYTHON SOURCE LINES 98-102
+.. GENERATED FROM PYTHON SOURCE LINES 99-103
 
 .. code-block:: Python
 
@@ -220,31 +221,31 @@ we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the s
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
-        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
-        affine.for %arg2 = 0 to 1024 {
-          %alloc_0 = memref.alloc() : memref<1024xf32>
-          affine.for %arg3 = 0 to 1024 {
-            affine.store %cst, %alloc_0[%arg3] : memref<1024xf32>
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
+        affine.for %arg2 = 0 to 32 {
+          %alloc_0 = memref.alloc() : memref<32xf32>
+          affine.for %arg3 = 0 to 32 {
+            affine.store %cst, %alloc_0[%arg3] : memref<32xf32>
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
-          affine.for %arg3 = 0 to 1024 {
-            affine.for %arg4 = 0 to 1024 {
-              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+          affine.for %arg3 = 0 to 32 {
+            affine.for %arg4 = 0 to 32 {
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<32x32xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<32x32xf32>
               %2 = arith.mulf %0, %1 : f32
-              %3 = affine.load %alloc_0[%arg4] : memref<1024xf32>
+              %3 = affine.load %alloc_0[%arg4] : memref<32xf32>
               %4 = arith.addf %3, %2 : f32
-              affine.store %4, %alloc_0[%arg4] : memref<1024xf32>
+              affine.store %4, %alloc_0[%arg4] : memref<32xf32>
             } {loop_name = "j"}
           } {loop_name = "k", op_name = "S_k_0", reduction}
-          affine.for %arg3 = 0 to 1024 {
-            %0 = affine.load %alloc_0[%arg3] : memref<1024xf32>
-            affine.store %0, %alloc[%arg2, %arg3] : memref<1024x1024xf32>
+          affine.for %arg3 = 0 to 32 {
+            %0 = affine.load %alloc_0[%arg3] : memref<32xf32>
+            affine.store %0, %alloc[%arg2, %arg3] : memref<32x32xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %alloc : memref<1024x1024xf32>
+        return %alloc : memref<32x32xf32>
       }
     }
 
@@ -252,18 +253,18 @@ we can directly use ``<schedule>.<tensor>`` to access a specific tensor in the s
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 103-107
+.. GENERATED FROM PYTHON SOURCE LINES 104-108
 
 From the above generated code, we can see that Allo automatically
 creates an intermediate buffer ``%1`` for ``C`` and attach it inside the ``i`` loop.
 Also two additional loop nested named ``j_init`` and ``j_back`` are created to
 initialize and write the intermediate buffer back to output tensor.
 
-.. GENERATED FROM PYTHON SOURCE LINES 109-110
+.. GENERATED FROM PYTHON SOURCE LINES 110-111
 
 Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
 
-.. GENERATED FROM PYTHON SOURCE LINES 110-114
+.. GENERATED FROM PYTHON SOURCE LINES 111-115
 
 .. code-block:: Python
 
@@ -280,31 +281,31 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
  .. code-block:: none
 
     module {
-      func.func @gemm(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>) -> memref<1024x1024xf32> attributes {itypes = "__", otypes = "_"} {
-        %alloc = memref.alloc() {name = "C"} : memref<1024x1024xf32>
+      func.func @gemm(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) -> memref<32x32xf32> attributes {itypes = "__", otypes = "_"} {
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xf32>
         %cst = arith.constant 0.000000e+00 : f32
-        linalg.fill ins(%cst : f32) outs(%alloc : memref<1024x1024xf32>)
-        affine.for %arg2 = 0 to 1024 {
-          %alloc_0 = memref.alloc() : memref<1024xf32>
-          affine.for %arg3 = 0 to 1024 {
-            affine.store %cst, %alloc_0[%arg3] : memref<1024xf32>
+        linalg.fill ins(%cst : f32) outs(%alloc : memref<32x32xf32>)
+        affine.for %arg2 = 0 to 32 {
+          %alloc_0 = memref.alloc() : memref<32xf32>
+          affine.for %arg3 = 0 to 32 {
+            affine.store %cst, %alloc_0[%arg3] : memref<32xf32>
           } {buffer, loop_name = "j_init", pipeline_ii = 1 : i32}
-          affine.for %arg3 = 0 to 1024 {
-            affine.for %arg4 = 0 to 1024 {
-              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<1024x1024xf32>
-              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<1024x1024xf32>
+          affine.for %arg3 = 0 to 32 {
+            affine.for %arg4 = 0 to 32 {
+              %0 = affine.load %arg0[%arg2, %arg3] {from = "A"} : memref<32x32xf32>
+              %1 = affine.load %arg1[%arg3, %arg4] {from = "B"} : memref<32x32xf32>
               %2 = arith.mulf %0, %1 : f32
-              %3 = affine.load %alloc_0[%arg4] : memref<1024xf32>
+              %3 = affine.load %alloc_0[%arg4] : memref<32xf32>
               %4 = arith.addf %3, %2 : f32
-              affine.store %4, %alloc_0[%arg4] : memref<1024xf32>
+              affine.store %4, %alloc_0[%arg4] : memref<32xf32>
             } {loop_name = "j", pipeline_ii = 1 : ui32}
           } {loop_name = "k", op_name = "S_k_0", reduction}
-          affine.for %arg3 = 0 to 1024 {
-            %0 = affine.load %alloc_0[%arg3] : memref<1024xf32>
-            affine.store %0, %alloc[%arg2, %arg3] : memref<1024x1024xf32>
+          affine.for %arg3 = 0 to 32 {
+            %0 = affine.load %alloc_0[%arg3] : memref<32xf32>
+            affine.store %0, %alloc[%arg2, %arg3] : memref<32x32xf32>
           } {buffer, loop_name = "j_back", pipeline_ii = 1 : i32}
         } {loop_name = "i", op_name = "S_i_j_0"}
-        return %alloc : memref<1024x1024xf32>
+        return %alloc : memref<32x32xf32>
       }
     }
 
@@ -312,7 +313,7 @@ Lastly, we pipeline the ``j`` loop in order to achieve the best performance.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 115-120
+.. GENERATED FROM PYTHON SOURCE LINES 116-121
 
 Codegen for Vivado/Vitis HLS
 ----------------------------
@@ -320,7 +321,7 @@ Similar to the CPU execution, we only need to change the target of the ``.build(
 in order to target different backends. Here, we use ``vhls`` as the target to generate
 Vivado/Vitis HLS code, which will directly returns the generated code as a string.
 
-.. GENERATED FROM PYTHON SOURCE LINES 120-124
+.. GENERATED FROM PYTHON SOURCE LINES 121-125
 
 .. code-block:: Python
 
@@ -352,23 +353,23 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
     #include <stdint.h>
     using namespace std;
     void gemm(
-      float v0[1024][1024],
-      float v1[1024][1024],
-      float v2[1024][1024]
+      float v0[32][32],
+      float v1[32][32],
+      float v2[32][32]
     ) {     // L2
-      for (int v3 = 0; v3 < 1024; v3++) {   // L5
-        for (int v4 = 0; v4 < 1024; v4++) { // L5
+      for (int v3 = 0; v3 < 32; v3++) {     // L5
+        for (int v4 = 0; v4 < 32; v4++) {   // L5
           v2[v3][v4] = 0.000000;    // L5
         }
       }
-      l_S_i_j_0_i: for (int i = 0; i < 1024; i++) { // L6
-        float v6[1024];     // L7
-        l_j_init: for (int j_init = 0; j_init < 1024; j_init++) {   // L8
+      l_S_i_j_0_i: for (int i = 0; i < 32; i++) {   // L6
+        float v6[32];       // L7
+        l_j_init: for (int j_init = 0; j_init < 32; j_init++) {     // L8
         #pragma HLS pipeline II=1
           v6[j_init] = 0.000000;    // L9
         }
-        l_S_k_0_k: for (int k = 0; k < 1024; k++) { // L11
-          l_j: for (int j = 0; j < 1024; j++) {     // L12
+        l_S_k_0_k: for (int k = 0; k < 32; k++) {   // L11
+          l_j: for (int j = 0; j < 32; j++) {       // L12
           #pragma HLS pipeline II=1
             float v10 = v0[i][k];   // L13
             float v11 = v1[k][j];   // L14
@@ -378,7 +379,7 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
             v6[j] = v14;    // L18
           }
         }
-        l_j_back: for (int j_back = 0; j_back < 1024; j_back++) {   // L21
+        l_j_back: for (int j_back = 0; j_back < 32; j_back++) {     // L21
         #pragma HLS pipeline II=1
           float v16 = v6[j_back];   // L22
           v2[i][j_back] = v16;      // L23
@@ -391,7 +392,7 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 125-135
+.. GENERATED FROM PYTHON SOURCE LINES 126-136
 
 We can see that the generated code preserves the same structure as the IR, and inserts
 necessary headers and pragmas for Vivado/Vitis HLS. The generated code can be directly passed
@@ -404,14 +405,14 @@ to Vivado/Vitis HLS to generate RTL designs.
    and the estimated reports may be different, as the newer version of Vitis HLS provides better
    automatic optimizations.
 
-.. GENERATED FROM PYTHON SOURCE LINES 137-141
+.. GENERATED FROM PYTHON SOURCE LINES 138-142
 
 We also provide an easy way to invoke Vitis HLS from Allo. Users can simply provide
 the synthesis mode that are supported by Vitis HLS (e.g., ``csim``, ``csyn``, ``sw_emu``,
 ``hw_emu``, and ``hw``), and the target project folder name. Allo will automatically generate
 the HLS project and invoke the compiler to generate the RTL design.
 
-.. GENERATED FROM PYTHON SOURCE LINES 141-144
+.. GENERATED FROM PYTHON SOURCE LINES 142-145
 
 .. code-block:: Python
 
@@ -425,13 +426,12 @@ the HLS project and invoke the compiler to generate the RTL design.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 145-163
+.. GENERATED FROM PYTHON SOURCE LINES 146-164
 
 You will see a ``gemm.prj`` folder is generated in the current directory:
 
 - ``host.cpp``: The host (CPU) code that invokes the generated accelerator.
 - ``kernel.cpp``: The generated accelerator code.
-- ``run.tcl``: The Vivado HLS script that can be used to run the Vivado HLS project.
 - ``Makefile``: Defined some shorthands for compiling the project.
 
 To run Vitis HLS, you can simply invoke the built module without passing any arguments into it.
@@ -440,41 +440,42 @@ To run Vitis HLS, you can simply invoke the built module without passing any arg
 
    You need to configure the Vitis HLS environment before running the generated code.
    We have the Vitis environment configured on the Zhang group server, so you can directly
-   ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment.
+   ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment, which
+   targets the AMD U280 FPGA board.
 
 .. code-block:: python
 
    mod()
 
-.. GENERATED FROM PYTHON SOURCE LINES 165-190
+.. GENERATED FROM PYTHON SOURCE LINES 166-191
 
 After executing the above command, you can check the following report under ``gemm.prj/out.prj/solution1/syn/report/csynth.rpt``.
 
 .. code-block:: python
 
-   +--------------------------------------------------+------------+-----------+----------+------------+---------+
-   |                      Modules                     |  Latency   |  Latency  | Iteration|            |   Trip  |
-   |                      & Loops                     |  (cycles)  |    (ns)   |  Latency |  Interval  |  Count  |
-   +--------------------------------------------------+------------+-----------+----------+------------+---------+
-   |+ gemm                                            |  1080059934|  3.597e+09|         -|  1080059935|        -|
-   | + gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2  |     1048578|  3.492e+06|         -|     1048578|        -|
-   |  o VITIS_LOOP_44_1_VITIS_LOOP_45_2               |     1048576|  3.492e+06|         2|           1|  1048576|
-   | o l_S_buf0_buf0_l_0_l_buf0_l_1                   |     1048576|  3.492e+06|         2|           1|  1048576|
-   | o l_S_buf1_buf1_l_0_l_buf1_l_1                   |     1048576|  3.492e+06|         2|           1|  1048576|
-   | o l_S_i_j_0_i                                    |  1075865600|  3.583e+09|   1050650|           -|     1024|
-   |  + gemm_Pipeline_l_j_init                        |        1026|  3.417e+03|         -|        1026|        -|
-   |   o l_j_init                                     |        1024|  3.410e+03|         1|           1|     1024|
-   |  + gemm_Pipeline_l_S_k_0_k_l_j                   |     1048591|  3.492e+06|         -|     1048591|        -|
-   |   o l_S_k_0_k_l_j                                |     1048589|  3.492e+06|        15|           1|  1048576|
-   |  + gemm_Pipeline_l_j_back                        |        1027|  3.420e+03|         -|        1027|        -|
-   |   o l_j_back                                     |        1025|  3.413e+03|         3|           1|     1024|
-   | o l_S_result2_result2_l_0_l_result2_l_1          |     1048578|  3.492e+06|         4|           1|  1048576|
-   +--------------------------------------------------+------------+-----------+----------+------------+---------+
+   +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+   |                      Modules                     | Latency |  Latency  | Iteration|         | Trip |          |         |         |             |            |     |
+   |                      & Loops                     | (cycles)|    (ns)   |  Latency | Interval| Count| Pipelined|  BRAM   |   DSP   |      FF     |     LUT    | URAM|
+   +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+   |+ gemm                                            |    39934|  1.331e+05|         -|    39935|     -|        no|  6 (~0%)|  5 (~0%)|  19074 (~0%)|  29069 (2%)|    -|
+   | + gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2  |     1026|  3.420e+03|         -|     1026|     -|        no|        -|        -|     36 (~0%)|   169 (~0%)|    -|
+   |  o VITIS_LOOP_44_1_VITIS_LOOP_45_2               |     1024|  3.413e+03|         2|        1|  1024|       yes|        -|        -|            -|           -|    -|
+   | o l_S_buf0_buf0_l_0_l_buf0_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+   | o l_S_buf1_buf1_l_0_l_buf1_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+   | o l_S_i_j_0_i                                    |    35616|  1.187e+05|      1113|        -|    32|        no|        -|        -|            -|           -|    -|
+   |  + gemm_Pipeline_l_j_init                        |       34|    113.322|         -|       34|     -|        no|        -|        -|      8 (~0%)|    50 (~0%)|    -|
+   |   o l_j_init                                     |       32|    106.656|         1|        1|    32|       yes|        -|        -|            -|           -|    -|
+   |  + gemm_Pipeline_l_S_k_0_k_l_j                   |     1039|  3.463e+03|         -|     1039|     -|        no|        -|  5 (~0%)|    759 (~0%)|   494 (~0%)|    -|
+   |   o l_S_k_0_k_l_j                                |     1037|  3.456e+03|        15|        1|  1024|       yes|        -|        -|            -|           -|    -|
+   |  + gemm_Pipeline_l_j_back                        |       34|    113.322|         -|       34|     -|        no|        -|        -|     15 (~0%)|    78 (~0%)|    -|
+   |   o l_j_back                                     |       32|    106.656|         2|        1|    32|       yes|        -|        -|            -|           -|    -|
+   | o l_S_result2_result2_l_0_l_result2_l_1          |     1026|  3.420e+03|         4|        1|  1024|       yes|        -|        -|            -|           -|    -|
+   +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
 
 From the above output, we can clearly see that all the loops inside the GEMM kernel (marked as ``o``) are pipelined
 with Initiation Interval (II) equal to 1. You can also find more detailed information under the ``report`` folder.
 
-.. GENERATED FROM PYTHON SOURCE LINES 192-213
+.. GENERATED FROM PYTHON SOURCE LINES 193-214
 
 On-board Execution
 ------------------
@@ -498,14 +499,14 @@ explicitly create an output array and pass it to the function.
 Finally, you should be able to see the generated bitstream under the ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1`` folder
 (actual board name may be different), and the above test should pass.
 
-.. GENERATED FROM PYTHON SOURCE LINES 215-231
+.. GENERATED FROM PYTHON SOURCE LINES 216-232
 
 To get more detailed information on the resource usage and performance of the generated design,
 you can check the following files:
 
-- ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.xclbin``: The generated bitstream.
-- ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
-- ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/top/hls_reports/top_csynth.rpt``: The HLS synthesis report.
+- ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.xclbin``: The generated bitstream.
+- ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
+- ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/gemm/hls_reports/gemm_csynth.rpt``: The HLS synthesis report.
 - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt``: The full utilization report after placement and routing. You can find the following resource usage:
 
   - LUT: ``1. CLB Logic -- CLB LUTs``
@@ -514,13 +515,13 @@ you can check the following files:
   - DSP: ``4. ARITHMETIC -- DSPs``
 
 - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt``: The per SLR utilization report after placement and routing.
-- ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/top/top_vitis_hls.log``: The log file of the Vitis HLS.
+- ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/gemm/gemm_vitis_hls.log``: The log file of the Vitis HLS.
 - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log``: The log file of the Vivado backend synthesis.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.277 seconds)
+   **Total running time of the script:** (0 minutes 0.326 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:

@@ -18,6 +18,7 @@ First, we import the necessary packages.
 
 import allo
 from allo.ir.types import float32
+import numpy as np
 
 ##############################################################################
 # Algorithm Definition
@@ -27,7 +28,7 @@ from allo.ir.types import float32
 #
 # We can define the constants as follows, which denotes the matrix sizes:
 
-M, N, K = 1024, 1024, 1024
+M, N, K = 32, 32, 32
 
 # %%
 # Here, we define the main computation of the GEMM but use ``float32`` as the
@@ -146,7 +147,6 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 #
 # - ``host.cpp``: The host (CPU) code that invokes the generated accelerator.
 # - ``kernel.cpp``: The generated accelerator code.
-# - ``run.tcl``: The Vivado HLS script that can be used to run the Vivado HLS project.
 # - ``Makefile``: Defined some shorthands for compiling the project.
 #
 # To run Vitis HLS, you can simply invoke the built module without passing any arguments into it.
@@ -155,7 +155,8 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 #
 #    You need to configure the Vitis HLS environment before running the generated code.
 #    We have the Vitis environment configured on the Zhang group server, so you can directly
-#    ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment.
+#    ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment, which
+#    targets the AMD U280 FPGA board.
 #
 # .. code-block:: python
 #
@@ -166,24 +167,24 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 #
 # .. code-block:: python
 #
-#    +--------------------------------------------------+------------+-----------+----------+------------+---------+
-#    |                      Modules                     |  Latency   |  Latency  | Iteration|            |   Trip  |
-#    |                      & Loops                     |  (cycles)  |    (ns)   |  Latency |  Interval  |  Count  |
-#    +--------------------------------------------------+------------+-----------+----------+------------+---------+
-#    |+ gemm                                            |  1080059934|  3.597e+09|         -|  1080059935|        -|
-#    | + gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2  |     1048578|  3.492e+06|         -|     1048578|        -|
-#    |  o VITIS_LOOP_44_1_VITIS_LOOP_45_2               |     1048576|  3.492e+06|         2|           1|  1048576|
-#    | o l_S_buf0_buf0_l_0_l_buf0_l_1                   |     1048576|  3.492e+06|         2|           1|  1048576|
-#    | o l_S_buf1_buf1_l_0_l_buf1_l_1                   |     1048576|  3.492e+06|         2|           1|  1048576|
-#    | o l_S_i_j_0_i                                    |  1075865600|  3.583e+09|   1050650|           -|     1024|
-#    |  + gemm_Pipeline_l_j_init                        |        1026|  3.417e+03|         -|        1026|        -|
-#    |   o l_j_init                                     |        1024|  3.410e+03|         1|           1|     1024|
-#    |  + gemm_Pipeline_l_S_k_0_k_l_j                   |     1048591|  3.492e+06|         -|     1048591|        -|
-#    |   o l_S_k_0_k_l_j                                |     1048589|  3.492e+06|        15|           1|  1048576|
-#    |  + gemm_Pipeline_l_j_back                        |        1027|  3.420e+03|         -|        1027|        -|
-#    |   o l_j_back                                     |        1025|  3.413e+03|         3|           1|     1024|
-#    | o l_S_result2_result2_l_0_l_result2_l_1          |     1048578|  3.492e+06|         4|           1|  1048576|
-#    +--------------------------------------------------+------------+-----------+----------+------------+---------+
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+#    |                      Modules                     | Latency |  Latency  | Iteration|         | Trip |          |         |         |             |            |     |
+#    |                      & Loops                     | (cycles)|    (ns)   |  Latency | Interval| Count| Pipelined|  BRAM   |   DSP   |      FF     |     LUT    | URAM|
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+#    |+ gemm                                            |    39934|  1.331e+05|         -|    39935|     -|        no|  6 (~0%)|  5 (~0%)|  19074 (~0%)|  29069 (2%)|    -|
+#    | + gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2  |     1026|  3.420e+03|         -|     1026|     -|        no|        -|        -|     36 (~0%)|   169 (~0%)|    -|
+#    |  o VITIS_LOOP_44_1_VITIS_LOOP_45_2               |     1024|  3.413e+03|         2|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_buf0_buf0_l_0_l_buf0_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_buf1_buf1_l_0_l_buf1_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_i_j_0_i                                    |    35616|  1.187e+05|      1113|        -|    32|        no|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_j_init                        |       34|    113.322|         -|       34|     -|        no|        -|        -|      8 (~0%)|    50 (~0%)|    -|
+#    |   o l_j_init                                     |       32|    106.656|         1|        1|    32|       yes|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_S_k_0_k_l_j                   |     1039|  3.463e+03|         -|     1039|     -|        no|        -|  5 (~0%)|    759 (~0%)|   494 (~0%)|    -|
+#    |   o l_S_k_0_k_l_j                                |     1037|  3.456e+03|        15|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_j_back                        |       34|    113.322|         -|       34|     -|        no|        -|        -|     15 (~0%)|    78 (~0%)|    -|
+#    |   o l_j_back                                     |       32|    106.656|         2|        1|    32|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_result2_result2_l_0_l_result2_l_1          |     1026|  3.420e+03|         4|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
 #
 # From the above output, we can clearly see that all the loops inside the GEMM kernel (marked as ``o``) are pipelined
 # with Initiation Interval (II) equal to 1. You can also find more detailed information under the ``report`` folder.
@@ -215,9 +216,9 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 # To get more detailed information on the resource usage and performance of the generated design,
 # you can check the following files:
 #
-# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.xclbin``: The generated bitstream.
-# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
-# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/top/hls_reports/top_csynth.rpt``: The HLS synthesis report.
+# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.xclbin``: The generated bitstream.
+# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/gemm/hls_reports/gemm_csynth.rpt``: The HLS synthesis report.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt``: The full utilization report after placement and routing. You can find the following resource usage:
 #
 #   - LUT: ``1. CLB Logic -- CLB LUTs``
@@ -226,5 +227,5 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 #   - DSP: ``4. ARITHMETIC -- DSPs``
 #
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt``: The per SLR utilization report after placement and routing.
-# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/top/top_vitis_hls.log``: The log file of the Vitis HLS.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/gemm/gemm_vitis_hls.log``: The log file of the Vitis HLS.
 # - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log``: The log file of the Vivado backend synthesis.

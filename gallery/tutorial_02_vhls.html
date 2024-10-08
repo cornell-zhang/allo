@@ -151,8 +151,8 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Python API</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../api/index.html">allo.customize</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../api/index.html#allo-ir">allo.ir</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html">Schedule Primitives</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html#data-types">Data Types</a></li>
 </ul>
 
         </div>
@@ -179,6 +179,7 @@ to download the full example code.</p>
 <p>First, we import the necessary packages.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">allo</span>
 <span class="kn">from</span> <span class="nn">allo.ir.types</span> <span class="kn">import</span> <span class="n">float32</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 </pre></div>
 </div>
 </section>
@@ -187,7 +188,7 @@ to download the full example code.</p>
 <p>We again define a general matrix multiplication (GEMM) in this tutorial.
 However, we will make some changes to demonstrate more features of the DSL.</p>
 <p>We can define the constants as follows, which denotes the matrix sizes:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">1024</span>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
 </pre></div>
 </div>
 <p>Here, we define the main computation of the GEMM but use <code class="docutils literal notranslate"><span class="pre">float32</span></code> as the
@@ -236,23 +237,23 @@ This is used to change the computation order of matrix multiplication.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
-    affine.for %arg2 = 0 to 1024 {
-      affine.for %arg3 = 0 to 1024 {
-        affine.for %arg4 = 0 to 1024 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
-          %3 = affine.load %alloc[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          %3 = affine.load %alloc[%arg2, %arg4] {from = &quot;C&quot;} : memref&lt;32x32xf32&gt;
           %4 = arith.addf %3, %2 : f32
-          affine.store %4, %alloc[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+          affine.store %4, %alloc[%arg2, %arg4] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
         } {loop_name = &quot;j&quot;}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %alloc : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;32x32xf32&gt;
   }
 }
 </pre></div>
@@ -273,31 +274,31 @@ we can directly use <code class="docutils literal notranslate"><span class="pre"
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
-    affine.for %arg2 = 0 to 1024 {
-      %alloc_0 = memref.alloc() : memref&lt;1024xf32&gt;
-      affine.for %arg3 = 0 to 1024 {
-        affine.store %cst, %alloc_0[%arg3] : memref&lt;1024xf32&gt;
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
-      affine.for %arg3 = 0 to 1024 {
-        affine.for %arg4 = 0 to 1024 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
-          %3 = affine.load %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          %3 = affine.load %alloc_0[%arg4] : memref&lt;32xf32&gt;
           %4 = arith.addf %3, %2 : f32
-          affine.store %4, %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          affine.store %4, %alloc_0[%arg4] : memref&lt;32xf32&gt;
         } {loop_name = &quot;j&quot;}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      affine.for %arg3 = 0 to 1024 {
-        %0 = affine.load %alloc_0[%arg3] : memref&lt;1024xf32&gt;
-        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        %0 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
+        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %alloc : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;32x32xf32&gt;
   }
 }
 </pre></div>
@@ -312,31 +313,31 @@ initialize and write the intermediate buffer back to output tensor.</p>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @gemm(%arg0: memref&lt;1024x1024xf32&gt;, %arg1: memref&lt;1024x1024xf32&gt;) -&gt; memref&lt;1024x1024xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;1024x1024xf32&gt;
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
     %cst = arith.constant 0.000000e+00 : f32
-    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;1024x1024xf32&gt;)
-    affine.for %arg2 = 0 to 1024 {
-      %alloc_0 = memref.alloc() : memref&lt;1024xf32&gt;
-      affine.for %arg3 = 0 to 1024 {
-        affine.store %cst, %alloc_0[%arg3] : memref&lt;1024xf32&gt;
+    linalg.fill ins(%cst : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
       } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
-      affine.for %arg3 = 0 to 1024 {
-        affine.for %arg4 = 0 to 1024 {
-          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;1024x1024xf32&gt;
-          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;1024x1024xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %0 = affine.load %arg0[%arg2, %arg3] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %1 = affine.load %arg1[%arg3, %arg4] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
           %2 = arith.mulf %0, %1 : f32
-          %3 = affine.load %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          %3 = affine.load %alloc_0[%arg4] : memref&lt;32xf32&gt;
           %4 = arith.addf %3, %2 : f32
-          affine.store %4, %alloc_0[%arg4] : memref&lt;1024xf32&gt;
+          affine.store %4, %alloc_0[%arg4] : memref&lt;32xf32&gt;
         } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
-      affine.for %arg3 = 0 to 1024 {
-        %0 = affine.load %alloc_0[%arg3] : memref&lt;1024xf32&gt;
-        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;1024x1024xf32&gt;
+      affine.for %arg3 = 0 to 32 {
+        %0 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
+        affine.store %0, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
       } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
-    return %alloc : memref&lt;1024x1024xf32&gt;
+    return %alloc : memref&lt;32x32xf32&gt;
   }
 }
 </pre></div>
@@ -366,23 +367,23 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
 #include &lt;stdint.h&gt;
 using namespace std;
 void gemm(
-  float v0[1024][1024],
-  float v1[1024][1024],
-  float v2[1024][1024]
+  float v0[32][32],
+  float v1[32][32],
+  float v2[32][32]
 ) {     // L2
-  for (int v3 = 0; v3 &lt; 1024; v3++) {   // L5
-    for (int v4 = 0; v4 &lt; 1024; v4++) { // L5
+  for (int v3 = 0; v3 &lt; 32; v3++) {     // L5
+    for (int v4 = 0; v4 &lt; 32; v4++) {   // L5
       v2[v3][v4] = 0.000000;    // L5
     }
   }
-  l_S_i_j_0_i: for (int i = 0; i &lt; 1024; i++) { // L6
-    float v6[1024];     // L7
-    l_j_init: for (int j_init = 0; j_init &lt; 1024; j_init++) {   // L8
+  l_S_i_j_0_i: for (int i = 0; i &lt; 32; i++) {   // L6
+    float v6[32];       // L7
+    l_j_init: for (int j_init = 0; j_init &lt; 32; j_init++) {     // L8
     #pragma HLS pipeline II=1
       v6[j_init] = 0.000000;    // L9
     }
-    l_S_k_0_k: for (int k = 0; k &lt; 1024; k++) { // L11
-      l_j: for (int j = 0; j &lt; 1024; j++) {     // L12
+    l_S_k_0_k: for (int k = 0; k &lt; 32; k++) {   // L11
+      l_j: for (int j = 0; j &lt; 32; j++) {       // L12
       #pragma HLS pipeline II=1
         float v10 = v0[i][k];   // L13
         float v11 = v1[k][j];   // L14
@@ -392,7 +393,7 @@ void gemm(
         v6[j] = v14;    // L18
       }
     }
-    l_j_back: for (int j_back = 0; j_back &lt; 1024; j_back++) {   // L21
+    l_j_back: for (int j_back = 0; j_back &lt; 32; j_back++) {     // L21
     #pragma HLS pipeline II=1
       float v16 = v6[j_back];   // L22
       v2[i][j_back] = v16;      // L23
@@ -422,7 +423,6 @@ the HLS project and invoke the compiler to generate the RTL design.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">host.cpp</span></code>: The host (CPU) code that invokes the generated accelerator.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kernel.cpp</span></code>: The generated accelerator code.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">run.tcl</span></code>: The Vivado HLS script that can be used to run the Vivado HLS project.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Makefile</span></code>: Defined some shorthands for compiling the project.</p></li>
 </ul>
 <p>To run Vitis HLS, you can simply invoke the built module without passing any arguments into it.</p>
@@ -430,30 +430,31 @@ the HLS project and invoke the compiler to generate the RTL design.</p>
 <p class="admonition-title">Note</p>
 <p>You need to configure the Vitis HLS environment before running the generated code.
 We have the Vitis environment configured on the Zhang group server, so you can directly
-<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/allo/vitis_2022.1_opt.sh</span></code> to set up the environment.</p>
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">/work/shared/common/allo/vitis_2022.1_opt.sh</span></code> to set up the environment, which
+targets the AMD U280 FPGA board.</p>
 </div>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span><span class="p">()</span>
 </pre></div>
 </div>
 <p>After executing the above command, you can check the following report under <code class="docutils literal notranslate"><span class="pre">gemm.prj/out.prj/solution1/syn/report/csynth.rpt</span></code>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="o">+--------------------------------------------------+------------+-----------+----------+------------+---------+</span>
-<span class="o">|</span>                      <span class="n">Modules</span>                     <span class="o">|</span>  <span class="n">Latency</span>   <span class="o">|</span>  <span class="n">Latency</span>  <span class="o">|</span> <span class="n">Iteration</span><span class="o">|</span>            <span class="o">|</span>   <span class="n">Trip</span>  <span class="o">|</span>
-<span class="o">|</span>                      <span class="o">&amp;</span> <span class="n">Loops</span>                     <span class="o">|</span>  <span class="p">(</span><span class="n">cycles</span><span class="p">)</span>  <span class="o">|</span>    <span class="p">(</span><span class="n">ns</span><span class="p">)</span>   <span class="o">|</span>  <span class="n">Latency</span> <span class="o">|</span>  <span class="n">Interval</span>  <span class="o">|</span>  <span class="n">Count</span>  <span class="o">|</span>
-<span class="o">+--------------------------------------------------+------------+-----------+----------+------------+---------+</span>
-<span class="o">|+</span> <span class="n">gemm</span>                                            <span class="o">|</span>  <span class="mi">1080059934</span><span class="o">|</span>  <span class="mf">3.597e+09</span><span class="o">|</span>         <span class="o">-|</span>  <span class="mi">1080059935</span><span class="o">|</span>        <span class="o">-|</span>
-<span class="o">|</span> <span class="o">+</span> <span class="n">gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2</span>  <span class="o">|</span>     <span class="mi">1048578</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="o">-|</span>     <span class="mi">1048578</span><span class="o">|</span>        <span class="o">-|</span>
-<span class="o">|</span>  <span class="n">o</span> <span class="n">VITIS_LOOP_44_1_VITIS_LOOP_45_2</span>               <span class="o">|</span>     <span class="mi">1048576</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="mi">2</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>  <span class="mi">1048576</span><span class="o">|</span>
-<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_buf0_buf0_l_0_l_buf0_l_1</span>                   <span class="o">|</span>     <span class="mi">1048576</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="mi">2</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>  <span class="mi">1048576</span><span class="o">|</span>
-<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_buf1_buf1_l_0_l_buf1_l_1</span>                   <span class="o">|</span>     <span class="mi">1048576</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="mi">2</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>  <span class="mi">1048576</span><span class="o">|</span>
-<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_i_j_0_i</span>                                    <span class="o">|</span>  <span class="mi">1075865600</span><span class="o">|</span>  <span class="mf">3.583e+09</span><span class="o">|</span>   <span class="mi">1050650</span><span class="o">|</span>           <span class="o">-|</span>     <span class="mi">1024</span><span class="o">|</span>
-<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_j_init</span>                        <span class="o">|</span>        <span class="mi">1026</span><span class="o">|</span>  <span class="mf">3.417e+03</span><span class="o">|</span>         <span class="o">-|</span>        <span class="mi">1026</span><span class="o">|</span>        <span class="o">-|</span>
-<span class="o">|</span>   <span class="n">o</span> <span class="n">l_j_init</span>                                     <span class="o">|</span>        <span class="mi">1024</span><span class="o">|</span>  <span class="mf">3.410e+03</span><span class="o">|</span>         <span class="mi">1</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>     <span class="mi">1024</span><span class="o">|</span>
-<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_S_k_0_k_l_j</span>                   <span class="o">|</span>     <span class="mi">1048591</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="o">-|</span>     <span class="mi">1048591</span><span class="o">|</span>        <span class="o">-|</span>
-<span class="o">|</span>   <span class="n">o</span> <span class="n">l_S_k_0_k_l_j</span>                                <span class="o">|</span>     <span class="mi">1048589</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>        <span class="mi">15</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>  <span class="mi">1048576</span><span class="o">|</span>
-<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_j_back</span>                        <span class="o">|</span>        <span class="mi">1027</span><span class="o">|</span>  <span class="mf">3.420e+03</span><span class="o">|</span>         <span class="o">-|</span>        <span class="mi">1027</span><span class="o">|</span>        <span class="o">-|</span>
-<span class="o">|</span>   <span class="n">o</span> <span class="n">l_j_back</span>                                     <span class="o">|</span>        <span class="mi">1025</span><span class="o">|</span>  <span class="mf">3.413e+03</span><span class="o">|</span>         <span class="mi">3</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>     <span class="mi">1024</span><span class="o">|</span>
-<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_result2_result2_l_0_l_result2_l_1</span>          <span class="o">|</span>     <span class="mi">1048578</span><span class="o">|</span>  <span class="mf">3.492e+06</span><span class="o">|</span>         <span class="mi">4</span><span class="o">|</span>           <span class="mi">1</span><span class="o">|</span>  <span class="mi">1048576</span><span class="o">|</span>
-<span class="o">+--------------------------------------------------+------------+-----------+----------+------------+---------+</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="o">+--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+</span>
+<span class="o">|</span>                      <span class="n">Modules</span>                     <span class="o">|</span> <span class="n">Latency</span> <span class="o">|</span>  <span class="n">Latency</span>  <span class="o">|</span> <span class="n">Iteration</span><span class="o">|</span>         <span class="o">|</span> <span class="n">Trip</span> <span class="o">|</span>          <span class="o">|</span>         <span class="o">|</span>         <span class="o">|</span>             <span class="o">|</span>            <span class="o">|</span>     <span class="o">|</span>
+<span class="o">|</span>                      <span class="o">&amp;</span> <span class="n">Loops</span>                     <span class="o">|</span> <span class="p">(</span><span class="n">cycles</span><span class="p">)</span><span class="o">|</span>    <span class="p">(</span><span class="n">ns</span><span class="p">)</span>   <span class="o">|</span>  <span class="n">Latency</span> <span class="o">|</span> <span class="n">Interval</span><span class="o">|</span> <span class="n">Count</span><span class="o">|</span> <span class="n">Pipelined</span><span class="o">|</span>  <span class="n">BRAM</span>   <span class="o">|</span>   <span class="n">DSP</span>   <span class="o">|</span>      <span class="n">FF</span>     <span class="o">|</span>     <span class="n">LUT</span>    <span class="o">|</span> <span class="n">URAM</span><span class="o">|</span>
+<span class="o">+--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+</span>
+<span class="o">|+</span> <span class="n">gemm</span>                                            <span class="o">|</span>    <span class="mi">39934</span><span class="o">|</span>  <span class="mf">1.331e+05</span><span class="o">|</span>         <span class="o">-|</span>    <span class="mi">39935</span><span class="o">|</span>     <span class="o">-|</span>        <span class="n">no</span><span class="o">|</span>  <span class="mi">6</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>  <span class="mi">5</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>  <span class="mi">19074</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>  <span class="mi">29069</span> <span class="p">(</span><span class="mi">2</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="o">-|</span>
+<span class="o">|</span> <span class="o">+</span> <span class="n">gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2</span>  <span class="o">|</span>     <span class="mi">1026</span><span class="o">|</span>  <span class="mf">3.420e+03</span><span class="o">|</span>         <span class="o">-|</span>     <span class="mi">1026</span><span class="o">|</span>     <span class="o">-|</span>        <span class="n">no</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>     <span class="mi">36</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>   <span class="mi">169</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="o">-|</span>
+<span class="o">|</span>  <span class="n">o</span> <span class="n">VITIS_LOOP_44_1_VITIS_LOOP_45_2</span>               <span class="o">|</span>     <span class="mi">1024</span><span class="o">|</span>  <span class="mf">3.413e+03</span><span class="o">|</span>         <span class="mi">2</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>  <span class="mi">1024</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_buf0_buf0_l_0_l_buf0_l_1</span>                   <span class="o">|</span>     <span class="mi">1025</span><span class="o">|</span>  <span class="mf">3.416e+03</span><span class="o">|</span>         <span class="mi">3</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>  <span class="mi">1024</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_buf1_buf1_l_0_l_buf1_l_1</span>                   <span class="o">|</span>     <span class="mi">1025</span><span class="o">|</span>  <span class="mf">3.416e+03</span><span class="o">|</span>         <span class="mi">3</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>  <span class="mi">1024</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_i_j_0_i</span>                                    <span class="o">|</span>    <span class="mi">35616</span><span class="o">|</span>  <span class="mf">1.187e+05</span><span class="o">|</span>      <span class="mi">1113</span><span class="o">|</span>        <span class="o">-|</span>    <span class="mi">32</span><span class="o">|</span>        <span class="n">no</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_j_init</span>                        <span class="o">|</span>       <span class="mi">34</span><span class="o">|</span>    <span class="mf">113.322</span><span class="o">|</span>         <span class="o">-|</span>       <span class="mi">34</span><span class="o">|</span>     <span class="o">-|</span>        <span class="n">no</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>      <span class="mi">8</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="mi">50</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="o">-|</span>
+<span class="o">|</span>   <span class="n">o</span> <span class="n">l_j_init</span>                                     <span class="o">|</span>       <span class="mi">32</span><span class="o">|</span>    <span class="mf">106.656</span><span class="o">|</span>         <span class="mi">1</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>    <span class="mi">32</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_S_k_0_k_l_j</span>                   <span class="o">|</span>     <span class="mi">1039</span><span class="o">|</span>  <span class="mf">3.463e+03</span><span class="o">|</span>         <span class="o">-|</span>     <span class="mi">1039</span><span class="o">|</span>     <span class="o">-|</span>        <span class="n">no</span><span class="o">|</span>        <span class="o">-|</span>  <span class="mi">5</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="mi">759</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>   <span class="mi">494</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="o">-|</span>
+<span class="o">|</span>   <span class="n">o</span> <span class="n">l_S_k_0_k_l_j</span>                                <span class="o">|</span>     <span class="mi">1037</span><span class="o">|</span>  <span class="mf">3.456e+03</span><span class="o">|</span>        <span class="mi">15</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>  <span class="mi">1024</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span>  <span class="o">+</span> <span class="n">gemm_Pipeline_l_j_back</span>                        <span class="o">|</span>       <span class="mi">34</span><span class="o">|</span>    <span class="mf">113.322</span><span class="o">|</span>         <span class="o">-|</span>       <span class="mi">34</span><span class="o">|</span>     <span class="o">-|</span>        <span class="n">no</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>     <span class="mi">15</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="mi">78</span> <span class="p">(</span><span class="o">~</span><span class="mi">0</span><span class="o">%</span><span class="p">)</span><span class="o">|</span>    <span class="o">-|</span>
+<span class="o">|</span>   <span class="n">o</span> <span class="n">l_j_back</span>                                     <span class="o">|</span>       <span class="mi">32</span><span class="o">|</span>    <span class="mf">106.656</span><span class="o">|</span>         <span class="mi">2</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>    <span class="mi">32</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">|</span> <span class="n">o</span> <span class="n">l_S_result2_result2_l_0_l_result2_l_1</span>          <span class="o">|</span>     <span class="mi">1026</span><span class="o">|</span>  <span class="mf">3.420e+03</span><span class="o">|</span>         <span class="mi">4</span><span class="o">|</span>        <span class="mi">1</span><span class="o">|</span>  <span class="mi">1024</span><span class="o">|</span>       <span class="n">yes</span><span class="o">|</span>        <span class="o">-|</span>        <span class="o">-|</span>            <span class="o">-|</span>           <span class="o">-|</span>    <span class="o">-|</span>
+<span class="o">+--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+</span>
 </pre></div>
 </div>
 <p>From the above output, we can clearly see that all the loops inside the GEMM kernel (marked as <code class="docutils literal notranslate"><span class="pre">o</span></code>) are pipelined
@@ -481,9 +482,9 @@ explicitly create an output array and pass it to the function.</p>
 <p>To get more detailed information on the resource usage and performance of the generated design,
 you can check the following files:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.xclbin</span></code>: The generated bitstream.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/top.link.xclbin.info</span></code>: Frequency of the actual design, which can be found in <code class="docutils literal notranslate"><span class="pre">DATA_CLK</span></code>. By default, it is 300MHz.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/top/hls_reports/top_csynth.rpt</span></code>: The HLS synthesis report.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.xclbin</span></code>: The generated bitstream.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.link.xclbin.info</span></code>: Frequency of the actual design, which can be found in <code class="docutils literal notranslate"><span class="pre">DATA_CLK</span></code>. By default, it is 300MHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/gemm/hls_reports/gemm_csynth.rpt</span></code>: The HLS synthesis report.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt</span></code>: The full utilization report after placement and routing. You can find the following resource usage:</p>
 <ul>
 <li><p>LUT: <code class="docutils literal notranslate"><span class="pre">1.</span> <span class="pre">CLB</span> <span class="pre">Logic</span> <span class="pre">--</span> <span class="pre">CLB</span> <span class="pre">LUTs</span></code></p></li>
@@ -493,10 +494,10 @@ you can check the following files:</p>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt</span></code>: The per SLR utilization report after placement and routing.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/top/top_vitis_hls.log</span></code>: The log file of the Vitis HLS.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/gemm/gemm_vitis_hls.log</span></code>: The log file of the Vitis HLS.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log</span></code>: The log file of the Vivado backend synthesis.</p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.277 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.326 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-tutorial-02-vhls-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/861a23b0676093686f50a5f922fc6363/tutorial_02_vhls.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">tutorial_02_vhls.ipynb</span></code></a></p>
