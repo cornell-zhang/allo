@@ -51,6 +51,6 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
 
 .. toctree::
    :maxdepth: 1
-   :caption: Reference
+   :caption: Python API
 
-   genindex
+   api/index.rst

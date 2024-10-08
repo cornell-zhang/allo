@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>allo.customize &#8212; Allo Documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic_mod.css?v=9b2032db" />
+    <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="../../_static/documentation_options.js?v=db78e746"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=30646c52"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <script src="../../_static/js/petite-vue.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body data-dark_mode_code_blocks="true">
+
+<div id="top_nav">
+    
+
+    <nav>
+        
+            
+        
+
+        <p id="toggle_sidebar">
+            <a href="#" title="Toggle sidebar">|||</a>
+        </p>
+        <h1><a href="../../index.html" title="Go to homepage">Allo Documentation</a></h1>
+            <a id="source_link" href="https://github.com/cornell-zhang/allo">
+    
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
+            <path fill="white" d="M 244.8,8 C 106.1,8 0,113.3 0,252 c 0,110.9 69.8,205.8 169.5,239.2 12.8,2.3 17.3,-5.6 17.3,-12.1 0,-6.2 -0.3,-40.4 -0.3,-61.4 0,0 -70,15 -84.7,-29.8 0,0 -11.4,-29.1 -27.8,-36.6 0,0 -22.9,-15.7 1.6,-15.4 0,0 24.9,2 38.6,25.8 21.9,38.6 58.6,27.5 72.9,20.9 2.3,-16 8.8,-27.1 16,-33.7 -55.9,-6.2 -112.3,-14.3 -112.3,-110.5 0,-27.5 7.6,-41.3 23.6,-58.9 -2.6,-6.5 -11.1,-33.3 2.6,-67.9 20.9,-6.5 69,27 69,27 20,-5.6 41.5,-8.5 62.8,-8.5 21.3,0 42.8,2.9 62.8,8.5 0,0 48.1,-33.6 69,-27 13.7,34.7 5.2,61.4 2.6,67.9 16,17.7 25.8,31.5 25.8,58.9 0,96.5 -58.9,104.2 -114.8,110.5 9.2,7.9 17,22.9 17,46.4 0,33.7 -0.3,75.4 -0.3,83.6 0,6.5 4.6,14.4 17.3,12.1 C 428.2,457.8 496,362.9 496,252 496,113.3 383.5,8 244.8,8 Z"/>
+        </svg>
+    
+</a>
+        
+
+        <a id="mode_toggle" href="#" @click.prevent="handleClick" :title="mode">
+    <template v-if="mode == 'light'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_light"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M67.48,18.073c1.913,-1.912 1.913,-5.018 0,-6.931c-1.912,-1.912 -5.018,-1.912 -6.931,0l-6.798,6.799c-1.912,1.912 -1.912,5.018 0,6.931c1.913,1.912 5.018,1.912 6.931,-0l6.798,-6.799Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.728,61.108c1.912,-1.913 1.912,-5.018 -0,-6.931c-1.913,-1.913 -5.019,-1.913 -6.931,-0l-6.799,6.798c-1.912,1.913 -1.912,5.019 0,6.931c1.913,1.913 5.019,1.913 6.931,0l6.799,-6.798Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.682,54.177c-1.913,-1.913 -5.018,-1.913 -6.931,-0c-1.912,1.913 -1.912,5.018 0,6.931l6.798,6.798c1.913,1.913 5.019,1.913 6.931,0c1.913,-1.912 1.913,-5.018 0,-6.931l-6.798,-6.798Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M4.901,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901l-0,9.614c-0,2.705 2.196,4.901 4.9,4.901c2.705,-0 4.901,-2.196 4.901,-4.901l0,-9.614Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M18.929,11.142c-1.912,-1.912 -5.018,-1.912 -6.931,0c-1.912,1.913 -1.912,5.019 0,6.931l6.799,6.799c1.912,1.912 5.018,1.912 6.931,-0c1.912,-1.913 1.912,-5.019 -0,-6.931l-6.799,-6.799Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.108,34.623c-2.705,0 -4.901,2.196 -4.901,4.901c-0,2.705 2.196,4.901 4.901,4.901l9.614,0c2.705,0 4.901,-2.196 4.901,-4.901c-0,-2.705 -2.196,-4.901 -4.901,-4.901l-9.614,0Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'dark'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_dark"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><circle cx="39.311" cy="39.524" r="15.734" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.212,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.901,2.196 -4.901,4.901c0,2.705 2.197,4.901 4.901,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.662,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.989,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.732,61.103c1.91,-1.91 1.91,-5.011 0,-6.921l-0.009,-0.01c-1.91,-1.91 -5.012,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.909,1.91 5.011,1.91 6.92,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.672,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.52,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l-0,-0.01c-0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.212,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.901,2.196 -4.901,4.901c0,2.704 2.197,4.9 4.901,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.73,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 -0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.098,34.623c-2.699,0 -4.891,2.192 -4.891,4.892l-0,0.019c-0,2.699 2.192,4.891 4.891,4.891c2.7,0 4.892,-2.192 4.892,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.892,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+
+    <template v-if="mode == 'darkest'">
+        <svg width="100%" height="100%" viewBox="0 0 79 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g id="mode_darkest"><rect id="Bounds" x="0" y="-0" width="78.623" height="79.049" style="fill:none;"/><path d="M39.315,23.791c8.684,-0 15.734,7.05 15.734,15.733c0,8.684 -7.05,15.734 -15.734,15.734c-8.683,0 -15.733,-7.05 -15.733,-15.734c-0,-8.683 7.05,-15.733 15.733,-15.733Zm0,4.737c6.069,0 10.997,4.927 10.997,10.996c-0,6.069 -4.928,10.996 -10.997,10.996c-6.068,0 -10.996,-4.927 -10.996,-10.996c0,-6.069 4.928,-10.996 10.996,-10.996Z" style="fill:#fff;"/><g id="beams"><g id="beam"><path id="beam1" serif:id="beam" d="M44.216,14.515c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,0 -4.9,2.196 -4.9,4.901c-0,2.705 2.196,4.901 4.9,4.901c2.705,0 4.901,-2.196 4.901,-4.901Z" style="fill:#fff;"/></g><g id="beam2" serif:id="beam"><path id="beam3" serif:id="beam" d="M60.666,24.892c1.902,-1.902 1.902,-4.99 0,-6.892l-0.04,-0.039c-1.901,-1.902 -4.989,-1.902 -6.891,-0c-1.901,1.901 -1.901,4.989 0,6.891l0.04,0.04c1.902,1.901 4.99,1.901 6.891,-0Z" style="fill:#fff;"/></g><g id="beam4" serif:id="beam"><path id="beam5" serif:id="beam" d="M25.737,61.103c1.909,-1.91 1.909,-5.011 -0,-6.921l-0.01,-0.01c-1.91,-1.91 -5.011,-1.91 -6.921,-0c-1.91,1.91 -1.91,5.011 -0,6.921l0.01,0.01c1.91,1.91 5.011,1.91 6.921,-0Z" style="fill:#fff;"/></g><g id="beam6" serif:id="beam"><path id="beam7" serif:id="beam" d="M60.676,54.167c-1.907,-1.907 -5.004,-1.907 -6.911,0l-0.02,0.02c-1.907,1.907 -1.907,5.004 0,6.911c1.907,1.907 5.004,1.907 6.911,-0l0.02,-0.02c1.907,-1.907 1.907,-5.004 0,-6.911Z" style="fill:#fff;"/></g><g id="beam8" serif:id="beam"><path id="beam9" serif:id="beam" d="M14.524,34.623c-2.702,0 -4.896,2.194 -4.896,4.896l0,0.01c0,2.702 2.194,4.896 4.896,4.896c2.702,0 4.896,-2.194 4.896,-4.896l0,-0.01c0,-2.702 -2.194,-4.896 -4.896,-4.896Z" style="fill:#fff;"/></g><g id="beam10" serif:id="beam"><path id="beam11" serif:id="beam" d="M44.216,64.534c0,-2.705 -2.196,-4.901 -4.901,-4.901c-2.704,-0 -4.9,2.196 -4.9,4.901c-0,2.704 2.196,4.9 4.9,4.9c2.705,0 4.901,-2.196 4.901,-4.9Z" style="fill:#fff;"/></g><g id="beam12" serif:id="beam"><path id="beam13" serif:id="beam" d="M25.734,17.943c-1.911,-1.911 -5.015,-1.911 -6.926,0l-0.005,0.005c-1.911,1.911 -1.911,5.015 0,6.926c1.911,1.911 5.015,1.911 6.926,0l0.005,-0.005c1.911,-1.911 1.911,-5.014 0,-6.926Z" style="fill:#fff;"/></g><g id="beam14" serif:id="beam"><path id="beam15" serif:id="beam" d="M64.103,34.623c-2.7,0 -4.892,2.192 -4.892,4.892l-0,0.019c-0,2.699 2.192,4.891 4.892,4.891c2.699,0 4.891,-2.192 4.891,-4.891l0,-0.019c0,-2.7 -2.192,-4.892 -4.891,-4.892Z" style="fill:#fff;"/></g></g></g></svg>
+    </template>
+</a>
+
+<script>
+(function() {
+    const LOCAL_STORAGE_KEY = 'piccoloThemeMode'
+
+    var initialMode = localStorage.getItem(LOCAL_STORAGE_KEY)
+
+    if (initialMode) {
+        // Make sure the value in local storage is valid
+        if (['light', 'dark', 'darkest'].indexOf(initialMode) == -1) {
+            initialMode = 'light'
+            localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+        }
+    } else {
+        // Check if the client prefers dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            initialMode = 'dark'
+        } else {
+            initialMode = 'light'
+        }
+        localStorage.setItem(LOCAL_STORAGE_KEY, initialMode)
+    }
+
+    document.documentElement.dataset.mode = initialMode
+
+    PetiteVue.createApp({
+        'mode': initialMode,
+        handleClick() {
+            let currentMode = this.mode
+
+            if (currentMode == 'light') {
+                this.mode = 'dark'
+            } else if (currentMode == 'dark') {
+                this.mode = 'darkest'
+            } else if (currentMode == 'darkest') {
+                this.mode = 'light'
+            }
+
+            document.documentElement.dataset.mode = this.mode
+            localStorage.setItem(LOCAL_STORAGE_KEY, this.mode)
+
+            console.log(this.mode)
+        }
+    }).mount('#mode_toggle')
+})()
+</script>
+            <p class="mobile_search_link">
+                <a href="../../search.html" title="Search">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 64" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2">
+                        <path d="M14.873 40.009c-2.315-3.943-3.642-8.532-3.642-13.429C11.231 11.91 23.141 0 37.811 0s26.58 11.91 26.58 26.58-11.91 26.58-26.58 26.58a26.44 26.44 0 0 1-14.277-4.161L9.739 62.794a3.12 3.12 0 0 1-4.413 0L.913 58.382c-1.217-1.218-1.217-3.196 0-4.413l13.96-13.96zM37.811 8.054c10.225 0 18.526 8.301 18.526 18.526s-8.301 18.526-18.526 18.526-18.526-8.301-18.526-18.526S27.586 8.054 37.811 8.054z" fill="#fff" />
+                    </svg>
+                </a>
+            </p>
+        
+
+        <div class="searchbox_wrapper">
+            
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+    </nav>
+</div>
+
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../setup/index.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_01_get_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../developer/index.html">Developer Setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/developer_02_mlir.html">MLIR Translation Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Python API</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">allo.customize</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html#allo-ir">allo.ir</a></li>
+</ul>
+
+        </div>
+      </div>
+
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for allo.customize</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright Allo authors. All Rights Reserved.</span>
+<span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
+<span class="c1"># pylint: disable=no-name-in-module</span>
+
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">textwrap</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
+<span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">FunctionType</span> <span class="k">as</span> <span class="n">PyFunctionType</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">collections.abc</span> <span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">from</span> <span class="nn">._mlir.ir</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Context</span><span class="p">,</span>
+    <span class="n">Location</span><span class="p">,</span>
+    <span class="n">InsertionPoint</span><span class="p">,</span>
+    <span class="n">StringAttr</span><span class="p">,</span>
+    <span class="n">UnitAttr</span><span class="p">,</span>
+    <span class="n">IndexType</span><span class="p">,</span>
+    <span class="n">IntegerType</span><span class="p">,</span>
+    <span class="n">IntegerAttr</span><span class="p">,</span>
+    <span class="n">TypeAttr</span><span class="p">,</span>
+    <span class="n">F32Type</span><span class="p">,</span>
+    <span class="n">MemRefType</span><span class="p">,</span>
+    <span class="n">FlatSymbolRefAttr</span><span class="p">,</span>
+    <span class="n">AffineMap</span><span class="p">,</span>
+    <span class="n">AffineMapAttr</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">._mlir.dialects</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">allo</span> <span class="k">as</span> <span class="n">allo_d</span><span class="p">,</span>
+    <span class="n">memref</span> <span class="k">as</span> <span class="n">memref_d</span><span class="p">,</span>
+    <span class="n">affine</span> <span class="k">as</span> <span class="n">affine_d</span><span class="p">,</span>
+    <span class="n">scf</span> <span class="k">as</span> <span class="n">scf_d</span><span class="p">,</span>
+    <span class="n">arith</span> <span class="k">as</span> <span class="n">arith_d</span><span class="p">,</span>
+    <span class="n">func</span> <span class="k">as</span> <span class="n">func_d</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">._mlir.dialects.affine</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AffineExpr</span><span class="p">,</span>
+    <span class="n">AffineDimExpr</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">._mlir.exceptions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AlloValueError</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">primitives</span> <span class="k">as</span> <span class="n">prim</span>
+<span class="kn">from</span> <span class="nn">.ir.visitor</span> <span class="kn">import</span> <span class="n">ASTContext</span>
+<span class="kn">from</span> <span class="nn">.ir.utils</span> <span class="kn">import</span> <span class="n">MockArg</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">,</span> <span class="n">parse_ast</span><span class="p">,</span> <span class="n">get_global_vars</span>
+<span class="kn">from</span> <span class="nn">.ir.builder</span> <span class="kn">import</span> <span class="n">ASTTransformer</span>
+<span class="kn">from</span> <span class="nn">.ir.infer</span> <span class="kn">import</span> <span class="n">TypeInferer</span>
+<span class="kn">from</span> <span class="nn">.ir.transform</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_affine_loop_nests</span><span class="p">,</span>
+    <span class="n">find_loop_in_bands</span><span class="p">,</span>
+    <span class="n">find_buffer</span><span class="p">,</span>
+    <span class="n">find_func_in_module</span><span class="p">,</span>
+    <span class="n">LoopWrapper</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">.ir.use_def</span> <span class="kn">import</span> <span class="n">UseDefChain</span>
+<span class="kn">from</span> <span class="nn">.passes</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_mlir_lower_pipeline</span><span class="p">,</span>
+    <span class="n">lower_linalg_and_attach_names</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">.backend.llvm</span> <span class="kn">import</span> <span class="n">LLVMModule</span>
+<span class="kn">from</span> <span class="nn">.backend.hls</span> <span class="kn">import</span> <span class="n">HLSModule</span>
+<span class="kn">from</span> <span class="nn">.library</span> <span class="kn">import</span> <span class="n">KERNEL2SCHEDULE</span>
+
+
+<span class="k">def</span> <span class="nf">getsourcefile</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcefile</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ret</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getfile</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ret</span>
+
+
+<span class="k">def</span> <span class="nf">getsourcelines</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcelines</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">wrapped_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">):</span>
+    <span class="nd">@wraps</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">sch</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">with</span> <span class="n">sch</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">context</span><span class="p">,</span> <span class="n">Location</span><span class="o">.</span><span class="n">unknown</span><span class="p">():</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">_mlir_lower_pipeline</span><span class="p">(</span><span class="n">sch</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+        <span class="c1"># Remove previous Python-C++ references</span>
+        <span class="n">sch</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">_clear_live_operations</span><span class="p">()</span>
+        <span class="c1"># Update top function in the current context</span>
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">sch</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">)</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">:</span>
+                <span class="n">sch</span><span class="o">.</span><span class="n">top_func</span> <span class="o">=</span> <span class="n">op</span>
+                <span class="k">break</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Top function not found&quot;</span><span class="p">)</span>
+        <span class="c1"># Update insertion point</span>
+        <span class="n">sch</span><span class="o">.</span><span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">sch</span><span class="o">.</span><span class="n">top_func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="c1"># Record primitive sequences</span>
+        <span class="n">sch</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="n">kwargs</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">res</span>
+
+    <span class="k">return</span> <span class="n">wrapper</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">Partition</span><span class="p">:</span>
+    <span class="n">Complete</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">Block</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">Cyclic</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="Schedule">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule">[docs]</a>
+<span class="k">class</span> <span class="nc">Schedule</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">module</span><span class="p">,</span>
+        <span class="n">top_func</span><span class="p">,</span>
+        <span class="n">func_args</span><span class="p">,</span>
+        <span class="n">ip</span><span class="p">,</span>
+        <span class="n">ext_libs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">use_def_chain</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">inst_list</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">top_func</span> <span class="o">=</span> <span class="n">top_func</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span> <span class="o">=</span> <span class="n">top_func</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span> <span class="o">=</span> <span class="n">func_args</span>  <span class="c1"># only store names here</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ip</span> <span class="o">=</span> <span class="n">ip</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">primitive_sequences</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">ext_libs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ext_libs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span> <span class="o">=</span> <span class="n">ext_libs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_def_chain</span> <span class="o">=</span> <span class="n">use_def_chain</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inst_list</span> <span class="o">=</span> <span class="n">inst_list</span> <span class="k">if</span> <span class="n">inst_list</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">get_loops</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func</span>
+        <span class="k">return</span> <span class="n">get_affine_loop_nests</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_find_band</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">loops</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_loops</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">loops</span><span class="o">.</span><span class="n">loops</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">loops</span><span class="p">[</span><span class="n">band_name</span><span class="p">]</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Band </span><span class="si">{</span><span class="n">band_name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_find_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">)</span> <span class="ow">and</span> <span class="n">func</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">func</span>
+        <span class="k">if</span> <span class="n">error</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Function </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_get_func_and_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="n">LoopWrapper</span><span class="p">):</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">axis</span><span class="o">.</span><span class="n">func</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">,</span> <span class="n">axis</span>
+        <span class="k">if</span> <span class="s2">&quot;:&quot;</span> <span class="ow">in</span> <span class="n">axis</span><span class="p">:</span>
+            <span class="n">func_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">axis</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">func_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">func</span><span class="p">,</span> <span class="n">axis</span>
+
+<div class="viewcode-block" id="Schedule.split">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.split">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        `split` will find the loop with loop index `axis` and tile it with each tile size `factor`</span>
+<span class="sd">        The new inner loop will be named `axis.inner` and the outer loop will be named `axis.outer`</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str</span>
+<span class="sd">            The name of an index in the kernel.</span>
+
+<span class="sd">        factor: int</span>
+<span class="sd">            The size of each tile, e.g. the size of the inner nested loop.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">i32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_unsigned</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="n">factor</span> <span class="o">=</span> <span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">SplitOp</span><span class="p">(</span><span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">factor</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.reorder">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reorder">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">reorder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Reorders nested loops with indices listed in `args` such that the outermost loop is the first</span>
+<span class="sd">        index listed in `args`, the second is the second outermost, and so on.</span>
+
+<span class="sd">        This function is vardic, accepting each index as a separate argument.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdls</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+            <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+            <span class="n">loop_hdls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">arg_results</span> <span class="o">=</span> <span class="p">[</span><span class="n">arg</span><span class="o">.</span><span class="n">result</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">loop_hdls</span><span class="p">]</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">ReorderOp</span><span class="p">(</span><span class="n">arg_results</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.unroll">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.unroll">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">unroll</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Unrolls a loop with loop index `axis` by `factor`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str</span>
+<span class="sd">            The name of an index in the kernel.</span>
+
+<span class="sd">        factor: int</span>
+<span class="sd">            The factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">i32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_unsigned</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="n">factor</span> <span class="o">=</span> <span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">UnrollOp</span><span class="p">(</span><span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="n">factor</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.fuse">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.fuse">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">fuse</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Combines loops with indices listed in `args` into a single loop over a single index.</span>
+
+<span class="sd">        This function is vardic, accepting each index as a separate argument.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdls</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+            <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">arg</span><span class="p">)</span>
+            <span class="n">loop_hdls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">arg_results</span> <span class="o">=</span> <span class="p">[</span><span class="n">arg</span><span class="o">.</span><span class="n">result</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">loop_hdls</span><span class="p">]</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">FuseOp</span><span class="p">(</span><span class="n">arg_results</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.partition">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.partition">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">partition_type</span><span class="o">=</span><span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Partitions a given array, for example if the array is `B`, this would be `&lt;schedule&gt;.B`.</span>
+<span class="sd">        There are three types, `Partition.Complete`, `Partition.Block`, and `Partition.cyclic`.</span>
+<span class="sd">        block: The original array is split into `factor` equally sized blocks of consecutive elements of the original array</span>
+<span class="sd">        cyclic:The original array is split into `factor` equally sized blocks interleaving the elements of the original array.</span>
+<span class="sd">        complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">            The array to partition.</span>
+
+<span class="sd">        partition_type: allo.customize.Partition</span>
+<span class="sd">            The type of partition.</span>
+
+<span class="sd">        factor: int</span>
+<span class="sd">            The number of arrays created by a block or cyclic partition.</span>
+
+<span class="sd">        dim: int</span>
+<span class="sd">            The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO: test whether the partition has conflicts for different functions</span>
+        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid partition type&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dim</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid dimension&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">factor</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid factor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">:</span>
+            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
+            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
+            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Not supported partition type&quot;</span><span class="p">)</span>
+        <span class="c1"># test whether partitioning the same array</span>
+        <span class="k">for</span> <span class="n">parray</span><span class="p">,</span> <span class="n">items</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">parray</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">target</span><span class="o">.</span><span class="n">func</span>
+                    <span class="ow">and</span> <span class="n">parray</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">target</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">):</span>
+                    <span class="k">if</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span> <span class="ow">and</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="c1"># this array has been completely partitioned along all the axes</span>
+                        <span class="k">return</span>
+                    <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Cannot partition the same array twice: </span><span class="si">{</span><span class="n">parray</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">item</span><span class="si">}</span><span class="s2"> vs (</span><span class="si">{</span><span class="n">partition_type</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">factor</span><span class="si">}</span><span class="s2">)&quot;</span>
+                    <span class="p">)</span>
+        <span class="c1"># actual partition</span>
+        <span class="n">i32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_signless</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="n">ui32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_unsigned</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="c1"># find all the tensors that need to be partitioned</span>
+        <span class="n">visited_target_names</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">visited_func_calls</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">def</span> <span class="nf">recursive_partition</span><span class="p">(</span><span class="n">inner_target</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="n">visited_target_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">inner_target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
+            <span class="c1"># equivalent users</span>
+            <span class="k">for</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_def_chain</span><span class="o">.</span><span class="n">get_equivalent_tensors</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">tensor</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">tensor</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+            <span class="c1"># calling the same function</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                <span class="n">visited_func_calls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
+                        <span class="k">for</span> <span class="n">call_op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="p">(</span>
+                                <span class="nb">isinstance</span><span class="p">(</span><span class="n">call_op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">)</span>
+                                <span class="ow">and</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
+                                <span class="o">==</span> <span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span>
+                                <span class="ow">and</span> <span class="n">call_op</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">visited_func_calls</span>
+                            <span class="p">):</span>
+                                <span class="n">visited_func_calls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">call_op</span><span class="p">)</span>
+                                <span class="n">buffer</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span>
+                                    <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                                    <span class="n">call_op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+                                <span class="p">)</span>
+                                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">buffer</span><span class="p">)</span>
+
+        <span class="n">recursive_partition</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">inner_target</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">:</span>
+            <span class="n">func</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span>
+                <span class="n">MockBuffer</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">inner_target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">inner_target</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="p">[</span><span class="n">inner_target</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">partition_type</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">factor</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="n">allo_d</span><span class="o">.</span><span class="n">PartitionOp</span><span class="p">(</span>
+                <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="p">,</span>
+                <span class="n">partition_kind</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">partition_type</span><span class="p">),</span>
+                <span class="n">dim</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ui32</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span>
+                <span class="n">factor</span><span class="o">=</span><span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ui32</span><span class="p">,</span> <span class="n">factor</span><span class="p">),</span>
+                <span class="n">ip</span><span class="o">=</span><span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="c1"># Calculate layout map</span>
+        <span class="c1"># first N: partition index</span>
+        <span class="c1"># last N : physical index</span>
+        <span class="n">shape</span> <span class="o">=</span> <span class="n">mlir_target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">partition_idx</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">address_idx</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">dim</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">dim</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="n">dim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
+                    <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">factor</span><span class="p">)</span>
+                    <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">factor</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
+                    <span class="c1"># block factor N means partition into N blocks</span>
+                    <span class="c1"># each block has shape[dim] / factor elements</span>
+                    <span class="n">block_factor</span> <span class="o">=</span> <span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">factor</span>
+                    <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_floor_div</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="n">block_factor</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">block_factor</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>  <span class="c1"># Partition.Complete</span>
+                    <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+                    <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">partition_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineExpr</span><span class="o">.</span><span class="n">get_constant</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+                <span class="n">address_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AffineDimExpr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+        <span class="n">affine_map</span> <span class="o">=</span> <span class="n">AffineMap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">dim_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">),</span> <span class="n">symbol_count</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exprs</span><span class="o">=</span><span class="n">partition_idx</span> <span class="o">+</span> <span class="n">address_idx</span>
+        <span class="p">)</span>
+        <span class="n">affine_attr</span> <span class="o">=</span> <span class="n">AffineMapAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">affine_map</span><span class="p">)</span>
+        <span class="n">only_target_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GlobalOp</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="n">only_target_names</span>
+            <span class="p">):</span>
+                <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">TypeAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">element_type</span><span class="p">,</span>
+                        <span class="n">affine_attr</span><span class="p">,</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">memory_space</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.buffer_at">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.buffer_at">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">buffer_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`</span>
+<span class="sd">        instead of immediately writing them to memory.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">            An array written to in a loop.</span>
+
+<span class="sd">        axis: str</span>
+<span class="sd">            The loop index whose body contains writes to target</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">memref_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">F32Type</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">BufferAtOp</span><span class="p">(</span><span class="n">memref_type</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.reshape">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reshape">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">reshape</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">shape</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Takes an array in the kernel, `target`, for example if the array is `B`, then would be `target` would be `&lt;schedule&gt;.B`, and reshapes it to tuple `shape`. As an example, if the desired shape is 32 by 4 by 8, the `&lt;shape&gt;` would be `(32, 4, 8)`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">            The array, represented by a memory, to reshape.</span>
+
+<span class="sd">        shape: tuple</span>
+<span class="sd">            The new shape of the memory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
+        <span class="n">eletype</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">type</span><span class="p">)</span><span class="o">.</span><span class="n">element_type</span>
+        <span class="n">memref_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">eletype</span><span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">ReshapeOp</span><span class="p">(</span><span class="n">memref_type</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.pipeline">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.pipeline">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">initiation_interval</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">rewind</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Pipelines a loop with index `axis` into `initiation_interval` stages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str</span>
+<span class="sd">            The index of the loop to pipeline.</span>
+
+<span class="sd">        initiation_interval: int</span>
+<span class="sd">            The initiation_interval to be used when pipelining.</span>
+
+<span class="sd">        rewind: bool</span>
+<span class="sd">            If true, rewinding is allowed, allowing continuous loop pipelining.</span>
+<span class="sd">            This is only effective for perfect loop nests inside a top level function.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">i32</span> <span class="o">=</span> <span class="n">IntegerType</span><span class="o">.</span><span class="n">get_unsigned</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="n">ii</span> <span class="o">=</span> <span class="n">IntegerAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i32</span><span class="p">,</span> <span class="n">initiation_interval</span><span class="p">)</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rewind</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_loops</span><span class="p">(</span><span class="n">func</span><span class="p">)[</span><span class="n">band_name</span><span class="p">][</span><span class="n">axis</span><span class="p">]</span><span class="o">.</span><span class="n">loop</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span>
+                <span class="s2">&quot;rewind&quot;</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="n">UnitAttr</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">get_loops</span><span class="p">(</span><span class="n">func</span><span class="p">)[</span><span class="n">band_name</span><span class="p">][</span><span class="n">axis</span><span class="p">]</span><span class="o">.</span><span class="n">loop</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;pipeline_ii&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ii</span></div>
+
+
+<div class="viewcode-block" id="Schedule.parallel">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.parallel">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Instantiates a loop with index `axis` to be computed in parallel with the loops it is nested with.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str</span>
+<span class="sd">            The index of the loop to be computed in parallel.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">ParallelOp</span><span class="p">(</span><span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.inline">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.inline">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">inline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Inlines a function `axis`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str</span>
+<span class="sd">            The function to inline.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="n">axis</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="nb">str</span><span class="p">),</span> <span class="s2">&quot;Function name must be a string&quot;</span>
+        <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;inline&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">UnitAttr</span><span class="o">.</span><span class="n">get</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="Schedule.dataflow">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.dataflow">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">dataflow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Applies a &quot;dataflow&quot; attribute to function `axis`. This allows for parallelism if the given function uses streams or the `to` schedule.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis: str | allo.ir.LoopWrapper</span>
+<span class="sd">            The function to add the attribute to.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="c1"># function</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+            <span class="n">func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;dataflow&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">UnitAttr</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="k">return</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">loop_name</span> <span class="o">=</span> <span class="n">axis</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">band_name</span> <span class="o">=</span> <span class="n">band_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">def</span> <span class="nf">locate_loop</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+            <span class="k">nonlocal</span> <span class="n">cnt</span>
+            <span class="k">for</span> <span class="n">ope</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ope</span><span class="p">,</span> <span class="p">(</span><span class="n">scf_d</span><span class="o">.</span><span class="n">ForOp</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">)):</span>
+                    <span class="n">locate_loop</span><span class="p">(</span><span class="n">ope</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="s2">&quot;loop_name&quot;</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span>
+                <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;loop_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">loop_name</span>
+            <span class="p">):</span>
+                <span class="n">cnt</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;dataflow&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">UnitAttr</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">scf_d</span><span class="o">.</span><span class="n">ForOp</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="s2">&quot;op_name&quot;</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span>
+                    <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;op_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">band_name</span>
+                <span class="p">):</span>
+                    <span class="n">locate_loop</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">cnt</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataflow loop </span><span class="si">{</span><span class="n">band_name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">loop_name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.compute_at">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.compute_at">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">compute_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">from_loop</span><span class="p">,</span> <span class="n">target_loop</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If `from_loop` and `target_loop` are indices over the same range, `&lt;schedule&gt;.compute_at(from_loop, target_loop)` merges the two loops, taking</span>
+<span class="sd">        the body of `from_loop` and appending it to the body of `target_loop`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        from_loop: str</span>
+<span class="sd">            The loop whose body is being moved.</span>
+
+<span class="sd">        target_loop: str</span>
+<span class="sd">            The loop whose body is being appended to.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">from_band</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func</span><span class="p">,</span> <span class="n">from_loop</span><span class="p">)</span>
+        <span class="n">target_band</span><span class="p">,</span> <span class="n">target_axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func</span><span class="p">,</span> <span class="n">target_loop</span><span class="p">)</span>
+        <span class="n">from_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">from_band</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">target_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">target_band</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span>
+            <span class="n">target_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">target_axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ip</span>
+        <span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">ComputeAtOp</span><span class="p">(</span>
+            <span class="n">from_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">target_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ip</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.reuse_at">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reuse_at">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">reuse_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Takes an array in a kernel, for example if the array is `B`, this would be `&lt;schedule&gt;.B`, accessed by index `axis` and creates a reuse buffer</span>
+<span class="sd">        to reuse values from `target` which are accessed in a sequentially moving window.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">            The array being accessed.</span>
+
+<span class="sd">        axis: str</span>
+<span class="sd">            The loop index used to access values in `target`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
+        <span class="n">func</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_func_and_axis</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="n">band_name</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="n">find_loop_in_bands</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
+        <span class="n">op_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateOpHandleOp</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">memref_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">F32Type</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
+
+        <span class="k">def</span> <span class="nf">find_reuse_buffers</span><span class="p">(</span><span class="n">res</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="p">(</span>
+                            <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">AllocOp</span><span class="p">)</span>
+                            <span class="ow">and</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span>
+                            <span class="ow">and</span> <span class="n">band_name</span> <span class="o">+</span> <span class="s2">&quot;_reuse&quot;</span>
+                            <span class="ow">in</span> <span class="n">StringAttr</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+                        <span class="p">):</span>
+                            <span class="n">res</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+
+        <span class="n">prev_reuse_buffers</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">find_reuse_buffers</span><span class="p">(</span><span class="n">prev_reuse_buffers</span><span class="p">)</span>
+        <span class="n">allo_d</span><span class="o">.</span><span class="n">ReuseAtOp</span><span class="p">(</span><span class="n">memref_type</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">loop_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+        <span class="n">_mlir_lower_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+        <span class="n">new_reuse_buffers</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">find_reuse_buffers</span><span class="p">(</span><span class="n">new_reuse_buffers</span><span class="p">)</span>
+        <span class="n">new_reuse_buffers</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">buf</span> <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="n">new_reuse_buffers</span> <span class="k">if</span> <span class="n">buf</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">prev_reuse_buffers</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">new_reuse_buffers</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">prev_reuse_buffers</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Reuse buffer not found&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">MockBuffer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">,</span>
+            <span class="n">StringAttr</span><span class="p">(</span><span class="n">new_reuse_buffers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.to">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.to">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">depth</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Takes an array in the kernel, `target`, for example if the array is `B`, this would be `target` would be `&lt;schedule&gt;.B`,</span>
+<span class="sd">        and converts it into a stream. `dst` is the name of the array any value of `target` is written to.</span>
+<span class="sd">        For example if `C[i, j] = B[i, j]`, `dst` would be specified as `&quot;C&quot;`. If values of `&lt;target&gt;` get written to multiple arrays.</span>
+<span class="sd">        Multiple calls to `&lt;schedule&gt;.to(...)` may be needed.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">            The array to convert to a stream.</span>
+
+<span class="sd">        dst: str</span>
+<span class="sd">            An array which a value of `target` is written to.</span>
+
+<span class="sd">        axis: str</span>
+<span class="sd">            Move axis-th loop body to xcel scope.</span>
+
+<span class="sd">        depth: int</span>
+<span class="sd">            The streaming channel depth.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="n">prim</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">depth</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Schedule.unfold">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.unfold">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">unfold</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">axes</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Finds a set of nested loops with name `band_name` and for every `&lt;i&gt;` in list `axes`.</span>
+<span class="sd">        The `&lt;i&gt;th` nested loop is unfolded into a constant number of copies of it&#39;s loop body.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        band_name: str</span>
+<span class="sd">            The set of nested loops to unroll.</span>
+
+<span class="sd">        axes: list[int]</span>
+<span class="sd">            A list of the axes to unroll.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="nb">list</span><span class="p">),</span> <span class="s2">&quot;Axes must be a list&quot;</span>
+        <span class="n">axes</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">axes</span> <span class="o">==</span> <span class="nb">list</span><span class="p">(</span>
+            <span class="nb">range</span><span class="p">(</span><span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">axes</span><span class="p">))</span>
+        <span class="p">),</span> <span class="s2">&quot;Axes must be consecutive&quot;</span>
+        <span class="c1"># start from the inner most loop</span>
+        <span class="k">if</span> <span class="s2">&quot;:&quot;</span> <span class="ow">in</span> <span class="n">band_name</span><span class="p">:</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">band_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">band_name</span> <span class="o">=</span> <span class="n">band_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func</span>
+        <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="n">axes</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="c1"># Need to recompute the loop nests due to the MLIR bug:</span>
+            <span class="c1"># https://reviews.llvm.org/D101422</span>
+            <span class="c1"># Otherwise, it may hit invalid operations</span>
+            <span class="n">band</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_band</span><span class="p">(</span><span class="n">band_name</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+            <span class="n">target_outer</span> <span class="o">=</span> <span class="n">band</span><span class="o">.</span><span class="n">get_outer_most</span><span class="p">()</span>
+            <span class="n">loops</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">band</span><span class="p">)</span>
+            <span class="n">op_to_remove</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">loop_wrapper</span> <span class="o">=</span> <span class="n">loops</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span>
+            <span class="n">loop</span> <span class="o">=</span> <span class="n">loop_wrapper</span><span class="o">.</span><span class="n">loop</span>
+            <span class="n">lower_bound</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;lowerBoundMap&quot;</span><span class="p">]</span>
+            <span class="k">assert</span> <span class="nb">str</span><span class="p">(</span><span class="n">lower_bound</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;affine_map&lt;() -&gt; (0)&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;Lower bound must be 0&quot;</span>
+            <span class="n">upper_bound</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;upperBoundMap&quot;</span><span class="p">]</span>
+            <span class="n">upper_bound</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+                <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;affine_map&lt;\(\) -&gt; \(([0-9]*)\)&gt;&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">upper_bound</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">axis</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">loops</span><span class="p">[</span><span class="n">axis</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">loop</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="p">(</span><span class="n">target_outer</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">loop</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineYieldOp</span><span class="p">):</span>
+                    <span class="k">break</span>
+
+            <span class="k">def</span> <span class="nf">update_operand</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">):</span>
+                    <span class="c1"># pylint: disable=cell-var-from-loop</span>
+                    <span class="k">for</span> <span class="n">in_op</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                        <span class="n">update_operand</span><span class="p">(</span><span class="n">in_op</span><span class="p">,</span> <span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">replace_uses_of_with</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">)</span>
+
+            <span class="c1"># unfold the body `upper_bound` times</span>
+            <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">upper_bound</span><span class="p">):</span>
+                <span class="c1"># pylint: disable=too-many-function-args</span>
+                <span class="n">cst_op</span> <span class="o">=</span> <span class="n">arith_d</span><span class="o">.</span><span class="n">ConstantOp</span><span class="p">(</span><span class="n">IndexType</span><span class="o">.</span><span class="n">get</span><span class="p">(),</span> <span class="n">idx</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
+                <span class="c1"># Directly duplicate the loop itself</span>
+                <span class="c1"># (to preserve a scope for replacing the induction variable),</span>
+                <span class="c1"># and replace the induction variable with the constant</span>
+                <span class="n">new_loop</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">clone</span><span class="p">(</span><span class="n">ip</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">new_loop</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineYieldOp</span><span class="p">):</span>
+                        <span class="k">break</span>
+                    <span class="n">update_operand</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">new_loop</span><span class="o">.</span><span class="n">induction_variable</span><span class="p">,</span> <span class="n">cst_op</span><span class="o">.</span><span class="n">result</span><span class="p">)</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">move_before</span><span class="p">(</span><span class="n">new_loop</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">):</span>
+                        <span class="n">new_name</span> <span class="o">=</span> <span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">band_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+                            <span class="k">if</span> <span class="s2">&quot;op_name&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">attributes</span>
+                            <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s1">&#39;op_name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="p">)</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;op_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
+                        <span class="c1"># Also need to duplicate the function outside the top function</span>
+                        <span class="n">old_func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span>
+                            <span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span>
+                        <span class="p">)</span>
+                        <span class="n">dup_func</span> <span class="o">=</span> <span class="n">old_func</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">clone</span><span class="p">(</span><span class="n">InsertionPoint</span><span class="p">(</span><span class="n">func</span><span class="p">))</span>
+                        <span class="n">new_name</span> <span class="o">=</span> <span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FlatSymbolRefAttr</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s1">&#39;callee&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="p">)</span>
+                        <span class="n">dup_func</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;sym_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+                        <span class="n">op</span><span class="o">.</span><span class="n">attributes</span><span class="p">[</span><span class="s2">&quot;callee&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FlatSymbolRefAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_name</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">old_func</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">op_to_remove</span><span class="p">:</span>
+                            <span class="n">op_to_remove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">old_func</span><span class="p">)</span>
+                <span class="n">op_to_remove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_loop</span><span class="p">)</span>
+            <span class="c1"># need to erase at the end</span>
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">op_to_remove</span><span class="p">:</span>
+                <span class="n">op</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">erase</span><span class="p">()</span>
+            <span class="n">loop</span><span class="o">.</span><span class="n">operation</span><span class="o">.</span><span class="n">erase</span><span class="p">()</span>
+        <span class="c1"># TODO: use a class to wrap the results</span>
+        <span class="k">return</span> <span class="n">axes</span></div>
+
+
+    <span class="c1"># pylint: disable=redefined-builtin</span>
+<div class="viewcode-block" id="Schedule.compose">
+<a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.compose">[docs]</a>
+    <span class="nd">@wrapped_apply</span>
+    <span class="k">def</span> <span class="nf">compose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schs</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Uses `schs`, a schedule for a kernel called in this kernel, in this kernel.</span>
+
+<span class="sd">        A kernel, `&lt;k1&gt;`, may call another kernel, `&lt;k2&gt;`. This means the output of `&lt;k1&gt;.customize()` will contain the MLIR for the compiled `&lt;k2&gt;`, `&lt;s2&#39;&gt;`. `&lt;s2&#39;&gt;` will not have any custom schedule.</span>
+<span class="sd">        To use a custom schedule, `&lt;s2&gt;`, the compiled `&lt;k2&gt;` with some schedule can be created.</span>
+<span class="sd">        This is inserted into the schedule for this kernel through `self.compose(&lt;s2&gt;)`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        schs: allo.customize.Schedule</span>
+<span class="sd">            The schedule of a kernel used in `self`.</span>
+
+<span class="sd">        id: str</span>
+<span class="sd">            Identifies the schedule to replace contained in `self`.</span>
+<span class="sd">            This schedule in `self` must be annotated if `id` is specified.</span>
+
+<span class="sd">        instantiate: list</span>
+<span class="sd">            This is a list of objects used to instantiate types `schs` is generic over.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">def</span> <span class="nf">get_name</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="p">(</span><span class="n">LoopWrapper</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">)):</span>
+                <span class="n">arg</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+                <span class="n">orig_func_name</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">func</span> <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span>
+                <span class="n">func_name</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">orig_func_name</span> <span class="k">if</span> <span class="nb">id</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">orig_func_name</span> <span class="o">+</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">func_name</span> <span class="o">=</span> <span class="n">orig_func_name</span> <span class="o">+</span> <span class="s2">&quot;_0&quot;</span>
+                <span class="n">arg</span><span class="o">.</span><span class="n">func</span> <span class="o">=</span> <span class="n">func_name</span>
+                <span class="k">return</span> <span class="n">arg</span>
+            <span class="n">orig_func_name</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;:&quot;</span> <span class="ow">in</span> <span class="n">arg</span> <span class="k">else</span> <span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span>
+            <span class="n">arg</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;:&quot;</span> <span class="ow">in</span> <span class="n">arg</span> <span class="k">else</span> <span class="n">arg</span>
+            <span class="n">func_name</span> <span class="o">=</span> <span class="n">orig_func_name</span> <span class="k">if</span> <span class="nb">id</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">orig_func_name</span> <span class="o">+</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func_name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">func_name</span> <span class="o">=</span> <span class="n">orig_func_name</span> <span class="o">+</span> <span class="s2">&quot;_0&quot;</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">func_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">arg</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">schs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">schs</span> <span class="o">=</span> <span class="p">[</span><span class="n">schs</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">sch</span> <span class="ow">in</span> <span class="n">schs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="n">PyFunctionType</span><span class="p">):</span>
+                <span class="n">schedule</span> <span class="o">=</span> <span class="n">customize</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="n">instantiate</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sch</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">KERNEL2SCHEDULE</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Cannot find schedule for kernel </span><span class="si">{</span><span class="n">sch</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">sch</span> <span class="o">=</span> <span class="n">KERNEL2SCHEDULE</span><span class="p">[</span><span class="n">sch</span><span class="p">](</span><span class="n">schedule</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="n">Schedule</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;The first argument must be a Schedule object&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">primitive</span> <span class="ow">in</span> <span class="n">sch</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="p">:</span>
+                <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="c1"># Avoid changing the original schedule</span>
+                <span class="n">args</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="c1"># Update axes</span>
+                <span class="k">if</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;reorder&quot;</span><span class="p">,</span> <span class="s2">&quot;fuse&quot;</span><span class="p">}:</span>
+                    <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="n">get_name</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]</span>
+                <span class="k">elif</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span>
+                    <span class="s2">&quot;split&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;unroll&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;pipeline&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;parallel&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;dataflow&quot;</span><span class="p">,</span>
+                <span class="p">}:</span>
+                    <span class="k">if</span> <span class="s2">&quot;axis&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+                        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;buffer_at&quot;</span><span class="p">,</span> <span class="s2">&quot;reuse_at&quot;</span><span class="p">}:</span>
+                    <span class="k">if</span> <span class="s2">&quot;axis&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+                        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;unfold&quot;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="s2">&quot;band_name&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+                        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;band_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;band_name&quot;</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="c1"># Update target buffers</span>
+                <span class="k">if</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span>
+                    <span class="s2">&quot;partition&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;to&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;buffer_at&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;reuse_at&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;reshape&quot;</span><span class="p">,</span>
+                <span class="p">}:</span>
+                    <span class="k">if</span> <span class="s2">&quot;target&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+                        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;target&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;target&quot;</span><span class="p">])</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_name</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">context</span><span class="p">,</span> <span class="n">Location</span><span class="o">.</span><span class="n">unknown</span><span class="p">():</span>
+                    <span class="n">primitive_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="c1"># directly apply primitives to new functions</span>
+                    <span class="n">primitive_func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;llvm&quot;</span><span class="p">:</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;llvm&quot;</span>
+            <span class="k">return</span> <span class="n">LLVMModule</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span>
+                <span class="n">top_func_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">,</span>
+                <span class="n">ext_libs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="s2">&quot;vivado_hls&quot;</span><span class="p">,</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">}:</span>
+            <span class="k">return</span> <span class="n">HLSModule</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span>
+                <span class="n">top_func_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">,</span>
+                <span class="n">platform</span><span class="o">=</span><span class="s2">&quot;vivado_hls&quot;</span> <span class="k">if</span> <span class="n">target</span> <span class="o">!=</span> <span class="s2">&quot;vitis_hls&quot;</span> <span class="k">else</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
+                <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
+                <span class="n">project</span><span class="o">=</span><span class="n">project</span><span class="p">,</span>
+                <span class="n">ext_libs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
+                <span class="n">configs</span><span class="o">=</span><span class="n">configs</span><span class="p">,</span>
+                <span class="n">func_args</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Target </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is not supported&quot;</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">customize</span><span class="p">(</span>
+    <span class="n">fn</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">enable_tensor</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">lower_linalg</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">global_vars</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">instantiate</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="n">Context</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="c1"># Get Python AST</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="n">fn</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">src</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">getsourcelines</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="p">[</span><span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">tabsize</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">9999</span><span class="p">)</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">src</span><span class="p">]</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">src</span><span class="p">))</span>
+    <span class="n">tree</span> <span class="o">=</span> <span class="n">parse_ast</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">instantiate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">instantiate</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">global_vars</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">global_vars</span> <span class="o">=</span> <span class="n">get_global_vars</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+    <span class="c1"># Use-def chain analysis</span>
+    <span class="n">use_def_chain</span> <span class="o">=</span> <span class="n">UseDefChain</span><span class="p">(</span><span class="n">global_vars</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">instantiate</span><span class="p">)</span>
+    <span class="n">use_def_chain</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
+    <span class="c1"># Type construction</span>
+    <span class="n">ctx_type_inf</span> <span class="o">=</span> <span class="n">ASTContext</span><span class="p">(</span>
+        <span class="n">global_vars</span><span class="o">=</span><span class="n">global_vars</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">mlir_ctx</span><span class="o">=</span><span class="n">Context</span><span class="p">()</span> <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">context</span><span class="p">,</span>
+        <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ctx_type_inf</span><span class="o">.</span><span class="n">inst</span> <span class="o">=</span> <span class="n">instantiate</span>
+    <span class="n">tree</span> <span class="o">=</span> <span class="n">TypeInferer</span><span class="p">()(</span><span class="n">ctx_type_inf</span><span class="p">,</span> <span class="n">tree</span><span class="p">)</span>
+    <span class="n">ctx_type_inf</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># Start building IR</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">ASTContext</span><span class="p">(</span>
+        <span class="n">global_vars</span><span class="o">=</span><span class="n">global_vars</span><span class="p">,</span>
+        <span class="n">mlir_ctx</span><span class="o">=</span><span class="n">Context</span><span class="p">()</span> <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">context</span><span class="p">,</span>
+        <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
+        <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ctx</span><span class="o">.</span><span class="n">inst</span> <span class="o">=</span> <span class="n">instantiate</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="n">ASTTransformer</span><span class="p">()(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">tree</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">lower_linalg</span><span class="p">:</span>
+        <span class="n">lower_linalg_and_attach_names</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">top_func</span> <span class="o">=</span> <span class="n">find_func_in_module</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+    <span class="n">sch</span> <span class="o">=</span> <span class="n">Schedule</span><span class="p">(</span>
+        <span class="n">module</span><span class="p">,</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">top_func</span><span class="p">,</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
+        <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">top_func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">),</span>
+        <span class="n">ext_libs</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
+        <span class="n">use_def_chain</span><span class="o">=</span><span class="n">use_def_chain</span><span class="p">,</span>
+        <span class="n">inst_list</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="c1"># Attach buffers to schedule:</span>
+    <span class="c1"># The reason why we do not attach buffers to function is that</span>
+    <span class="c1"># we may have multiple schedules referring to the same function,</span>
+    <span class="c1"># which will cause conflicts of different buffers in different contexts.</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">Callable</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">buffer</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">buffers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span> <span class="n">MockArg</span><span class="p">):</span>  <span class="c1"># Function arguments</span>
+                <span class="nb">setattr</span><span class="p">(</span>
+                    <span class="n">sch</span><span class="p">,</span>
+                    <span class="n">name</span><span class="p">,</span>
+                    <span class="n">MockBuffer</span><span class="p">(</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">buffer</span><span class="o">.</span><span class="n">idx</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">buffer</span><span class="p">,</span> <span class="p">(</span><span class="n">memref_d</span><span class="o">.</span><span class="n">AllocOp</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">,</span> <span class="n">memref_d</span><span class="o">.</span><span class="n">GetGlobalOp</span><span class="p">)</span>
+            <span class="p">):</span>  <span class="c1"># Intermediate buffers</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">sch</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">(</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+    <span class="c1"># Check if there are memory leaks</span>
+    <span class="c1"># All live operations = {top_func} + {top_func_ip}</span>
+    <span class="n">buffer</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">ctx</span><span class="o">.</span><span class="n">buffers</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">global_vars</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c1"># Functions are stored in ctx.global_vars, which should also be removed</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># assert module.context._get_live_operation_count() == 2, (</span>
+    <span class="c1">#     &quot;All live operations = 1 (top_func) + 1 (top_func_ip), &quot;</span>
+    <span class="c1">#     f&quot;expected 2, but got {module.context._get_live_operation_count()}&quot;</span>
+    <span class="c1"># )</span>
+    <span class="k">return</span> <span class="n">sch</span>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+    
+
+      <div class="clearer"></div>
+    </div>
+    <div class="button_nav_wrapper">
+        <div class="button_nav">
+            <div class="left">
+                
+            </div>
+
+            <div class="right">
+                
+            </div>
+        </div>
+    </div>
+
+
+    <div class="footer" role="contentinfo">
+    &#169; Copyright 2024, Allo Authors.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.0.2.
+    </div>
+
+<p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
+  </body>
+</html>
