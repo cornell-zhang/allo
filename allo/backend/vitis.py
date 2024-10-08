@@ -147,6 +147,9 @@ def codegen_host(top, module):
             f"std::vector<{out_dtype}, aligned_allocator<{out_dtype}> > source_out{i}({' * '.join(out_shape)});\n",
             strip=False,
         )
+        out_str += format_str(
+            f"std::fill(source_out{i}.begin(), source_out{i}.end(), 0);\n", strip=False
+        )
     out_str += "\n"
     # Generate OpenCL host code
     out_str += format_str(
