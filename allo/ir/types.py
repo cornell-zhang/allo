@@ -83,7 +83,7 @@ class Int(AlloType):
         """
         Constructs an integer.
 
-        Parameters:
+        Parameters
         ----------
         bits: The bitwidth of the integer.
         """
@@ -106,7 +106,7 @@ class UInt(AlloType):
         """
         Constructs an unsigned integer.
 
-        Parameters:
+        Parameters
         ----------
         bits: The bitwidth of the integer.
         """
@@ -133,7 +133,8 @@ class Float(AlloType):
         """
         Constructs a floating point decimal number.
 
-        Parameters:
+        Parameters
+        ----------
         bits: The bitwidth of the float. This must be either 16, 32, or 64.
         """
         if bits == 16:
@@ -171,7 +172,8 @@ class Fixed(AlloType):
         """
         Constructs a fixed point decimal.
 
-        Parameters:
+        Parameters
+        ----------
         bits: The bitwidth of the number.
 
         frac: The number of fraction bits in the decimal.
@@ -192,7 +194,8 @@ class UFixed(AlloType):
         """
         Constructs an unsigned fixed point decimal.
 
-        Parameters:
+        Parameters
+        ----------
         bits: The bitwidth of the number.
 
         frac: The number of fraction bits in the decimal.

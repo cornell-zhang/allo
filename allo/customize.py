@@ -173,9 +173,11 @@ class Schedule:
 
         Parameters
         ----------
-        axis: The name of an index in the kernel.
+        axis: str
+            The name of an index in the kernel.
 
-        factor: The size of each tile, e.g. the size of the inner nested loop.
+        factor: int
+            The size of each tile, e.g. the size of the inner nested loop.
         """
         func, axis = self._get_func_and_axis(axis)
         band_name, axis = find_loop_in_bands(func, axis)
@@ -213,11 +215,13 @@ class Schedule:
         """
         Unrolls a loop with loop index `axis` by `factor`.
 
-        Parameters:
+        Parameters
         ----------
-        axis: The name of an index in the kernel.
+        axis: str
+            The name of an index in the kernel.
 
-        factor: The factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.
+        factor: int
+            The factor to unroll by, for example a factor of 2 will cause the body to be duplicated once.
         """
 
         func, axis = self._get_func_and_axis(axis)
@@ -259,15 +263,19 @@ class Schedule:
         cyclic:The original array is split into `factor` equally sized blocks interleaving the elements of the original array.
         complete: The original array is split into its individual elements. This corresponds to resolving a memory into registers.
 
-        Parameters:
+        Parameters
         ----------
-        target: The array to partition.
+        target: allo.ir.utils.MockBuffer
+            The array to partition.
 
-        partition_type: The type of partition.
+        partition_type: allo.customize.Partition
+            The type of partition.
 
-        factor: The number of arrays created by a block or cyclic partition.
+        factor: int
+            The number of arrays created by a block or cyclic partition.
 
-        dim: The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.
+        dim: int
+            The dimension of `target` to partition. If `dim=0`, all dimensions are partitioned.
         """
         # TODO: test whether the partition has conflicts for different functions
         if partition_type > 2:
@@ -404,11 +412,13 @@ class Schedule:
         Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
         instead of immediately writing them to memory.
 
-        Parameters:
+        Parameters
         ----------
-        target: An array written to in a loop.
+        target: allo.ir.utils.MockBuffer
+            An array written to in a loop.
 
-        axis: The loop index whose body contains writes to target
+        axis: str
+            The loop index whose body contains writes to target
         """
 
         _, _, target = find_buffer(self.module, target, self.func_args)
@@ -425,11 +435,13 @@ class Schedule:
         """
         Takes an array in the kernel, `target`, for example if the array is `B`, then would be `target` would be `<schedule>.B`, and reshapes it to tuple `shape`. As an example, if the desired shape is 32 by 4 by 8, the `<shape>` would be `(32, 4, 8)`.
 
-        Parameters:
+        Parameters
         ----------
-        target: The array, represented by a memory, to reshape.
+        target: allo.ir.utils.MockBuffer
+            The array, represented by a memory, to reshape.
 
-        shape: The new shape of the memory.
+        shape: tuple
+            The new shape of the memory.
         """
 
         _, _, target = find_buffer(self.module, target, self.func_args)
@@ -442,14 +454,17 @@ class Schedule:
         """
         Pipelines a loop with index `axis` into `initiation_interval` stages.
 
-        Parameters:
+        Parameters
         ----------
-        axis: The index of the loop to pipeline.
+        axis: str
+            The index of the loop to pipeline.
 
-        initiation_interval: The initiation_interval to be used when pipelining.
+        initiation_interval: int
+            The initiation_interval to be used when pipelining.
 
-        rewind: If true, rewinding is allowed, allowing continuous loop pipelining.
-        This is only effective for perfect loop nests inside a top level function.
+        rewind: bool
+            If true, rewinding is allowed, allowing continuous loop pipelining.
+            This is only effective for perfect loop nests inside a top level function.
         """
 
         i32 = IntegerType.get_unsigned(32)
@@ -467,9 +482,10 @@ class Schedule:
         """
         Instantiates a loop with index `axis` to be computed in parallel with the loops it is nested with.
 
-        Parameters:
+        Parameters
         ----------
-        axis: The index of the loop to be computed in parallel.
+        axis: str
+            The index of the loop to be computed in parallel.
         """
 
         func, axis = self._get_func_and_axis(axis)
@@ -484,9 +500,10 @@ class Schedule:
         """
         Inlines a function `axis`.
 
-        Parameters:
+        Parameters
         ----------
-        axis: The function to inline.
+        axis: str
+            The function to inline.
         """
 
         assert axis is None or isinstance(axis, str), "Function name must be a string"
@@ -500,9 +517,10 @@ class Schedule:
         """
         Applies a "dataflow" attribute to function `axis`. This allows for parallelism if the given function uses streams or the `to` schedule.
 
-        Parameters:
+        Parameters
         ----------
-        axis: The function to add the attribute to.
+        axis: str | allo.ir.LoopWrapper
+            The function to add the attribute to.
         """
 
         if isinstance(axis, str):
@@ -544,11 +562,13 @@ class Schedule:
         If `from_loop` and `target_loop` are indices over the same range, `<schedule>.compute_at(from_loop, target_loop)` merges the two loops, taking
         the body of `from_loop` and appending it to the body of `target_loop`.
 
-        Parameters:
+        Parameters
         ----------
-        from_loop: The loop whose body is being moved.
+        from_loop: str
+            The loop whose body is being moved.
 
-        target_loop: The loop whose body is being appended to.
+        target_loop: str
+            The loop whose body is being appended to.
         """
 
         from_band, _ = find_loop_in_bands(self.top_func, from_loop)
@@ -568,11 +588,13 @@ class Schedule:
         Takes an array in a kernel, for example if the array is `B`, this would be `<schedule>.B`, accessed by index `axis` and creates a reuse buffer
         to reuse values from `target` which are accessed in a sequentially moving window.
 
-        Parameters:
+        Parameters
         ----------
-        target: The array being accessed.
+        target: allo.ir.utils.MockBuffer
+            The array being accessed.
 
-        axis: The loop index used to access values in `target`
+        axis: str
+            The loop index used to access values in `target`
         """
 
         _, _, target = find_buffer(self.module, target, self.func_args)
@@ -619,11 +641,19 @@ class Schedule:
         For example if `C[i, j] = B[i, j]`, `dst` would be specified as `"C"`. If values of `<target>` get written to multiple arrays.
         Multiple calls to `<schedule>.to(...)` may be needed.
 
-        Parameters:
+        Parameters
         ----------
-        target: The array to convert to a stream.
+        target: allo.ir.utils.MockBuffer
+            The array to convert to a stream.
 
-        dst: An array which a value of `target` is written to.
+        dst: str
+            An array which a value of `target` is written to.
+
+        axis: str
+            Move axis-th loop body to xcel scope.
+
+        depth: int
+            The streaming channel depth.
         """
 
         return prim.to(
@@ -636,11 +666,13 @@ class Schedule:
         Finds a set of nested loops with name `band_name` and for every `<i>` in list `axes`.
         The `<i>th` nested loop is unfolded into a constant number of copies of it's loop body.
 
-        Parameters:
+        Parameters
         ----------
-        band_name: The set of nested loops to unroll.
+        band_name: str
+            The set of nested loops to unroll.
 
-        axes: A list of the axes to unroll
+        axes: list[int]
+            A list of the axes to unroll.
         """
 
         assert isinstance(axes, list), "Axes must be a list"
@@ -737,9 +769,17 @@ class Schedule:
         To use a custom schedule, `<s2>`, the compiled `<k2>` with some schedule can be created.
         This is inserted into the schedule for this kernel through `self.compose(<s2>)`.
 
-        Parameters:
+        Parameters
         ----------
-        schs: The schedule of a kernel used in `self`.
+        schs: allo.customize.Schedule
+            The schedule of a kernel used in `self`.
+
+        id: str
+            Identifies the schedule to replace contained in `self`.
+            This schedule in `self` must be annotated if `id` is specified.
+
+        instantiate: list
+            This is a list of objects used to instantiate types `schs` is generic over.
         """
 
         def get_name(arg):
