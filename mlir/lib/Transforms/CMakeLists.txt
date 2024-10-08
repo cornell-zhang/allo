@@ -10,6 +10,7 @@ add_mlir_library(MLIRAlloPasses
     RemoveStrideMap.cpp
     MemRefDCE.cpp
     DataPlacement.cpp
+    UnifyKernels.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/allo
