@@ -407,18 +407,26 @@ class HLSModule:
                 )
                 print(cmd)
                 if shell:
-                    subprocess.Popen(cmd, shell=True).wait()
+                    process = subprocess.Popen(cmd, shell=True)
                 else:
-                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to build the project")
             else:
                 print("Build folder exists, skip building")
                 # run the executable
-                cmd = f"cd {self.project}; ./top ../{bitstream_folder}/top.xclbin"
-                subprocess.Popen(cmd, shell=True).wait()
+                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                cmd = f"cd {self.project}; make host PLATFORM=$XDEVICE; {prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run the executable")
             # suppose the last argument is the output tensor
-            args[-1][:] = read_tensor_from_file(
-                inputs[-1][0], inputs[-1][1], f"{self.project}/output.data"
+            result = read_tensor_from_file(
+                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
             )
+            args[-1][:] = result
             return
         else:
             raise RuntimeError("Not implemented")
