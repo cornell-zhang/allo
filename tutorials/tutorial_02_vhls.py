@@ -18,6 +18,7 @@ First, we import the necessary packages.
 
 import allo
 from allo.ir.types import float32
+import numpy as np
 
 ##############################################################################
 # Algorithm Definition
