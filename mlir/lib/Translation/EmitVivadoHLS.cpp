@@ -363,6 +363,12 @@ public:
   bool visitOp(arith::MinUIOp op) {
     return emitter.emitMaxMin(op, "min"), true;
   }
+  bool visitOp(arith::MaximumFOp op) {
+    return emitter.emitMaxMin(op, "max"), true;
+  }
+  bool visitOp(arith::MinimumFOp op) {
+    return emitter.emitMaxMin(op, "min"), true;
+  }
 
   /// Logical expressions.
   bool visitOp(arith::XOrIOp op) { return emitter.emitBinary(op, "^"), true; }

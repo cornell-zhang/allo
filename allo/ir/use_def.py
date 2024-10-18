@@ -193,6 +193,9 @@ class UseDefChain(ast.NodeVisitor):
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
                 return list(self.visit(node.args[0]))
+            if node.func.id in {"min", "max"}:
+                assert len(node.args) == 2, "min/max only support two arguments"
+                return list(self.visit(node.args[0])) + list(self.visit(node.args[1]))
             raise RuntimeError(f"Unsupported function call {node.func.id}")
 
         if obj.__module__.startswith("allo") and not obj.__module__.startswith(
