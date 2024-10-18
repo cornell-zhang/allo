@@ -1674,6 +1674,25 @@ class ASTTransformer(ASTBuilder):
                     node.args[0].dtype,
                     Int(32) if node.func.id == "int" else Float(32),
                 )
+
+            if node.func.id in {"min", "max"}:
+                stmts = build_stmts(ctx, node.args)
+                if isinstance(node.dtype, Float):
+                    opcls = {
+                        "min": arith_d.MinimumFOp,
+                        "max": arith_d.MaximumFOp,
+                    }.get(node.func.id)
+                elif isinstance(node.dtype, Int):
+                    opcls = {
+                        "min": arith_d.MinSIOp,
+                        "max": arith_d.MaxSIOp,
+                    }.get(node.func.id)
+                elif isinstance(node.dtype, UInt):
+                    opcls = {
+                        "min": arith_d.MinUIOp,
+                        "max": arith_d.MaxUIOp,
+                    }.get(node.func.id)
+                return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if (
