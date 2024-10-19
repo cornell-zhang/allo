@@ -2127,7 +2127,8 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
-        os << ",\n";
+        if (func.getArguments().size() > 0)
+          os << ",\n";
         indent();
 
         // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
