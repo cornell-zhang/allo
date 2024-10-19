@@ -13,7 +13,6 @@ from .._mlir.ir import (
     IntegerAttr,
     FloatAttr,
     StringAttr,
-    AffineConstantExpr,
     AffineMap,
     AffineMapAttr,
 )
