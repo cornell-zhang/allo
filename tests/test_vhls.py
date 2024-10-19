@@ -166,5 +166,20 @@ def test_scalar():
     # Note: Should not expect it to run using csim! Need to generate correct binding for mutable scalars in PyBind.
 
 
+def test_size1_array():
+    def kernel(A: int32[1]) -> int32[1]:
+        A[0] = A[0] + 1
+        return A
+
+    s = allo.customize(kernel)
+    mod = s.build()
+    np_A = np.array([1], dtype=np.int32)
+    np.testing.assert_allclose(mod(np_A), [2], rtol=1e-5)
+    print("Passed CPU simulation!")
+    mod = s.build(target="vhls")
+    print(mod.hls_code)
+    assert "[1]" in mod.hls_code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
