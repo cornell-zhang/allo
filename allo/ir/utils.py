@@ -188,11 +188,10 @@ class MockScalar(MockOp):
         self.name = name
         self.ctx = ctx
         self.value = value
-        shape = (1,)
         assert isinstance(dtype, AlloType), f"Expect AlloType, got {dtype}"
         self.dtype = dtype
         if not ctx.enable_tensor:
-            memref_type = MemRefType.get(shape, dtype.build())
+            memref_type = MemRefType.get((), dtype.build())
             alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
             alloc_op.attributes["name"] = StringAttr.get(name)
         else:
@@ -203,9 +202,7 @@ class MockScalar(MockOp):
     def result(self):
         # pylint: disable=no-else-return
         if not self.ctx.enable_tensor:
-            affine_map = AffineMap.get(
-                dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-            )
+            affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
             affine_attr = AffineMapAttr.get(affine_map)
             load = affine_d.AffineLoadOp(
                 self.dtype.build(),

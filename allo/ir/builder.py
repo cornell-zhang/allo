@@ -86,9 +86,7 @@ class ASTTransformer(ASTBuilder):
                 buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
             )
             if not ctx.enable_tensor:
-                affine_map = AffineMap.get(
-                    dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-                )
+                affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
                 affine_attr = AffineMapAttr.get(affine_map)
                 store_op = affine_d.AffineStoreOp(
                     val.result, target, [], affine_attr, ip=ctx.get_ip()
@@ -1246,7 +1244,6 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(node.dtype, Stream):
             ctx.buffers[node.target.id] = rhs
         else:
-            # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
                 node.dtype,

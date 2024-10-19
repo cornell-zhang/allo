@@ -714,5 +714,20 @@ def test_minmax(T):
     assert "max" in mod.hls_code
 
 
+def test_scalar():
+    def kernel() -> int32:
+        a: int32 = 0
+        b: int32 = a + 1
+        return b
+
+    s = allo.customize(kernel)
+    print(s.module)
+    assert "%alloc[]" in str(s.module)
+    mod = s.build()
+    assert mod() == 1
+    mod = s.build(target="vhls")
+    assert "," not in mod.hls_code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
