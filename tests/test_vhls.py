@@ -167,18 +167,23 @@ def test_scalar():
 
 
 def test_size1_array():
-    def kernel(A: int32[1]) -> int32[1]:
+    def top(A: int32[1]) -> int32[1]:
         A[0] = A[0] + 1
         return A
 
-    s = allo.customize(kernel)
+    s = allo.customize(top)
     mod = s.build()
     np_A = np.array([1], dtype=np.int32)
     np.testing.assert_allclose(mod(np_A), [2], rtol=1e-5)
     print("Passed CPU simulation!")
-    mod = s.build(target="vhls")
+    mod = s.build(target="vitis_hls", mode="csim", project="test_size1_array.prj")
     print(mod.hls_code)
     assert "[1]" in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        np_B = np.array([0], dtype=np.int32)
+        mod(np_A, np_B)
+        np.testing.assert_allclose(np_A, [2], rtol=1e-5)
+        print("Passed!")
 
 
 if __name__ == "__main__":
