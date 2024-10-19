@@ -922,14 +922,10 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
     emitValue(memref, 0, false, load_from_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
-    // do nothing;
-  } else {
-    for (auto index : affineMap.getResults()) {
-      os << "[";
-      affineEmitter.emitAffineExpr(index);
-      os << "]";
-    }
+  for (auto index : affineMap.getResults()) {
+    os << "[";
+    affineEmitter.emitAffineExpr(index);
+    os << "]";
   }
   os << ";";
   emitInfoAndNewLine(op);
@@ -972,14 +968,10 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
     emitValue(memref, 0, false, store_to_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
-    // do nothing;
-  } else {
-    for (auto index : affineMap.getResults()) {
-      os << "[";
-      affineEmitter.emitAffineExpr(index);
-      os << "]";
-    }
+  for (auto index : affineMap.getResults()) {
+    os << "[";
+    affineEmitter.emitAffineExpr(index);
+    os << "]";
   }
   os << " = ";
   emitValue(op.getValueToStore());
@@ -1762,12 +1754,8 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
         os << " */";
       } else {
         emitValue(array, 0, false, name);
-        if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
-          // do nothing;
-        } else {
-          for (auto &shape : arrayType.getShape())
-            os << "[" << shape << "]";
-        }
+        for (auto &shape : arrayType.getShape())
+          os << "[" << shape << "]";
       }
     } else { // tensor
       emitValue(array, 0, false, name);
@@ -2127,7 +2115,8 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
-        os << ",\n";
+        if (func.getArguments().size() > 0)
+          os << ",\n";
         indent();
 
         // TODO: a known bug, cannot return a value twice, e.g. return %0, %0

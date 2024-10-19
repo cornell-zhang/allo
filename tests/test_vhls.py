@@ -121,9 +121,8 @@ def test_csim_write_back():
 
 
 def test_pointer_generation():
-    def top(inst: bool[1], C: int32[3]):
-        flag: bool = inst[0]
-        if flag:
+    def top(inst: bool, C: int32[3]):
+        if inst:
             C[0] = C[0] + 1
 
     s = allo.customize(top)
@@ -164,6 +163,26 @@ def test_scalar():
     mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
     assert "int32_t *v1" in mod.hls_code
     # Note: Should not expect it to run using csim! Need to generate correct binding for mutable scalars in PyBind.
+
+
+def test_size1_array():
+    def top(A: int32[1]) -> int32[1]:
+        A[0] = A[0] + 1
+        return A
+
+    s = allo.customize(top)
+    mod = s.build()
+    np_A = np.array([1], dtype=np.int32)
+    np.testing.assert_allclose(mod(np_A), [2], rtol=1e-5)
+    print("Passed CPU simulation!")
+    mod = s.build(target="vitis_hls", mode="csim", project="test_size1_array.prj")
+    print(mod.hls_code)
+    assert "[1]" in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        np_B = np.array([0], dtype=np.int32)
+        mod(np_A, np_B)
+        np.testing.assert_allclose(np_A, [2], rtol=1e-5)
+        print("Passed!")
 
 
 if __name__ == "__main__":
