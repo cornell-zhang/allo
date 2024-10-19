@@ -121,9 +121,8 @@ def test_csim_write_back():
 
 
 def test_pointer_generation():
-    def top(inst: bool[1], C: int32[3]):
-        flag: bool = inst[0]
-        if flag:
+    def top(inst: bool, C: int32[3]):
+        if inst:
             C[0] = C[0] + 1
 
     s = allo.customize(top)
