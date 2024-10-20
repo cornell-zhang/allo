@@ -454,7 +454,9 @@ def parse_xml(path, prod_name, top="top", print_flag=False):
     est_resources = area_estimate["Resources"]
     avail_resources = area_estimate["AvailableResources"]
     resources = {}
-    for name in ("BRAM_18K", "DSP48E", "FF", "LUT"):
+    for name in ("BRAM_18K", "DSP48E", "DSP", "FF", "LUT", "URAM"):
+        if name not in est_resources:
+            continue
         item = [est_resources[name], avail_resources[name]]
         item.append(f"{round(int(item[0]) / int(item[1]) * 100)}%")
         resources[name] = item.copy()

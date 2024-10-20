@@ -161,7 +161,7 @@ mod = s.build(target="llvm")
 # directly feed them into the executable. Allo will automatically handle the
 # input data and generate corresponding internal wrappers for LLVM to execute,
 # but we still need to make sure the data types are consistent. By default,
-# ``np.random.randint`` will generate np.int64 data type, while we use ``int32``
+# ``np.random.randint`` will generate ``np.int64`` data type, while we use ``int32``
 # when defining our kernel function, so we need to explicitly cast the data type
 # to ``np.int32``.
 
@@ -184,3 +184,4 @@ np_C = mod(np_A, np_B)
 
 golden_C = np.matmul(np_A, np_B)
 np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
+print("Results are correct!")

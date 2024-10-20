@@ -687,5 +687,47 @@ def test_tuple():
     np.testing.assert_allclose(np_D, np_D_ref)
 
 
+@pytest.mark.parametrize("T", [int8, int32, float32])
+def test_minmax(T):
+    def kernel(A: T[10]) -> (T[2], T[2]):
+        min_val: T[2] = 0x3F3F3F3F
+        max_val: T[2] = -0x3F3F3F3F
+        for i in range(10):
+            min_val[0] = min(min_val[0], A[i])
+            max_val[0] = max(max_val[0], A[i])
+        return min_val, max_val
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    if T == int8:
+        np_A = np.random.randint(-64, 64, size=(10,)).astype(np.int8)
+    elif T == int32:
+        np_A = np.random.randint(-1000, 1000, size=(10,)).astype(np.int32)
+    elif T == float32:
+        np_A = np.random.random((10,)).astype(np.float32)
+    allo_min, allo_max = mod(np_A)
+    assert allo_min[0] == np.min(np_A)
+    assert allo_max[0] == np.max(np_A)
+    mod = s.build(target="vhls")
+    assert "min" in mod.hls_code
+    assert "max" in mod.hls_code
+
+
+def test_scalar():
+    def kernel() -> int32:
+        a: int32 = 0
+        b: int32 = a + 1
+        return b
+
+    s = allo.customize(kernel)
+    print(s.module)
+    assert "%alloc[]" in str(s.module)
+    mod = s.build()
+    assert mod() == 1
+    mod = s.build(target="vhls")
+    assert "," not in mod.hls_code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

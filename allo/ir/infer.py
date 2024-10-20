@@ -723,6 +723,14 @@ class TypeInferer(ASTVisitor):
                 new_args = visit_stmts(ctx, node.args)
                 node.shape = tuple()
                 node.dtype = float32 if node.func.id == "float" else int32
+            elif node.func.id in {"min", "max"}:
+                # Python-Builtin functions
+                assert (
+                    len(node.args) == 2
+                ), "Only support two arguments for `min` and `max`"
+                new_args = visit_stmts(ctx, node.args)
+                node.shape = new_args[0].shape
+                node.dtype = new_args[0].dtype
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node

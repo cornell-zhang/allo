@@ -86,9 +86,7 @@ class ASTTransformer(ASTBuilder):
                 buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
             )
             if not ctx.enable_tensor:
-                affine_map = AffineMap.get(
-                    dim_count=0, symbol_count=0, exprs=[AffineConstantExpr.get(0)]
-                )
+                affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
                 affine_attr = AffineMapAttr.get(affine_map)
                 store_op = affine_d.AffineStoreOp(
                     val.result, target, [], affine_attr, ip=ctx.get_ip()
@@ -1246,7 +1244,6 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(node.dtype, Stream):
             ctx.buffers[node.target.id] = rhs
         else:
-            # TODO: figure out why zero-ranked cannot work
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
                 node.dtype,
@@ -1674,6 +1671,25 @@ class ASTTransformer(ASTBuilder):
                     node.args[0].dtype,
                     Int(32) if node.func.id == "int" else Float(32),
                 )
+
+            if node.func.id in {"min", "max"}:
+                stmts = build_stmts(ctx, node.args)
+                if isinstance(node.dtype, Float):
+                    opcls = {
+                        "min": arith_d.MinimumFOp,
+                        "max": arith_d.MaximumFOp,
+                    }.get(node.func.id)
+                elif isinstance(node.dtype, Int):
+                    opcls = {
+                        "min": arith_d.MinSIOp,
+                        "max": arith_d.MaxSIOp,
+                    }.get(node.func.id)
+                elif isinstance(node.dtype, UInt):
+                    opcls = {
+                        "min": arith_d.MinUIOp,
+                        "max": arith_d.MaxUIOp,
+                    }.get(node.func.id)
+                return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if (

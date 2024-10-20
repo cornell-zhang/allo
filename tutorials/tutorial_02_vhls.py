@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Vivado HLS Backend
-==================
+Vivado/Vitis HLS Backend
+========================
 
 **Author**: Hongzheng Chen (hzchen@cs.cornell.edu)
 
 
 In this tutorial, we will demonstrate how to leverage the Allo DSL to generate
-Vivado HLS code for FPGA.
+`Vivado/Vitis HLS <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis/vitis-hls.html>`_ C++ code for FPGA.
 
 Import Allo
 -----------
@@ -18,6 +18,7 @@ First, we import the necessary packages.
 
 import allo
 from allo.ir.types import float32
+import numpy as np
 
 ##############################################################################
 # Algorithm Definition
@@ -27,7 +28,7 @@ from allo.ir.types import float32
 #
 # We can define the constants as follows, which denotes the matrix sizes:
 
-M, N, K = 1024, 1024, 1024
+M, N, K = 32, 32, 32
 
 # %%
 # Here, we define the main computation of the GEMM but use ``float32`` as the
@@ -112,85 +113,119 @@ s.pipeline("j")
 print(s.module)
 
 ##############################################################################
-# Codegen for Vivado HLS
-# ----------------------
+# Codegen for Vivado/Vitis HLS
+# ----------------------------
 # Similar to the CPU execution, we only need to change the target of the ``.build()`` function
 # in order to target different backends. Here, we use ``vhls`` as the target to generate
-# Vivado HLS code, which will returns the generated code as a string.
+# Vivado/Vitis HLS code, which will directly returns the generated code as a string.
 
 code = s.build(target="vhls")
 print(code)
 
 # %%
 # We can see that the generated code preserves the same structure as the IR, and inserts
-# necessary headers and pragmas for Vivado HLS. The generated code can be directly passed
-# to Vivado HLS to generate RTL designs.
+# necessary headers and pragmas for Vivado/Vitis HLS. The generated code can be directly passed
+# to Vivado/Vitis HLS to generate RTL designs.
+#
+# .. note::
+#
+#    Vivado HLS was the previous name of Vitis HLS (before 2020.1). The previous HLS code
+#    can still run on the latest Vitis HLS, but the performance of the generated RTL design
+#    and the estimated reports may be different, as the newer version of Vitis HLS provides better
+#    automatic optimizations.
 
 # %%
-# We also provide an easy way to invoke Vivado HLS from Allo. Users can simply provide
-# the synthesis mode that are supported by Vivado HLS (e.g., ``csim``, ``csyn``, ``cosim``,
-# and ``impl``), and the target project folder name. Allo will automatically generate
+# We also provide an easy way to invoke Vitis HLS from Allo. Users can simply provide
+# the synthesis mode that are supported by Vitis HLS (e.g., ``csim``, ``csyn``, ``sw_emu``,
+# ``hw_emu``, and ``hw``), and the target project folder name. Allo will automatically generate
 # the HLS project and invoke the compiler to generate the RTL design.
 
-mod = s.build(target="vhls", mode="csyn", project="gemm.prj")
+mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 
 # %%
 # You will see a ``gemm.prj`` folder is generated in the current directory:
 #
 # - ``host.cpp``: The host (CPU) code that invokes the generated accelerator.
 # - ``kernel.cpp``: The generated accelerator code.
-# - ``run.tcl``: The Vivado HLS script that can be used to generate the Vivado HLS project.
 # - ``Makefile``: Defined some shorthands for compiling the project.
 #
-# To run Vivado HLS, you can simply invoke the built module without passing any arguments into it.
+# To run Vitis HLS, you can simply invoke the built module without passing any arguments into it.
 #
 # .. note::
 #
-#    You need to configure the Vivado HLS environment before running the generated code.
-#    We have the Vivado environment configured in the ``brg-zhang`` server, so you can directly
-#    ``source /work/shared/common/allo/vitis_2019.2_opt.sh`` to set up the environment.
+#    You need to configure the Vitis HLS environment before running the generated code.
+#    We have the Vitis environment configured on the Zhang group server, so you can directly
+#    ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment, which
+#    targets the AMD U280 FPGA board.
 #
 # .. code-block:: python
 #
 #    mod()
 
 # %%
-# After executing the above command, you will see the following output:
+# After executing the above command, you can check the following report under ``gemm.prj/out.prj/solution1/syn/report/csynth.rpt``.
 #
 # .. code-block:: python
 #
-#    +-------------------+-----------------------------------+
-#    | HLS Version       | Vivado HLS 2019.2.1               |
-#    | Product family    | zynq                              |
-#    | Target device     | xc7z020-clg484-1                  |
-#    | Top Model Name    | gemm                              |
-#    +-------------------+-----------------------------------+
-#    | Target CP         | 10.00 ns                          |
-#    | Estimated CP      | 8.052 ns                          |
-#    | Latency (cycles)  | Min 1077958658; Max 1077958658    |
-#    | Interval (cycles) | Min 1077958659; Max 1077958659    |
-#    | Resources         | Type        Used    Total    Util |
-#    |                   | --------  ------  -------  ------ |
-#    |                   | BRAM_18K       2      280      1% |
-#    |                   | DSP48E         5      220      2% |
-#    |                   | FF           862   106400      1% |
-#    |                   | LUT         1375    53200      3% |
-#    +-------------------+-----------------------------------+
-#    +---------------+--------------+------------+---------------------+---------------+------------------+
-#    |               |   Trip Count |    Latency |   Iteration Latency |   Pipeline II |   Pipeline Depth |
-#    |---------------+--------------+------------+---------------------+---------------+------------------|
-#    | Loop1         |         1024 |    2099200 |                2050 |           N/A |              N/A |
-#    | + Loop1.1     |         1024 |       2048 |                   2 |           N/A |              N/A |
-#    | l_S_i_j_i     |         1024 | 1075859456 |             1050644 |           N/A |              N/A |
-#    | + l_j_init    |         1024 |       1024 |                 N/A |             1 |                1 |
-#    | + l_S_k_k_l_j |      1048576 |    1048588 |                 N/A |             1 |               14 |
-#    | + l_j_back    |         1024 |       1025 |                 N/A |             1 |                3 |
-#    +---------------+--------------+------------+---------------------+---------------+------------------+
-#    * Units in clock cycles
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+#    |                      Modules                     | Latency |  Latency  | Iteration|         | Trip |          |         |         |             |            |     |
+#    |                      & Loops                     | (cycles)|    (ns)   |  Latency | Interval| Count| Pipelined|  BRAM   |   DSP   |      FF     |     LUT    | URAM|
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
+#    |+ gemm                                            |    39934|  1.331e+05|         -|    39935|     -|        no|  6 (~0%)|  5 (~0%)|  19074 (~0%)|  29069 (2%)|    -|
+#    | + gemm_Pipeline_VITIS_LOOP_44_1_VITIS_LOOP_45_2  |     1026|  3.420e+03|         -|     1026|     -|        no|        -|        -|     36 (~0%)|   169 (~0%)|    -|
+#    |  o VITIS_LOOP_44_1_VITIS_LOOP_45_2               |     1024|  3.413e+03|         2|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_buf0_buf0_l_0_l_buf0_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_buf1_buf1_l_0_l_buf1_l_1                   |     1025|  3.416e+03|         3|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_i_j_0_i                                    |    35616|  1.187e+05|      1113|        -|    32|        no|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_j_init                        |       34|    113.322|         -|       34|     -|        no|        -|        -|      8 (~0%)|    50 (~0%)|    -|
+#    |   o l_j_init                                     |       32|    106.656|         1|        1|    32|       yes|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_S_k_0_k_l_j                   |     1039|  3.463e+03|         -|     1039|     -|        no|        -|  5 (~0%)|    759 (~0%)|   494 (~0%)|    -|
+#    |   o l_S_k_0_k_l_j                                |     1037|  3.456e+03|        15|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    |  + gemm_Pipeline_l_j_back                        |       34|    113.322|         -|       34|     -|        no|        -|        -|     15 (~0%)|    78 (~0%)|    -|
+#    |   o l_j_back                                     |       32|    106.656|         2|        1|    32|       yes|        -|        -|            -|           -|    -|
+#    | o l_S_result2_result2_l_0_l_result2_l_1          |     1026|  3.420e+03|         4|        1|  1024|       yes|        -|        -|            -|           -|    -|
+#    +--------------------------------------------------+---------+-----------+----------+---------+------+----------+---------+---------+-------------+------------+-----+
 #
-# From the above output, we can clearly see that all the loops inside the GEMM kernel are pipelined
-# with II=1.
+# From the above output, we can clearly see that all the loops inside the GEMM kernel (marked as ``o``) are pipelined
+# with Initiation Interval (II) equal to 1. You can also find more detailed information under the ``report`` folder.
+
+##############################################################################
+# On-board Execution
+# ------------------
+# After optimizing the design and make sure everything works correctly,
+# we can push the generated RTL design to the backend synthesis flow to generate
+# the bitstream for FPGA. In Allo, we can directly change the target to ``hw``
+# to launch the backend synthesis job. It may take several hours to generate the final
+# bitstream, so it would be better to run it using `tmux <https://github.com/tmux/tmux/wiki>`_.
+# Also, since the C design cannot support returning a new array, we need to
+# explicitly create an output array and pass it to the function.
 #
-# .. note::
+# .. code-block:: python
 #
-#   The results are also printed to a file named ``report.json`` for further analysis.
+#    mod = s.build(target="vitis_hls", mode="hw", project="gemm.prj")
+#    np_A = np.random.random((M, K)).astype(np.float32)
+#    np_B = np.random.random((K, N)).astype(np.float32)
+#    allo_C = np.zeros((M, N), dtype=np.float32)
+#    mod(np_A, np_B, allo_C)
+#    np.testing.assert_allclose(allo_C, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
+#
+# Finally, you should be able to see the generated bitstream under the ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1`` folder
+# (actual board name may be different), and the above test should pass.
+
+# %%
+# To get more detailed information on the resource usage and performance of the generated design,
+# you can check the following files:
+#
+# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.xclbin``: The generated bitstream.
+# - ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1/gemm.link.xclbin.info``: Frequency of the actual design, which can be found in ``DATA_CLK``. By default, it is 300MHz.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/gemm/hls_reports/gemm_csynth.rpt``: The HLS synthesis report.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_full_util_routed.rpt``: The full utilization report after placement and routing. You can find the following resource usage:
+#
+#   - LUT: ``1. CLB Logic -- CLB LUTs``
+#   - FF: ``1. CLB Logic -- CLB Registers -- Register as Flip Flop``
+#   - BRAM: ``3. BLOCKRAM -- Block RAM Tile``
+#   - DSP: ``4. ARITHMETIC -- DSPs``
+#
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/reports/link/imp/impl_1_slr_util_routed.rpt``: The per SLR utilization report after placement and routing.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/gemm/gemm_vitis_hls.log``: The log file of the Vitis HLS.
+# - ``gemm.prj/_x.hw.xilinx_u280_gen3x16_xdma_1_202211_1/logs/link/v++.log``: The log file of the Vivado backend synthesis.

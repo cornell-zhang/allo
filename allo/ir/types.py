@@ -59,6 +59,10 @@ class AlloType:
 
 
 class Index(AlloType):
+    """
+    An array index.
+    """
+
     def __init__(self):
         super().__init__(32, 0, "index")
 
@@ -71,7 +75,18 @@ class Index(AlloType):
 
 
 class Int(AlloType):
+    """
+    An integer of variable bitwidth.
+    """
+
     def __init__(self, bits):
+        """
+        Constructs an integer.
+
+        Parameters
+        ----------
+        bits: The bitwidth of the integer.
+        """
         super().__init__(bits, 0, f"i{bits}")
 
     def build(self):
@@ -83,7 +98,18 @@ class Int(AlloType):
 
 
 class UInt(AlloType):
+    """
+    An unsigned integer of variable bitwidth.
+    """
+
     def __init__(self, bits):
+        """
+        Constructs an unsigned integer.
+
+        Parameters
+        ----------
+        bits: The bitwidth of the integer.
+        """
         super().__init__(bits, 0, f"ui{bits}")
 
     def build(self):
@@ -99,7 +125,18 @@ class UInt(AlloType):
 
 
 class Float(AlloType):
+    """
+    A floating point decimal number.
+    """
+
     def __init__(self, bits):
+        """
+        Constructs a floating point decimal number.
+
+        Parameters
+        ----------
+        bits: The bitwidth of the float. This must be either 16, 32, or 64.
+        """
         if bits == 16:
             super().__init__(16, 10, f"f{bits}")
             self.exponent = 5
@@ -127,7 +164,21 @@ class Float(AlloType):
 
 
 class Fixed(AlloType):
+    """
+    A fixed point decimal.
+    """
+
     def __init__(self, bits, fracs):
+        """
+        Constructs a fixed point decimal.
+
+        Parameters
+        ----------
+        bits: The bitwidth of the number.
+
+        frac: The number of fraction bits in the decimal.
+        """
+
         super().__init__(bits, fracs, f"fixed({bits}, {fracs})")
 
     def build(self):
@@ -135,7 +186,20 @@ class Fixed(AlloType):
 
 
 class UFixed(AlloType):
+    """
+    An unsigned fixed point decimal.
+    """
+
     def __init__(self, bits, fracs):
+        """
+        Constructs an unsigned fixed point decimal.
+
+        Parameters
+        ----------
+        bits: The bitwidth of the number.
+
+        frac: The number of fraction bits in the decimal.
+        """
         super().__init__(bits, fracs, f"ufixed({bits}, {fracs})")
 
     def build(self):
@@ -174,6 +238,10 @@ class Struct(AlloType):
 
 
 class Stream(AlloType):
+    """
+    A FIFO type. Schedules using the `dataflow` schedule may find using this improves parallelism.
+    """
+
     def __init__(self, dtype, shape, depth=2, size=1):
         assert isinstance(dtype, AlloType), f"dtype must be an AlloType, got {dtype}"
         self.dtype = dtype
@@ -195,7 +263,9 @@ class Stream(AlloType):
         return f"Stream({self.dtype}[{shape}])"
 
 
-bool = Int(1)
+# boolean type should not be used as i1!
+bool = UInt(1)
+# signed integer types
 int1 = Int(1)
 int8 = Int(8)
 int16 = Int(16)
@@ -217,6 +287,7 @@ int12 = Int(12)
 int13 = Int(13)
 int14 = Int(14)
 int15 = Int(15)
+# unsigned integer types
 uint1 = UInt(1)
 uint8 = UInt(8)
 uint16 = UInt(16)
@@ -238,7 +309,9 @@ uint12 = UInt(12)
 uint13 = UInt(13)
 uint14 = UInt(14)
 uint15 = UInt(15)
+# index type
 index = Index()
+# floating point types
 float16 = Float(16)
 float32 = Float(32)
 float64 = Float(64)

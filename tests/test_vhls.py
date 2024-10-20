@@ -1,10 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import pytest
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import bool, int32, float32
 import numpy as np
 import allo.backend.hls as hls
 
@@ -118,6 +117,71 @@ def test_csim_write_back():
         B = np.zeros((N), dtype=np.int32)
         mod(A, B)
         np.testing.assert_allclose(A, B, rtol=1e-5)
+        print("Passed!")
+
+
+def test_pointer_generation():
+    def top(inst: bool, C: int32[3]):
+        if inst:
+            C[0] = C[0] + 1
+
+    s = allo.customize(top)
+    mod = s.build(target="vitis_hls", mode="csim", project="test_pointer.prj")
+    assert "bool v0," in mod.hls_code and ",," not in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        inst = np.array([1], dtype=np.bool_)
+        C = np.array([1, 2, 3], dtype=np.int32)
+        mod(inst, C)
+        np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+        print("Passed!")
+
+
+def test_scalar_not_array():
+    def top(inst: bool, C: int32[3]):
+        flag: bool = inst[0]
+        if flag:
+            C[0] = C[0] + 1
+
+    s = allo.customize(top)
+    mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
+    assert "bool v0," in mod.hls_code and ",," not in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        C = np.array([1, 2, 3], dtype=np.int32)
+        mod(1, C)
+        np.testing.assert_allclose(C, [2, 2, 3], rtol=1e-5)
+        print("Passed!")
+
+
+def test_scalar():
+    def case1(C: int32) -> int32:
+        return C + 1
+
+    s = allo.customize(case1)
+    mod = s.build()
+    assert mod(1) == 2
+    print("Passed CPU simulation!")
+    mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
+    assert "int32_t *v1" in mod.hls_code
+    # Note: Should not expect it to run using csim! Need to generate correct binding for mutable scalars in PyBind.
+
+
+def test_size1_array():
+    def top(A: int32[1]) -> int32[1]:
+        A[0] = A[0] + 1
+        return A
+
+    s = allo.customize(top)
+    mod = s.build()
+    np_A = np.array([1], dtype=np.int32)
+    np.testing.assert_allclose(mod(np_A), [2], rtol=1e-5)
+    print("Passed CPU simulation!")
+    mod = s.build(target="vitis_hls", mode="csim", project="test_size1_array.prj")
+    print(mod.hls_code)
+    assert "[1]" in mod.hls_code
+    if hls.is_available("vitis_hls"):
+        np_B = np.array([0], dtype=np.int32)
+        mod(np_A, np_B)
+        np.testing.assert_allclose(np_A, [2], rtol=1e-5)
         print("Passed!")
 
 

@@ -20,6 +20,8 @@ from .vitis import (
     postprocess_hls_code,
     generate_description_file,
     update_makefile,
+    write_tensor_to_file,
+    read_tensor_from_file,
 )
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
@@ -30,6 +32,7 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
+from ..utils import get_func_inputs_outputs
 
 # from .. import primitives as prim
 
@@ -136,12 +139,16 @@ def separate_header(hls_code, top=None):
             arg_type = line.strip()
             _, var = arg_type.rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
-            var = var.split("[")[0]
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
             allo_type = c2allo_type[ele_type]
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((allo_type, shape))
-            sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+            if "[" in var:  # array
+                var = var.split("[")[0]
+                sig_str += "  " + ele_type + " *" + var + f"{comma}\n"
+            else:  # scalar
+                var = var.split(",")[0]
+                sig_str += "  " + ele_type + " " + var + f"{comma}\n"
     sig_str += '} // extern "C"\n'
     sig_str += "\n#endif // KERNEL_H\n"
     return sig_str, args
@@ -222,7 +229,13 @@ class HLSModule:
             copy_build_files(self.top_func_name, project, mode, platform=platform)
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
-                assert self.mode in {"csim", "sw_emu", "hw_emu", "hw"}, "Invalid mode"
+                assert self.mode in {
+                    "csim",
+                    "csyn",
+                    "sw_emu",
+                    "hw_emu",
+                    "hw",
+                }, "Invalid mode"
                 assert (
                     self.top_func_name != "kernel"
                 ), "kernel is a reserved keyword for vitis_hls"
@@ -314,9 +327,7 @@ class HLSModule:
 
     def __call__(self, *args, shell=True):
         if self.platform == "vivado_hls":
-            assert (
-                os.system(f"which {self.platform} >> /dev/null") == 0
-            ), f"cannot find {self.platform} on system path"
+            assert is_available("vivado_hls"), "vivado_hls is not available"
             ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
             assert (
                 int(ver[0]) * 10 + int(ver[1]) >= 48
@@ -351,9 +362,7 @@ class HLSModule:
             else:
                 raise RuntimeError(f"{self.platform} does not support {self.mode} mode")
         elif self.platform == "vitis_hls":
-            assert (
-                os.system(f"which {self.platform} >> /dev/null") == 0
-            ), f"cannot find {self.platform} on system path"
+            assert is_available("vitis_hls"), "vitis_hls is not available"
             if self.mode == "csim":
                 cwd = os.getcwd()
                 mod = IPModule(
@@ -367,12 +376,57 @@ class HLSModule:
                 )
                 mod(*args)
                 return
+            if self.mode == "csyn":
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                if shell:
+                    subprocess.Popen(cmd, shell=True).wait()
+                else:
+                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                return
+            # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            cmd = f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
-            print(cmd)
-            if shell:
-                subprocess.Popen(cmd, shell=True).wait()
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, _ = get_func_inputs_outputs(func)
+            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_dtype,
+                    in_shape,
+                    f"in_data_{i}",
+                    f"{self.project}/input_{i}.h",
+                )
+            # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(bitstream_folder):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to build the project")
             else:
-                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                print("Build folder exists, skip building")
+                # run the executable
+                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                cmd = f"cd {self.project}; make host PLATFORM=$XDEVICE; {prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run the executable")
+            # suppose the last argument is the output tensor
+            result = read_tensor_from_file(
+                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+            )
+            args[-1][:] = result
+            return
         else:
             raise RuntimeError("Not implemented")
