@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
