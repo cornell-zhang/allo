@@ -22,14 +22,10 @@ def gemm(A: int32[M, K], B: int32[K, N], inst: int8[2], C: int32[M, N]):
     # def gemm(A: int32[M, K], B: int32[K, N], inst: bool[1], C: int32[M, N]):
 
     flowtag: bool = inst[0]
-    # flowtag: bool = inst
     # --------------------------------------------------------
-    # R_zero: int32 = 0
-    # C_zero: int32 = 0
     Rtimes: int32 = M // Rt if flowtag else K // Rt
     Ctimes: int32 = N // Ct
     Tlength: int32 = K if flowtag else M
-    # Tcycles: int32 = Tlength+Rt+Ct-2
 
     local_S: int32
 
