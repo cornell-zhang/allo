@@ -19,7 +19,6 @@ P0, P1 = Rt + 2, Ct + 2
 
 @df.kernel(mapping=[P0, P1])
 def gemm(A: int32[M, K], B: int32[K, N], inst: int8[2], C: int32[M, N]):
-    # def gemm(A: int32[M, K], B: int32[K, N], inst: bool[1], C: int32[M, N]):
 
     flowtag: bool = inst[0]
     # --------------------------------------------------------
