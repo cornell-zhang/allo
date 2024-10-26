@@ -1614,6 +1614,9 @@ class ASTTransformer(ASTBuilder):
                     return build_stmt(ctx, node.func)
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
+                    cast = ASTTransformer.build_cast_op(
+                        ctx, stmts[0], node.args[0].dtype, node.func.value.dtype
+                    )
                     if len(node.func.value.shape) == 0:
                         affine_map = AffineMap.get(
                             dim_count=0,
@@ -1622,7 +1625,7 @@ class ASTTransformer(ASTBuilder):
                         )
                         affine_attr = AffineMapAttr.get(affine_map)
                         op = affine_d.AffineStoreOp(
-                            stmts[0].result,
+                            cast.result,
                             ctx.buffers[node.func.value.id].result,
                             [],
                             affine_attr,
@@ -1630,7 +1633,7 @@ class ASTTransformer(ASTBuilder):
                         )
                     else:
                         store_tensor(
-                            stmts[0].result,
+                            cast.result,
                             ctx.buffers[node.func.value.id].result,
                             "put",
                             ip=ctx.get_ip(),
@@ -1689,7 +1692,13 @@ class ASTTransformer(ASTBuilder):
                         "min": arith_d.MinUIOp,
                         "max": arith_d.MaxUIOp,
                     }.get(node.func.id)
-                return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
+                lhs = ASTTransformer.build_cast_op(
+                    ctx, stmts[0], node.args[0].dtype, node.dtype
+                )
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, stmts[1], node.args[1].dtype, node.dtype
+                )
+                return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
         if (

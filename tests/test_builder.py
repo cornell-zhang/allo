@@ -714,6 +714,27 @@ def test_minmax(T):
     assert "max" in mod.hls_code
 
 
+def test_minmax_cast():
+    def kernel(A: int8[2]) -> int32[2]:
+        res: int32[2] = 0
+        res[0] = min(A[0], 0)
+        res[1] = max(A[1], 0.0)
+        return res
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(-64, 64, size=(2,)).astype(np.int8)
+    allo_B = mod(np_A)
+    assert allo_B[0] == min(np_A[0], 0)
+    assert allo_B[1] == max(np_A[1], 0.0)
+    mod = s.build(target="vhls")
+    print(mod)
+    assert "min" in mod.hls_code
+    assert "max" in mod.hls_code
+    assert "(float)" in mod.hls_code
+
+
 def test_scalar():
     def kernel() -> int32:
         a: int32 = 0
