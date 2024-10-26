@@ -39,8 +39,6 @@ def smith_waterman_score_matrix(seqA, seqB):
 @df.kernel(mapping=[P0, P1])
 def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0, P1]):
     i, j = df.get_pid()
-    # using float32 for the score matrix to avoid overflow
-    # or account for different scoring functions
     in_A: Stream[int32] = df.pipe(src=(i, j - 1), dst=(i, j))
     in_B: Stream[int32] = df.pipe(src=(i - 1, j), dst=(i, j))
     in_C: Stream[int32] = df.pipe(src=(i - 1, j - 1), dst=(i, j))
