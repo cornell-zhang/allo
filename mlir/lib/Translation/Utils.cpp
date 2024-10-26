@@ -45,9 +45,13 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
         return SmallString<8>(std::to_string(boolAttr.getValue()));
 
       } else if (auto floatAttr = constAttr.dyn_cast<FloatAttr>()) {
+        // as 0.0 will be interpreted as double constant, we need to explicitly
+        // declare it as float32
+        int bitwidth = floatAttr.getType().cast<FloatType>().getWidth();
+        std::string prefix = (bitwidth == 32) ? "(float)" : "(double)";
         auto value = floatAttr.getValueAsDouble();
         if (std::isfinite(value))
-          return SmallString<8>(std::to_string(value));
+          return SmallString<8>(prefix + std::to_string(value));
         else if (value > 0)
           return SmallString<8>("INFINITY");
         else
