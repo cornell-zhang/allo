@@ -18,9 +18,8 @@ P0, P1 = Rt + 2, Ct + 2
 
 
 @df.kernel(mapping=[P0, P1])
-def gemm(A: int32[M, K], B: int32[K, N], inst: int8[2], C: int32[M, N]):
+def gemm(A: int32[M, K], B: int32[K, N], flowtag: bool, C: int32[M, N]):
 
-    flowtag: bool = inst[0]
     # --------------------------------------------------------
     Rtimes: int32 = M // Rt if flowtag else K // Rt
     Ctimes: int32 = N // Ct
@@ -105,11 +104,10 @@ def test_unified_systolic():
 
     C = np.zeros((M, N), dtype=np.int32)
     C_flat = C.flatten()
-    flowtag: bool = False
-    insts = np.array([flowtag, flowtag], dtype=np.int8)
+    flowtag: bool = True
 
     if hls.is_available("vitis_hls"):
-        gemm(A_flat, B_flat, insts, C_flat)
+        gemm(A_flat, B_flat, flowtag, C_flat)
         print(C_flat)
         C_truth = np.dot(A, B).flatten()
         print(C_truth)
