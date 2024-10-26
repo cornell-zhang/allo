@@ -729,8 +729,10 @@ class TypeInferer(ASTVisitor):
                     len(node.args) == 2
                 ), "Only support two arguments for `min` and `max`"
                 new_args = visit_stmts(ctx, node.args)
+                typing_rule = get_typing_rule("minmax")
+                res_type = typing_rule(new_args[0].dtype, new_args[1].dtype)
+                node.dtype = res_type
                 node.shape = new_args[0].shape
-                node.dtype = new_args[0].dtype
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
