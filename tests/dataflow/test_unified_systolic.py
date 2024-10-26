@@ -41,7 +41,7 @@ def gemm(A: int32[M, K], B: int32[K, N], inst: int8[2], C: int32[M, N]):
     for ri in range(Rtimes, name="row_loop"):
         for ci in range(Ctimes, name="column_loop"):
             # corner
-            with allo.meta_if(i in [0, Rt + 1] and j in [0, Ct + 1]):
+            with allo.meta_if(i in {0, Rt + 1} and j in {0, Ct + 1}):
                 pass
 
             # peripheral Load
@@ -80,14 +80,14 @@ def gemm(A: int32[M, K], B: int32[K, N], inst: int8[2], C: int32[M, N]):
                     r: int32 = in_R.get()
                     c: int32 = in_C.get()
                     # Core MAC
-                    acti: int32 = r
+                    act: int32 = r
                     weight: int32 = c if flowtag else s
                     psum: int32 = s if flowtag else c
-                    accu: int32 = acti * weight + psum
+                    acc: int32 = act * weight + psum
                     # FLOW OUT
-                    local_S = accu if flowtag else s  # *
+                    local_S = acc if flowtag else s  # *
                     out_R.put(r)
-                    out_C.put(c if flowtag else accu)
+                    out_C.put(c if flowtag else acc)
 
                 if flowtag:
                     C[ri * Rt + (i - 1), ci * Ct + (j - 1)] = local_S
@@ -111,9 +111,9 @@ def test_unified_systolic():
     if hls.is_available("vitis_hls"):
         gemm(A_flat, B_flat, insts, C_flat)
         print(C_flat)
-        C_tru = np.dot(A, B).flatten()
-        print(C_tru)
-        np.testing.assert_allclose(C_flat, C_tru, atol=1e-5)
+        C_truth = np.dot(A, B).flatten()
+        print(C_truth)
+        np.testing.assert_allclose(C_flat, C_truth, atol=1e-5)
         print("Passed!")
 
 
