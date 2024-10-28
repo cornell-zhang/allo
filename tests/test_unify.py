@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.unify_kernels import unify_kernels
+from allo.primitives.unify import unify
 from allo.ir.types import int8
 import pytest
 import numpy as np
@@ -19,7 +19,7 @@ def test_simple_loop():
         for i in range(L):
             A[i] -= 1
 
-    unified = unify_kernels(f1, f2, 1)
+    unified = unify(f1, f2, 1)
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros((L), dtype=np.int8)
     np_A = allo_A.copy()
@@ -43,7 +43,7 @@ def test_multi_time_loop():
         for i in range(L):
             A[i] -= 1
 
-    unified = unify_kernels(f1, f2, 4)
+    unified = unify(f1, f2, 4)
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros((L), dtype=np.int8)
     np_A_add = allo_A + 2
@@ -63,7 +63,7 @@ def test_simple_grid():
         for i, j in allo.grid(L, D):
             A[i, j] -= 1
 
-    unified = unify_kernels(f1, f2, 1)
+    unified = unify(f1, f2, 1)
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros((L, D), dtype=np.int8)
     np_A = allo_A.copy()
@@ -87,7 +87,7 @@ def test_select():
         for i in range(L):
             A[i] = C[i]
 
-    unified = unify_kernels(f1, f2, 1)
+    unified = unify(f1, f2, 1)
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros(L, dtype=np.int8)
     allo_B = np.ones(L, dtype=np.int8)
@@ -115,7 +115,7 @@ def test_nested_loop():
             for j in range(D):
                 A[i] -= 1
 
-    unified = unify_kernels(f1, f2, 1)
+    unified = unify(f1, f2, 1)
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros((L), dtype=np.int8)
     allo_B = np.array([5, 6, 7, 8], dtype=np.int8)

@@ -3,7 +3,6 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import numpy as np
-
 from .._mlir.ir import (
     UnitAttr,
     StringAttr,
