@@ -16,8 +16,8 @@ from ..customize import customize
 def unify(func1: Callable, func2: Callable, loop_num: int):
     """
     Unify two kernels by extracting common parts (e.g. for loop) and using conditional branch.
-    The new module take one more input than func1 and func2 (they should have same input arguments), and the extra input is an array of int8. 
-    The unified kernel uses an outer loop to wrap the input kernels, where the number of iteration in the outer loop is loop_num. 
+    The new module take one more input than func1 and func2 (they should have same input arguments), and the extra input is an array of int8.
+    The unified kernel uses an outer loop to wrap the input kernels, where the number of iteration in the outer loop is loop_num.
     In each iteration, the kernel will execute the branch according to the element in the input array (e.g. 0 for func1, 1 for func2).
     ----------------
     Parameters:
