@@ -8,14 +8,14 @@
     <title>Developer Setup &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
-    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=fd3f3429" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=d2d258e8" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <script src="../_static/documentation_options.js?v=db78e746"></script>
-    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=30646c52"></script>
@@ -208,7 +208,7 @@ $<span class="w"> </span>git<span class="w"> </span>remote<span class="w"> </spa
 make sure you have passed the tests locally before creating a PR or pushing to your fork.</p>
 <p>There are several tests for our project:</p>
 <ol class="arabic simple">
-<li><p><strong>License header check</strong>: make sure all the source files have the license header, which is important for open source projects.</p></li>
+<li><p><strong>License header check</strong>: make sure all the source files have the license header, which is important for open source projects. Please copy these <a class="reference external" href="https://github.com/cornell-zhang/allo/blob/main/allo/__init__.py#L1-L2">two lines</a> if you are creating a new Python file.</p></li>
 <li><p><strong>Code style check</strong>: make sure the Python code style is consistent with the <a class="reference external" href="https://www.python.org/dev/peps/pep-0008/">PEP8</a> standard. We use <code class="docutils literal notranslate"><span class="pre">black</span></code> for Python formatting, which should has been installed in your environment during the setup. For the MLIR part, we use <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> for C/C++ formatting.</p></li>
 <li><p><strong>Linting check</strong>: make sure the code is <a class="reference external" href="https://www.perforce.com/blog/qac/what-lint-code-and-what-linting-and-why-linting-important">linted</a> correctly. We use <code class="docutils literal notranslate"><span class="pre">pylint</span></code> for Python linting, which should also been installed during the setup.</p></li>
 <li><p><strong>Unit tests</strong>: make sure the changes will not break the existing facilities. We use <code class="docutils literal notranslate"><span class="pre">pytest</span></code> for Python unit tests, and the test cases are under the <code class="docutils literal notranslate"><span class="pre">tests</span></code> folder.</p></li>
@@ -313,7 +313,7 @@ Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2024, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.0.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>

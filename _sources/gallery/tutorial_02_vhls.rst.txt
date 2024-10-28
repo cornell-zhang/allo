@@ -359,14 +359,14 @@ Vivado/Vitis HLS code, which will directly returns the generated code as a strin
     ) {     // L2
       for (int v3 = 0; v3 < 32; v3++) {     // L5
         for (int v4 = 0; v4 < 32; v4++) {   // L5
-          v2[v3][v4] = 0.000000;    // L5
+          v2[v3][v4] = (float)0.000000;     // L5
         }
       }
       l_S_i_j_0_i: for (int i = 0; i < 32; i++) {   // L6
         float v6[32];       // L7
         l_j_init: for (int j_init = 0; j_init < 32; j_init++) {     // L8
         #pragma HLS pipeline II=1
-          v6[j_init] = 0.000000;    // L9
+          v6[j_init] = (float)0.000000;     // L9
         }
         l_S_k_0_k: for (int k = 0; k < 32; k++) {   // L11
           l_j: for (int j = 0; j < 32; j++) {       // L12
@@ -521,7 +521,7 @@ you can check the following files:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.326 seconds)
+   **Total running time of the script:** (0 minutes 0.332 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_02_vhls.py:
