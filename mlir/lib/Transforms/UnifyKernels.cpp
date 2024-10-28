@@ -194,7 +194,7 @@ void mergeLoop(OpBuilder &builder, affine::AffineForOp &op1,
 }
 
 func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
-                          OpBuilder &builder) {
+                          OpBuilder &builder, int loop_num) {
   std::string newFuncName =
       func1.getName().str() + "_" + func2.getName().str() + "_unified";
 
@@ -207,7 +207,7 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
                                      oldInputTypes.end());
   auto newOutputTypes = oldFuncType.getResults();
   Type i8Type = builder.getI8Type();
-  Type memrefType = MemRefType::get({2}, i8Type);
+  Type memrefType = MemRefType::get({loop_num}, i8Type);
   newInputTypes.push_back(memrefType);
   auto newFuncType = builder.getFunctionType(newInputTypes, newOutputTypes);
   // Todo: Need to clone attribute
@@ -310,7 +310,7 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
 }
 
 /// Pass entry point
-ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2) {
+ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2, int loop_num) {
   auto funcOps1 = module1.getOps<func::FuncOp>();
   auto funcOps2 = module2.getOps<func::FuncOp>();
 
@@ -323,7 +323,7 @@ ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2) {
   while (it1 != funcOps1.end() && it2 != funcOps2.end()) {
     func::FuncOp funcOp1 = *it1;
     func::FuncOp funcOp2 = *it2;
-    func::FuncOp newFuncOp = unifyKernels(funcOp1, funcOp2, builder);
+    func::FuncOp newFuncOp = unifyKernels(funcOp1, funcOp2, builder, loop_num);
     newModule.push_back(newFuncOp);
 
     ++it1;
