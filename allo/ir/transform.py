@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
-from collections.abc import Callable
 import numpy as np
 
 from .._mlir.ir import (
@@ -16,14 +15,12 @@ from .._mlir.ir import (
     FlatSymbolRefAttr,
     FunctionType,
     TypeAttr,
-    Context,
 )
 from .._mlir.dialects import (
     memref as memref_d,
     affine as affine_d,
     scf as scf_d,
     func as func_d,
-    allo as allo_d,
 )
 from .utils import MockArg, MockBuffer
 
@@ -480,14 +477,3 @@ def find_func_and_axis(self, axis):
         func_name = self.top_func_name
     func = self._find_function(func_name)
     return func, axis
-
-
-def unify_kernels(func1: Callable, func2: Callable, loop_num: int):
-    from ..customize import customize
-
-    mlir_ctx = Context()
-    allo_d.register_dialect(mlir_ctx)
-    s1 = customize(func1, context=mlir_ctx)
-    s2 = customize(func2, context=mlir_ctx)
-    unified_module = allo_d.unify_kernels(s1.module, s2.module, loop_num)
-    return unified_module

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.transform import unify_kernels
+from allo.ir.unify_kernels import unify_kernels
 from allo.ir.types import int8
 import pytest
 import numpy as np
