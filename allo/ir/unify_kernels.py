@@ -3,8 +3,12 @@
 
 from collections.abc import Callable
 
-from .._mlir.ir import Context
-from .._mlir.dialects import allo as allo_d
+from .._mlir.ir import (
+    Context,
+)
+from .._mlir.dialects import (
+    allo as allo_d,
+)
 from ..customize import customize
 
 
