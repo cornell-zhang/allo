@@ -32,6 +32,26 @@ def test_simple_loop():
     np.testing.assert_allclose(allo_A, np_A, atol=1e-3)
 
 
+def test_multi_time_loop():
+    L = 8
+    
+    def f1(A: int8[L]):
+        for i in range(L): 
+            A[i] += 1
+            
+    def f2(A: int8[L]):
+        for i in range(L): 
+            A[i] -= 1
+            
+    unified = unify_kernels(f1, f2, 4)
+    llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
+    allo_A = np.zeros((L), dtype=np.int8)
+    np_A_add = allo_A + 2
+    
+    llvm_mod(allo_A, np.array([0, 0, 0, 1], dtype=np.int8))
+    np.testing.assert_allclose(allo_A, np_A_add, atol=1e-3)
+
+
 def test_simple_grid():
     L, D = 8, 8
     
@@ -101,10 +121,15 @@ def test_nested_loop():
     allo_B = np.array([5, 6, 7, 8], dtype=np.int8)
 
     llvm_mod(allo_A, allo_B, np.array([0], dtype=np.int8))
-    np.testing.assert_allclose(allo_A, np.array([9, 10, 11, 12], dtype=np.int8), atol=1e-3)
+    np.testing.assert_allclose(
+        allo_A, np.array([9, 10, 11, 12], dtype=np.int8), atol=1e-3
+    )
     
     llvm_mod(allo_A, allo_B, np.array([1], dtype=np.int8))
-    np.testing.assert_allclose(allo_A, np.array([1, 2, 3, 4], dtype=np.int8), atol=1e-3)
+    np.testing.assert_allclose(
+        allo_A, np.array([1, 2, 3, 4], dtype=np.int8), atol=1e-3
+    )
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

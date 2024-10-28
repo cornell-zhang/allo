@@ -484,6 +484,7 @@ def find_func_and_axis(self, axis):
 
 def unify_kernels(func1: Callable, func2: Callable, loop_num: int):
     from ..customize import customize
+    
     mlir_ctx = Context()
     allo_d.register_dialect(mlir_ctx)
     s1 = customize(func1, context=mlir_ctx)
