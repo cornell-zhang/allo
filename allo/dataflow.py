@@ -103,7 +103,7 @@ def tag_stream_type(func, func_name, stream_info, start_index):
     if "stypes" in func.attributes:
         stypes = func.attributes["stypes"].value.split()
     else:
-        stypes =  ["_"] * start_index
+        stypes = ["_"] * start_index
     for src, dst, _ in stream_info:
         if func_name == src:
             stypes.append("o")
@@ -113,8 +113,10 @@ def tag_stream_type(func, func_name, stream_info, start_index):
             stypes.append("g")
     func.attributes["stypes"] = StringAttr.get("".join(stypes))
 
+
 def remove_unused_argument():
     pass
+
 
 def _build_top(s_top, input_types, stream_info):
     """
