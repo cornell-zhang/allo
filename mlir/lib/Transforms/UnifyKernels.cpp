@@ -219,13 +219,16 @@ func::FuncOp unifyKernels(func::FuncOp &func1, func::FuncOp &func2,
   auto inst = entryBlock->getArgument(entryBlock->getNumArguments() - 1);
   builder.setInsertionPointToStart(entryBlock);
 
-  auto outterLoop = builder.create<mlir::affine::AffineForOp>(loc, 0, 2, 1);
+  auto outterLoop =
+      builder.create<mlir::affine::AffineForOp>(loc, 0, loop_num, 1);
   mlir::Value loopIndex = outterLoop.getInductionVar();
   builder.setInsertionPointToStart(outterLoop.getBody());
   mlir::Value curInst =
       builder.create<mlir::affine::AffineLoadOp>(loc, inst, loopIndex);
-  mlir::Value zeroValue = builder.create<mlir::arith::ConstantOp>(loc, builder.getI8Type(), builder.getI8IntegerAttr(0));
-  mlir::Value conditionArg = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, curInst, zeroValue);
+  mlir::Value zeroValue = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getI8Type(), builder.getI8IntegerAttr(0));
+  mlir::Value conditionArg = builder.create<mlir::arith::CmpIOp>(
+      loc, mlir::arith::CmpIPredicate::eq, curInst, zeroValue);
 
   auto &block1 = func1.front();
   auto &block2 = func2.front();
