@@ -61,6 +61,8 @@ def test_tiled_systolic():
         gemm(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")
+        mod = df.build(gemm, target="vitis_hls", mode="csyn", project="top.prj")
+        mod()
 
 
 if __name__ == "__main__":

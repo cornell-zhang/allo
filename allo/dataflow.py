@@ -117,12 +117,7 @@ def _build_top(s_top, input_types, stream_info):
     top_func.attributes["dataflow"] = UnitAttr.get()
     s_top.top_func.operation.erase()
     s_top.top_func = top_func
-    hls_mod = s_top.build(
-        target="vitis_hls",
-        mode="csim",
-        project="top.prj",
-    )
-    return hls_mod
+    return s_top
 
 
 def kernel(mapping=None):
@@ -141,7 +136,7 @@ def kernel(mapping=None):
     return actual_decorator
 
 
-def build(funcs):
+def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
     def top():
         # Just for locating insertion point
         pass
@@ -152,6 +147,8 @@ def build(funcs):
     all_stream_info = {}
     # mapping from arg name to arg index
     top_func_arg_mapping = {}
+    if not isinstance(funcs, list):
+        funcs = [funcs]
     with s_top.module.context, Location.unknown():
         for func in funcs:
             global_vars = get_global_vars(func)
@@ -184,5 +181,10 @@ def build(funcs):
                 all_stream_info[new_func_name] = (stream_info, indices)
                 s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                 s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-        hls_mod = _build_top(s_top, input_types, all_stream_info)
+        s_top = _build_top(s_top, input_types, all_stream_info)
+        hls_mod = s_top.build(
+            target=target,
+            mode=mode,
+            project=project,
+        )
     return hls_mod

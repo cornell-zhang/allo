@@ -735,4 +735,5 @@ registry = {
     ast.UAdd: intrin_rule(),
     ast.Invert: intrin_rule(),
     ast.IfExp: select_rule(),
+    "minmax": select_rule(),
 }

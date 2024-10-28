@@ -43,11 +43,12 @@ To simplify the installation process, we provide a docker image that has already
 Install from Source
 -------------------
 
-Please follow the instructions below to build the LLVM-19 project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly.
+Please follow the instructions below to build the LLVM-19 project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the `externals <https://github.com/cornell-zhang/allo/tree/main/externals>`_ folder.
 
 .. code-block:: bash
 
-    git submodule update --init --recursive && cd externals/llvm-project
+    git clone --recursive https://github.com/cornell-zhang/allo.git
+    cd allo/externals/llvm-project
     # Apply our patch
     git apply ../llvm_patch
     # Python 3.12 is required
@@ -62,13 +63,8 @@ Please follow the instructions below to build the LLVM-19 project from source. Y
         -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
         -DPython3_EXECUTABLE=`which python3`
     ninja
-
-Then clone the Allo repository to your local machine.
-
-.. code-block:: console
-  
-  $ git clone https://github.com/cornell-zhang/allo.git
-  $ cd allo
+    # export environment variable
+    export LLVM_BUILD_DIR=$(pwd)
 
 We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is **3.12**.
 
@@ -131,4 +127,4 @@ Now, you can run the following command to test if the installation is successful
 
   $ python3 -c "import allo as allo; import allo.ir as air"
 
-If you see no error message, then the installation is successful. Otherwise, please contact us for help.
+If you see no error messages, then the installation is successful. Otherwise, please contact us for help.
