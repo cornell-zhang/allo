@@ -8,6 +8,7 @@ from .._mlir.ir import Context
 from .._mlir.dialects import allo as allo_d
 from ..customize import customize
 
+
 def unify_kernels(func1: Callable, func2: Callable, loop_num: int):
     mlir_ctx = Context()
     allo_d.register_dialect(mlir_ctx)
