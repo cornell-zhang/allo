@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-import textwrap
 import numpy as np
 
+from .utils import format_str
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 
@@ -66,12 +66,6 @@ ctype_map = {
     "ui32": "unsigned int",
     "ui64": "unsigned long",
 }
-
-
-def format_str(s, indent=4, strip=True):
-    if strip:
-        return textwrap.indent(textwrap.dedent(s).strip("\n"), " " * indent)
-    return textwrap.indent(textwrap.dedent(s), " " * indent)
 
 
 # pylint: disable=too-many-branches
