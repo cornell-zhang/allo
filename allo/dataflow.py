@@ -114,10 +114,6 @@ def tag_stream_type(func, func_name, stream_info, start_index):
     func.attributes["stypes"] = StringAttr.get("".join(stypes))
 
 
-def remove_unused_argument():
-    pass
-
-
 def _build_top(s_top, input_types, stream_info):
     """
     s_top: schedule of top-level function
