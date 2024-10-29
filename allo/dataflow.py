@@ -32,6 +32,10 @@ def move_stream_to_interface(func):
     stream_ops = []
     stream_types = []
     stream_info = []
+    used_stream_ops = []
+    used_stream_types = []
+    used_stream_info = []
+
     for op in func.entry_block.operations:
         if (
             isinstance(op, memref_d.AllocOp)
@@ -44,12 +48,28 @@ def move_stream_to_interface(func):
             src = op.attributes["src"].value
             dst = op.attributes["dst"].value
             stream_info.append((src, dst, stream_type))
+
     if len(stream_ops) == 0:
         return func, stream_info
+
+    # Check if the stream op is used in the function, remove if not
+    for op, stype, sinfo in zip(stream_ops, stream_types, stream_info):
+        if len(list(op.result.uses)) != 0:
+            used_stream_ops.append(op)
+            used_stream_types.append(stype)
+            used_stream_info.append(sinfo)
+        else:
+            op.operation.erase()
+
+    if len(used_stream_ops) == 0:
+        return func, used_stream_info
+
     in_types = func.attributes["function_type"].value.inputs
     out_types = func.attributes["function_type"].value.results
-    in_types += stream_types
+
+    in_types += used_stream_types
     func_type = FunctionType.get(in_types, out_types)
+
     func_op = func_d.FuncOp(
         name=func.attributes["sym_name"].value,
         type=func_type,
@@ -57,22 +77,41 @@ def move_stream_to_interface(func):
     )
     func_op.add_entry_block()
     ip = func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
-    # copy function operations
+
     cnt_stream = 0
+    total_args = len(func_op.arguments)
+
     for op in func.entry_block.operations:
         if isinstance(op, func_d.ReturnOp):
             break
-        if op in stream_ops:
+        if op in used_stream_ops:
             op.result.replace_all_uses_with(
-                func_op.arguments[len(in_types) - len(stream_types) + cnt_stream]
+                func_op.arguments[total_args - len(used_stream_types) + cnt_stream]
             )
             cnt_stream += 1
+            op.operation.erase()
             continue
         op.operation.move_before(ip)
     for i, arg in enumerate(func.arguments):
         arg.replace_all_uses_with(func_op.arguments[i])
+
     func.operation.erase()
-    return func_op, stream_info
+    return func_op, used_stream_info
+
+
+def tag_stream_type(func, func_name, stream_info, start_index):
+    if "stypes" in func.attributes:
+        stypes = func.attributes["stypes"].value.split()
+    else:
+        stypes = ["_"] * start_index
+    for src, dst, _ in stream_info:
+        if func_name == src:
+            stypes.append("o")
+        elif func_name == dst:
+            stypes.append("i")
+        else:
+            stypes.append("g")
+    func.attributes["stypes"] = StringAttr.get("".join(stypes))
 
 
 def _build_top(s_top, input_types, stream_info):
@@ -89,7 +128,7 @@ def _build_top(s_top, input_types, stream_info):
     func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
     # create global stream ops
     stream_dict = {}
-    for func_name, (stream_lst, indices) in stream_info.items():
+    for i, (func_name, (stream_lst, indices)) in enumerate(stream_info.items()):
         arg_lst = []
         for src, dst, stream_type in stream_lst:
             if (src, dst) not in stream_dict:
@@ -108,12 +147,14 @@ def _build_top(s_top, input_types, stream_info):
         arguments = []
         for idx in indices:
             arguments.append(top_func.arguments[idx])
-        func_d.CallOp(
+        call_op = func_d.CallOp(
             [],
             FlatSymbolRefAttr.get(func_name),
             arguments + arg_lst,
             ip=InsertionPoint.at_block_terminator(top_func.entry_block),
         )
+        if i == len(stream_info) - 1:
+            call_op.attributes["last"] = UnitAttr.get()
     top_func.attributes["dataflow"] = UnitAttr.get()
     s_top.top_func.operation.erase()
     s_top.top_func = top_func
@@ -178,6 +219,7 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
                         )
                     indices.append(top_func_arg_mapping[arg])
                 s.top_func, stream_info = move_stream_to_interface(s.top_func)
+                tag_stream_type(s.top_func, new_func_name, stream_info, len(indices))
                 all_stream_info[new_func_name] = (stream_info, indices)
                 s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                 s.top_func.operation.clone(InsertionPoint(s_top.top_func))
