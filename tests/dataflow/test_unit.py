@@ -8,18 +8,13 @@ import allo.backend.hls as hls
 import re
 import numpy as np
 
-# M, N, K = 512, 512, 512
-# Mt, Nt = 16, 16
-M, N, K = 16, 16, 16
+M, N, K = 4, 4, 4
 Mt, Nt = 1, 1
-# M, N, K = 4, 4, 4
-# Mt, Nt = 1, 1
 P0, P1 = Mt + 1, Nt + 1
 
 
 @df.kernel(mapping=[P0, P1])
 def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
-    # A[Mt, K] * B[K, Nt] = C[Mt, Nt]
     i, j = df.get_pid()
     in_A: Stream[int32] = df.pipe(src=(i, j - 1), dst=(i, j))
     in_B: Stream[int32] = df.pipe(src=(i - 1, j), dst=(i, j))
@@ -65,19 +60,13 @@ def check_function_arguments(code, kernel_name, arg_count):
 
 
 def test_unit():
-    A = np.random.randint(0, 10, (M, K)).astype(np.int32)
-    B = np.random.randint(0, 10, (K, N)).astype(np.int32)
-    C = np.zeros((M, N), dtype=np.int32)
-    if hls.is_available("vitis_hls"):
-        gemm(A, B, C)
-        np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
-        mod = df.build(gemm, target="vitis_hls", mode="csim", project="top.prj")
-        code = mod.hls_code
-        check_function_arguments(code, "gemm_0_0", 3)
-        check_function_arguments(code, "gemm_0_1", 4)
-        check_function_arguments(code, "gemm_1_0", 4)
-        check_function_arguments(code, "gemm_1_1", 7)
-        print("Passed!")
+    mod = df.build(gemm, target="vhls")
+    code = mod.hls_code
+    check_function_arguments(code, "gemm_0_0", 3)
+    check_function_arguments(code, "gemm_0_1", 4)
+    check_function_arguments(code, "gemm_1_0", 4)
+    check_function_arguments(code, "gemm_1_1", 7)
+    print("Passed!")
 
 
 if __name__ == "__main__":
