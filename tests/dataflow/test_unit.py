@@ -55,12 +55,13 @@ def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
 
 
 def check_function_arguments(code, kernel_name, arg_count):
-    pattern = rf'{kernel_name}\((.*?)\);'
+    pattern = rf"{kernel_name}\((.*?)\);"
     matches = re.findall(pattern, code)
     for match in matches:
-        args = match.split(',')
-        assert len(args) == arg_count, \
-            f"Expected {arg_count} arguments for {kernel_name}, but found {len(args)}."
+        args = match.split(",")
+        assert (
+            len(args) == arg_count
+        ), f"Expected {arg_count} arguments for {kernel_name}, but found {len(args)}."
 
 
 def test_unit():
