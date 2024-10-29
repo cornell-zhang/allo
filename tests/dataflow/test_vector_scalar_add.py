@@ -7,7 +7,7 @@ import allo.dataflow as df
 import numpy as np
 
 Ty = int32
-M = 64
+M = 128
 
 @df.kernel(mapping=[1])
 def core(A: Ty[M], B: Ty[M]):

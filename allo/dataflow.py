@@ -211,7 +211,7 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         func = funcs
         s = customize(func)
         print(s.module)
-        mod = build_aie(s.module, project)
+        mod = build_aie(s, func.__name__, project)
         return
 
     def top():
