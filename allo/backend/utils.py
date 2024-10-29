@@ -11,8 +11,8 @@ def format_str(s, indent=4, strip=True):
         # global context
         indent = INDENT
     if strip:
-        return textwrap.indent(textwrap.dedent(s).strip("\n"), " " * indent) + "\n"
-    return textwrap.indent(textwrap.dedent(s), " " * indent) + "\n"
+        return textwrap.indent(textwrap.dedent(s).strip(), " " * indent) + "\n"
+    return textwrap.indent(s, " " * indent) + "\n"
 
 
 @contextmanager
