@@ -4,9 +4,7 @@
 import allo
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
-import allo.backend.hls as hls
 import re
-import numpy as np
 
 M, N, K = 4, 4, 4
 Mt, Nt = 1, 1
