@@ -126,7 +126,6 @@ def remove_unused_func_ops(s_top, func_names):
         ):
             func_op.erase()
             del func_names[i]
-    return
 
 
 def _build_top(s_top, input_types, stream_info, func_names):
