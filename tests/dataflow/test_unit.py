@@ -63,7 +63,7 @@ def test_unit():
     code = mod.hls_code
     unused_kernels = ["gemm_0_0", "gemm_0_2", "gemm_2_0", "gemm_2_2"]
     for kernel in unused_kernels:
-        assert (kernel not in code), f"Expected {kernel} not in hls code"
+        assert kernel not in code, f"Expected {kernel} not in hls code"
     check_function_arguments(code, "gemm_0_1", 4)
     check_function_arguments(code, "gemm_1_0", 4)
     check_function_arguments(code, "gemm_1_1", 7)

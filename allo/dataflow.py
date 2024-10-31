@@ -119,7 +119,11 @@ def remove_unused_func_ops(s_top, func_names):
     for i in range(len(func_names) - 1, -1, -1):
         func_op = s_top.module.body.operations[i]
         blocks = func_op.body.blocks
-        if len(blocks) == 1 and len(blocks[0].operations) == 1 and blocks[0].operations[0].name == "func.return":
+        if (
+            len(blocks) == 1
+            and len(blocks[0].operations) == 1
+            and blocks[0].operations[0].name == "func.return"
+        ):
             func_op.erase()
             del func_names[i]
     return
@@ -145,9 +149,7 @@ def _build_top(s_top, input_types, stream_info, func_names):
     remove_unused_func_ops(s_top, func_names)
     ip = InsertionPoint(s_top.module.body)
     func_type = FunctionType.get(input_types, [])
-    top_func = func_d.FuncOp(
-        name="top", type=func_type, ip=ip
-    )
+    top_func = func_d.FuncOp(name="top", type=func_type, ip=ip)
     top_func.add_entry_block()
     func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
     # create global stream ops
