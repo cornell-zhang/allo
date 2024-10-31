@@ -21,7 +21,7 @@ def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
     out_B: Stream[int32] = df.pipe(src=(i, j), dst=(i + 1, j))
     for m in range(M // Mt):
         for n in range(N // Nt):
-            with allo.meta_if(i in [0, Mt + 1, Nt + 1] and j in [0, Mt + 1, Nt + 1]):
+            with allo.meta_if(i in {0, Mt + 1, Nt + 1} and j in {0, Mt + 1, Nt + 1}):
                 pass
             with allo.meta_elif(j == 0):
                 for k in range(K):
@@ -61,7 +61,7 @@ def check_function_arguments(code, kernel_name, arg_count):
 def test_unit():
     mod = df.build(gemm, target="vhls")
     code = mod.hls_code
-    unused_kernels = ["gemm_0_0", "gemm_0_2", "gemm_2_0", "gemm_2_2"]
+    unused_kernels = {"gemm_0_0", "gemm_0_2", "gemm_2_0", "gemm_2_2"}
     for kernel in unused_kernels:
         assert kernel not in code, f"Expected {kernel} not in hls code"
     check_function_arguments(code, "gemm_0_1", 4)

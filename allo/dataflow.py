@@ -133,6 +133,7 @@ def _build_top(s_top, input_types, stream_info, func_names):
     s_top: schedule of top-level function
     input_types: top-level function input types
     stream_info: {(src, dst): stream_types} (TODO: support more than one stream)
+    func_names: all kernel function names (top not included)
     """
     s_top.top_func.operation.erase()
     # remove unused kernel
