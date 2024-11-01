@@ -14,6 +14,7 @@ from allo.ir.types import (
     uint1,
     int32,
     float32,
+    index,
 )
 import allo.ir.types as T
 
@@ -40,6 +41,44 @@ def test_int32_float32_casting():
     print(s.module)
     mod = s.build()
     assert mod(1) == kernel(1)
+
+
+def test_index_fixed_casting():
+    def test_one_cast(fixed):
+        def kernel(a: fixed) -> float32:
+            sum_val: fixed = 0.0
+            ret_val: float32 = 0.0
+            for step in range(10):
+                sum_val += step
+            ret_val = sum_val
+            return ret_val
+
+        s = allo.customize(kernel)
+        mod = s.build()
+        assert mod(1) == kernel(1)
+
+    for i in range(1, 20):
+        test_one_cast(Fixed(32, i))
+        test_one_cast(UFixed(32, i))
+
+
+def test_fixed_index_casting():
+
+    def test_one_cast(fixed):
+        def kernel(a: float32) -> int32:
+            a_fix: fixed = a
+            a_idx: index = a_fix
+            b: index = 2
+            ret: int32 = a_idx + b
+            return ret
+
+        s = allo.customize(kernel)
+        mod = s.build()
+        assert mod(2.0) == kernel(2.0)
+
+    for i in range(1, 20):
+        test_one_cast(Fixed(32, i))
+        test_one_cast(UFixed(32, i))
 
 
 def test_large_bitwidth():
