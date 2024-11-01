@@ -16,6 +16,7 @@ from ._mlir.ir import (
     FunctionType,
 )
 from ._mlir.dialects import func as func_d, memref as memref_d
+from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
 from .ir.utils import get_global_vars
 
@@ -114,21 +115,47 @@ def tag_stream_type(func, func_name, stream_info, start_index):
     func.attributes["stypes"] = StringAttr.get("".join(stypes))
 
 
-def _build_top(s_top, input_types, stream_info):
+def remove_unused_func_ops(s_top, func_names):
+    for i in range(len(func_names) - 1, -1, -1):
+        func_op = s_top.module.body.operations[i]
+        blocks = func_op.body.blocks
+        if (
+            len(blocks) == 1
+            and len(blocks[0].operations) == 1
+            and blocks[0].operations[0].name == "func.return"
+        ):
+            func_op.erase()
+            del func_names[i]
+
+
+def _build_top(s_top, input_types, stream_info, func_names):
     """
     s_top: schedule of top-level function
     input_types: top-level function input types
     stream_info: {(src, dst): stream_types} (TODO: support more than one stream)
+    func_names: all kernel function names (top not included)
     """
+    s_top.top_func.operation.erase()
+    # remove unused kernel
+    passes = ["canonicalize"]
+    pipeline = f'builtin.module(func.func({",".join(passes)}))'
+    try:
+        with s_top.module.context:
+            mlir_pass_manager.parse(pipeline).run(s_top.module.operation)
+    except Exception as e:
+        print("Error: failed to run MLIR lower pipeline, printing module...")
+        print(s_top.module)
+        raise e
+    remove_unused_func_ops(s_top, func_names)
+    ip = InsertionPoint(s_top.module.body)
     func_type = FunctionType.get(input_types, [])
-    top_func = func_d.FuncOp(
-        name="top", type=func_type, ip=InsertionPoint(s_top.top_func)
-    )
+    top_func = func_d.FuncOp(name="top", type=func_type, ip=ip)
     top_func.add_entry_block()
     func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
     # create global stream ops
     stream_dict = {}
-    for i, (func_name, (stream_lst, indices)) in enumerate(stream_info.items()):
+    for i, func_name in enumerate(func_names):
+        stream_lst, indices = stream_info[func_name]
         arg_lst = []
         for src, dst, stream_type in stream_lst:
             if (src, dst) not in stream_dict:
@@ -153,10 +180,10 @@ def _build_top(s_top, input_types, stream_info):
             arguments + arg_lst,
             ip=InsertionPoint.at_block_terminator(top_func.entry_block),
         )
-        if i == len(stream_info) - 1:
+        # tag the last callOp for tapa invoke
+        if i == len(func_names) - 1:
             call_op.attributes["last"] = UnitAttr.get()
     top_func.attributes["dataflow"] = UnitAttr.get()
-    s_top.top_func.operation.erase()
     s_top.top_func = top_func
     return s_top
 
@@ -186,6 +213,8 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
     s_top = customize(top)
     input_types = []
     all_stream_info = {}
+    # collect all funcOp
+    func_names = []
     # mapping from arg name to arg index
     top_func_arg_mapping = {}
     if not isinstance(funcs, list):
@@ -223,7 +252,8 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
                 all_stream_info[new_func_name] = (stream_info, indices)
                 s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
                 s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-        s_top = _build_top(s_top, input_types, all_stream_info)
+                func_names.append(new_func_name)
+        s_top = _build_top(s_top, input_types, all_stream_info, func_names)
         hls_mod = s_top.build(
             target=target,
             mode=mode,
