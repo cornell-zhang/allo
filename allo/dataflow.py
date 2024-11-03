@@ -212,7 +212,7 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         s = customize(func)
         print(s.module)
         mod = build_aie(s, func.__name__, project)
-        return
+        return mod
 
     def top():
         # Just for locating insertion point

@@ -27,3 +27,10 @@ def core(A: Ty[M], B: Ty[M]):
 # print("PASSED!")
 
 top = df.build(core, target="aie")
+A = np.random.randint(0, 100, M).astype(np.int32)
+B = np.zeros(M).astype(np.int32)
+top(A, B)
+print(B)
+print(A + 1)
+np.testing.assert_allclose(B, A + 1)
+print("PASSED!")
