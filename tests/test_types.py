@@ -501,7 +501,7 @@ def test_boolean():
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
-    np_A = np.random.randint(0, 2, size=(16)).astype(np.bool)
+    np_A = np.random.randint(0, 2, size=(16)).astype(np.bool_)
     np_B = mod(np_A)
     np.testing.assert_array_equal(np_A, np_B)
 
