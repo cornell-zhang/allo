@@ -15,7 +15,6 @@ from .._mlir.ir import (
     RankedTensorType,
     ShapedType,
     IntegerType,
-    IndexType,
     F32Type,
     UnitAttr,
     IntegerAttr,
@@ -356,6 +355,7 @@ class ASTTransformer(ASTBuilder):
         if type(res_type) is type(src_type) and res_type == src_type:
             return op
 
+        # Single-step type conversions
         cast_map = {
             # Index <-> UInt/Int
             (Int, Index): arith_d.IndexCastOp,
@@ -367,9 +367,6 @@ class ASTTransformer(ASTBuilder):
             (UInt, Float): arith_d.UIToFPOp,
             (Float, Int): arith_d.FPToSIOp,
             (Float, UInt): arith_d.FPToUIOp,
-            # FP to Index is not supported in MLIR
-            # (Float, Index): RuntimeError,
-            # (Index, Float): RuntimeError,
             # Float <-> Fixed/UFixed
             (Float, Fixed): allo_d.FloatToFixedOp,
             (Float, UFixed): allo_d.FloatToFixedOp,
@@ -395,13 +392,25 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(src_type, Float) and isinstance(res_type, Index):
             # FP to Index is not supported in MLIR
             # we need to cast to UInt first, then cast to Index
-            op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
+            op = arith_d.FPToUIOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
             )
             opcls = arith_d.SIToFPOp  # proceed to build cast to float
+        elif isinstance(src_type, Index) and isinstance(res_type, (Fixed, UFixed)):
+            op = arith_d.IndexCastOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
+            opcls = allo_d.IntToFixedOp  # proceed to build cast to float
+        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Index):
+            op = allo_d.FixedToIntOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
+            opcls = arith_d.IndexCastOp
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
                 opcls = arith_d.TruncIOp
