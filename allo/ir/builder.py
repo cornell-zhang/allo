@@ -652,15 +652,15 @@ class ASTTransformer(ASTBuilder):
                 Float: RuntimeError,
                 Int: arith_d.ShLIOp,
                 UInt: arith_d.ShLIOp,
-                Fixed: RuntimeError,
-                UFixed: RuntimeError,
+                Fixed: allo_d.ShLFixedOp,
+                UFixed: allo_d.ShLFixedOp,
             },
             ast.RShift: {
                 Float: RuntimeError,
                 Int: arith_d.ShRSIOp,
                 UInt: arith_d.ShRUIOp,
-                Fixed: RuntimeError,
-                UFixed: RuntimeError,
+                Fixed: allo_d.ShRFixedOp,
+                UFixed: allo_d.ShRFixedOp,
             },
             ast.BitOr: {
                 Float: RuntimeError,
@@ -685,6 +685,12 @@ class ASTTransformer(ASTBuilder):
             },
         }.get(type(node.op))
         ty_cls = Int if isinstance(node.dtype, Index) else type(node.dtype)
+        if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
+            node.dtype, (Fixed, UFixed)
+        ):
+            return opcls[ty_cls](
+                node.dtype.build(), lhs.result, rhs.result, ip=ctx.get_ip()
+            )
         return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
@@ -730,8 +736,14 @@ class ASTTransformer(ASTBuilder):
         lhs = ASTTransformer.build_cast_op(
             ctx, lhs, node.left.dtype, node.dtype, node.left.shape
         )
+        if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
+            node.dtype, (Fixed, UFixed)
+        ):
+            target_rhs_type = Int(32)
+        else:
+            target_rhs_type = node.dtype
         rhs = ASTTransformer.build_cast_op(
-            ctx, rhs, node.right.dtype, node.dtype, node.right.shape
+            ctx, rhs, node.right.dtype, target_rhs_type, node.right.shape
         )
         lhs = ASTTransformer.build_broadcast_op(
             ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
