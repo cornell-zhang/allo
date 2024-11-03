@@ -709,6 +709,30 @@ def DivFixedOp : FixedBinaryOp<"div_fixed"> {
   let summary = "fixed point division operation";
 }
 
+def ShLFixedOp : Allo_Op<"shl_fixed"> {
+  let summary = "fixed point shift left operation";
+  let arguments = (ins
+      FixedLike:$lhs,
+      SignlessIntegerLike:$rhs
+  );
+  let results = (outs FixedLike:$result);
+  let assemblyFormat = [{
+    `(` $lhs `,` $rhs `)` `:` attr-dict `(` type($lhs) `,` type($rhs) `)` `->` type($result)
+  }];
+}
+
+def ShRFixedOp : Allo_Op<"shr_fixed"> {
+  let summary = "fixed point shift right operation";
+  let arguments = (ins
+      FixedLike:$lhs,
+      SignlessIntegerLike:$rhs
+  );
+  let results = (outs FixedLike:$result);
+  let assemblyFormat = [{
+    `(` $lhs `,` $rhs `)` `:` attr-dict `(` type($lhs) `,` type($rhs) `)` `->` type($result)
+  }];
+}
+
 def CmpFixedOp : Allo_Op<"cmp_fixed", [NoMemoryEffect, SameTypeOperands, TypesMatchWith<
     "result type has i1 element type and same shape as operands",
     "lhs", "result", "getI1SameShape($_self)">] # ElementwiseMappable.traits> {

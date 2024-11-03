@@ -483,6 +483,12 @@ public:
     return emitter.emitBinary(op, "/"), true;
   }
   bool visitOp(allo::CmpFixedOp op);
+  bool visitOp(allo::ShLFixedOp op) {
+    return emitter.emitBinary(op, "<<"), true;
+  }
+  bool visitOp(allo::ShRFixedOp op) {
+    return emitter.emitBinary(op, ">>"), true;
+  }
   bool visitOp(allo::MinFixedOp op) {
     return emitter.emitMaxMin(op, "min"), true;
   }

@@ -279,6 +279,23 @@ def test_fixed_compare():
     # FIXME: FixedType kernels cannot be lowered
 
 
+def test_fixed_shift():
+    # Example from https://docs.amd.com/r/en-US/ug1399-vitis-hls/Class-Methods-Operators-and-Data-Members
+    def kernel(A: Fixed(8, 3)[2]) -> float32[2]:
+        shl: Fixed(25, 10) = A[0] << 2
+        shr: Fixed(25, 10) = A[1] >> 2
+        res: float32[2] = 0.0
+        res[0] = float(shl)
+        res[1] = float(shr)
+        return res
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+    A = np.array([5.375, 5.375], dtype=np.float32)
+    np.testing.assert_allclose(mod(A), [-10.5, 1.25], rtol=1e-5)
+
+
 def test_dynamic_type():
     def kernel[Ty]() -> int32:
         A: int32 = Ty.bits
@@ -484,7 +501,7 @@ def test_boolean():
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
-    np_A = np.random.randint(0, 2, size=(16)).astype(np.bool)
+    np_A = np.random.randint(0, 2, size=(16)).astype(np.bool_)
     np_B = mod(np_A)
     np.testing.assert_array_equal(np_A, np_B)
 
