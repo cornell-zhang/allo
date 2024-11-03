@@ -102,67 +102,74 @@ int main(int argc, const char *argv[]) {
   // ------------------------------------------------------
   // Initialize input/ output buffer sizes and sync them
   // ------------------------------------------------------
-  constexpr int IN_SIZE = 128;
-  constexpr int OUT_SIZE = 128;
   auto bo_instr = xrt::bo(device, instr_v.size() * sizeof(int),
                           XCL_BO_FLAGS_CACHEABLE, kernel.group_id(1));
   void *bufInstr = bo_instr.map<void *>();
   memcpy(bufInstr, instr_v.data(), instr_v.size() * sizeof(int));
 
-  std::ifstream inputFile("input0.data");
-  std::ofstream outputFile("output.data");
-  // Check if the file opened successfully
-  if (!inputFile.is_open()) {
-      std::cerr << "Error: Could not open input file.\\n";
-      return 1;
-  }
-  if (!outputFile.is_open()) {
+  std::ofstream ofile("output.data");
+  if (!ofile.is_open()) {
       std::cerr << "Error: Could not open output file.\\n";
       return 1;
   }
-  auto bo_in0 = xrt::bo(device, IN_SIZE * sizeof(int32_t),
-                        XRT_BO_FLAGS_HOST_ONLY, kernel.group_id(3));
-  auto bo_out = xrt::bo(device, OUT_SIZE * sizeof(int32_t),
-                        XRT_BO_FLAGS_HOST_ONLY, kernel.group_id(4));
-  if (verbosity >= 1)
-    std::cout << "Writing data into buffer objects.\\n";
 
-  uint32_t *bufIn0 = bo_in0.map<uint32_t *>();
-  std::vector<uint32_t> srcVec0;
-  for (int i = 0; i < IN_SIZE; i++) {
-    int num;
-    inputFile >> num;
-    srcVec0.push_back(num);
-  }
-  memcpy(bufIn0, srcVec0.data(), (srcVec0.size() * sizeof(uint32_t)));
+"""
 
-  bo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-  bo_in0.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-  if (verbosity >= 1)
-    std::cout << "Running Kernel.\\n";
-  unsigned int opcode = 3;
-  auto run = kernel(opcode, bo_instr, instr_v.size(), bo_in0, bo_out);
-  run.wait();
-
-  bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  uint32_t *bufOut = bo_out.map<uint32_t *>();
-
-  for (uint32_t i = 0; i < OUT_SIZE; i++) {
-    outputFile << *(bufOut + i) << "\\n";
-  }
-
-  // Close files
-  inputFile.close();
-  outputFile.close();
+file_close_str = """  ofile.close();
   if (verbosity >= 1)
     std::cout << "Array has been written to output.data.\\n";
   return 0;
 }
 """
 
-def codegen_host(mod):
+def codegen_host(mod, input_args):
     code = host_header
+    with format_code(indent=2):
+        # write input data
+        for i, (arg, dtype, shape) in enumerate(input_args[:-1]):
+            code += format_str(f"std::ifstream ifile{i}(\"input{i}.data\");")
+            code += format_str(f"if (!ifile{i}.is_open()) {{")
+            code += format_str(f"  std::cerr << \"Error: Could not open input file.\\n\";", strip=False)
+            code += format_str(f"  return 1;", strip=False)
+            code += format_str(f"}}")
+            size = np.prod(shape)
+            code += format_str(f"auto bo_in{i} = xrt::bo(device, {size} * sizeof(int32_t),")
+            code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({i + 3}));", indent=26)
+            code += format_str(f"uint32_t *bufIn{i} = bo_in{i}.map<uint32_t *>();")
+            code += format_str(f"std::vector<uint32_t> srcVec{i};")
+            code += format_str(f"for (int i = 0; i < {size}; i++) {{")
+            with format_code(indent=4):
+                code += format_str(f"int num;")
+                code += format_str(f"ifile{i} >> num;")
+                code += format_str(f"srcVec{i}.push_back(num);")
+            code += format_str("}")
+            code += format_str(f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof(uint32_t)));")
+        out_size = np.prod(input_args[-1][2])
+        code += format_str(f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof(int32_t),", strip=False)
+        code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2}));", indent=26)
+        code += format_str("if (verbosity >= 1)")
+        code += format_str("  std::cout << \"Writing data into buffer objects.\\n\";", strip=False)
+        code += format_str("\nbo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
+        for i in range(len(input_args) - 1):
+            code += format_str(f"bo_in{i}.sync(XCL_BO_SYNC_BO_TO_DEVICE);")
+        # run kernels
+        code += format_str("if (verbosity >= 1)")
+        code += format_str("  std::cout << \"Running Kernel.\\n\";", strip=False)
+        code += format_str("\nunsigned int opcode = 3;", strip=False)
+        inbufs = ", ".join([f"bo_in{i}" for i in range(len(input_args) - 1)])
+        code += format_str("// gid: (opcode, instr, instr_size, ...)")
+        code += format_str(f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, bo_out);")
+        code += format_str("run.wait();")
+        # get results
+        code += format_str("\nbo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
+        code += format_str("uint32_t *bufOut = bo_out.map<uint32_t *>();")
+        code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
+        code += format_str("  ofile << *(bufOut + i) << \"\\n\";", strip=False)
+        code += format_str("}")
+        code += format_str("\n// Close files", strip=False)
+        for i in range(len(input_args) - 1):
+            code += format_str(f"ifile{i}.close();")
+        code += file_close_str
     return code
 
 
@@ -174,7 +181,7 @@ def codegen_aie_mlir(mod, input_args):
     code += format_str("%tile_mem = aie.tile(0, 1)")
     code += format_str("%tile_comp = aie.tile(0, 2)")
     # create object fifos
-    # 2 means double buffer
+    # depth=2 means double buffer
     in_type = input_args[0][1]
     out_type = input_args[1][1]
     code += format_str(f"aie.objectfifo @in0(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>")
@@ -245,7 +252,7 @@ def build_aie(s, name, project):
     path = os.path.dirname(__file__)
     path = os.path.join(path, "../harness/aie")
     os.system(f"cp -r {path}/* {project}")
-    host_code = codegen_host(mod)
+    host_code = codegen_host(mod, input_args)
     with open(os.path.join(project, "test.cpp"), "w") as f:
         f.write(host_code)
     cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top && cmake --build . --config Release"
