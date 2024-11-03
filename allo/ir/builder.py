@@ -15,7 +15,6 @@ from .._mlir.ir import (
     RankedTensorType,
     ShapedType,
     IntegerType,
-    IndexType,
     F32Type,
     UnitAttr,
     IntegerAttr,
@@ -393,7 +392,9 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(src_type, Float) and isinstance(res_type, Index):
             # FP to Index is not supported in MLIR
             # we need to cast to UInt first, then cast to Index
-            op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
+            op = arith_d.FPToUIOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
