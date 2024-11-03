@@ -155,11 +155,15 @@ def codegen_host(mod, input_args):
         # run kernels
         code += format_str("if (verbosity >= 1)")
         code += format_str("  std::cout << \"Running Kernel.\\n\";", strip=False)
-        code += format_str("\nunsigned int opcode = 3;", strip=False)
+        code += format_str("\nauto start = std::chrono::high_resolution_clock::now();", strip=False)
+        code += format_str("unsigned int opcode = 3;", strip=False)
         inbufs = ", ".join([f"bo_in{i}" for i in range(len(input_args) - 1)])
         code += format_str("// gid: (opcode, instr, instr_size, ...)")
         code += format_str(f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, bo_out);")
         code += format_str("run.wait();")
+        code += format_str("\nauto end = std::chrono::high_resolution_clock::now();", strip=False)
+        code += format_str("float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();")
+        code += format_str("std::cout << \"NPU execution time: \" << npu_time << \"us\\n\";")
         # get results
         code += format_str("\nbo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
         code += format_str("uint32_t *bufOut = bo_out.map<uint32_t *>();")
