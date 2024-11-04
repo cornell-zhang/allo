@@ -74,8 +74,6 @@ def codegen_host(top, module):
     inputs, outputs = get_func_inputs_outputs(func)
     # Get input/output types
     out_str = format_str(header, indent=0, strip=False)
-    for i in range(len(inputs)):
-        out_str += format_str(f'#include "input_{i}.h"', indent=0, strip=False)
     out_str += format_str(main_header, indent=0, strip=False)
     out_str += format_str("cl::Kernel krnl_" + top + ";\n", strip=False)
     out_str += format_str(
@@ -104,13 +102,28 @@ def codegen_host(top, module):
             in_dtype = "float"
         else:
             raise ValueError(f"Unsupported input type: {in_dtype}")
+        out_str += format_str(f'std::ifstream ifile{i}("input{i}.data");')
+        out_str += format_str(f"if (!ifile{i}.is_open()) {{")
+        out_str += format_str(
+            '  std::cerr << "Error: Could not open input file.\\n";', strip=False
+        )
+        out_str += format_str("  return 1;", strip=False)
+        out_str += format_str("}")
         in_shape = [str(i) for i in in_shape]
         if len(in_shape) == 0:
             # scalar
-            out_str += format_str(
-                f"{in_dtype} source_in{i} = in_data_{i};", strip=False
-            )
+            out_str += format_str(f"{in_dtype} source_in{i};")
+            out_str += format_str(f"ifile{i} >> source_in{i};")
         else:
+            # pylint: disable=bad-builtin
+            out_str += format_str(
+                f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
+            )
+            out_str += format_str(
+                f"for (unsigned i = 0; i < {'*'.join(map(str, in_shape))}; i++) {{"
+            )
+            out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
+            out_str += format_str("}")
             out_str += format_str(
                 f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};",
                 strip=False,
