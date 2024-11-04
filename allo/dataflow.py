@@ -210,9 +210,10 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         assert not isinstance(funcs, list), "Only support one function for AIE target."
         func = funcs
         global_vars = get_global_vars(func)
+        mapping = func.mapping
         s = customize(func, global_vars=global_vars)
         print(s.module)
-        mod = AIEModule(s.module, s.top_func_name, project)
+        mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
 
