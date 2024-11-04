@@ -8,6 +8,7 @@ import numpy as np
 
 
 def _test_vector_scalar_add():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
     #                |--------------------------------------------|
     #                v   v-------------------------v              v
     # shim tile <-> mem tile <-> comp tile0    comp tile1    comp tile2

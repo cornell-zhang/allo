@@ -8,6 +8,7 @@ import numpy as np
 
 
 def _test_vector_scalar_add():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
 
@@ -25,6 +26,7 @@ def _test_vector_scalar_add():
 
 
 def _test_vector_scalar_mul():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_mul
     Ty = float32
     M = 512
 
