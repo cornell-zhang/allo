@@ -1,12 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
+# pylint: disable=consider-using-with
 
 import os
-import json
-import textwrap
-import numpy as np
 import subprocess
+import numpy as np
 
 from .vitis import read_tensor_from_file
 from ..ir.transform import find_func_in_module
@@ -126,21 +125,28 @@ file_close_str = """  ofile.close();
 }
 """
 
-def codegen_host(mod, input_args):
+
+def codegen_host(input_args):
     code = host_header
     with format_code(indent=2):
         # write input data
-        for i, (arg, dtype, shape) in enumerate(input_args[:-1]):
+        for i, (_, dtype, shape) in enumerate(input_args[:-1]):
             dtype = ctype_map[str(dtype.element_type)]
-            code += format_str(f"std::ifstream ifile{i}(\"input{i}.data\");")
+            code += format_str(f'std::ifstream ifile{i}("input{i}.data");')
             code += format_str(f"if (!ifile{i}.is_open()) {{")
-            code += format_str(f"  std::cerr << \"Error: Could not open input file.\\n\";", strip=False)
-            code += format_str(f"  return 1;", strip=False)
-            code += format_str(f"}}")
+            code += format_str(
+                '  std::cerr << "Error: Could not open input file.\\n";', strip=False
+            )
+            code += format_str("  return 1;", strip=False)
+            code += format_str("}")
             size = np.prod(shape)
-            code += format_str(f"auto bo_in{i} = xrt::bo(device, {size} * sizeof({dtype}),")
+            code += format_str(
+                f"auto bo_in{i} = xrt::bo(device, {size} * sizeof({dtype}),"
+            )
             with format_code(indent=24):
-                code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({i + 3}));")
+                code += format_str(
+                    f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({i + 3}));"
+                )
             code += format_str(f"{dtype} *bufIn{i} = bo_in{i}.map<{dtype} *>();")
             code += format_str(f"std::vector<{dtype}> srcVec{i};")
             code += format_str(f"for (int i = 0; i < {size}; i++) {{")
@@ -149,35 +155,54 @@ def codegen_host(mod, input_args):
                 code += format_str(f"ifile{i} >> num;")
                 code += format_str(f"srcVec{i}.push_back(num);")
             code += format_str("}")
-            code += format_str(f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));")
+            code += format_str(
+                f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));"
+            )
         _, out_dtype, out_shape = input_args[-1]
         out_dtype = ctype_map[str(out_dtype.element_type)]
         out_size = np.prod(out_shape)
-        code += format_str(f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof({out_dtype}),", strip=False)
+        code += format_str(
+            f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof({out_dtype}),",
+            strip=False,
+        )
         with format_code(indent=24):
-            code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2}));")
+            code += format_str(
+                f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2}));"
+            )
         code += format_str("if (verbosity >= 1)")
-        code += format_str("  std::cout << \"Writing data into buffer objects.\\n\";", strip=False)
+        code += format_str(
+            '  std::cout << "Writing data into buffer objects.\\n";', strip=False
+        )
         code += format_str("\nbo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
         for i in range(len(input_args) - 1):
             code += format_str(f"bo_in{i}.sync(XCL_BO_SYNC_BO_TO_DEVICE);")
         # run kernels
         code += format_str("if (verbosity >= 1)")
-        code += format_str("  std::cout << \"Running Kernel.\\n\";", strip=False)
-        code += format_str("\nauto start = std::chrono::high_resolution_clock::now();", strip=False)
+        code += format_str('  std::cout << "Running Kernel.\\n";', strip=False)
+        code += format_str(
+            "\nauto start = std::chrono::high_resolution_clock::now();", strip=False
+        )
         code += format_str("unsigned int opcode = 3;", strip=False)
         inbufs = ", ".join([f"bo_in{i}" for i in range(len(input_args) - 1)])
         code += format_str("// gid: (opcode, instr, instr_size, ...)")
-        code += format_str(f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, bo_out);")
+        code += format_str(
+            f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, bo_out);"
+        )
         code += format_str("run.wait();")
-        code += format_str("\nauto end = std::chrono::high_resolution_clock::now();", strip=False)
-        code += format_str("float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();")
-        code += format_str("std::cout << \"NPU execution time: \" << npu_time << \"us\\n\";")
+        code += format_str(
+            "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
+        )
+        code += format_str(
+            "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
+        )
+        code += format_str(
+            'std::cout << "NPU execution time: " << npu_time << "us\\n";'
+        )
         # get results
         code += format_str("\nbo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
         code += format_str(f"{out_dtype} *bufOut = bo_out.map<{out_dtype} *>();")
         code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
-        code += format_str("  ofile << *(bufOut + i) << \"\\n\";", strip=False)
+        code += format_str('  ofile << *(bufOut + i) << "\\n";', strip=False)
         code += format_str("}")
         code += format_str("\n// Close files", strip=False)
         for i in range(len(input_args) - 1):
@@ -197,10 +222,18 @@ def codegen_aie_mlir(mod, input_args):
     # depth=2 means double buffer
     in_type = input_args[0][1]
     out_type = input_args[1][1]
-    code += format_str(f"aie.objectfifo @in0(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>")
-    code += format_str(f"aie.objectfifo @in1(%tile_mem, {{%tile_comp}}, 2 : i32) : !aie.objectfifo<{in_type}>")
-    code += format_str(f"aie.objectfifo @out0(%tile_mem, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{out_type}>")
-    code += format_str(f"aie.objectfifo @out1(%tile_comp, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{out_type}>")
+    code += format_str(
+        f"aie.objectfifo @in0(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+    )
+    code += format_str(
+        f"aie.objectfifo @in1(%tile_mem, {{%tile_comp}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+    )
+    code += format_str(
+        f"aie.objectfifo @out0(%tile_mem, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+    )
+    code += format_str(
+        f"aie.objectfifo @out1(%tile_comp, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+    )
     # construct connection
     code += format_str("aie.objectfifo.link [@in0] -> [@in1]([] [])")
     code += format_str("aie.objectfifo.link [@out1] -> [@out0]([] [])")
@@ -209,13 +242,23 @@ def codegen_aie_mlir(mod, input_args):
     with format_code(indent=6):
         code += format_str("%c0 = arith.constant 0 : index")
         code += format_str("%c1 = arith.constant 1 : index")
-        code += format_str("%c9223372036854775807 = arith.constant 9223372036854775807 : index")
+        code += format_str(
+            "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
+        )
         code += format_str("scf.for %arg0 = %c0 to %c9223372036854775807 step %c1 {")
         with format_code(indent=8):
-            code += format_str(f"%fifo0 = aie.objectfifo.acquire @in1(Consume, 1) : !aie.objectfifosubview<{in_type}>")
-            code += format_str(f"%local0 = aie.objectfifo.subview.access %fifo0[0] : !aie.objectfifosubview<{in_type}> -> {in_type}")
-            code += format_str(f"%fifo1 = aie.objectfifo.acquire @out1(Produce, 1) : !aie.objectfifosubview<{out_type}>")
-            code += format_str(f"%local1 = aie.objectfifo.subview.access %fifo1[0] : !aie.objectfifosubview<{out_type}> -> {out_type}")
+            code += format_str(
+                f"%fifo0 = aie.objectfifo.acquire @in1(Consume, 1) : !aie.objectfifosubview<{in_type}>"
+            )
+            code += format_str(
+                f"%local0 = aie.objectfifo.subview.access %fifo0[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
+            )
+            code += format_str(
+                f"%fifo1 = aie.objectfifo.acquire @out1(Produce, 1) : !aie.objectfifosubview<{out_type}>"
+            )
+            code += format_str(
+                f"%local1 = aie.objectfifo.subview.access %fifo1[0] : !aie.objectfifosubview<{out_type}> -> {out_type}"
+            )
             mod_str = str(mod).replace("%arg0", "%local0")
             mod_str = mod_str.replace("%arg1", "%local1")
             with format_code(indent=4):
@@ -230,8 +273,12 @@ def codegen_aie_mlir(mod, input_args):
     in_shape = input_args[0][2][0]
     out_shape = input_args[1][2][0]
     with format_code(indent=6):
-        code += format_str(f"aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, {in_shape}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in0}} : {in_type}")
-        code += format_str(f"aiex.npu.dma_memcpy_nd(0, 0, %arg1[0, 0, 0, 0][1, 1, 1, {out_shape}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out0}} : {out_type}")
+        code += format_str(
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, {in_shape}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in0}} : {in_type}"
+        )
+        code += format_str(
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg1[0, 0, 0, 0][1, 1, 1, {out_shape}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out0}} : {out_type}"
+        )
         code += format_str("aiex.npu.dma_wait {symbol = @in0}")
         code += format_str("aiex.npu.dma_wait {symbol = @out0}")
     code += format_str("}")
@@ -254,7 +301,7 @@ def build_aie(s, name, project):
     print(input_args)
     code = codegen_aie_mlir(mod, input_args)
     os.makedirs(os.path.join(project, "build"), exist_ok=True)
-    with open(os.path.join(project, "top.mlir"), "w") as f:
+    with open(os.path.join(project, "top.mlir"), "w", encoding="utf-8") as f:
         f.write(code)
     # build mlir-aie
     cmd = f"cd {project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
@@ -265,8 +312,8 @@ def build_aie(s, name, project):
     path = os.path.dirname(__file__)
     path = os.path.join(path, "../harness/aie")
     os.system(f"cp -r {path}/* {project}")
-    host_code = codegen_host(mod, input_args)
-    with open(os.path.join(project, "test.cpp"), "w") as f:
+    host_code = codegen_host(input_args)
+    with open(os.path.join(project, "test.cpp"), "w", encoding="utf-8") as f:
         f.write(host_code)
     cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
     process = subprocess.Popen(cmd, shell=True)
@@ -274,40 +321,31 @@ def build_aie(s, name, project):
     if process.returncode != 0:
         raise RuntimeError("Failed to build AIE project.")
     return AIEModule(mod, name, project, code)
-    
+
 
 class AIEModule:
-    def __init__(
-        self,
-        module,
-        top_func_name,
-        project,
-        code
-    ):
+    def __init__(self, module, top_func_name, project, code):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
         self.code = code
         self.module = module
 
-    def __call__(
-        self, *args
-    ):
+    def __call__(self, *args):
         func = find_func_in_module(self.module, self.top_func_name)
         inputs, _ = get_func_inputs_outputs(func)
         # suppose the last argument is output
         for i, arg in enumerate(args[:-1]):
-            with open(os.path.join(self.project, f"input{i}.data"), "w") as f:
+            with open(
+                os.path.join(self.project, f"input{i}.data"), "w", encoding="utf-8"
+            ) as f:
                 f.write("\n".join([str(i) for i in arg.flatten()]))
         cmd = f"cd {self.project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE"
         process = subprocess.Popen(cmd, shell=True)
         process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
-        with open(os.path.join(self.project, "output.data"), "r") as f:
-            data = f.readlines()
         result = read_tensor_from_file(
             inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
         )
         args[-1][:] = result
-        return

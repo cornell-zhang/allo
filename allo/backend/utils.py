@@ -1,10 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=global-statement
 
 import textwrap
 from contextlib import contextmanager
 
 INDENT = -1
+
 
 def format_str(s, indent=4, strip=True):
     if INDENT != -1:
