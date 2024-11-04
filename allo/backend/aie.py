@@ -214,12 +214,11 @@ def codegen_host(input_args):
 def codegen_aie_mlir(mod, orig_input_args, mapping):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
-    # device = "npu1_1col"
-    device = "npu1_2col"
+    mem_tile_size = 2 if len(input_args) > 2 else 1
+    device = "npu1_2col" if len(input_args) > 2 else "npu1_1col"
     code += format_str(f"aie.device({device}) {{", indent=2)
     # create tiles
     code += format_str("%tile_shim = aie.tile(0, 0)")
-    mem_tile_size = 2 if len(input_args) > 2 else 1
     for mid in range(mem_tile_size):
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
     assert len(mapping) == 1, "Only support 1D mapping for now"
@@ -229,7 +228,6 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
     # update module and args
     mod_str = str(mod)
     for i, (ele_type, shape) in enumerate(input_args):
-        assert len(shape) == 1, "Only support 1D input for now"
         orig_ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         shape = (shape[0] // pe_size, *shape[1:])
         ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
@@ -247,7 +245,9 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
                 f"aie.objectfifo @in{i}_p{pid}(%tile_mem{i}, {{%tile_comp{pid}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
             )
         in_mem_str = ", ".join([f"@in{i}_p{pid}" for pid in range(pe_size)])
-        in_mem_stride = list(range(0, shape[-1] * pe_size, shape[-1]))
+        shape_prod = np.prod(shape)
+        in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
+        # (src_offsets, dst_offsets)
         code += format_str(
             f"aie.objectfifo.link [@in_sh{i}] -> [{in_mem_str}]([] {in_mem_stride})"
         )
@@ -262,7 +262,8 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
         f"aie.objectfifo @out_sh(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
     )
     out_mem_str = ", ".join([f"@out_p{pid}" for pid in range(pe_size)])
-    out_mem_stride = list(range(0, out_shape[-1] * pe_size, out_shape[-1]))
+    shape_prod = np.prod(out_shape)
+    out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
     code += format_str(
         f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh]({out_mem_stride} [])"
     )
@@ -316,11 +317,23 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
     )
     with format_code(indent=6):
         for i, (_, orig_in_type, shape) in enumerate(input_args[:-1]):
+            # (x, y, memref[offset][size][stride])
+            # issue_token: MM2S-false, S2MM-true
+            if len(shape) == 1:
+                size_n_stride = f"[1, 1, 1, {shape[0] * pe_size}][0, 0, 0, 1]"
+            else:
+                size_n_stride = (
+                    f"[1, 1, {shape[0] * pe_size}, {shape[1]}][0, 0, {shape[1]}, 1]"
+                )
             code += format_str(
-                f"aiex.npu.dma_memcpy_nd(0, 0, %arg{i}[0, 0, 0, 0][1, 1, 1, {shape[0] * pe_size}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in_sh{i}}} : {orig_in_type}"
+                f"aiex.npu.dma_memcpy_nd(0, 0, %arg{i}[0, 0, 0, 0]{size_n_stride}) {{id = {i + 1} : i64, issue_token = true, metadata = @in_sh{i}}} : {orig_in_type}"
             )
+        if len(out_shape) == 1:
+            out_size_n_stride = f"[1, 1, 1, {out_shape[0] * pe_size}][0, 0, 0, 1]"
+        else:
+            out_size_n_stride = f"[1, 1, {out_shape[0] * pe_size}, {out_shape[1]}][0, 0, {out_shape[1]}, 1]"
         code += format_str(
-            f"aiex.npu.dma_memcpy_nd(0, 0, %arg{out_id}[0, 0, 0, 0][1, 1, 1, {out_shape[0] * pe_size}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out_sh}} : {orig_out_type}"
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg{out_id}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh}} : {orig_out_type}"
         )
         for i in range(len(input_args) - 1):
             code += format_str(f"aiex.npu.dma_wait {{symbol = @in_sh{i}}}")
