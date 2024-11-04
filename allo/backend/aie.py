@@ -228,8 +228,7 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
         code += format_str(f"%tile_comp{pid} = aie.tile(0, {pid + 2})")
     # update module and args
     mod_str = str(mod)
-    for i in range(len(input_args)):
-        ele_type, shape = input_args[i]
+    for i, (ele_type, shape) in enumerate(input_args):
         assert len(shape) == 1, "Only support 1D input for now"
         orig_ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         shape = (shape[0] // pe_size, *shape[1:])
@@ -307,9 +306,14 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
             code += format_str("aie.end")
         code += format_str("}")
     in_args = ", ".join(
-        [f"%arg{i}: {orig_in_type}" for i, (_, orig_in_type, _) in enumerate(input_args[:-1])]
+        [
+            f"%arg{i}: {orig_in_type}"
+            for i, (_, orig_in_type, _) in enumerate(input_args[:-1])
+        ]
     )
-    code += format_str(f"aiex.runtime_sequence({in_args}, %arg{out_id}: {orig_out_type}) {{")
+    code += format_str(
+        f"aiex.runtime_sequence({in_args}, %arg{out_id}: {orig_out_type}) {{"
+    )
     with format_code(indent=6):
         for i, (_, orig_in_type, shape) in enumerate(input_args[:-1]):
             code += format_str(
