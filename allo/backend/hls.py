@@ -40,10 +40,7 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
-    return (
-        os.system("which vitis_hls >> /dev/null") == 0
-        and os.environ.get("XDEVICE", None) is not None
-    )
+    return os.system("which vitis_hls >> /dev/null") == 0
 
 
 def run_process(cmd, pattern=None):

@@ -49,10 +49,7 @@ class IPModule:
             include_paths = []
         self.include_paths = include_paths + [self.abs_path]
         if link_hls:
-            if (
-                os.system("which vitis_hls >> /dev/null") == 0
-                and os.environ.get("XDEVICE", None) is not None
-            ):
+            if os.system("which vitis_hls >> /dev/null") == 0:
                 self.include_paths.append(
                     "/".join(os.popen("which vitis_hls").read().split("/")[:-2])
                     + "/include"

@@ -19,6 +19,7 @@ from ._mlir.dialects import func as func_d, memref as memref_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
 from .ir.utils import get_global_vars
+from .backend.aie import AIEModule
 
 
 def get_pid():
@@ -205,6 +206,16 @@ def kernel(mapping=None):
 
 
 def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
+    if target == "aie":
+        assert not isinstance(funcs, list), "Only support one function for AIE target."
+        func = funcs
+        global_vars = get_global_vars(func)
+        s = customize(func, global_vars=global_vars)
+        print(s.module)
+        mod = AIEModule(s.module, s.top_func_name, project)
+        mod.build()
+        return mod
+
     def top():
         # Just for locating insertion point
         pass
