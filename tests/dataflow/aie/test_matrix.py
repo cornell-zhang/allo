@@ -47,5 +47,3 @@ def _test_matrix_matrix_add():
 if __name__ == "__main__":
     _test_matrix_scalar_add()
     _test_matrix_matrix_add()
-    _test_vector_vector_add()
-    _test_vector_vector_mul()
