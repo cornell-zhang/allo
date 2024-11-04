@@ -19,7 +19,7 @@ from ._mlir.dialects import func as func_d, memref as memref_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
 from .ir.utils import get_global_vars
-from .backend.aie import build_aie
+from .backend.aie import AIEModule
 
 
 def get_pid():
@@ -212,7 +212,8 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         global_vars = get_global_vars(func)
         s = customize(func, global_vars=global_vars)
         print(s.module)
-        mod = build_aie(s, func.__name__, project)
+        mod = AIEModule(s.module, s.top_func_name, project)
+        mod.build()
         return mod
 
     def top():

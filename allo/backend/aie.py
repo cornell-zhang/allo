@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=consider-using-with
+# pylint: disable=consider-using-with, bad-builtin
 
 import os
 import subprocess
@@ -130,8 +130,8 @@ def codegen_host(input_args):
     code = host_header
     with format_code(indent=2):
         # write input data
-        for i, (_, dtype, shape) in enumerate(input_args[:-1]):
-            dtype = ctype_map[str(dtype.element_type)]
+        for i, (dtype, shape) in enumerate(input_args[:-1]):
+            dtype = ctype_map[dtype]
             code += format_str(f'std::ifstream ifile{i}("input{i}.data");')
             code += format_str(f"if (!ifile{i}.is_open()) {{")
             code += format_str(
@@ -158,8 +158,8 @@ def codegen_host(input_args):
             code += format_str(
                 f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));"
             )
-        _, out_dtype, out_shape = input_args[-1]
-        out_dtype = ctype_map[str(out_dtype.element_type)]
+        out_dtype, out_shape = input_args[-1]
+        out_dtype = ctype_map[out_dtype]
         out_size = np.prod(out_shape)
         code += format_str(
             f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof({out_dtype}),",
@@ -220,8 +220,10 @@ def codegen_aie_mlir(mod, input_args):
     code += format_str("%tile_comp = aie.tile(0, 2)")
     # create object fifos
     # depth=2 means double buffer
-    in_type = input_args[0][1]
-    out_type = input_args[1][1]
+    in_ele_type, out_ele_type = input_args[0][0], input_args[1][0]
+    in_shape, out_shape = input_args[0][1], input_args[1][1]
+    in_type = f"memref<{'x'.join(map(str, in_shape))}x{in_ele_type}>"
+    out_type = f"memref<{'x'.join(map(str, out_shape))}x{out_ele_type}>"
     code += format_str(
         f"aie.objectfifo @in0(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>"
     )
@@ -270,14 +272,12 @@ def codegen_aie_mlir(mod, input_args):
         code += format_str("aie.end")
     code += format_str("}")
     code += format_str(f"aiex.runtime_sequence(%arg0: {in_type}, %arg1: {out_type}) {{")
-    in_shape = input_args[0][2][0]
-    out_shape = input_args[1][2][0]
     with format_code(indent=6):
         code += format_str(
-            f"aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, {in_shape}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in0}} : {in_type}"
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, {in_shape[0]}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in0}} : {in_type}"
         )
         code += format_str(
-            f"aiex.npu.dma_memcpy_nd(0, 0, %arg1[0, 0, 0, 0][1, 1, 1, {out_shape}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out0}} : {out_type}"
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg1[0, 0, 0, 0][1, 1, 1, {out_shape[0]}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out0}} : {out_type}"
         )
         code += format_str("aiex.npu.dma_wait {symbol = @in0}")
         code += format_str("aiex.npu.dma_wait {symbol = @out0}")
@@ -287,53 +287,44 @@ def codegen_aie_mlir(mod, input_args):
     return code
 
 
-def build_aie(s, name, project):
-    assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
-    assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-    assert "LLVM_BUILD_DIR" in os.environ, "Please set LLVM_BUILD_DIR"
-    # PATH=${MLIR_AIE_INSTALL_DIR}/bin:${LLVM_BUILD_DIR}/bin:${PATH}
-    mod = s.module
-    input_args = []
-    for idx, arg in enumerate(s.func_args[name]):
-        dtype = s.top_func.attributes["function_type"].value.inputs[idx]
-        shape = dtype.shape
-        input_args.append((arg, dtype, shape))
-    print(input_args)
-    code = codegen_aie_mlir(mod, input_args)
-    os.makedirs(os.path.join(project, "build"), exist_ok=True)
-    with open(os.path.join(project, "top.mlir"), "w", encoding="utf-8") as f:
-        f.write(code)
-    # build mlir-aie
-    cmd = f"cd {project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
-    process = subprocess.Popen(cmd, shell=True)
-    process.wait()
-    if process.returncode != 0:
-        raise RuntimeError("Failed to compile the MLIR-AIE code")
-    path = os.path.dirname(__file__)
-    path = os.path.join(path, "../harness/aie")
-    os.system(f"cp -r {path}/* {project}")
-    host_code = codegen_host(input_args)
-    with open(os.path.join(project, "test.cpp"), "w", encoding="utf-8") as f:
-        f.write(host_code)
-    cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
-    process = subprocess.Popen(cmd, shell=True)
-    process.wait()
-    if process.returncode != 0:
-        raise RuntimeError("Failed to build AIE project.")
-    return AIEModule(mod, name, project, code)
-
-
 class AIEModule:
-    def __init__(self, module, top_func_name, project, code):
+    def __init__(self, module, top_func_name, project):
         self.module = module
         self.top_func_name = top_func_name
+        self.top_func = find_func_in_module(self.module, self.top_func_name)
         self.project = project
-        self.code = code
         self.module = module
 
+    def build(self):
+        assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
+        assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
+        assert "LLVM_BUILD_DIR" in os.environ, "Please set LLVM_BUILD_DIR"
+        inputs, outputs = get_func_inputs_outputs(self.top_func)
+        input_args = inputs + outputs
+        code = codegen_aie_mlir(self.module, input_args)
+        os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
+        with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
+            f.write(code)
+        # build mlir-aie
+        cmd = f"cd {self.project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
+        process = subprocess.Popen(cmd, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to compile the MLIR-AIE code")
+        path = os.path.dirname(__file__)
+        path = os.path.join(path, "../harness/aie")
+        os.system(f"cp -r {path}/* {self.project}")
+        host_code = codegen_host(input_args)
+        with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
+            f.write(host_code)
+        cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
+        process = subprocess.Popen(cmd, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to build AIE project.")
+        return self
+
     def __call__(self, *args):
-        func = find_func_in_module(self.module, self.top_func_name)
-        inputs, _ = get_func_inputs_outputs(func)
         # suppose the last argument is output
         for i, arg in enumerate(args[:-1]):
             with open(
@@ -345,6 +336,7 @@ class AIEModule:
         process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
+        inputs, _ = get_func_inputs_outputs(self.top_func)
         result = read_tensor_from_file(
             inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
         )
