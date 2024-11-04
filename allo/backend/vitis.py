@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=bad-builtin
 
 import json
 import numpy as np
@@ -67,7 +68,6 @@ ctype_map = {
 }
 
 
-# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
@@ -115,7 +115,6 @@ def codegen_host(top, module):
             out_str += format_str(f"{in_dtype} source_in{i};")
             out_str += format_str(f"ifile{i} >> source_in{i};")
         else:
-            # pylint: disable=bad-builtin
             out_str += format_str(
                 f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
             )
