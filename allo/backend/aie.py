@@ -8,7 +8,11 @@ import textwrap
 import numpy as np
 import subprocess
 
+from .vitis import read_tensor_from_file
+from ..ir.transform import find_func_in_module
+from ..utils import get_func_inputs_outputs
 from .utils import format_str, format_code
+from .vitis import ctype_map
 
 
 host_header = """
@@ -127,26 +131,31 @@ def codegen_host(mod, input_args):
     with format_code(indent=2):
         # write input data
         for i, (arg, dtype, shape) in enumerate(input_args[:-1]):
+            dtype = ctype_map[str(dtype.element_type)]
             code += format_str(f"std::ifstream ifile{i}(\"input{i}.data\");")
             code += format_str(f"if (!ifile{i}.is_open()) {{")
             code += format_str(f"  std::cerr << \"Error: Could not open input file.\\n\";", strip=False)
             code += format_str(f"  return 1;", strip=False)
             code += format_str(f"}}")
             size = np.prod(shape)
-            code += format_str(f"auto bo_in{i} = xrt::bo(device, {size} * sizeof(int32_t),")
-            code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({i + 3}));", indent=26)
-            code += format_str(f"uint32_t *bufIn{i} = bo_in{i}.map<uint32_t *>();")
-            code += format_str(f"std::vector<uint32_t> srcVec{i};")
+            code += format_str(f"auto bo_in{i} = xrt::bo(device, {size} * sizeof({dtype}),")
+            with format_code(indent=24):
+                code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({i + 3}));")
+            code += format_str(f"{dtype} *bufIn{i} = bo_in{i}.map<{dtype} *>();")
+            code += format_str(f"std::vector<{dtype}> srcVec{i};")
             code += format_str(f"for (int i = 0; i < {size}; i++) {{")
             with format_code(indent=4):
-                code += format_str(f"int num;")
+                code += format_str(f"{dtype} num;")
                 code += format_str(f"ifile{i} >> num;")
                 code += format_str(f"srcVec{i}.push_back(num);")
             code += format_str("}")
-            code += format_str(f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof(uint32_t)));")
-        out_size = np.prod(input_args[-1][2])
-        code += format_str(f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof(int32_t),", strip=False)
-        code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2}));", indent=26)
+            code += format_str(f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));")
+        _, out_dtype, out_shape = input_args[-1]
+        out_dtype = ctype_map[str(out_dtype.element_type)]
+        out_size = np.prod(out_shape)
+        code += format_str(f"\nauto bo_out = xrt::bo(device, {out_size} * sizeof({out_dtype}),", strip=False)
+        with format_code(indent=24):
+            code += format_str(f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2}));")
         code += format_str("if (verbosity >= 1)")
         code += format_str("  std::cout << \"Writing data into buffer objects.\\n\";", strip=False)
         code += format_str("\nbo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
@@ -166,7 +175,7 @@ def codegen_host(mod, input_args):
         code += format_str("std::cout << \"NPU execution time: \" << npu_time << \"us\\n\";")
         # get results
         code += format_str("\nbo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
-        code += format_str("uint32_t *bufOut = bo_out.map<uint32_t *>();")
+        code += format_str(f"{out_dtype} *bufOut = bo_out.map<{out_dtype} *>();")
         code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
         code += format_str("  ofile << *(bufOut + i) << \"\\n\";", strip=False)
         code += format_str("}")
@@ -264,23 +273,28 @@ def build_aie(s, name, project):
     process.wait()
     if process.returncode != 0:
         raise RuntimeError("Failed to build AIE project.")
-    return AIEModule(project, code)
+    return AIEModule(mod, name, project, code)
     
 
 class AIEModule:
     def __init__(
         self,
+        module,
+        top_func_name,
         project,
         code
     ):
+        self.module = module
+        self.top_func_name = top_func_name
         self.project = project
         self.code = code
-        # func = find_func_in_module(self.module, self.top_func_name)
-        # inputs, _ = get_func_inputs_outputs(func)
+        self.module = module
 
     def __call__(
         self, *args
     ):
+        func = find_func_in_module(self.module, self.top_func_name)
+        inputs, _ = get_func_inputs_outputs(func)
         # suppose the last argument is output
         for i, arg in enumerate(args[:-1]):
             with open(os.path.join(self.project, f"input{i}.data"), "w") as f:
@@ -292,6 +306,8 @@ class AIEModule:
             raise RuntimeError("Failed to execute AIE code.")
         with open(os.path.join(self.project, "output.data"), "r") as f:
             data = f.readlines()
-        result = np.array([int(i) for i in data])
+        result = read_tensor_from_file(
+            inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+        )
         args[-1][:] = result
         return
