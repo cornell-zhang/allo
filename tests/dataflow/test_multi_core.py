@@ -28,28 +28,29 @@ def _test_vector_scalar_add():
     print("PASSED!")
 
 
-# def _test_vector_vector_add():
-#     #                |--------------------------------------------|
-#     #                v   v-------------------------v              v
-#     # shim tile <-> mem tile <-> comp tile0    comp tile1    comp tile2
-#     Ty = int32
-#     M = 48
-#     P0 = 3
+def _test_vector_vector_add():
+    #                  |--------------------------------------------|
+    #                  v   v--------------------------v             v
+    # shim tile <-> A mem tile 0 <-> comp tile0    comp tile1    comp tile2
+    #       ^-----> B mem tile 1 <-------^------------^-------------^
+    Ty = int32
+    M = 1024
+    P0 = 4
 
-#     @df.kernel(mapping=[P0])
-#     def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-#         for i in range(M // P0):
-#             C[i] = A[i] + B[i]
+    @df.kernel(mapping=[P0])
+    def core(A: Ty[M], B: Ty[M], C: Ty[M]):
+        for i in range(M // P0):
+            C[i] = A[i] + B[i]
 
-#     top = df.build(core, target="aie")
-#     A = np.random.randint(0, 100, M).astype(np.int32)
-#     B = np.random.randint(0, 100, M).astype(np.int32)
-#     C = np.zeros(M).astype(np.int32)
-#     top(A, B, C)
-#     np.testing.assert_allclose(C, A + B)
-#     print("PASSED!")
+    top = df.build(core, target="aie")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.random.randint(0, 100, M).astype(np.int32)
+    C = np.zeros(M).astype(np.int32)
+    top(A, B, C)
+    np.testing.assert_allclose(C, A + B)
+    print("PASSED!")
 
 
 if __name__ == "__main__":
     _test_vector_scalar_add()
-    # _test_vector_vector_add()
+    _test_vector_vector_add()

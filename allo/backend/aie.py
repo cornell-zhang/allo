@@ -214,10 +214,14 @@ def codegen_host(input_args):
 def codegen_aie_mlir(mod, orig_input_args, mapping):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
-    code += format_str("aie.device(npu1_1col) {", indent=2)
+    # device = "npu1_1col"
+    device = "npu1_2col"
+    code += format_str(f"aie.device({device}) {{", indent=2)
     # create tiles
     code += format_str("%tile_shim = aie.tile(0, 0)")
-    code += format_str("%tile_mem = aie.tile(0, 1)")
+    mem_tile_size = 2 if len(input_args) > 2 else 1
+    for mid in range(mem_tile_size):
+        code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
     assert len(mapping) == 1, "Only support 1D mapping for now"
     pe_size = mapping[0]
     for pid in range(pe_size):
@@ -233,14 +237,15 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
         input_args[i] = (ele_type, orig_ele_type, shape)
         mod_str = mod_str.replace(orig_ele_type, ele_type)
     # create object fifos
+    # connect each argument to a separate mem tile
     for i, (in_type, orig_in_type, shape) in enumerate(input_args[:-1]):
         # depth=2 means double buffer
         code += format_str(
-            f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+            f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
         )
         for pid in range(pe_size):
             code += format_str(
-                f"aie.objectfifo @in{i}_p{pid}(%tile_mem, {{%tile_comp{pid}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                f"aie.objectfifo @in{i}_p{pid}(%tile_mem{i}, {{%tile_comp{pid}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
             )
         in_mem_str = ", ".join([f"@in{i}_p{pid}" for pid in range(pe_size)])
         in_mem_stride = list(range(0, shape[-1] * pe_size, shape[-1]))
@@ -249,12 +254,13 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
         )
     out_id = len(input_args) - 1
     out_type, orig_out_type, out_shape = input_args[-1]
+    # output uses tile_mem0
     for pid in range(pe_size):
         code += format_str(
-            f"aie.objectfifo @out_p{pid}(%tile_comp{pid}, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+            f"aie.objectfifo @out_p{pid}(%tile_comp{pid}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
         )
     code += format_str(
-        f"aie.objectfifo @out_sh(%tile_mem, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
+        f"aie.objectfifo @out_sh(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
     )
     out_mem_str = ", ".join([f"@out_p{pid}" for pid in range(pe_size)])
     out_mem_stride = list(range(0, out_shape[-1] * pe_size, out_shape[-1]))
