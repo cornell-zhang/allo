@@ -7,7 +7,7 @@ import allo.dataflow as df
 import numpy as np
 
 
-def test_vector_scalar_add():
+def _test_vector_scalar_add():
     Ty = int32
     M = 1024
 
@@ -24,7 +24,7 @@ def test_vector_scalar_add():
     print("PASSED!")
 
 
-def test_vector_scalar_mul():
+def _test_vector_scalar_mul():
     Ty = float32
     M = 512
 
@@ -42,5 +42,5 @@ def test_vector_scalar_mul():
 
 
 if __name__ == "__main__":
-    test_vector_scalar_add()
-    test_vector_scalar_mul()
+    _test_vector_scalar_add()
+    _test_vector_scalar_mul()
