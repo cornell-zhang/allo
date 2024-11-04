@@ -31,6 +31,7 @@ else()
 endif()
 
 set(TARGET_NAME test CACHE STRING "Target to be built")
+set(MLIR_AIE_DIR test CACHE STRING "MLIR-AIE root directory")
 
 SET (ProjectName ${TARGET_NAME})
 SET (currentTarget ${TARGET_NAME})
@@ -45,7 +46,7 @@ project(${ProjectName})
 find_package(Boost REQUIRED)
 
 add_executable(${currentTarget}
-    /home/zhang/users/hc676/mlir-aie/runtime_lib/test_lib/test_utils.cpp
+    ${MLIR_AIE_DIR}/runtime_lib/test_lib/test_utils.cpp
     test.cpp
 )
 
@@ -54,7 +55,7 @@ target_compile_definitions(${currentTarget} PUBLIC DISABLE_ABI_CHECK=1)
 target_include_directories (${currentTarget} PUBLIC 
     ${XRT_INC_DIR}
     ${Boost_INCLUDE_DIRS}
-    /home/zhang/users/hc676/mlir-aie/runtime_lib/test_lib
+    ${MLIR_AIE_DIR}/runtime_lib/test_lib
 )
 
 target_link_directories(${currentTarget} PUBLIC

@@ -259,7 +259,7 @@ def build_aie(s, name, project):
     host_code = codegen_host(mod, input_args)
     with open(os.path.join(project, "test.cpp"), "w") as f:
         f.write(host_code)
-    cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top && cmake --build . --config Release"
+    cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
     process = subprocess.Popen(cmd, shell=True)
     process.wait()
     if process.returncode != 0:
