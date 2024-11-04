@@ -211,7 +211,8 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, input_args):
+def codegen_aie_mlir(mod, orig_input_args):
+    input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     code += format_str("aie.device(npu1_1col) {", indent=2)
     # create tiles
@@ -219,26 +220,28 @@ def codegen_aie_mlir(mod, input_args):
     code += format_str("%tile_mem = aie.tile(0, 1)")
     code += format_str("%tile_comp = aie.tile(0, 2)")
     # create object fifos
-    # depth=2 means double buffer
-    in_ele_type, out_ele_type = input_args[0][0], input_args[1][0]
-    in_shape, out_shape = input_args[0][1], input_args[1][1]
-    in_type = f"memref<{'x'.join(map(str, in_shape))}x{in_ele_type}>"
+    for i in range(len(input_args) - 1):
+        ele_type, shape = input_args[i]
+        input_args[i] = (f"memref<{'x'.join(map(str, shape))}x{ele_type}>", shape)
+    for i, (in_type, shape) in enumerate(input_args[:-1]):
+        # depth=2 means double buffer
+        code += format_str(
+            f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+        )
+        code += format_str(
+            f"aie.objectfifo @in{i}(%tile_mem, {{%tile_comp}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+        )
+        code += format_str(f"aie.objectfifo.link [@in_sh{i}] -> [@in{i}]([] [])")
+    out_id = len(input_args) - 1
+    out_ele_type, out_shape = input_args[-1]
     out_type = f"memref<{'x'.join(map(str, out_shape))}x{out_ele_type}>"
     code += format_str(
-        f"aie.objectfifo @in0(%tile_shim, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+        f"aie.objectfifo @out(%tile_mem, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{out_type}>"
     )
     code += format_str(
-        f"aie.objectfifo @in1(%tile_mem, {{%tile_comp}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+        f"aie.objectfifo @out_sh(%tile_comp, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{out_type}>"
     )
-    code += format_str(
-        f"aie.objectfifo @out0(%tile_mem, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{out_type}>"
-    )
-    code += format_str(
-        f"aie.objectfifo @out1(%tile_comp, {{%tile_mem}}, 2 : i32) : !aie.objectfifo<{out_type}>"
-    )
-    # construct connection
-    code += format_str("aie.objectfifo.link [@in0] -> [@in1]([] [])")
-    code += format_str("aie.objectfifo.link [@out1] -> [@out0]([] [])")
+    code += format_str("aie.objectfifo.link [@out_sh] -> [@out]([] [])")
     # create core computation
     code += format_str("%core_0_2 = aie.core(%tile_comp) {")
     with format_code(indent=6):
@@ -248,39 +251,47 @@ def codegen_aie_mlir(mod, input_args):
             "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
         )
         code += format_str("scf.for %arg0 = %c0 to %c9223372036854775807 step %c1 {")
+        mod_str = str(mod)
         with format_code(indent=8):
+            for i, (in_type, shape) in enumerate(input_args[:-1]):
+                code += format_str(
+                    f"%fifo{i} = aie.objectfifo.acquire @in{i}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
+                )
+                code += format_str(
+                    f"%local{i} = aie.objectfifo.subview.access %fifo{i}[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
+                )
+                mod_str = mod_str.replace(f"%arg{i}", f"%local{i}")
             code += format_str(
-                f"%fifo0 = aie.objectfifo.acquire @in1(Consume, 1) : !aie.objectfifosubview<{in_type}>"
+                f"%fifo_out = aie.objectfifo.acquire @out_sh(Produce, 1) : !aie.objectfifosubview<{out_type}>"
             )
             code += format_str(
-                f"%local0 = aie.objectfifo.subview.access %fifo0[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
+                f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{out_type}> -> {out_type}"
             )
-            code += format_str(
-                f"%fifo1 = aie.objectfifo.acquire @out1(Produce, 1) : !aie.objectfifosubview<{out_type}>"
-            )
-            code += format_str(
-                f"%local1 = aie.objectfifo.subview.access %fifo1[0] : !aie.objectfifosubview<{out_type}> -> {out_type}"
-            )
-            mod_str = str(mod).replace("%arg0", "%local0")
-            mod_str = mod_str.replace("%arg1", "%local1")
+            mod_str = mod_str.replace(f"%arg{out_id}", "%local_out")
             with format_code(indent=4):
                 for line in mod_str.splitlines()[2:-3]:
                     code += format_str(line, strip=False)
-            code += format_str("aie.objectfifo.release @in1(Consume, 1)")
-            code += format_str("aie.objectfifo.release @out1(Produce, 1)")
+            for i, (ele_type, shape) in enumerate(input_args[:-1]):
+                code += format_str(f"aie.objectfifo.release @in{i}(Consume, 1)")
+            code += format_str("aie.objectfifo.release @out_sh(Produce, 1)")
         code += format_str("}")
         code += format_str("aie.end")
     code += format_str("}")
-    code += format_str(f"aiex.runtime_sequence(%arg0: {in_type}, %arg1: {out_type}) {{")
+    in_args = ", ".join(
+        [f"%arg{i}: {in_type}" for i, (in_type, _) in enumerate(input_args[:-1])]
+    )
+    code += format_str(f"aiex.runtime_sequence({in_args}, %arg{out_id}: {out_type}) {{")
     with format_code(indent=6):
+        for i, (in_type, shape) in enumerate(input_args[:-1]):
+            code += format_str(
+                f"aiex.npu.dma_memcpy_nd(0, 0, %arg{i}[0, 0, 0, 0][1, 1, 1, {shape[0]}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in_sh{i}}} : {in_type}"
+            )
         code += format_str(
-            f"aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, {in_shape[0]}][0, 0, 0, 1]) {{id = 1 : i64, issue_token = true, metadata = @in0}} : {in_type}"
+            f"aiex.npu.dma_memcpy_nd(0, 0, %arg{out_id}[0, 0, 0, 0][1, 1, 1, {out_shape[0]}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out}} : {out_type}"
         )
-        code += format_str(
-            f"aiex.npu.dma_memcpy_nd(0, 0, %arg1[0, 0, 0, 0][1, 1, 1, {out_shape[0]}][0, 0, 0, 1]) {{id = 0 : i64, metadata = @out0}} : {out_type}"
-        )
-        code += format_str("aiex.npu.dma_wait {symbol = @in0}")
-        code += format_str("aiex.npu.dma_wait {symbol = @out0}")
+        for i in range(len(input_args) - 1):
+            code += format_str(f"aiex.npu.dma_wait {{symbol = @in_sh{i}}}")
+        code += format_str("aiex.npu.dma_wait {symbol = @out}")
     code += format_str("}")
     code += format_str("}", indent=2)
     code += "}"
