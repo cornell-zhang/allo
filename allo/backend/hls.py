@@ -414,7 +414,11 @@ class HLSModule:
                 print("Build folder exists, skip building")
                 # run the executable
                 prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
-                cmd = f"cd {self.project}; make host PLATFORM=$XDEVICE; {prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                prefix += f" cd {self.project};"
+                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
+                    prefix += f" make host PLATFORM=$XDEVICE;"
+                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                print(cmd)
                 process = subprocess.Popen(cmd, shell=True)
                 process.wait()
                 if process.returncode != 0:
