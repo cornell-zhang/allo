@@ -416,7 +416,7 @@ class HLSModule:
                 prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
                 prefix += f" cd {self.project};"
                 if not os.path.exists(f"{self.project}/{self.top_func_name}"):
-                    prefix += f" make host PLATFORM=$XDEVICE;"
+                    prefix += " make host PLATFORM=$XDEVICE;"
                 cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
                 print(cmd)
                 process = subprocess.Popen(cmd, shell=True)
