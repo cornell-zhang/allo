@@ -406,18 +406,13 @@ def update_makefile(file_name, ext_libs):
         outfile.write(makefile)
 
 
-def write_tensor_to_file(tensor, dtype, shape, name, file_path):
-    # generate C buffers
+def write_tensor_to_file(tensor, shape, file_path):
     with open(file_path, "w", encoding="utf-8") as f:
         if len(shape) == 0:
             # scalar
-            f.write(f"const {ctype_map[dtype]} {name} = {tensor};\n")
+            f.write(f"{tensor}\n")
         else:
-            f.write(f"const {ctype_map[dtype]} {name}")
-            # pylint: disable=bad-builtin
-            f.write(f"[{', '.join(map(str, shape))}] = {{")
-            f.write(", ".join([str(i) for i in tensor.flatten()]))
-            f.write("};\n")
+            f.write("\n".join([str(i) for i in tensor.flatten()]))
 
 
 def read_tensor_from_file(dtype, shape, file_path):
