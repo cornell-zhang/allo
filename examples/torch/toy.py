@@ -28,3 +28,8 @@ golden = model(*example_inputs)
 np_inputs = [x.detach().numpy() for x in example_inputs]
 res = llvm_mod(*np_inputs)
 torch.testing.assert_close(res, golden.detach().numpy())
+print("Passed!")
+
+# Use other backends
+mod = allo.frontend.from_pytorch(model, example_inputs=example_inputs, target="vhls")
+print(mod.hls_code)
