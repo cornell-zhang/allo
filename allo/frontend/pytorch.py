@@ -27,6 +27,9 @@ def from_pytorch(
     leaf_modules=None,
     verbose=False,
     enable_tensor=False,
+    target="llvm",
+    mode="csim",
+    project="top.prj",
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -64,7 +67,7 @@ def from_pytorch(
     s = customize(
         code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
     )
-    mod = s.build()
+    mod = s.build(target=target, mode=mode, project=project)
     if verbose:
         print(s.module)
     return mod

@@ -388,17 +388,17 @@ class HLSModule:
             # prepare data
             func = find_func_in_module(self.module, self.top_func_name)
             inputs, _ = get_func_inputs_outputs(func)
-            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
                 write_tensor_to_file(
                     arg,
-                    in_dtype,
                     in_shape,
-                    f"in_data_{i}",
-                    f"{self.project}/input_{i}.h",
+                    f"{self.project}/input{i}.data",
                 )
             # check if the build folder exists
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
-            if not os.path.exists(bitstream_folder):
+            if not os.path.exists(
+                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
+            ):
                 cmd = (
                     f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
                 )
@@ -414,7 +414,11 @@ class HLSModule:
                 print("Build folder exists, skip building")
                 # run the executable
                 prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
-                cmd = f"cd {self.project}; make host PLATFORM=$XDEVICE; {prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                prefix += f" cd {self.project};"
+                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
+                    prefix += " make host PLATFORM=$XDEVICE;"
+                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                print(cmd)
                 process = subprocess.Popen(cmd, shell=True)
                 process.wait()
                 if process.returncode != 0:
