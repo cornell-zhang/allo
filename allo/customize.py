@@ -878,6 +878,17 @@ class Schedule:
                 configs=configs,
                 func_args=self.func_args,
             )
+        if target == "tapa":
+            return HLSModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                platform="tapa",
+                mode=mode,
+                project=project,
+                ext_libs=self.ext_libs,
+                configs=configs,
+                func_args=self.func_args,
+            )
         raise NotImplementedError(f"Target {target} is not supported")
 
 
