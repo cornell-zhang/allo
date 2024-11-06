@@ -12,7 +12,6 @@ from .._mlir.ir import (
     F32Type,
     F64Type,
     MemRefType,
-    StringAttr,
 )
 from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning

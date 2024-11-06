@@ -81,7 +81,8 @@ bool alloMlirTypeIsAStreamType(MlirType type) {
   return unwrap(type).isa<allo::StreamType>();
 }
 
-MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType, size_t depth) {
+MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType,
+                               size_t depth) {
   return wrap(allo::StreamType::get(unwrap(ctx), unwrap(baseType), depth));
 }
 
