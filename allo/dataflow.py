@@ -19,14 +19,15 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
 from .ir.utils import get_global_vars
 from .backend.aie import AIEModule
+from .ir.types import Stream
 
 
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
 
 
-def pipe():
-    raise NotImplementedError("This function should be called in a kernel function.")
+def pipe(dtype, shape=(), depth=2):
+    return Stream(dtype, shape, depth)
 
 
 def move_stream_to_interface(func):
@@ -198,6 +199,20 @@ def kernel(mapping=None):
     return actual_decorator
 
 
+def region():
+
+    def actual_decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # *args and **kwargs are the actual arguments that are passed into the kernel function
+            hls_mod = build(funcs=[func])
+            return hls_mod(*args, **kwargs)
+
+        return wrapper
+
+    return actual_decorator
+
+
 def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
     if target == "aie":
         assert not isinstance(funcs, list), "Only support one function for AIE target."
@@ -210,12 +225,6 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         mod.build()
         return mod
 
-    def top():
-        # Just for locating insertion point
-        pass
-
-    # construct a common module
-    s_top = customize(top)
     input_types = []
     all_stream_info = {}
     # collect all funcOp

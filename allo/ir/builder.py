@@ -1740,23 +1740,12 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
-                src = ASTResolver.resolve_constant(node.keywords[0].value, ctx)
-                dst = ASTResolver.resolve_constant(node.keywords[1].value, ctx)
-                if not (isinstance(src, str) and isinstance(dst, str)):
-                    src = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{src[0]}_{src[1]}"
-                    )
-                    dst = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{dst[0]}_{dst[1]}"
-                    )
+                exec("_pipe = " + ast.unparse(node), ctx.global_vars)
+                stream = ctx.global_vars.get("_pipe")
                 stream_type = allo_d.StreamType.get(
-                    node.dtype.build(), depth=node.dtype.depth
+                    stream.build(), depth=stream.depth
                 )
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
-                stream_op.attributes["src"] = StringAttr.get(src)
-                stream_op.attributes["dst"] = StringAttr.get(dst)
                 return stream_op
             if isinstance(new_args[0].result, OpResultList):
                 arg_type = new_args[0].result[0].type
