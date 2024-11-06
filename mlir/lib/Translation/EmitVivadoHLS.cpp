@@ -82,6 +82,12 @@ static SmallString<16> getTypeName(Type valType) {
     return SmallString<16>(
         "ap_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
+
+  else if (auto streamType = valType.dyn_cast<StreamType>())
+    return SmallString<16>(
+        "hls::stream< " +
+        std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
+
   else
     assert(1 == 0 && "Got unsupported type.");
 
@@ -153,6 +159,11 @@ public:
   void emitSetSlice(allo::SetIntSliceOp op);
   void emitBitReverse(allo::BitReverseOp op);
   void emitBitcast(arith::BitcastOp op);
+
+  /// Stream operation emitters.
+  void emitStreamConstruct(allo::StreamConstructOp op);
+  void emitStreamGet(allo::StreamGetOp op);
+  void emitStreamPut(allo::StreamPutOp op);
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -495,6 +506,13 @@ public:
   bool visitOp(allo::MaxFixedOp op) {
     return emitter.emitMaxMin(op, "max"), true;
   }
+
+  /// Stream operations.
+  bool visitOp(allo::StreamConstructOp op) {
+    return emitter.emitStreamConstruct(op), true;
+  }
+  bool visitOp(allo::StreamGetOp op) { return emitter.emitStreamGet(op), true; }
+  bool visitOp(allo::StreamPutOp op) { return emitter.emitStreamPut(op), true; }
 
 private:
   ModuleEmitter &emitter;
@@ -1423,6 +1441,83 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
+void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
+  auto rank = emitNestedLoopHead(op.getResult());
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result, rank);
+  os << ";\n";
+  indent();
+  os << "#pragma HLS stream variable=";
+  emitValue(result);
+  os << " depth=";
+  os << result.getType().cast<StreamType>().getDepth();
+  emitInfoAndNewLine(op);
+  emitNestedLoopTail(rank);
+}
+
+void ModuleEmitter::emitStreamGet(StreamGetOp op) {
+  int rank = 0;
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  unsigned dimIdx = 0;
+  auto stream = op->getOperand(0);
+  auto streamType = stream.getType().cast<StreamType>();
+  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+    indent();
+    emitArrayDecl(result, false);
+    os << ";\n";
+    for (auto &shape : shapedType.getShape()) {
+      indent();
+      os << "for (int iv" << dimIdx << " = 0; ";
+      os << "iv" << dimIdx << " < " << shape << "; ";
+      os << "++iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+    rank = dimIdx;
+  }
+  indent();
+  emitValue(result, rank);
+  os << " = ";
+  emitValue(stream, 0, false);
+  os << ".read();\n";
+  for (unsigned i = 0; i < rank; ++i) {
+    reduceIndent();
+    indent();
+    os << "}\n";
+  }
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitStreamPut(StreamPutOp op) {
+  int rank = 0;
+  auto stream = op->getOperand(0);
+  unsigned dimIdx = 0;
+  auto streamType = stream.getType().cast<StreamType>();
+  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+    for (auto &shape : shapedType.getShape()) {
+      indent();
+      os << "for (int iv" << dimIdx << " = 0; ";
+      os << "iv" << dimIdx << " < " << shape << "; ";
+      os << "++iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+    rank = dimIdx;
+  }
+  indent();
+  emitValue(stream, 0, false);
+  os << ".write(";
+  emitValue(op->getOperand(1), rank);
+  os << ");\n";
+  for (unsigned i = 0; i < rank; ++i) {
+    reduceIndent();
+    indent();
+    os << "}\n";
+  }
+  emitInfoAndNewLine(op);
+}
+
 void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
@@ -2095,7 +2190,11 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
         emitArrayDecl(arg, true, input_args[argIdx]);
       }
     } else {
-      if (input_args.size() == 0) {
+      if (arg.getType().isa<StreamType>()) {
+        // need to pass by reference
+        os << getTypeName(arg) << "& ";
+        os << addName(arg, false);
+      } else if (input_args.size() == 0) {
         emitValue(arg);
       } else {
         emitValue(arg, 0, false, input_args[argIdx]);

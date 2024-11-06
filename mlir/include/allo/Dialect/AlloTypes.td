@@ -47,4 +47,11 @@ def Struct : Allo_Type<"Struct", [MemRefElementTypeInterface]> {
   bit hasCustomAssemblyFormat = 1;
 }
 
+def Stream : Allo_Type<"Stream", [MemRefElementTypeInterface]> {
+  let summary = "stream type";
+  let mnemonic = "stream";
+  let parameters = (ins AnyType:$baseType, "std::size_t":$depth);
+  let assemblyFormat = "`<` $baseType `,` $depth `>`";
+}
+
 #endif // ALLO_TYPES

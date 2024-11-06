@@ -706,11 +706,12 @@ class TypeInferer(ASTVisitor):
                     node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
                     node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
                 elif node.func.attr == "get":
-                    # get dtype and shape inside Stream
+                    # return value
                     node.shape = ctx.buffers[node.func.value.id].dtype.shape
                     node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
-                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    # stream type itself
+                    node.func.value.shape = tuple()
+                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method {node.func.attr}"
