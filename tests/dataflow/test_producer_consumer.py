@@ -34,7 +34,12 @@ def consumer(B: Ty[M, N]):
 def test_producer_consumer():
     A = np.random.rand(M, N).astype(np.float32)
     B = np.zeros((M, N), dtype=np.float32)
-    top = df.build([producer, consumer])
+    top = df.build(
+        [producer, consumer],
+        target="vitis_hls",
+        mode="csim",
+        project="producer_consumer.prj",
+    )
     if hls.is_available("vitis_hls"):
         top(A, B)
         np.testing.assert_allclose(A + 1, B)

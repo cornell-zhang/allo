@@ -12,10 +12,9 @@ from ._mlir.ir import (
     FlatSymbolRefAttr,
     Location,
     UnitAttr,
-    MemRefType,
     FunctionType,
 )
-from ._mlir.dialects import func as func_d, memref as memref_d
+from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
 from .ir.utils import get_global_vars
@@ -39,12 +38,8 @@ def move_stream_to_interface(func):
     used_stream_info = []
 
     for op in func.entry_block.operations:
-        if (
-            isinstance(op, memref_d.AllocOp)
-            and MemRefType(op.result.type).memory_space is not None
-            and "stream" in MemRefType(op.result.type).memory_space.value
-        ):
-            stream_type = MemRefType(op.result.type)
+        if isinstance(op, allo_d.StreamConstructOp):
+            stream_type = allo_d.StreamType(op.result.type)
             stream_ops.append(op)
             stream_types.append(stream_type)
             src = op.attributes["src"].value
@@ -160,10 +155,8 @@ def _build_top(s_top, input_types, stream_info, func_names):
         arg_lst = []
         for src, dst, stream_type in stream_lst:
             if (src, dst) not in stream_dict:
-                new_op = memref_d.AllocOp(
+                new_op = allo_d.StreamConstructOp(
                     stream_type,
-                    [],
-                    [],
                     ip=InsertionPoint.at_block_terminator(top_func.entry_block),
                 )
                 new_op.attributes["src"] = StringAttr.get(src)

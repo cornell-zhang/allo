@@ -1635,56 +1635,19 @@ class ASTTransformer(ASTBuilder):
                     return build_stmt(ctx, node.func)
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
-                    cast = ASTTransformer.build_cast_op(
-                        ctx, stmts[0], node.args[0].dtype, node.func.value.dtype
+                    assert len(stmts) == 1, "Stream can only have one argument"
+                    allo_d.StreamPutOp(
+                        ctx.buffers[node.func.value.id].result,
+                        stmts[0].result,
+                        ip=ctx.get_ip(),
                     )
-                    if len(node.func.value.shape) == 0:
-                        affine_map = AffineMap.get(
-                            dim_count=0,
-                            symbol_count=0,
-                            exprs=[AffineConstantExpr.get(0)],
-                        )
-                        affine_attr = AffineMapAttr.get(affine_map)
-                        op = affine_d.AffineStoreOp(
-                            cast.result,
-                            ctx.buffers[node.func.value.id].result,
-                            [],
-                            affine_attr,
-                            ip=ctx.get_ip(),
-                        )
-                    else:
-                        store_tensor(
-                            cast.result,
-                            ctx.buffers[node.func.value.id].result,
-                            "put",
-                            ip=ctx.get_ip(),
-                            flatten=False,
-                        )
                     return
                 if node.func.attr == "get":
-                    # pylint: disable=no-else-return
-                    if len(node.func.value.shape) == 0:
-                        affine_map = AffineMap.get(
-                            dim_count=0,
-                            symbol_count=0,
-                            exprs=[AffineConstantExpr.get(0)],
-                        )
-                        affine_attr = AffineMapAttr.get(affine_map)
-                        return affine_d.AffineLoadOp(
-                            node.func.value.dtype.build(),
-                            ctx.buffers[node.func.value.id].result,
-                            [],
-                            affine_attr,
-                            ip=ctx.get_ip(),
-                        )
-                    else:
-                        return create_buffer(
-                            ctx.buffers[node.func.value.id].result,
-                            "get",
-                            ip=ctx.get_ip(),
-                            alloc_ip=None,
-                            flatten=False,
-                        )
+                    return allo_d.StreamGetOp(
+                        node.func.value.dtype.build(),
+                        ctx.buffers[node.func.value.id].result,
+                        ip=ctx.get_ip(),
+                    )
 
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -1789,8 +1752,8 @@ class ASTTransformer(ASTBuilder):
                         ctx.top_func.attributes["sym_name"].value
                         + f"_{dst[0]}_{dst[1]}"
                     )
-                memref_type = node.dtype.build()
-                stream_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                stream_type = allo_d.StreamType.get(node.dtype.dtype.build(), depth=2)
+                stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                 stream_op.attributes["src"] = StringAttr.get(src)
                 stream_op.attributes["dst"] = StringAttr.get(dst)
                 return stream_op

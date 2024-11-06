@@ -70,6 +70,7 @@ void mlir::python::populateAlloIRTypes(py::module &m) {
       .def_property_readonly(
           "frac", [](MlirType type) { return alloMlirUFixedTypeGetFrac(type); },
           "Returns the fraction of the fixed point type");
+
   mlir_type_subclass(m, "StructType", alloMlirTypeIsAStructType)
       .def_classmethod(
           "get",
@@ -91,4 +92,19 @@ void mlir::python::populateAlloIRTypes(py::module &m) {
             return types;
           },
           "Get a field type of a struct type by index.");
+
+  mlir_type_subclass(m, "StreamType", alloMlirTypeIsAStreamType)
+      .def_classmethod(
+          "get",
+          [](py::object cls, MlirType &baseType, size_t depth,
+             MlirContext ctx) {
+            return cls(alloMlirStreamTypeGet(ctx, baseType, depth));
+          },
+          "Get an instance of StreamType in given context.", py::arg("cls"),
+          py::arg("base_type"), py::arg("depth"),
+          py::arg("context") = py::none())
+      .def_property_readonly(
+          "base_type",
+          [](MlirType type) { return alloMlirStreamTypeGetBaseType(type); },
+          "Returns the base type of the stream object");
 }

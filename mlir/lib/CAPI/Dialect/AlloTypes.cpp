@@ -76,3 +76,15 @@ MlirType alloMlirStructGetEleType(MlirType type, size_t pos) {
 unsigned alloMlirStructTypeGetNumFields(MlirType type) {
   return unwrap(type).cast<allo::StructType>().getElementTypes().size();
 }
+
+bool alloMlirTypeIsAStreamType(MlirType type) {
+  return unwrap(type).isa<allo::StreamType>();
+}
+
+MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType, size_t depth) {
+  return wrap(allo::StreamType::get(unwrap(ctx), unwrap(baseType), depth));
+}
+
+MlirType alloMlirStreamTypeGetBaseType(MlirType type) {
+  return wrap(unwrap(type).cast<allo::StreamType>().getBaseType());
+}
