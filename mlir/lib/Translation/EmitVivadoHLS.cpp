@@ -1458,26 +1458,63 @@ void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
 }
 
 void ModuleEmitter::emitStreamGet(StreamGetOp op) {
-  auto rank = emitNestedLoopHead(op.getResult());
-  indent();
+  int rank = 0;
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
+  unsigned dimIdx = 0;
+  auto stream = op->getOperand(0);
+  auto streamType = stream.getType().cast<StreamType>();
+  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+    indent();
+    emitArrayDecl(result, false);
+    os << ";\n";
+    for (auto &shape : shapedType.getShape()) {
+      indent();
+      os << "for (int iv" << dimIdx << " = 0; ";
+      os << "iv" << dimIdx << " < " << shape << "; ";
+      os << "++iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+    rank = dimIdx;
+  }
+  indent();
   emitValue(result, rank);
   os << " = ";
-  auto stream = op->getOperand(0);
   emitValue(stream, 0, false);
-  os << ".read();";
+  os << ".read();\n";
+  for (unsigned i = 0; i < rank; ++i) {
+    reduceIndent();
+    indent();
+    os << "}\n";
+  }
   emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
 }
 
 void ModuleEmitter::emitStreamPut(StreamPutOp op) {
-  indent();
+  int rank = 0;
   auto stream = op->getOperand(0);
+  unsigned dimIdx = 0;
+  auto streamType = stream.getType().cast<StreamType>();
+  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+    for (auto &shape : shapedType.getShape()) {
+      indent();
+      os << "for (int iv" << dimIdx << " = 0; ";
+      os << "iv" << dimIdx << " < " << shape << "; ";
+      os << "++iv" << dimIdx++ << ") {\n";
+      addIndent();
+    }
+    rank = dimIdx;
+  }
+  indent();
   emitValue(stream, 0, false);
   os << ".write(";
-  emitValue(op->getOperand(1));
-  os << ");";
+  emitValue(op->getOperand(1), rank);
+  os << ");\n";
+  for (unsigned i = 0; i < rank; ++i) {
+    reduceIndent();
+    indent();
+    os << "}\n";
+  }
   emitInfoAndNewLine(op);
 }
 

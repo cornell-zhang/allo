@@ -54,8 +54,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .transform import store_tensor, create_buffer
-from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, Stream
+from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
@@ -1249,7 +1248,9 @@ class ASTTransformer(ASTBuilder):
                 ctx, rhs, node.value.dtype, node.dtype, node.value.shape
             )
         # Store LHS
-        if len(shape) > 0:
+        if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
+            ctx.buffers[node.target.id] = rhs
+        elif len(shape) > 0:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             with ctx.get_ip():
@@ -1262,8 +1263,6 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
-        elif isinstance(node.dtype, Stream):
-            ctx.buffers[node.target.id] = rhs
         else:
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
@@ -1752,7 +1751,9 @@ class ASTTransformer(ASTBuilder):
                         ctx.top_func.attributes["sym_name"].value
                         + f"_{dst[0]}_{dst[1]}"
                     )
-                stream_type = allo_d.StreamType.get(node.dtype.dtype.build(), depth=2)
+                stream_type = allo_d.StreamType.get(
+                    node.dtype.build(), depth=node.dtype.depth
+                )
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                 stream_op.attributes["src"] = StringAttr.get(src)
                 stream_op.attributes["dst"] = StringAttr.get(dst)
