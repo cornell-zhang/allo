@@ -1290,6 +1290,7 @@ class ASTTransformer(ASTBuilder):
             ctx = old_ctx.copy()
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
+            ctx.buffers = old_ctx.buffers.copy()
         else:
             old_ctx = None
 
@@ -1635,16 +1636,22 @@ class ASTTransformer(ASTBuilder):
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
                     assert len(stmts) == 1, "Stream can only have one argument"
+                    stream = ctx.buffers[node.func.value.id].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
                     allo_d.StreamPutOp(
-                        ctx.buffers[node.func.value.id].result,
+                        stream.result,
                         stmts[0].result,
                         ip=ctx.get_ip(),
                     )
                     return
                 if node.func.attr == "get":
+                    stream = ctx.buffers[node.func.value.id].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
                     return allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
-                        ctx.buffers[node.func.value.id].result,
+                        stream.result,
                         ip=ctx.get_ip(),
                     )
 
@@ -1742,9 +1749,7 @@ class ASTTransformer(ASTBuilder):
             if fn_name == "pipe":
                 exec("_pipe = " + ast.unparse(node), ctx.global_vars)
                 stream = ctx.global_vars.get("_pipe")
-                stream_type = allo_d.StreamType.get(
-                    stream.build(), depth=stream.depth
-                )
+                stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                 return stream_op
             if isinstance(new_args[0].result, OpResultList):

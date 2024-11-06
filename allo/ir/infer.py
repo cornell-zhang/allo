@@ -510,13 +510,6 @@ class TypeInferer(ASTVisitor):
             )
             node.value.shape = node.np_values.shape
             node.value.dtype = target_dtype
-        elif (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Attribute)
-            and node.value.func.attr == "pipe"
-        ):
-            node.value.shape = target_shape
-            node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
@@ -539,6 +532,7 @@ class TypeInferer(ASTVisitor):
             # Create a new context to avoid name collision
             old_ctx = ctx
             ctx = old_ctx.copy()
+            ctx.buffers = old_ctx.buffers.copy()
         else:
             old_ctx = None
 
@@ -579,6 +573,9 @@ class TypeInferer(ASTVisitor):
                 )
             ctx.buffers[func_name] = node
 
+        # set context
+        ctx.top_func = node
+        ctx.top_func_tree = node
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
         if node.returns is None or (
@@ -738,8 +735,10 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
-        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
-            "allo.library"
+        if (
+            obj.__module__.startswith("allo")
+            and not obj.__module__.startswith("allo.library")
+            and not obj.__module__.startswith("allo._mlir")
         ):
             # Allo library functions
             new_args = visit_stmts(ctx, node.args)
@@ -750,6 +749,12 @@ class TypeInferer(ASTVisitor):
                 node.dtype = None
                 return node
             fn_name = obj.__name__
+            if fn_name == "pipe":
+                exec("_pipe = " + ast.unparse(node), ctx.global_vars)
+                stream = ctx.global_vars.get("_pipe")
+                node.shape = tuple()
+                node.dtype = stream
+                return node
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":
