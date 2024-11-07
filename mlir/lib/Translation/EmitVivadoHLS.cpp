@@ -1481,11 +1481,14 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   emitValue(result, rank);
   os << " = ";
   emitValue(stream, 0, false);
-  os << ".read();\n";
-  for (unsigned i = 0; i < rank; ++i) {
-    reduceIndent();
-    indent();
-    os << "}\n";
+  os << ".read();";
+  if (rank > 0) {
+    os << "\n";
+    for (unsigned i = 0; i < rank; ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
   }
   emitInfoAndNewLine(op);
 }
@@ -1510,10 +1513,13 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   os << ".write(";
   emitValue(op->getOperand(1), rank);
   os << ");\n";
-  for (unsigned i = 0; i < rank; ++i) {
-    reduceIndent();
-    indent();
-    os << "}\n";
+  if (rank > 0) {
+    os << "\n";
+    for (unsigned i = 0; i < rank; ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
   }
   emitInfoAndNewLine(op);
 }
