@@ -1512,7 +1512,7 @@ void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   emitValue(stream, 0, false);
   os << ".write(";
   emitValue(op->getOperand(1), rank);
-  os << ");\n";
+  os << ");";
   if (rank > 0) {
     os << "\n";
     for (unsigned i = 0; i < rank; ++i) {
