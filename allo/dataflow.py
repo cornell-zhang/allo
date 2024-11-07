@@ -3,14 +3,13 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
 import functools
-import numpy as np
 
 from ._mlir.ir import (
-    StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
     Location,
     UnitAttr,
+    StringAttr,
     FunctionType,
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
@@ -38,16 +37,26 @@ def move_stream_to_interface(s):
         stream_ops = []
         stream_types = []
         stream_info[func_name] = []
+        in_types = func.attributes["function_type"].value.inputs
+        out_types = func.attributes["function_type"].value.results
+        s_type_str = "_" * len(in_types)
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_type = allo_d.StreamType(op.result.type)
                 stream_ops.append(op)
                 stream_types.append(stream_type)
                 stream_name = op.attributes["name"].value
-                stream_info[func_name].append(stream_name)
+                for use in op.result.uses:
+                    # get use's parent operation
+                    if isinstance(use.owner, allo_d.StreamGetOp):
+                        direction = "in"
+                    elif isinstance(use.owner, allo_d.StreamPutOp):
+                        direction = "out"
+                    else:
+                        raise ValueError("Stream is not used correctly.")
+                stream_info[func_name].append((stream_name, direction))
+                s_type_str += direction[0]
         # create new func to update arguments
-        in_types = func.attributes["function_type"].value.inputs
-        out_types = func.attributes["function_type"].value.results
         in_types += stream_types
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
@@ -58,6 +67,8 @@ def move_stream_to_interface(s):
             )
             new_func.add_entry_block()
             return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            # tag stream types
+            new_func.attributes["stypes"] = StringAttr.get(s_type_str)
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:
@@ -78,21 +89,6 @@ def move_stream_to_interface(s):
     return stream_info
 
 
-def tag_stream_type(func, func_name, stream_info, start_index):
-    if "stypes" in func.attributes:
-        stypes = func.attributes["stypes"].value.split()
-    else:
-        stypes = ["_"] * start_index
-    for src, dst, _ in stream_info:
-        if func_name == src:
-            stypes.append("o")
-        elif func_name == dst:
-            stypes.append("i")
-        else:
-            stypes.append("g")
-    func.attributes["stypes"] = StringAttr.get("".join(stypes))
-
-
 def remove_unused_func_ops(s, func_names):
     for i in range(len(func_names) - 1, -1, -1):
         func_op = s.module.body.operations[i]
@@ -108,7 +104,7 @@ def remove_unused_func_ops(s, func_names):
 def _build_top(s, stream_info):
     """
     s: top-level schedule
-    stream_info: {func_name: [stream_names]}
+    stream_info: {func_name: [(stream_names, direction)]}
     """
     # remove unused kernel
     passes = ["canonicalize"]
@@ -167,7 +163,7 @@ def _build_top(s, stream_info):
         for i, func_name in enumerate(stream_info.keys()):
             arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
             stream_lst = [
-                stream_map[stream_name] for stream_name in stream_info[func_name]
+                stream_map[stream_name] for stream_name, _ in stream_info[func_name]
             ]
             call_op = func_d.CallOp(
                 [],
@@ -230,13 +226,6 @@ def build(func, target="vitis_hls", mode="csim", project="top.prj"):
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
     print(s.module)
-    sys.exit()
-    tag_stream_type(s.top_func, new_func_name, stream_info, le(indices))
-    all_stream_info[new_func_name] = (stream_info, indices)
-    s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
-    s.top_func.operation.clone(InsertionPoint(s.top_func))
-    func_names.append(new_func_name)
-    s = _build_top(s, input_types, all_stream_info, func_names)
     hls_mod = s.build(
         target=target,
         mode=mode,
