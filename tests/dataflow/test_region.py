@@ -13,7 +13,8 @@ M, N, K = 16, 16, 16
 
 @df.region()
 def top():
-    pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+    pipe0 = df.pipe(dtype=Ty, shape=(), depth=4)
+    pipe1 = df.pipe(dtype=Ty, shape=(), depth=2)
 
     @df.kernel(mapping=[1])
     def producer(A: Ty[M, N]):
@@ -21,19 +22,16 @@ def top():
             # load data
             out: Ty = A[i, j]
             # send data
-            pipe.put(out)
+            pipe0.put(out)
 
     @df.kernel(mapping=[1])
     def consumer(B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
-            data = pipe.get()
+            data = pipe0.get()
             # computation
             B[i, j] = data + 1
 
 
 if __name__ == "__main__":
-    s = allo.customize(top, verbose=True)
-    print(s.module)
-    code = s.build(target="vhls")
-    print(code)
+    mod = df.build(top)

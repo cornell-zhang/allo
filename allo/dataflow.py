@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
 
-import gc
 import functools
 import numpy as np
 
@@ -17,7 +16,7 @@ from ._mlir.ir import (
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize
-from .ir.utils import get_global_vars
+from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
 
@@ -30,71 +29,53 @@ def pipe(dtype, shape=(), depth=2):
     return Stream(dtype, shape, depth)
 
 
-def move_stream_to_interface(func):
-    stream_ops = []
-    stream_types = []
-    stream_info = []
-    used_stream_ops = []
-    used_stream_types = []
-    used_stream_info = []
+def move_stream_to_interface(s):
+    stream_info = {}
+    funcs = get_all_funcs_except_top(s)
 
-    for op in func.entry_block.operations:
-        if isinstance(op, allo_d.StreamConstructOp):
-            stream_type = allo_d.StreamType(op.result.type)
-            stream_ops.append(op)
-            stream_types.append(stream_type)
-            src = op.attributes["src"].value
-            dst = op.attributes["dst"].value
-            stream_info.append((src, dst, stream_type))
-
-    if len(stream_ops) == 0:
-        return func, stream_info
-
-    # Check if the stream op is used in the function, remove if not
-    for op, stype, sinfo in zip(stream_ops, stream_types, stream_info):
-        if len(list(op.result.uses)) != 0:
-            used_stream_ops.append(op)
-            used_stream_types.append(stype)
-            used_stream_info.append(sinfo)
-        else:
-            op.operation.erase()
-
-    if len(used_stream_ops) == 0:
-        return func, used_stream_info
-
-    in_types = func.attributes["function_type"].value.inputs
-    out_types = func.attributes["function_type"].value.results
-
-    in_types += used_stream_types
-    func_type = FunctionType.get(in_types, out_types)
-
-    func_op = func_d.FuncOp(
-        name=func.attributes["sym_name"].value,
-        type=func_type,
-        ip=InsertionPoint(func),
-    )
-    func_op.add_entry_block()
-    ip = func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
-
-    cnt_stream = 0
-    total_args = len(func_op.arguments)
-
-    for op in func.entry_block.operations:
-        if isinstance(op, func_d.ReturnOp):
-            break
-        if op in used_stream_ops:
-            op.result.replace_all_uses_with(
-                func_op.arguments[total_args - len(used_stream_types) + cnt_stream]
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        stream_ops = []
+        stream_types = []
+        stream_info[func_name] = []
+        for op in func.entry_block.operations:
+            if isinstance(op, allo_d.StreamConstructOp):
+                stream_type = allo_d.StreamType(op.result.type)
+                stream_ops.append(op)
+                stream_types.append(stream_type)
+                stream_name = op.attributes["name"].value
+                stream_info[func_name].append(stream_name)
+        # create new func to update arguments
+        in_types = func.attributes["function_type"].value.inputs
+        out_types = func.attributes["function_type"].value.results
+        in_types += stream_types
+        with s.module.context, Location.unknown():
+            func_type = FunctionType.get(in_types, out_types)
+            new_func = func_d.FuncOp(
+                name=func.attributes["sym_name"].value,
+                type=func_type,
+                ip=InsertionPoint(func),
             )
-            cnt_stream += 1
-            op.operation.erase()
-            continue
-        op.operation.move_before(ip)
-    for i, arg in enumerate(func.arguments):
-        arg.replace_all_uses_with(func_op.arguments[i])
-
-    func.operation.erase()
-    return func_op, used_stream_info
+            new_func.add_entry_block()
+            return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            # move operations from old func to new func
+            cnt_stream = 0
+            for op in func.entry_block.operations:
+                if isinstance(op, func_d.ReturnOp):
+                    break
+                if op in stream_ops:
+                    op.result.replace_all_uses_with(
+                        new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
+                    )
+                    cnt_stream += 1
+                    op.operation.erase()
+                    continue
+                op.operation.move_before(return_op)
+            # update original arguments
+            for i, arg in enumerate(func.arguments):
+                arg.replace_all_uses_with(new_func.arguments[i])
+            func.operation.erase()
+    return stream_info
 
 
 def tag_stream_type(func, func_name, stream_info, start_index):
@@ -112,9 +93,9 @@ def tag_stream_type(func, func_name, stream_info, start_index):
     func.attributes["stypes"] = StringAttr.get("".join(stypes))
 
 
-def remove_unused_func_ops(s_top, func_names):
+def remove_unused_func_ops(s, func_names):
     for i in range(len(func_names) - 1, -1, -1):
-        func_op = s_top.module.body.operations[i]
+        func_op = s.module.body.operations[i]
         blocks = func_op.body.blocks
         if (
             len(blocks) == 1
@@ -122,65 +103,83 @@ def remove_unused_func_ops(s_top, func_names):
             and blocks[0].operations[0].name == "func.return"
         ):
             func_op.erase()
-            del func_names[i]
 
 
-def _build_top(s_top, input_types, stream_info, func_names):
+def _build_top(s, stream_info):
     """
-    s_top: schedule of top-level function
-    input_types: top-level function input types
-    stream_info: {(src, dst): stream_types} (TODO: support more than one stream)
-    func_names: all kernel function names (top not included)
+    s: top-level schedule
+    stream_info: {func_name: [stream_names]}
     """
-    s_top.top_func.operation.erase()
     # remove unused kernel
     passes = ["canonicalize"]
     pipeline = f'builtin.module(func.func({",".join(passes)}))'
     try:
-        with s_top.module.context:
-            mlir_pass_manager.parse(pipeline).run(s_top.module.operation)
+        with s.module.context:
+            mlir_pass_manager.parse(pipeline).run(s.module.operation)
     except Exception as e:
         print("Error: failed to run MLIR lower pipeline, printing module...")
-        print(s_top.module)
+        print(s.module)
         raise e
-    remove_unused_func_ops(s_top, func_names)
-    ip = InsertionPoint(s_top.module.body)
-    func_type = FunctionType.get(input_types, [])
-    top_func = func_d.FuncOp(name="top", type=func_type, ip=ip)
-    top_func.add_entry_block()
-    func_d.ReturnOp([], ip=InsertionPoint(top_func.entry_block))
-    # create global stream ops
-    stream_dict = {}
-    for i, func_name in enumerate(func_names):
-        stream_lst, indices = stream_info[func_name]
-        arg_lst = []
-        for src, dst, stream_type in stream_lst:
-            if (src, dst) not in stream_dict:
-                new_op = allo_d.StreamConstructOp(
-                    stream_type,
-                    ip=InsertionPoint.at_block_terminator(top_func.entry_block),
-                )
-                new_op.attributes["src"] = StringAttr.get(src)
-                new_op.attributes["dst"] = StringAttr.get(dst)
-                stream_dict[(src, dst)] = new_op
-            else:
-                new_op = stream_dict[(src, dst)]
-            arg_lst.append(new_op.result)
-        arguments = []
-        for idx in indices:
-            arguments.append(top_func.arguments[idx])
-        call_op = func_d.CallOp(
-            [],
-            FlatSymbolRefAttr.get(func_name),
-            arguments + arg_lst,
-            ip=InsertionPoint.at_block_terminator(top_func.entry_block),
-        )
-        # tag the last callOp for tapa invoke
-        if i == len(func_names) - 1:
-            call_op.attributes["last"] = UnitAttr.get()
-    top_func.attributes["dataflow"] = UnitAttr.get()
-    s_top.top_func = top_func
-    return s_top
+    remove_unused_func_ops(s, stream_info.keys())
+
+    # create argument mapping
+    funcs = get_all_funcs_except_top(s)
+    input_types = []
+    arg_mapping = {}
+    used_args = {}  # {arg_name: arg_idx in top_func}
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        arg_mapping[func_name] = []
+        for i, arg in enumerate(func.arguments):
+            if not "!allo.stream" in str(arg.type):
+                arg_name = s.func_args[func_name][i]
+                if arg_name not in used_args:
+                    used_args[arg_name] = len(input_types)
+                    input_types.append(arg.type)
+                arg_mapping[func_name].append(used_args[arg_name])
+    # update top function
+    top_func = None
+    for func in s.module.body.operations:
+        if (
+            isinstance(func, func_d.FuncOp)
+            and func.attributes["sym_name"].value == s.top_func_name
+        ):
+            top_func = func
+            break
+    with s.module.context, Location.unknown():
+        # create new func
+        func_type = FunctionType.get(input_types, [])
+        new_top = func_d.FuncOp(name="top", type=func_type, ip=InsertionPoint(top_func))
+        new_top.add_entry_block()
+        return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
+        for op in top_func.entry_block.operations:
+            if isinstance(op, func_d.ReturnOp):
+                break
+            op.operation.move_before(return_op)
+        top_func.operation.erase()
+        # get all global streams
+        stream_map = {}
+        for op in new_top.entry_block.operations:
+            if isinstance(op, allo_d.StreamConstructOp):
+                stream_name = op.attributes["name"].value
+                stream_map[stream_name] = op
+        # add call functions
+        for i, func_name in enumerate(stream_info.keys()):
+            arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
+            stream_lst = [
+                stream_map[stream_name] for stream_name in stream_info[func_name]
+            ]
+            call_op = func_d.CallOp(
+                [],
+                FlatSymbolRefAttr.get(func_name),
+                arg_lst + stream_lst,
+                ip=InsertionPoint.at_block_terminator(new_top.entry_block),
+            )
+            if i == len(stream_info) - 1:
+                call_op.attributes["last"] = UnitAttr.get()
+        new_top.attributes["dataflow"] = UnitAttr.get()
+    s.top_func = new_top
+    return s
 
 
 def kernel(mapping=None):
@@ -213,10 +212,8 @@ def region():
     return actual_decorator
 
 
-def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
+def build(func, target="vitis_hls", mode="csim", project="top.prj"):
     if target == "aie":
-        assert not isinstance(funcs, list), "Only support one function for AIE target."
-        func = funcs
         global_vars = get_global_vars(func)
         mapping = func.mapping
         s = customize(func, global_vars=global_vars)
@@ -225,52 +222,24 @@ def build(funcs, target="vitis_hls", mode="csim", project="top.prj"):
         mod.build()
         return mod
 
-    input_types = []
-    all_stream_info = {}
-    # collect all funcOp
-    func_names = []
-    # mapping from arg name to arg index
-    top_func_arg_mapping = {}
-    if not isinstance(funcs, list):
-        funcs = [funcs]
-    with s_top.module.context, Location.unknown():
-        for func in funcs:
-            global_vars = get_global_vars(func)
-            mapping = func.mapping
-            assert len(mapping) <= 2, "Only support 1D/2D mapping now."
-            for dim in np.ndindex(*mapping):
-                # A randomly crashed bug
-                # https://github.com/cornell-zhang/allo/issues/196
-                gc.collect()
-                if len(dim) == 1:
-                    global_vars.update({"df.p0": dim[0]})
-                    new_func_name = func.__name__ + f"_{dim[0]}"
-                else:
-                    global_vars.update({"df.p0": dim[0], "df.p1": dim[1]})
-                    new_func_name = func.__name__ + f"_{dim[0]}_{dim[1]}"
-                s = customize(
-                    func.__wrapped__ if hasattr(func, "__wrapped__") else func,
-                    global_vars=global_vars,
-                    context=s_top.module.context,
-                )
-                indices = []
-                for idx, arg in enumerate(s.func_args[func.__name__]):
-                    if not arg in top_func_arg_mapping:
-                        top_func_arg_mapping[arg] = len(top_func_arg_mapping)
-                        input_types.append(
-                            s.top_func.attributes["function_type"].value.inputs[idx]
-                        )
-                    indices.append(top_func_arg_mapping[arg])
-                s.top_func, stream_info = move_stream_to_interface(s.top_func)
-                tag_stream_type(s.top_func, new_func_name, stream_info, len(indices))
-                all_stream_info[new_func_name] = (stream_info, indices)
-                s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
-                s.top_func.operation.clone(InsertionPoint(s_top.top_func))
-                func_names.append(new_func_name)
-        s_top = _build_top(s_top, input_types, all_stream_info, func_names)
-        hls_mod = s_top.build(
-            target=target,
-            mode=mode,
-            project=project,
-        )
+    global_vars = get_global_vars(func)
+    s = customize(
+        func,
+        global_vars=global_vars,
+    )
+    stream_info = move_stream_to_interface(s)
+    s = _build_top(s, stream_info)
+    print(s.module)
+    sys.exit()
+    tag_stream_type(s.top_func, new_func_name, stream_info, le(indices))
+    all_stream_info[new_func_name] = (stream_info, indices)
+    s.top_func.attributes["sym_name"] = StringAttr.get(new_func_name)
+    s.top_func.operation.clone(InsertionPoint(s.top_func))
+    func_names.append(new_func_name)
+    s = _build_top(s, input_types, all_stream_info, func_names)
+    hls_mod = s.build(
+        target=target,
+        mode=mode,
+        project=project,
+    )
     return hls_mod
