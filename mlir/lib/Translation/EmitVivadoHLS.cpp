@@ -2223,7 +2223,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     if (arg.getType().isa<ShapedType>()) {
       if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
         auto shapedType = arg.getType().dyn_cast<ShapedType>();
-        os << getTypeName(arg) << "& ";
+        os << getTypeName(arg) << " ";
         os << addName(arg, false);
         for (auto shape : shapedType.getShape())
           os << "[" << shape << "]";
