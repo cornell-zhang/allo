@@ -8,6 +8,7 @@
 
 include "allo/Dialect/AlloDialect.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
+include "mlir/IR/CommonTypeConstraints.td"
 
 def Type : Allo_Type<"Type", [MemRefElementTypeInterface]> {
   let summary = "generic type";
@@ -46,5 +47,14 @@ def Struct : Allo_Type<"Struct", [MemRefElementTypeInterface]> {
   let parameters = (ins ArrayRefParameter<"Type", "elementTypes">:$elementTypes);
   bit hasCustomAssemblyFormat = 1;
 }
+
+def Stream : Allo_Type<"Stream", [MemRefElementTypeInterface]> {
+  let summary = "stream type";
+  let mnemonic = "stream";
+  let parameters = (ins AnyType:$baseType, "std::size_t":$depth);
+  let assemblyFormat = "`<` $baseType `,` $depth `>`";
+}
+
+def StreamLike : TypeOrContainer<Stream, "stream-like">;
 
 #endif // ALLO_TYPES

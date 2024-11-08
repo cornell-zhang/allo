@@ -64,19 +64,23 @@ public:
             arith::MaximumFOp, arith::MinimumFOp,
             // Logical expressions.
             arith::XOrIOp, arith::AndIOp, arith::OrIOp, arith::ShLIOp,
-            arith::ShRSIOp, arith::ShRUIOp, allo::GetIntBitOp, allo::SetIntBitOp,
-            allo::GetIntSliceOp, allo::SetIntSliceOp, allo::BitReverseOp,
+            arith::ShRSIOp, arith::ShRUIOp, allo::GetIntBitOp,
+            allo::SetIntBitOp, allo::GetIntSliceOp, allo::SetIntSliceOp,
+            allo::BitReverseOp,
             // Special operations.
             func::CallOp, func::ReturnOp, arith::SelectOp, arith::ConstantOp,
             arith::TruncIOp, arith::TruncFOp, arith::ExtUIOp, arith::ExtSIOp,
             arith::ExtFOp, arith::IndexCastOp, arith::UIToFPOp, arith::SIToFPOp,
             arith::FPToSIOp, arith::FPToUIOp, arith::BitcastOp,
             allo::FixedToFloatOp, allo::FloatToFixedOp, allo::IntToFixedOp,
-            allo::FixedToIntOp, allo::FixedToFixedOp, UnrealizedConversionCastOp,
+            allo::FixedToIntOp, allo::FixedToFixedOp,
+            UnrealizedConversionCastOp,
             // Allo operations.
             allo::CreateLoopHandleOp, allo::CreateOpHandleOp, allo::AddFixedOp,
-            allo::SubFixedOp, allo::MulFixedOp, allo::DivFixedOp, allo::CmpFixedOp,
-            allo::MinFixedOp, allo::MaxFixedOp, allo::PrintOp>(
+            allo::SubFixedOp, allo::MulFixedOp, allo::DivFixedOp,
+            allo::CmpFixedOp, allo::ShLFixedOp, allo::ShRFixedOp,
+            allo::MinFixedOp, allo::MaxFixedOp, allo::PrintOp,
+            allo::StreamConstructOp, allo::StreamGetOp, allo::StreamPutOp>(
             [&](auto opNode) -> ResultType {
               return thisCast->visitOp(opNode, args...);
             })
@@ -239,8 +243,15 @@ public:
   HANDLE(allo::MulFixedOp);
   HANDLE(allo::DivFixedOp);
   HANDLE(allo::CmpFixedOp);
+  HANDLE(allo::ShLFixedOp);
+  HANDLE(allo::ShRFixedOp);
   HANDLE(allo::MinFixedOp);
   HANDLE(allo::MaxFixedOp);
+
+  /// Stream operations.
+  HANDLE(allo::StreamConstructOp);
+  HANDLE(allo::StreamGetOp);
+  HANDLE(allo::StreamPutOp);
 
 #undef HANDLE
 };

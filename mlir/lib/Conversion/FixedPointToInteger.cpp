@@ -399,6 +399,39 @@ void lowerFixedDiv(DivFixedOp &op) {
   }
 }
 
+// Lower ShLFixedOp to ShLIOp
+// https://docs.amd.com/r/en-US/ug1399-vitis-hls/Class-Methods-Operators-and-Data-Members
+void lowerFixedShL(ShLFixedOp &op) {
+  OpBuilder rewriter(op);
+  Type t = op->getOperand(0).getType();
+  FixedTypeInfo ti = getFixedPointInfo(t);
+  auto lhs = op->getOperand(0);
+  int sh_width = op->getOperand(1).getType().cast<IntegerType>().getWidth();
+  Value rhs =
+      castIntegerWidth(op->getContext(), rewriter, op->getLoc(),
+                       op->getOperand(1), sh_width, ti.width, ti.isSigned);
+  Type newType = IntegerType::get(op.getContext(), ti.width);
+  arith::ShLIOp newOp =
+      rewriter.create<arith::ShLIOp>(op->getLoc(), newType, lhs, rhs);
+  op->replaceAllUsesWith(newOp);
+}
+
+// Lower ShRFixedOp to ShRIOp
+void lowerFixedShR(ShRFixedOp &op) {
+  OpBuilder rewriter(op);
+  Type t = op->getOperand(0).getType();
+  FixedTypeInfo ti = getFixedPointInfo(t);
+  auto lhs = op->getOperand(0);
+  int sh_width = op->getOperand(1).getType().cast<IntegerType>().getWidth();
+  Value rhs =
+      castIntegerWidth(op->getContext(), rewriter, op->getLoc(),
+                       op->getOperand(1), sh_width, ti.width, ti.isSigned);
+  Type newType = IntegerType::get(op.getContext(), ti.width);
+  arith::ShRSIOp newOp =
+      rewriter.create<arith::ShRSIOp>(op->getLoc(), newType, lhs, rhs);
+  op->replaceAllUsesWith(newOp);
+}
+
 // Lower CmpFixedOp to CmpIOp
 void lowerFixedCmp(CmpFixedOp &op) {
   OpBuilder rewriter(op);
@@ -817,6 +850,10 @@ void visitOperation(Operation &op) {
     lowerFixedDiv(new_op);
   } else if (auto new_op = dyn_cast<CmpFixedOp>(op)) {
     lowerFixedCmp(new_op);
+  } else if (auto new_op = dyn_cast<ShLFixedOp>(op)) {
+    lowerFixedShL(new_op);
+  } else if (auto new_op = dyn_cast<ShRFixedOp>(op)) {
+    lowerFixedShR(new_op);
   } else if (auto new_op = dyn_cast<MinFixedOp>(op)) {
     lowerFixedMin(new_op);
   } else if (auto new_op = dyn_cast<MaxFixedOp>(op)) {
@@ -852,8 +889,8 @@ void visitBlock(Block &block) {
     Operation &op = *it;
     visitOperation(op);
     if (llvm::isa<AddFixedOp, SubFixedOp, MulFixedOp, DivFixedOp, CmpFixedOp,
-                  MinFixedOp, MaxFixedOp, IntToFixedOp, FixedToIntOp,
-                  FloatToFixedOp, FixedToFloatOp, FixedToFixedOp,
+                  ShLFixedOp, ShRFixedOp, MinFixedOp, MaxFixedOp, IntToFixedOp,
+                  FixedToIntOp, FloatToFixedOp, FixedToFloatOp, FixedToFixedOp,
                   GetGlobalFixedOp>(op)) {
       opToRemove.push_back(&op);
     }

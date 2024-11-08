@@ -12,7 +12,6 @@ from .._mlir.ir import (
     F32Type,
     F64Type,
     MemRefType,
-    StringAttr,
 )
 from .._mlir.dialects import allo as allo_d
 from .._mlir.exceptions import DTypeError, DTypeWarning
@@ -251,12 +250,9 @@ class Stream(AlloType):
         super().__init__(0, 0, f"stream<{dtype}>")
 
     def build(self):
-        return MemRefType.get(
-            self.shape if len(self.shape) > 0 else (1,),
-            self.dtype.build(),
-            None,
-            StringAttr.get(f"stream:{self.depth}"),
-        )
+        if len(self.shape) > 0:
+            return MemRefType.get(self.shape, self.dtype.build())
+        return self.dtype.build()
 
     def __repr__(self):
         shape = ", ".join(str(s) for s in self.shape)
