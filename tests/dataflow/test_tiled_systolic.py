@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import allo
 from allo.ir.types import int32
 import allo.dataflow as df
@@ -57,6 +58,16 @@ def top():
                     C[m * Mt + i - 1, n * Nt + j - 1] = c
 
 
+def check_function_arguments(code, kernel_name, arg_count):
+    pattern = rf"{kernel_name}\((.*?)\);"
+    matches = re.findall(pattern, code)
+    for match in matches:
+        args = match.split(",")
+        assert (
+            len(args) == arg_count
+        ), f"Expected {arg_count} arguments for {kernel_name}, but found {len(args)}."
+
+
 def test_tiled_systolic():
     A = np.random.randint(0, 10, (M, K)).astype(np.int32)
     B = np.random.randint(0, 10, (K, N)).astype(np.int32)
@@ -66,6 +77,21 @@ def test_tiled_systolic():
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")
+    # test generated module
+    global Mt, Nt, P0, P1
+    Mt, Nt = 1, 1
+    P0, P1 = Mt + 2, Nt + 2
+    mod = df.build(top, target="vhls")
+    code = mod.hls_code
+    unused_kernels = {"gemm_0_0", "gemm_0_2", "gemm_2_0", "gemm_2_2"}
+    for kernel in unused_kernels:
+        assert kernel not in code, f"Expected {kernel} not in hls code"
+    check_function_arguments(code, "gemm_0_1", 4)
+    check_function_arguments(code, "gemm_1_0", 4)
+    check_function_arguments(code, "gemm_1_1", 7)
+    check_function_arguments(code, "gemm_1_2", 4)
+    check_function_arguments(code, "gemm_2_1", 4)
+    print("Passed!")
 
 
 if __name__ == "__main__":
