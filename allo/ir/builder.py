@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
 
 import gc
 import ast
@@ -1283,6 +1283,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx, node):
+        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
+        # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -1290,6 +1292,33 @@ class ASTTransformer(ASTBuilder):
             ctx = old_ctx.copy()
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
+            ctx.buffers = old_ctx.buffers.copy()
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if isinstance(decorator.func, ast.Attribute):
+                        if decorator.func.attr == "kernel":
+                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                            mapping = eval(
+                                ast.unparse(decorator.keywords[0].value),
+                                ctx.global_vars,
+                            )
+                            orig_name = node.name
+                            for dim in np.ndindex(*mapping):
+                                new_ctx = old_ctx.copy()
+                                new_ctx.set_ip(old_ctx.top_func)
+                                new_ctx.top_func_tree = node
+                                new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.global_vars = old_ctx.global_vars.copy()
+                                if len(dim) == 1:
+                                    new_ctx.global_vars.update({"df.p0": dim[0]})
+                                    node.name = orig_name + f"_{dim[0]}"
+                                else:
+                                    new_ctx.global_vars.update(
+                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                    )
+                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                ASTTransformer.build_FunctionDef(new_ctx, node)
+                            return
         else:
             old_ctx = None
 
@@ -1356,7 +1385,6 @@ class ASTTransformer(ASTBuilder):
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         # attach type hints
@@ -1635,16 +1663,50 @@ class ASTTransformer(ASTBuilder):
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
                     assert len(stmts) == 1, "Stream can only have one argument"
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    stream = ctx.buffers[vid].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        # pylint: disable=redefined-builtin
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                    else:
+                        slice = []
                     allo_d.StreamPutOp(
-                        ctx.buffers[node.func.value.id].result,
+                        stream.result,
+                        slice,
                         stmts[0].result,
                         ip=ctx.get_ip(),
                     )
                     return
                 if node.func.attr == "get":
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    stream = ctx.buffers[vid].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        # pylint: disable=redefined-variable-type
+                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                    else:
+                        slice = []
                     return allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
-                        ctx.buffers[node.func.value.id].result,
+                        stream.result,
+                        slice,
                         ip=ctx.get_ip(),
                     )
 
@@ -1689,6 +1751,16 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
+            fn_name = obj.__name__ if not isinstance(obj, IPModule) else None
+            if fn_name == "array":
+                # as it directly runs the node inside, this branch is put in the front
+                array = eval(ast.unparse(node), ctx.global_vars)
+                stream_type = allo_d.StreamType.get(
+                    array.element.build(), depth=array.element.depth
+                )
+                tensor_type = RankedTensorType.get(array.shape, stream_type)
+                stream_op = allo_d.StreamConstructOp(tensor_type, ip=ctx.get_ip())
+                return stream_op
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
@@ -1716,7 +1788,6 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return
-            fn_name = obj.__name__
             if fn_name in {"zeros", "ones"}:
                 shape = node.shape
                 dtype = node.dtype
@@ -1740,23 +1811,9 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
-                src = ASTResolver.resolve_constant(node.keywords[0].value, ctx)
-                dst = ASTResolver.resolve_constant(node.keywords[1].value, ctx)
-                if not (isinstance(src, str) and isinstance(dst, str)):
-                    src = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{src[0]}_{src[1]}"
-                    )
-                    dst = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{dst[0]}_{dst[1]}"
-                    )
-                stream_type = allo_d.StreamType.get(
-                    node.dtype.build(), depth=node.dtype.depth
-                )
+                stream = eval(ast.unparse(node), ctx.global_vars)
+                stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
-                stream_op.attributes["src"] = StringAttr.get(src)
-                stream_op.attributes["dst"] = StringAttr.get(dst)
                 return stream_op
             if isinstance(new_args[0].result, OpResultList):
                 arg_type = new_args[0].result[0].type
