@@ -209,20 +209,15 @@ def region():
 
 
 def build(func, target="vitis_hls", mode="csim", project="top.prj"):
+    global_vars = get_global_vars(func)
+    s = customize(func, global_vars=global_vars)
     if target == "aie":
-        global_vars = get_global_vars(func)
         mapping = func.mapping
-        s = customize(func, global_vars=global_vars)
         print(s.module)
         mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
-
-    global_vars = get_global_vars(func)
-    s = customize(
-        func,
-        global_vars=global_vars,
-    )
+    # FPGA backend
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
     print(s.module)

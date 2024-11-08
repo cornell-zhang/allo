@@ -13,7 +13,7 @@ M, N, K = 16, 16, 16
 
 @df.region()
 def top():
-    pipe0 = df.pipe(dtype=Ty, shape=(), depth=4)
+    pipe = df.pipe(dtype=Ty, shape=(), depth=4)
 
     @df.kernel(mapping=[1])
     def producer(A: Ty[M, N]):
@@ -21,13 +21,13 @@ def top():
             # load data
             out: Ty = A[i, j]
             # send data
-            pipe0.put(out)
+            pipe.put(out)
 
     @df.kernel(mapping=[1])
     def consumer(B: Ty[M, N]):
         for i, j in allo.grid(M, N):
             # receive data
-            data = pipe0.get()
+            data = pipe.get()
             # computation
             B[i, j] = data + 1
 

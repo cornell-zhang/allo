@@ -1283,6 +1283,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx, node):
+        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -1291,6 +1292,32 @@ class ASTTransformer(ASTBuilder):
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
             ctx.buffers = old_ctx.buffers.copy()
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if isinstance(decorator.func, ast.Attribute):
+                        if decorator.func.attr == "kernel":
+                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                            mapping = eval(
+                                ast.unparse(decorator.keywords[0].value),
+                                ctx.global_vars,
+                            )
+                            orig_name = node.name
+                            for dim in np.ndindex(*mapping):
+                                new_ctx = old_ctx.copy()
+                                new_ctx.set_ip(old_ctx.top_func)
+                                new_ctx.top_func_tree = node
+                                new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.global_vars = old_ctx.global_vars.copy()
+                                if len(dim) == 1:
+                                    new_ctx.global_vars.update({"df.p0": dim[0]})
+                                    node.name = orig_name + f"_{dim[0]}"
+                                else:
+                                    new_ctx.global_vars.update(
+                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                    )
+                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                ASTTransformer.build_FunctionDef(new_ctx, node)
+                            return
         else:
             old_ctx = None
 
@@ -1357,7 +1384,6 @@ class ASTTransformer(ASTBuilder):
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         # attach type hints
