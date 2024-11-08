@@ -247,7 +247,7 @@ class UseDefChain(ast.NodeVisitor):
             targets = node.targets[0].elts
         else:
             targets = [node.targets[0]]
-        for i, target in enumerate(targets):
+        for _, target in enumerate(targets):
             name = get_name(target)
             var = VarNode(self.path, name)
             for parent in parents:

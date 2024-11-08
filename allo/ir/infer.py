@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument, eval-used
 
 import ast
 import inspect
@@ -528,6 +528,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
+        # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -558,7 +559,7 @@ class TypeInferer(ASTVisitor):
                                     node.name = orig_name + f"_{dim[0]}_{dim[1]}"
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
                                 node.name = orig_name
-                            return
+                            return node
         else:
             old_ctx = None
 
@@ -786,8 +787,7 @@ class TypeInferer(ASTVisitor):
                 return node
             fn_name = obj.__name__
             if fn_name == "pipe":
-                exec("_pipe = " + ast.unparse(node), ctx.global_vars)
-                stream = ctx.global_vars.get("_pipe")
+                stream = eval(ast.unparse(node), ctx.global_vars)
                 node.shape = tuple()
                 node.dtype = stream
                 return node

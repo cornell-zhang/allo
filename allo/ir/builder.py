@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
 
 import gc
 import ast
@@ -1284,6 +1284,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_FunctionDef(ctx, node):
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
+        # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -1671,6 +1672,7 @@ class ASTTransformer(ASTBuilder):
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
                     if isinstance(node.func.value, ast.Subscript):
+                        # pylint: disable=redefined-builtin
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
@@ -1697,6 +1699,7 @@ class ASTTransformer(ASTBuilder):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
+                        # pylint: disable=redefined-variable-type
                         slice = tuple(slice) if not isinstance(slice, tuple) else slice
                     else:
                         slice = []

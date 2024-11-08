@@ -136,7 +136,7 @@ def _build_top(s, stream_info):
         func_name = func.attributes["sym_name"].value
         arg_mapping[func_name] = []
         for i, arg in enumerate(func.arguments):
-            if not "!allo.stream" in str(arg.type):
+            if "!allo.stream" not in str(arg.type):
                 arg_name = s.func_args[func_name][i]
                 if arg_name not in used_args:
                     used_args[arg_name] = len(input_types)
