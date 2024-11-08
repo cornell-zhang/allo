@@ -298,6 +298,15 @@ class TypeInferer(ASTVisitor):
                         rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
                     )
                     ctx.buffers[target.id] = target
+                    # update global variables for metaprogramming
+                    if (
+                        isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and node.value.func.attr == "get_pid"
+                    ):
+                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                            f"df.p{i}"
+                        ]
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -525,6 +534,31 @@ class TypeInferer(ASTVisitor):
             old_ctx = ctx
             ctx = old_ctx.copy()
             ctx.buffers = old_ctx.buffers.copy()
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if isinstance(decorator.func, ast.Attribute):
+                        if decorator.func.attr == "kernel":
+                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                            mapping = eval(
+                                ast.unparse(decorator.keywords[0].value),
+                                ctx.global_vars,
+                            )
+                            orig_name = node.name
+                            for dim in np.ndindex(*mapping):
+                                new_ctx = old_ctx.copy()
+                                new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.global_vars = old_ctx.global_vars.copy()
+                                if len(dim) == 1:
+                                    new_ctx.global_vars.update({"df.p0": dim[0]})
+                                    node.name = orig_name + f"_{dim[0]}"
+                                else:
+                                    new_ctx.global_vars.update(
+                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                    )
+                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                TypeInferer.visit_FunctionDef(new_ctx, node)
+                                node.name = orig_name
+                            return
         else:
             old_ctx = None
 
@@ -692,15 +726,25 @@ class TypeInferer(ASTVisitor):
                     new_args = visit_stmts(ctx, node.args)
                     node.shape = tuple()
                     node.dtype = None
-                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    node.func.value.shape = ctx.buffers[vid].dtype.shape
+                    node.func.value.dtype = ctx.buffers[vid].dtype.dtype
                 elif node.func.attr == "get":
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
                     # return value
-                    node.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    node.shape = ctx.buffers[vid].dtype.shape
+                    node.dtype = ctx.buffers[vid].dtype.dtype
                     # stream type itself
                     node.func.value.shape = tuple()
-                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype
+                    node.func.value.dtype = ctx.buffers[vid].dtype
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method {node.func.attr}"

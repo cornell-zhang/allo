@@ -28,6 +28,16 @@ def pipe(dtype, shape=(), depth=2):
     return Stream(dtype, shape, depth)
 
 
+class Array:
+    def __init__(self, element, shape):
+        self.element = element
+        self.shape = shape
+
+
+def array(element, shape):
+    return Array(element, shape)
+
+
 def move_stream_to_interface(s):
     stream_info = {}
     funcs = get_all_funcs_except_top(s)
@@ -42,9 +52,8 @@ def move_stream_to_interface(s):
         s_type_str = "_" * len(in_types)
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
-                stream_type = allo_d.StreamType(op.result.type)
                 stream_ops.append(op)
-                stream_types.append(stream_type)
+                stream_types.append(op.result.type)
                 stream_name = op.attributes["name"].value
                 for use in op.result.uses:
                     # get use's parent operation
@@ -160,7 +169,8 @@ def _build_top(s, stream_info):
                 stream_name = op.attributes["name"].value
                 stream_map[stream_name] = op
         # add call functions
-        for i, func_name in enumerate(stream_info.keys()):
+        for i, func in enumerate(funcs):
+            func_name = func.attributes["sym_name"].value
             arg_lst = [new_top.arguments[idx] for idx in arg_mapping[func_name]]
             stream_lst = [
                 stream_map[stream_name] for stream_name, _ in stream_info[func_name]

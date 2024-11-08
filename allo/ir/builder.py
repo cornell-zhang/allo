@@ -1662,22 +1662,45 @@ class ASTTransformer(ASTBuilder):
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
                     assert len(stmts) == 1, "Stream can only have one argument"
-                    stream = ctx.buffers[node.func.value.id].clone(
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    stream = ctx.buffers[vid].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                    else:
+                        slice = []
                     allo_d.StreamPutOp(
                         stream.result,
+                        slice,
                         stmts[0].result,
                         ip=ctx.get_ip(),
                     )
                     return
                 if node.func.attr == "get":
-                    stream = ctx.buffers[node.func.value.id].clone(
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    stream = ctx.buffers[vid].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        slice = ASTResolver.resolve_slice(node.func.value.slice, ctx)
+                    else:
+                        slice = []
                     return allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,
+                        slice,
                         ip=ctx.get_ip(),
                     )
 
@@ -1722,6 +1745,16 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
+            fn_name = obj.__name__
+            if fn_name == "array":
+                # as it directly runs the node inside, this branch is put in the front
+                array = eval(ast.unparse(node), ctx.global_vars)
+                stream_type = allo_d.StreamType.get(
+                    array.element.build(), depth=array.element.depth
+                )
+                tensor_type = RankedTensorType.get(array.shape, stream_type)
+                stream_op = allo_d.StreamConstructOp(tensor_type, ip=ctx.get_ip())
+                return stream_op
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
@@ -1749,7 +1782,6 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return
-            fn_name = obj.__name__
             if fn_name in {"zeros", "ones"}:
                 shape = node.shape
                 dtype = node.dtype
@@ -1773,8 +1805,7 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
-                exec("_pipe = " + ast.unparse(node), ctx.global_vars)
-                stream = ctx.global_vars.get("_pipe")
+                stream = eval(ast.unparse(node), ctx.global_vars)
                 stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                 return stream_op

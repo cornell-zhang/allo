@@ -349,43 +349,10 @@ class UseDefChain(ast.NodeVisitor):
             len(node.items[0].context_expr.args) <= 1
         ), "Only support one argument for `allo.meta_if/elif/else()`"
         # Compile-time comparison
-        if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
-            try:
-                # pylint: disable=eval-used
-                cond = eval(
-                    compile(
-                        ast.Expression(node.items[0].context_expr.args[0]), "", "eval"
-                    ),
-                    self.global_vars,
-                )
-            # pylint: disable=broad-exception-caught
-            except Exception:
-                return None
-            if node.items[0].context_expr.func.attr == "meta_if":
-                final_cond = cond
-                self.meta_if_stack.append(final_cond)
-            else:  # meta_elif
-                assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
-                if self.meta_if_stack[-1]:  # previous `if` has already satisfied
-                    self.meta_if_stack.pop()
-                    self.meta_if_stack.append(True)
-                    final_cond = False
-                else:
-                    self.meta_if_stack.pop()
-                    self.meta_if_stack.append(cond)
-                    final_cond = cond
-        elif node.items[0].context_expr.func.attr == "meta_else":
-            assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_else()"
-            final_cond = not self.meta_if_stack[-1]
-            self.meta_if_stack.pop()
-        else:
-            raise RuntimeError("Unsupported meta function")
-        if final_cond:
-            res = []
-            for stmt in node.body:
-                res.append(self.visit(stmt))
-            return res[-1]
-        return None
+        res = []
+        for stmt in node.body:
+            res.append(self.visit(stmt))
+        return res[-1]
 
     def visit_Return(self, node):
         if node.value is None:
