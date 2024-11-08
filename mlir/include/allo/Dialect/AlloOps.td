@@ -1005,7 +1005,7 @@ def IntToStructOp : Allo_Op<"int_to_struct"> {
 def StreamConstructOp : Allo_Op<"stream_construct"> {
   let summary = "Create a stream object";
   let arguments = (ins );
-  let results = (outs Stream:$res);
+  let results = (outs StreamLike:$res);
   let assemblyFormat = [{
       `(` `)` attr-dict `:` qualified(type($res))
   }];
@@ -1013,19 +1013,19 @@ def StreamConstructOp : Allo_Op<"stream_construct"> {
 
 def StreamGetOp : Allo_Op<"stream_get"> {
   let summary = "Get an object from a stream";
-  let arguments = (ins Stream:$stream);
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices);
   let results = (outs AnyType:$res);
   let assemblyFormat = [{
-      `(` $stream `)` attr-dict `:` qualified(type($stream)) `->` type($res)
+      `(` $stream `,` $indices`)` attr-dict `:` qualified(type($stream)) `->` type($res)
   }];
 }
 
 def StreamPutOp : Allo_Op<"stream_put"> {
   let summary = "Put an object into a stream";
-  let arguments = (ins Stream:$stream, AnyType:$data);
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices, AnyType:$data);
   let results = (outs );
   let assemblyFormat = [{
-      `(` $stream `,` $data `)` attr-dict `:` qualified(type($stream)) `contains` type($data)
+      `(` $stream `,` $indices `,` $data `)` attr-dict `:` qualified(type($stream)) `contains` type($data)
   }];
 }
 
