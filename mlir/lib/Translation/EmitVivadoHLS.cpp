@@ -1442,45 +1442,66 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
 }
 
 void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
-  auto rank = emitNestedLoopHead(op.getResult());
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
-  emitValue(result, rank);
+  emitValue(result);
+  if (auto shapedType = result.getType().dyn_cast<ShapedType>()) {
+    for (auto shape : shapedType.getShape()) {
+      os << "[" << shape << "]";
+    }
+  }
   os << ";\n";
   indent();
   os << "#pragma HLS stream variable=";
   emitValue(result);
   os << " depth=";
-  os << result.getType().cast<StreamType>().getDepth();
+  if (result.getType().isa<StreamType>())
+    os << result.getType().cast<StreamType>().getDepth();
+  else {
+    // array of stream
+    os << result.getType()
+              .cast<ShapedType>()
+              .getElementType()
+              .cast<StreamType>()
+              .getDepth();
+  }
   emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
 }
 
 void ModuleEmitter::emitStreamGet(StreamGetOp op) {
   int rank = 0;
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
-  unsigned dimIdx = 0;
   auto stream = op->getOperand(0);
-  auto streamType = stream.getType().cast<StreamType>();
-  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
-    indent();
-    emitArrayDecl(result, false);
-    os << ";\n";
-    for (auto &shape : shapedType.getShape()) {
+  if (stream.getType().isa<StreamType>()) {
+    unsigned dimIdx = 0;
+    auto streamType = stream.getType().cast<StreamType>();
+    if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
       indent();
-      os << "for (int iv" << dimIdx << " = 0; ";
-      os << "iv" << dimIdx << " < " << shape << "; ";
-      os << "++iv" << dimIdx++ << ") {\n";
-      addIndent();
+      emitArrayDecl(result, false);
+      os << ";\n";
+      for (auto &shape : shapedType.getShape()) {
+        indent();
+        os << "for (int iv" << dimIdx << " = 0; ";
+        os << "iv" << dimIdx << " < " << shape << "; ";
+        os << "++iv" << dimIdx++ << ") {\n";
+        addIndent();
+      }
+      rank = dimIdx;
     }
-    rank = dimIdx;
   }
   indent();
   emitValue(result, rank);
   os << " = ";
   emitValue(stream, 0, false);
+  if (stream.getType().isa<ShapedType>()) {
+    // array of stream
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    for (int64_t v : denseArrayAttr.asArrayRef()) {
+      os << "[" << v << "]";
+    }
+  }
   os << ".read();";
   if (rank > 0) {
     os << "\n";
@@ -1496,20 +1517,30 @@ void ModuleEmitter::emitStreamGet(StreamGetOp op) {
 void ModuleEmitter::emitStreamPut(StreamPutOp op) {
   int rank = 0;
   auto stream = op->getOperand(0);
-  unsigned dimIdx = 0;
-  auto streamType = stream.getType().cast<StreamType>();
-  if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
-    for (auto &shape : shapedType.getShape()) {
-      indent();
-      os << "for (int iv" << dimIdx << " = 0; ";
-      os << "iv" << dimIdx << " < " << shape << "; ";
-      os << "++iv" << dimIdx++ << ") {\n";
-      addIndent();
+  if (stream.getType().isa<StreamType>()) {
+    unsigned dimIdx = 0;
+    auto streamType = stream.getType().cast<StreamType>();
+    if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+      for (auto &shape : shapedType.getShape()) {
+        indent();
+        os << "for (int iv" << dimIdx << " = 0; ";
+        os << "iv" << dimIdx << " < " << shape << "; ";
+        os << "++iv" << dimIdx++ << ") {\n";
+        addIndent();
+      }
+      rank = dimIdx;
     }
-    rank = dimIdx;
+    indent();
+    emitValue(stream, 0, false);
+  } else {
+    // array of stream
+    indent();
+    emitValue(stream, 0, false);
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    for (int64_t v : denseArrayAttr.asArrayRef()) {
+      os << "[" << v << "]";
+    }
   }
-  indent();
-  emitValue(stream, 0, false);
   os << ".write(";
   emitValue(op->getOperand(1), rank);
   os << ");";
@@ -2190,7 +2221,13 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (arg.getType().isa<ShapedType>()) {
-      if (input_args.size() == 0) {
+      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
+        auto shapedType = arg.getType().dyn_cast<ShapedType>();
+        os << getTypeName(arg) << "& ";
+        os << addName(arg, false);
+        for (auto shape : shapedType.getShape())
+          os << "[" << shape << "]";
+      } else if (input_args.size() == 0) {
         emitArrayDecl(arg, true);
       } else {
         emitArrayDecl(arg, true, input_args[argIdx]);

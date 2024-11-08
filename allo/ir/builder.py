@@ -1694,7 +1694,10 @@ class ASTTransformer(ASTBuilder):
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
                     if isinstance(node.func.value, ast.Subscript):
-                        slice = ASTResolver.resolve_slice(node.func.value.slice, ctx)
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
                     else:
                         slice = []
                     return allo_d.StreamGetOp(

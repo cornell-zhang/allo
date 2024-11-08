@@ -36,8 +36,8 @@ def top():
         with allo.meta_else():
             c: float32 = 0
             for k in range(K):
-                a: float32 = in_A.get()
-                b: float32 = in_B.get()
+                a: float32 = in_A[i, j].get()
+                b: float32 = in_B[i, j].get()
                 c += a * b
                 out_A[i, j].put(a)
                 out_B[i, j].put(b)

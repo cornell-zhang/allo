@@ -210,7 +210,7 @@ class HLSModule:
                 # used for lowering tensor.empty
                 "empty-tensor-to-alloc-tensor,"
                 # translate tensor dialect (virtual) to memref dialect (physical)
-                "one-shot-bufferize{bufferize-function-boundaries},"
+                # "one-shot-bufferize{bufferize-function-boundaries},"
                 # common lowering passes
                 "func.func(convert-linalg-to-affine-loops)"
                 # DO NOT LOWER AFFINE DIALECT
