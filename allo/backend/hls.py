@@ -23,6 +23,9 @@ from .vitis import (
     write_tensor_to_file,
     read_tensor_from_file,
 )
+from .tapa import (
+    codegen_tapa_host,
+)
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
 from ..passes import (
@@ -62,6 +65,8 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     path = os.path.join(path, "../harness/")
     if platform in {"vivado_hls", "vitis_hls", "tapa"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
+        if platform == "tapa":
+            return
         if mode == "debug":
             mode = "csyn"
         elif mode == "sw_emu":
@@ -225,7 +230,10 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        allo_d.emit_vhls(self.module, buf)
+        if platform == "tapa":
+            allo_d.emit_thls(self.module, buf)
+        else:
+            allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:
@@ -251,7 +259,7 @@ class HLSModule:
                     path + "makefile_gen/description.json",
                     dst_path,
                 )
-                generate_makefile(dst_path, project)
+                generate_makefile(dst_path, project, self.platform)
                 for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
@@ -305,7 +313,7 @@ class HLSModule:
                     dst_path,
                 )
                 self.args = []
-                generate_makefile(dst_path, project)
+                generate_makefile(dst_path, project, self.platform)
                 for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
@@ -314,6 +322,13 @@ class HLSModule:
                     self.top_func_name,
                     self.module,
                 )
+                self.tapa_host = codegen_tapa_host(
+                    self.top_func_name,
+                    self.module,
+                    self.hls_code,
+                )
+                with open(f"{project}/tapa_host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.tapa_host)
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
