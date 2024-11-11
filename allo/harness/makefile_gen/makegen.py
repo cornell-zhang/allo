@@ -119,7 +119,7 @@ def deprecated_check(target, data):
     target.write("\n")
 
 
-def mk_run(target, data, desc_file, path):
+def mk_run(target, data, desc_file, path, platform):
     if "targets" in data:
         target.write("ifneq ($(TARGET),$(findstring $(TARGET),")
         args = data["targets"]
@@ -182,7 +182,7 @@ def mk_run(target, data, desc_file, path):
     }
 
     for i in makefile_lst:
-        gen_func[i](desc_file, path)
+        gen_func[i](desc_file, path, platform)
 
     if ("platform_type" in data and data["platform_type"] == "pcie") and (
         "vck" in blocklist
@@ -491,10 +491,10 @@ def readme_gen(target):
     target.write("\n")
 
 
-def create_mk(target, data, desc_file, path):
+def create_mk(target, data, desc_file, path, platform):
     mk_copyright(target)
     create_params(target, data)
-    mk_run(target, data, desc_file, path)
+    mk_run(target, data, desc_file, path, platform)
     mk_help(target)
     return
 
@@ -509,7 +509,7 @@ def create_utils(target, data):
     return
 
 
-def generate_makefile(desc_file, path):
+def generate_makefile(desc_file, path, platform="vitis_hls"):
     global data, init_cur_dir, cur_dir
     desc = open(desc_file, "r")
     data = json.load(desc)
@@ -544,7 +544,7 @@ def generate_makefile(desc_file, path):
     else:
         # print("Generating Auto-Makefile for %s" % data["name"])
         target = open(os.path.join(path, "Makefile"), "w")
-        create_mk(target, data, desc_file, path)
+        create_mk(target, data, desc_file, path, platform)
         # print("Generating utils.mk file for %s" % data["name"])
         target = open(os.path.join(path, "utils.mk"), "w+")
         create_utils(target, data)

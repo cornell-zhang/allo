@@ -270,7 +270,7 @@ def add_kernel_flags(target, data):
     return
 
 
-def building_kernel(target, data):
+def building_kernel(target, data, platform):
     if "containers" in data:
         target.write(
             "############################## Setting Rules for Binary Containers (Building Kernels) ##############################\n"
@@ -296,18 +296,25 @@ def building_kernel(target, data):
                         target.write(location)
                         target.write("\n")
                     else:
-                        target.write("\tv++ ")
-                        target.write("-c ")
-                        target.write("$(VPP_FLAGS) ")
-                        target.write("-t $(TARGET) --platform $(PLATFORM) ")
-                        if "clflags" in acc:
-                            target.write("$(VPP_FLAGS_" + acc["name"] + ") ")
-                        target.write("-k ")
-                        target.write(acc["name"])
-                        target.write(" --temp_dir ")
-                        target.write("$(TEMP_DIR) ")
-                        target.write(" -I'$(<D)'")
-                        target.write(" -o'$@' $^\n")
+                        if platform == "tapa":
+                            target.write("\ttapa compile ")
+                            target.write("--top ")
+                            target.write(acc["name"])
+                            target.write(" --platform $(PLATFORM) ")
+                            target.write("-f $^ -o $@\n")
+                        else:
+                            target.write("\tv++ ")
+                            target.write("-c ")
+                            target.write("$(VPP_FLAGS) ")
+                            target.write("-t $(TARGET) --platform $(PLATFORM) ")
+                            if "clflags" in acc:
+                                target.write("$(VPP_FLAGS_" + acc["name"] + ") ")
+                            target.write("-k ")
+                            target.write(acc["name"])
+                            target.write(" --temp_dir ")
+                            target.write("$(TEMP_DIR) ")
+                            target.write(" -I'$(<D)'")
+                            target.write(" -o'$@' $^\n")
         target.write("\n")
         for con in data["containers"]:
             target.write("$(BUILD_DIR)/")
@@ -454,7 +461,7 @@ def mk_clean(target, data):
     return
 
 
-def mk_build_all(target, data):
+def mk_build_all(target, data, platform):
     target.write(
         "############################## Setting Targets ##############################\n"
     )
@@ -496,7 +503,7 @@ def mk_build_all(target, data):
     if rtl_counter == 1:
         building_kernel_rtl(target, data)
     else:
-        building_kernel(target, data)
+        building_kernel(target, data, platform)
     building_host(target, data)
     return
 
@@ -633,19 +640,19 @@ def mk_help(target):
     target.write("\n")
 
 
-def create_mk(target, data):
+def create_mk(target, data, platform):
     mk_copyright(target)
     mk_help(target)
     create_params(target, data)
     add_host_flags(target, data)
     add_kernel_flags(target, data)
-    mk_build_all(target, data)
+    mk_build_all(target, data, platform)
     mk_run(target, data)
     mk_clean(target, data)
     return
 
 
-def generate_makefile(desc_file, path):
+def generate_makefile(desc_file, path, platform):
     global data, init_cur_dir, cur_dir
     desc = open(desc_file, "r")
     data = json.load(desc)
@@ -672,7 +679,7 @@ def generate_makefile(desc_file, path):
     else:
         # print("Generating Auto-Makefile for %s" % data["name"])
         target = open(os.path.join(path, "makefile_versal_alveo.mk"), "w")
-        create_mk(target, data)
+        create_mk(target, data, platform)
 
     if target:
         target.close
