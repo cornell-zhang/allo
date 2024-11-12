@@ -12,7 +12,7 @@ W: int32 = 2  # gap penalty score per length, assuming a linear increament
 
 max_size = 100
 M, N = 4, 4
-P0, P1 = M + 1, N + 1
+P0, P1 = M + 2, N + 2
 
 Sim: int32 = 3
 Mis: int32 = -3
@@ -43,19 +43,31 @@ def top():
     fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
-    def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0, P1]):
+    def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
         i, j = df.get_pid()
-        with allo.meta_if(i == 0 and j == 0):
+        with allo.meta_if((i == 0 and j == P1 - 1) or (i == P0 - 1 and j == 0)):
+            pass
+        with allo.meta_elif(i == 0 and j == 0):
             # Fill the first row and column with zeros
             fifo_A[i, j].put(0)
             fifo_B[i, j].put(0)
             fifo_C[i, j].put(0)
+        with allo.meta_elif(i == P0 - 1 and j == P1 - 1):
+            fifo_A[i, j].get()
+            fifo_B[i, j].get()
+            fifo_C[i, j].get()
         with allo.meta_elif(i == 0):
             fifo_A[i, j].put(0)
             fifo_C[i, j].put(0)
+        with allo.meta_elif(i == P0 - 1):
+            fifo_A[i, j].get()
+            fifo_C[i, j].get()
         with allo.meta_elif(j == 0):
             fifo_B[i, j].put(0)
             fifo_C[i, j].put(0)
+        with allo.meta_elif(j == P1 - 1):
+            fifo_B[i, j].get()
+            fifo_C[i, j].get()
         with allo.meta_else():
             a = fifo_A[i, j].get()
             b = fifo_B[i, j].get()
@@ -70,14 +82,13 @@ def top():
             fifo_A[i, j + 1].put(max(gap_A, score))
             fifo_B[i + 1, j].put(max(gap_B, score))
             fifo_C[i + 1, j + 1].put(score)
-        # TODO: Add draining modules
 
 
 def test_systolic():
     possible_chars = np.array(["A", "C", "G", "T"], dtype="c")
     A = np.random.choice(possible_chars, size=M).view(np.int8)
     B = np.random.choice(possible_chars, size=N).view(np.int8)
-    S = np.zeros((P0, P1), dtype=np.int32)
+    S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
         mod(A, B, S)
