@@ -82,6 +82,10 @@ static SmallString<16> getTypeName(Type valType) {
     return SmallString<16>(
         "ap_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
+  else if (auto streamType = valType.dyn_cast<StreamType>())
+    return SmallString<16>(
+        "tapa::stream< " +
+        std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
   else
     assert(1 == 0 && "Got unsupported type.");
 
@@ -153,6 +157,11 @@ public:
   void emitSetSlice(allo::SetIntSliceOp op);
   void emitBitReverse(allo::BitReverseOp op);
   void emitBitcast(arith::BitcastOp op);
+
+  /// Stream operation emitters.
+  void emitStreamConstruct(allo::StreamConstructOp op);
+  void emitStreamGet(allo::StreamGetOp op);
+  void emitStreamPut(allo::StreamPutOp op);
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -485,6 +494,13 @@ public:
   bool visitOp(allo::MaxFixedOp op) {
     return emitter.emitMaxMin(op, "max"), true;
   }
+
+  /// Stream operations.
+  bool visitOp(allo::StreamConstructOp op) {
+    return emitter.emitStreamConstruct(op), true;
+  }
+  bool visitOp(allo::StreamGetOp op) { return emitter.emitStreamGet(op), true; }
+  bool visitOp(allo::StreamPutOp op) { return emitter.emitStreamPut(op), true; }
 
 private:
   ModuleEmitter &emitter;
@@ -1421,6 +1437,120 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
+void ModuleEmitter::emitStreamConstruct(StreamConstructOp op) {
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  if (auto shapedType = result.getType().dyn_cast<ShapedType>()) {
+    for (auto shape : shapedType.getShape()) {
+      os << "[" << shape << "]";
+    }
+  }
+  os << ";\n";
+  indent();
+  os << "#pragma HLS stream variable=";
+  emitValue(result);
+  os << " depth=";
+  if (result.getType().isa<StreamType>())
+    os << result.getType().cast<StreamType>().getDepth();
+  else {
+    // array of stream
+    os << result.getType()
+              .cast<ShapedType>()
+              .getElementType()
+              .cast<StreamType>()
+              .getDepth();
+  }
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitStreamGet(StreamGetOp op) {
+  int rank = 0;
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  auto stream = op->getOperand(0);
+  if (stream.getType().isa<StreamType>()) {
+    unsigned dimIdx = 0;
+    auto streamType = stream.getType().cast<StreamType>();
+    if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+      indent();
+      emitArrayDecl(result, false);
+      os << ";\n";
+      for (auto &shape : shapedType.getShape()) {
+        indent();
+        os << "for (int iv" << dimIdx << " = 0; ";
+        os << "iv" << dimIdx << " < " << shape << "; ";
+        os << "++iv" << dimIdx++ << ") {\n";
+        addIndent();
+      }
+      rank = dimIdx;
+    }
+  }
+  indent();
+  emitValue(result, rank);
+  os << " = ";
+  emitValue(stream, 0, false);
+  if (stream.getType().isa<ShapedType>()) {
+    // array of stream
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    for (int64_t v : denseArrayAttr.asArrayRef()) {
+      os << "[" << v << "]";
+    }
+  }
+  os << ".read();";
+  if (rank > 0) {
+    os << "\n";
+    for (unsigned i = 0; i < rank; ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
+  }
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitStreamPut(StreamPutOp op) {
+  int rank = 0;
+  auto stream = op->getOperand(0);
+  if (stream.getType().isa<StreamType>()) {
+    unsigned dimIdx = 0;
+    auto streamType = stream.getType().cast<StreamType>();
+    if (auto shapedType = streamType.getBaseType().dyn_cast<ShapedType>()) {
+      for (auto &shape : shapedType.getShape()) {
+        indent();
+        os << "for (int iv" << dimIdx << " = 0; ";
+        os << "iv" << dimIdx << " < " << shape << "; ";
+        os << "++iv" << dimIdx++ << ") {\n";
+        addIndent();
+      }
+      rank = dimIdx;
+    }
+    indent();
+    emitValue(stream, 0, false);
+  } else {
+    // array of stream
+    indent();
+    emitValue(stream, 0, false);
+    auto denseArrayAttr = op->getAttrOfType<DenseI64ArrayAttr>("indices");
+    for (int64_t v : denseArrayAttr.asArrayRef()) {
+      os << "[" << v << "]";
+    }
+  }
+  os << ".write(";
+  emitValue(op->getOperand(1), rank);
+  os << ");";
+  if (rank > 0) {
+    os << "\n";
+    for (unsigned i = 0; i < rank; ++i) {
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
+  }
+  emitInfoAndNewLine(op);
+}
+
 void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
@@ -2128,13 +2258,43 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (arg.getType().isa<ShapedType>()) {
-      if (input_args.size() == 0) {
+      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
+        auto shapedType = arg.getType().dyn_cast<ShapedType>();
+        SmallString<16> typeName = getTypeName(arg);
+        size_t pos = typeName.find("stream");
+        if (pos != llvm::StringRef::npos) {
+          SmallString<16> streamTypeName;
+          streamTypeName += typeName.slice(0, pos);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
+          streamTypeName += typeName.slice(pos, typeName.size());
+          os << streamTypeName << " ";
+        } else {
+          emitError(func, "has error stream type name.");
+        }
+        os << addName(arg, false);
+        for (auto shape : shapedType.getShape())
+          os << "[" << shape << "]";
+      } else if (input_args.size() == 0) {
         emitArrayDecl(arg, true, "", stypes[argIdx]);
       } else {
         emitArrayDecl(arg, true, input_args[argIdx], stypes[argIdx]);
       }
     } else {
-      if (input_args.size() == 0) {
+      if (arg.getType().isa<StreamType>()) {
+        // need to pass by reference
+        SmallString<16> typeName = getTypeName(arg);
+        size_t pos = typeName.find("stream");
+        if (pos != llvm::StringRef::npos) {
+          SmallString<16> streamTypeName;
+          streamTypeName += typeName.slice(0, pos);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
+          streamTypeName += typeName.slice(pos, typeName.size());
+          os << streamTypeName << "& ";
+        } else {
+          emitError(func, "has error stream type name.");
+        }
+        os << addName(arg, false);
+      } else if (input_args.size() == 0) {
         emitValue(arg);
       } else {
         emitValue(arg, 0, false, input_args[argIdx]);

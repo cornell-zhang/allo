@@ -193,7 +193,7 @@ def _build_top(s, stream_info):
                 arg_lst + stream_lst,
                 ip=InsertionPoint.at_block_terminator(new_top.entry_block),
             )
-            if i == len(stream_info) - 1:
+            if i == len(funcs) - 1:
                 call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
