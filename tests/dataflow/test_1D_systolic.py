@@ -8,7 +8,7 @@ import allo.backend.hls as hls
 import numpy as np
 
 M, N, K = 16, 16, 16
-P0 = K + 1
+P0 = K + 2
 
 
 @df.region()
@@ -19,8 +19,9 @@ def top():
     @df.kernel(mapping=[2, P0])
     def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
         i, j = df.get_pid()
-        with allo.meta_if(i == 0 and j == 0):
+        with allo.meta_if(i == 0 and (j == 0 or j == P0 - 1)):
             pass
+        # input
         with allo.meta_elif(i == 0):
             for _ in range(N):
                 for k in range(K):
@@ -29,6 +30,12 @@ def top():
             for m in range(M):
                 for k in range(K):
                     fifo_A[i, j + 1].put(A[m, k])
+        # drain
+        with allo.meta_elif(j == P0 - 1):
+            for m in range(M):
+                for _ in range(K):
+                    a: float32 = fifo_A[i, j].get()
+        # compute
         with allo.meta_else():
             for m in range(M):
                 c: float32 = 0

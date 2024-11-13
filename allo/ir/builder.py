@@ -791,6 +791,13 @@ class ASTTransformer(ASTBuilder):
                 targets = [node.targets[0]]
             for idx, target in enumerate(targets):
                 if isinstance(target, ast.Name):
+                    if isinstance(rhs, list):
+                        # array of FIFOs
+                        for ele in rhs:
+                            new_name = target.id + "_" + ele.attributes["id"].value
+                            ele.attributes["name"] = StringAttr.get(new_name)
+                            ctx.buffers[new_name] = ele
+                        return rhs
                     if hasattr(rhs, "attributes"):
                         rhs.attributes["name"] = StringAttr.get(target.id)
                     if target.id in ctx.buffers:
@@ -1668,20 +1675,24 @@ class ASTTransformer(ASTBuilder):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
-                    stream = ctx.buffers[vid].clone(
-                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
-                    )
                     if isinstance(node.func.value, ast.Subscript):
                         # pylint: disable=redefined-builtin
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
                         slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                        # access a specific stream
+                        slice_str = "_".join([str(x) for x in slice])
+                        new_name = f"{vid}_{slice_str}"
                     else:
                         slice = []
+                        new_name = vid
+                    stream = ctx.buffers[new_name].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
                     allo_d.StreamPutOp(
                         stream.result,
-                        slice,
+                        [],
                         stmts[0].result,
                         ip=ctx.get_ip(),
                     )
@@ -1692,21 +1703,25 @@ class ASTTransformer(ASTBuilder):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
-                    stream = ctx.buffers[vid].clone(
-                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
-                    )
                     if isinstance(node.func.value, ast.Subscript):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
                         # pylint: disable=redefined-variable-type
                         slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                        # access a specific stream
+                        slice_str = "_".join([str(x) for x in slice])
+                        new_name = f"{vid}_{slice_str}"
                     else:
                         slice = []
+                        new_name = vid
+                    stream = ctx.buffers[new_name].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
                     return allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,
-                        slice,
+                        [],
                         ip=ctx.get_ip(),
                     )
 
@@ -1758,9 +1773,14 @@ class ASTTransformer(ASTBuilder):
                 stream_type = allo_d.StreamType.get(
                     array.element.build(), depth=array.element.depth
                 )
-                tensor_type = RankedTensorType.get(array.shape, stream_type)
-                stream_op = allo_d.StreamConstructOp(tensor_type, ip=ctx.get_ip())
-                return stream_op
+                # explicitly unravel the array
+                results = []
+                for dim in np.ndindex(*array.shape):
+                    stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
+                    # pylint: disable=bad-builtin
+                    stream_op.attributes["id"] = StringAttr.get("_".join(map(str, dim)))
+                    results.append(stream_op)
+                return results
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
