@@ -13,8 +13,10 @@ P0, P1 = M + 1, N + 1
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=UInt(M * 8), shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=UInt(N * 8), shape=(), depth=4), shape=(P0, P1))
+    L2_A = df.array(df.pipe(dtype=UInt(M * 8), shape=(), depth=4), shape=(P0,))
+    L2_B = df.array(df.pipe(dtype=UInt(N * 8), shape=(), depth=4), shape=(P1,))
+    fifo_A = df.array(df.pipe(dtype=int8, shape=(), depth=4), shape=(M, N))
+    fifo_B = df.array(df.pipe(dtype=int8, shape=(), depth=4), shape=(M, N))
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
@@ -22,48 +24,49 @@ def top():
         # periperals kernels
         with allo.meta_if(i == 0 and j == 0):
             for k in range(K):
+                # pack data A
                 packed_A: UInt(M * 8) = 0
                 for m in range(M):
                     packed_A[m * 8 : (m + 1) * 8] = A[m, k]
-                fifo_A[1, 0].put(packed_A)
+                L2_A[1].put(packed_A)
+                # pack data B
                 packed_B: UInt(N * 8) = 0
                 for n in range(N):
                     packed_B[n * 8 : (n + 1) * 8] = B[k, n]
-                fifo_B[0, 1].put(packed_B)
+                L2_B[1].put(packed_B)
         with allo.meta_elif(j == 0):
-            # i > 0
+            # i > 0, the first column
             for k in range(K):
-                a = fifo_A[i, j].get()
-                fifo_A[i, j + 1].put(a)
+                a = L2_A[i].get()
+                # unpack data
+                fifo_A[i - 1, 0].put(a[8 * (i - 1) : 8 * i])
                 with allo.meta_if(i < M):
-                    fifo_A[i + 1, j].put(a)
+                    L2_A[i + 1].put(a)
                 # TODO: Fix meta matching
                 with allo.meta_else():
                     pass
         with allo.meta_elif(i == 0):
-            # j > 0
+            # j > 0, the first row
             for k in range(K):
-                b = fifo_B[i, j].get()
-                fifo_B[i + 1, j].put(b)
+                b = L2_B[j].get()
+                fifo_B[0, j - 1].put(b[8 * (j - 1) : 8 * j])
                 with allo.meta_if(j < N):
-                    fifo_B[i, j + 1].put(b)
+                    L2_B[j + 1].put(b)
                 with allo.meta_else():
                     pass
         # main body
         with allo.meta_else():
-            c: int8 = 0
+            c: int16 = 0
             for k in range(K):
-                a: UInt(M * 8) = fifo_A[i, j].get()
-                b: UInt(N * 8) = fifo_B[i, j].get()
-                local_a: int8 = a[(i - 1) * 8 : i * 8]
-                local_b: int8 = b[(j - 1) * 8 : j * 8]
-                c += local_a * local_b
+                a: int8 = fifo_A[i - 1, j - 1].get()
+                b: int8 = fifo_B[i - 1, j - 1].get()
+                c += a * b
                 with allo.meta_if(j < N):
-                    fifo_A[i, j + 1].put(a)
+                    fifo_A[i - 1, j].put(a)
                 with allo.meta_else():
                     pass
                 with allo.meta_if(i < M):
-                    fifo_B[i + 1, j].put(b)
+                    fifo_B[i, j - 1].put(b)
                 with allo.meta_else():
                     pass
             C[i - 1, j - 1] = c
