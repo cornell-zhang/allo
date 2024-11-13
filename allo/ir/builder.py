@@ -1680,7 +1680,12 @@ class ASTTransformer(ASTBuilder):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                        if isinstance(slice, int):
+                            slice = tuple([slice])
+                        else:
+                            slice = (
+                                tuple(slice) if not isinstance(slice, tuple) else slice
+                            )
                         # access a specific stream
                         slice_str = "_".join([str(x) for x in slice])
                         new_name = f"{vid}_{slice_str}"
@@ -1707,8 +1712,13 @@ class ASTTransformer(ASTBuilder):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        # pylint: disable=redefined-variable-type
-                        slice = tuple(slice) if not isinstance(slice, tuple) else slice
+                        if isinstance(slice, int):
+                            slice = tuple([slice])
+                        else:
+                            # pylint: disable=redefined-variable-type
+                            slice = (
+                                tuple(slice) if not isinstance(slice, tuple) else slice
+                            )
                         # access a specific stream
                         slice_str = "_".join([str(x) for x in slice])
                         new_name = f"{vid}_{slice_str}"
