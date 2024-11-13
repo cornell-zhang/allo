@@ -1690,7 +1690,7 @@ class ASTTransformer(ASTBuilder):
                         slice_str = "_".join([str(x) for x in slice])
                         new_name = f"{vid}_{slice_str}"
                     else:
-                        slice = []
+                        slice = tuple()
                         new_name = vid
                     stream = ctx.buffers[new_name].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
@@ -1715,7 +1715,6 @@ class ASTTransformer(ASTBuilder):
                         if isinstance(slice, int):
                             slice = tuple([slice])
                         else:
-                            # pylint: disable=redefined-variable-type
                             slice = (
                                 tuple(slice) if not isinstance(slice, tuple) else slice
                             )
@@ -1723,7 +1722,7 @@ class ASTTransformer(ASTBuilder):
                         slice_str = "_".join([str(x) for x in slice])
                         new_name = f"{vid}_{slice_str}"
                     else:
-                        slice = []
+                        slice = tuple()
                         new_name = vid
                     stream = ctx.buffers[new_name].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
