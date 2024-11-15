@@ -10,7 +10,6 @@ import numpy as np
 
 W: int32 = 2  # gap penalty score per length, assuming a linear increament
 
-max_size = 100
 M, N = 4, 4
 P0, P1 = M + 2, N + 2
 
@@ -38,6 +37,10 @@ def smith_waterman_score_matrix(seqA, seqB):
 
 @df.region()
 def top():
+    # FIFOs
+    # FIFO A goes in increasing j direction
+    # FIFO B goes in increasing i direction
+    # FIFO C goes in increasing i and j direction
     fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
     fifo_B = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
     fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
@@ -45,29 +48,28 @@ def top():
     @df.kernel(mapping=[P0, P1])
     def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
         i, j = df.get_pid()
+        # Does nothing for the two boundary PEs
         with allo.meta_if((i == 0 and j == P1 - 1) or (i == P0 - 1 and j == 0)):
             pass
+        # Input
         with allo.meta_elif(i == 0 and j == 0):
-            # Fill the first row and column with zeros
-            fifo_A[i, j].put(0)
-            fifo_B[i, j].put(0)
-            fifo_C[i, j].put(0)
-        with allo.meta_elif(i == P0 - 1 and j == P1 - 1):
-            fifo_A[i, j].get()
-            fifo_B[i, j].get()
-            fifo_C[i, j].get()
+            fifo_C[i + 1, j + 1].put(0)
         with allo.meta_elif(i == 0):
-            fifo_A[i, j].put(0)
-            fifo_C[i, j].put(0)
-        with allo.meta_elif(i == P0 - 1):
-            fifo_A[i, j].get()
-            fifo_C[i, j].get()
+            fifo_B[i + 1, j].put(0)
+            fifo_C[i + 1, j + 1].put(0)
         with allo.meta_elif(j == 0):
-            fifo_B[i, j].put(0)
-            fifo_C[i, j].put(0)
-        with allo.meta_elif(j == P1 - 1):
+            fifo_A[i, j + 1].put(0)
+            fifo_C[i + 1, j + 1].put(0)
+        # Drain
+        with allo.meta_elif(i == P0 - 1 and j == P1 - 1):
+            fifo_C[i, j].get()
+        with allo.meta_elif(i == P0 - 1):
             fifo_B[i, j].get()
             fifo_C[i, j].get()
+        with allo.meta_elif(j == P1 - 1):
+            fifo_A[i, j].get()
+            fifo_C[i, j].get()
+        # Compute
         with allo.meta_else():
             a = fifo_A[i, j].get()
             b = fifo_B[i, j].get()
@@ -89,7 +91,7 @@ def test_systolic():
     A = np.random.choice(possible_chars, size=M).view(np.int8)
     B = np.random.choice(possible_chars, size=N).view(np.int8)
     S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
-    mod = df.build(top)
+    mod = df.build(top, target="vitis_hls", mode="csim", project="smith_waterman.prj")
     if hls.is_available("vitis_hls"):
         mod(A, B, S)
         oracle = smith_waterman_score_matrix(A, B)
