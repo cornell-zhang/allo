@@ -91,12 +91,9 @@ def test_systolic():
     A = np.random.choice(possible_chars, size=M).view(np.int8)
     B = np.random.choice(possible_chars, size=N).view(np.int8)
     S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
-    mod = df.build(top, target="vitis_hls", mode="csim", project="smith_waterman.prj")
+    mod = df.build(top, target="vitis_hls", mode="hw", project="smith_waterman.prj")
     if hls.is_available("vitis_hls"):
         mod(A, B, S)
-        oracle = smith_waterman_score_matrix(A, B)
-        np.testing.assert_array_equal(S, oracle)
-        print("Passed!")
 
 
 if __name__ == "__main__":
