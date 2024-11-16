@@ -19,8 +19,9 @@ def top():
     @df.kernel(mapping=[P0, P1])
     def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
         # Weight stationary GEMM systolic array
-        # A is contains the stationary weights
+        # A is the matrix that contains the stationary weights
         i, j = df.get_pid()
+
         # periperals kernels
         with allo.meta_if(i == 0):
             for n in range(N):
@@ -31,13 +32,18 @@ def top():
             for n in range(N):
                 fifo_B[i, j].get()
 
+        # compute
+        # There are three cases: j == 0, j == K - 1, and the rest
         with allo.meta_elif(j == 0):
+            # Does not take partial sum from the previous PE
             for n in range(N):
                 a: float32 = A[i - 1, j]
                 b = fifo_B[i, j].get()
                 fifo_A[i, j + 1].put(a * b)
                 fifo_B[i + 1, j].put(b)
         with allo.meta_elif(j == K - 1):
+            # Does not keep passing the partial sum to the next PE
+            # Concludes the computation and writes to the output
             for n in range(N):
                 partial_sum = fifo_A[i, j].get()
                 a: float32 = A[i - 1, j]
@@ -45,6 +51,7 @@ def top():
                 C[i - 1, n] = partial_sum + a * b
                 fifo_B[i + 1, j].put(b)
         with allo.meta_else():
+            # Continues the computation
             for n in range(N):
                 partial_sum = fifo_A[i, j].get()
                 a: float32 = A[i - 1, j]
