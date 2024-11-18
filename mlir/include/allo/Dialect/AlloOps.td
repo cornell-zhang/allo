@@ -709,6 +709,30 @@ def DivFixedOp : FixedBinaryOp<"div_fixed"> {
   let summary = "fixed point division operation";
 }
 
+def ShLFixedOp : Allo_Op<"shl_fixed"> {
+  let summary = "fixed point shift left operation";
+  let arguments = (ins
+      FixedLike:$lhs,
+      SignlessIntegerLike:$rhs
+  );
+  let results = (outs FixedLike:$result);
+  let assemblyFormat = [{
+    `(` $lhs `,` $rhs `)` `:` attr-dict `(` type($lhs) `,` type($rhs) `)` `->` type($result)
+  }];
+}
+
+def ShRFixedOp : Allo_Op<"shr_fixed"> {
+  let summary = "fixed point shift right operation";
+  let arguments = (ins
+      FixedLike:$lhs,
+      SignlessIntegerLike:$rhs
+  );
+  let results = (outs FixedLike:$result);
+  let assemblyFormat = [{
+    `(` $lhs `,` $rhs `)` `:` attr-dict `(` type($lhs) `,` type($rhs) `)` `->` type($result)
+  }];
+}
+
 def CmpFixedOp : Allo_Op<"cmp_fixed", [NoMemoryEffect, SameTypeOperands, TypesMatchWith<
     "result type has i1 element type and same shape as operands",
     "lhs", "result", "getI1SameShape($_self)">] # ElementwiseMappable.traits> {
@@ -971,6 +995,37 @@ def IntToStructOp : Allo_Op<"int_to_struct"> {
   let results = (outs Struct:$res);
   let assemblyFormat = [{
       `(` $input `)` attr-dict `:` type($input) `->` type($res)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Stream operations
+//===----------------------------------------------------------------------===//
+
+def StreamConstructOp : Allo_Op<"stream_construct"> {
+  let summary = "Create a stream object";
+  let arguments = (ins );
+  let results = (outs StreamLike:$res);
+  let assemblyFormat = [{
+      `(` `)` attr-dict `:` qualified(type($res))
+  }];
+}
+
+def StreamGetOp : Allo_Op<"stream_get"> {
+  let summary = "Get an object from a stream";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices);
+  let results = (outs AnyType:$res);
+  let assemblyFormat = [{
+      `(` $stream `,` $indices`)` attr-dict `:` qualified(type($stream)) `->` type($res)
+  }];
+}
+
+def StreamPutOp : Allo_Op<"stream_put"> {
+  let summary = "Put an object into a stream";
+  let arguments = (ins StreamLike:$stream, DenseI64ArrayAttr:$indices, AnyType:$data);
+  let results = (outs );
+  let assemblyFormat = [{
+      `(` $stream `,` $indices `,` $data `)` attr-dict `:` qualified(type($stream)) `contains` type($data)
   }];
 }
 

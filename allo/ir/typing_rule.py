@@ -615,13 +615,24 @@ def shift_rule():
         (Int, Index): lambda t1, t2: t1,
     }
     uint_rules = {
+        (UInt, Int): lambda t1, t2: t1,
         (UInt, UInt): lambda t1, t2: t1,
         (UInt, Index): lambda t1, t2: t1,
     }
     index_rules = {
         (Index, Index): lambda t1, t2: Index(),
     }
-    return TypingRule([int_rules, uint_rules, index_rules], commutative=True)
+    fixed_rules = {
+        (Fixed, Int): lambda t1, t2: t1,
+        (Fixed, UInt): lambda t1, t2: t1,
+        (Fixed, Index): lambda t1, t2: t1,
+    }
+    ufixed_rules = {
+        (UFixed, Int): lambda t1, t2: t1,
+        (UFixed, UInt): lambda t1, t2: t1,
+        (UFixed, Index): lambda t1, t2: t1,
+    }
+    return TypingRule([int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules])
 
 
 def and_or_rule():

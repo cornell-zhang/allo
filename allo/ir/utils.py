@@ -21,6 +21,7 @@ from .._mlir.dialects import (
     affine as affine_d,
     arith as arith_d,
     tensor as tensor_d,
+    func as func_d,
 )
 from .types import AlloType, Int, UInt, Fixed, UFixed, Index
 from .symbol_resolver import ASTResolver
@@ -94,6 +95,17 @@ def get_func_id_from_param_types(param_types):
         if isinstance(param_type, str):
             return param_type
     return None
+
+
+def get_all_funcs_except_top(s):
+    funcs = []
+    for func in s.module.body.operations:
+        if (
+            isinstance(func, func_d.FuncOp)
+            and func.attributes["sym_name"].value != s.top_func_name
+        ):
+            funcs.append(func)
+    return funcs
 
 
 def resolve_generic_types(global_vars, type_var, call_val):

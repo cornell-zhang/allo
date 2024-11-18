@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
 
 import gc
 import ast
@@ -15,7 +15,6 @@ from .._mlir.ir import (
     RankedTensorType,
     ShapedType,
     IntegerType,
-    IndexType,
     F32Type,
     UnitAttr,
     IntegerAttr,
@@ -55,8 +54,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .transform import store_tensor, create_buffer
-from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, Stream
+from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
@@ -356,6 +354,7 @@ class ASTTransformer(ASTBuilder):
         if type(res_type) is type(src_type) and res_type == src_type:
             return op
 
+        # Single-step type conversions
         cast_map = {
             # Index <-> UInt/Int
             (Int, Index): arith_d.IndexCastOp,
@@ -367,9 +366,6 @@ class ASTTransformer(ASTBuilder):
             (UInt, Float): arith_d.UIToFPOp,
             (Float, Int): arith_d.FPToSIOp,
             (Float, UInt): arith_d.FPToUIOp,
-            # FP to Index is not supported in MLIR
-            # (Float, Index): RuntimeError,
-            # (Index, Float): RuntimeError,
             # Float <-> Fixed/UFixed
             (Float, Fixed): allo_d.FloatToFixedOp,
             (Float, UFixed): allo_d.FloatToFixedOp,
@@ -395,13 +391,25 @@ class ASTTransformer(ASTBuilder):
         elif isinstance(src_type, Float) and isinstance(res_type, Index):
             # FP to Index is not supported in MLIR
             # we need to cast to UInt first, then cast to Index
-            op = arith_d.FPToUIOp(IndexType.get(), op.result, ip=ctx.get_ip())
+            op = arith_d.FPToUIOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
             opcls = arith_d.IndexCastOp  # proceed to build cast to index
         elif isinstance(src_type, Index) and isinstance(res_type, Float):
             op = arith_d.IndexCastOp(
                 IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
             )
             opcls = arith_d.SIToFPOp  # proceed to build cast to float
+        elif isinstance(src_type, Index) and isinstance(res_type, (Fixed, UFixed)):
+            op = arith_d.IndexCastOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
+            opcls = allo_d.IntToFixedOp  # proceed to build cast to float
+        elif isinstance(src_type, (Fixed, UFixed)) and isinstance(res_type, Index):
+            op = allo_d.FixedToIntOp(
+                IntegerType.get_signless(32), op.result, ip=ctx.get_ip()
+            )
+            opcls = arith_d.IndexCastOp
         elif isinstance(src_type, (Int, UInt)) and isinstance(res_type, (Int, UInt)):
             if src_type.bits > res_type.bits:
                 opcls = arith_d.TruncIOp
@@ -643,15 +651,15 @@ class ASTTransformer(ASTBuilder):
                 Float: RuntimeError,
                 Int: arith_d.ShLIOp,
                 UInt: arith_d.ShLIOp,
-                Fixed: RuntimeError,
-                UFixed: RuntimeError,
+                Fixed: allo_d.ShLFixedOp,
+                UFixed: allo_d.ShLFixedOp,
             },
             ast.RShift: {
                 Float: RuntimeError,
                 Int: arith_d.ShRSIOp,
                 UInt: arith_d.ShRUIOp,
-                Fixed: RuntimeError,
-                UFixed: RuntimeError,
+                Fixed: allo_d.ShRFixedOp,
+                UFixed: allo_d.ShRFixedOp,
             },
             ast.BitOr: {
                 Float: RuntimeError,
@@ -676,6 +684,12 @@ class ASTTransformer(ASTBuilder):
             },
         }.get(type(node.op))
         ty_cls = Int if isinstance(node.dtype, Index) else type(node.dtype)
+        if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
+            node.dtype, (Fixed, UFixed)
+        ):
+            return opcls[ty_cls](
+                node.dtype.build(), lhs.result, rhs.result, ip=ctx.get_ip()
+            )
         return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
 
     @staticmethod
@@ -721,8 +735,14 @@ class ASTTransformer(ASTBuilder):
         lhs = ASTTransformer.build_cast_op(
             ctx, lhs, node.left.dtype, node.dtype, node.left.shape
         )
+        if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
+            node.dtype, (Fixed, UFixed)
+        ):
+            target_rhs_type = Int(32)
+        else:
+            target_rhs_type = node.dtype
         rhs = ASTTransformer.build_cast_op(
-            ctx, rhs, node.right.dtype, node.dtype, node.right.shape
+            ctx, rhs, node.right.dtype, target_rhs_type, node.right.shape
         )
         lhs = ASTTransformer.build_broadcast_op(
             ctx, lhs, node.dtype, node.left.shape, node.shape, node.dims[0]
@@ -771,6 +791,13 @@ class ASTTransformer(ASTBuilder):
                 targets = [node.targets[0]]
             for idx, target in enumerate(targets):
                 if isinstance(target, ast.Name):
+                    if isinstance(rhs, list):
+                        # array of FIFOs
+                        for ele in rhs:
+                            new_name = target.id + "_" + ele.attributes["id"].value
+                            ele.attributes["name"] = StringAttr.get(new_name)
+                            ctx.buffers[new_name] = ele
+                        return rhs
                     if hasattr(rhs, "attributes"):
                         rhs.attributes["name"] = StringAttr.get(target.id)
                     if target.id in ctx.buffers:
@@ -1228,7 +1255,9 @@ class ASTTransformer(ASTBuilder):
                 ctx, rhs, node.value.dtype, node.dtype, node.value.shape
             )
         # Store LHS
-        if len(shape) > 0:
+        if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
+            ctx.buffers[node.target.id] = rhs
+        elif len(shape) > 0:
             alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             alloc_op.attributes["name"] = StringAttr.get(node.target.id)
             with ctx.get_ip():
@@ -1241,8 +1270,6 @@ class ASTTransformer(ASTBuilder):
             ctx.buffers[node.target.id] = (
                 linalg_op.owner if ctx.enable_tensor else alloc_op
             )
-        elif isinstance(node.dtype, Stream):
-            ctx.buffers[node.target.id] = rhs
         else:
             ctx.buffers[node.target.id] = MockScalar(
                 node.target.id,
@@ -1263,6 +1290,8 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_FunctionDef(ctx, node):
+        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
+        # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
@@ -1270,6 +1299,33 @@ class ASTTransformer(ASTBuilder):
             ctx = old_ctx.copy()
             ctx.set_ip(old_ctx.top_func)
             ctx.top_func_tree = node
+            ctx.buffers = old_ctx.buffers.copy()
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if isinstance(decorator.func, ast.Attribute):
+                        if decorator.func.attr == "kernel":
+                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                            mapping = eval(
+                                ast.unparse(decorator.keywords[0].value),
+                                ctx.global_vars,
+                            )
+                            orig_name = node.name
+                            for dim in np.ndindex(*mapping):
+                                new_ctx = old_ctx.copy()
+                                new_ctx.set_ip(old_ctx.top_func)
+                                new_ctx.top_func_tree = node
+                                new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.global_vars = old_ctx.global_vars.copy()
+                                if len(dim) == 1:
+                                    new_ctx.global_vars.update({"df.p0": dim[0]})
+                                    node.name = orig_name + f"_{dim[0]}"
+                                else:
+                                    new_ctx.global_vars.update(
+                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                    )
+                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                ASTTransformer.build_FunctionDef(new_ctx, node)
+                            return
         else:
             old_ctx = None
 
@@ -1336,7 +1392,6 @@ class ASTTransformer(ASTBuilder):
         # Build function
         # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
         func_type = FunctionType.get(input_types, output_types)
-        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
         func_op.add_entry_block()
         # attach type hints
@@ -1614,56 +1669,70 @@ class ASTTransformer(ASTBuilder):
                     return build_stmt(ctx, node.func)
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
-                    cast = ASTTransformer.build_cast_op(
-                        ctx, stmts[0], node.args[0].dtype, node.func.value.dtype
+                    assert len(stmts) == 1, "Stream can only have one argument"
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
                     )
-                    if len(node.func.value.shape) == 0:
-                        affine_map = AffineMap.get(
-                            dim_count=0,
-                            symbol_count=0,
-                            exprs=[AffineConstantExpr.get(0)],
+                    if isinstance(node.func.value, ast.Subscript):
+                        # pylint: disable=redefined-builtin
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        affine_attr = AffineMapAttr.get(affine_map)
-                        op = affine_d.AffineStoreOp(
-                            cast.result,
-                            ctx.buffers[node.func.value.id].result,
-                            [],
-                            affine_attr,
-                            ip=ctx.get_ip(),
-                        )
+                        if isinstance(slice, int):
+                            slice = tuple([slice])
+                        else:
+                            slice = (
+                                tuple(slice) if not isinstance(slice, tuple) else slice
+                            )
+                        # access a specific stream
+                        slice_str = "_".join([str(x) for x in slice])
+                        new_name = f"{vid}_{slice_str}"
                     else:
-                        store_tensor(
-                            cast.result,
-                            ctx.buffers[node.func.value.id].result,
-                            "put",
-                            ip=ctx.get_ip(),
-                            flatten=False,
-                        )
+                        slice = tuple()
+                        new_name = vid
+                    stream = ctx.buffers[new_name].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
+                    allo_d.StreamPutOp(
+                        stream.result,
+                        [],
+                        stmts[0].result,
+                        ip=ctx.get_ip(),
+                    )
                     return
                 if node.func.attr == "get":
-                    # pylint: disable=no-else-return
-                    if len(node.func.value.shape) == 0:
-                        affine_map = AffineMap.get(
-                            dim_count=0,
-                            symbol_count=0,
-                            exprs=[AffineConstantExpr.get(0)],
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    if isinstance(node.func.value, ast.Subscript):
+                        slice = eval(
+                            ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        affine_attr = AffineMapAttr.get(affine_map)
-                        return affine_d.AffineLoadOp(
-                            node.func.value.dtype.build(),
-                            ctx.buffers[node.func.value.id].result,
-                            [],
-                            affine_attr,
-                            ip=ctx.get_ip(),
-                        )
+                        if isinstance(slice, int):
+                            slice = tuple([slice])
+                        else:
+                            slice = (
+                                tuple(slice) if not isinstance(slice, tuple) else slice
+                            )
+                        # access a specific stream
+                        slice_str = "_".join([str(x) for x in slice])
+                        new_name = f"{vid}_{slice_str}"
                     else:
-                        return create_buffer(
-                            ctx.buffers[node.func.value.id].result,
-                            "get",
-                            ip=ctx.get_ip(),
-                            alloc_ip=None,
-                            flatten=False,
-                        )
+                        slice = tuple()
+                        new_name = vid
+                    stream = ctx.buffers[new_name].clone(
+                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    )
+                    return allo_d.StreamGetOp(
+                        node.func.value.dtype.build(),
+                        stream.result,
+                        [],
+                        ip=ctx.get_ip(),
+                    )
 
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -1706,6 +1775,21 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
+            fn_name = obj.__name__ if not isinstance(obj, IPModule) else None
+            if fn_name == "array":
+                # as it directly runs the node inside, this branch is put in the front
+                array = eval(ast.unparse(node), ctx.global_vars)
+                stream_type = allo_d.StreamType.get(
+                    array.element.build(), depth=array.element.depth
+                )
+                # explicitly unravel the array
+                results = []
+                for dim in np.ndindex(*array.shape):
+                    stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
+                    # pylint: disable=bad-builtin
+                    stream_op.attributes["id"] = StringAttr.get("_".join(map(str, dim)))
+                    results.append(stream_op)
+                return results
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
@@ -1733,7 +1817,6 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return
-            fn_name = obj.__name__
             if fn_name in {"zeros", "ones"}:
                 shape = node.shape
                 dtype = node.dtype
@@ -1757,21 +1840,9 @@ class ASTTransformer(ASTBuilder):
                     MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
                 )
             if fn_name == "pipe":
-                src = ASTResolver.resolve_constant(node.keywords[0].value, ctx)
-                dst = ASTResolver.resolve_constant(node.keywords[1].value, ctx)
-                if not (isinstance(src, str) and isinstance(dst, str)):
-                    src = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{src[0]}_{src[1]}"
-                    )
-                    dst = (
-                        ctx.top_func.attributes["sym_name"].value
-                        + f"_{dst[0]}_{dst[1]}"
-                    )
-                memref_type = node.dtype.build()
-                stream_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                stream_op.attributes["src"] = StringAttr.get(src)
-                stream_op.attributes["dst"] = StringAttr.get(dst)
+                stream = eval(ast.unparse(node), ctx.global_vars)
+                stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
+                stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                 return stream_op
             if isinstance(new_args[0].result, OpResultList):
                 arg_type = new_args[0].result[0].type

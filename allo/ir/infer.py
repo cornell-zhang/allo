@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument, eval-used
 
 import ast
 import inspect
@@ -298,6 +298,7 @@ class TypeInferer(ASTVisitor):
                         rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
                     )
                     ctx.buffers[target.id] = target
+                    # update global variables for metaprogramming
                     if (
                         isinstance(node.value, ast.Call)
                         and isinstance(node.value.func, ast.Attribute)
@@ -510,13 +511,6 @@ class TypeInferer(ASTVisitor):
             )
             node.value.shape = node.np_values.shape
             node.value.dtype = target_dtype
-        elif (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Attribute)
-            and node.value.func.attr == "pipe"
-        ):
-            node.value.shape = target_shape
-            node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
         ctx.buffers[node.target.id] = node
@@ -534,11 +528,38 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_FunctionDef(ctx, node):
+        # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
             # Create a new context to avoid name collision
             old_ctx = ctx
             ctx = old_ctx.copy()
+            ctx.buffers = old_ctx.buffers.copy()
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if isinstance(decorator.func, ast.Attribute):
+                        if decorator.func.attr == "kernel":
+                            assert len(decorator.keywords) > 0, "Missing kernel mapping"
+                            mapping = eval(
+                                ast.unparse(decorator.keywords[0].value),
+                                ctx.global_vars,
+                            )
+                            orig_name = node.name
+                            for dim in np.ndindex(*mapping):
+                                new_ctx = old_ctx.copy()
+                                new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.global_vars = old_ctx.global_vars.copy()
+                                if len(dim) == 1:
+                                    new_ctx.global_vars.update({"df.p0": dim[0]})
+                                    node.name = orig_name + f"_{dim[0]}"
+                                else:
+                                    new_ctx.global_vars.update(
+                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                    )
+                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                TypeInferer.visit_FunctionDef(new_ctx, node)
+                                node.name = orig_name
+                            return node
         else:
             old_ctx = None
 
@@ -579,6 +600,9 @@ class TypeInferer(ASTVisitor):
                 )
             ctx.buffers[func_name] = node
 
+        # set context
+        ctx.top_func = node
+        ctx.top_func_tree = node
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
         if node.returns is None or (
@@ -703,14 +727,25 @@ class TypeInferer(ASTVisitor):
                     new_args = visit_stmts(ctx, node.args)
                     node.shape = tuple()
                     node.dtype = None
-                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    node.func.value.shape = ctx.buffers[vid].dtype.shape
+                    node.func.value.dtype = ctx.buffers[vid].dtype.dtype
                 elif node.func.attr == "get":
-                    # get dtype and shape inside Stream
-                    node.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.dtype = ctx.buffers[node.func.value.id].dtype.dtype
-                    node.func.value.shape = ctx.buffers[node.func.value.id].dtype.shape
-                    node.func.value.dtype = ctx.buffers[node.func.value.id].dtype.dtype
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    # return value
+                    node.shape = ctx.buffers[vid].dtype.shape
+                    node.dtype = ctx.buffers[vid].dtype.dtype
+                    # stream type itself
+                    node.func.value.shape = tuple()
+                    node.func.value.dtype = ctx.buffers[vid].dtype
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method {node.func.attr}"
@@ -737,8 +772,10 @@ class TypeInferer(ASTVisitor):
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
             return node
 
-        if obj.__module__.startswith("allo") and not obj.__module__.startswith(
-            "allo.library"
+        if (
+            obj.__module__.startswith("allo")
+            and not obj.__module__.startswith("allo.library")
+            and not obj.__module__.startswith("allo._mlir")
         ):
             # Allo library functions
             new_args = visit_stmts(ctx, node.args)
@@ -749,6 +786,11 @@ class TypeInferer(ASTVisitor):
                 node.dtype = None
                 return node
             fn_name = obj.__name__
+            if fn_name == "pipe":
+                stream = eval(ast.unparse(node), ctx.global_vars)
+                node.shape = tuple()
+                node.dtype = stream
+                return node
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":

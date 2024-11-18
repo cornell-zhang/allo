@@ -1,10 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=bad-builtin
 
 import json
-import textwrap
 import numpy as np
 
+from .utils import format_str
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 
@@ -21,7 +22,6 @@ header = """
 #include <vector>
 #include <iomanip>
 #include <fstream>
-
 """
 
 main_header = """
@@ -68,23 +68,14 @@ ctype_map = {
 }
 
 
-def format_str(s, indent=4, strip=True):
-    if strip:
-        return textwrap.indent(textwrap.dedent(s).strip("\n"), " " * indent)
-    return textwrap.indent(textwrap.dedent(s), " " * indent)
-
-
-# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
     inputs, outputs = get_func_inputs_outputs(func)
     # Get input/output types
     out_str = format_str(header, indent=0, strip=False)
-    for i in range(len(inputs)):
-        out_str += format_str(f'#include "input_{i}.h"\n', indent=0, strip=False)
     out_str += format_str(main_header, indent=0, strip=False)
-    out_str += format_str("\ncl::Kernel krnl_" + top + ";\n", strip=False)
+    out_str += format_str("cl::Kernel krnl_" + top + ";\n", strip=False)
     out_str += format_str(
         """
         // Allocate Memory in Host Memory
@@ -96,7 +87,6 @@ def codegen_host(top, module):
         // CL_MEM_USE_HOST_PTR
         """
     )
-    out_str += "\n"
     # Generate in/out buffers
     for i, (in_dtype, in_shape) in enumerate(inputs):
         if in_dtype in ctype_map:
@@ -112,19 +102,33 @@ def codegen_host(top, module):
             in_dtype = "float"
         else:
             raise ValueError(f"Unsupported input type: {in_dtype}")
+        out_str += format_str(f'std::ifstream ifile{i}("input{i}.data");')
+        out_str += format_str(f"if (!ifile{i}.is_open()) {{")
+        out_str += format_str(
+            '  std::cerr << "Error: Could not open input file.\\n";', strip=False
+        )
+        out_str += format_str("  return 1;", strip=False)
+        out_str += format_str("}")
         in_shape = [str(i) for i in in_shape]
         if len(in_shape) == 0:
             # scalar
-            out_str += format_str(
-                f"{in_dtype} source_in{i} = in_data_{i};\n", strip=False
-            )
+            out_str += format_str(f"{in_dtype} source_in{i};")
+            out_str += format_str(f"ifile{i} >> source_in{i};")
         else:
             out_str += format_str(
-                f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};\n",
+                f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
+            )
+            out_str += format_str(
+                f"for (unsigned i = 0; i < {'*'.join(map(str, in_shape))}; i++) {{"
+            )
+            out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
+            out_str += format_str("}")
+            out_str += format_str(
+                f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};",
                 strip=False,
             )
             out_str += format_str(
-                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}(in_data_{i}, in_data_{i} + {' * '.join(in_shape)});\n",
+                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}(in_data_{i}, in_data_{i} + {' * '.join(in_shape)});",
                 strip=False,
             )
     for i, (out_dtype, out_shape) in enumerate(outputs):
@@ -177,20 +181,20 @@ def codegen_host(top, module):
         """
     )
     out_str += format_str(
-        f'\nOCL_CHECK(err, krnl_{top} = cl::Kernel(program, "{top}", &err));', 12, False
+        f'OCL_CHECK(err, krnl_{top} = cl::Kernel(program, "{top}", &err));', 12, False
     )
     out_str += format_str(
-        """
-                valid_device = true;
-                break; // we break because we found a valid device
-            }
+        """            valid_device = true;
+            break; // we break because we found a valid device
         }
-        if (!valid_device) {
-            std::cout << "Failed to program any device found, exit!\\n";
-            exit(EXIT_FAILURE);
-        }
-        """,
+    }
+    if (!valid_device) {
+        std::cout << "Failed to program any device found, exit!\\n";
+        exit(EXIT_FAILURE);
+    }
+    """,
         strip=False,
+        indent=0,
     )
     out_str += format_str(
         """
@@ -199,7 +203,6 @@ def codegen_host(top, module):
         // Device-to-host communication
         """
     )
-    out_str += "\n"
     for i, (in_dtype, in_shape) in enumerate(inputs):
         if i == len(inputs) - 1 and len(outputs) == 0:
             # suppose the last input is also the output
@@ -208,12 +211,12 @@ def codegen_host(top, module):
             flag = "CL_MEM_READ_ONLY"
         if len(in_shape) != 0:
             out_str += format_str(
-                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, size_bytes_in{i}, source_in{i}.data(), &err));\n",
+                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, size_bytes_in{i}, source_in{i}.data(), &err));",
                 strip=False,
             )
     for i in range(len(outputs)):
         out_str += format_str(
-            f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_bytes_out{i}, source_out{i}.data(), &err));\n",
+            f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_bytes_out{i}, source_out{i}.data(), &err));",
             strip=False,
         )
     out_str += "\n"
@@ -223,26 +226,26 @@ def codegen_host(top, module):
         if len(in_shape) == 0:
             # scalar
             out_str += format_str(
-                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, source_in{i}));\n",
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, source_in{i}));",
                 strip=False,
             )
         else:
             out_str += format_str(
-                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));\n",
+                f"OCL_CHECK(err, err = krnl_{top}.setArg({i}, buffer_in{i}));",
                 strip=False,
             )
             buf_str += f"buffer_in{i}, "
     for i in range(len(outputs)):
         out_str += format_str(
-            f"OCL_CHECK(err, err = krnl_{top}.setArg({len(inputs) + i}, buffer_out{i}));\n",
+            f"OCL_CHECK(err, err = krnl_{top}.setArg({len(inputs) + i}, buffer_out{i}));",
             strip=False,
         )
-    out_str += format_str("// Copy input data to device global memory\n", strip=False)
+    out_str += format_str("// Copy input data to device global memory", strip=False)
     buf_str = buf_str.strip(", ")
     out_str += format_str(
         "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
         + buf_str
-        + "}, 0 /* 0 means from host*/));\n",
+        + "}, 0 /* 0 means from host*/));",
         strip=False,
     )
     out_str += "\n"
@@ -255,34 +258,34 @@ def codegen_host(top, module):
               << "|-------------------------+-------------------------|\\n";
     """
     )
-    out_str += "\n\n"
+    out_str += "\n"
     # Launch kernel
-    out_str += format_str("// Launch the Kernel\n", strip=False)
+    out_str += format_str("// Launch the Kernel", strip=False)
     out_str += format_str(
-        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}, nullptr, &event));\n",
+        f"OCL_CHECK(err, err = q.enqueueTask(krnl_{top}, nullptr, &event));",
         strip=False,
     )
     out_str += "\n"
     out_str += format_str(
-        "// Copy Result from Device Global Memory to Host Local Memory\n",
+        "// Copy Result from Device Global Memory to Host Local Memory",
         strip=False,
     )
     if len(outputs) > 0:
         out_str += format_str(
             "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
             + ", ".join([f"buffer_out{i}" for i in range(len(outputs))])
-            + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+            + "}, CL_MIGRATE_MEM_OBJECT_HOST));",
             strip=False,
         )
     else:
         out_str += format_str(
             "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
             + ", ".join([f"buffer_in{len(inputs) - 1}"])
-            + "}, CL_MIGRATE_MEM_OBJECT_HOST));\n",
+            + "}, CL_MIGRATE_MEM_OBJECT_HOST));",
             strip=False,
         )
-    out_str += format_str("q.finish();\n", strip=False)
-    out_str += format_str("// OpenCL Host Code Ends\n", strip=False)
+    out_str += format_str("q.finish();", strip=False)
+    out_str += format_str("// OpenCL Host Code Ends", strip=False)
     out_str += "\n"
     # Timing
     out_str += format_str(
@@ -295,11 +298,11 @@ def codegen_host(top, module):
     )
     out_str += "\n"
     out_str += format_str(
-        f'std::cout << "| " << std::left << std::setw(24) << "{top} "\n',
+        f'std::cout << "| " << std::left << std::setw(24) << "{top} "',
         strip=False,
     )
     out_str += format_str(
-        '<< "|" << std::right << std::setw(24) << exe_time << " |\\n";\n',
+        '<< "|" << std::right << std::setw(24) << exe_time << " |\\n";',
         strip=False,
         indent=14,
     )
@@ -320,21 +323,22 @@ def codegen_host(top, module):
     else:
         out_buf = "source_out" + str(len(outputs) - 1)
     out_str += format_str(
-        f"""
-        // Write the output data to file
-        std::ofstream ofile;
-        ofile.open("output.data");
-        if (!ofile) {{
-            std::cerr << "Failed to open output file!" << std::endl;
-            return EXIT_FAILURE;
-        }}
-        for (unsigned i = 0; i < {out_buf}.size(); i++) {{
-            ofile << {out_buf}[i] << std::endl;
-        }}
-        ofile.close();
-        """
+        f"""    // Write the output data to file
+    std::ofstream ofile;
+    ofile.open("output.data");
+    if (!ofile) {{
+        std::cerr << "Failed to open output file!" << std::endl;
+        return EXIT_FAILURE;
+    }}
+    for (unsigned i = 0; i < {out_buf}.size(); i++) {{
+        ofile << {out_buf}[i] << std::endl;
+    }}
+    ofile.close();
+    """,
+        strip=False,
+        indent=0,
     )
-    out_str += format_str("\nreturn EXIT_SUCCESS;\n", strip=False)
+    out_str += format_str("return EXIT_SUCCESS;", strip=False)
     out_str += "}\n"
     return out_str
 
@@ -402,18 +406,13 @@ def update_makefile(file_name, ext_libs):
         outfile.write(makefile)
 
 
-def write_tensor_to_file(tensor, dtype, shape, name, file_path):
-    # generate C buffers
+def write_tensor_to_file(tensor, shape, file_path):
     with open(file_path, "w", encoding="utf-8") as f:
         if len(shape) == 0:
             # scalar
-            f.write(f"const {ctype_map[dtype]} {name} = {tensor};\n")
+            f.write(f"{tensor}\n")
         else:
-            f.write(f"const {ctype_map[dtype]} {name}")
-            # pylint: disable=bad-builtin
-            f.write(f"[{', '.join(map(str, shape))}] = {{")
-            f.write(", ".join([str(i) for i in tensor.flatten()]))
-            f.write("};\n")
+            f.write("\n".join([str(i) for i in tensor.flatten()]))
 
 
 def read_tensor_from_file(dtype, shape, file_path):
