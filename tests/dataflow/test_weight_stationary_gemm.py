@@ -8,7 +8,7 @@ import allo.backend.hls as hls
 import numpy as np
 
 M, N, K = 4, 4, 4
-P0, P1 = M + 2, K
+P0, P1 = K, N + 2
 
 
 @df.region()
@@ -19,45 +19,45 @@ def top():
     @df.kernel(mapping=[P0, P1])
     def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
         # Weight stationary GEMM systolic array
-        # A is the matrix that contains the stationary weights
+        # B is the matrix that contains the stationary weights
         i, j = df.get_pid()
 
         # periperals kernels
-        with allo.meta_if(i == 0):
-            for n in range(N):
-                fifo_B[i + 1, j].put(B[j, n])
+        with allo.meta_if(j == 0):
+            for m in range(M):
+                fifo_A[i, j + 1].put(A[m, i])
 
         # drain
-        with allo.meta_elif(i == M + 1):
-            for n in range(N):
-                fifo_B[i, j].get()
+        with allo.meta_elif(j == N + 1):
+            for m in range(M):
+                fifo_A[i, j].get()
 
         # compute
-        # There are three cases: j == 0, j == K - 1, and the rest
-        with allo.meta_elif(j == 0):
+        # There are three cases: i == 0, i == K - 1, and the rest
+        with allo.meta_elif(i == 0):
             # Does not take partial sum from the previous PE
-            for n in range(N):
-                a: float32 = A[i - 1, j]
-                b = fifo_B[i, j].get()
-                fifo_A[i, j + 1].put(a * b)
-                fifo_B[i + 1, j].put(b)
-        with allo.meta_elif(j == K - 1):
+            b: float32 = B[i, j - 1]
+            for m in range(M):
+                a = fifo_A[i, j].get()
+                fifo_A[i, j + 1].put(a)
+                fifo_B[i + 1, j].put(a * b)
+        with allo.meta_elif(i == K - 1):
             # Does not keep passing the partial sum to the next PE
             # Concludes the computation and writes to the output
-            for n in range(N):
-                partial_sum = fifo_A[i, j].get()
-                a: float32 = A[i - 1, j]
-                b = fifo_B[i, j].get()
-                C[i - 1, n] = partial_sum + a * b
-                fifo_B[i + 1, j].put(b)
+            b: float32 = B[i, j - 1]
+            for m in range(M):
+                partial_sum = fifo_B[i, j].get()
+                a = fifo_A[i, j].get()
+                C[m, j - 1] = partial_sum + a * b
+                fifo_A[i, j + 1].put(a)
         with allo.meta_else():
             # Continues the computation
-            for n in range(N):
-                partial_sum = fifo_A[i, j].get()
-                a: float32 = A[i - 1, j]
-                b = fifo_B[i, j].get()
-                fifo_A[i, j + 1].put(partial_sum + a * b)
-                fifo_B[i + 1, j].put(b)
+            b: float32 = B[i, j - 1]
+            for m in range(M):
+                partial_sum = fifo_B[i, j].get()
+                a = fifo_A[i, j].get()
+                fifo_A[i, j + 1].put(a)
+                fifo_B[i + 1, j].put(partial_sum + a * b)
 
 
 def test_systolic():
