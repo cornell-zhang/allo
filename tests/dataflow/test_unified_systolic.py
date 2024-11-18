@@ -6,7 +6,6 @@ from allo.ir.types import int32, bool
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
-import pytest
 
 M, N, K = 4, 4, 4
 Rt, Ct = 2, 2
@@ -22,7 +21,7 @@ def top():
     inst_chain = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P0 - 1, P1))
 
     @df.kernel(mapping=[P0, P1])
-    def gemm(A: int32[M, K], B: int32[K, N], inst: bool[1], C: int32[M, N]):
+    def gemm(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
 
         i, j = df.get_pid()
 
@@ -30,7 +29,7 @@ def top():
         # Decode and Dispatch
 
         with allo.meta_if(i == 0 and j == 0):
-            tag: bool = inst[0]
+            tag: bool = inst
             inst_broad[j].put(tag)
             inst_chain[i, j].put(tag)
 
@@ -124,32 +123,26 @@ def test_unified_systolic():
     A = np.random.randint(-8, 8, (M, K)).astype(np.int32)
     B = np.random.randint(-8, 8, (K, N)).astype(np.int32)
 
-    A_flat = A.flatten()
-    B_flat = B.flatten()
-
     C = np.zeros((M, N), dtype=np.int32)
-    C_flat = C.flatten()
 
-    flowtag: bool = False
-    insts = [flowtag]
+    flowtag1: bool = False
     if hls.is_available("vitis_hls"):
         mod = df.build(top)
-        mod(A_flat, B_flat, insts, C_flat)
-        print(C_flat)
-        C_tru = np.dot(A, B).flatten()
-        print(C_tru)
-        np.testing.assert_allclose(C_flat, C_tru, atol=1e-5)
+        mod(A, B, flowtag1, C)
+        print(C)
+        C_truth = np.dot(A, B)
+        print(C_truth)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Weight-stationary Mode Passed!")
 
-    flowtag: bool = True
-    insts = [flowtag]
+    flowtag2: bool = True
     if hls.is_available("vitis_hls"):
         mod = df.build(top)
-        mod(A_flat, B_flat, insts, C_flat)
-        print(C_flat)
-        C_tru = np.dot(A, B).flatten()
-        print(C_tru)
-        np.testing.assert_allclose(C_flat, C_tru, atol=1e-5)
+        mod(A, B, flowtag2, C)
+        print(C)
+        C_truth = np.dot(A, B)
+        print(C_truth)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Output-stationary Mode Passed!")
 
 
