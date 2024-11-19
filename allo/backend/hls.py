@@ -296,8 +296,7 @@ class HLSModule:
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
-                    "csyn",
-                    "sw_emu",
+                    "fast_hw_emu",
                     "hw_emu",
                     "hw",
                 }, "Invalid mode"
@@ -482,10 +481,6 @@ class HLSModule:
             return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
-            if self.mode == "csim":
-                raise RuntimeError("Csim for tapa is not supported")
-            if self.mode == "csyn":
-                raise RuntimeError("Csyn for tapa is not supported")
             # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
             # prepare data
@@ -498,6 +493,16 @@ class HLSModule:
                     f"{self.project}/input{i}.data",
                 )
             # check if the build folder exists
+            if self.mode in {"csim", "fast_hw_emu"}:
+                cmd = (
+                    f"cd {self.project}; make {self.mode}"
+                )
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run tapa executable")
+                return
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
             if not os.path.exists(
                 os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")

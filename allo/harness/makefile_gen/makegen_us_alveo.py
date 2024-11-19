@@ -37,7 +37,7 @@ def create_params(target, data):
     target.write(
         "############################## Setting up Project Variables ##############################\n"
     )
-    target.write("TARGET := hw\n")
+    target.write("TARGET := fast_hw_emu\n")
     target.write("VPP_LDFLAGS :=\n")
     target.write("include ./utils.mk\n")
     target.write("\n")
@@ -538,13 +538,20 @@ def mk_run(target, data, platform):
     target.write(
         "############################## Setting Essential Checks and Running Rules ##############################\n"
     )
+    
+    if platform == "tapa":
+        target.write("csim: $(TAPA_EXECUTABLE)\n")
+        target.write("\t$(TAPA_EXECUTABLE)\n")
+        target.write("\n")
+        
+        target.write("fast_hw_emu: $(TAPA_EXECUTABLE) $(TEMP_DIR)/top.xo")
+        target.write("\n")
+        target.write("\t$(TAPA_EXECUTABLE) --bitstream=$(TEMP_DIR)/top.xo")
+        target.write("\n\n")
 
     target.write("run: all\n")
     if platform == "tapa":
-        target.write("ifeq ($(TARGET), sw_emu)\n")
-        target.write("\t$(TAPA_EXECUTABLE)\n")
-        # TODO: can be another way for hw_emu
-        target.write("else ifeq ($(TARGET), hw_emu)\n")
+        target.write("ifeq ($(TARGET), hw_emu)\n")
         target.write("\tcp -rf $(EMCONFIG_DIR)/emconfig.json .\n")
         target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
         if "launch" in data:
@@ -598,10 +605,7 @@ def mk_run(target, data, platform):
         target.write(" $(TAPA_EXECUTABLE)")
     target.write("\n")
     if platform == "tapa":
-        target.write("ifeq ($(TARGET), sw_emu)\n")
-        target.write("\t$(TAPA_EXECUTABLE)\n")
-        # TODO: can be another way for hw_emu
-        target.write("else ifeq ($(TARGET), hw_emu)\n")
+        target.write("ifeq ($(TARGET), hw_emu)\n")
         target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
         if "launch" in data:
             if "cmd_args" in data["launch"][0]:
