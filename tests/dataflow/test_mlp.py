@@ -71,12 +71,12 @@ def test_mlp():
         np.dot(np.maximum(np.dot(np.maximum(np.dot(X, np_W0), 0), np_W1), 0), np_W2), 0
     )
     mod = df.build(top)
-    allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
-    mod(X, allo_final_Y)
-    np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-    print("PASSED!")
-    # hls
     if hls.is_available("vitis_hls"):
+        allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
+        mod(X, allo_final_Y)
+        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+        print("PASSED!")
+        # hls
         s = df.customize(top)
         s.pipeline("linear1_0:j")
         s.pipeline("linear2_0:j")

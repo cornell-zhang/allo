@@ -98,9 +98,12 @@ def move_stream_to_interface(s):
     return stream_info
 
 
-def remove_unused_func_ops(s):
+def remove_unused_func_ops(s, func_names):
     for func_op in s.module.body.operations:
-        if not isinstance(func_op, func_d.FuncOp):
+        if not (
+            isinstance(func_op, func_d.FuncOp)
+            and func_op.attributes["sym_name"] in func_names
+        ):
             continue
         blocks = func_op.body.blocks
         if (
@@ -126,7 +129,7 @@ def _build_top(s, stream_info):
         print("Error: failed to run MLIR lower pipeline, printing module...")
         print(s.module)
         raise e
-    remove_unused_func_ops(s)
+    remove_unused_func_ops(s, stream_info.keys())
 
     # create argument mapping
     funcs = get_all_funcs_except_top(s)
@@ -152,6 +155,7 @@ def _build_top(s, stream_info):
         ):
             top_func = func
             break
+    assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
         func_type = FunctionType.get(input_types, [])
