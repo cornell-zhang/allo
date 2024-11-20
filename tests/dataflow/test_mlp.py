@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from allo.ir.types import float32
+from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -25,8 +26,10 @@ def top():
     def linear1(X: Ty[BS, M0]):
         # BS*M0 * M0*M1 = BS*M1
         W0: Ty[M0, M1] = np_W0
+        buf: Ty[M1]
         for i in range(BS):
-            buf: Ty[M1] = 0
+            for j_init in range(M1):
+                buf[j_init] = 0
             for k in range(M0):
                 # reorder reduction loop outside, and pipeline
                 x: Ty = X[i, k]
@@ -40,8 +43,10 @@ def top():
     def linear2():
         # BS*M1 * M1*M2 = BS*M2
         W1: Ty[M1, M2] = np_W1
+        buf: Ty[M2]
         for i in range(BS):
-            buf: Ty[M2] = 0
+            for j_init in range(M2):
+                buf[j_init] = 0
             for k in range(M1):
                 # reorder reduction loop outside, and pipeline
                 x: Ty = Z0.get()
@@ -54,8 +59,10 @@ def top():
     def linear3(Z2: Ty[BS, NUM_CLASSES]):
         # BS*M2 * M2*NUM_CLASSES = BS*NUM_CLASSES
         W2: Ty[M2, NUM_CLASSES] = np_W2
+        buf: Ty[NUM_CLASSES]
         for i in range(BS):
-            buf: Ty[NUM_CLASSES] = 0
+            for j_init in range(NUM_CLASSES):
+                buf[j_init] = 0
             for k in range(M2):
                 # reorder reduction loop outside, and pipeline
                 x: Ty = Z1.get()
@@ -65,24 +72,36 @@ def top():
                 Z2[i, j_back] = max(buf[j_back], 0)
 
 
+def schedule_linear(s, lid, factor=4):
+    s.pipeline(f"linear{lid}_0:j")
+    s.pipeline(f"linear{lid}_0:j_init")
+    s.pipeline(f"linear{lid}_0:j_back")
+    s.unroll(f"linear{lid}_0:j", factor=factor)
+    s.unroll(f"linear{lid}_0:j_init", factor=factor)
+    # s.unroll(f"linear{lid}_0:j_back", factor=factor)
+    s.partition(
+        MockBuffer(f"linear{lid}_0", "buf"), dim=0, partition_type=2, factor=factor
+    )
+
+
 def test_mlp():
     X = np.random.rand(BS, M0).astype(np.float32)
     Y = np.maximum(
         np.dot(np.maximum(np.dot(np.maximum(np.dot(X, np_W0), 0), np_W1), 0), np_W2), 0
     )
-    mod = df.build(top)
+    s = df.customize(top)
+    schedule_linear(s, 1, factor=4)
+    schedule_linear(s, 2, factor=4)
+    schedule_linear(s, 3, factor=1)
+    print(s.module)
     if hls.is_available("vitis_hls"):
         allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
+        mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
         mod(X, allo_final_Y)
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
         print("PASSED!")
         # hls
-        s = df.customize(top)
-        s.pipeline("linear1_0:j")
-        s.pipeline("linear2_0:j")
-        s.pipeline("linear3_0:j")
-        print(s.module)
-        mod = s.build(target="vitis_hls", mode="hw", project="df-mlp3-relu-on-chip.prj")
+        mod = s.build(target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll.prj")
         mod(X, allo_final_Y)
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
 
