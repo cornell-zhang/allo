@@ -82,10 +82,9 @@ def test_mlp():
         s.pipeline("linear2_0:j")
         s.pipeline("linear3_0:j")
         print(s.module)
-        mod = s.build(
-            target="vitis_hls", mode="csyn", project="df-mlp3-relu-on-chip.prj"
-        )
-        mod()
+        mod = s.build(target="vitis_hls", mode="hw", project="df-mlp3-relu-on-chip.prj")
+        mod(X, allo_final_Y)
+        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
 
 
 if __name__ == "__main__":
