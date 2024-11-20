@@ -102,7 +102,7 @@ def remove_unused_func_ops(s, func_names):
     for func_op in s.module.body.operations:
         if not (
             isinstance(func_op, func_d.FuncOp)
-            and func_op.attributes["sym_name"] in func_names
+            and func_op.attributes["sym_name"].value in func_names
         ):
             continue
         blocks = func_op.body.blocks
