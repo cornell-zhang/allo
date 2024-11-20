@@ -14,7 +14,7 @@ from ._mlir.ir import (
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize
+from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
@@ -99,8 +99,12 @@ def move_stream_to_interface(s):
 
 
 def remove_unused_func_ops(s, func_names):
-    for i in range(len(func_names) - 1, -1, -1):
-        func_op = s.module.body.operations[i]
+    for func_op in s.module.body.operations:
+        if not (
+            isinstance(func_op, func_d.FuncOp)
+            and func_op.attributes["sym_name"].value in func_names
+        ):
+            continue
         blocks = func_op.body.blocks
         if (
             len(blocks) == 1
@@ -151,6 +155,7 @@ def _build_top(s, stream_info):
         ):
             top_func = func
             break
+    assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
         func_type = FunctionType.get(input_types, [])
@@ -218,19 +223,25 @@ def region():
     return actual_decorator
 
 
-def build(func, target="vitis_hls", mode="csim", project="top.prj"):
+def customize(func):
     global_vars = get_global_vars(func)
-    s = customize(func, global_vars=global_vars)
+    s = _customize(func, global_vars=global_vars)
+    stream_info = move_stream_to_interface(s)
+    s = _build_top(s, stream_info)
+    print(s.module)
+    return s
+
+
+def build(func, target="vitis_hls", mode="csim", project="top.prj"):
     if target == "aie":
+        global_vars = get_global_vars(func)
+        s = _customize(func, global_vars=global_vars)
         mapping = func.mapping
-        print(s.module)
         mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
     # FPGA backend
-    stream_info = move_stream_to_interface(s)
-    s = _build_top(s, stream_info)
-    print(s.module)
+    s = customize(func)
     hls_mod = s.build(
         target=target,
         mode=mode,
