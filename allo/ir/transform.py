@@ -379,8 +379,6 @@ def create_buffer_load(tensors, name, ip, flatten=False, mapping=None):
                 affine_attr,
             )
 
-    return
-
 
 def create_buffer_store(tensors, name, ip, flatten=False, mapping=None):
 
@@ -457,8 +455,6 @@ def create_buffer_store(tensors, name, ip, flatten=False, mapping=None):
                 induction_vars,
                 affine_attr,
             )
-
-    return
 
 
 def create_data_movement(
@@ -549,8 +545,6 @@ def create_data_movement(
                 induction_vars,
                 affine_attr,
             )
-
-    return
 
 
 def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):

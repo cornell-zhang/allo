@@ -341,7 +341,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
             # Build Function
             func_type = FunctionType.get(input_types, [])
-            func_name = f"store_res"
+            func_name = "store_res"
             func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
             store_func_names.append(func_name)
 
@@ -359,7 +359,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 create_data_movement(
                     func_op.arguments,
-                    f"store_res",
+                    "store_res",
                     ip=ip_store,
                     from_memory=False,
                     flatten=flatten,
@@ -407,7 +407,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     new_in_types.append(arg.type)
 
                 # Build CallOp for buffer loading
-                call_op = func_d.CallOp(
+                func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(load_func_names[ind_arg]),
                     [arg, alloc_op.result],
@@ -441,7 +441,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 new_out_types.append(alloc_op.result.type)
 
                 # Build CallOp for buffer loading
-                call_op = func_d.CallOp(
+                func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(store_func_names[ind_res]),
                     [arg, alloc_op.result],
@@ -450,9 +450,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
         else:  # The last argument is set as return value by default
             # Build CallOp for buffer loading
-            call_op = func_d.CallOp(
+            func_d.CallOp(
                 [],
-                FlatSymbolRefAttr.get(f"store_res"),
+                FlatSymbolRefAttr.get("store_res"),
                 [last_buf, top_func.arguments[-1]],
                 ip=ip_return,
             )

@@ -19,11 +19,6 @@ from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
 
-from .passes import (
-    generate_input_output_buffers,
-    generate_input_output_buffers_bk,
-)
-
 
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
@@ -133,8 +128,6 @@ def _build_top(s, stream_info):
     except Exception as e:
         print("Error: failed to run MLIR lower pipeline, printing module...")
         print(s.module)
-        with open("top_err.mlir", "w") as f:
-            print(s.module, file=f)
         raise e
     remove_unused_func_ops(s, stream_info.keys())
 
