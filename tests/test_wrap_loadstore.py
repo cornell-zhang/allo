@@ -37,17 +37,22 @@ def test_wrap_void():
 
 def test_wrap_nonvoid():
     M, N = 4, 4
+
     def matrix_add(A: float32[M, N]) -> float32[M, N]:
         B: float32[M, N]
         for i, j in allo.grid(M, N, name="PE"):
             B[i, j] = A[i, j] + 1
         return B
+
     s = allo.customize(matrix_add)
 
     if hls.is_available("vitis_hls"):
         mod = s.build(target="vitis_hls", mode="csim")
-        assert f"func.func @matrix_add(%arg0: memref<16xf32>) -> memref<16xf32>" in str(mod.module)
+        assert f"func.func @matrix_add(%arg0: memref<16xf32>) -> memref<16xf32>" in str(
+            mod.module
+        )
         print("Passed!")
+
 
 if __name__ == "__main__":
     test_wrap_void()

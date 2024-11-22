@@ -178,14 +178,13 @@ class HLSModule:
                     mappings = configs.get("mappings", None)
                 else:
                     mappings = None
-                
+
                 # generate_input_output_buffers_bk(self.func, flatten=True)
 
                 generate_input_output_buffers(self.module, top_func_name, flatten=True)
-                with open('debug.mlir', 'w') as f:
+                with open("debug.mlir", "w") as f:
                     print(self.module, file=f)
                     print("Done!!")
-
 
                 # TODO: Fix dataflow!
                 # if "dataflow" in self.func.attributes:

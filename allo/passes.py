@@ -31,6 +31,7 @@ from ._mlir.dialects import (
 from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer, store_tensor, find_func_in_module
+
 # from .ir.transform import create_buffer_load, create_buffer_store
 from .ir.transform import create_data_movement
 from .ir.utils import MockBuffer, get_extra_type_hints
@@ -185,10 +186,10 @@ def generate_input_output_buffers_bk(top_func, flatten=False, mappings=None):
 def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
     res = {"inputs": [], "outputs": []}
     top_func = find_func_in_module(module, top_func_name)
-    
+
     if mappings is None:
         mappings = [None] * len(top_func.arguments)
-    
+
     # Build Buffer-Load functions
     load_func_names = []
     with module.context, Location.unknown():
@@ -198,19 +199,21 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             if not isinstance(arg.type, MemRefType):
                 load_func_names.append("")
                 continue
-            
+
             # Build input types
             input_types = []
             shape = MemRefType(arg.type).shape
             if not flatten:
                 type_in = MemRefType.get(shape, MemRefType(arg.type).element_type)
             else:
-                type_in = MemRefType.get((np.prod(shape),), MemRefType(arg.type).element_type)
+                type_in = MemRefType.get(
+                    (np.prod(shape),), MemRefType(arg.type).element_type
+                )
             input_types.append(type_in)
-            
+
             type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
             input_types.append(type_buf)
-            
+
             # Build Function
             func_type = FunctionType.get(input_types, [])
             func_name = f"load_buf{ind_arg}"
@@ -233,32 +236,33 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     continue
 
                 # create_buffer_load(
-                #     func_op.arguments, f"load_buf{ind_arg}", 
-                #     ip=ip_load, 
+                #     func_op.arguments, f"load_buf{ind_arg}",
+                #     ip=ip_load,
                 #     flatten=flatten, mapping=mappings[ind_arg]
                 # )
                 create_data_movement(
-                    func_op.arguments, f"load_buf{ind_arg}", 
-                    ip=ip_load, 
+                    func_op.arguments,
+                    f"load_buf{ind_arg}",
+                    ip=ip_load,
                     from_memory=True,
-                    flatten=flatten, mapping=mappings[ind_arg]
+                    flatten=flatten,
+                    mapping=mappings[ind_arg],
                 )
 
             func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
-
 
     # Find ReturnOp
     for op in top_func.entry_block.operations:
         if isinstance(op, func_d.ReturnOp):
             op_return = op
             break
-    
+
     # Build Buffer-Store functions
     store_func_names = []
     with module.context, Location.unknown():
         if len(mappings) < len(op_return.operands) + len(top_func.arguments):
             mappings += [None] * len(op_return.operands)
-        if len(op_return.operands) > 0: # Return value exist
+        if len(op_return.operands) > 0:  # Return value exist
             ip = InsertionPoint(top_func)
             for ind_res, arg in enumerate(op_return.operands):
                 if not isinstance(arg.type, MemRefType):
@@ -268,14 +272,16 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 # Build input types
                 input_types = []
                 shape = MemRefType(arg.type).shape
-                
+
                 type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
                 input_types.append(type_buf)
-                
+
                 if not flatten:
                     type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
                 else:
-                    type_out = MemRefType.get((np.prod(shape),), MemRefType(arg.type).element_type)
+                    type_out = MemRefType.get(
+                        (np.prod(shape),), MemRefType(arg.type).element_type
+                    )
                 input_types.append(type_out)
 
                 # Build Function
@@ -300,33 +306,37 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                         continue
 
                     # create_buffer_store(
-                    #     func_op.arguments, f"store_res{ind_res}", 
-                    #     ip=ip_store, 
+                    #     func_op.arguments, f"store_res{ind_res}",
+                    #     ip=ip_store,
                     #     flatten=flatten, mapping=mappings[ind_res]
                     # )
                     create_data_movement(
-                        func_op.arguments, f"store_res{ind_res}", 
-                        ip=ip_store, 
-                        from_memory= False,
-                        flatten=flatten, mapping=mappings[ind_res]
+                        func_op.arguments,
+                        f"store_res{ind_res}",
+                        ip=ip_store,
+                        from_memory=False,
+                        flatten=flatten,
+                        mapping=mappings[ind_res],
                     )
 
                 func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
-        else: # The last argument is set as return value by default
+        else:  # The last argument is set as return value by default
             ip = InsertionPoint(top_func)
             arg = top_func.arguments[-1]
             # Build input types
             input_types = []
             shape = MemRefType(arg.type).shape
-            
+
             type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
             input_types.append(type_buf)
-            
+
             if not flatten:
                 type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
             else:
-                type_out = MemRefType.get((np.prod(shape),), MemRefType(arg.type).element_type)
+                type_out = MemRefType.get(
+                    (np.prod(shape),), MemRefType(arg.type).element_type
+                )
             input_types.append(type_out)
 
             # Build Function
@@ -348,29 +358,30 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 ip_store = InsertionPoint(func_op.entry_block)
 
                 create_data_movement(
-                    func_op.arguments, f"store_res", 
-                    ip=ip_store, 
+                    func_op.arguments,
+                    f"store_res",
+                    ip=ip_store,
                     from_memory=False,
-                    flatten=flatten, mapping=mappings[-1]
+                    flatten=flatten,
+                    mapping=mappings[-1],
                 )
 
             func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
-            
 
     # Modify Top function
     with top_func.context, Location.unknown():
         ip_first = InsertionPoint(top_func.entry_block.operations[0])
-        
+
         # Modify Loading
         new_in_types = []
-        last_buf = None # For Default Storing
+        last_buf = None  # For Default Storing
         with ip_first:
             for ind_arg, arg in enumerate(top_func.arguments):
                 # Process non-MemRefType
                 if not isinstance(arg.type, MemRefType):
                     new_in_types.append(arg.type)
                     continue
-                
+
                 # Build AllocOP for buffer
                 alloc_op = memref_d.AllocOp(
                     MemRefType.get(
@@ -391,25 +402,24 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                         old_memref.element_type,
                     )
                     arg.set_type(new_memref)
-                    new_in_types.append(new_memref) 
+                    new_in_types.append(new_memref)
                 else:
-                    new_in_types.append(arg.type)               
+                    new_in_types.append(arg.type)
 
                 # Build CallOp for buffer loading
                 call_op = func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(load_func_names[ind_arg]),
-                    [arg, alloc_op.result]
+                    [arg, alloc_op.result],
                 )
 
                 # Update last argument
                 last_buf = alloc_op.result
 
-        
         # Modify Storing
         new_out_types = []
         ip_return = InsertionPoint(op_return)
-        if len(op_return.operands) > 0: # Return Value Exist
+        if len(op_return.operands) > 0:  # Return Value Exist
             for ind_res, arg in enumerate(op_return.operands):
                 # Process non-MemRefType
                 if not isinstance(arg.type, MemRefType):
@@ -417,10 +427,13 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Build AllocOP for buffer
                 alloc_op = memref_d.AllocOp(
-                    MemRefType.get((np.prod(MemRefType(arg.type).shape),), MemRefType(arg.type).element_type),
+                    MemRefType.get(
+                        (np.prod(MemRefType(arg.type).shape),),
+                        MemRefType(arg.type).element_type,
+                    ),
                     [],
                     [],
-                    ip=ip_first
+                    ip=ip_first,
                 )
 
                 # Update returnop
@@ -432,23 +445,20 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     [],
                     FlatSymbolRefAttr.get(store_func_names[ind_res]),
                     [arg, alloc_op.result],
-                    ip = ip_return
+                    ip=ip_return,
                 )
-        
-        else: # The last argument is set as return value by default
+
+        else:  # The last argument is set as return value by default
             # Build CallOp for buffer loading
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(f"store_res"),
                 [last_buf, top_func.arguments[-1]],
-                ip = ip_return
+                ip=ip_return,
             )
-
 
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
-
-
 
     # with top_func.context, Location.unknown():
     #     first_op = top_func.entry_block.operations[0]
@@ -516,7 +526,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
     #             break
     #     func_type = FunctionType.get(new_in_types, new_out_types)
     #     top_func.attributes["function_type"] = TypeAttr.get(func_type)
-    
+
     return res
 
 
