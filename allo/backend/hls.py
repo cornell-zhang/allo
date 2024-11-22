@@ -29,6 +29,7 @@ from ..passes import (
     _mlir_lower_pipeline,
     decompose_library_function,
     generate_input_output_buffers,
+    generate_input_output_buffers_bk,
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
@@ -177,10 +178,15 @@ class HLSModule:
                     mappings = configs.get("mappings", None)
                 else:
                     mappings = None
-                # buffers = generate_input_output_buffers(
-                generate_input_output_buffers(
-                    self.func, flatten=True, mappings=mappings
-                )
+                
+                # generate_input_output_buffers_bk(self.func, flatten=True)
+
+                generate_input_output_buffers(self.module, top_func_name, flatten=True)
+                with open('debug.mlir', 'w') as f:
+                    print(self.module, file=f)
+                    print("Done!!")
+
+
                 # TODO: Fix dataflow!
                 # if "dataflow" in self.func.attributes:
                 #     assert func_args is not None, "Need to specify func_args"
