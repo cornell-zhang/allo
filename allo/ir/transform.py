@@ -551,7 +551,7 @@ def create_data_movement(
 def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
     # Build input types
     shape = MemRefType(arg.type).shape
-    
+
     if not flatten:
         type_flatten = MemRefType.get(shape, MemRefType(arg.type).element_type)
     else:

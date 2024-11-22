@@ -202,8 +202,15 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             else:
                 func_name = f"load_buf{ind_arg}"
                 load_func_names.append(func_name)
-            
-            wrap_data_movement(arg, ip, func_name, from_memory=True, flatten=flatten, mapping=mappings[ind_arg])
+
+            wrap_data_movement(
+                arg,
+                ip,
+                func_name,
+                from_memory=True,
+                flatten=flatten,
+                mapping=mappings[ind_arg],
+            )
 
             # # Build input types
             # input_types = []
@@ -271,8 +278,15 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 else:
                     func_name = f"store_res{ind_res}"
                     store_func_names.append(func_name)
-                
-                wrap_data_movement(res, ip, func_name, from_memory=False, flatten=flatten, mapping=mappings[ind_res])
+
+                wrap_data_movement(
+                    res,
+                    ip,
+                    func_name,
+                    from_memory=False,
+                    flatten=flatten,
+                    mapping=mappings[ind_res],
+                )
 
                 # # Build input types
                 # input_types = []
@@ -326,9 +340,16 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             arg = top_func.arguments[-1]
             func_name = "store_res"
             store_func_names.append(func_name)
-            
-            wrap_data_movement(arg, ip, func_name, from_memory=False, flatten=flatten, mapping=mappings[-1])
-            
+
+            wrap_data_movement(
+                arg,
+                ip,
+                func_name,
+                from_memory=False,
+                flatten=flatten,
+                mapping=mappings[-1],
+            )
+
             # # Build input types
             # input_types = []
             # shape = MemRefType(arg.type).shape
