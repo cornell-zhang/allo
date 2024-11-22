@@ -4,6 +4,7 @@
 
 import numpy as np
 from .._mlir.ir import (
+    Location,
     UnitAttr,
     StringAttr,
     InsertionPoint,
@@ -21,7 +22,7 @@ from .._mlir.dialects import (
     scf as scf_d,
     func as func_d,
 )
-from .utils import MockArg, MockBuffer
+from .utils import MockArg, MockBuffer, get_extra_type_hints
 
 
 class LoopWrapper:
@@ -545,6 +546,48 @@ def create_data_movement(
                 induction_vars,
                 affine_attr,
             )
+
+
+def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
+    # Build input types
+    shape = MemRefType(arg.type).shape
+    
+    if not flatten:
+        type_flatten = MemRefType.get(shape, MemRefType(arg.type).element_type)
+    else:
+        type_flatten = MemRefType.get(
+            (np.prod(shape),), MemRefType(arg.type).element_type
+        )
+
+    type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+    input_types = [type_flatten, type_buf] if from_memory else [type_buf, type_flatten]
+
+    # Build Function
+    func_type = FunctionType.get(input_types, [])
+    func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
+
+    # Attach type hints
+    if hasattr(arg, "dtype"):
+        typehints = [get_extra_type_hints(arg.dtype)] * 2
+        func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+
+    # Set context
+    func_op.add_entry_block()
+
+    # Build ForOp for movement inside
+    with func_op.context, Location.unknown():
+        ip_move = InsertionPoint(func_op.entry_block)
+
+        create_data_movement(
+            func_op.arguments,
+            func_name,
+            ip=ip_move,
+            from_memory=from_memory,
+            flatten=flatten,
+            mapping=mapping,
+        )
+
+    func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
 
 def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):

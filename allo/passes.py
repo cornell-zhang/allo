@@ -33,7 +33,7 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer, store_tensor, find_func_in_module
 
 # from .ir.transform import create_buffer_load, create_buffer_store
-from .ir.transform import create_data_movement
+from .ir.transform import create_data_movement, wrap_data_movement
 from .ir.utils import MockBuffer, get_extra_type_hints
 from .utils import get_mlir_dtype_from_str
 
@@ -199,57 +199,57 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             if not isinstance(arg.type, MemRefType):
                 load_func_names.append("")
                 continue
-
-            # Build input types
-            input_types = []
-            shape = MemRefType(arg.type).shape
-            if not flatten:
-                type_in = MemRefType.get(shape, MemRefType(arg.type).element_type)
             else:
-                type_in = MemRefType.get(
-                    (np.prod(shape),), MemRefType(arg.type).element_type
-                )
-            input_types.append(type_in)
+                func_name = f"load_buf{ind_arg}"
+                load_func_names.append(func_name)
+            
+            wrap_data_movement(arg, ip, func_name, from_memory=True, flatten=flatten, mapping=mappings[ind_arg])
 
-            type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
-            input_types.append(type_buf)
+            # # Build input types
+            # input_types = []
+            # shape = MemRefType(arg.type).shape
+            # if not flatten:
+            #     type_in = MemRefType.get(shape, MemRefType(arg.type).element_type)
+            # else:
+            #     type_in = MemRefType.get(
+            #         (np.prod(shape),), MemRefType(arg.type).element_type
+            #     )
+            # input_types.append(type_in)
 
-            # Build Function
-            func_type = FunctionType.get(input_types, [])
-            func_name = f"load_buf{ind_arg}"
-            func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
-            load_func_names.append(func_name)
+            # type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+            # input_types.append(type_buf)
 
-            # Attach type hints
-            if hasattr(arg, "dtype"):
-                typehints = [get_extra_type_hints(arg.dtype)] * 2
-                func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+            # # Build Function
+            # func_type = FunctionType.get(input_types, [])
+            # func_name = f"load_buf{ind_arg}"
+            # func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
+            # load_func_names.append(func_name)
 
-            # Set context
-            func_op.add_entry_block()
+            # # Attach type hints
+            # if hasattr(arg, "dtype"):
+            #     typehints = [get_extra_type_hints(arg.dtype)] * 2
+            #     func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
 
-            # Build ForOp for movement inside
-            with func_op.context, Location.unknown():
-                ip_load = InsertionPoint(func_op.entry_block)
+            # # Set context
+            # func_op.add_entry_block()
 
-                if not isinstance(arg.type, MemRefType):
-                    continue
+            # # Build ForOp for movement inside
+            # with func_op.context, Location.unknown():
+            #     ip_load = InsertionPoint(func_op.entry_block)
 
-                # create_buffer_load(
-                #     func_op.arguments, f"load_buf{ind_arg}",
-                #     ip=ip_load,
-                #     flatten=flatten, mapping=mappings[ind_arg]
-                # )
-                create_data_movement(
-                    func_op.arguments,
-                    f"load_buf{ind_arg}",
-                    ip=ip_load,
-                    from_memory=True,
-                    flatten=flatten,
-                    mapping=mappings[ind_arg],
-                )
+            #     if not isinstance(arg.type, MemRefType):
+            #         continue
 
-            func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
+            #     create_data_movement(
+            #         func_op.arguments,
+            #         f"load_buf{ind_arg}",
+            #         ip=ip_load,
+            #         from_memory=True,
+            #         flatten=flatten,
+            #         mapping=mappings[ind_arg],
+            #     )
+
+            # func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
     # Find ReturnOp
     for op in top_func.entry_block.operations:
@@ -264,109 +264,114 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             mappings += [None] * len(op_return.operands)
         if len(op_return.operands) > 0:  # Return value exist
             ip = InsertionPoint(top_func)
-            for ind_res, arg in enumerate(op_return.operands):
-                if not isinstance(arg.type, MemRefType):
+            for ind_res, res in enumerate(op_return.operands):
+                if not isinstance(res.type, MemRefType):
                     store_func_names.append("")
                     continue
-
-                # Build input types
-                input_types = []
-                shape = MemRefType(arg.type).shape
-
-                type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
-                input_types.append(type_buf)
-
-                if not flatten:
-                    type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
                 else:
-                    type_out = MemRefType.get(
-                        (np.prod(shape),), MemRefType(arg.type).element_type
-                    )
-                input_types.append(type_out)
+                    func_name = f"store_res{ind_res}"
+                    store_func_names.append(func_name)
+                
+                wrap_data_movement(res, ip, func_name, from_memory=False, flatten=flatten, mapping=mappings[ind_res])
 
-                # Build Function
-                func_type = FunctionType.get(input_types, [])
-                func_name = f"store_res{ind_res}"
-                func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
-                store_func_names.append(func_name)
+                # # Build input types
+                # input_types = []
+                # shape = MemRefType(arg.type).shape
 
-                # Attach type hints
-                if hasattr(arg, "dtype"):
-                    typehints = [get_extra_type_hints(arg.dtype)] * 2
-                    func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+                # type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+                # input_types.append(type_buf)
 
-                # Set context
-                func_op.add_entry_block()
+                # if not flatten:
+                #     type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
+                # else:
+                #     type_out = MemRefType.get(
+                #         (np.prod(shape),), MemRefType(arg.type).element_type
+                #     )
+                # input_types.append(type_out)
 
-                # Build ForOp for movement inside
-                with func_op.context, Location.unknown():
-                    ip_store = InsertionPoint(func_op.entry_block)
+                # # Build Function
+                # func_type = FunctionType.get(input_types, [])
+                # func_name = f"store_res{ind_res}"
+                # func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
+                # store_func_names.append(func_name)
 
-                    if not isinstance(arg.type, MemRefType):
-                        continue
+                # # Attach type hints
+                # if hasattr(arg, "dtype"):
+                #     typehints = [get_extra_type_hints(arg.dtype)] * 2
+                #     func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
 
-                    # create_buffer_store(
-                    #     func_op.arguments, f"store_res{ind_res}",
-                    #     ip=ip_store,
-                    #     flatten=flatten, mapping=mappings[ind_res]
-                    # )
-                    create_data_movement(
-                        func_op.arguments,
-                        f"store_res{ind_res}",
-                        ip=ip_store,
-                        from_memory=False,
-                        flatten=flatten,
-                        mapping=mappings[ind_res],
-                    )
+                # # Set context
+                # func_op.add_entry_block()
 
-                func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
+                # # Build ForOp for movement inside
+                # with func_op.context, Location.unknown():
+                #     ip_store = InsertionPoint(func_op.entry_block)
+
+                #     if not isinstance(arg.type, MemRefType):
+                #         continue
+
+                #     create_data_movement(
+                #         func_op.arguments,
+                #         f"store_res{ind_res}",
+                #         ip=ip_store,
+                #         from_memory=False,
+                #         flatten=flatten,
+                #         mapping=mappings[ind_res],
+                #     )
+
+                # func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
         else:  # The last argument is set as return value by default
             ip = InsertionPoint(top_func)
             arg = top_func.arguments[-1]
-            # Build input types
-            input_types = []
-            shape = MemRefType(arg.type).shape
-
-            type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
-            input_types.append(type_buf)
-
-            if not flatten:
-                type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
-            else:
-                type_out = MemRefType.get(
-                    (np.prod(shape),), MemRefType(arg.type).element_type
-                )
-            input_types.append(type_out)
-
-            # Build Function
-            func_type = FunctionType.get(input_types, [])
             func_name = "store_res"
-            func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
             store_func_names.append(func_name)
+            
+            wrap_data_movement(arg, ip, func_name, from_memory=False, flatten=flatten, mapping=mappings[-1])
+            
+            # # Build input types
+            # input_types = []
+            # shape = MemRefType(arg.type).shape
 
-            # Attach type hints
-            if hasattr(arg, "dtype"):
-                typehints = [get_extra_type_hints(arg.dtype)] * 2
-                func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+            # type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+            # input_types.append(type_buf)
 
-            # Set context
-            func_op.add_entry_block()
+            # if not flatten:
+            #     type_out = MemRefType.get(shape, MemRefType(arg.type).element_type)
+            # else:
+            #     type_out = MemRefType.get(
+            #         (np.prod(shape),), MemRefType(arg.type).element_type
+            #     )
+            # input_types.append(type_out)
 
-            # Build ForOp for movement inside
-            with func_op.context, Location.unknown():
-                ip_store = InsertionPoint(func_op.entry_block)
+            # # Build Function
+            # func_type = FunctionType.get(input_types, [])
+            # func_name = "store_res"
+            # func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
+            # store_func_names.append(func_name)
 
-                create_data_movement(
-                    func_op.arguments,
-                    "store_res",
-                    ip=ip_store,
-                    from_memory=False,
-                    flatten=flatten,
-                    mapping=mappings[-1],
-                )
+            # # Attach type hints
+            # if hasattr(arg, "dtype"):
+            #     typehints = [get_extra_type_hints(arg.dtype)] * 2
+            #     func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
 
-            func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
+            # # Set context
+            # func_op.add_entry_block()
+
+            # # Build ForOp for movement inside
+            # with func_op.context, Location.unknown():
+            #     ip_store = InsertionPoint(func_op.entry_block)
+
+            #     create_data_movement(
+            #         func_op.arguments,
+            #         "store_res",
+            #         ip=ip_store,
+            #         from_memory=False,
+            #         flatten=flatten,
+            #         mapping=mappings[-1],
+            #     )
+
+            # func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
     # Modify Top function
     with top_func.context, Location.unknown():
@@ -459,73 +464,6 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
-
-    # with top_func.context, Location.unknown():
-    #     first_op = top_func.entry_block.operations[0]
-    #     new_in_types = []
-    #     in_bufs = []
-    #     for i, arg in enumerate(top_func.arguments):
-    #         if not isinstance(arg.type, MemRefType):
-    #             new_in_types.append(arg.type)
-    #             continue
-
-    #         buf = create_buffer(
-    #             arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
-    #         )
-    #         in_bufs.append(buf)
-    #         if flatten:
-    #             old_memref = MemRefType(arg.type)
-    #             new_memref = MemRefType.get(
-    #                 (np.prod(old_memref.shape),),
-    #                 old_memref.element_type,
-    #             )
-    #             arg.set_type(new_memref)
-    #             new_in_types.append(new_memref)
-    #         else:
-    #             new_in_types.append(arg.type)
-    #         res["inputs"].append(MockBuffer(top_func_name, f"buf{i}"))
-    #     # find return op
-    #     new_out_types = []
-    #     for op in top_func.entry_block.operations:
-    #         if isinstance(op, func_d.ReturnOp):
-    #             if len(mappings) < len(op.operands) + len(top_func.arguments):
-    #                 mappings += [None] * len(op.operands)
-    #             if len(op.operands) > 0:
-    #                 for i, arg in enumerate(op.operands):
-    #                     if not isinstance(arg.type, MemRefType):
-    #                         new_out_types.append(arg.type)
-    #                         continue
-    #                     buf = create_buffer(
-    #                         arg,
-    #                         f"result{i+len(top_func.arguments)}",
-    #                         ip=op,
-    #                         alloc_ip=first_op,
-    #                         flatten=flatten,
-    #                         mapping=mappings[len(top_func.arguments) + i],
-    #                     )
-    #                     # update returnop
-    #                     op.operation.replace_uses_of_with(arg, buf.result)
-    #                     new_out_types.append(buf.result.type)
-    #                     res["outputs"].append(
-    #                         MockBuffer(
-    #                             top_func_name, arg.owner.attributes["name"].value
-    #                         )
-    #                     )
-    #             else:
-    #                 # the last argument is set as the return value by default
-    #                 store_tensor(
-    #                     in_bufs[-1].result,
-    #                     top_func.arguments[-1],
-    #                     f"result{len(top_func.arguments)}",
-    #                     ip=op,
-    #                     flatten=flatten,
-    #                 )
-    #                 res["outputs"].append(
-    #                     MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
-    #                 )
-    #             break
-    #     func_type = FunctionType.get(new_in_types, new_out_types)
-    #     top_func.attributes["function_type"] = TypeAttr.get(func_type)
 
     return res
 
