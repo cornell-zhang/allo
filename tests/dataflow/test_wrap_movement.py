@@ -33,8 +33,14 @@ def test_wrap_void():
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
         module = str(mod.module)
-        assert f"call @load_buf0(%arg0, %alloc) : (memref<1024xf32>, memref<32x32xf32>) -> ()" in module
-        assert f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()" in module
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<1024xf32>, memref<32x32xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()"
+            in module
+        )
         print("Passed!")
 
 
