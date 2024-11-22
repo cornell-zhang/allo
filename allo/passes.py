@@ -33,8 +33,8 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import create_buffer, store_tensor, find_func_in_module
 
 # from .ir.transform import create_buffer_load, create_buffer_store
-from .ir.transform import create_data_movement, wrap_data_movement
-from .ir.utils import MockBuffer, get_extra_type_hints
+from .ir.transform import wrap_data_movement
+from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
 
 
@@ -199,9 +199,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             if not isinstance(arg.type, MemRefType):
                 load_func_names.append("")
                 continue
-            else:
-                func_name = f"load_buf{ind_arg}"
-                load_func_names.append(func_name)
+
+            func_name = f"load_buf{ind_arg}"
+            load_func_names.append(func_name)
 
             wrap_data_movement(
                 arg,
@@ -275,9 +275,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 if not isinstance(res.type, MemRefType):
                     store_func_names.append("")
                     continue
-                else:
-                    func_name = f"store_res{ind_res}"
-                    store_func_names.append(func_name)
+
+                func_name = f"store_res{ind_res}"
+                store_func_names.append(func_name)
 
                 wrap_data_movement(
                     res,
