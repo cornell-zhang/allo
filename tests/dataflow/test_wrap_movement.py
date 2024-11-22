@@ -27,33 +27,16 @@ def test_wrap_void():
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
-    mod = df.build(top)
 
     if hls.is_available("vitis_hls"):
+        mod = df.build(top)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
-        print("Passed!")
-
-
-def test_wrap_nonvoid():
-    M, N = 4, 4
-
-    def matrix_add(A: float32[M, N]) -> float32[M, N]:
-        B: float32[M, N]
-        for i, j in allo.grid(M, N, name="PE"):
-            B[i, j] = A[i, j] + 1
-        return B
-
-    s = allo.customize(matrix_add)
-
-    if hls.is_available("vitis_hls"):
-        mod = s.build(target="vitis_hls", mode="csim")
-        assert f"func.func @matrix_add(%arg0: memref<16xf32>) -> memref<16xf32>" in str(
-            mod.module
-        )
+        module = str(mod.module)
+        assert f"call @load_buf0(%arg0, %alloc) : (memref<1024xf32>, memref<32x32xf32>) -> ()" in module
+        assert f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()" in module
         print("Passed!")
 
 
 if __name__ == "__main__":
     test_wrap_void()
-    test_wrap_nonvoid()

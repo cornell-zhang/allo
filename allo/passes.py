@@ -30,9 +30,10 @@ from ._mlir.dialects import (
 )
 from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .ir.transform import create_buffer, store_tensor, find_func_in_module
 
-# from .ir.transform import create_buffer_load, create_buffer_store
+# from .ir.transform import create_buffer, store_tensor
+
+from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
@@ -110,77 +111,77 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
-def generate_input_output_buffers_bk(top_func, flatten=False, mappings=None):
-    res = {"inputs": [], "outputs": []}
-    top_func_name = top_func.attributes["sym_name"].value
-    if mappings is None:
-        mappings = [None] * len(top_func.arguments)
-    with top_func.context, Location.unknown():
-        first_op = top_func.entry_block.operations[0]
-        new_in_types = []
-        in_bufs = []
-        for i, arg in enumerate(top_func.arguments):
-            if not isinstance(arg.type, MemRefType):
-                new_in_types.append(arg.type)
-                continue
-            buf = create_buffer(
-                arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
-            )
-            in_bufs.append(buf)
-            if flatten:
-                old_memref = MemRefType(arg.type)
-                new_memref = MemRefType.get(
-                    (np.prod(old_memref.shape),),
-                    old_memref.element_type,
-                )
-                arg.set_type(new_memref)
-                new_in_types.append(new_memref)
-            else:
-                new_in_types.append(arg.type)
-            res["inputs"].append(MockBuffer(top_func_name, f"buf{i}"))
-        # find return op
-        new_out_types = []
-        for op in top_func.entry_block.operations:
-            if isinstance(op, func_d.ReturnOp):
-                if len(mappings) < len(op.operands) + len(top_func.arguments):
-                    mappings += [None] * len(op.operands)
-                if len(op.operands) > 0:
-                    for i, arg in enumerate(op.operands):
-                        if not isinstance(arg.type, MemRefType):
-                            new_out_types.append(arg.type)
-                            continue
-                        buf = create_buffer(
-                            arg,
-                            f"result{i+len(top_func.arguments)}",
-                            ip=op,
-                            alloc_ip=first_op,
-                            flatten=flatten,
-                            mapping=mappings[len(top_func.arguments) + i],
-                        )
-                        # update returnop
-                        op.operation.replace_uses_of_with(arg, buf.result)
-                        new_out_types.append(buf.result.type)
-                        res["outputs"].append(
-                            MockBuffer(
-                                top_func_name, arg.owner.attributes["name"].value
-                            )
-                        )
-                else:
-                    # the last argument is set as the return value by default
-                    store_tensor(
-                        in_bufs[-1].result,
-                        top_func.arguments[-1],
-                        f"result{len(top_func.arguments)}",
-                        ip=op,
-                        flatten=flatten,
-                    )
-                    res["outputs"].append(
-                        MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
-                    )
-                break
-        func_type = FunctionType.get(new_in_types, new_out_types)
-        top_func.attributes["function_type"] = TypeAttr.get(func_type)
-    return res
+# def generate_input_output_buffers_bk(top_func, flatten=False, mappings=None):
+#     res = {"inputs": [], "outputs": []}
+#     top_func_name = top_func.attributes["sym_name"].value
+#     if mappings is None:
+#         mappings = [None] * len(top_func.arguments)
+#     with top_func.context, Location.unknown():
+#         first_op = top_func.entry_block.operations[0]
+#         new_in_types = []
+#         in_bufs = []
+#         for i, arg in enumerate(top_func.arguments):
+#             if not isinstance(arg.type, MemRefType):
+#                 new_in_types.append(arg.type)
+#                 continue
+#             buf = create_buffer(
+#                 arg, f"buf{i}", ip=first_op, flatten=flatten, mapping=mappings[i]
+#             )
+#             in_bufs.append(buf)
+#             if flatten:
+#                 old_memref = MemRefType(arg.type)
+#                 new_memref = MemRefType.get(
+#                     (np.prod(old_memref.shape),),
+#                     old_memref.element_type,
+#                 )
+#                 arg.set_type(new_memref)
+#                 new_in_types.append(new_memref)
+#             else:
+#                 new_in_types.append(arg.type)
+#             res["inputs"].append(MockBuffer(top_func_name, f"buf{i}"))
+#         # find return op
+#         new_out_types = []
+#         for op in top_func.entry_block.operations:
+#             if isinstance(op, func_d.ReturnOp):
+#                 if len(mappings) < len(op.operands) + len(top_func.arguments):
+#                     mappings += [None] * len(op.operands)
+#                 if len(op.operands) > 0:
+#                     for i, arg in enumerate(op.operands):
+#                         if not isinstance(arg.type, MemRefType):
+#                             new_out_types.append(arg.type)
+#                             continue
+#                         buf = create_buffer(
+#                             arg,
+#                             f"result{i+len(top_func.arguments)}",
+#                             ip=op,
+#                             alloc_ip=first_op,
+#                             flatten=flatten,
+#                             mapping=mappings[len(top_func.arguments) + i],
+#                         )
+#                         # update returnop
+#                         op.operation.replace_uses_of_with(arg, buf.result)
+#                         new_out_types.append(buf.result.type)
+#                         res["outputs"].append(
+#                             MockBuffer(
+#                                 top_func_name, arg.owner.attributes["name"].value
+#                             )
+#                         )
+#                 else:
+#                     # the last argument is set as the return value by default
+#                     store_tensor(
+#                         in_bufs[-1].result,
+#                         top_func.arguments[-1],
+#                         f"result{len(top_func.arguments)}",
+#                         ip=op,
+#                         flatten=flatten,
+#                     )
+#                     res["outputs"].append(
+#                         MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
+#                     )
+#                 break
+#         func_type = FunctionType.get(new_in_types, new_out_types)
+#         top_func.attributes["function_type"] = TypeAttr.get(func_type)
+#     return res
 
 
 def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
@@ -441,6 +442,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Update last argument
                 last_buf = alloc_op.result
+                res["inputs"].append(MockBuffer(top_func_name, f"buf{ind_arg}"))
 
         # Modify Storing
         new_out_types = []
@@ -449,18 +451,26 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             for ind_res, arg in enumerate(op_return.operands):
                 # Process non-MemRefType
                 if not isinstance(arg.type, MemRefType):
+                    new_out_types.append(arg.type)
                     continue
 
                 # Build AllocOP for buffer
-                alloc_op = memref_d.AllocOp(
-                    MemRefType.get(
+                if not flatten:
+                    store_memref = MemRefType.get(
+                        MemRefType(arg.type).shape, MemRefType(arg.type).element_type
+                    )
+                else:
+                    store_memref = MemRefType.get(
                         (np.prod(MemRefType(arg.type).shape),),
                         MemRefType(arg.type).element_type,
-                    ),
-                    [],
-                    [],
-                    ip=ip_first,
-                )
+                    )
+
+                    alloc_op = memref_d.AllocOp(
+                        store_memref,
+                        [],
+                        [],
+                        ip=ip_first,
+                    )
 
                 # Update returnop
                 op_return.operation.replace_uses_of_with(arg, alloc_op.result)
@@ -474,6 +484,10 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     ip=ip_return,
                 )
 
+                res["outputs"].append(
+                    MockBuffer(top_func_name, arg.owner.attributes["name"].value)
+                )
+
         else:  # The last argument is set as return value by default
             # Build CallOp for buffer loading
             func_d.CallOp(
@@ -481,6 +495,10 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 FlatSymbolRefAttr.get("store_res"),
                 [last_buf, top_func.arguments[-1]],
                 ip=ip_return,
+            )
+
+            res["outputs"].append(
+                MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
             )
 
         func_type = FunctionType.get(new_in_types, new_out_types)
