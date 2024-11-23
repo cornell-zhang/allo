@@ -5,6 +5,7 @@ import allo
 from allo.ir.types import float32
 import allo.dataflow as df
 import allo.backend.hls as hls
+from allo.passes import generate_input_output_buffers
 import numpy as np
 
 M, N, K = 32, 32, 32
@@ -23,16 +24,30 @@ def top():
                     C[i, j] += A[i, k] * B[k, j]
 
 
-def test_wrap_void():
+def test_wrap_void(flatten: bool):
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
 
-    if hls.is_available("vitis_hls"):
-        mod = df.build(top)
-        mod(A, B, C)
-        np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
-        module = str(mod.module)
+    s = df.customize(top)
+    generate_input_output_buffers(s.module, "top", flatten=flatten)
+    module = str(s.module)
+
+    if flatten:
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<1024xf32>, %arg1: memref<32x32xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res(%arg0: memref<32x32xf32>, %arg1: memref<1024xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert (
+            f'%alloc = memref.alloc() {{name = "buf0"}} : memref<32x32xf32>' in module
+        )
+        # Function Call
         assert (
             f"call @load_buf0(%arg0, %alloc) : (memref<1024xf32>, memref<32x32xf32>) -> ()"
             in module
@@ -41,8 +56,40 @@ def test_wrap_void():
             f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()"
             in module
         )
-        print("Passed!")
+
+    else:
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert (
+            f'%alloc = memref.alloc() {{name = "buf0"}} : memref<32x32xf32>' in module
+        )
+        # Function Call
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<32x32xf32>, memref<32x32xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<32x32xf32>) -> ()"
+            in module
+        )
+
+    print("Data Movement Passed!")
+
+    if hls.is_available("vitis_hls"):
+        mod = df.build(top)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
+        print("Functionality Passed!")
 
 
 if __name__ == "__main__":
-    test_wrap_void()
+    test_wrap_void(True)
+    test_wrap_void(False)

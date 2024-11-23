@@ -6,6 +6,7 @@ import allo
 from allo.ir.types import bool, int32, float32
 import numpy as np
 import allo.backend.hls as hls
+from allo.passes import generate_input_output_buffers
 
 
 @pytest.mark.parametrize("flatten", [True, False])
@@ -188,7 +189,8 @@ def test_size1_array():
         print("Passed!")
 
 
-def test_wrap_nonvoid():
+@pytest.mark.parametrize("flatten", [True, False])
+def test_wrap_nonvoid(flatten):
     M, N = 4, 4
 
     def matrix_add(A: float32[M, N]) -> float32[M, N]:
@@ -198,14 +200,72 @@ def test_wrap_nonvoid():
         return B
 
     s = allo.customize(matrix_add)
+    generate_input_output_buffers(s.module, "matrix_add", flatten=flatten)
+    module = str(s.module)
 
-    if hls.is_available("vitis_hls"):
-        mod = s.build(target="vitis_hls", mode="csim")
-        module = str(mod.module)
+    if flatten:
+        # Top Function Argument
         assert (
             f"func.func @matrix_add(%arg0: memref<16xf32>) -> memref<16xf32>" in module
         )
-        print("Passed!")
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<16xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res1(%arg0: memref<4x4xf32>, %arg1: memref<16xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert f'%alloc = memref.alloc() {{name = "buf0"}} : memref<4x4xf32>' in module
+        # Function Call
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<16xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res1(%alloc_1, %alloc_0) : (memref<4x4xf32>, memref<16xf32>) -> ()"
+            in module
+        )
+        # Return Value Allocation
+        assert f'%alloc_0 = memref.alloc() {{name = "res1"}} : memref<16xf32>' in module
+        # ReturnOP Update
+        assert f"return %alloc_0 : memref<16xf32>" in module
+    else:
+        # Top Function Argument
+        assert (
+            f"func.func @matrix_add(%arg0: memref<4x4xf32>) -> memref<4x4xf32>"
+            in module
+        )
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<4x4xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res1(%arg0: memref<4x4xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert f'%alloc = memref.alloc() {{name = "buf0"}} : memref<4x4xf32>' in module
+        # Function Call
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<4x4xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res1(%alloc_1, %alloc_0) : (memref<4x4xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        # Return Value Allocation
+        assert (
+            f'%alloc_0 = memref.alloc() {{name = "res1"}} : memref<4x4xf32>' in module
+        )
+        # ReturnOP Update
+        assert f"return %alloc_0 : memref<4x4xf32>" in module
+
+    print("Passed!")
 
 
 if __name__ == "__main__":

@@ -305,15 +305,15 @@ def create_data_movement(
 ):
 
     if len(tensors) != 2:
-        raise IndexError("One origin and one destination ONLY!")
+        raise IndexError("One source and one destination ONLY!")
 
-    tensor_ori = tensors[0]
-    tensor_des = tensors[1]
+    src_tensor = tensors[0]
+    des_tensor = tensors[1]
 
     if from_memory:
-        shape = MemRefType(tensor_des.type).shape
+        shape = MemRefType(des_tensor.type).shape
     else:
-        shape = MemRefType(tensor_ori.type).shape
+        shape = MemRefType(src_tensor.type).shape
 
     if mapping is not None:
         loop_bounds, src_pattern, dst_pattern = mapping
@@ -336,14 +336,14 @@ def create_data_movement(
                 f"affine_map<({var_str})->({dst_pattern})>"
             )
             load = affine_d.AffineLoadOp(
-                MemRefType(tensor_ori.type).element_type,
-                tensor_ori,
+                MemRefType(src_tensor.type).element_type,
+                src_tensor,
                 induction_vars,
                 affine_attr,
             )
             affine_d.AffineStoreOp(
                 load.result,
-                tensor_des,
+                des_tensor,
                 induction_vars,
                 affine_attr,
             )
@@ -370,8 +370,8 @@ def create_data_movement(
 
             affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
             load = affine_d.AffineLoadOp(
-                MemRefType(tensor_ori.type).element_type,
-                tensor_ori,
+                MemRefType(src_tensor.type).element_type,
+                src_tensor,
                 induction_vars,
                 affine_attr,
             )
@@ -384,7 +384,7 @@ def create_data_movement(
             affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({store_str})>")
             affine_d.AffineStoreOp(
                 load.result,
-                tensor_des,
+                des_tensor,
                 induction_vars,
                 affine_attr,
             )
