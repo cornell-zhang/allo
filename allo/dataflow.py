@@ -190,7 +190,6 @@ def _build_top(s, stream_info):
                 call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
-
     return s
 
 
@@ -229,7 +228,7 @@ def customize(func):
     s = _customize(func, global_vars=global_vars)
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
-    # print(s.module)
+    print(s.module)
     return s
 
 

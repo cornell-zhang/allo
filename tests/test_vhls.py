@@ -104,7 +104,6 @@ def test_vitis_io_stream():
         print(s.module)
         np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
         hls_mod(np_A)
-        # hls_mod()
 
 
 def test_csim_write_back():
