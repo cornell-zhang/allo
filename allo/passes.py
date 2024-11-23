@@ -185,7 +185,7 @@ def lower_linalg_and_attach_names(module):
 
 
 def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
-    res = {"inputs": [], "outputs": []}
+    results = {"inputs": [], "outputs": []}
     top_func = find_func_in_module(module, top_func_name)
 
     if mappings is None:
@@ -277,7 +277,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     store_func_names.append("")
                     continue
 
-                func_name = f"store_res{ind_res}"
+                func_name = f"store_res{ind_res + len(top_func.arguments)}"
                 store_func_names.append(func_name)
 
                 wrap_data_movement(
@@ -417,6 +417,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     [],
                     [],
                 )
+                alloc_op.attributes["name"] = StringAttr.get(f"buf{ind_arg}")
 
                 # Replace original argument with buffer
                 arg.replace_all_uses_with(alloc_op.result)
@@ -442,7 +443,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Update last argument
                 last_buf = alloc_op.result
-                res["inputs"].append(MockBuffer(top_func_name, f"buf{ind_arg}"))
+                results["inputs"].append(MockBuffer(top_func_name, f"buf{ind_arg}"))
 
         # Modify Storing
         new_out_types = []
@@ -465,12 +466,16 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                         MemRefType(arg.type).element_type,
                     )
 
-                    alloc_op = memref_d.AllocOp(
-                        store_memref,
-                        [],
-                        [],
-                        ip=ip_first,
-                    )
+                alloc_op = memref_d.AllocOp(
+                    store_memref,
+                    [],
+                    [],
+                    ip=ip_first,
+                )
+
+                alloc_op.attributes["name"] = StringAttr.get(
+                    f"res{ind_res + len(top_func.arguments)}"
+                )
 
                 # Update returnop
                 op_return.operation.replace_uses_of_with(arg, alloc_op.result)
@@ -484,7 +489,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     ip=ip_return,
                 )
 
-                res["outputs"].append(
+                results["outputs"].append(
                     MockBuffer(top_func_name, arg.owner.attributes["name"].value)
                 )
 
@@ -497,14 +502,14 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 ip=ip_return,
             )
 
-            res["outputs"].append(
+            results["outputs"].append(
                 MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
             )
 
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
 
-    return res
+    return results
 
 
 def decompose_library_function(module):
