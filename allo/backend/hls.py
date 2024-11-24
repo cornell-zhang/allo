@@ -177,10 +177,11 @@ class HLSModule:
                     mappings = configs.get("mappings", None)
                 else:
                     mappings = None
-                # buffers = generate_input_output_buffers(
+
                 generate_input_output_buffers(
-                    self.func, flatten=True, mappings=mappings
+                    self.module, top_func_name, flatten=True, mappings=mappings
                 )
+
                 # TODO: Fix dataflow!
                 # if "dataflow" in self.func.attributes:
                 #     assert func_args is not None, "Need to specify func_args"

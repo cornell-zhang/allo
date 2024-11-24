@@ -6,6 +6,7 @@ import allo
 from allo.ir.types import bool, int32, float32
 import numpy as np
 import allo.backend.hls as hls
+from allo.passes import generate_input_output_buffers
 
 
 @pytest.mark.parametrize("flatten", [True, False])
@@ -18,7 +19,9 @@ def test_io_buffer_gemm(flatten):
 
     s = allo.customize(gemm)
     print(s.module)
-    allo.passes.generate_input_output_buffers(s.top_func, flatten=flatten)
+    allo.passes.generate_input_output_buffers(
+        s.module, s.top_func_name, flatten=flatten
+    )
     print(s.module)
     mod = s.build()
     if not flatten:
@@ -100,7 +103,8 @@ def test_vitis_io_stream():
     if hls.is_available("vitis_hls"):
         hls_mod = s.build(target="vitis_hls", mode="sw_emu", project="test_io.prj")
         print(s.module)
-        hls_mod()
+        np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
+        hls_mod(np_A)
 
 
 def test_csim_write_back():
@@ -127,7 +131,7 @@ def test_pointer_generation():
 
     s = allo.customize(top)
     mod = s.build(target="vitis_hls", mode="csim", project="test_pointer.prj")
-    assert "bool v0," in mod.hls_code and ",," not in mod.hls_code
+    assert "bool v" in mod.hls_code and ",," not in mod.hls_code
     if hls.is_available("vitis_hls"):
         inst = np.array([1], dtype=np.bool_)
         C = np.array([1, 2, 3], dtype=np.int32)
@@ -144,7 +148,7 @@ def test_scalar_not_array():
 
     s = allo.customize(top)
     mod = s.build(target="vitis_hls", mode="csim", project="test_scalar.prj")
-    assert "bool v0," in mod.hls_code and ",," not in mod.hls_code
+    assert "bool v" in mod.hls_code and ",," not in mod.hls_code
     if hls.is_available("vitis_hls"):
         C = np.array([1, 2, 3], dtype=np.int32)
         mod(1, C)
@@ -183,6 +187,85 @@ def test_size1_array():
         mod(np_A, np_B)
         np.testing.assert_allclose(np_A, [2], rtol=1e-5)
         print("Passed!")
+
+
+@pytest.mark.parametrize("flatten", [True, False])
+def test_wrap_nonvoid(flatten):
+    M, N = 4, 4
+
+    def matrix_add(A: float32[M, N]) -> float32[M, N]:
+        B: float32[M, N]
+        for i, j in allo.grid(M, N, name="PE"):
+            B[i, j] = A[i, j] + 1
+        return B
+
+    s = allo.customize(matrix_add)
+    generate_input_output_buffers(s.module, "matrix_add", flatten=flatten)
+    module = str(s.module)
+
+    if flatten:
+        # Top Function Argument
+        assert (
+            f"func.func @matrix_add(%arg0: memref<16xf32>) -> memref<16xf32>" in module
+        )
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<16xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res1(%arg0: memref<4x4xf32>, %arg1: memref<16xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert f'%alloc = memref.alloc() {{name = "buf0"}} : memref<4x4xf32>' in module
+        # Function Call
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<16xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res1(%alloc_1, %alloc_0) : (memref<4x4xf32>, memref<16xf32>) -> ()"
+            in module
+        )
+        # Return Value Allocation
+        assert f'%alloc_0 = memref.alloc() {{name = "res1"}} : memref<16xf32>' in module
+        # ReturnOP Update
+        assert f"return %alloc_0 : memref<16xf32>" in module
+    else:
+        # Top Function Argument
+        assert (
+            f"func.func @matrix_add(%arg0: memref<4x4xf32>) -> memref<4x4xf32>"
+            in module
+        )
+        # Movement Function Generation
+        assert (
+            f"func.func @load_buf0(%arg0: memref<4x4xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        assert (
+            f"func.func @store_res1(%arg0: memref<4x4xf32>, %arg1: memref<4x4xf32>)"
+            in module
+        )
+        # Buffer Allocation
+        assert f'%alloc = memref.alloc() {{name = "buf0"}} : memref<4x4xf32>' in module
+        # Function Call
+        assert (
+            f"call @load_buf0(%arg0, %alloc) : (memref<4x4xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        assert (
+            f"call @store_res1(%alloc_1, %alloc_0) : (memref<4x4xf32>, memref<4x4xf32>) -> ()"
+            in module
+        )
+        # Return Value Allocation
+        assert (
+            f'%alloc_0 = memref.alloc() {{name = "res1"}} : memref<4x4xf32>' in module
+        )
+        # ReturnOP Update
+        assert f"return %alloc_0 : memref<4x4xf32>" in module
+
+    print("Passed!")
 
 
 if __name__ == "__main__":
