@@ -1,4 +1,6 @@
-# test_packed_systolic.py
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo
 from allo.ir.types import int8, int16, int32
 import allo.dataflow as df
