@@ -8,7 +8,7 @@ import allo.backend.hls as hls
 import numpy as np
 
 L, D = 2, 2
-M, N, K = L, 1*D, D
+M, N, K = L, 1 * D, D
 PP = 2
 P0, P1 = M // PP + 2, N + 2
 
@@ -17,6 +17,7 @@ if PP == 2:
     allo_type = int16
 else:
     raise ValueError(f"Unsupported packing factor: {PP}")
+
 
 @df.region()
 def top():
@@ -27,7 +28,7 @@ def top():
     def gemm(
         X_packed: allo_type[L // PP, D],
         W_packed: allo_type[D, 1 * D // PP],
-        Z_packed: allo_type[L // PP, 1 * D]
+        Z_packed: allo_type[L // PP, 1 * D],
     ):
         i, j = df.get_pid()
         # Peripheral kernels
@@ -62,6 +63,7 @@ def top():
                 fifo_B[i + 1, j].put(b)
                 Z_packed[i - 1, j - 1][k * 8 : (k + 1) * 8] += c
 
+
 def test_packed_systolic():
     X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
     print("X:")
@@ -69,10 +71,8 @@ def test_packed_systolic():
     W_A_cst = np.random.randint(-4, 4, size=(D, 1 * D)).astype(np.int8)
     print("W_A_cst:")
     print(W_A_cst)
-    
-    packed_X = np.ascontiguousarray(
-        np.ascontiguousarray(X).view(np_type).transpose()
-    )
+
+    packed_X = np.ascontiguousarray(np.ascontiguousarray(X).view(np_type).transpose())
     print("packed_X:")
     print(packed_X)
     W_A_packed = np.ascontiguousarray(
@@ -94,6 +94,7 @@ def test_packed_systolic():
         print(np_C_packed)
         np.testing.assert_allclose(Z_packed, np_C_packed, atol=1e-3)
         print("Passed!")
+
 
 if __name__ == "__main__":
     test_packed_systolic()
