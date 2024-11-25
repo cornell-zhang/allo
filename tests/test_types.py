@@ -513,8 +513,8 @@ def test_struct():
         for i in range(16):
             # Create struct inside function
             point: struct_type = {"x": x[i], "y": y[i]}
-            sum_val += point.x
-            sum_val += int(point.y)
+            sum_val += point['x']
+            sum_val += int(point['y'])
         return sum_val
 
     s = allo.customize(kernel)
