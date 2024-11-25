@@ -260,14 +260,37 @@ bool isLegal(func::FuncOp &func) {
 
 /// Pass entry point
 bool applyLowerCompositeType(ModuleOp &mod) {
+  // First check if there are any struct operations to lower
+  bool hasStructOps = false;
+  for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
+    func.walk([&](Operation *op) {
+      if (isa<StructGetOp, StructConstructOp, IntToStructOp>(op)) {
+        hasStructOps = true;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (hasStructOps) break;
+  }
+
+  // If no struct operations, return success without doing anything
+  if (!hasStructOps) {
+    return true;
+  }
+
+  // Only apply transformations if we found struct operations
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     lowerIntToStructOp(func);
   }
+  // Only run DCE if we actually did some transformations
   applyMemRefDCE(mod);
+  
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     lowerStructType(func);
   }
+  // Run final DCE pass
   applyMemRefDCE(mod);
+  
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     if (!isLegal(func)) {
       return false;

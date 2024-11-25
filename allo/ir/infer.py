@@ -411,7 +411,6 @@ class TypeInferer(ASTVisitor):
         raise None
 
     @staticmethod
-    @staticmethod
     def visit_Subscript(ctx, node):
         value = visit_stmt(ctx, node.value)
         # Handle struct field access
