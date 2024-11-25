@@ -310,6 +310,7 @@ def generate_input_output_buffers(
     return results
 
 
+# pylint: disable=dangerous-default-value
 def analyze_arg_load_store_in_func(func, arg_names=[]):
     res = {}
     for idx, arg in enumerate(func.arguments):
@@ -345,16 +346,16 @@ def analyze_arg_load_store_in_func(func, arg_names=[]):
 
 def analyze_arg_load_store(mod, func_args):
     res = {}
-    for func_name in func_args:
+    for func_name, arg_names in func_args.items():
         func = find_func_in_module(mod, func_name)
-        func_res = analyze_arg_load_store_in_func(func, func_args[func_name])
-        for key in func_res:
-            if func_res[key] == "func":
+        func_res = analyze_arg_load_store_in_func(func, arg_names)
+        for key, io_type in func_res.items():
+            if io_type == "func":
                 continue
-            if key in res and func_res[key] != res[key]:
+            if key in res and io_type != res[key]:
                 res[key] = "both"
             else:
-                res[key] = func_res[key]
+                res[key] = io_type
     return res
 
 

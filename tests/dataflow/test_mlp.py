@@ -124,7 +124,9 @@ def test_mlp():
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
         print("PASSED CSIM!")
         # hls
-        mod = s.build(target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj")
+        mod = s.build(
+            target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj"
+        )
         mod(X, allo_final_Y)
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
         print("PASSED HW!")
