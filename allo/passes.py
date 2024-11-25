@@ -352,12 +352,14 @@ def analyze_arg_load_store(mod, func_args):
     res = {}
     for func_name, arg_names in func_args.items():
         func = find_func_in_module(mod, func_name)
-        assert func is not None, f"Function {func_name} not found in module"
+        if func is None:
+            # some transformations have been done
+            continue
         func_res = analyze_arg_load_store_in_func(func, arg_names)
         for key, io_type in func_res.items():
             if io_type == "func":
-                continue
-            if key in res and io_type != res[key]:
+                res[key] = "func"
+            elif key in res and io_type != res[key]:
                 res[key] = "both"
             else:
                 res[key] = io_type
