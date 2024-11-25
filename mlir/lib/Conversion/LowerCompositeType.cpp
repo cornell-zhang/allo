@@ -270,7 +270,8 @@ bool applyLowerCompositeType(ModuleOp &mod) {
       }
       return WalkResult::advance();
     });
-    if (hasStructOps) break;
+    if (hasStructOps)
+      break;
   }
 
   // If no struct operations, return success without doing anything
@@ -284,13 +285,13 @@ bool applyLowerCompositeType(ModuleOp &mod) {
   }
   // Only run DCE if we actually did some transformations
   applyMemRefDCE(mod);
-  
+
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     lowerStructType(func);
   }
   // Run final DCE pass
   applyMemRefDCE(mod);
-  
+
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     if (!isLegal(func)) {
       return false;
