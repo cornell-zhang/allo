@@ -234,7 +234,6 @@ def customize(func):
     s = _customize(func, global_vars=global_vars)
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
-    print(s.module)
     return s
 
 

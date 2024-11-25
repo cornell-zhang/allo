@@ -113,8 +113,8 @@ def test_mlp():
         np.dot(np.maximum(np.dot(np.maximum(np.dot(X, np_W0), 0), np_W1), 0), np_W2), 0
     )
     s = df.customize(top)
-    schedule_linear(s, 1, factor=4)
-    schedule_linear(s, 2, factor=4)
+    schedule_linear(s, 1, factor=8)
+    schedule_linear(s, 2, factor=8)
     schedule_linear(s, 3, factor=1)
     print(s.module)
     if hls.is_available("vitis_hls"):
@@ -124,7 +124,7 @@ def test_mlp():
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
         print("PASSED CSIM!")
         # hls
-        mod = s.build(target="vitis_hls", mode="hw_emu", project="df-mlp3-relu-unroll-new.prj")
+        mod = s.build(target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj")
         mod(X, allo_final_Y)
         np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
         print("PASSED HW!")
