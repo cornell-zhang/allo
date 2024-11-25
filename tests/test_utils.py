@@ -3,7 +3,8 @@
 
 import allo
 from allo.ir.types import int32
-from allo.ir.transform import find_loop_in_bands
+from allo.ir.transform import find_loop_in_bands, find_func_in_module
+from allo.passes import analyze_arg_load_store_in_func, analyze_arg_load_store
 import pytest
 
 
@@ -51,5 +52,49 @@ def test_func_call():
     assert axis_name == "j"
 
 
+def test_analyze_load_store():
+    def kernel(A: int32[32], B: int32[32], C: int32[32]):
+        for i in range(32):
+            C[i] = A[i] + B[i]
+
+    s = allo.customize(kernel)
+    res = analyze_arg_load_store_in_func(
+        s.top_func, arg_names=s.func_args[s.top_func_name]
+    )
+    assert res["A"] == "in"
+    assert res["B"] == "in"
+    assert res["C"] == "out"
+
+    def rw_kernel(D: int32[32]):
+        for i in range(32):
+            D[i] = D[i] + 1
+
+    def top(A: int32[32], B: int32[32], C: int32[32], D: int32[32]):
+        kernel(A, B, C)
+        rw_kernel(D)
+
+    s = allo.customize(top)
+    func = find_func_in_module(s.module, "rw_kernel")
+    res = analyze_arg_load_store_in_func(func, arg_names=s.func_args["rw_kernel"])
+    assert res["D"] == "both"
+
+    def write_kernel(A: int32[32]):
+        for i in range(32):
+            A[i] = i
+
+    def top2(A: int32[32], B: int32[32], C: int32[32], D: int32[32]):
+        kernel(A, B, C)
+        write_kernel(A)
+        rw_kernel(D)
+
+    s = allo.customize(top2)
+    res = analyze_arg_load_store(s.module, s.func_args)
+    assert res["A"] == "both"
+    assert res["B"] == "in"
+    assert res["C"] == "out"
+    assert res["D"] == "both"
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_analyze_load_store()

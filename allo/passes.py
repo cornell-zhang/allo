@@ -299,6 +299,54 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
     return results
 
 
+def analyze_arg_load_store_in_func(func, arg_names=[]):
+    res = {}
+    for idx, arg in enumerate(func.arguments):
+        if not isinstance(arg.type, MemRefType):
+            continue
+        # check all uses
+        if len(arg_names) > 0:
+            arg_name = arg_names[idx]
+        else:
+            arg_name = f"arg{idx}"
+        for use in arg.uses:
+            if isinstance(
+                use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp, allo_d.StreamGetOp)
+            ):
+                if arg_name in res and res[arg_name] == "out":
+                    res[arg_name] = "both"
+                else:
+                    res[arg_name] = "in"
+            elif isinstance(
+                use.owner,
+                (memref_d.StoreOp, affine_d.AffineStoreOp, allo_d.StreamPutOp),
+            ):
+                if arg_name in res and res[arg_name] == "in":
+                    res[arg_name] = "both"
+                else:
+                    res[arg_name] = "out"
+            elif isinstance(use.owner, func_d.CallOp):
+                res[arg_name] = "func"
+            else:
+                raise ValueError(f"Unsupported operation: {type(use.owner)}")
+    return res
+
+
+def analyze_arg_load_store(mod, func_args):
+    res = {}
+    for func_name in func_args:
+        func = find_func_in_module(mod, func_name)
+        func_res = analyze_arg_load_store_in_func(func, func_args[func_name])
+        for key in func_res:
+            if func_res[key] == "func":
+                continue
+            if key in res and func_res[key] != res[key]:
+                res[key] = "both"
+            else:
+                res[key] = func_res[key]
+    return res
+
+
 def decompose_library_function(module):
     with module.context, Location.unknown():
         # get all functions from origin module and find the function to replace
