@@ -116,6 +116,8 @@ def test_nested_loop():
                 A[i] -= 1
 
     unified = unify(f1, f2, 1)
+    hls_mod = allo.HLSModule(unified, "f1_f2_unified", "vivado_hls")
+    assert "void f1_f2_unified" in hls_mod.hls_code
     llvm_mod = allo.LLVMModule(unified, "f1_f2_unified")
     allo_A = np.zeros((L), dtype=np.int8)
     allo_B = np.array([5, 6, 7, 8], dtype=np.int8)

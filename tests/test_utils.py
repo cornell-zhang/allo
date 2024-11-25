@@ -96,5 +96,4 @@ def test_analyze_load_store():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_analyze_load_store()
+    pytest.main([__file__])
