@@ -34,6 +34,7 @@ class ASTResolver:
         if isinstance(node, ast.Dict):
             # Resolve dictionary literals to struct types
             from .types import Struct
+
             keys = [k.value if isinstance(k, ast.Constant) else None for k in node.keys]
             # If any key is not a string constant, this isn't a valid struct type
             if any(not isinstance(k, str) for k in keys):

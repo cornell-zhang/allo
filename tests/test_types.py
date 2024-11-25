@@ -506,37 +506,37 @@ def test_boolean():
     np.testing.assert_array_equal(np_A, np_B)
 
 
-def test_struct():
-    struct_type =  T.Struct({"x": int32, "y": float32})
+def test_struct_simple():
+    struct_type = T.Struct({"x": int32, "y": float32})
+
     def kernel(x: int32[16], y: float32[16]) -> int32:
         sum_val: int32 = 0
         for i in range(16):
             # Create struct inside function
             point: struct_type = {"x": x[i], "y": y[i]}
-            sum_val += point['x']
-            sum_val += int(point['y'])
+            sum_val += point["x"]
+            sum_val += int(point["y"])
         return sum_val
 
     s = allo.customize(kernel)
     print(s.module)
     mod = s.build()
-    
+
     # Create separate arrays for x and y
     np_x = np.zeros(16, dtype=np.int32)
     np_y = np.zeros(16, dtype=np.float32)
-    
+
     # Fill with test data
     for i in range(16):
         np_x[i] = i
         np_y[i] = float(i)
-        
+
     allo_result = mod(np_x, np_y)
-    
+
     # Calculate expected result
     expected = sum(x + int(y) for x, y in zip(np_x, np_y))
-    
-    assert allo_result == expected
 
+    assert allo_result == expected
 
 
 ######################################################################
@@ -567,5 +567,4 @@ def test_type_comparison():
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_struct()
+    pytest.main([__file__])

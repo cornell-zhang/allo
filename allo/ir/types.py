@@ -234,7 +234,7 @@ class Struct(AlloType):
 
     def build(self):
         types = []
-        for name, dtype in self.dtype_dict.items():
+        for _, dtype in self.dtype_dict.items():
             types.append(dtype.build())
         return allo_d.StructType.get(types)
 

@@ -1249,25 +1249,21 @@ class ASTTransformer(ASTBuilder):
                 node.value.dtype[field_name].build(),
                 value.result,
                 idx_attr,
-                ip=ctx.get_ip()
+                ip=ctx.get_ip(),
             )
         else:  # bit operation
             return ASTTransformer.build_bit_operation(ctx, node, val=val, idx=idx)
-
 
     @staticmethod
     def build_Dict(ctx, node):
         # Build each value in the dictionary
         values = [build_stmt(ctx, value) for value in node.values]
-        
-        # Get the field names from the keys
-        field_names = [key.value for key in node.keys]
-        
+
         # Create a struct construct op with the values
         return allo_d.StructConstructOp(
             node.dtype.build(),  # The struct type should already be inferred
             [value.result for value in values],
-            ip=ctx.get_ip()
+            ip=ctx.get_ip(),
         )
 
     @staticmethod

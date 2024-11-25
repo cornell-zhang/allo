@@ -151,7 +151,6 @@ class UseDefChain(ast.NodeVisitor):
                     res.append(self.visit(stmt))
                 return res
         raise RuntimeError("Unsupported for loop")
-    
 
     def visit_Dict(self, node):
         res = set()
