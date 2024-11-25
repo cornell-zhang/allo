@@ -116,6 +116,7 @@ def remove_unused_func_ops(s, func_names):
             and len(blocks[0].operations) == 1
             and blocks[0].operations[0].name == "func.return"
         ):
+            s.func_args.pop(func_op.attributes["sym_name"].value)
             func_op.erase()
 
 

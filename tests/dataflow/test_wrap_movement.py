@@ -30,7 +30,7 @@ def test_wrap_void():
 
     flatten = True
     s1 = df.customize(top)
-    generate_input_output_buffers(s1.module, "top", flatten=flatten)
+    generate_input_output_buffers(s1.module, "top", s1.func_args, flatten=flatten)
     module = str(s1.module)
     # Movement Function Generation
     assert (
@@ -56,7 +56,7 @@ def test_wrap_void():
 
     flatten = False
     s2 = df.customize(top)
-    generate_input_output_buffers(s2.module, "top", flatten=flatten)
+    generate_input_output_buffers(s2.module, "top", s2.func_args, flatten=flatten)
     module = str(s2.module)
     # Movement Function Generation
     assert (
