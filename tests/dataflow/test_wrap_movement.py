@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import allo
 from allo.ir.types import float32
 import allo.dataflow as df
 import allo.backend.hls as hls
@@ -39,7 +38,7 @@ def test_wrap_void():
         in module
     )
     assert (
-        f"func.func @store_res(%arg0: memref<32x32xf32>, %arg1: memref<1024xf32>)"
+        f"func.func @store_res2(%arg0: memref<32x32xf32>, %arg1: memref<1024xf32>)"
         in module
     )
     # Buffer Allocation
@@ -50,7 +49,7 @@ def test_wrap_void():
         in module
     )
     assert (
-        f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()"
+        f"call @store_res2(%alloc_1, %arg2) : (memref<32x32xf32>, memref<1024xf32>) -> ()"
         in module
     )
     print("Data Movement (Flatten) Passed!")
@@ -65,7 +64,7 @@ def test_wrap_void():
         in module
     )
     assert (
-        f"func.func @store_res(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>)"
+        f"func.func @store_res2(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>)"
         in module
     )
     # Buffer Allocation
@@ -76,7 +75,7 @@ def test_wrap_void():
         in module
     )
     assert (
-        f"call @store_res(%alloc_1, %arg2) : (memref<32x32xf32>, memref<32x32xf32>) -> ()"
+        f"call @store_res2(%alloc_1, %arg2) : (memref<32x32xf32>, memref<32x32xf32>) -> ()"
         in module
     )
     print("Data Movement (Non-flatten) Passed!")

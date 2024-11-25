@@ -172,6 +172,9 @@ def generate_input_output_buffers(
 
         else:
             for idx, arg in enumerate(top_func.arguments):
+                if not isinstance(arg.type, MemRefType):
+                    # scalar
+                    continue
                 if load_store_mapping[func_args[top_func_name][idx]] in {"out", "both"}:
                     ip = InsertionPoint(top_func)
                     func_name = f"store_res{idx}"
@@ -340,7 +343,8 @@ def analyze_arg_load_store_in_func(func, arg_names=[]):
             elif isinstance(use.owner, func_d.CallOp):
                 res[arg_name] = "func"
             else:
-                raise ValueError(f"Unsupported operation: {type(use.owner)}")
+                # return op
+                pass
     return res
 
 

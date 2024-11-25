@@ -20,7 +20,7 @@ def test_io_buffer_gemm(flatten):
     s = allo.customize(gemm)
     print(s.module)
     allo.passes.generate_input_output_buffers(
-        s.module, s.top_func_name, flatten=flatten
+        s.module, s.top_func_name, s.func_args, flatten=flatten
     )
     print(s.module)
     mod = s.build()
@@ -200,7 +200,7 @@ def test_wrap_nonvoid(flatten):
         return B
 
     s = allo.customize(matrix_add)
-    generate_input_output_buffers(s.module, "matrix_add", flatten=flatten)
+    generate_input_output_buffers(s.module, "matrix_add", s.func_args, flatten=flatten)
     module = str(s.module)
 
     if flatten:
