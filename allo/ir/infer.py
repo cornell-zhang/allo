@@ -145,7 +145,7 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.values)
         
         # Dictionary type is a mapping of keys to value types
-        node.dtype = {k.value: v.dtype for k, v in zip(node.keys, node.values)}
+        node.dtype = Struct({k.value: v.dtype for k, v in zip(node.keys, node.values)})
         node.shape = () # one dict is considered as one Struct-type scalar 
         return node
 

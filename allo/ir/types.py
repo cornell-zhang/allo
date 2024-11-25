@@ -233,12 +233,10 @@ class Struct(AlloType):
         return self.__getattr__(key)
 
     def build(self):
-        fields = []
         types = []
         for name, dtype in self.dtype_dict.items():
-            fields.append(StringAttr.get(name))
             types.append(dtype.build())
-        return StructType.get(fields, types)
+        return allo_d.StructType.get(types)
 
 
 class Stream(AlloType):
