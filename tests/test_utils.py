@@ -3,7 +3,7 @@
 
 import allo
 from allo.ir.types import int32
-from allo.ir.transform import find_loop_in_bands, find_func_in_module
+from allo.ir.transform import find_loop_in_bands
 from allo.passes import analyze_arg_load_store_in_func, analyze_arg_load_store
 import pytest
 
@@ -58,25 +58,20 @@ def test_analyze_load_store():
             C[i] = A[i] + B[i]
 
     s = allo.customize(kernel)
-    res = analyze_arg_load_store_in_func(
-        s.top_func, arg_names=s.func_args[s.top_func_name]
-    )
-    assert res["A"] == "in"
-    assert res["B"] == "in"
-    assert res["C"] == "out"
+    res = analyze_arg_load_store_in_func(s.top_func)
+    assert res == ["in", "in", "out"]
 
     def rw_kernel(D: int32[32]):
         for i in range(32):
             D[i] = D[i] + 1
 
-    def top(A: int32[32], B: int32[32], C: int32[32], D: int32[32]):
-        kernel(A, B, C)
-        rw_kernel(D)
+    def top(X: int32[32], Y: int32[32], Z: int32[32], P: int32[32]):
+        kernel(X, Y, Z)
+        rw_kernel(P)
 
     s = allo.customize(top)
-    func = find_func_in_module(s.module, "rw_kernel")
-    res = analyze_arg_load_store_in_func(func, arg_names=s.func_args["rw_kernel"])
-    assert res["D"] == "both"
+    res = analyze_arg_load_store(s.module)
+    assert res["top"] == ["in", "in", "out", "both"]
 
     def write_kernel(A: int32[32]):
         for i in range(32):
@@ -88,11 +83,8 @@ def test_analyze_load_store():
         rw_kernel(D)
 
     s = allo.customize(top2)
-    res = analyze_arg_load_store(s.module, s.func_args)
-    assert res["A"] == "both"
-    assert res["B"] == "in"
-    assert res["C"] == "out"
-    assert res["D"] == "both"
+    res = analyze_arg_load_store(s.module)
+    assert res["top2"] == ["both", "in", "out", "both"]
 
 
 if __name__ == "__main__":

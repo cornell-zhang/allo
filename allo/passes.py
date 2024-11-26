@@ -117,7 +117,7 @@ def generate_input_output_buffers(
     if mappings is None:
         mappings = [None] * len(top_func.arguments)
 
-    load_store_mapping = analyze_arg_load_store(module, func_args)
+    load_store_mapping = analyze_arg_load_store(module)
     # Build Buffer-Load functions
     load_func_names = []
     with module.context, Location.unknown():
@@ -314,55 +314,55 @@ def generate_input_output_buffers(
 
 
 # pylint: disable=dangerous-default-value
-def analyze_arg_load_store_in_func(func, arg_names=[]):
-    res = {}
-    for idx, arg in enumerate(func.arguments):
+def analyze_arg_load_store_in_func(func, mapping={}):
+    res = []
+    for _, arg in enumerate(func.arguments):
         if not isinstance(arg.type, MemRefType):
+            res.append("scalar")
             continue
-        # check all uses
-        if len(arg_names) > 0:
-            arg_name = arg_names[idx]
-        else:
-            arg_name = f"arg{idx}"
+        # 10: in, 01: out, 11: both, 00: func
+        io_type = 0
         for use in arg.uses:
             if isinstance(
                 use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp, allo_d.StreamGetOp)
             ):
-                if arg_name in res and res[arg_name] == "out":
-                    res[arg_name] = "both"
-                else:
-                    res[arg_name] = "in"
+                io_type |= 2
             elif isinstance(
                 use.owner,
                 (memref_d.StoreOp, affine_d.AffineStoreOp, allo_d.StreamPutOp),
             ):
-                if arg_name in res and res[arg_name] == "in":
-                    res[arg_name] = "both"
-                else:
-                    res[arg_name] = "out"
+                io_type |= 1
             elif isinstance(use.owner, func_d.CallOp):
-                res[arg_name] = "func"
-            else:
-                # return op
-                pass
+                callee = use.owner.attributes["callee"].value
+                if callee in mapping:
+                    callee_arg_type = mapping[callee][use.operand_number]
+                    if callee_arg_type == "out":
+                        io_type |= 1
+                    elif callee_arg_type == "in":
+                        io_type |= 2
+                    elif callee_arg_type == "both":
+                        io_type |= 3
+                    else:
+                        io_type |= 0
+        match io_type:
+            case 1:
+                res.append("out")
+            case 2:
+                res.append("in")
+            case 3:
+                res.append("both")
+            case 0:
+                res.append("func")
     return res
 
 
-def analyze_arg_load_store(mod, func_args):
+def analyze_arg_load_store(mod):
     res = {}
-    for func_name, arg_names in func_args.items():
-        func = find_func_in_module(mod, func_name)
-        if func is None:
-            # some transformations have been done
+    for func in mod.body.operations:
+        if not isinstance(func, func_d.FuncOp):
             continue
-        func_res = analyze_arg_load_store_in_func(func, arg_names)
-        for key, io_type in func_res.items():
-            if io_type == "func":
-                res[key] = "func"
-            elif key in res and io_type != res[key]:
-                res[key] = "both"
-            else:
-                res[key] = io_type
+        func_res = analyze_arg_load_store_in_func(func, res)
+        res[func.attributes["sym_name"].value] = func_res
     return res
 
 
