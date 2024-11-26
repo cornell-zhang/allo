@@ -1235,8 +1235,36 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_memory_access(ctx, node, val=val, idx=idx)
         elif len(node.value.shape) > 0 and ctx.enable_tensor:
             return ASTTransformer.build_tensor_access(ctx, node, val=val, idx=idx)
+        elif isinstance(node.value.dtype, Struct):
+            # Get the struct value
+            value = build_stmt(ctx, node.value)
+            # Get the field name from the string slice
+            field_name = node.slice.value
+            # Get the field index from the struct type
+            field_idx = list(node.value.dtype.dtype_dict.keys()).index(field_name)
+            # Create index attribute
+            idx_attr = IntegerAttr.get(IntegerType.get_signless(64), field_idx)
+            # Extract the field using struct get op
+            return allo_d.StructGetOp(
+                node.value.dtype[field_name].build(),
+                value.result,
+                idx_attr,
+                ip=ctx.get_ip(),
+            )
         else:  # bit operation
             return ASTTransformer.build_bit_operation(ctx, node, val=val, idx=idx)
+
+    @staticmethod
+    def build_Dict(ctx, node):
+        # Build each value in the dictionary
+        values = [build_stmt(ctx, value) for value in node.values]
+
+        # Create a struct construct op with the values
+        return allo_d.StructConstructOp(
+            node.dtype.build(),  # The struct type should already be inferred
+            [value.result for value in values],
+            ip=ctx.get_ip(),
+        )
 
     @staticmethod
     def build_AnnAssign(ctx, node):

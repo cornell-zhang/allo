@@ -21,6 +21,7 @@ from .types import (
     uint1,
     int32,
     float32,
+    Struct,
     Stream,
 )
 from .typing_rule import get_typing_rule
@@ -71,9 +72,9 @@ class TypeInferer(ASTVisitor):
             if dtype is Stream:
                 # create an actual class instance
                 base_type, base_shape = TypeInferer.visit_type_hint(ctx, node.slice)
-                dtype = Stream(base_type, base_shape)
+                stream_dtype = Stream(base_type, base_shape)
                 shape = tuple()
-                return dtype, shape
+                return stream_dtype, shape
             assert dtype is not None, f"Unsupported type {node.value.id}"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
@@ -122,6 +123,8 @@ class TypeInferer(ASTVisitor):
             node.dtype = int32
         elif isinstance(node.value, float):
             node.dtype = float32
+        elif isinstance(node.value, str):
+            node.dtype = str
         elif node.value is None:
             return ASTResolver.resolve_constant(node.value, ctx)
         else:
@@ -133,6 +136,17 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.elts)
         node.shape = [elt.shape for elt in node.elts]
         node.dtype = [elt.dtype for elt in node.elts]
+        return node
+
+    @staticmethod
+    def visit_Dict(ctx, node):
+        # Visit all keys and values
+        visit_stmts(ctx, node.keys)
+        visit_stmts(ctx, node.values)
+
+        # Dictionary type is a mapping of keys to value types
+        node.dtype = Struct({k.value: v.dtype for k, v in zip(node.keys, node.values)})
+        node.shape = ()  # one dict is considered as one Struct-type scalar
         return node
 
     @staticmethod
@@ -399,6 +413,20 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx, node):
         value = visit_stmt(ctx, node.value)
+        # Handle struct field access
+        if len(value.shape) == 0 and isinstance(value.dtype, Struct):
+            if not isinstance(node.slice, ast.Constant) or not isinstance(
+                node.slice.value, str
+            ):
+                raise RuntimeError("Struct field access must use string literal")
+            field = node.slice.value
+            if field not in value.dtype.dtype_dict:
+                raise RuntimeError(f"Field {field} not found in struct type")
+            node.dtype = value.dtype.dtype_dict[field]
+            node.shape = tuple()
+            return node
+
+        # Handle tensor subscript
         if len(value.shape) > 0:
             visit_stmt(ctx, node.slice)
             # calculate tensor slicing

@@ -69,6 +69,8 @@ class LLVMModule:
                 call_ext_libs_in_ptr(self.module, ext_libs)
             # Remove .partition() annotation
             allo_d.remove_stride_map(self.module)
+            # Lower composite (struct) types
+            allo_d.lower_composite_type(self.module)
             # Resolve FixedType
             allo_d.lower_fixed_to_int(self.module)
             allo_d.lower_bit_ops(self.module)

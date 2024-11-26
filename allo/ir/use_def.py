@@ -152,6 +152,12 @@ class UseDefChain(ast.NodeVisitor):
                 return res
         raise RuntimeError("Unsupported for loop")
 
+    def visit_Dict(self, node):
+        res = set()
+        for value in node.values:
+            res = res.union(self.visit(value))
+        return res
+
     def visit_Call(self, node):
         original_func_id = self.func_id
         if isinstance(node.func, ast.Name):
