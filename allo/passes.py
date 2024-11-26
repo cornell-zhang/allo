@@ -108,6 +108,7 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
+# pylint: disable=too-many-branches
 def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
     results = {"inputs": [], "outputs": []}
     top_func = find_func_in_module(module, top_func_name)
