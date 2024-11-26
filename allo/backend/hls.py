@@ -182,7 +182,6 @@ class HLSModule:
                 generate_input_output_buffers(
                     self.module,
                     top_func_name,
-                    func_args,
                     flatten=True,
                     mappings=mappings,
                 )

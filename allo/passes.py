@@ -108,9 +108,7 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
-def generate_input_output_buffers(
-    module, top_func_name, func_args, flatten=False, mappings=None
-):
+def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
     results = {"inputs": [], "outputs": []}
     top_func = find_func_in_module(module, top_func_name)
 
@@ -128,7 +126,7 @@ def generate_input_output_buffers(
                 load_func_names.append("")
                 continue
 
-            if load_store_mapping[func_args[top_func_name][idx]] in {"in", "both"}:
+            if load_store_mapping[top_func_name][idx] in {"in", "both"}:
                 func_name = f"load_buf{idx}"
                 load_func_names.append(func_name)
                 wrap_data_movement(
@@ -175,7 +173,7 @@ def generate_input_output_buffers(
                 if not isinstance(arg.type, MemRefType):
                     # scalar
                     continue
-                if load_store_mapping[func_args[top_func_name][idx]] in {"out", "both"}:
+                if load_store_mapping[top_func_name][idx] in {"out", "both"}:
                     ip = InsertionPoint(top_func)
                     func_name = f"store_res{idx}"
                     store_func_names.append(func_name)
@@ -229,7 +227,7 @@ def generate_input_output_buffers(
                     new_in_types.append(arg.type)
 
                 # Build CallOp for buffer loading
-                if load_store_mapping[func_args[top_func_name][idx]] in {
+                if load_store_mapping[top_func_name][idx] in {
                     "in",
                     "both",
                 }:
@@ -296,7 +294,7 @@ def generate_input_output_buffers(
             for idx, arg in enumerate(top_func.arguments):
                 if not isinstance(arg.type, MemRefType):
                     continue
-                if load_store_mapping[func_args[top_func_name][idx]] in {"out", "both"}:
+                if load_store_mapping[top_func_name][idx] in {"out", "both"}:
                     func_name = f"store_res{idx}"
                     func_d.CallOp(
                         [],
