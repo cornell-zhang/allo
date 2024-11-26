@@ -42,9 +42,6 @@ def top():
                 fifo_A[i - 1, 0].put(a[8 * (i - 1) : 8 * i])
                 with allo.meta_if(i < M):
                     L2_A[i + 1].put(a)
-                # TODO: Fix meta matching
-                with allo.meta_else():
-                    pass
         with allo.meta_elif(i == 0):
             # j > 0, the first row
             for k in range(K):
@@ -52,8 +49,6 @@ def top():
                 fifo_B[0, j - 1].put(b[8 * (j - 1) : 8 * j])
                 with allo.meta_if(j < N):
                     L2_B[j + 1].put(b)
-                with allo.meta_else():
-                    pass
         # main body
         with allo.meta_else():
             c: int16 = 0
@@ -63,12 +58,8 @@ def top():
                 c += a * b
                 with allo.meta_if(j < N):
                     fifo_A[i - 1, j].put(a)
-                with allo.meta_else():
-                    pass
                 with allo.meta_if(i < M):
                     fifo_B[i, j - 1].put(b)
-                with allo.meta_else():
-                    pass
             C[i - 1, j - 1] = c
 
 

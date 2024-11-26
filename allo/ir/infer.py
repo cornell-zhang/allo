@@ -1021,25 +1021,38 @@ class TypeInferer(ASTVisitor):
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
-                ctx.meta_if_stack.append(final_cond)
+                if len(ctx.meta_if_stack) > ctx.with_scope_level:
+                    ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
+                else:
+                    ctx.meta_if_stack.append([final_cond])
             else:  # meta_elif
-                assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
-                if ctx.meta_if_stack[-1]:  # previous `if` has already satisfied
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(True)
+                assert (
+                    len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+                ), "Unmatched allo.meta_elif()"
+                if ctx.meta_if_stack[ctx.with_scope_level][
+                    -1
+                ]:  # previous `if` has already satisfied
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(True)
                     final_cond = False
                 else:
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(cond)
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(cond)
                     final_cond = cond
         elif node.items[0].context_expr.func.attr == "meta_else":
-            assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_else()"
-            final_cond = not ctx.meta_if_stack[-1]
-            ctx.meta_if_stack.pop()
+            assert (
+                len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+            ), "Unmatched allo.meta_else()"
+            final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
+            ctx.meta_if_stack[ctx.with_scope_level].pop()
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
+            ctx.with_scope_level += 1
             visit_stmts(ctx, node.body)
+            # clear inner context
+            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
+            ctx.with_scope_level -= 1
         node.dtype = None
         node.shape = None
         return node
