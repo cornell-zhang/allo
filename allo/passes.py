@@ -108,6 +108,7 @@ def lower_linalg_and_attach_names(module):
                         cnt_loop_nests += 1
 
 
+# pylint: disable=too-many-branches
 def generate_input_output_buffers(module, top_func_name, flatten=False, mappings=None):
     results = {"inputs": [], "outputs": []}
     top_func = find_func_in_module(module, top_func_name)
@@ -115,27 +116,28 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
     if mappings is None:
         mappings = [None] * len(top_func.arguments)
 
+    load_store_mapping = analyze_arg_load_store(module)
     # Build Buffer-Load functions
     load_func_names = []
     with module.context, Location.unknown():
         ip = InsertionPoint(top_func)
         # Create Load function for each input
-        for arg_ind, arg in enumerate(top_func.arguments):
+        for idx, arg in enumerate(top_func.arguments):
             if not isinstance(arg.type, MemRefType):
                 load_func_names.append("")
                 continue
 
-            func_name = f"load_buf{arg_ind}"
-            load_func_names.append(func_name)
-
-            wrap_data_movement(
-                arg,
-                ip,
-                func_name,
-                from_memory=True,
-                flatten=flatten,
-                mapping=mappings[arg_ind],
-            )
+            if load_store_mapping[top_func_name][idx] in {"in", "both"}:
+                func_name = f"load_buf{idx}"
+                load_func_names.append(func_name)
+                wrap_data_movement(
+                    arg,
+                    ip,
+                    func_name,
+                    from_memory=True,
+                    flatten=flatten,
+                    mapping=mappings[idx],
+                )
 
     # Find ReturnOp
     for op in top_func.entry_block.operations:
@@ -143,19 +145,19 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
             op_return = op
             break
 
-    # Build Buffer-Store functions
+    # Build Buffering functions
     store_func_names = []
     with module.context, Location.unknown():
         if len(mappings) < len(op_return.operands) + len(top_func.arguments):
             mappings += [None] * len(op_return.operands)
         if len(op_return.operands) > 0:  # Return value exist
             ip = InsertionPoint(top_func)
-            for res_ind, res in enumerate(op_return.operands):
+            for idx, res in enumerate(op_return.operands):
                 if not isinstance(res.type, MemRefType):
                     store_func_names.append("")
                     continue
 
-                func_name = f"store_res{res_ind + len(top_func.arguments)}"
+                func_name = f"store_res{idx + len(top_func.arguments)}"
                 store_func_names.append(func_name)
 
                 wrap_data_movement(
@@ -164,23 +166,27 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     func_name,
                     from_memory=False,
                     flatten=flatten,
-                    mapping=mappings[res_ind],
+                    mapping=mappings[idx],
                 )
 
-        else:  # The last argument is set as return value by default
-            ip = InsertionPoint(top_func)
-            arg = top_func.arguments[-1]
-            func_name = "store_res"
-            store_func_names.append(func_name)
+        else:
+            for idx, arg in enumerate(top_func.arguments):
+                if not isinstance(arg.type, MemRefType):
+                    # scalar
+                    continue
+                if load_store_mapping[top_func_name][idx] in {"out", "both"}:
+                    ip = InsertionPoint(top_func)
+                    func_name = f"store_res{idx}"
+                    store_func_names.append(func_name)
 
-            wrap_data_movement(
-                arg,
-                ip,
-                func_name,
-                from_memory=False,
-                flatten=flatten,
-                mapping=mappings[-1],
-            )
+                    wrap_data_movement(
+                        arg,
+                        ip,
+                        func_name,
+                        from_memory=False,
+                        flatten=flatten,
+                        mapping=mappings[-1],
+                    )
 
     # Modify Top function
     with top_func.context, Location.unknown():
@@ -188,9 +194,9 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
         # Modify Loading
         new_in_types = []
-        last_buf = None  # For Default Storing
+        bufs = {}  # arg idx->buf
         with ip_first:
-            for arg_ind, arg in enumerate(top_func.arguments):
+            for idx, arg in enumerate(top_func.arguments):
                 # Process non-MemRefType
                 if not isinstance(arg.type, MemRefType):
                     new_in_types.append(arg.type)
@@ -204,7 +210,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     [],
                     [],
                 )
-                alloc_op.attributes["name"] = StringAttr.get(f"buf{arg_ind}")
+                alloc_op.attributes["name"] = StringAttr.get(f"buf{idx}")
 
                 # Replace original argument with buffer
                 arg.replace_all_uses_with(alloc_op.result)
@@ -222,21 +228,25 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     new_in_types.append(arg.type)
 
                 # Build CallOp for buffer loading
-                func_d.CallOp(
-                    [],
-                    FlatSymbolRefAttr.get(load_func_names[arg_ind]),
-                    [arg, alloc_op.result],
-                )
+                if load_store_mapping[top_func_name][idx] in {
+                    "in",
+                    "both",
+                }:
+                    func_d.CallOp(
+                        [],
+                        FlatSymbolRefAttr.get(load_func_names[idx]),
+                        [arg, alloc_op.result],
+                    )
+                    results["inputs"].append(MockBuffer(top_func_name, f"buf{idx}"))
 
-                # Update last argument
-                last_buf = alloc_op.result
-                results["inputs"].append(MockBuffer(top_func_name, f"buf{arg_ind}"))
+                # Record buffers
+                bufs[idx] = alloc_op
 
         # Modify Storing
         new_out_types = []
         ip_return = InsertionPoint(op_return)
         if len(op_return.operands) > 0:  # Return Value Exist
-            for res_ind, arg in enumerate(op_return.operands):
+            for idx, arg in enumerate(op_return.operands):
                 # Process non-MemRefType
                 if not isinstance(arg.type, MemRefType):
                     new_out_types.append(arg.type)
@@ -261,7 +271,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 )
 
                 alloc_op.attributes["name"] = StringAttr.get(
-                    f"res{res_ind + len(top_func.arguments)}"
+                    f"res{idx + len(top_func.arguments)}"
                 )
 
                 # Update returnop
@@ -271,7 +281,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                 # Build CallOp for buffer loading
                 func_d.CallOp(
                     [],
-                    FlatSymbolRefAttr.get(store_func_names[res_ind]),
+                    FlatSymbolRefAttr.get(store_func_names[idx]),
                     [arg, alloc_op.result],
                     ip=ip_return,
                 )
@@ -280,23 +290,79 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
                     MockBuffer(top_func_name, arg.owner.attributes["name"].value)
                 )
 
-        else:  # The last argument is set as return value by default
-            # Build CallOp for buffer loading
-            func_d.CallOp(
-                [],
-                FlatSymbolRefAttr.get("store_res"),
-                [last_buf, top_func.arguments[-1]],
-                ip=ip_return,
-            )
+        else:
+            # argument as output
+            for idx, arg in enumerate(top_func.arguments):
+                if not isinstance(arg.type, MemRefType):
+                    continue
+                if load_store_mapping[top_func_name][idx] in {"out", "both"}:
+                    func_name = f"store_res{idx}"
+                    func_d.CallOp(
+                        [],
+                        FlatSymbolRefAttr.get(func_name),
+                        [bufs[idx].result, arg],
+                        ip=ip_return,
+                    )
 
-            results["outputs"].append(
-                MockBuffer(top_func_name, f"result{len(top_func.arguments)}")
-            )
+                    results["outputs"].append(MockBuffer(top_func_name, f"result{idx}"))
 
         func_type = FunctionType.get(new_in_types, new_out_types)
         top_func.attributes["function_type"] = TypeAttr.get(func_type)
 
     return results
+
+
+# pylint: disable=dangerous-default-value
+def analyze_arg_load_store_in_func(func, mapping={}):
+    res = []
+    for _, arg in enumerate(func.arguments):
+        if not isinstance(arg.type, MemRefType):
+            res.append("scalar")
+            continue
+        # 10: in, 01: out, 11: both, 00: func
+        io_type = 0
+        for use in arg.uses:
+            if isinstance(
+                use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp, allo_d.StreamGetOp)
+            ):
+                io_type |= 2
+            elif isinstance(
+                use.owner,
+                (memref_d.StoreOp, affine_d.AffineStoreOp, allo_d.StreamPutOp),
+            ):
+                io_type |= 1
+            elif isinstance(use.owner, func_d.CallOp):
+                callee = use.owner.attributes["callee"].value
+                if callee in mapping:
+                    callee_arg_type = mapping[callee][use.operand_number]
+                    if callee_arg_type == "out":
+                        io_type |= 1
+                    elif callee_arg_type == "in":
+                        io_type |= 2
+                    elif callee_arg_type == "both":
+                        io_type |= 3
+                    else:
+                        io_type |= 0
+        match io_type:
+            case 1:
+                res.append("out")
+            case 2:
+                res.append("in")
+            case 3:
+                res.append("both")
+            case 0:
+                res.append("func")
+    return res
+
+
+def analyze_arg_load_store(mod):
+    res = {}
+    for func in mod.body.operations:
+        if not isinstance(func, func_d.FuncOp):
+            continue
+        func_res = analyze_arg_load_store_in_func(func, res)
+        res[func.attributes["sym_name"].value] = func_res
+    return res
 
 
 def decompose_library_function(module):

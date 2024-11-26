@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module, unused-argument
+# pylint: disable=consider-using-with, no-name-in-module
 
 import os
 import re
@@ -178,8 +178,12 @@ class HLSModule:
                 else:
                     mappings = None
 
+                assert func_args is not None, "Need to specify func_args"
                 generate_input_output_buffers(
-                    self.module, top_func_name, flatten=True, mappings=mappings
+                    self.module,
+                    top_func_name,
+                    flatten=True,
+                    mappings=mappings,
                 )
 
                 # TODO: Fix dataflow!

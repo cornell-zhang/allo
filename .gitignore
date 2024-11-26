@@ -83,3 +83,4 @@ docs/source/gallery
 log
 
 _tmp
+*.txt
