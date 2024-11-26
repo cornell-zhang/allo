@@ -364,9 +364,17 @@ class UseDefChain(ast.NodeVisitor):
         ), "Only support one argument for `allo.meta_if/elif/else()`"
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
-            cond = ASTResolver.resolve_constant(
-                node.items[0].context_expr.args[0], self.global_vars
-            )
+            try:
+                # pylint: disable=eval-used
+                cond = eval(
+                    compile(
+                        ast.Expression(node.items[0].context_expr.args[0]), "", "eval"
+                    ),
+                    self.global_vars,
+                )
+            # pylint: disable=broad-exception-caught
+            except Exception:
+                return None
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
                 if len(self.meta_if_stack) > self.with_scope_level:
