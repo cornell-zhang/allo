@@ -53,6 +53,7 @@ class UseDefChain(ast.NodeVisitor):
         self.func_name2id = {}
         self.func_id = None
         # Used for metaprogramming
+        self.with_scope_level = 0
         self.meta_if_stack = []
 
     def __getitem__(self, key):
@@ -363,40 +364,45 @@ class UseDefChain(ast.NodeVisitor):
         ), "Only support one argument for `allo.meta_if/elif/else()`"
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
-            try:
-                # pylint: disable=eval-used
-                cond = eval(
-                    compile(
-                        ast.Expression(node.items[0].context_expr.args[0]), "", "eval"
-                    ),
-                    self.global_vars,
-                )
-            # pylint: disable=broad-exception-caught
-            except Exception:
-                return None
+            cond = ASTResolver.resolve_constant(
+                node.items[0].context_expr.args[0], self.global_vars
+            )
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
-                self.meta_if_stack.append(final_cond)
+                if len(self.meta_if_stack) > self.with_scope_level:
+                    self.meta_if_stack[self.with_scope_level].append(final_cond)
+                else:
+                    self.meta_if_stack.append([final_cond])
             else:  # meta_elif
-                assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
-                if self.meta_if_stack[-1]:  # previous `if` has already satisfied
-                    self.meta_if_stack.pop()
-                    self.meta_if_stack.append(True)
+                assert (
+                    len(self.meta_if_stack[self.with_scope_level]) > 0
+                ), "Unmatched allo.meta_elif()"
+                if self.meta_if_stack[self.with_scope_level][
+                    -1
+                ]:  # previous `if` has already satisfied
+                    self.meta_if_stack[self.with_scope_level].pop()
+                    self.meta_if_stack[self.with_scope_level].append(True)
                     final_cond = False
                 else:
-                    self.meta_if_stack.pop()
-                    self.meta_if_stack.append(cond)
+                    self.meta_if_stack[self.with_scope_level].pop()
+                    self.meta_if_stack[self.with_scope_level].append(cond)
                     final_cond = cond
         elif node.items[0].context_expr.func.attr == "meta_else":
-            assert len(self.meta_if_stack) > 0, "Unmatched allo.meta_else()"
-            final_cond = not self.meta_if_stack[-1]
-            self.meta_if_stack.pop()
+            assert (
+                len(self.meta_if_stack[self.with_scope_level]) > 0
+            ), "Unmatched allo.meta_else()"
+            final_cond = not self.meta_if_stack[self.with_scope_level][-1]
+            self.meta_if_stack[self.with_scope_level].pop()
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
+            self.with_scope_level += 1
             res = []
             for stmt in node.body:
                 res.append(self.visit(stmt))
+            # clear inner context
+            self.meta_if_stack = self.meta_if_stack[: self.with_scope_level]
+            self.with_scope_level -= 1
             return res[-1]
         return None
 
