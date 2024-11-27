@@ -233,7 +233,10 @@ class Struct(AlloType):
         return self.__getattr__(key)
 
     def build(self):
-        raise NotImplementedError("TODO")
+        types = []
+        for _, dtype in self.dtype_dict.items():
+            types.append(dtype.build())
+        return allo_d.StructType.get(types)
 
 
 class Stream(AlloType):

@@ -4,6 +4,7 @@
 
 import numpy as np
 from .._mlir.ir import (
+    Location,
     UnitAttr,
     StringAttr,
     InsertionPoint,
@@ -21,7 +22,7 @@ from .._mlir.dialects import (
     scf as scf_d,
     func as func_d,
 )
-from .utils import MockArg, MockBuffer
+from .utils import MockArg, MockBuffer, get_extra_type_hints
 
 
 class LoopWrapper:
@@ -299,40 +300,33 @@ def update_streaming_interface(module, target, depth=-1):
             func.attributes["function_type"] = TypeAttr.get(func_type)
 
 
-def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
-    new_ip = ip if alloc_ip is None else alloc_ip
-    if not isinstance(new_ip, InsertionPoint):
-        new_ip = InsertionPoint(new_ip)
-    with new_ip:
-        shape = MemRefType(tensor.type).shape
-        if not flatten or alloc_ip is None:
-            alloc_op = memref_d.AllocOp(
-                # remove layout & memory_space info
-                MemRefType.get(
-                    MemRefType(tensor.type).shape, MemRefType(tensor.type).element_type
-                ),
-                [],
-                [],
-            )
-        else:  # store back to results
-            alloc_op = memref_d.AllocOp(
-                MemRefType.get((np.prod(shape),), MemRefType(tensor.type).element_type),
-                [],
-                [],
-            )
-        alloc_op.attributes["name"] = StringAttr.get(name)
-    if alloc_ip is None:  # load
-        tensor.replace_all_uses_with(alloc_op.result)
+def create_data_movement(
+    tensors, name, ip, from_memory=True, flatten=False, mapping=None
+):
+
+    if len(tensors) != 2:
+        raise IndexError("One source and one destination ONLY!")
+
+    src_tensor = tensors[0]
+    des_tensor = tensors[1]
+
+    if from_memory:
+        shape = MemRefType(des_tensor.type).shape
+    else:
+        shape = MemRefType(src_tensor.type).shape
+
     if mapping is not None:
         loop_bounds, src_pattern, dst_pattern = mapping
     else:
         loop_bounds, src_pattern, dst_pattern = shape, None, None
+
     for_loops = build_for_loops(loop_bounds, ip, name)
     for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
         IntegerType.get_unsigned(32), 1
     )
     for_loops[-1].attributes["rewind"] = UnitAttr.get()
     induction_vars = [for_loop.induction_variable for for_loop in for_loops]
+
     with InsertionPoint(for_loops[-1].body.operations[0]):
         if not flatten:
             var_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
@@ -342,18 +336,19 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                 f"affine_map<({var_str})->({dst_pattern})>"
             )
             load = affine_d.AffineLoadOp(
-                MemRefType(tensor.type).element_type,
-                tensor,
+                MemRefType(src_tensor.type).element_type,
+                src_tensor,
                 induction_vars,
                 affine_attr,
             )
             affine_d.AffineStoreOp(
                 load.result,
-                alloc_op.result,
+                des_tensor,
                 induction_vars,
                 affine_attr,
             )
         else:
+            # Build affine attribution
             out_str = ""
             reversed_shape = list(shape)[::-1]
             for i in range(len(shape)):
@@ -364,97 +359,77 @@ def create_buffer(tensor, name, ip, alloc_ip=None, flatten=False, mapping=None):
                     out_str = f" d{len(shape) - i - 1}" + out_str
                 if i != len(shape) - 1:
                     out_str = " + " + out_str
-            if alloc_ip is None:  # load from inputs
-                in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
-                if src_pattern is not None:
-                    out_str = src_pattern
-                affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-                load = affine_d.AffineLoadOp(
-                    MemRefType(tensor.type).element_type,
-                    tensor,
-                    induction_vars,
-                    affine_attr,
-                )
-                if dst_pattern is not None:
-                    out_str = dst_pattern
-                else:
-                    out_str = in_str
-                affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-                affine_d.AffineStoreOp(
-                    load.result,
-                    alloc_op.result,
-                    induction_vars,
-                    affine_attr,
-                )
-            else:  # store back results to outputs
-                in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
-                if src_pattern is not None:
-                    load_str = src_pattern
-                else:
-                    load_str = in_str
-                affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({load_str})>"
-                )
-                load = affine_d.AffineLoadOp(
-                    MemRefType(tensor.type).element_type,
-                    tensor,
-                    induction_vars,
-                    affine_attr,
-                )
-                if dst_pattern is not None:
-                    out_str = dst_pattern
-                affine_attr = AffineMapAttr.parse(
-                    f"affine_map<({in_str})->({out_str})>"
-                )
-                affine_d.AffineStoreOp(
-                    load.result,
-                    alloc_op.result,
-                    induction_vars,
-                    affine_attr,
-                )
-    return alloc_op
+
+            in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
+
+            # Build LoadOp
+            if src_pattern is not None:
+                load_str = src_pattern
+            else:
+                load_str = out_str if from_memory else in_str
+
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
+            load = affine_d.AffineLoadOp(
+                MemRefType(src_tensor.type).element_type,
+                src_tensor,
+                induction_vars,
+                affine_attr,
+            )
+
+            # Build StoreOp
+            if dst_pattern is not None:
+                store_str = dst_pattern
+            else:
+                store_str = in_str if from_memory else out_str
+            affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({store_str})>")
+            affine_d.AffineStoreOp(
+                load.result,
+                des_tensor,
+                induction_vars,
+                affine_attr,
+            )
 
 
-def store_tensor(tensor, target, name, ip, flatten=True):
-    shape = MemRefType(tensor.type).shape
-    loop_bounds = shape
-    for_loops = build_for_loops(loop_bounds, ip, name)
-    for_loops[-1].attributes["pipeline_ii"] = IntegerAttr.get(
-        IntegerType.get_unsigned(32), 1
-    )
-    for_loops[-1].attributes["rewind"] = UnitAttr.get()
-    induction_vars = [for_loop.induction_variable for for_loop in for_loops]
-    with InsertionPoint(for_loops[-1].body.operations[0]):
-        in_str = ", ".join([f"d{i}" for i in range(len(loop_bounds))])
-        load_str = in_str
-        affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({load_str})>")
-        load = affine_d.AffineLoadOp(
-            MemRefType(tensor.type).element_type, tensor, induction_vars, affine_attr
+def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
+    # Build input types
+    shape = MemRefType(arg.type).shape
+
+    if not flatten:
+        type_flatten = MemRefType.get(shape, MemRefType(arg.type).element_type)
+    else:
+        type_flatten = MemRefType.get(
+            (np.prod(shape),), MemRefType(arg.type).element_type
         )
-        if not flatten:
-            out_str = in_str
-        else:
-            out_str = ""
-            reversed_shape = list(shape)[::-1]
-            for i in range(len(shape)):
-                s_str = " * ".join([str(s) for s in reversed_shape[:i]])
-                if s_str != "":
-                    out_str = s_str + f" * d{len(shape) - i - 1}" + out_str
-                else:
-                    out_str = f" d{len(shape) - i - 1}" + out_str
-                if i != len(shape) - 1:
-                    out_str = " + " + out_str
-        affine_attr = AffineMapAttr.parse(f"affine_map<({in_str})->({out_str})>")
-        affine_d.AffineStoreOp(
-            load.result,
-            target,
-            induction_vars,
-            affine_attr,
+
+    type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+    input_types = [type_flatten, type_buf] if from_memory else [type_buf, type_flatten]
+
+    # Build Function
+    func_type = FunctionType.get(input_types, [])
+    func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ip)
+
+    # Attach type hints
+    if hasattr(arg, "dtype"):
+        typehints = [get_extra_type_hints(arg.dtype)] * 2
+        func_op.attributes["itypes"] = StringAttr.get("".join(typehints))
+
+    # Set context
+    func_op.add_entry_block()
+
+    # Build ForOp for movement inside
+    with func_op.context, Location.unknown():
+        ip_move = InsertionPoint(func_op.entry_block)
+
+        create_data_movement(
+            func_op.arguments,
+            func_name,
+            ip=ip_move,
+            from_memory=from_memory,
+            flatten=flatten,
+            mapping=mapping,
         )
+
+    func_d.ReturnOp([], ip=InsertionPoint(func_op.entry_block))
 
 
 def find_func_in_module(module, func_name):

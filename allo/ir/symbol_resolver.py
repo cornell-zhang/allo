@@ -31,6 +31,20 @@ class ASTResolver:
             # pylint: disable=eval-used
             return eval(compile(ast.Expression(node), "", "eval"), scope)
 
+        if isinstance(node, ast.Dict):
+            # Resolve dictionary literals to struct types
+            from .types import Struct
+
+            keys = [k.value if isinstance(k, ast.Constant) else None for k in node.keys]
+            # If any key is not a string constant, this isn't a valid struct type
+            if any(not isinstance(k, str) for k in keys):
+                return None
+            values = [ASTResolver.resolve(v, scope) for v in node.values]
+            # If any value type couldn't be resolved, return None
+            if any(v is None for v in values):
+                return None
+            return Struct(dict(zip(keys, values)))
+
         if isinstance(node, ast.Name):
             return scope.get(node.id)
 
