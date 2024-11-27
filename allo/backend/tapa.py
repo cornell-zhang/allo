@@ -91,8 +91,10 @@ def codegen_tapa_host(top, module, hls_code):
     inputs, outputs = get_func_inputs_outputs(func)
     in_dtypes = []
     in_names = []
+    in_shapes = []
     out_dtypes = []
     out_names = []
+    out_shapes = []
     
     out_str = format_str(header, indent=0, strip=False)
     
@@ -107,16 +109,17 @@ def codegen_tapa_host(top, module, hls_code):
             out_str += ");\n"
             break
         elif func_decl:
-            arg_type = line.strip()
-            _, var = arg_type.rsplit(" ", 1)
-            comma = "," if var[-1] == "," else ""
-            ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            if "[" in var:  # array
-                var = var.split("[")[0]
-                out_str += "    " + ele_type + " *" + var + f"{comma}\n"
-            else:  # scalar
-                var = var.split(",")[0]
-                out_str += "    " + ele_type + " " + var + f"{comma}\n"
+            out_str += "    " + line + "\n"
+            # arg_type = line.strip()
+            # _, var = arg_type.rsplit(" ", 1)
+            # comma = "," if var[-1] == "," else ""
+            # ele_type = arg_type.split("[")[0].split(" ")[0].strip()
+            # if "[" in var:  # array
+            #     var = var.split("[")[0]
+            #     out_str += "    " + ele_type + " *" + var + f"{comma}\n"
+            # else:  # scalar
+            #     var = var.split(",")[0]
+            #     out_str += "    " + ele_type + " " + var + f"{comma}\n"
                 
     out_str += format_str(main_header, indent=0, strip=False)
                 
@@ -166,6 +169,7 @@ def codegen_tapa_host(top, module, hls_code):
             )
         in_dtypes.append(in_dtype)
         in_names.append(f"source_in{i}")
+        in_shapes.append(in_shape)
     for i, (out_dtype, out_shape) in enumerate(outputs):
         if out_dtype in ctype_map:
             out_dtype = ctype_map[out_dtype]
@@ -191,14 +195,17 @@ def codegen_tapa_host(top, module, hls_code):
         )
         out_dtypes.append(out_dtype)
         out_names.append(f"source_out{i}")
+        out_shapes.append(out_shape)
     out_str += "\n"
     # generate tapa invoke
     out_str += f"""    int64_t kernel_time_ns = tapa::invoke(
         {top}, FLAGS_bitstream,
 """
     # TODO: can change to read_only or write_only if needed
-    for i, (in_dtype, in_name) in enumerate(zip(in_dtypes, in_names)):
+    for i, (in_dtype, in_name, in_shape) in enumerate(zip(in_dtypes, in_names, in_shapes)):
         out_str += f"        tapa::read_write_mmap<{in_dtype}>({in_name})"
+        # TODO: probably can't support 3d array
+        out_str += f".vectorized<{in_shape[-1]}>()"
         if len(out_dtypes) == 0 and i == len(in_dtypes) - 1:
             out_str += "\n"
         else:
