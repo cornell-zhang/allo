@@ -230,7 +230,9 @@ def mk_help(target, platform):
     target.write(f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
-    target.write('\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n')
+    target.write(
+        '\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n'
+    )
     target.write('\t$(ECHO) ""\n')
     target.write(f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EMU_PS=<X86/QEMU> EDGE_COMMON_SW=<rootfs and kernel image path>")

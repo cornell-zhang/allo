@@ -664,9 +664,7 @@ def mk_help(target, platform):
         target.write('\t$(ECHO) "  make fast_hw_emu\n')
     target.write('\t$(ECHO) "      Command to run application in emulation."\n')
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>')
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')
     target.write('\t$(ECHO) ""\n')
@@ -675,7 +673,9 @@ def mk_help(target, platform):
     target.write('\t$(ECHO) "      Command to build host application."\n')
     target.write('\t$(ECHO) ""\n')
     target.write('\t$(ECHO) "  make clean "\n')
-    target.write('\t$(ECHO) "      Command to remove the generated non-hardware files."\n')
+    target.write(
+        '\t$(ECHO) "      Command to remove the generated non-hardware files."\n'
+    )
     target.write('\t$(ECHO) ""\n')
     target.write('\t$(ECHO) "  make cleanall"\n')
     target.write('\t$(ECHO) "      Command to remove all the generated files."\n')
