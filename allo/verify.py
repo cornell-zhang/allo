@@ -1,5 +1,6 @@
 import os
 import past
+import re
 
 def verify(schedule_a, schedule_b):
     '''
@@ -20,16 +21,20 @@ def verify(schedule_a, schedule_b):
     with open(prog_b_path, "w") as f:
         f.write(str(mod_b))
 
-    add_pocc_pragmas(prog_a_path)
-    add_pocc_pragmas(prog_b_path)
+    add_pocc_pragmas_single_func(prog_a_path)
+    add_pocc_pragmas_single_func(prog_b_path)
 
+    replace_unsupported_types(prog_a_path)
+    replace_unsupported_types(prog_b_path)
 
-    is_equivalent = past.verify(prog_a_path, prog_b_path, "v2")
+    output_var = "v0"
+
+    is_equivalent = past.verify(prog_a_path, prog_b_path, output_var)
 
     return is_equivalent
 
 
-def add_pocc_pragmas(file_path):
+def add_pocc_pragmas_single_func(file_path):
     with open(file_path, "r") as f:
         lines = f.readlines()
 
@@ -47,3 +52,16 @@ def add_pocc_pragmas(file_path):
 
     with open(file_path, "w") as f:
         f.writelines(lines)
+
+
+def replace_unsupported_types(file_path):
+    with open(file_path, "r") as f:
+        content = f.read()
+    
+    # replace types and type conversions
+    updated_content = content.replace("int32_t", "int").replace("int64_t", "int")
+    updated_content = updated_content.replace("(float)", "")
+    updated_content = re.sub(r"ap_int<\d{1,2}>", "int", updated_content)
+
+    with open(file_path, 'w') as f:
+            f.write(updated_content)
