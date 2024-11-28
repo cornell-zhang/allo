@@ -6,8 +6,6 @@
  */
 
 #include "allo/Translation/EmitTapaHLS.h"
-#include "allo/Dialect/AlloDialect.h"
-#include "allo/Dialect/AlloOps.h"
 #include "allo/Dialect/Visitor.h"
 #include "allo/Support/Utils.h"
 #include "allo/Translation/Utils.h"
@@ -18,7 +16,9 @@
 #include "mlir/InitAllDialects.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/Support/raw_ostream.h"
-#include <iostream>
+
+#include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloOps.h"
 
 using namespace mlir;
 using namespace allo;
@@ -169,10 +169,8 @@ public:
 private:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "", bool isMmap = false,
-                 mlir::ArrayRef<int64_t> shape = {});
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "",
-                     char type = '_');
+                 std::string name = "", bool isMmap = false);
+  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "", char type = '_');
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
   void emitInfoAndNewLine(Operation *op);
@@ -1800,8 +1798,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   while (parentOp && !llvm::isa<mlir::func::FuncOp>(parentOp)) {
     parentOp = parentOp->getParentOp();
   }
-  if (auto callerFuncOp =
-          llvm::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
+  if (auto callerFuncOp = llvm::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
     mlir::StringRef callerName = callerFuncOp.getName();
     // Gather all function calls in the top function
     if (callerName == "top") {
@@ -1842,7 +1839,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
           }
           emitInfoAndNewLine(callOp);
         }
-      }
+      } 
       return;
     }
   }
@@ -1850,8 +1847,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
 
 /// C++ component emitters.
 void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name, bool isMmap,
-                              mlir::ArrayRef<int64_t> shape) {
+                              std::string name, bool isMmap) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -1863,16 +1859,7 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 
   if (isMmap) {
-    os << "tapa::mmap<";
-    for (size_t i = 0; i < shape.size() - 1; ++i) {
-      os << "tapa::vec_t<";
-    }
-    os << getTypeName(val);
-    for (size_t i = shape.size() - 1; i >= 1; --i) {
-      int64_t dim = shape[i];
-      os << ", " << dim << ">";
-    }
-    os << "> ";
+    os << "tapa::mmap<" << getTypeName(val) << "> ";
   } else {
     os << getTypeName(val) << " ";
   }
@@ -1887,8 +1874,7 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
-                                  char type) {
+void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name, char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = array.getType().cast<ShapedType>();
@@ -1905,9 +1891,7 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
         }
 
         // print stream type
-        os << "tapa::"
-           << ((type == '_' || type == 'g') ? "" : std::string(1, type))
-           << "stream< " << getTypeName(array) << " > ";
+        os << "tapa::" << ((type == '_' || type == 'g') ? "" : std::string(1, type)) <<  "stream< " << getTypeName(array) << " > ";
 
         auto attr_str = attr.cast<StringAttr>().getValue().str();
         int S_index = attr_str.find("S"); // spatial
@@ -1932,11 +1916,10 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
         os << " */";
       } else {
         if (isFunc) {
-          emitValue(array, 0, false, name, true, arrayType.getShape()); // cout
+          emitValue(array, 0, false, name, true);
         } else {
           emitValue(array, 0, false, name);
-          if (arrayType.getShape().size() == 1 &&
-              arrayType.getShape()[0] == 1) {
+          if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
             // do nothing;
           } else {
             for (auto &shape : arrayType.getShape())
@@ -2282,9 +2265,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
         if (pos != llvm::StringRef::npos) {
           SmallString<16> streamTypeName;
           streamTypeName += typeName.slice(0, pos);
-          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
-                                ? ""
-                                : std::string(1, stypes[argIdx]);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
           streamTypeName += typeName.slice(pos, typeName.size());
           os << streamTypeName << " ";
         } else {
@@ -2306,9 +2287,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
         if (pos != llvm::StringRef::npos) {
           SmallString<16> streamTypeName;
           streamTypeName += typeName.slice(0, pos);
-          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
-                                ? ""
-                                : std::string(1, stypes[argIdx]);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
           streamTypeName += typeName.slice(pos, typeName.size());
           os << streamTypeName << "& ";
         } else {
