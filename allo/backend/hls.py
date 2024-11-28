@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
+# pylint: disable=consider-using-with, no-name-in-module, too-many-branches
 
 import os
 import re
@@ -43,7 +43,7 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
-    elif backend == "tapa":
+    if backend == "tapa":
         return os.system("which tapa >> /dev/null") == 0
     return os.system("which vitis_hls >> /dev/null") == 0
 
@@ -66,7 +66,7 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     if platform in {"vivado_hls", "vitis_hls", "tapa"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
         if platform == "tapa":
-            return
+            return "success"
         if mode == "debug":
             mode = "csyn"
         elif mode == "sw_emu":
@@ -486,7 +486,7 @@ class HLSModule:
             # prepare data
             func = find_func_in_module(self.module, self.top_func_name)
             inputs, _ = get_func_inputs_outputs(func)
-            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
                 write_tensor_to_file(
                     arg,
                     in_shape,

@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=bad-builtin
+# pylint: disable=bad-builtin, too-many-branches
 
 from .utils import format_str
 from ..ir.transform import find_func_in_module
