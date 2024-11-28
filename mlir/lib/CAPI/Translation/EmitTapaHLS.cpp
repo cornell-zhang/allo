@@ -13,8 +13,7 @@ using namespace mlir;
 using namespace allo;
 
 MlirLogicalResult mlirEmitTapaHls(MlirModule module,
-                                    MlirStringCallback callback,
-                                    void *userData) {
+                                  MlirStringCallback callback, void *userData) {
   mlir::detail::CallbackOstream stream(callback, userData);
   return wrap(emitTapaHLS(unwrap(module), stream));
 }
