@@ -552,20 +552,14 @@ def mk_run(target, data, platform):
     target.write("run: all\n")
     if platform == "tapa":
         target.write("ifeq ($(TARGET), hw_emu)\n")
-        target.write("\tcp -rf $(EMCONFIG_DIR)/emconfig.json .\n")
-        target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-        if "launch" in data:
-            if "cmd_args" in data["launch"][0]:
-                target.write(" $(CMD_ARGS)")
-        target.write("\n")
     else:
         target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
-        target.write("\tcp -rf $(EMCONFIG_DIR)/emconfig.json .\n")
-        target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-        if "launch" in data:
-            if "cmd_args" in data["launch"][0]:
-                target.write(" $(CMD_ARGS)")
-        target.write("\n")
+    target.write("\tcp -rf $(EMCONFIG_DIR)/emconfig.json .\n")
+    target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
+    if "launch" in data:
+        if "cmd_args" in data["launch"][0]:
+            target.write(" $(CMD_ARGS)")
+    target.write("\n")
         
     target.write("else\n")
     target.write("\t$(EXECUTABLE)")
@@ -606,18 +600,13 @@ def mk_run(target, data, platform):
     target.write("\n")
     if platform == "tapa":
         target.write("ifeq ($(TARGET), hw_emu)\n")
-        target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-        if "launch" in data:
-            if "cmd_args" in data["launch"][0]:
-                target.write(" $(CMD_ARGS)")
-        target.write("\n")
     else:
         target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
-        target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-        if "launch" in data:
-            if "cmd_args" in data["launch"][0]:
-                target.write(" $(CMD_ARGS)")
-        target.write("\n")
+    target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
+    if "launch" in data:
+        if "cmd_args" in data["launch"][0]:
+            target.write(" $(CMD_ARGS)")
+    target.write("\n")
         
     target.write("else\n")
     target.write("\t$(EXECUTABLE)")
@@ -652,16 +641,18 @@ def mk_run(target, data, platform):
     target.write("\n")
 
 
-def mk_help(target):
+def mk_help(target, platform):
     target.write(
         "\n############################## Help Section ##############################\n"
     )
+    
+    modes = "<hw_emu/hw>" if platform == "tapa" else "<sw_emu/hw_emu/hw>"
 
     target.write("ifneq ($(findstring Makefile, $(MAKEFILE_LIST)), Makefile)\n")
     target.write("help:\n")
     target.write('\t$(ECHO) "Makefile Usage:"\n')
     target.write(
-        '\t$(ECHO) "  make all TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
     target.write(
@@ -669,13 +660,20 @@ def mk_help(target):
     )
     target.write('\t$(ECHO) ""\n')
     target.write(
-        '\t$(ECHO) "  make run TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
+    if platform == "tapa":
+        target.write(
+            '\t$(ECHO) "  make csim\n'
+        )
+        target.write(
+            '\t$(ECHO) "  make fast_hw_emu\n'
+        )
     target.write('\t$(ECHO) "      Command to run application in emulation."\n')
     target.write('\t$(ECHO) ""\n')
     target.write(
-        '\t$(ECHO) "  make build TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')
@@ -699,7 +697,7 @@ def mk_help(target):
 
 def create_mk(target, data, platform):
     mk_copyright(target)
-    mk_help(target)
+    mk_help(target, platform)
     create_params(target, data)
     add_host_flags(target, data, platform)
     add_kernel_flags(target, data, platform)

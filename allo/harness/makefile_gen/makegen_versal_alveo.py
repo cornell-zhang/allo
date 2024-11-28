@@ -37,7 +37,7 @@ def create_params(target, data):
     target.write(
         "############################## Setting up Project Variables ##############################\n"
     )
-    target.write("TARGET := hw\n")
+    target.write("TARGET := fast_hw_emu\n")
     target.write("VPP_LDFLAGS :=\n")
     target.write("include ./utils.mk\n")
     target.write("\n")
@@ -97,7 +97,7 @@ def create_params(target, data):
     return
 
 
-def add_host_flags(target, data):
+def add_host_flags(target, data, platform):
     target.write(
         "############################## Setting up Host Variables ##############################\n"
     )
@@ -123,6 +123,10 @@ def add_host_flags(target, data):
     if not source_flag:
         target.write("src/host.cpp\n")
     target.write("\n")
+    
+    if platform == "tapa":
+        target.write("TAPA_HOST_SRCS = tapa_host.cpp")
+    
     target.write("# Host compiler global settings\n")
     target.write("CXXFLAGS += ")
     target.write("-fmessage-length=0")
@@ -154,7 +158,7 @@ def add_host_flags(target, data):
     return
 
 
-def add_kernel_flags(target, data):
+def add_kernel_flags(target, data, platform):
     target.write(
         "############################## Setting up Kernel Variables ##############################\n"
     )
@@ -233,6 +237,14 @@ def add_kernel_flags(target, data):
     else:
         target.write("host")
     target.write("\n")
+    
+    if platform == "tapa":
+        target.write("TAPA_EXECUTABLE = ./tapa_")
+        if "host_exe" in data["host"]:
+            target.write(data["host"]["host_exe"])
+        else:
+            target.write("host")
+        target.write("\n")
 
     target.write("EMCONFIG_DIR = $(TEMP_DIR)\n")
     target.write("\n")
@@ -386,7 +398,7 @@ def building_kernel_rtl(target, data):
     return
 
 
-def building_host(target, data):
+def building_host(target, data, platform):
     target.write(
         "############################## Setting Rules for Host (Building Host Executable) ##############################\n"
     )
@@ -394,6 +406,10 @@ def building_host(target, data):
     target.write("$(EXECUTABLE): $(HOST_SRCS) | check-xrt\n")
     target.write("\tg++ -o $@ $^ $(CXXFLAGS) $(LDFLAGS)\n")
     target.write("\n")
+    if platform == "tapa":
+        target.write("$(TAPA_EXECUTABLE): $(TAPA_HOST_SRCS) kernel.cpp | check-xrt\n")
+        target.write("\ttapa g++ $^ -o $@\n")
+        target.write("\n")
     target.write("emconfig:$(EMCONFIG_DIR)/emconfig.json\n")
     target.write("$(EMCONFIG_DIR)/emconfig.json:\n")
     target.write("\temconfigutil --platform $(PLATFORM) --od $(EMCONFIG_DIR)")
@@ -429,14 +445,17 @@ def profile_report(target):
     return
 
 
-def mk_clean(target, data):
+def mk_clean(target, data, platform):
     target.write(
         "############################## Cleaning Rules ##############################\n"
     )
 
     target.write("# Cleaning stuff\n")
     target.write("clean:\n")
-    target.write("\t-$(RMDIR) $(EXECUTABLE) $(XCLBIN)/{*sw_emu*,*hw_emu*} \n")
+    target.write("\t-$(RMDIR) $(EXECUTABLE) ")
+    if platform == "tapa":
+        target.write("$(TAPA_EXECUTABLE) ")
+    target.write("$(XCLBIN)/{*sw_emu*,*hw_emu*} \n")
     target.write("\t-$(RMDIR) profile_* TempConfig system_estimate.xtxt *.rpt *.csv \n")
     target.write(
         "\t-$(RMDIR) src/*.ll *v++* .Xil emconfig.json dltmp* xmltmp* *.log *.jou *.wcfg *.wdb\n"
@@ -468,6 +487,8 @@ def mk_build_all(target, data, platform):
 
     target.write(".PHONY: all clean cleanall docs emconfig\n")
     target.write("all: check-platform check-device check-vitis $(EXECUTABLE) ")
+    if platform == "tapa":
+        target.write("$(TAPA_EXECUTABLE) ")
     for con in data["containers"]:
         target.write("$(BUILD_DIR)/")
         target.write(con["name"])
@@ -478,6 +499,11 @@ def mk_build_all(target, data, platform):
     target.write(".PHONY: host\n")
     target.write("host: $(EXECUTABLE)\n")
     target.write("\n")
+    
+    if platform == "tapa":
+        target.write(".PHONY: tapa_host\n")
+        target.write("tapa_host: $(TAPA_EXECUTABLE)\n")
+        target.write("\n")
 
     target.write(".PHONY: build\n")
     target.write("build: check-vitis check-device")
@@ -504,20 +530,32 @@ def mk_build_all(target, data, platform):
         building_kernel_rtl(target, data)
     else:
         building_kernel(target, data, platform)
-    building_host(target, data)
+    building_host(target, data, platform)
     return
 
 
-def mk_run(target, data):
+def mk_run(target, data, platform):
     target.write(
         "############################## Setting Essential Checks and Running Rules ##############################\n"
     )
+    
+    if platform == "tapa":
+        target.write("csim: $(TAPA_EXECUTABLE)\n")
+        target.write("\t$(TAPA_EXECUTABLE)\n")
+        target.write("\n")
+        
+        target.write("fast_hw_emu: $(TAPA_EXECUTABLE) $(TEMP_DIR)/top.xo")
+        target.write("\n")
+        target.write("\t$(TAPA_EXECUTABLE) --bitstream=$(TEMP_DIR)/top.xo")
+        target.write("\n\n")
 
     target.write("run: all\n")
-    target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
+    if platform == "tapa":
+        target.write("ifeq ($(TARGET), hw_emu)\n")
+    else:
+        target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
     target.write("\tcp -rf $(EMCONFIG_DIR)/emconfig.json .\n")
     target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-
     if "launch" in data:
         if "cmd_args" in data["launch"][0]:
             target.write(" $(CMD_ARGS)")
@@ -555,14 +593,20 @@ def mk_run(target, data):
     target.write("\n\n")
 
     target.write(".PHONY: test\n")
-    target.write("test: $(EXECUTABLE)\n")
-    target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
+    target.write("test: $(EXECUTABLE)")
+    if platform == "tapa":
+        target.write(" $(TAPA_EXECUTABLE)")
+    target.write("\n")
+    if platform == "tapa":
+        target.write("ifeq ($(TARGET), hw_emu)\n")
+    else:
+        target.write("ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))\n")
     target.write("\tXCL_EMULATION_MODE=$(TARGET) $(EXECUTABLE)")
-
     if "launch" in data:
         if "cmd_args" in data["launch"][0]:
             target.write(" $(CMD_ARGS)")
     target.write("\n")
+        
     target.write("else\n")
     target.write("\t$(EXECUTABLE)")
 
@@ -596,30 +640,39 @@ def mk_run(target, data):
     target.write("\n\n")
 
 
-def mk_help(target):
+def mk_help(target, platform):
     target.write(
         "\n############################## Help Section ##############################\n"
     )
+    
+    modes = "<hw_emu/hw>" if platform == "tapa" else "<sw_emu/hw_emu/hw>"
 
     target.write("ifneq ($(findstring Makefile, $(MAKEFILE_LIST)), Makefile)\n")
     target.write("help:\n")
     target.write('\t$(ECHO) "Makefile Usage:"\n')
     target.write(
-        '\t$(ECHO) "  make all TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
+    if platform == "tapa":
+        target.write(
+            '\t$(ECHO) "  make csim\n'
+        )
+        target.write(
+            '\t$(ECHO) "  make fast_hw_emu\n'
+        )
     target.write(
         '\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n'
     )
     target.write('\t$(ECHO) ""\n')
     target.write(
-        '\t$(ECHO) "  make run TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to run application in emulation."\n')
     target.write('\t$(ECHO) ""\n')
     target.write(
-        '\t$(ECHO) "  make build TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
+        f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>'
     )
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')
@@ -642,13 +695,13 @@ def mk_help(target):
 
 def create_mk(target, data, platform):
     mk_copyright(target)
-    mk_help(target)
+    mk_help(target, platform)
     create_params(target, data)
-    add_host_flags(target, data)
-    add_kernel_flags(target, data)
+    add_host_flags(target, data, platform)
+    add_kernel_flags(target, data, platform)
     mk_build_all(target, data, platform)
-    mk_run(target, data)
-    mk_clean(target, data)
+    mk_run(target, data, platform)
+    mk_clean(target, data, platform)
     return
 
 
