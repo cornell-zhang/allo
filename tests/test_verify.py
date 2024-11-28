@@ -58,7 +58,7 @@ def test_range_for():
     
     assert verifier
 
-test that ap_int types are correctly handled
+# test that ap_int types are correctly handled
 def test_get_bit():
     def kernel(A: int32[10]) -> int32[10]:
         B: int32[10] = 0
