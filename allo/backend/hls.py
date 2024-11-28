@@ -494,9 +494,7 @@ class HLSModule:
                 )
             # check if the build folder exists
             if self.mode in {"csim", "fast_hw_emu"}:
-                cmd = (
-                    f"cd {self.project}; make {self.mode}"
-                )
+                cmd = f"cd {self.project}; make {self.mode}"
                 print(cmd)
                 process = subprocess.Popen(cmd, shell=True)
                 process.wait()

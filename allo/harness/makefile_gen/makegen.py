@@ -222,43 +222,29 @@ def mk_help(target, platform):
     target.write(
         "\n############################## Help Section ##############################\n"
     )
-    
+
     modes = "<hw_emu/hw>" if platform == "tapa" else "<sw_emu/hw_emu/hw>"
 
     target.write("help:\n")
     target.write('\t$(ECHO) "Makefile Usage:"\n')
-    target.write(
-        f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
-    target.write(
-        '\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n'
-    )
+    target.write('\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n')
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EMU_PS=<X86/QEMU> EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
     if platform == "tapa":
-        target.write(
-            '\t$(ECHO) "     sw_emu is unavailable with tapa, please use csim'
-        )
-        target.write(
-            '\t$(ECHO) "     make csim\n'
-        )
-        target.write(
-            '\t$(ECHO) "     make fast_hw_emu\n'
-        )
+        target.write('\t$(ECHO) "     sw_emu is unavailable with tapa, please use csim')
+        target.write('\t$(ECHO) "     make csim\n')
+        target.write('\t$(ECHO) "     make fast_hw_emu\n')
     else:
         target.write(
             '\t$(ECHO) "      Command to run application in emulation.Default sw_emu will run on x86 ,to launch on qemu specify EMU_PS=QEMU."\n'
         )
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')

@@ -123,10 +123,10 @@ def add_host_flags(target, data, platform):
     if not source_flag:
         target.write("src/host.cpp\n")
     target.write("\n")
-    
+
     if platform == "tapa":
         target.write("TAPA_HOST_SRCS = tapa_host.cpp")
-    
+
     target.write("# Host compiler global settings\n")
     target.write("CXXFLAGS += ")
     target.write("-fmessage-length=0")
@@ -237,7 +237,7 @@ def add_kernel_flags(target, data, platform):
     else:
         target.write("host")
     target.write("\n")
-    
+
     if platform == "tapa":
         target.write("TAPA_EXECUTABLE = ./tapa_")
         if "host_exe" in data["host"]:
@@ -499,7 +499,7 @@ def mk_build_all(target, data, platform):
     target.write(".PHONY: host\n")
     target.write("host: $(EXECUTABLE)\n")
     target.write("\n")
-    
+
     if platform == "tapa":
         target.write(".PHONY: tapa_host\n")
         target.write("tapa_host: $(TAPA_EXECUTABLE)\n")
@@ -538,12 +538,12 @@ def mk_run(target, data, platform):
     target.write(
         "############################## Setting Essential Checks and Running Rules ##############################\n"
     )
-    
+
     if platform == "tapa":
         target.write("csim: $(TAPA_EXECUTABLE)\n")
         target.write("\t$(TAPA_EXECUTABLE)\n")
         target.write("\n")
-        
+
         target.write("fast_hw_emu: $(TAPA_EXECUTABLE) $(TEMP_DIR)/top.xo")
         target.write("\n")
         target.write("\t$(TAPA_EXECUTABLE) --bitstream=$(TEMP_DIR)/top.xo")
@@ -606,7 +606,7 @@ def mk_run(target, data, platform):
         if "cmd_args" in data["launch"][0]:
             target.write(" $(CMD_ARGS)")
     target.write("\n")
-        
+
     target.write("else\n")
     target.write("\t$(EXECUTABLE)")
 
@@ -644,36 +644,26 @@ def mk_help(target, platform):
     target.write(
         "\n############################## Help Section ##############################\n"
     )
-    
+
     modes = "<hw_emu/hw>" if platform == "tapa" else "<sw_emu/hw_emu/hw>"
 
     target.write("ifneq ($(findstring Makefile, $(MAKEFILE_LIST)), Makefile)\n")
     target.write("help:\n")
     target.write('\t$(ECHO) "Makefile Usage:"\n')
-    target.write(
-        f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>')
     target.write('"\n')
     if platform == "tapa":
-        target.write(
-            '\t$(ECHO) "  make csim\n'
-        )
-        target.write(
-            '\t$(ECHO) "  make fast_hw_emu\n'
-        )
+        target.write('\t$(ECHO) "  make csim\n')
+        target.write('\t$(ECHO) "  make fast_hw_emu\n')
     target.write(
         '\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n'
     )
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>')
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to run application in emulation."\n')
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>')
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')
     target.write('\t$(ECHO) ""\n')

@@ -93,9 +93,9 @@ def codegen_tapa_host(top, module, hls_code):
     in_names = []
     out_dtypes = []
     out_names = []
-    
+
     out_str = format_str(header, indent=0, strip=False)
-    
+
     # generate declaration for top
     func_decl = False
     for line in hls_code.split("\n"):
@@ -117,9 +117,9 @@ def codegen_tapa_host(top, module, hls_code):
             else:  # scalar
                 var = var.split(",")[0]
                 out_str += "    " + ele_type + " " + var + f"{comma}\n"
-                
+
     out_str += format_str(main_header, indent=0, strip=False)
-                
+
     # Generate in/out buffers
     for i, (in_dtype, in_shape) in enumerate(inputs):
         if in_dtype in ctype_map:
@@ -210,7 +210,9 @@ def codegen_tapa_host(top, module, hls_code):
         else:
             out_str += ",\n"
     out_str += "    );\n"
-    out_str += "    clog << \"kernel time: \" << kernel_time_ns * 1e-9 << \" s\" << endl;\n\n"
+    out_str += (
+        '    clog << "kernel time: " << kernel_time_ns * 1e-9 << " s" << endl;\n\n'
+    )
     assert len(outputs) <= 1, "Only support one output for now"
     if len(outputs) == 0:
         out_buf = "source_in" + str(len(inputs) - 1)
