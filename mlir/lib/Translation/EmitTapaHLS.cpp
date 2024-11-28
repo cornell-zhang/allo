@@ -170,7 +170,8 @@ private:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                  std::string name = "", bool isMmap = false);
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "", char type = '_');
+  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "",
+                     char type = '_');
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
   void emitInfoAndNewLine(Operation *op);
@@ -954,11 +955,14 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
         int stride = 1;
         for (int j = i + 1; j < rank; ++j) {
           if (shape[j] == ShapedType::kDynamic) {
-            emitError(op, "has dynamic shape, which is currently unsupported for tapa.");
+            emitError(
+                op,
+                "has dynamic shape, which is currently unsupported for tapa.");
           }
           stride *= shape[j];
         }
-        totalExpr = totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+        totalExpr =
+            totalExpr + indexExpr * getAffineConstantExpr(stride, context);
       }
       os << "[";
       affineEmitter.emitAffineExpr(totalExpr);
@@ -1026,11 +1030,14 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
         int stride = 1;
         for (int j = i + 1; j < rank; ++j) {
           if (shape[j] == ShapedType::kDynamic) {
-            emitError(op, "has dynamic shape, which is currently unsupported for tapa.");
+            emitError(
+                op,
+                "has dynamic shape, which is currently unsupported for tapa.");
           }
           stride *= shape[j];
         }
-        totalExpr = totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+        totalExpr =
+            totalExpr + indexExpr * getAffineConstantExpr(stride, context);
       }
       os << "[";
       affineEmitter.emitAffineExpr(totalExpr);
@@ -1842,7 +1849,8 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   while (parentOp && !llvm::isa<mlir::func::FuncOp>(parentOp)) {
     parentOp = parentOp->getParentOp();
   }
-  if (auto callerFuncOp = llvm::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
+  if (auto callerFuncOp =
+          llvm::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
     mlir::StringRef callerName = callerFuncOp.getName();
     // Gather all function calls in the top function
     if (callerName == "top") {
@@ -1883,7 +1891,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
           }
           emitInfoAndNewLine(callOp);
         }
-      } 
+      }
       return;
     }
   }
@@ -1918,7 +1926,8 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name, char type) {
+void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
+                                  char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = array.getType().cast<ShapedType>();
@@ -1935,7 +1944,9 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name, ch
         }
 
         // print stream type
-        os << "tapa::" << ((type == '_' || type == 'g') ? "" : std::string(1, type)) <<  "stream< " << getTypeName(array) << " > ";
+        os << "tapa::"
+           << ((type == '_' || type == 'g') ? "" : std::string(1, type))
+           << "stream< " << getTypeName(array) << " > ";
 
         auto attr_str = attr.cast<StringAttr>().getValue().str();
         int S_index = attr_str.find("S"); // spatial
@@ -1963,7 +1974,8 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name, ch
           emitValue(array, 0, false, name, true);
         } else {
           emitValue(array, 0, false, name);
-          if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
+          if (arrayType.getShape().size() == 1 &&
+              arrayType.getShape()[0] == 1) {
             // do nothing;
           } else {
             for (auto &shape : arrayType.getShape())
@@ -2309,7 +2321,9 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
         if (pos != llvm::StringRef::npos) {
           SmallString<16> streamTypeName;
           streamTypeName += typeName.slice(0, pos);
-          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
+                                ? ""
+                                : std::string(1, stypes[argIdx]);
           streamTypeName += typeName.slice(pos, typeName.size());
           os << streamTypeName << " ";
         } else {
@@ -2331,7 +2345,9 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
         if (pos != llvm::StringRef::npos) {
           SmallString<16> streamTypeName;
           streamTypeName += typeName.slice(0, pos);
-          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g') ? "" : std::string(1, stypes[argIdx]);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
+                                ? ""
+                                : std::string(1, stypes[argIdx]);
           streamTypeName += typeName.slice(pos, typeName.size());
           os << streamTypeName << "& ";
         } else {
