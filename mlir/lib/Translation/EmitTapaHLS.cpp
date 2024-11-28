@@ -934,12 +934,34 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
     emitValue(memref, 0, false, load_from_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
+  auto shape = arrayType.getShape();
+  int rank = shape.size();
+  if (rank == 0 || (rank == 1 && shape[0] == 1)) {
     // do nothing;
   } else {
-    for (auto index : affineMap.getResults()) {
+    if (rank == 1) {
+      for (auto index : affineMap.getResults()) {
+        os << "[";
+        affineEmitter.emitAffineExpr(index);
+        os << "]";
+      }
+    } else {
+      auto context = op.getContext();
+      AffineExpr totalExpr = getAffineConstantExpr(0, context);
+
+      for (int i = 0; i < rank; ++i) {
+        AffineExpr indexExpr = affineMap.getResults()[i];
+        int stride = 1;
+        for (int j = i + 1; j < rank; ++j) {
+          if (shape[j] == ShapedType::kDynamic) {
+            emitError(op, "has dynamic shape, which is currently unsupported for tapa.");
+          }
+          stride *= shape[j];
+        }
+        totalExpr = totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+      }
       os << "[";
-      affineEmitter.emitAffineExpr(index);
+      affineEmitter.emitAffineExpr(totalExpr);
       os << "]";
     }
   }
@@ -984,12 +1006,34 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
     emitValue(memref, 0, false, store_to_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
+  auto shape = arrayType.getShape();
+  int rank = shape.size();
+  if (rank == 0 || (rank == 1 && shape[0] == 1)) {
     // do nothing;
   } else {
-    for (auto index : affineMap.getResults()) {
+    if (rank == 1) {
+      for (auto index : affineMap.getResults()) {
+        os << "[";
+        affineEmitter.emitAffineExpr(index);
+        os << "]";
+      }
+    } else {
+      auto context = op.getContext();
+      AffineExpr totalExpr = getAffineConstantExpr(0, context);
+
+      for (int i = 0; i < rank; ++i) {
+        AffineExpr indexExpr = affineMap.getResults()[i];
+        int stride = 1;
+        for (int j = i + 1; j < rank; ++j) {
+          if (shape[j] == ShapedType::kDynamic) {
+            emitError(op, "has dynamic shape, which is currently unsupported for tapa.");
+          }
+          stride *= shape[j];
+        }
+        totalExpr = totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+      }
       os << "[";
-      affineEmitter.emitAffineExpr(index);
+      affineEmitter.emitAffineExpr(totalExpr);
       os << "]";
     }
   }
