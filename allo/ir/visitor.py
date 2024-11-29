@@ -63,6 +63,7 @@ class ASTContext:
         # libraries for external IPs
         self.ext_libs = []
         # metaprogramming
+        self.with_scope_level = 0
         self.meta_if_stack = []
         self.has_return = False
 
