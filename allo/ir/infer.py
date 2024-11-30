@@ -3,6 +3,8 @@
 # pylint: disable=unused-argument, eval-used
 
 import ast
+import sys
+import traceback
 import inspect
 import textwrap
 import warnings
@@ -33,6 +35,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
@@ -776,7 +779,7 @@ class TypeInferer(ASTVisitor):
                     node.func.value.dtype = ctx.buffers[vid].dtype
                 else:
                     raise RuntimeError(
-                        f"Unsupported function call or attribute method {node.func.attr}"
+                        f"Unsupported function call or attribute method `.{node.func.attr}`"
                     )
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -846,10 +849,12 @@ class TypeInferer(ASTVisitor):
             # Visit arguments in the top-level
             visit_stmts(ctx, node.args)
             func = ctx.global_vars[obj_name]
-            src, _ = inspect.getsourcelines(func)
+            src, starting_line_no = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
-            tree = parse_ast(src, ctx.verbose)
+            tree = parse_ast(
+                src, starting_line_no=starting_line_no, verbose=ctx.verbose
+            )
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             stmts = visit_stmts(func_ctx, tree.body)
@@ -1087,9 +1092,7 @@ def visit_stmts(ctx, stmts):
         try:
             results.append(visit_stmt(ctx, stmt))
         except Exception as e:
-            raise e
-            # raise RuntimeError(
-            #     f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}"
-            #     + f" {e}"
-            # )
+            print(f"{traceback.format_exc()}")
+            print_error_message(str(e), stmt, ctx.tree)
+            sys.exit(1)
     return results
