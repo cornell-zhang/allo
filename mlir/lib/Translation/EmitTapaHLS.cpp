@@ -30,6 +30,7 @@ using namespace allo;
 // used for determine whether to generate C++ default types or ap_(u)int
 static bool BIT_FLAG = false;
 
+// TODO: overload
 static SmallString<16> getTypeName(Type valType) {
   if (auto arrayType = valType.dyn_cast<ShapedType>())
     valType = arrayType.getElementType();
@@ -896,6 +897,7 @@ void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
@@ -973,6 +975,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
@@ -1831,6 +1834,7 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
@@ -1898,6 +1902,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
 }
 
 /// C++ component emitters.
+// TODO: overload
 void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
                               std::string name, bool isMmap) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
@@ -1926,6 +1931,7 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
+// TODO: overload
 void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
                                   char type) {
   assert(!isDeclared(array) && "has been declared before.");
@@ -2062,6 +2068,7 @@ void ModuleEmitter::emitBlock(Block &block) {
   }
 }
 
+// TODO: overload
 void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
@@ -2182,6 +2189,7 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
     os << "\n";
 }
 
+// TODO: overload
 void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                            ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
@@ -2261,6 +2269,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   // }
 }
 
+// TODO: overload
 void ModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
@@ -2451,6 +2460,7 @@ void ModuleEmitter::emitHostFunction(func::FuncOp func) {
 }
 
 /// Top-level MLIR module emitter.
+// TODO: overload
 void ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
