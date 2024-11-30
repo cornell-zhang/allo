@@ -87,7 +87,7 @@ def test_analyze_load_store():
     assert res["top2"] == ["both", "in", "out", "both"]
 
 
-def _test_traceback():
+def test_traceback():
     def kernel(A: int32[32]):
         B: undefined_type = 1
 
