@@ -2400,6 +2400,6 @@ def build_stmts(ctx, stmts):
             results.append(build_stmt(ctx, stmt))
         except Exception as e:
             print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.tree)
+            print_error_message(str(e), stmt, ctx.top_func_tree)
             sys.exit(1)
     return results

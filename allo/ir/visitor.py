@@ -81,12 +81,12 @@ class ASTContext:
             self.tree,
             self.global_vars.copy(),
             self.mlir_ctx,
+            self.inst,
             self.func_args,
             self.enable_tensor,
             self.verbose,
         )
         ctx.func_id = self.func_id
-        ctx.inst = self.inst
         ctx.func_name2id = self.func_name2id
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose

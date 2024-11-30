@@ -78,14 +78,14 @@ class TypeInferer(ASTVisitor):
                 stream_dtype = Stream(base_type, base_shape)
                 shape = tuple()
                 return stream_dtype, shape
-            assert dtype is not None, f"Unsupported type {node.value.id}"
+            assert dtype is not None, f"Unsupported type `{node.value.id}`"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
             return dtype, shape
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
-            assert dtype is not None, f"Unsupported type {node.id}"
+            assert dtype is not None, f"Unsupported type `{node.id}`"
             return dtype, tuple()
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
@@ -115,9 +115,9 @@ class TypeInferer(ASTVisitor):
                 node.dtype = Index()
                 node.shape = tuple()
             else:
-                raise RuntimeError(f"Unsupported global variable {node.id}")
+                raise RuntimeError(f"Unsupported global variable `{node.id}`")
             return node
-        raise RuntimeError(f"Unsupported Name {node.id}")
+        raise RuntimeError(f"Unsupported Name `{node.id}`")
 
     @staticmethod
     def visit_Constant(ctx, node):
@@ -1093,6 +1093,6 @@ def visit_stmts(ctx, stmts):
             results.append(visit_stmt(ctx, stmt))
         except Exception as e:
             print(f"{traceback.format_exc()}")
-            print_error_message(str(e), stmt, ctx.tree)
+            print_error_message(str(e), stmt, ctx.top_func_tree)
             sys.exit(1)
     return results
