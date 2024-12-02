@@ -204,12 +204,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Build AllocOP for buffer
                 alloc_op = memref_d.AllocOp(
-                    MemRefType.get(
-                        MemRefType(arg.type).shape,
-                        MemRefType(arg.type).element_type,
-                        MemRefType(arg.type).layout,
-                        MemRefType(arg.type).memory_space,
-                    ),
+                    MemRefType(arg.type),
                     [],
                     [],
                 )
@@ -257,12 +252,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Build AllocOP for buffer
                 if not flatten:
-                    store_memref = MemRefType.get(
-                        MemRefType(arg.type).shape,
-                        MemRefType(arg.type).element_type,
-                        MemRefType(arg.type).layout,
-                        MemRefType(arg.type).memory_space,
-                    )
+                    store_memref = MemRefType(arg.type)
                 else:
                     store_memref = MemRefType.get(
                         (np.prod(MemRefType(arg.type).shape),),
