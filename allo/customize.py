@@ -867,11 +867,11 @@ class Schedule:
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "ihls"}:
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
-                platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
+                platform="vivado_hls" if target == "vhls" else target,
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,
