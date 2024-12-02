@@ -401,7 +401,7 @@ def wrap_data_movement(arg, ip, func_name, from_memory, flatten, mapping):
             (np.prod(shape),), MemRefType(arg.type).element_type
         )
 
-    type_buf = MemRefType.get(shape, MemRefType(arg.type).element_type)
+    type_buf = MemRefType(arg.type)
     input_types = [type_flatten, type_buf] if from_memory else [type_buf, type_flatten]
 
     # Build Function
