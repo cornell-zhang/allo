@@ -63,18 +63,27 @@ from ..backend.ip import IPModule
 from ..utils import get_mlir_dtype_from_str
 from ..logging import print_error_message
 
+file_name_g = None
 
 class ASTBuilder(ASTVisitor):
-    def __call__(self, ctx, node, **kwargs):
+    def __call__(self, ctx, node, file_name = None, **kwargs):
+        global file_name_g
+        if not file_name_g and file_name:
+            file_name_g = file_name
         if node is None:
             return None
         method = getattr(self, "build_" + node.__class__.__name__, None)
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        with ctx.mlir_ctx, Location.unknown():
-            res = method(ctx, node, **kwargs)
-            return res
+        if file_name_g and hasattr(node, 'lineno') and hasattr(node, 'col_offset'):
+            with ctx.mlir_ctx, Location.file(file_name_g, node.lineno, node.col_offset):
+                res = method(ctx, node, **kwargs)
+                return res
+        else:
+            with ctx.mlir_ctx, Location.unknown():
+                res = method(ctx, node, **kwargs)
+                return res
 
 
 # pylint: disable=too-many-public-methods
@@ -1652,7 +1661,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Module(ctx, node):
         with ctx.mlir_ctx:
-            module = Module.create(loc=Location.unknown())
+            module = Module.create()
         ctx.set_ip(module.body)
         for stmt in node.body:
             build_stmt(ctx, stmt)
