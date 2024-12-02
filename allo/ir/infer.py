@@ -3,6 +3,8 @@
 # pylint: disable=unused-argument, eval-used
 
 import ast
+import sys
+import traceback
 import inspect
 import textwrap
 import warnings
@@ -33,6 +35,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
@@ -75,14 +78,14 @@ class TypeInferer(ASTVisitor):
                 stream_dtype = Stream(base_type, base_shape)
                 shape = tuple()
                 return stream_dtype, shape
-            assert dtype is not None, f"Unsupported type {node.value.id}"
+            assert dtype is not None, f"Unsupported type `{node.value.id}`"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
             return dtype, shape
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
-            assert dtype is not None, f"Unsupported type {node.id}"
+            assert dtype is not None, f"Unsupported type `{node.id}`"
             return dtype, tuple()
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
@@ -112,9 +115,9 @@ class TypeInferer(ASTVisitor):
                 node.dtype = Index()
                 node.shape = tuple()
             else:
-                raise RuntimeError(f"Unsupported global variable {node.id}")
+                raise RuntimeError(f"Unsupported global variable `{node.id}`")
             return node
-        raise RuntimeError(f"Unsupported Name {node.id}")
+        raise RuntimeError(f"Unsupported Name `{node.id}`")
 
     @staticmethod
     def visit_Constant(ctx, node):
@@ -776,7 +779,7 @@ class TypeInferer(ASTVisitor):
                     node.func.value.dtype = ctx.buffers[vid].dtype
                 else:
                     raise RuntimeError(
-                        f"Unsupported function call or attribute method {node.func.attr}"
+                        f"Unsupported function call or attribute method `.{node.func.attr}`"
                     )
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -846,10 +849,12 @@ class TypeInferer(ASTVisitor):
             # Visit arguments in the top-level
             visit_stmts(ctx, node.args)
             func = ctx.global_vars[obj_name]
-            src, _ = inspect.getsourcelines(func)
+            src, starting_line_no = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
-            tree = parse_ast(src, ctx.verbose)
+            tree = parse_ast(
+                src, starting_line_no=starting_line_no, verbose=ctx.verbose
+            )
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             stmts = visit_stmts(func_ctx, tree.body)
@@ -1086,10 +1091,9 @@ def visit_stmts(ctx, stmts):
     for stmt in stmts:
         try:
             results.append(visit_stmt(ctx, stmt))
+        # pylint: disable=broad-exception-caught
         except Exception as e:
-            raise e
-            # raise RuntimeError(
-            #     f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}"
-            #     + f" {e}"
-            # )
+            print(f"{traceback.format_exc()}")
+            print_error_message(str(e), stmt, ctx.top_func_tree)
+            sys.exit(1)
     return results

@@ -77,8 +77,17 @@ def get_kwarg(kwargs, name):
     raise RuntimeError(f"Keyword argument {name} not found")
 
 
-def parse_ast(src, verbose=False):
+def _adjust_line_numbers(node, offset):
+    for child in ast.walk(node):
+        if hasattr(child, "lineno"):
+            child.lineno += offset
+        if hasattr(child, "end_lineno"):
+            child.end_lineno += offset
+
+
+def parse_ast(src, starting_line_no=1, verbose=False):
     tree = ast.parse(src)
+    _adjust_line_numbers(tree, starting_line_no - 1)
     if verbose:
         print(src)
         try:

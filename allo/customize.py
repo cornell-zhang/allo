@@ -894,10 +894,10 @@ def customize(
     if isinstance(fn, str):
         src = fn
     else:
-        src, _ = getsourcelines(fn)
+        src, starting_line_no = getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
-    tree = parse_ast(src, verbose)
+    tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
     if instantiate is None:
         instantiate = []
     if global_vars is None:
@@ -907,22 +907,24 @@ def customize(
     use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
+        tree=tree,
         global_vars=global_vars.copy(),
         mlir_ctx=Context() if context is None else context,
+        inst=instantiate,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    ctx_type_inf.inst = instantiate
     tree = TypeInferer()(ctx_type_inf, tree)
     ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
+        tree=tree,
         global_vars=global_vars,
         mlir_ctx=Context() if context is None else context,
+        inst=instantiate,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    ctx.inst = instantiate
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
