@@ -227,7 +227,7 @@ class ASTTransformer(ASTBuilder):
             # The step is a value of same type but required to be positive.
             if step is not None and step <= 0:
                 raise RuntimeError(
-                    "Step in for loop range should be positive, got: ", step
+                    f"Step in for loop range should be positive, got: {step}"
                 )
             step = build_stmt(ctx, args[2] if len(args) >= 3 else ast.Constant(1))
             lb_expr = ASTTransformer.build_cast_op(

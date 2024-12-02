@@ -14,7 +14,7 @@ def print_error_message(error, stmt, tree):
     source_code = ast.unparse(tree)
     source_stmt = ast.unparse(stmt)
     strip_lines = [line.strip() for line in source_code.splitlines()]
-    target_idx = strip_lines.index(source_stmt)
+    target_idx = strip_lines.index(source_stmt.splitlines()[0].strip())
     line_number = stmt.lineno
     start_offset = min(target_idx, 5)
     code_lines = source_code.splitlines()[target_idx - 5 : target_idx + 5]
