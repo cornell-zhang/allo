@@ -637,7 +637,7 @@ def test_build_none_return():
     def kernel7(A: int32[32]) -> int32:
         pass
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(RuntimeError):
         s7 = allo.customize(kernel7)
 
 
