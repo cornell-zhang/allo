@@ -55,13 +55,13 @@ dtype_size_map = {
 ctype_map = {
     "f32": "float",
     "f64": "double",
-    "i8": "char",
+    "i8": "int8_t",
     "i16": "short",
     "i32": "int",
     "i64": "long",
     "i128": "__int128_t",  # unverified
     "ui1": "bool",
-    "ui8": "unsigned char",
+    "ui8": "uint8_t",
     "ui16": "unsigned short",
     "ui32": "unsigned int",
     "ui64": "unsigned long",
