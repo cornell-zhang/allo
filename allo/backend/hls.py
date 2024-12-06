@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
+# pylint: disable=consider-using-with, no-name-in-module, too-many-branches
 
 import os
 import re
@@ -23,6 +23,9 @@ from .vitis import (
     write_tensor_to_file,
     read_tensor_from_file,
 )
+from .tapa import (
+    codegen_tapa_host,
+)
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
 from ..passes import (
@@ -40,6 +43,8 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
+    if backend == "tapa":
+        return os.system("which tapa >> /dev/null") == 0
     return os.system("which vitis_hls >> /dev/null") == 0
 
 
@@ -58,8 +63,10 @@ def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
     os.makedirs(project, exist_ok=True)
     path = os.path.dirname(__file__)
     path = os.path.join(path, "../harness/")
-    if platform in {"vivado_hls", "vitis_hls"}:
+    if platform in {"vivado_hls", "vitis_hls", "tapa"}:
         os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
+        if platform == "tapa":
+            return "success"
         if mode == "debug":
             mode = "csyn"
         elif mode == "sw_emu":
@@ -223,7 +230,10 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        allo_d.emit_vhls(self.module, buf)
+        if platform == "tapa":
+            allo_d.emit_thls(self.module, buf)
+        else:
+            allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:
@@ -249,7 +259,7 @@ class HLSModule:
                     path + "makefile_gen/description.json",
                     dst_path,
                 )
-                generate_makefile(dst_path, project)
+                generate_makefile(dst_path, project, self.platform)
                 for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
@@ -283,6 +293,41 @@ class HLSModule:
                     self.top_func_name,
                     self.module,
                 )
+            elif self.platform == "tapa":
+                assert self.mode in {
+                    "csim",
+                    "fast_hw_emu",
+                    "hw_emu",
+                    "hw",
+                }, "Invalid mode"
+                assert (
+                    self.top_func_name != "kernel"
+                ), "kernel is a reserved keyword for tapa"
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "../harness/")
+                dst_path = os.path.join(project, "description.json")
+                generate_description_file(
+                    self.top_func_name,
+                    path + "makefile_gen/description.json",
+                    dst_path,
+                )
+                self.args = []
+                generate_makefile(dst_path, project, self.platform)
+                for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
+                    update_makefile(
+                        os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
+                    )
+                self.host_code = codegen_host(
+                    self.top_func_name,
+                    self.module,
+                )
+                self.tapa_host = codegen_tapa_host(
+                    self.top_func_name,
+                    self.module,
+                    self.hls_code,
+                )
+                with open(f"{project}/tapa_host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.tapa_host)
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
@@ -400,6 +445,62 @@ class HLSModule:
                     f"{self.project}/input{i}.data",
                 )
             # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(
+                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
+            ):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to build the project")
+            else:
+                print("Build folder exists, skip building")
+                # run the executable
+                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                prefix += f" cd {self.project};"
+                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
+                    prefix += " make host PLATFORM=$XDEVICE;"
+                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run the executable")
+            # suppose the last argument is the output tensor
+            result = read_tensor_from_file(
+                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+            )
+            args[-1][:] = result
+            return
+        elif self.platform == "tapa":
+            assert is_available("tapa"), "tapa is not available"
+            # Use Makefile (sw_emu, hw_emu, hw)
+            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, _ = get_func_inputs_outputs(func)
+            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_shape,
+                    f"{self.project}/input{i}.data",
+                )
+            # check if the build folder exists
+            if self.mode in {"csim", "fast_hw_emu"}:
+                cmd = f"cd {self.project}; make {self.mode}"
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run tapa executable")
+                return
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
             if not os.path.exists(
                 os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
