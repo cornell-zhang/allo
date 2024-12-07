@@ -253,7 +253,6 @@ def test_cascade_specialized_systolic():
     s.to(MockBuffer("systolic_tile", "A_fifo"), pe, axis=1, depth=M0 + 1)
     s.to(MockBuffer("systolic_tile", "B_fifo"), pe, axis=0, depth=M1 + 1)
     # Compose with submodule
-    s_top.use_def_chain.dump_graph("top")
     s_top.compose(s, id="FFN1")
     s_top.compose(s, id="FFN2")
     s_top.to(s_top.Z, "systolic_FFN2", depth=M0 * KK)
