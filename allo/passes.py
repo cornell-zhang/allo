@@ -621,11 +621,10 @@ def analyze_use_def(mod):
     def uf_find(i):
         if parent[i] == i:
             return i
-        else:
-            # path compression
-            result = uf_find(parent[i])
-            parent[i] = result
-            return result
+        # path compression
+        result = uf_find(parent[i])
+        parent[i] = result
+        return result
 
     def uf_union(name_i, name_j):
         parent[uf_find(uf_mapping[name_i])] = uf_find(uf_mapping[name_j])
@@ -655,6 +654,7 @@ def analyze_use_def(mod):
             for use in val.uses:
                 if isinstance(use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp)):
                     vals.append(use.owner.result)
+        # pylint: disable=redefined-argument-from-local
         for val in vals:
             if isinstance(val.owner, Operation) and "func.call" in str(val.owner):
                 # not sure why cannot use isinstance(val.owner, func_d.CallOp)
@@ -682,7 +682,7 @@ def analyze_use_def(mod):
                 if "name" in op.attributes:
                     buf_name = f"{func_name}:{op.attributes['name'].value}"
                 elif " = " in str(op):
-                    buf_name = f"{func_name}:{str(op).split(' = ')[0]}"
+                    buf_name = f"{func_name}:{str(op).split(' = ', maxsplit=1)[0]}"
                 else:
                     # call op does not have return value
                     continue
@@ -696,10 +696,11 @@ def analyze_use_def(mod):
                     elif "from" in owner.attributes:
                         buf_name = f"{func_name}:{owner.attributes['from'].value}"
                     elif " = " in str(owner):
-                        buf_name = f"{func_name}:{str(owner).split(' = ')[0]}"
+                        buf_name = (
+                            f"{func_name}:{str(owner).split(' = ', maxsplit=1)[0]}"
+                        )
                     ret_vals[func_name] = buf_name
 
     # recover final sets
     res = recover_sets()
-    print(res)
     return res
