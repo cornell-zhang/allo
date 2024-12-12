@@ -73,10 +73,6 @@ def getsourcefile(obj):
     return ret
 
 
-def getsourcelines(obj):
-    return inspect.getsourcelines(obj)
-
-
 def wrapped_apply(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -903,9 +899,9 @@ def customize(
 ):
     # Get Python AST
     if isinstance(fn, str):
-        src = fn
+        src, starting_line_no = fn, 1
     else:
-        src, starting_line_no = getsourcelines(fn)
+        src, starting_line_no = inspect.getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
     tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
