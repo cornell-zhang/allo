@@ -318,6 +318,10 @@ class Schedule:
             visited_target_names.append(name)
             _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
+            if inner_target.name in self.func_args[inner_target.func]:
+                # is a function argument
+                idx = self.func_args[inner_target.func].index(inner_target.name)
+                name = f"{inner_target.func}:{idx}"
             for buf_name in self.get_equivalent_variables(name):
                 path, buf_name = buf_name.split(":")
                 if buf_name.isdigit():
