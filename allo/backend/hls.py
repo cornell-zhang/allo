@@ -174,18 +174,17 @@ class HLSModule:
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
+        if configs is not None:
+            new_configs = DEFAULT_CONFIG
+            new_configs.update(configs)
+            configs = new_configs
+        else:
+            configs = DEFAULT_CONFIG
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
-                if configs is not None:
-                    new_configs = DEFAULT_CONFIG
-                    new_configs.update(configs)
-                    configs = new_configs
-                else:
-                    configs = DEFAULT_CONFIG
-
                 assert func_args is not None, "Need to specify func_args"
                 generate_input_output_buffers(
                     self.module,
