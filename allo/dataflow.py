@@ -238,7 +238,7 @@ def customize(func):
     return s
 
 
-def build(func, target="vitis_hls", mode="csim", project="top.prj"):
+def build(func, target="vitis_hls", mode="csim", project="top.prj", configs=None):
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars)
@@ -252,5 +252,6 @@ def build(func, target="vitis_hls", mode="csim", project="top.prj"):
         target=target,
         mode=mode,
         project=project,
+        configs=configs,
     )
     return hls_mod
