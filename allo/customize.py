@@ -56,10 +56,10 @@ from .ir.transform import (
     find_func_in_module,
     LoopWrapper,
 )
-from .ir.use_def import UseDefChain
 from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
+    analyze_use_def,
 )
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
@@ -113,7 +113,6 @@ class Schedule:
         func_args,
         ip,
         ext_libs=None,
-        use_def_chain=None,
         inst_list=None,
     ):
         self.module = module
@@ -125,7 +124,6 @@ class Schedule:
         if ext_libs is None:
             ext_libs = []
         self.ext_libs = ext_libs
-        self.use_def_chain = use_def_chain
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
 
@@ -280,14 +278,15 @@ class Schedule:
             raise AlloValueError("Invalid dimension")
         if factor < 0:
             raise AlloValueError("Invalid factor")
-        if partition_type == Partition.Complete:
-            partition_type = 0
-        elif partition_type == Partition.Block:
-            partition_type = 1
-        elif partition_type == Partition.Cyclic:
-            partition_type = 2
-        else:
-            raise AlloValueError("Not supported partition type")
+        match partition_type:
+            case Partition.Complete:
+                partition_type = 0
+            case Partition.Block:
+                partition_type = 1
+            case Partition.Cyclic:
+                partition_type = 2
+            case _:
+                raise AlloValueError("Not supported partition type")
         # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
@@ -315,8 +314,16 @@ class Schedule:
             visited_target_names.append(name)
             _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
-            for tensor in self.use_def_chain.get_equivalent_tensors(name):
-                recursive_partition(MockBuffer(tensor.path, tensor.name))
+            if inner_target.name in self.func_args[inner_target.func]:
+                # is a function argument
+                idx = self.func_args[inner_target.func].index(inner_target.name)
+                name = f"{inner_target.func}:{idx}"
+            for buf_name in self.get_equivalent_variables(name):
+                path, buf_name = buf_name.split(":")
+                if buf_name.isdigit():
+                    # function argument
+                    buf_name = self.func_args[path][int(buf_name)]
+                recursive_partition(MockBuffer(path, buf_name))
             # calling the same function
             if isinstance(mlir_target, func_d.CallOp):
                 visited_func_calls.append(mlir_target)
@@ -855,6 +862,13 @@ class Schedule:
                     primitive_func(*args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
+    def get_equivalent_variables(self, name):
+        use_def = analyze_use_def(self.module)
+        for ele in use_def:
+            if name in ele:
+                return ele
+        return []
+
     def build(self, target=None, mode=None, project=None, configs=None):
         if target is None or target == "llvm":
             target = "llvm"
@@ -909,9 +923,6 @@ def customize(
         instantiate = []
     if global_vars is None:
         global_vars = get_global_vars(fn)
-    # Use-def chain analysis
-    use_def_chain = UseDefChain(global_vars.copy(), instantiate)
-    use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
         tree=tree,
@@ -942,7 +953,6 @@ def customize(
         ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
         ext_libs=ctx.ext_libs,
-        use_def_chain=use_def_chain,
         inst_list=instantiate,
     )
     # Attach buffers to schedule:

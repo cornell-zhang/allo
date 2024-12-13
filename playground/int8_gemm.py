@@ -40,7 +40,6 @@ def test_cascaded_int8_gemm():
     print("Passed!")
     # Submodule customization
     # Compose with submodule
-    s_top.use_def_chain.dump_graph("top")
     s_top.compose(
         systolic, instantiate=[int8, int8, int8, L, D, 4 * D, M0, M1], id="FFN1"
     )
