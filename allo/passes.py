@@ -639,8 +639,9 @@ def analyze_use_def(mod):
             return []
         res = [set() for _ in range(max(parent) + 1)]
         for buf, label in uf_mapping.items():
-            ancestor = parent[label]
-            res[ancestor].add(buf)
+            while label != parent[label]:
+                label = parent[label]
+            res[label].add(buf)
         return res
 
     def add_use(val, val_name):
@@ -678,7 +679,7 @@ def analyze_use_def(mod):
             uf_add(arg_name)
             add_use(arg, arg_name)
         for op in func.entry_block.operations:
-            if isinstance(op, (memref_d.AllocOp, func_d.CallOp)):
+            if isinstance(op, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)):
                 if "name" in op.attributes:
                     buf_name = f"{func_name}:{op.attributes['name'].value}"
                 elif " = " in str(op):
