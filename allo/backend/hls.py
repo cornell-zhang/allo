@@ -265,6 +265,7 @@ class HLSModule:
                     self.top_func_name,
                     path + "makefile_gen/description.json",
                     dst_path,
+                    frequency=configs["frequency"],
                 )
                 generate_makefile(dst_path, project, self.platform)
                 for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
@@ -317,6 +318,7 @@ class HLSModule:
                     self.top_func_name,
                     path + "makefile_gen/description.json",
                     dst_path,
+                    frequency=configs["frequency"],
                 )
                 self.args = []
                 generate_makefile(dst_path, project, self.platform)
