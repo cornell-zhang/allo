@@ -231,10 +231,13 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        if platform == "tapa":
-            allo_d.emit_thls(self.module, buf)
-        else:
-            allo_d.emit_vhls(self.module, buf)
+        match platform:
+            case "tapa":
+                allo_d.emit_thls(self.module, buf)
+            case "intel_hls":
+                allo_d.emit_ihls(self.module, buf)
+            case _:
+                allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:
