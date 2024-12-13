@@ -268,5 +268,15 @@ def test_wrap_nonvoid(flatten):
     print("Passed!")
 
 
+def test_ihls():
+    def top(A: int32[1]) -> int32[1]:
+        A[0] = A[0] + 1
+        return A
+
+    s = allo.customize(top)
+    mod = s.build(target="ihls")
+    assert "h.single_task<Top>([=]() [[intel::kernel_args_restrict]]" in mod.hls_code
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

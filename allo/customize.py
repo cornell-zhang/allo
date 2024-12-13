@@ -877,22 +877,20 @@ class Schedule:
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
+            match target:
+                case "vitis_hls":
+                    platform = "vitis_hls"
+                case "tapa":
+                    platform = "tapa"
+                case "ihls":
+                    platform = "intel_hls"
+                case _:
+                    platform = "vivado_hls"
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
-                platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
-                mode=mode,
-                project=project,
-                ext_libs=self.ext_libs,
-                configs=configs,
-                func_args=self.func_args,
-            )
-        if target == "tapa":
-            return HLSModule(
-                self.module,
-                top_func_name=self.top_func_name,
-                platform="tapa",
+                platform=platform,
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,
