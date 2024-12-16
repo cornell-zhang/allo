@@ -18,6 +18,7 @@ from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
+from .passes import df_pipeline
 
 
 def get_pid():
@@ -235,6 +236,8 @@ def customize(func):
     s = _customize(func, global_vars=global_vars)
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
+
+    df_pipeline(s.module, rewind=True)
     return s
 
 
