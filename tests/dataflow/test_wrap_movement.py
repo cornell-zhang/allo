@@ -94,8 +94,8 @@ def test_nowrap():
 
     s1 = df.customize(top)
     module = str(s1.module)
-    with open("debug.mlir", "w") as f:
-        print(module, file=f)
+    assert "load_buf0" not in module
+    assert "store_res2" not in module
 
     if hls.is_available("vitis_hls"):
         mod = df.build(top, target="vitis_hls", mode="csim", wrapping=False)
@@ -105,5 +105,5 @@ def test_nowrap():
 
 
 if __name__ == "__main__":
-    # test_wrap_void()
+    test_wrap_void()
     test_nowrap()
