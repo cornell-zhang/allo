@@ -869,7 +869,7 @@ class Schedule:
                 return ele
         return []
 
-    def build(self, target=None, mode=None, project=None, configs=None):
+    def build(self, target=None, mode=None, project=None, configs=None, wrapping=None):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -890,7 +890,19 @@ class Schedule:
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
-                platform=platform,
+                platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
+                mode=mode,
+                project=project,
+                ext_libs=self.ext_libs,
+                configs=configs,
+                func_args=self.func_args,
+                wrapping=wrapping,
+            )
+        if target == "tapa":
+            return HLSModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                platform="tapa",
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,

@@ -87,5 +87,23 @@ def test_wrap_void():
         print("Functionality Passed!")
 
 
+def test_nowrap():
+    A = np.random.rand(M, K).astype(np.float32)
+    B = np.random.rand(K, N).astype(np.float32)
+    C = np.zeros((M, N), dtype=np.float32)
+
+    s1 = df.customize(top)
+    module = str(s1.module)
+    with open("debug.mlir", "w") as f:
+        print(module, file=f)
+
+    if hls.is_available("vitis_hls"):
+        mod = df.build(top, target="vitis_hls", mode="csim", wrapping=False)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
+        print("Functionality Passed!")
+
+
 if __name__ == "__main__":
-    test_wrap_void()
+    # test_wrap_void()
+    test_nowrap()

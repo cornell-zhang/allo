@@ -168,6 +168,7 @@ class HLSModule:
         ext_libs=None,
         configs=None,
         func_args=None,
+        wrapping=None,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
@@ -186,12 +187,14 @@ class HLSModule:
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
                 assert func_args is not None, "Need to specify func_args"
-                generate_input_output_buffers(
-                    self.module,
-                    top_func_name,
-                    flatten=True,
-                    mappings=configs.get("mappings", None),
-                )
+
+                if wrapping:
+                    generate_input_output_buffers(
+                        self.module,
+                        top_func_name,
+                        flatten=True,
+                        mappings=configs.get("mappings", None),
+                    )
 
                 # TODO: Fix dataflow!
                 # if "dataflow" in self.func.attributes:
