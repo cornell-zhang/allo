@@ -168,7 +168,7 @@ class HLSModule:
         ext_libs=None,
         configs=None,
         func_args=None,
-        wrapping=None,
+        wrapping=True,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
