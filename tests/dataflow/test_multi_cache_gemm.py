@@ -180,7 +180,7 @@ def test_large_scale_gemm():
         C_golden = np.dot(A, B)
 
         C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
-        mod1 = df.build(top, wrapping=False)
+        mod1 = df.build(top, wrap_io=False)
         mod1(A_packed, B_packed, C_packed)
         C = deserialize_C(C_packed.view(np.int8))
         print(C)
@@ -194,7 +194,7 @@ def test_large_scale_gemm():
             target="vitis_hls",
             mode="hw_emu",
             project=f"df-packed-{Rt}x{Ct}.prj",
-            wrapping=False,
+            wrap_io=False,
         )
         mod2(A_packed, B_packed, C_packed)
         C = deserialize_C(C_packed.view(np.int8))

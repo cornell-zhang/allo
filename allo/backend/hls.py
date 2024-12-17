@@ -168,7 +168,7 @@ class HLSModule:
         ext_libs=None,
         configs=None,
         func_args=None,
-        wrapping=True,
+        wrap_io=True,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
@@ -188,7 +188,7 @@ class HLSModule:
             if platform == "vitis_hls":
                 assert func_args is not None, "Need to specify func_args"
 
-                if wrapping:
+                if wrap_io:
                     generate_input_output_buffers(
                         self.module,
                         top_func_name,

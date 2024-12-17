@@ -98,7 +98,7 @@ def test_nowrap():
     assert "store_res2" not in module
 
     if hls.is_available("vitis_hls"):
-        mod = df.build(top, target="vitis_hls", mode="csim", wrapping=False)
+        mod = df.build(top, target="vitis_hls", mode="csim", wrap_io=False)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
         print("Functionality Passed!")

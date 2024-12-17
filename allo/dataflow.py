@@ -247,7 +247,7 @@ def build(
     mode="csim",
     project="top.prj",
     configs=None,
-    wrapping=True,
+    wrap_io=True,
 ):
     if target == "aie":
         global_vars = get_global_vars(func)
@@ -263,6 +263,6 @@ def build(
         mode=mode,
         project=project,
         configs=configs,
-        wrapping=wrapping,
+        wrap_io=wrap_io,
     )
     return hls_mod
