@@ -11,6 +11,7 @@ from ._mlir.ir import (
     UnrankedMemRefType,
     FunctionType,
     TypeAttr,
+    UnitAttr,
     FlatSymbolRefAttr,
     ArrayAttr,
     Attribute,
@@ -26,6 +27,7 @@ from ._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
+    scf as scf_d,
     linalg as linalg_d,
     arith as arith_d,
 )
@@ -705,3 +707,30 @@ def analyze_use_def(mod):
     # recover final sets
     res = recover_sets()
     return res
+
+
+def df_pipeline(module, initiation_interval=1, rewind=False):
+
+    def pipe_loop_innermost(forop, ii, rewind):
+        inner_forops = []
+        for op in forop.body.operations:
+            if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+                inner_forops.append(op)
+        if inner_forops:
+            for inner_forop in inner_forops:
+                pipe_loop_innermost(inner_forop, ii, rewind)
+        else:
+            forop.attributes["pipeline_ii"] = ii
+            if rewind:
+                forop.attributes["rewind"] = UnitAttr.get()
+            # print('Pipeline Once.')
+
+    with module.context:
+        i32 = IntegerType.get_unsigned(32)
+        ii = IntegerAttr.get(i32, initiation_interval)
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp):
+                func = op
+                for op_ in func.entry_block.operations:
+                    if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
+                        pipe_loop_innermost(op_, ii, rewind)

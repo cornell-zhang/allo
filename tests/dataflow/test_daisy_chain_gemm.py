@@ -25,7 +25,7 @@ def top():
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int16[M, K], B: int16[K, N], C: int16[M, N]):
         i, j = df.get_pid()
-        # periperals kernels
+        # peripheral kernels
         with allo.meta_if(i == 0 and j == 0):
             for k in range(K):
                 # pack data A
@@ -56,9 +56,6 @@ def top():
                 fifo_A[i - 1, 0].put(a[16 * (i - 1) : 16 * i])
                 with allo.meta_if(i < M):
                     L2_A[i + 1].put(a)
-                # TODO: Fix meta matching
-                with allo.meta_else():
-                    pass
 
         with allo.meta_elif(i == 0):
             # j > 0, the first row
@@ -67,8 +64,6 @@ def top():
                 fifo_B[0, j - 1].put(b[16 * (j - 1) : 16 * j])
                 with allo.meta_if(j < N):
                     L2_B[j + 1].put(b)
-                with allo.meta_else():
-                    pass
 
         with allo.meta_elif(i == P0 - 1):
             c_C = L1_C[i - 2, N - j].get()
@@ -76,8 +71,6 @@ def top():
             with allo.meta_if(j != 1):
                 for ind in range(j - 1):
                     L2_C[j - 1].put(L2_C[j - 2].get())
-            with allo.meta_else():
-                pass
 
         with allo.meta_elif(j == P1 - 1):
             pass

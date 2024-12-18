@@ -869,7 +869,7 @@ class Schedule:
                 return ele
         return []
 
-    def build(self, target=None, mode=None, project=None, configs=None):
+    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -896,6 +896,7 @@ class Schedule:
                 ext_libs=self.ext_libs,
                 configs=configs,
                 func_args=self.func_args,
+                wrap_io=wrap_io,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
