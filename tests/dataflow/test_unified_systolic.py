@@ -139,7 +139,7 @@ def test_unified_systolic():
         schedule_unified_systolic(s)
 
         # csim test
-        print(" Csim Test ".center(60, '*'))
+        print(" Csim Test ".center(60, "*"))
         mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
         C_truth = np.dot(A, B)
         print(C_truth)
@@ -158,14 +158,16 @@ def test_unified_systolic():
         print("Csim: Output-stationary Mode Passed!")
 
         # csyn test
-        print(" Csyn Test ".center(60, '*'))
+        print(" Csyn Test ".center(60, "*"))
         mod_csyn = s.build(target="vitis_hls", mode="csyn", project="df-uni-csyn.prj")
         mod_csyn()
         print("Design: C-Synthesizable!")
 
         # hw_emu test
-        print(" Hw_emu Test ".center(60, '*'))
-        mod_hwemu = s.build(target="vitis_hls", mode="hw_emu", project="df-uni-hwemu.prj")
+        print(" Hw_emu Test ".center(60, "*"))
+        mod_hwemu = s.build(
+            target="vitis_hls", mode="hw_emu", project="df-uni-hwemu.prj"
+        )
         C = np.zeros((M, N), dtype=np.int32)
         mod_hwemu(A, B, flowtag1, C)
         print(C)
@@ -177,7 +179,6 @@ def test_unified_systolic():
         print(C)
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Hw_emu: Output-stationary Mode Passed!")
-
 
 
 if __name__ == "__main__":
