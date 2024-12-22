@@ -86,8 +86,6 @@ def top():
                     fifo_A[i - 1, j].put(a)
                 with allo.meta_if(i < M):
                     fifo_B[i, j - 1].put(b)
-                with allo.meta_else():
-                    pass
 
             with allo.meta_if(i == 1):
                 packed_tmp: UInt(M * 16) = 0
