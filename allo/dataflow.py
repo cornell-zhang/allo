@@ -167,7 +167,9 @@ def _build_top(s, stream_info):
     with s.module.context, Location.unknown():
         # create new func
         func_type = FunctionType.get(input_types, [])
-        new_top = func_d.FuncOp(name="top", type=func_type, ip=InsertionPoint(top_func))
+        new_top = func_d.FuncOp(
+            name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
+        )
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
         for op in top_func.entry_block.operations:
@@ -231,13 +233,19 @@ def region():
     return actual_decorator
 
 
-def customize(func):
+def df_primitive_default(s):
+    df_pipeline(s.module, rewind=True)
+
+
+def customize(func, opt_default=True):
     global_vars = get_global_vars(func)
     s = _customize(func, global_vars=global_vars)
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
 
-    df_pipeline(s.module, rewind=True)
+    if opt_default:
+        df_primitive_default(s)
+
     return s
 
 
@@ -248,6 +256,7 @@ def build(
     project="top.prj",
     configs=None,
     wrap_io=True,
+    opt_default=True,
 ):
     if target == "aie":
         global_vars = get_global_vars(func)
@@ -257,7 +266,7 @@ def build(
         mod.build()
         return mod
     # FPGA backend
-    s = customize(func)
+    s = customize(func, opt_default)
     hls_mod = s.build(
         target=target,
         mode=mode,
