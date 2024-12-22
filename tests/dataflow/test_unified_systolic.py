@@ -3,6 +3,7 @@
 
 import allo
 from allo.ir.types import int32, bool
+from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -118,6 +119,13 @@ def top():
                             pass
 
 
+def schedule_unified_systolic(s):
+    s.partition(MockBuffer(s.top_func_name, "A"), dim=0)
+    s.partition(MockBuffer(s.top_func_name, "B"), dim=0)
+    s.partition(MockBuffer(s.top_func_name, "C"), dim=0)
+    return s
+
+
 def test_unified_systolic():
 
     A = np.random.randint(-8, 8, (M, K)).astype(np.int32)
@@ -125,25 +133,52 @@ def test_unified_systolic():
 
     C = np.zeros((M, N), dtype=np.int32)
 
-    flowtag1: bool = False
     if hls.is_available("vitis_hls"):
-        mod = df.build(top)
+
+        s = df.customize(top)
+        schedule_unified_systolic(s)
+
+        # csim test
+        print(" Csim Test ".center(60, "*"))
+        mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
+        C_truth = np.dot(A, B)
+        print(C_truth)
+
+        flowtag1: bool = False
         mod(A, B, flowtag1, C)
         print(C)
-        C_truth = np.dot(A, B)
-        print(C_truth)
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Weight-stationary Mode Passed!")
+        print("Csim: Weight-stationary Mode Passed!")
 
-    flowtag2: bool = True
-    if hls.is_available("vitis_hls"):
-        mod = df.build(top)
+        flowtag2: bool = True
+        C = np.zeros((M, N), dtype=np.int32)
         mod(A, B, flowtag2, C)
         print(C)
-        C_truth = np.dot(A, B)
-        print(C_truth)
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        print("Output-stationary Mode Passed!")
+        print("Csim: Output-stationary Mode Passed!")
+
+        # csyn test
+        print(" Csyn Test ".center(60, "*"))
+        mod_csyn = s.build(target="vitis_hls", mode="csyn", project="df-uni-csyn.prj")
+        mod_csyn()
+        print("Design: C-Synthesizable!")
+
+        # hw_emu test
+        print(" Hw_emu Test ".center(60, "*"))
+        mod_hwemu = s.build(
+            target="vitis_hls", mode="hw_emu", project="df-uni-hwemu.prj"
+        )
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag1, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Weight-stationary Mode Passed!")
+
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag2, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Output-stationary Mode Passed!")
 
 
 if __name__ == "__main__":
