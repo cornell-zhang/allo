@@ -430,22 +430,22 @@ def test_unified_simple():
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Csim: Output-stationary Mode Passed!")
 
-        # # hw_emu test
-        # print(" Hw_emu Test ".center(60, "*"))
-        # mod_hwemu = s.build(
-        #     target="vitis_hls", mode="hw_emu", project="df-uni-simple-hwemu.prj"
-        # )
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag1, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Weight-stationary Mode Passed!")
+        # hw_emu test
+        print(" Hw_emu Test ".center(60, "*"))
+        mod_hwemu = s.build(
+            target="vitis_hls", mode="hw_emu", project="df-uni-simple-hwemu.prj"
+        )
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag1, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Weight-stationary Mode Passed!")
 
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag2, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Output-stationary Mode Passed!")
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag2, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Output-stationary Mode Passed!")
 
 
 def test_unified_daisy_chain():
@@ -478,22 +478,25 @@ def test_unified_daisy_chain():
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Csim: Output-stationary Mode Passed!")
 
-        # # hw_emu test
-        # print(" Hw_emu Test ".center(60, "*"))
-        # mod_hwemu = df.build(
-        #     unified_gemm_daisy_chain, target="vitis_hls", mode="hw_emu", project="df-uni-daisy-hwemu.prj"
-        # )
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag1, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Weight-stationary Mode Passed!")
+        # hw_emu test
+        print(" Hw_emu Test ".center(60, "*"))
+        mod_hwemu = df.build(
+            unified_gemm_daisy_chain,
+            target="vitis_hls",
+            mode="hw_emu",
+            project="df-uni-daisy-hwemu.prj",
+        )
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag1, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Weight-stationary Mode Passed!")
 
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag2, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Output-stationary Mode Passed!")
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag2, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Output-stationary Mode Passed!")
 
 
 M, N, K = 4, 4, 4
@@ -532,22 +535,22 @@ def test_unified_tiling():
         np.testing.assert_allclose(C, C_truth, atol=1e-5)
         print("Csim: Output-stationary Mode Passed!")
 
-        # # hw_emu test
-        # print(" Hw_emu Test ".center(60, "*"))
-        # mod_hwemu = s.build(
-        #     target="vitis_hls", mode="hw_emu", project="df-uni-tiling-hwemu.prj"
-        # )
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag1, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Weight-stationary Mode Passed!")
+        # hw_emu test
+        print(" Hw_emu Test ".center(60, "*"))
+        mod_hwemu = s.build(
+            target="vitis_hls", mode="hw_emu", project="df-uni-tiling-hwemu.prj"
+        )
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag1, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Weight-stationary Mode Passed!")
 
-        # C = np.zeros((M, N), dtype=np.int32)
-        # mod_hwemu(A, B, flowtag2, C)
-        # print(C)
-        # np.testing.assert_allclose(C, C_truth, atol=1e-5)
-        # print("Hw_emu: Output-stationary Mode Passed!")
+        C = np.zeros((M, N), dtype=np.int32)
+        mod_hwemu(A, B, flowtag2, C)
+        print(C)
+        np.testing.assert_allclose(C, C_truth, atol=1e-5)
+        print("Hw_emu: Output-stationary Mode Passed!")
 
 
 if __name__ == "__main__":
