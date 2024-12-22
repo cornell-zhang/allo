@@ -394,6 +394,11 @@ def schedule_unified_systolic(s):
     return s
 
 
+U = 4  # Require for same size in two dimension if not tiling
+M, N, K = U, 4, U
+P0, P1 = U + 2, U + 2
+
+
 def test_unified_simple():
 
     A = np.random.randint(-8, 8, (M, K)).astype(np.int32)
@@ -489,6 +494,11 @@ def test_unified_daisy_chain():
         # print(C)
         # np.testing.assert_allclose(C, C_truth, atol=1e-5)
         # print("Hw_emu: Output-stationary Mode Passed!")
+
+
+M, N, K = 4, 4, 4
+Rt, Ct = 2, 2
+P0, P1 = Rt + 2, Ct + 2
 
 
 def test_unified_tiling():
