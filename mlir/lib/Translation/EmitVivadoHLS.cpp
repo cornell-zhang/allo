@@ -1768,7 +1768,9 @@ void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
 
 template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
   indent();
-  emitValue(op.getResult());
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
   os << " = ";
   emitValue(op.getOperand());
   os << ";";

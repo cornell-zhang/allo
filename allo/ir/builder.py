@@ -128,7 +128,10 @@ class ASTTransformer(ASTBuilder):
     def build_array(ctx, dtype, shape):
         if not ctx.enable_tensor:
             memref_type = MemRefType.get(shape, dtype.build())
-            return memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            if isinstance(dtype, UInt):
+                alloc_op.attributes["unsigned"] = UnitAttr.get()
+            return alloc_op
         return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
 
     @staticmethod
@@ -690,10 +693,14 @@ class ASTTransformer(ASTBuilder):
         if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
             node.dtype, (Fixed, UFixed)
         ):
-            return opcls[ty_cls](
+            op = opcls[ty_cls](
                 node.dtype.build(), lhs.result, rhs.result, ip=ctx.get_ip()
             )
-        return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
+        else:
+            op = opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
+        if isinstance(node.dtype, UInt):
+            op.attributes["unsigned"] = UnitAttr.get()
+        return op
 
     @staticmethod
     def build_UnaryOp(ctx, node):
@@ -1122,6 +1129,8 @@ class ASTTransformer(ASTBuilder):
                     affine_attr,
                     ip=ctx.get_ip(),
                 )
+                if isinstance(node.value.dtype, UInt):
+                    op.attributes["unsigned"] = UnitAttr.get()
             else:  # ast.Store
                 op = affine_d.AffineStoreOp(
                     val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
@@ -1131,6 +1140,8 @@ class ASTTransformer(ASTBuilder):
             if isinstance(node.ctx, ast.Load):
                 # pylint: disable=redefined-variable-type
                 op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
+                if isinstance(node.value.dtype, UInt):
+                    op.attributes["unsigned"] = UnitAttr.get()
             else:  # ast.Store
                 op = memref_d.StoreOp(
                     val.result,
