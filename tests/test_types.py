@@ -43,6 +43,21 @@ def test_int32_float32_casting():
     assert mod(1) == kernel(1)
 
 
+def test_uint():
+    def casting():
+        buf1: UInt(17)[16, 16] = 0
+        buf2: float32[16, 16]
+
+        for i, j in allo.grid(16, 16):
+            buf2[i, j] = float(buf1[i, j] + buf1[j, i])
+
+    s = allo.customize(casting)
+    mod = s.build(target="vhls")
+    code = mod.hls_code
+    assert "ap_uint<17>" in code and "ap_uint<18>" in code
+    assert "ap_int<" not in code
+
+
 def test_index_fixed_casting():
     def test_one_cast(fixed):
         def kernel(a: index) -> float32:
