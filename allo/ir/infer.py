@@ -17,6 +17,7 @@ from .types import (
     AlloType,
     Int,
     UInt,
+    Float,
     Fixed,
     UFixed,
     Index,
@@ -777,6 +778,21 @@ class TypeInferer(ASTVisitor):
                     # stream type itself
                     node.func.value.shape = tuple()
                     node.func.value.dtype = ctx.buffers[vid].dtype
+                elif node.func.attr == "bitcast":
+                    visit_stmt(ctx, node.func.value)
+                    vid = (
+                        node.func.value.id
+                        if isinstance(node.func.value, ast.Name)
+                        else node.func.value.value.id
+                    )
+                    # single-element operation
+                    node.shape = tuple()
+                    node.func.value.shape = ctx.buffers[vid].shape
+                    node.func.value.dtype = ctx.buffers[vid].dtype
+                    if isinstance(ctx.buffers[vid].dtype, (UInt, Int)):
+                        node.dtype = Float(ctx.buffers[vid].dtype.bits)
+                    else:
+                        node.dtype = UInt(ctx.buffers[vid].dtype.bits)
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method `.{node.func.attr}`"
