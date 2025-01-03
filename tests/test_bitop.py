@@ -126,7 +126,6 @@ def test_dynamic_slice():
 
 
 def test_bitcast_uint2float():
-
     def kernel(A: uint32[10, 10]) -> float32[10, 10]:
         B: float32[10, 10]
         for i, j in allo.grid(10, 10):
@@ -140,6 +139,27 @@ def test_bitcast_uint2float():
     A_np = np.random.randint(100, size=(10, 10)).astype(np.uint32)
     B_np = mod(A_np)
     answer = np.frombuffer(A_np.tobytes(), np.float32).reshape((10, 10))
+    assert np.array_equal(B_np, answer)
+
+    code = str(s.build(target="vhls"))
+    assert "union" in code and "uint32" in code
+    print("Passed!")
+
+
+def test_bitcast_float2uint():
+    def kernel(A: float32[10, 10]) -> uint32[10, 10]:
+        B: uint32[10, 10]
+        for i, j in allo.grid(10, 10):
+            B[i, j] = A[i, j].bitcast()
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+
+    A_np = np.random.rand(10, 10).astype(np.float32)
+    B_np = mod(A_np)
+    answer = np.frombuffer(A_np.tobytes(), np.uint32).reshape((10, 10))
     assert np.array_equal(B_np, answer)
 
     code = str(s.build(target="vhls"))
