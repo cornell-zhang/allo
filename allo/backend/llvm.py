@@ -356,7 +356,7 @@ class LLVMModule:
                     ret_i = struct_array_to_int_array(
                         np_arr, bitwidth, res_type[0] == "i"
                     )
-                elif result_type == "f16":
+                elif res_type == "f16":
                     ret_i = np.array(np_arr, dtype=np.int16).view(np.float16)
                 elif res_type.startswith("fixed") or res_type.startswith("ufixed"):
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(res_type)
