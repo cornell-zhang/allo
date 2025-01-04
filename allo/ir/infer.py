@@ -780,22 +780,15 @@ class TypeInferer(ASTVisitor):
                     node.func.value.dtype = ctx.buffers[vid].dtype
                 elif node.func.attr == "bitcast":
                     visit_stmt(ctx, node.func.value)
-                    vid = (
-                        node.func.value.id
-                        if isinstance(node.func.value, ast.Name)
-                        else node.func.value.value.id
-                    )
                     # single-element operation
                     node.shape = tuple()
-                    node.func.value.shape = ctx.buffers[vid].shape
-                    node.func.value.dtype = ctx.buffers[vid].dtype
-                    if isinstance(ctx.buffers[vid].dtype, (UInt, Int)):
-                        node.dtype = Float(ctx.buffers[vid].dtype.bits)
+                    if isinstance(node.func.value.dtype, (UInt, Int)):
+                        node.dtype = Float(node.func.value.dtype.bits)
                     else:
-                        # casting between signed and unsigned types in C/C++ 
+                        # casting between signed and unsigned types in C/C++
                         # does not modify the underlying bit representation,
                         # but only the interpretation.
-                        node.dtype = UInt(ctx.buffers[vid].dtype.bits)
+                        node.dtype = UInt(node.func.value.dtype.bits)
                 else:
                     raise RuntimeError(
                         f"Unsupported function call or attribute method `.{node.func.attr}`"
@@ -845,6 +838,7 @@ class TypeInferer(ASTVisitor):
                 # No argument
                 if fn_name == "get_pid":
                     node.shape = (tuple(), tuple())
+                    # pylint: disable=redefined-variable-type
                     node.dtype = (Index(), Index())
                 else:
                     node.shape = None
