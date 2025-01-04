@@ -792,6 +792,9 @@ class TypeInferer(ASTVisitor):
                     if isinstance(ctx.buffers[vid].dtype, (UInt, Int)):
                         node.dtype = Float(ctx.buffers[vid].dtype.bits)
                     else:
+                        # casting between signed and unsigned types in C/C++ 
+                        # does not modify the underlying bit representation,
+                        # but only the interpretation.
                         node.dtype = UInt(ctx.buffers[vid].dtype.bits)
                 else:
                     raise RuntimeError(

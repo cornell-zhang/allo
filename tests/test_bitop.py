@@ -167,6 +167,28 @@ def test_bitcast_float2uint():
     print("Passed!")
 
 
+def test_bitcast_float2int():
+    def kernel(A: float32[10, 10]) -> int32[10, 10]:
+        B: int32[10, 10]
+        for i, j in allo.grid(10, 10):
+            B[i, j] = A[i, j].bitcast()
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+
+    A_np = np.random.rand(10, 10).astype(np.float32)
+    B_np = mod(A_np)
+    answer = np.frombuffer(A_np.tobytes(), np.int32).reshape((10, 10))
+    assert np.array_equal(B_np, answer)
+
+    code = str(s.build(target="vhls"))
+    assert "union" in code and "int32" in code
+    print(code)
+    print("Passed!")
+
+
 def test_packed_bconv2D_nchw():
     bs = 4
     ic, oc = 16, 32
