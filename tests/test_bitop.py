@@ -4,7 +4,7 @@
 import pytest
 import numpy as np
 import allo
-from allo.ir.types import uint1, uint2, int32, uint8, uint32, UInt, float32
+from allo.ir.types import uint1, uint2, int32, uint8, uint32, UInt, float16, float32
 
 
 def test_scalar():
@@ -125,7 +125,7 @@ def test_dynamic_slice():
     assert bin(1234) == "0b" + "".join([str(np_B[i]) for i in range(10, -1, -1)])
 
 
-def test_bitcast_uint2float():
+def test_bitcast_uint2float32():
     def kernel(A: uint32[10, 10]) -> float32[10, 10]:
         B: float32[10, 10]
         for i, j in allo.grid(10, 10):
@@ -143,6 +143,30 @@ def test_bitcast_uint2float():
 
     code = str(s.build(target="vhls"))
     assert "union" in code and "uint32" in code
+    print("Passed!")
+
+
+def test_bitcast_uint2float16():
+    def kernel(A: int32[10, 10]) -> float16[10, 10]:
+        B: float16[10, 10]
+        for i, j in allo.grid(10, 10):
+            B[i, j] = A[i, j][0:16].bitcast()
+        return B
+
+    s = allo.customize(kernel)
+    print(s.module)
+    mod = s.build()
+
+    A_np = np.random.randint(100, size=(10, 10)).astype(np.int32)
+    B_np = mod(A_np)
+    answer = np.frombuffer(A_np.astype(np.int16).tobytes(), np.float16).reshape(
+        (10, 10)
+    )
+    assert np.array_equal(B_np, answer)
+
+    code = str(s.build(target="vhls"))
+    print(code)
+    assert "union" in code and "half" in code
     print("Passed!")
 
 

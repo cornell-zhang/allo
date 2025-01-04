@@ -36,7 +36,9 @@ static SmallString<16> getTypeName(Type valType) {
     valType = arrayType.getElementType();
 
   // Handle float types.
-  if (valType.isa<Float32Type>())
+  if (valType.isa<Float16Type>())
+    return SmallString<16>("half");
+  else if (valType.isa<Float32Type>())
     return SmallString<16>("float");
   else if (valType.isa<Float64Type>())
     return SmallString<16>("double");

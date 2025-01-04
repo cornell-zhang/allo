@@ -35,7 +35,11 @@ static SmallString<16> getTypeName(Type valType) {
     valType = arrayType.getElementType();
 
   // Handle float types.
-  if (valType.isa<Float32Type>())
+  if (valType.isa<Float16Type>())
+    // Page 222:
+    // https://www.amd.com/content/dam/xilinx/support/documents/sw_manuals/xilinx2020_2/ug902-vivado-high-level-synthesis.pdf
+    return SmallString<16>("half");
+  else if (valType.isa<Float32Type>())
     return SmallString<16>("float");
   else if (valType.isa<Float64Type>())
     return SmallString<16>("double");
