@@ -1775,6 +1775,16 @@ class ASTTransformer(ASTBuilder):
                         [],
                         ip=ctx.get_ip(),
                     )
+                if node.func.attr == "bitcast":
+                    val = build_stmt(ctx, node.func.value)
+                    op = arith_d.BitcastOp(
+                        node.dtype.build(),
+                        val.result,
+                        ip=ctx.get_ip(),
+                    )
+                    if isinstance(node.func.value.dtype, UInt) or (node.dtype, UInt):
+                        op.attributes["unsigned"] = UnitAttr.get()
+                    return op
 
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
