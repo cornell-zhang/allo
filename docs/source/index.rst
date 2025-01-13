@@ -45,7 +45,11 @@ Allo is an Accelerator Design Language (ADL) and compiler that facilitates the c
    :caption: Deep Dive
 
    gallery/dive_01_data_types.rst
-
+   gallery/dive_02_template.rst
+   gallery/dive_03_composition.rst
+   dive/ip.rst
+   dive/pytorch.rst
+   gallery/dive_04_features.rst
 
 .. toctree::
    :maxdepth: 1
