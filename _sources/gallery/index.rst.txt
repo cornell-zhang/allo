@@ -34,6 +34,23 @@ Allo Documentations
 
 .. only:: html
 
+  .. image:: /gallery/images/thumb/sphx_glr_dive_01_data_types_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_dive_01_data_types.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Data Types and Type Casting</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
   .. image:: /gallery/images/thumb/sphx_glr_tutorial_02_vhls_thumb.png
     :alt:
 
@@ -68,6 +85,40 @@ Allo Documentations
 
 .. only:: html
 
+  .. image:: /gallery/images/thumb/sphx_glr_dive_02_template_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_dive_02_template.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Template Kernels</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
+  .. image:: /gallery/images/thumb/sphx_glr_dive_04_features_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_dive_04_features.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Other Features</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
   .. image:: /gallery/images/thumb/sphx_glr_developer_02_mlir_thumb.png
     :alt:
 
@@ -76,6 +127,23 @@ Allo Documentations
 .. raw:: html
 
       <div class="sphx-glr-thumbnail-title">MLIR Translation Guide</div>
+    </div>
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)">
+
+.. only:: html
+
+  .. image:: /gallery/images/thumb/sphx_glr_dive_03_composition_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_gallery_dive_03_composition.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Kernel Composition</div>
     </div>
 
 
@@ -90,9 +158,13 @@ Allo Documentations
    :hidden:
 
    /gallery/developer_01_ir_builder
+   /gallery/dive_01_data_types
    /gallery/tutorial_02_vhls
    /gallery/tutorial_01_get_started
+   /gallery/dive_02_template
+   /gallery/dive_04_features
    /gallery/developer_02_mlir
+   /gallery/dive_03_composition
 
 
 

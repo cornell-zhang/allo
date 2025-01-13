@@ -34,8 +34,10 @@ from allo.ir.types import int32
 # %%
 # We then define a function that takes two 32x32 matrices as inputs and
 # returns a 32x32 matrix as output. The variable declaration is defined
-# as ``<name>: <type>[<shape>]``. We require **strict type annotation** in
-# Allo's kernels, which is different from directly programming in Python.
+# as ``<name>: <type>[<shape>]``, and the function type is defined as
+# ``(<in_type0>, <in_type1>, ...) -> <out_type>``.
+# We require **strict type annotation** in Allo's kernels, which is different
+# from directly programming in Python.
 #
 # Inside the kernel, we provide a shorthand for the loop iterator. For example,
 # ``for i, j, k in allo.grid(32, 32, 32)`` is equivalent to the following

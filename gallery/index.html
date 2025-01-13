@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <title>Allo Documentations &#8212; Allo Documentation</title>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
@@ -141,6 +141,15 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorial_01_get_started.html">Getting Started</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="dive_01_data_types.html">Data Types and Type Casting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dive_02_template.html">Template Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dive_03_composition.html">Kernel Composition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dive/ip.html">IP Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dive/pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dive_04_features.html">Other Features</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
@@ -167,15 +176,27 @@
 <div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_developer_01_ir_builder_thumb.png" />
 <p><a class="reference internal" href="developer_01_ir_builder.html#sphx-glr-gallery-developer-01-ir-builder-py"><span class="std std-ref">IR Builder Walkthrough</span></a></p>
   <div class="sphx-glr-thumbnail-title">IR Builder Walkthrough</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_dive_01_data_types_thumb.png" />
+<p><a class="reference internal" href="dive_01_data_types.html#sphx-glr-gallery-dive-01-data-types-py"><span class="std std-ref">Data Types and Type Casting</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Data Types and Type Casting</div>
 </div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_tutorial_02_vhls_thumb.png" />
 <p><a class="reference internal" href="tutorial_02_vhls.html#sphx-glr-gallery-tutorial-02-vhls-py"><span class="std std-ref">Vivado/Vitis HLS Backend</span></a></p>
   <div class="sphx-glr-thumbnail-title">Vivado/Vitis HLS Backend</div>
 </div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_tutorial_01_get_started_thumb.png" />
 <p><a class="reference internal" href="tutorial_01_get_started.html#sphx-glr-gallery-tutorial-01-get-started-py"><span class="std std-ref">Getting Started</span></a></p>
   <div class="sphx-glr-thumbnail-title">Getting Started</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_dive_02_template_thumb.png" />
+<p><a class="reference internal" href="dive_02_template.html#sphx-glr-gallery-dive-02-template-py"><span class="std std-ref">Template Kernels</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Template Kernels</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_dive_04_features_thumb.png" />
+<p><a class="reference internal" href="dive_04_features.html#sphx-glr-gallery-dive-04-features-py"><span class="std std-ref">Other Features</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Other Features</div>
 </div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_developer_02_mlir_thumb.png" />
 <p><a class="reference internal" href="developer_02_mlir.html#sphx-glr-gallery-developer-02-mlir-py"><span class="std std-ref">MLIR Translation Guide</span></a></p>
   <div class="sphx-glr-thumbnail-title">MLIR Translation Guide</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Author: Hongzheng Chen (hzchen@cs.cornell.edu)"><img alt="" src="../_images/sphx_glr_dive_03_composition_thumb.png" />
+<p><a class="reference internal" href="dive_03_composition.html#sphx-glr-gallery-dive-03-composition-py"><span class="std std-ref">Kernel Composition</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Kernel Composition</div>
 </div></div><div class="toctree-wrapper compound">
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
@@ -204,7 +225,7 @@
 
 
     <div class="footer" role="contentinfo">
-    &#169; Copyright 2024, Allo Authors.
+    &#169; Copyright 2025, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
     </div>
 

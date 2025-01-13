@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>allo.customize &#8212; Allo Documentation</title>
-    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
@@ -140,6 +140,15 @@
 <li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_01_get_started.html">Getting Started</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_01_data_types.html">Data Types and Type Casting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_02_template.html">Template Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_03_composition.html">Kernel Composition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dive/ip.html">IP Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dive/pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_04_features.html">Other Features</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../developer/index.html">Developer Setup</a></li>
@@ -166,17 +175,17 @@
 <span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
 <span class="c1"># pylint: disable=no-name-in-module</span>
 
-<span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">inspect</span>
-<span class="kn">import</span> <span class="nn">textwrap</span>
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
-<span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">FunctionType</span> <span class="k">as</span> <span class="n">PyFunctionType</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Union</span>
-<span class="kn">from</span> <span class="nn">collections.abc</span> <span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">textwrap</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">wraps</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">FunctionType</span> <span class="k">as</span> <span class="n">PyFunctionType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
 
-<span class="kn">from</span> <span class="nn">._mlir.ir</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mlir.ir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">Context</span><span class="p">,</span>
     <span class="n">Location</span><span class="p">,</span>
     <span class="n">InsertionPoint</span><span class="p">,</span>
@@ -192,7 +201,7 @@
     <span class="n">AffineMap</span><span class="p">,</span>
     <span class="n">AffineMapAttr</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">._mlir.dialects</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mlir.dialects</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">allo</span> <span class="k">as</span> <span class="n">allo_d</span><span class="p">,</span>
     <span class="n">memref</span> <span class="k">as</span> <span class="n">memref_d</span><span class="p">,</span>
     <span class="n">affine</span> <span class="k">as</span> <span class="n">affine_d</span><span class="p">,</span>
@@ -200,50 +209,46 @@
     <span class="n">arith</span> <span class="k">as</span> <span class="n">arith_d</span><span class="p">,</span>
     <span class="n">func</span> <span class="k">as</span> <span class="n">func_d</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">._mlir.dialects.affine</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mlir.dialects.affine</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AffineExpr</span><span class="p">,</span>
     <span class="n">AffineDimExpr</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">._mlir.exceptions</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mlir.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AlloValueError</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">primitives</span> <span class="k">as</span> <span class="n">prim</span>
-<span class="kn">from</span> <span class="nn">.ir.visitor</span> <span class="kn">import</span> <span class="n">ASTContext</span>
-<span class="kn">from</span> <span class="nn">.ir.utils</span> <span class="kn">import</span> <span class="n">MockArg</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">,</span> <span class="n">parse_ast</span><span class="p">,</span> <span class="n">get_global_vars</span>
-<span class="kn">from</span> <span class="nn">.ir.builder</span> <span class="kn">import</span> <span class="n">ASTTransformer</span>
-<span class="kn">from</span> <span class="nn">.ir.infer</span> <span class="kn">import</span> <span class="n">TypeInferer</span>
-<span class="kn">from</span> <span class="nn">.ir.transform</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">primitives</span> <span class="k">as</span> <span class="n">prim</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.ir.visitor</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASTContext</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.ir.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">MockArg</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">,</span> <span class="n">parse_ast</span><span class="p">,</span> <span class="n">get_global_vars</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.ir.builder</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASTTransformer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.ir.infer</span><span class="w"> </span><span class="kn">import</span> <span class="n">TypeInferer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.ir.transform</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_affine_loop_nests</span><span class="p">,</span>
     <span class="n">find_loop_in_bands</span><span class="p">,</span>
     <span class="n">find_buffer</span><span class="p">,</span>
     <span class="n">find_func_in_module</span><span class="p">,</span>
     <span class="n">LoopWrapper</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.ir.use_def</span> <span class="kn">import</span> <span class="n">UseDefChain</span>
-<span class="kn">from</span> <span class="nn">.passes</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.passes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_mlir_lower_pipeline</span><span class="p">,</span>
     <span class="n">lower_linalg_and_attach_names</span><span class="p">,</span>
+    <span class="n">analyze_use_def</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.backend.llvm</span> <span class="kn">import</span> <span class="n">LLVMModule</span>
-<span class="kn">from</span> <span class="nn">.backend.hls</span> <span class="kn">import</span> <span class="n">HLSModule</span>
-<span class="kn">from</span> <span class="nn">.library</span> <span class="kn">import</span> <span class="n">KERNEL2SCHEDULE</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.backend.llvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLVMModule</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.backend.hls</span><span class="w"> </span><span class="kn">import</span> <span class="n">HLSModule</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">KERNEL2SCHEDULE</span>
 
 
-<span class="k">def</span> <span class="nf">getsourcefile</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">getsourcefile</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
     <span class="n">ret</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcefile</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">ret</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">ret</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getfile</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">ret</span>
 
 
-<span class="k">def</span> <span class="nf">getsourcelines</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcelines</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
-
-
-<span class="k">def</span> <span class="nf">wrapped_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">wrapped_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">):</span>
     <span class="nd">@wraps</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="n">sch</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="k">with</span> <span class="n">sch</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">context</span><span class="p">,</span> <span class="n">Location</span><span class="o">.</span><span class="n">unknown</span><span class="p">():</span>
             <span class="n">res</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
@@ -267,7 +272,7 @@
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">Partition</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Partition</span><span class="p">:</span>
     <span class="n">Complete</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">Block</span> <span class="o">=</span> <span class="mi">1</span>
     <span class="n">Cyclic</span> <span class="o">=</span> <span class="mi">2</span>
@@ -275,15 +280,14 @@
 
 <div class="viewcode-block" id="Schedule">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule">[docs]</a>
-<span class="k">class</span> <span class="nc">Schedule</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Schedule</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">module</span><span class="p">,</span>
         <span class="n">top_func</span><span class="p">,</span>
         <span class="n">func_args</span><span class="p">,</span>
         <span class="n">ip</span><span class="p">,</span>
         <span class="n">ext_libs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">use_def_chain</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">inst_list</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
@@ -295,24 +299,23 @@
         <span class="k">if</span> <span class="n">ext_libs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">ext_libs</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span> <span class="o">=</span> <span class="n">ext_libs</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">use_def_chain</span> <span class="o">=</span> <span class="n">use_def_chain</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inst_list</span> <span class="o">=</span> <span class="n">inst_list</span> <span class="k">if</span> <span class="n">inst_list</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
 
-    <span class="k">def</span> <span class="nf">get_loops</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_loops</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_func</span>
         <span class="k">return</span> <span class="n">get_affine_loop_nests</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_find_band</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_find_band</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="n">loops</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_loops</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">loops</span><span class="o">.</span><span class="n">loops</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">loops</span><span class="p">[</span><span class="n">band_name</span><span class="p">]</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Band </span><span class="si">{</span><span class="n">band_name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_find_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_find_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">)</span> <span class="ow">and</span> <span class="n">func</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">func</span>
@@ -320,7 +323,7 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Function </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
 
-    <span class="k">def</span> <span class="nf">_get_func_and_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_func_and_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="n">LoopWrapper</span><span class="p">):</span>
             <span class="n">func</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_function</span><span class="p">(</span><span class="n">axis</span><span class="o">.</span><span class="n">func</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">func</span><span class="p">,</span> <span class="n">axis</span>
@@ -334,7 +337,7 @@
 <div class="viewcode-block" id="Schedule.split">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.split">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        `split` will find the loop with loop index `axis` and tile it with each tile size `factor`</span>
 <span class="sd">        The new inner loop will be named `axis.inner` and the outer loop will be named `axis.outer`</span>
@@ -360,7 +363,7 @@
 <div class="viewcode-block" id="Schedule.reorder">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reorder">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">reorder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reorder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Reorders nested loops with indices listed in `args` such that the outermost loop is the first</span>
 <span class="sd">        index listed in `args`, the second is the second outermost, and so on.</span>
@@ -385,7 +388,7 @@
 <div class="viewcode-block" id="Schedule.unroll">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.unroll">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">unroll</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unroll</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Unrolls a loop with loop index `axis` by `factor`.</span>
 
@@ -411,7 +414,7 @@
 <div class="viewcode-block" id="Schedule.fuse">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.fuse">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">fuse</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fuse</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Combines loops with indices listed in `args` into a single loop over a single index.</span>
 
@@ -435,7 +438,7 @@
 <div class="viewcode-block" id="Schedule.partition">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.partition">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">partition_type</span><span class="o">=</span><span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">partition_type</span><span class="o">=</span><span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Partitions a given array, for example if the array is `B`, this would be `&lt;schedule&gt;.B`.</span>
 <span class="sd">        There are three types, `Partition.Complete`, `Partition.Block`, and `Partition.cyclic`.</span>
@@ -464,14 +467,15 @@
             <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid dimension&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">factor</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Invalid factor&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">:</span>
-            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
-            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">1</span>
-        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
-            <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">2</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Not supported partition type&quot;</span><span class="p">)</span>
+        <span class="k">match</span> <span class="n">partition_type</span><span class="p">:</span>
+            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Complete</span><span class="p">:</span>
+                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Block</span><span class="p">:</span>
+                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">case</span> <span class="n">Partition</span><span class="o">.</span><span class="n">Cyclic</span><span class="p">:</span>
+                <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">2</span>
+            <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Not supported partition type&quot;</span><span class="p">)</span>
         <span class="c1"># test whether partitioning the same array</span>
         <span class="k">for</span> <span class="n">parray</span><span class="p">,</span> <span class="n">items</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
@@ -492,15 +496,23 @@
         <span class="n">visited_target_names</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">visited_func_calls</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">def</span> <span class="nf">recursive_partition</span><span class="p">(</span><span class="n">inner_target</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">recursive_partition</span><span class="p">(</span><span class="n">inner_target</span><span class="p">):</span>
             <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">visited_target_names</span><span class="p">:</span>
                 <span class="k">return</span>
             <span class="n">visited_target_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">inner_target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
             <span class="c1"># equivalent users</span>
-            <span class="k">for</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_def_chain</span><span class="o">.</span><span class="n">get_equivalent_tensors</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
-                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">tensor</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">tensor</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]:</span>
+                <span class="c1"># is a function argument</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">for</span> <span class="n">buf_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_equivalent_variables</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                <span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span> <span class="o">=</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
+                    <span class="c1"># function argument</span>
+                    <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span>
+                <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span><span class="p">))</span>
             <span class="c1"># calling the same function</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
                 <span class="n">visited_func_calls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">)</span>
@@ -590,7 +602,7 @@
 <div class="viewcode-block" id="Schedule.buffer_at">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.buffer_at">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">buffer_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">buffer_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`</span>
 <span class="sd">        instead of immediately writing them to memory.</span>
@@ -617,7 +629,7 @@
 <div class="viewcode-block" id="Schedule.reshape">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reshape">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">reshape</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">shape</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reshape</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">shape</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Takes an array in the kernel, `target`, for example if the array is `B`, then would be `target` would be `&lt;schedule&gt;.B`, and reshapes it to tuple `shape`. As an example, if the desired shape is 32 by 4 by 8, the `&lt;shape&gt;` would be `(32, 4, 8)`.</span>
 
@@ -639,7 +651,7 @@
 <div class="viewcode-block" id="Schedule.pipeline">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.pipeline">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">initiation_interval</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">rewind</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">initiation_interval</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">rewind</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Pipelines a loop with index `axis` into `initiation_interval` stages.</span>
 
@@ -670,7 +682,7 @@
 <div class="viewcode-block" id="Schedule.parallel">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.parallel">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Instantiates a loop with index `axis` to be computed in parallel with the loops it is nested with.</span>
 
@@ -691,7 +703,7 @@
 <div class="viewcode-block" id="Schedule.inline">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.inline">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">inline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">inline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Inlines a function `axis`.</span>
 
@@ -711,7 +723,7 @@
 <div class="viewcode-block" id="Schedule.dataflow">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.dataflow">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">dataflow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dataflow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Applies a &quot;dataflow&quot; attribute to function `axis`. This allows for parallelism if the given function uses streams or the `to` schedule.</span>
 
@@ -731,7 +743,7 @@
         <span class="n">band_name</span> <span class="o">=</span> <span class="n">band_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
 
-        <span class="k">def</span> <span class="nf">locate_loop</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">locate_loop</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
             <span class="k">nonlocal</span> <span class="n">cnt</span>
             <span class="k">for</span> <span class="n">ope</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ope</span><span class="p">,</span> <span class="p">(</span><span class="n">scf_d</span><span class="o">.</span><span class="n">ForOp</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">)):</span>
@@ -758,7 +770,7 @@
 <div class="viewcode-block" id="Schedule.compute_at">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.compute_at">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">compute_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">from_loop</span><span class="p">,</span> <span class="n">target_loop</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">from_loop</span><span class="p">,</span> <span class="n">target_loop</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        If `from_loop` and `target_loop` are indices over the same range, `&lt;schedule&gt;.compute_at(from_loop, target_loop)` merges the two loops, taking</span>
 <span class="sd">        the body of `from_loop` and appending it to the body of `target_loop`.</span>
@@ -787,7 +799,7 @@
 <div class="viewcode-block" id="Schedule.reuse_at">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.reuse_at">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">reuse_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reuse_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">axis</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Takes an array in a kernel, for example if the array is `B`, this would be `&lt;schedule&gt;.B`, accessed by index `axis` and creates a reuse buffer</span>
 <span class="sd">        to reuse values from `target` which are accessed in a sequentially moving window.</span>
@@ -809,7 +821,7 @@
         <span class="n">loop_hdl</span> <span class="o">=</span> <span class="n">allo_d</span><span class="o">.</span><span class="n">CreateLoopHandleOp</span><span class="p">(</span><span class="n">op_hdl</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="n">StringAttr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">),</span> <span class="n">ip</span><span class="o">=</span><span class="n">ip</span><span class="p">)</span>
         <span class="n">memref_type</span> <span class="o">=</span> <span class="n">MemRefType</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">F32Type</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
 
-        <span class="k">def</span> <span class="nf">find_reuse_buffers</span><span class="p">(</span><span class="n">res</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">find_reuse_buffers</span><span class="p">(</span><span class="n">res</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">FuncOp</span><span class="p">):</span>
                     <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">entry_block</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
@@ -841,7 +853,7 @@
 <div class="viewcode-block" id="Schedule.to">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.to">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">depth</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">depth</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Takes an array in the kernel, `target`, for example if the array is `B`, this would be `target` would be `&lt;schedule&gt;.B`,</span>
 <span class="sd">        and converts it into a stream. `dst` is the name of the array any value of `target` is written to.</span>
@@ -871,7 +883,7 @@
 <div class="viewcode-block" id="Schedule.unfold">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.unfold">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">unfold</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">axes</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unfold</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">band_name</span><span class="p">,</span> <span class="n">axes</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Finds a set of nested loops with name `band_name` and for every `&lt;i&gt;` in list `axes`.</span>
 <span class="sd">        The `&lt;i&gt;th` nested loop is unfolded into a constant number of copies of it&#39;s loop body.</span>
@@ -920,7 +932,7 @@
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineYieldOp</span><span class="p">):</span>
                     <span class="k">break</span>
 
-            <span class="k">def</span> <span class="nf">update_operand</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">):</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">update_operand</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">):</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">affine_d</span><span class="o">.</span><span class="n">AffineForOp</span><span class="p">):</span>
                     <span class="c1"># pylint: disable=cell-var-from-loop</span>
                     <span class="k">for</span> <span class="n">in_op</span> <span class="ow">in</span> <span class="n">op</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
@@ -974,7 +986,7 @@
 <div class="viewcode-block" id="Schedule.compose">
 <a class="viewcode-back" href="../../api/index.html#allo.customize.Schedule.compose">[docs]</a>
     <span class="nd">@wrapped_apply</span>
-    <span class="k">def</span> <span class="nf">compose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schs</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schs</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instantiate</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Uses `schs`, a schedule for a kernel called in this kernel, in this kernel.</span>
 
@@ -995,7 +1007,7 @@
 <span class="sd">            This is a list of objects used to instantiate types `schs` is generic over.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="k">def</span> <span class="nf">get_name</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">get_name</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="p">(</span><span class="n">LoopWrapper</span><span class="p">,</span> <span class="n">MockBuffer</span><span class="p">)):</span>
                 <span class="n">arg</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
                 <span class="n">orig_func_name</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">func</span> <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sch</span><span class="o">.</span><span class="n">top_func_name</span>
@@ -1073,7 +1085,14 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">))</span></div>
 
 
-    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_equivalent_variables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="n">use_def</span> <span class="o">=</span> <span class="n">analyze_use_def</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ele</span> <span class="ow">in</span> <span class="n">use_def</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">ele</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">ele</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">configs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">wrap_io</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;llvm&quot;</span><span class="p">:</span>
             <span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;llvm&quot;</span>
             <span class="k">return</span> <span class="n">LLVMModule</span><span class="p">(</span>
@@ -1081,22 +1100,32 @@
                 <span class="n">top_func_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">,</span>
                 <span class="n">ext_libs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">target</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="s2">&quot;vivado_hls&quot;</span><span class="p">,</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">}:</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;vhls&quot;</span><span class="p">,</span> <span class="s2">&quot;vivado_hls&quot;</span><span class="p">,</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="s2">&quot;tapa&quot;</span><span class="p">,</span> <span class="s2">&quot;ihls&quot;</span><span class="p">}:</span>
+            <span class="k">match</span> <span class="n">target</span><span class="p">:</span>
+                <span class="k">case</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">:</span>
+                    <span class="n">platform</span> <span class="o">=</span> <span class="s2">&quot;vitis_hls&quot;</span>
+                <span class="k">case</span> <span class="s2">&quot;tapa&quot;</span><span class="p">:</span>
+                    <span class="n">platform</span> <span class="o">=</span> <span class="s2">&quot;tapa&quot;</span>
+                <span class="k">case</span> <span class="s2">&quot;ihls&quot;</span><span class="p">:</span>
+                    <span class="n">platform</span> <span class="o">=</span> <span class="s2">&quot;intel_hls&quot;</span>
+                <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+                    <span class="n">platform</span> <span class="o">=</span> <span class="s2">&quot;vivado_hls&quot;</span>
             <span class="k">return</span> <span class="n">HLSModule</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span>
                 <span class="n">top_func_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span><span class="p">,</span>
-                <span class="n">platform</span><span class="o">=</span><span class="s2">&quot;vivado_hls&quot;</span> <span class="k">if</span> <span class="n">target</span> <span class="o">!=</span> <span class="s2">&quot;vitis_hls&quot;</span> <span class="k">else</span> <span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
+                <span class="n">platform</span><span class="o">=</span><span class="n">platform</span><span class="p">,</span>
                 <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
                 <span class="n">project</span><span class="o">=</span><span class="n">project</span><span class="p">,</span>
                 <span class="n">ext_libs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
                 <span class="n">configs</span><span class="o">=</span><span class="n">configs</span><span class="p">,</span>
                 <span class="n">func_args</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
+                <span class="n">wrap_io</span><span class="o">=</span><span class="n">wrap_io</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Target </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is not supported&quot;</span><span class="p">)</span></div>
 
 
 
-<span class="k">def</span> <span class="nf">customize</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">customize</span><span class="p">(</span>
     <span class="n">fn</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
     <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">enable_tensor</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -1107,37 +1136,36 @@
 <span class="p">):</span>
     <span class="c1"># Get Python AST</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">src</span> <span class="o">=</span> <span class="n">fn</span>
+        <span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span> <span class="o">=</span> <span class="n">fn</span><span class="p">,</span> <span class="mi">1</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">src</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">getsourcelines</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+        <span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcelines</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
         <span class="n">src</span> <span class="o">=</span> <span class="p">[</span><span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">tabsize</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">9999</span><span class="p">)</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">src</span><span class="p">]</span>
         <span class="n">src</span> <span class="o">=</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">src</span><span class="p">))</span>
-    <span class="n">tree</span> <span class="o">=</span> <span class="n">parse_ast</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="n">tree</span> <span class="o">=</span> <span class="n">parse_ast</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span><span class="o">=</span><span class="n">starting_line_no</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">instantiate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">instantiate</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">if</span> <span class="n">global_vars</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">global_vars</span> <span class="o">=</span> <span class="n">get_global_vars</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
-    <span class="c1"># Use-def chain analysis</span>
-    <span class="n">use_def_chain</span> <span class="o">=</span> <span class="n">UseDefChain</span><span class="p">(</span><span class="n">global_vars</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">instantiate</span><span class="p">)</span>
-    <span class="n">use_def_chain</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
     <span class="c1"># Type construction</span>
     <span class="n">ctx_type_inf</span> <span class="o">=</span> <span class="n">ASTContext</span><span class="p">(</span>
+        <span class="n">tree</span><span class="o">=</span><span class="n">tree</span><span class="p">,</span>
         <span class="n">global_vars</span><span class="o">=</span><span class="n">global_vars</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">mlir_ctx</span><span class="o">=</span><span class="n">Context</span><span class="p">()</span> <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">context</span><span class="p">,</span>
+        <span class="n">inst</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
         <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
         <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">ctx_type_inf</span><span class="o">.</span><span class="n">inst</span> <span class="o">=</span> <span class="n">instantiate</span>
     <span class="n">tree</span> <span class="o">=</span> <span class="n">TypeInferer</span><span class="p">()(</span><span class="n">ctx_type_inf</span><span class="p">,</span> <span class="n">tree</span><span class="p">)</span>
     <span class="n">ctx_type_inf</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="c1"># Start building IR</span>
     <span class="n">ctx</span> <span class="o">=</span> <span class="n">ASTContext</span><span class="p">(</span>
+        <span class="n">tree</span><span class="o">=</span><span class="n">tree</span><span class="p">,</span>
         <span class="n">global_vars</span><span class="o">=</span><span class="n">global_vars</span><span class="p">,</span>
         <span class="n">mlir_ctx</span><span class="o">=</span><span class="n">Context</span><span class="p">()</span> <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">context</span><span class="p">,</span>
+        <span class="n">inst</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
         <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
         <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">ctx</span><span class="o">.</span><span class="n">inst</span> <span class="o">=</span> <span class="n">instantiate</span>
     <span class="n">module</span> <span class="o">=</span> <span class="n">ASTTransformer</span><span class="p">()(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">tree</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">lower_linalg</span><span class="p">:</span>
         <span class="n">lower_linalg_and_attach_names</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
@@ -1148,7 +1176,6 @@
         <span class="n">ctx</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
         <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">top_func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">),</span>
         <span class="n">ext_libs</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">ext_libs</span><span class="p">,</span>
-        <span class="n">use_def_chain</span><span class="o">=</span><span class="n">use_def_chain</span><span class="p">,</span>
         <span class="n">inst_list</span><span class="o">=</span><span class="n">instantiate</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="c1"># Attach buffers to schedule:</span>
@@ -1203,7 +1230,7 @@
 
 
     <div class="footer" role="contentinfo">
-    &#169; Copyright 2024, Allo Authors.
+    &#169; Copyright 2025, Allo Authors.
       Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
     </div>
 
