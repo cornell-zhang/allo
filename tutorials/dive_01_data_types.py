@@ -92,18 +92,18 @@ print(s.module)
 # --------------
 # As hardware accelerators have ability to manipulate each bit of the data, Allo supports bit operations on
 # those integer types. For example, we can access a specific bit in an integer ``a`` using the indexing operator:
-# 
+#
 # .. code-block:: python
 #
 #   a[15]
 
 # %%
 # We can also extract a chunk of bits from an integer using the slicing operator:
-# 
+#
 # .. code-block:: python
 #
 #   a[0:16]
-# 
+#
 # .. note::
 #
 #    Allo follows the Python convention that the upper bound is not included, so ``[0:16]`` means
