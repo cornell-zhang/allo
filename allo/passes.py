@@ -11,6 +11,7 @@ from ._mlir.ir import (
     UnrankedMemRefType,
     FunctionType,
     TypeAttr,
+    UnitAttr,
     FlatSymbolRefAttr,
     ArrayAttr,
     Attribute,
@@ -19,12 +20,14 @@ from ._mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
+    Operation,
 )
 from ._mlir.dialects import (
     allo as allo_d,
     func as func_d,
     affine as affine_d,
     memref as memref_d,
+    scf as scf_d,
     linalg as linalg_d,
     arith as arith_d,
 )
@@ -204,9 +207,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Build AllocOP for buffer
                 alloc_op = memref_d.AllocOp(
-                    MemRefType.get(
-                        MemRefType(arg.type).shape, MemRefType(arg.type).element_type
-                    ),
+                    MemRefType(arg.type),
                     [],
                     [],
                 )
@@ -254,9 +255,7 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 
                 # Build AllocOP for buffer
                 if not flatten:
-                    store_memref = MemRefType.get(
-                        MemRefType(arg.type).shape, MemRefType(arg.type).element_type
-                    )
+                    store_memref = MemRefType(arg.type)
                 else:
                     store_memref = MemRefType.get(
                         (np.prod(MemRefType(arg.type).shape),),
@@ -613,3 +612,125 @@ def update_generic_op(op, name, shape):
             raise NotImplementedError("Unsupported gelu shape")
     else:
         raise NotImplementedError("Unsupported function")
+
+
+def analyze_use_def(mod):
+    ret_vals = {}  # func_name -> return value
+    # union find structure
+    uf_mapping = {}  # name -> label ID
+    parent = []
+
+    def uf_find(i):
+        if parent[i] == i:
+            return i
+        # path compression
+        result = uf_find(parent[i])
+        parent[i] = result
+        return result
+
+    def uf_union(name_i, name_j):
+        parent[uf_find(uf_mapping[name_i])] = uf_find(uf_mapping[name_j])
+
+    def uf_add(name):
+        if name not in uf_mapping:
+            uf_mapping[name] = len(uf_mapping)
+            parent.append(uf_mapping[name])
+
+    def recover_sets():
+        if len(parent) == 0:
+            return []
+        res = [set() for _ in range(max(parent) + 1)]
+        for buf, label in uf_mapping.items():
+            while label != parent[label]:
+                label = parent[label]
+            res[label].add(buf)
+        return res
+
+    def add_use(val, val_name):
+        vals = [val]
+        if isinstance(val.type, MemRefType) and val.type.rank == 0:
+            # scalar, handle the following case
+            # %alloc_2 = memref.alloc() {name = "D"} : memref<i32>
+            # affine.store %20, %alloc_2[] {to = "D"} : memref<i32>
+            # %21 = affine.load %alloc_2[] {from = "D"} : memref<i32>
+            # %22 = call @foo(%21) : (i32) -> i32
+            for use in val.uses:
+                if isinstance(use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp)):
+                    vals.append(use.owner.result)
+        # pylint: disable=redefined-argument-from-local
+        for val in vals:
+            if isinstance(val.owner, Operation) and "func.call" in str(val.owner):
+                # not sure why cannot use isinstance(val.owner, func_d.CallOp)
+                # return value
+                callee = val.owner.attributes["callee"].value
+                uf_union(val_name, ret_vals[callee])
+                uf_union(ret_vals[callee], val_name)
+            for use in val.uses:
+                if isinstance(use.owner, func_d.CallOp):
+                    callee = use.owner.attributes["callee"].value
+                    target_name = f"{callee}:{use.operand_number}"
+                    uf_union(val_name, target_name)
+                    uf_union(target_name, val_name)
+
+    for func in mod.body.operations:
+        if not isinstance(func, func_d.FuncOp):
+            continue
+        func_name = func.attributes["sym_name"].value
+        for i, arg in enumerate(func.arguments):
+            arg_name = f"{func_name}:{i}"
+            uf_add(arg_name)
+            add_use(arg, arg_name)
+        for op in func.entry_block.operations:
+            if isinstance(op, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)):
+                if "name" in op.attributes:
+                    buf_name = f"{func_name}:{op.attributes['name'].value}"
+                elif " = " in str(op):
+                    buf_name = f"{func_name}:{str(op).split(' = ', maxsplit=1)[0]}"
+                else:
+                    # call op does not have return value
+                    continue
+                uf_add(buf_name)
+                add_use(op.result, buf_name)
+            if isinstance(op, func_d.ReturnOp):
+                for i, ret in enumerate(op.operands):
+                    owner = ret.owner
+                    if "name" in owner.attributes:
+                        buf_name = f"{func_name}:{owner.attributes['name'].value}"
+                    elif "from" in owner.attributes:
+                        buf_name = f"{func_name}:{owner.attributes['from'].value}"
+                    elif " = " in str(owner):
+                        buf_name = (
+                            f"{func_name}:{str(owner).split(' = ', maxsplit=1)[0]}"
+                        )
+                    ret_vals[func_name] = buf_name
+
+    # recover final sets
+    res = recover_sets()
+    return res
+
+
+def df_pipeline(module, initiation_interval=1, rewind=False):
+
+    def pipe_loop_innermost(forop, ii, rewind):
+        inner_forops = []
+        for op in forop.body.operations:
+            if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+                inner_forops.append(op)
+        if inner_forops:
+            for inner_forop in inner_forops:
+                pipe_loop_innermost(inner_forop, ii, rewind)
+        else:
+            forop.attributes["pipeline_ii"] = ii
+            if rewind:
+                forop.attributes["rewind"] = UnitAttr.get()
+            # print('Pipeline Once.')
+
+    with module.context:
+        i32 = IntegerType.get_unsigned(32)
+        ii = IntegerAttr.get(i32, initiation_interval)
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp):
+                func = op
+                for op_ in func.entry_block.operations:
+                    if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
+                        pipe_loop_innermost(op_, ii, rewind)

@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module
+# pylint: disable=consider-using-with, no-name-in-module, too-many-branches
 
 import os
 import re
@@ -15,6 +15,7 @@ from .._mlir.ir import (
 )
 from .._mlir.passmanager import PassManager
 
+from .config import DEFAULT_CONFIG, PART_NUMBER
 from .vitis import (
     codegen_host,
     postprocess_hls_code,
@@ -22,6 +23,9 @@ from .vitis import (
     update_makefile,
     write_tensor_to_file,
     read_tensor_from_file,
+)
+from .tapa import (
+    codegen_tapa_host,
 )
 from .ip import IPModule, c2allo_type
 from .report import parse_xml
@@ -40,6 +44,8 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
+    if backend == "tapa":
+        return os.system("which tapa >> /dev/null") == 0
     return os.system("which vitis_hls >> /dev/null") == 0
 
 
@@ -53,52 +59,52 @@ def run_process(cmd, pattern=None):
     return out.decode("utf-8")
 
 
-def copy_build_files(top, project, mode, platform="vivado_hls", script=None):
-    # make the project folder and copy files
-    os.makedirs(project, exist_ok=True)
-    path = os.path.dirname(__file__)
-    path = os.path.join(path, "../harness/")
-    if platform in {"vivado_hls", "vitis_hls"}:
-        os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
-        if mode == "debug":
-            mode = "csyn"
-        elif mode == "sw_emu":
-            mode = "csim"
-        elif mode == "hw_emu":
-            mode = "cosim"
-        else:
-            mode = "csyn"
-        if mode != "custom":
-            removed_mode = ["csyn", "csim", "cosim", "impl"]
-            selected_mode = mode.split("|")
-            for s_mode in selected_mode:
-                removed_mode.remove(s_mode)
+def codegen_tcl(top, configs):
+    out_str = """# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
-            new_tcl = ""
-            with open(
-                os.path.join(project, "run.tcl"), "r", encoding="utf-8"
-            ) as tcl_file:
-                for line in tcl_file:
-                    if "set_top" in line:
-                        line = "set_top " + top + "\n"
-                    # pylint: disable=too-many-boolean-expressions
-                    if (
-                        ("csim_design" in line and "csim" in removed_mode)
-                        or ("csynth_design" in line and "csyn" in removed_mode)
-                        or ("cosim_design" in line and "cosim" in removed_mode)
-                        or ("export_design" in line and "impl" in removed_mode)
-                    ):
-                        new_tcl += "#" + line
-                    else:
-                        new_tcl += line
-        else:  # custom tcl
-            print("Warning: custom Tcl file is used, and target mode becomes invalid.")
-            new_tcl = script
+#=============================================================================
+# run.tcl 
+#=============================================================================
+# Project name
+set hls_prj out.prj
 
-        with open(os.path.join(project, "run.tcl"), "w", encoding="utf-8") as tcl_file:
-            tcl_file.write(new_tcl)
-        return "success"
-    raise RuntimeError("Not implemented")
+# Open/reset the project
+open_project ${hls_prj} -reset
+
+open_solution -reset solution1 -flow_target vivado
+
+"""
+    out_str += f'# Top function of the design is "{top}"\n'
+    out_str += f"set_top {top}\n"
+    out_str += """
+# Add design and testbench files
+add_files kernel.cpp
+add_files -tb host.cpp -cflags "-std=gnu++0x"
+open_solution "solution1"
+"""
+    device = configs["device"]
+    frequency = configs["frequency"]
+    mode = configs["mode"]
+    if device not in PART_NUMBER:
+        raise RuntimeError(
+            f"Device {device} not supported. Available devices: {list(PART_NUMBER.keys())}"
+        )
+    out_str += f"\n# Target device is {device}\n"
+    out_str += f"set_part {{{PART_NUMBER[device]}}}\n\n"
+    out_str += "# Target frequency\n"
+    out_str += f"create_clock -period {1000 / frequency:.2f}\n\n"
+    out_str += "# Run HLS\n"
+    if "csim" in mode or "sw_emu" in mode:
+        out_str += "csim_design -O\n"
+    if "csyn" in mode or "debug" in mode:
+        out_str += "csynth_design\n"
+    if "cosim" in mode or "hw_emu" in mode:
+        out_str += "cosim_design\n"
+    if "impl" in mode or "hw" in mode:
+        out_str += "export_design -flow impl\n"
+    out_str += "\nexit\n"
+    return out_str
 
 
 def copy_ext_libs(ext_libs, project):
@@ -162,29 +168,33 @@ class HLSModule:
         ext_libs=None,
         configs=None,
         func_args=None,
+        wrap_io=True,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
+        if configs is not None:
+            new_configs = DEFAULT_CONFIG
+            new_configs.update(configs)
+            configs = new_configs
+        else:
+            configs = DEFAULT_CONFIG
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls":
-                if configs is not None:
-                    mappings = configs.get("mappings", None)
-                else:
-                    mappings = None
-
                 assert func_args is not None, "Need to specify func_args"
-                generate_input_output_buffers(
-                    self.module,
-                    top_func_name,
-                    flatten=True,
-                    mappings=mappings,
-                )
+
+                if wrap_io:
+                    generate_input_output_buffers(
+                        self.module,
+                        top_func_name,
+                        flatten=True,
+                        mappings=configs.get("mappings", None),
+                    )
 
                 # TODO: Fix dataflow!
                 # if "dataflow" in self.func.attributes:
@@ -223,12 +233,24 @@ class HLSModule:
             )
             pm.run(self.module.operation)
         buf = io.StringIO()
-        allo_d.emit_vhls(self.module, buf)
+        match platform:
+            case "tapa":
+                allo_d.emit_thls(self.module, buf)
+            case "intel_hls":
+                allo_d.emit_ihls(self.module, buf)
+            case _:
+                allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
-            copy_build_files(self.top_func_name, project, mode, platform=platform)
+            os.makedirs(project, exist_ok=True)
+            path = os.path.dirname(__file__)
+            path = os.path.join(path, "../harness/")
+            if platform in {"vivado_hls", "vitis_hls", "tapa"}:
+                os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
+                with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
+                    outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 assert self.mode in {
@@ -248,8 +270,9 @@ class HLSModule:
                     self.top_func_name,
                     path + "makefile_gen/description.json",
                     dst_path,
+                    frequency=configs["frequency"],
                 )
-                generate_makefile(dst_path, project)
+                generate_makefile(dst_path, project, self.platform)
                 for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
                     update_makefile(
                         os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
@@ -283,6 +306,42 @@ class HLSModule:
                     self.top_func_name,
                     self.module,
                 )
+            elif self.platform == "tapa":
+                assert self.mode in {
+                    "csim",
+                    "fast_hw_emu",
+                    "hw_emu",
+                    "hw",
+                }, "Invalid mode"
+                assert (
+                    self.top_func_name != "kernel"
+                ), "kernel is a reserved keyword for tapa"
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "../harness/")
+                dst_path = os.path.join(project, "description.json")
+                generate_description_file(
+                    self.top_func_name,
+                    path + "makefile_gen/description.json",
+                    dst_path,
+                    frequency=configs["frequency"],
+                )
+                self.args = []
+                generate_makefile(dst_path, project, self.platform)
+                for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
+                    update_makefile(
+                        os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
+                    )
+                self.host_code = codegen_host(
+                    self.top_func_name,
+                    self.module,
+                )
+                self.tapa_host = codegen_tapa_host(
+                    self.top_func_name,
+                    self.module,
+                    self.hls_code,
+                )
+                with open(f"{project}/tapa_host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.tapa_host)
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
@@ -400,6 +459,62 @@ class HLSModule:
                     f"{self.project}/input{i}.data",
                 )
             # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(
+                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
+            ):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to build the project")
+            else:
+                print("Build folder exists, skip building")
+                # run the executable
+                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                prefix += f" cd {self.project};"
+                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
+                    prefix += " make host PLATFORM=$XDEVICE;"
+                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run the executable")
+            # suppose the last argument is the output tensor
+            result = read_tensor_from_file(
+                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+            )
+            args[-1][:] = result
+            return
+        elif self.platform == "tapa":
+            assert is_available("tapa"), "tapa is not available"
+            # Use Makefile (sw_emu, hw_emu, hw)
+            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, _ = get_func_inputs_outputs(func)
+            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_shape,
+                    f"{self.project}/input{i}.data",
+                )
+            # check if the build folder exists
+            if self.mode in {"csim", "fast_hw_emu"}:
+                cmd = f"cd {self.project}; make {self.mode}"
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run tapa executable")
+                return
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
             if not os.path.exists(
                 os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")

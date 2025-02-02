@@ -33,10 +33,19 @@ class AffineScopeGuard:
 
 class ASTContext:
     def __init__(
-        self, global_vars, mlir_ctx, func_args=None, enable_tensor=False, verbose=False
+        self,
+        tree,
+        global_vars,
+        mlir_ctx,
+        inst=None,
+        func_args=None,
+        enable_tensor=False,
+        verbose=False,
     ):
         self.ip_stack = []
         self.buffers = {}
+        # ast tree
+        self.tree = tree
         self.top_func = None
         self.top_func_tree = None
         self.global_vars = global_vars
@@ -46,7 +55,7 @@ class ASTContext:
         self.func_args = {} if func_args is None else func_args
         self.func_id = None
         # instantiation of a template function
-        self.inst = None
+        self.inst = inst
         self.func_name2id = {}
         # used for subfunction call
         self.call_args = []
@@ -69,14 +78,15 @@ class ASTContext:
 
     def copy(self):
         ctx = ASTContext(
+            self.tree,
             self.global_vars.copy(),
             self.mlir_ctx,
+            self.inst,
             self.func_args,
             self.enable_tensor,
             self.verbose,
         )
         ctx.func_id = self.func_id
-        ctx.inst = self.inst
         ctx.func_name2id = self.func_name2id
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose

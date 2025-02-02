@@ -55,13 +55,13 @@ dtype_size_map = {
 ctype_map = {
     "f32": "float",
     "f64": "double",
-    "i8": "char",
+    "i8": "int8_t",
     "i16": "short",
     "i32": "int",
     "i64": "long",
     "i128": "__int128_t",  # unverified
     "ui1": "bool",
-    "ui8": "unsigned char",
+    "ui8": "uint8_t",
     "ui16": "unsigned short",
     "ui32": "unsigned int",
     "ui64": "unsigned long",
@@ -384,12 +384,12 @@ def postprocess_hls_code(hls_code, top=None):
     return out_str
 
 
-def generate_description_file(top, src_path, dst_path):
+def generate_description_file(top, src_path, dst_path, frequency):
     with open(src_path, "r", encoding="utf-8") as f:
         desc = f.read()
     desc = desc.replace("top", top)
     desc = json.loads(desc)
-    desc["containers"][0]["ldclflags"] += "  --kernel_frequency 300"
+    desc["containers"][0]["ldclflags"] += f"  --kernel_frequency {frequency}"
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
 

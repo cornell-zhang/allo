@@ -87,5 +87,29 @@ def test_analyze_load_store():
     assert res["top2"] == ["both", "in", "out", "both"]
 
 
+def test_traceback():
+    def kernel(A: int32[32]):
+        B: undefined_type = 1
+
+    def kernel2(A: int32[32]):
+        kernel(A)
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel2)
+
+    def long_kernel(A: int32[32]):
+        for i in range(32):
+            A[i] = i
+        for i in range(32):
+            A[i] = A[i] + 1
+            for j in range(32):
+                A[j] = A[j] * 2
+                for k in range(32):
+                    A[k] = A[z] + 1
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(long_kernel)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

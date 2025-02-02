@@ -28,7 +28,7 @@ def top():
         i, j = df.get_pid()
         for m in range(M // Mt):
             for n in range(N // Nt):
-                # periperals kernels
+                # peripheral kernels
                 with allo.meta_if(i in {0, Mt + 1} and j in {0, Nt + 1}):
                     pass
                 with allo.meta_elif(j == 0):

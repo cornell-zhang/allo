@@ -5,7 +5,7 @@
  * https://github.com/hanchenye/scalehls
  */
 
-#include "allo/Translation/EmitVivadoHLS.h"
+#include "allo/Translation/EmitTapaHLS.h"
 #include "allo/Dialect/Visitor.h"
 #include "allo/Support/Utils.h"
 #include "allo/Translation/Utils.h"
@@ -30,14 +30,13 @@ using namespace allo;
 // used for determine whether to generate C++ default types or ap_(u)int
 static bool BIT_FLAG = false;
 
+// TODO: overload
 static SmallString<16> getTypeName(Type valType) {
   if (auto arrayType = valType.dyn_cast<ShapedType>())
     valType = arrayType.getElementType();
 
   // Handle float types.
   if (valType.isa<Float16Type>())
-    // Page 222:
-    // https://www.amd.com/content/dam/xilinx/support/documents/sw_manuals/xilinx2020_2/ug902-vivado-high-level-synthesis.pdf
     return SmallString<16>("half");
   else if (valType.isa<Float32Type>())
     return SmallString<16>("float");
@@ -86,12 +85,10 @@ static SmallString<16> getTypeName(Type valType) {
     return SmallString<16>(
         "ap_ufixed<" + std::to_string(ufixedType.getWidth()) + ", " +
         std::to_string(ufixedType.getWidth() - ufixedType.getFrac()) + ">");
-
   else if (auto streamType = valType.dyn_cast<StreamType>())
     return SmallString<16>(
-        "hls::stream< " +
+        "tapa::stream< " +
         std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
-
   else
     assert(1 == 0 && "Got unsupported type.");
 
@@ -175,8 +172,9 @@ public:
 private:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
+                 std::string name = "", bool isMmap = false);
+  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "",
+                     char type = '_');
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
   void emitInfoAndNewLine(Operation *op);
@@ -188,6 +186,8 @@ private:
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
   void emitFunction(func::FuncOp func);
   void emitHostFunction(func::FuncOp func);
+
+  static SmallVector<func::CallOp, 8> gatheredCallOp;
 };
 } // namespace
 
@@ -378,12 +378,6 @@ public:
   bool visitOp(arith::MinUIOp op) {
     return emitter.emitMaxMin(op, "min"), true;
   }
-  bool visitOp(arith::MaximumFOp op) {
-    return emitter.emitMaxMin(op, "max"), true;
-  }
-  bool visitOp(arith::MinimumFOp op) {
-    return emitter.emitMaxMin(op, "min"), true;
-  }
 
   /// Logical expressions.
   bool visitOp(arith::XOrIOp op) { return emitter.emitBinary(op, "^"), true; }
@@ -498,12 +492,6 @@ public:
     return emitter.emitBinary(op, "/"), true;
   }
   bool visitOp(allo::CmpFixedOp op);
-  bool visitOp(allo::ShLFixedOp op) {
-    return emitter.emitBinary(op, "<<"), true;
-  }
-  bool visitOp(allo::ShRFixedOp op) {
-    return emitter.emitBinary(op, ">>"), true;
-  }
   bool visitOp(allo::MinFixedOp op) {
     return emitter.emitMaxMin(op, "min"), true;
   }
@@ -911,6 +899,7 @@ void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   indent();
   std::string load_from_name = "";
@@ -950,15 +939,45 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
     emitValue(memref, 0, false, load_from_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  for (auto index : affineMap.getResults()) {
-    os << "[";
-    affineEmitter.emitAffineExpr(index);
-    os << "]";
+  auto shape = arrayType.getShape();
+  int rank = shape.size();
+  if (rank == 0 || (rank == 1 && shape[0] == 1)) {
+    // do nothing;
+  } else {
+    if (rank == 1) {
+      for (auto index : affineMap.getResults()) {
+        os << "[";
+        affineEmitter.emitAffineExpr(index);
+        os << "]";
+      }
+    } else {
+      auto context = op.getContext();
+      AffineExpr totalExpr = getAffineConstantExpr(0, context);
+
+      for (int i = 0; i < rank; ++i) {
+        AffineExpr indexExpr = affineMap.getResults()[i];
+        int stride = 1;
+        for (int j = i + 1; j < rank; ++j) {
+          if (shape[j] == ShapedType::kDynamic) {
+            emitError(
+                op,
+                "has dynamic shape, which is currently unsupported for tapa.");
+          }
+          stride *= shape[j];
+        }
+        totalExpr =
+            totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+      }
+      os << "[";
+      affineEmitter.emitAffineExpr(totalExpr);
+      os << "]";
+    }
   }
   os << ";";
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   indent();
   std::string store_to_name = "";
@@ -996,10 +1015,39 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
     emitValue(memref, 0, false, store_to_name); // comment
   }
   auto arrayType = memref.getType().cast<ShapedType>();
-  for (auto index : affineMap.getResults()) {
-    os << "[";
-    affineEmitter.emitAffineExpr(index);
-    os << "]";
+  auto shape = arrayType.getShape();
+  int rank = shape.size();
+  if (rank == 0 || (rank == 1 && shape[0] == 1)) {
+    // do nothing;
+  } else {
+    if (rank == 1) {
+      for (auto index : affineMap.getResults()) {
+        os << "[";
+        affineEmitter.emitAffineExpr(index);
+        os << "]";
+      }
+    } else {
+      auto context = op.getContext();
+      AffineExpr totalExpr = getAffineConstantExpr(0, context);
+
+      for (int i = 0; i < rank; ++i) {
+        AffineExpr indexExpr = affineMap.getResults()[i];
+        int stride = 1;
+        for (int j = i + 1; j < rank; ++j) {
+          if (shape[j] == ShapedType::kDynamic) {
+            emitError(
+                op,
+                "has dynamic shape, which is currently unsupported for tapa.");
+          }
+          stride *= shape[j];
+        }
+        totalExpr =
+            totalExpr + indexExpr * getAffineConstantExpr(stride, context);
+      }
+      os << "[";
+      affineEmitter.emitAffineExpr(totalExpr);
+      os << "]";
+    }
   }
   os << " = ";
   emitValue(op.getValueToStore());
@@ -1776,9 +1824,7 @@ void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
 
 template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
   indent();
-  Value result = op.getResult();
-  fixUnsignedType(result, op->hasAttr("unsigned"));
-  emitValue(result);
+  emitValue(op.getResult());
   os << " = ";
   emitValue(op.getOperand());
   os << ";";
@@ -1794,6 +1840,7 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
   emitInfoAndNewLine(op);
 }
 
+// TODO: overload
 void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
@@ -1807,37 +1854,63 @@ void ModuleEmitter::emitCall(func::CallOp op) {
     }
   }
 
-  // Emit the function call.
-  indent();
-  os << op.getCallee() << "(";
-
-  // Handle input arguments.
-  unsigned argIdx = 0;
-  for (auto arg : op.getOperands()) {
-    emitValue(arg);
-
-    if (argIdx++ != op.getNumOperands() - 1)
-      os << ", ";
+  // Get the caller function name
+  mlir::Operation *parentOp = op->getParentOp();
+  while (parentOp && !llvm::isa<mlir::func::FuncOp>(parentOp)) {
+    parentOp = parentOp->getParentOp();
   }
+  if (auto callerFuncOp =
+          llvm::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
+    mlir::StringRef callerName = callerFuncOp.getName();
+    // Gather all function calls in the top function
+    if (callerName == "top") {
+      ModuleEmitter::gatheredCallOp.push_back(op);
+      if (op.getOperation()->hasAttr("last")) {
+        // Emit all gathered function calls with tapa::task().invoke()
+        indent();
+        os << "tapa::task()" << "\n";
+        for (size_t i = 0; i < ModuleEmitter::gatheredCallOp.size(); ++i) {
+          func::CallOp callOp = ModuleEmitter::gatheredCallOp[i];
+          indent();
+          os << ".invoke(";
+          os << callOp.getCallee() << ", ";
 
-  // Handle output arguments.
-  for (auto result : op.getResults()) {
-    // The address should be passed in for scalar result arguments.
-    if (result.getType().isa<ShapedType>())
-      os << ", ";
-    else
-      os << ", &";
+          // Handle input arguments.
+          unsigned argIdx = 0;
+          for (auto arg : callOp.getOperands()) {
+            emitValue(arg);
 
-    emitValue(result);
+            if (argIdx++ != callOp.getNumOperands() - 1)
+              os << ", ";
+          }
+
+          // Handle output arguments.
+          for (auto result : callOp.getResults()) {
+            // The address should be passed in for scalar result arguments.
+            if (result.getType().isa<ShapedType>())
+              os << ", ";
+            else
+              os << ", &";
+
+            emitValue(result);
+          }
+
+          os << ")";
+          if (i == ModuleEmitter::gatheredCallOp.size() - 1) {
+            os << ";";
+          }
+          emitInfoAndNewLine(callOp);
+        }
+      }
+      return;
+    }
   }
-
-  os << ");";
-  emitInfoAndNewLine(op);
 }
 
 /// C++ component emitters.
+// TODO: overload
 void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name) {
+                              std::string name, bool isMmap) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -1848,7 +1921,11 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
     return;
   }
 
-  os << getTypeName(val) << " ";
+  if (isMmap) {
+    os << "tapa::mmap<" << getTypeName(val) << "> ";
+  } else {
+    os << getTypeName(val) << " ";
+  }
 
   if (name == "") {
     // Add the new value to nameTable and emit its name.
@@ -1860,7 +1937,9 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
   }
 }
 
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+// TODO: overload
+void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name,
+                                  char type) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = array.getType().cast<ShapedType>();
@@ -1877,7 +1956,9 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
         }
 
         // print stream type
-        os << "hls::stream< " << getTypeName(array) << " > ";
+        os << "tapa::"
+           << ((type == '_' || type == 'g') ? "" : std::string(1, type))
+           << "stream< " << getTypeName(array) << " > ";
 
         auto attr_str = attr.cast<StringAttr>().getValue().str();
         int S_index = attr_str.find("S"); // spatial
@@ -1901,9 +1982,18 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
           os << "[" << shape << "]";
         os << " */";
       } else {
-        emitValue(array, 0, false, name);
-        for (auto &shape : arrayType.getShape())
-          os << "[" << shape << "]";
+        if (isFunc) {
+          emitValue(array, 0, false, name, true);
+        } else {
+          emitValue(array, 0, false, name);
+          if (arrayType.getShape().size() == 1 &&
+              arrayType.getShape()[0] == 1) {
+            // do nothing;
+          } else {
+            for (auto &shape : arrayType.getShape())
+              os << "[" << shape << "]";
+          }
+        }
       }
     } else { // tensor
       emitValue(array, 0, false, name);
@@ -1984,6 +2074,7 @@ void ModuleEmitter::emitBlock(Block &block) {
   }
 }
 
+// TODO: overload
 void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
@@ -2009,10 +2100,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   }
 
   if (auto dataflow = getLoopDirective(op, "dataflow")) {
-    reduceIndent();
-    indent();
-    os << "#pragma HLS dataflow\n";
-    addIndent();
+    emitError(op, "has unsupported attribute \"dataflow\" in tapa");
   }
 }
 
@@ -2107,6 +2195,7 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
     os << "\n";
 }
 
+// TODO: overload
 void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                            ArrayRef<Value> portList) {
   // auto funcDirect = getFuncDirective(func);
@@ -2168,10 +2257,11 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 
   //   // An empty line.
   //   os << "\n";
-  if (func->hasAttr("dataflow")) {
-    indent();
-    os << "#pragma HLS dataflow\n";
-  }
+
+  // if (func->hasAttr("dataflow")) {
+  //   indent();
+  //   os << "#pragma HLS dataflow\n";
+  // }
 
   if (func->hasAttr("inline")) {
     indent();
@@ -2185,6 +2275,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   // }
 }
 
+// TODO: overload
 void ModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
@@ -2227,25 +2318,56 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     for (unsigned i = 0; i < func.getNumArguments(); ++i)
       itypes += "x";
   }
+  std::string stypes = "";
+  if (func->hasAttr("stypes"))
+    stypes = func->getAttr("stypes").cast<StringAttr>().getValue().str();
+  else {
+    for (unsigned i = 0; i < func.getNumArguments(); ++i)
+      stypes += "x";
+  }
   for (auto &arg : func.getArguments()) {
     indent();
     fixUnsignedType(arg, itypes[argIdx] == 'u');
     if (arg.getType().isa<ShapedType>()) {
       if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
         auto shapedType = arg.getType().dyn_cast<ShapedType>();
-        os << getTypeName(arg) << " ";
+        SmallString<16> typeName = getTypeName(arg);
+        size_t pos = typeName.find("stream");
+        if (pos != llvm::StringRef::npos) {
+          SmallString<16> streamTypeName;
+          streamTypeName += typeName.slice(0, pos);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
+                                ? ""
+                                : std::string(1, stypes[argIdx]);
+          streamTypeName += typeName.slice(pos, typeName.size());
+          os << streamTypeName << " ";
+        } else {
+          emitError(func, "has error stream type name.");
+        }
         os << addName(arg, false);
         for (auto shape : shapedType.getShape())
           os << "[" << shape << "]";
       } else if (input_args.size() == 0) {
-        emitArrayDecl(arg, true);
+        emitArrayDecl(arg, true, "", stypes[argIdx]);
       } else {
-        emitArrayDecl(arg, true, input_args[argIdx]);
+        emitArrayDecl(arg, true, input_args[argIdx], stypes[argIdx]);
       }
     } else {
       if (arg.getType().isa<StreamType>()) {
         // need to pass by reference
-        os << getTypeName(arg) << "& ";
+        SmallString<16> typeName = getTypeName(arg);
+        size_t pos = typeName.find("stream");
+        if (pos != llvm::StringRef::npos) {
+          SmallString<16> streamTypeName;
+          streamTypeName += typeName.slice(0, pos);
+          streamTypeName += (stypes[argIdx] == '_' || stypes[argIdx] == 'g')
+                                ? ""
+                                : std::string(1, stypes[argIdx]);
+          streamTypeName += typeName.slice(pos, typeName.size());
+          os << streamTypeName << "& ";
+        } else {
+          emitError(func, "has error stream type name.");
+        }
         os << addName(arg, false);
       } else if (input_args.size() == 0) {
         emitValue(arg);
@@ -2273,8 +2395,7 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
     unsigned idx = 0;
     for (auto result : funcReturn.getOperands()) {
       if (std::find(args.begin(), args.end(), result) == args.end()) {
-        if (func.getArguments().size() > 0)
-          os << ",\n";
+        os << ",\n";
         indent();
 
         // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
@@ -2345,6 +2466,7 @@ void ModuleEmitter::emitHostFunction(func::FuncOp func) {
 }
 
 /// Top-level MLIR module emitter.
+// TODO: overload
 void ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
@@ -2357,7 +2479,7 @@ void ModuleEmitter::emitModule(ModuleOp module) {
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <hls_math.h>
-#include <hls_stream.h>
+#include <tapa.h>
 #include <math.h>
 #include <stdint.h>
 using namespace std;
@@ -2380,13 +2502,13 @@ using namespace std;
 #include "kernel.h"
 #include <ap_fixed.h>
 #include <ap_int.h>
-#include <hls_stream.h>
+#include <tapa.h>
 
 #include <ap_axi_sdata.h>
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <hls_math.h>
-#include <hls_stream.h>
+#include <tapa.h>
 #include <math.h>
 #include <stdint.h>
 
@@ -2417,15 +2539,15 @@ using namespace std;
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult allo::emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os) {
+LogicalResult allo::emitTapaHLS(ModuleOp module, llvm::raw_ostream &os) {
   AlloEmitterState state(os);
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
-void allo::registerEmitVivadoHLSTranslation() {
-  static TranslateFromMLIRRegistration toVivadoHLS(
-      "emit-vivado-hls", "Emit Vivado HLS", emitVivadoHLS,
+void allo::registerEmitTapaHLSTranslation() {
+  static TranslateFromMLIRRegistration toTapaHLS(
+      "emit-tapa-hls", "Emit Tapa HLS", emitTapaHLS,
       [&](DialectRegistry &registry) {
         // clang-format off
         registry.insert<
@@ -2442,3 +2564,5 @@ void allo::registerEmitVivadoHLSTranslation() {
         // clang-format on
       });
 }
+
+SmallVector<func::CallOp, 8> ModuleEmitter::gatheredCallOp;

@@ -173,7 +173,7 @@ def test_negative_step_for():
         for i in range(N - 1, -1, -1):
             y[i] = x[i]
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(SystemExit):
         s = allo.customize(kernel)
 
 
@@ -631,7 +631,7 @@ def test_build_none_return():
     def kernel6(A: int32[32]) -> int32:
         return
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(SystemExit):
         s6 = allo.customize(kernel6)
 
     def kernel7(A: int32[32]) -> int32:
