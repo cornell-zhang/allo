@@ -5,6 +5,8 @@
 
 import gc
 import ast
+import sys
+import traceback
 import numpy as np
 from .._mlir.ir import (
     Module,
@@ -59,6 +61,7 @@ from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
 from ..utils import get_mlir_dtype_from_str
+from ..logging import print_error_message
 
 
 class ASTBuilder(ASTVisitor):
@@ -125,7 +128,10 @@ class ASTTransformer(ASTBuilder):
     def build_array(ctx, dtype, shape):
         if not ctx.enable_tensor:
             memref_type = MemRefType.get(shape, dtype.build())
-            return memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            if isinstance(dtype, UInt):
+                alloc_op.attributes["unsigned"] = UnitAttr.get()
+            return alloc_op
         return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
 
     @staticmethod
@@ -224,7 +230,7 @@ class ASTTransformer(ASTBuilder):
             # The step is a value of same type but required to be positive.
             if step is not None and step <= 0:
                 raise RuntimeError(
-                    "Step in for loop range should be positive, got: ", step
+                    f"Step in for loop range should be positive, got: {step}"
                 )
             step = build_stmt(ctx, args[2] if len(args) >= 3 else ast.Constant(1))
             lb_expr = ASTTransformer.build_cast_op(
@@ -687,10 +693,14 @@ class ASTTransformer(ASTBuilder):
         if isinstance(node.op, (ast.LShift, ast.RShift)) and isinstance(
             node.dtype, (Fixed, UFixed)
         ):
-            return opcls[ty_cls](
+            op = opcls[ty_cls](
                 node.dtype.build(), lhs.result, rhs.result, ip=ctx.get_ip()
             )
-        return opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
+        else:
+            op = opcls[ty_cls](lhs.result, rhs.result, ip=ctx.get_ip())
+        if isinstance(node.dtype, UInt):
+            op.attributes["unsigned"] = UnitAttr.get()
+        return op
 
     @staticmethod
     def build_UnaryOp(ctx, node):
@@ -1119,6 +1129,8 @@ class ASTTransformer(ASTBuilder):
                     affine_attr,
                     ip=ctx.get_ip(),
                 )
+                if isinstance(node.value.dtype, UInt):
+                    op.attributes["unsigned"] = UnitAttr.get()
             else:  # ast.Store
                 op = affine_d.AffineStoreOp(
                     val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
@@ -1128,6 +1140,8 @@ class ASTTransformer(ASTBuilder):
             if isinstance(node.ctx, ast.Load):
                 # pylint: disable=redefined-variable-type
                 op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
+                if isinstance(node.value.dtype, UInt):
+                    op.attributes["unsigned"] = UnitAttr.get()
             else:  # ast.Store
                 op = memref_d.StoreOp(
                     val.result,
@@ -1235,8 +1249,36 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_memory_access(ctx, node, val=val, idx=idx)
         elif len(node.value.shape) > 0 and ctx.enable_tensor:
             return ASTTransformer.build_tensor_access(ctx, node, val=val, idx=idx)
+        elif isinstance(node.value.dtype, Struct):
+            # Get the struct value
+            value = build_stmt(ctx, node.value)
+            # Get the field name from the string slice
+            field_name = node.slice.value
+            # Get the field index from the struct type
+            field_idx = list(node.value.dtype.dtype_dict.keys()).index(field_name)
+            # Create index attribute
+            idx_attr = IntegerAttr.get(IntegerType.get_signless(64), field_idx)
+            # Extract the field using struct get op
+            return allo_d.StructGetOp(
+                node.value.dtype[field_name].build(),
+                value.result,
+                idx_attr,
+                ip=ctx.get_ip(),
+            )
         else:  # bit operation
             return ASTTransformer.build_bit_operation(ctx, node, val=val, idx=idx)
+
+    @staticmethod
+    def build_Dict(ctx, node):
+        # Build each value in the dictionary
+        values = [build_stmt(ctx, value) for value in node.values]
+
+        # Create a struct construct op with the values
+        return allo_d.StructConstructOp(
+            node.dtype.build(),  # The struct type should already be inferred
+            [value.result for value in values],
+            ip=ctx.get_ip(),
+        )
 
     @staticmethod
     def build_AnnAssign(ctx, node):
@@ -1733,6 +1775,16 @@ class ASTTransformer(ASTBuilder):
                         [],
                         ip=ctx.get_ip(),
                     )
+                if node.func.attr == "bitcast":
+                    val = build_stmt(ctx, node.func.value)
+                    op = arith_d.BitcastOp(
+                        node.dtype.build(),
+                        val.result,
+                        ip=ctx.get_ip(),
+                    )
+                    if isinstance(node.func.value.dtype, UInt) or (node.dtype, UInt):
+                        op.attributes["unsigned"] = UnitAttr.get()
+                    return op
 
             if node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -2310,25 +2362,38 @@ class ASTTransformer(ASTBuilder):
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
-                ctx.meta_if_stack.append(final_cond)
+                if len(ctx.meta_if_stack) > ctx.with_scope_level:
+                    ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
+                else:
+                    ctx.meta_if_stack.append([final_cond])
             else:  # meta_elif
-                assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
-                if ctx.meta_if_stack[-1]:  # previous `if` has already satisfied
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(True)
+                assert (
+                    len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+                ), "Unmatched allo.meta_elif()"
+                if ctx.meta_if_stack[ctx.with_scope_level][
+                    -1
+                ]:  # previous `if` has already satisfied
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(True)
                     final_cond = False
                 else:
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(cond)
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(cond)
                     final_cond = cond
         elif node.items[0].context_expr.func.attr == "meta_else":
-            assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_else()"
-            final_cond = not ctx.meta_if_stack[-1]
-            ctx.meta_if_stack.pop()
+            assert (
+                len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+            ), "Unmatched allo.meta_else()"
+            final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
+            ctx.meta_if_stack[ctx.with_scope_level].pop()
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
+            ctx.with_scope_level += 1
             stmts = build_stmts(ctx, node.body)
+            # clear inner context
+            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
+            ctx.with_scope_level -= 1
             return stmts[-1]
         return "WithStatementSkipped"
 
@@ -2352,5 +2417,11 @@ build_stmt = ASTTransformer()
 def build_stmts(ctx, stmts):
     results = []
     for stmt in stmts:
-        results.append(build_stmt(ctx, stmt))
+        try:
+            results.append(build_stmt(ctx, stmt))
+        # pylint: disable=broad-exception-caught
+        except Exception as e:
+            print(f"{traceback.format_exc()}")
+            print_error_message(str(e), stmt, ctx.top_func_tree)
+            sys.exit(1)
     return results

@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, inconsistent-return-statements
+# pylint: disable=no-name-in-module, inconsistent-return-statements, too-many-function-args
 
 import os
 import ctypes
@@ -69,6 +69,8 @@ class LLVMModule:
                 call_ext_libs_in_ptr(self.module, ext_libs)
             # Remove .partition() annotation
             allo_d.remove_stride_map(self.module)
+            # Lower composite (struct) types
+            allo_d.lower_composite_type(self.module)
             # Resolve FixedType
             allo_d.lower_fixed_to_int(self.module)
             allo_d.lower_bit_ops(self.module)
@@ -153,7 +155,10 @@ class LLVMModule:
                             f"Input type mismatch: {target_in_type} vs f32. Please use NumPy array"
                             " to wrap the data to avoid possible result mismatch"
                         ).warn()
-                    if target_in_type == "f32":
+                    if target_in_type == "f16":
+                        c_float_p = ctypes.c_int16 * 1
+                        arg = np.float16(arg).view(np.int16)
+                    elif target_in_type == "f32":
                         c_float_p = ctypes.c_float * 1
                     else:  # f64
                         c_float_p = ctypes.c_double * 1
@@ -315,6 +320,8 @@ class LLVMModule:
                     ret = struct_array_to_int_array(
                         ret, bitwidth, result_type[0] == "i"
                     )
+                elif result_type == "f16":
+                    ret = np.array(ret, dtype=np.int16).view(np.float16)
                 elif result_type.startswith("fixed") or result_type.startswith(
                     "ufixed"
                 ):
@@ -331,6 +338,8 @@ class LLVMModule:
                 # INVOKE
                 self.execution_engine.invoke(self.top_func_name, *arg_ptrs, return_ptr)
                 ret = return_ptr[0]
+                if result_type == "f16":
+                    ret = np.int16(ret).view(np.float16)
         else:  # multiple returns, assume all memref
             # INVOKE
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
@@ -347,6 +356,8 @@ class LLVMModule:
                     ret_i = struct_array_to_int_array(
                         np_arr, bitwidth, res_type[0] == "i"
                     )
+                elif res_type == "f16":
+                    ret_i = np.array(np_arr, dtype=np.int16).view(np.float16)
                 elif res_type.startswith("fixed") or res_type.startswith("ufixed"):
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(res_type)
                     ret_i = struct_array_to_int_array(

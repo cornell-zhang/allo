@@ -56,10 +56,10 @@ from .ir.transform import (
     find_func_in_module,
     LoopWrapper,
 )
-from .ir.use_def import UseDefChain
 from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
+    analyze_use_def,
 )
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
@@ -71,10 +71,6 @@ def getsourcefile(obj):
     if ret is None:
         ret = inspect.getfile(obj)
     return ret
-
-
-def getsourcelines(obj):
-    return inspect.getsourcelines(obj)
 
 
 def wrapped_apply(fn):
@@ -117,7 +113,6 @@ class Schedule:
         func_args,
         ip,
         ext_libs=None,
-        use_def_chain=None,
         inst_list=None,
     ):
         self.module = module
@@ -129,7 +124,6 @@ class Schedule:
         if ext_libs is None:
             ext_libs = []
         self.ext_libs = ext_libs
-        self.use_def_chain = use_def_chain
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
 
@@ -284,14 +278,15 @@ class Schedule:
             raise AlloValueError("Invalid dimension")
         if factor < 0:
             raise AlloValueError("Invalid factor")
-        if partition_type == Partition.Complete:
-            partition_type = 0
-        elif partition_type == Partition.Block:
-            partition_type = 1
-        elif partition_type == Partition.Cyclic:
-            partition_type = 2
-        else:
-            raise AlloValueError("Not supported partition type")
+        match partition_type:
+            case Partition.Complete:
+                partition_type = 0
+            case Partition.Block:
+                partition_type = 1
+            case Partition.Cyclic:
+                partition_type = 2
+            case _:
+                raise AlloValueError("Not supported partition type")
         # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
@@ -319,8 +314,16 @@ class Schedule:
             visited_target_names.append(name)
             _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
-            for tensor in self.use_def_chain.get_equivalent_tensors(name):
-                recursive_partition(MockBuffer(tensor.path, tensor.name))
+            if inner_target.name in self.func_args[inner_target.func]:
+                # is a function argument
+                idx = self.func_args[inner_target.func].index(inner_target.name)
+                name = f"{inner_target.func}:{idx}"
+            for buf_name in self.get_equivalent_variables(name):
+                path, buf_name = buf_name.split(":")
+                if buf_name.isdigit():
+                    # function argument
+                    buf_name = self.func_args[path][int(buf_name)]
+                recursive_partition(MockBuffer(path, buf_name))
             # calling the same function
             if isinstance(mlir_target, func_d.CallOp):
                 visited_func_calls.append(mlir_target)
@@ -859,7 +862,14 @@ class Schedule:
                     primitive_func(*args, **kwargs)
                     self.primitive_sequences.append((primitive[0], args, kwargs))
 
-    def build(self, target=None, mode=None, project=None, configs=None):
+    def get_equivalent_variables(self, name):
+        use_def = analyze_use_def(self.module)
+        for ele in use_def:
+            if name in ele:
+                return ele
+        return []
+
+    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -867,16 +877,26 @@ class Schedule:
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
+            match target:
+                case "vitis_hls":
+                    platform = "vitis_hls"
+                case "tapa":
+                    platform = "tapa"
+                case "ihls":
+                    platform = "intel_hls"
+                case _:
+                    platform = "vivado_hls"
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
-                platform="vivado_hls" if target != "vitis_hls" else "vitis_hls",
+                platform=platform,
                 mode=mode,
                 project=project,
                 ext_libs=self.ext_libs,
                 configs=configs,
                 func_args=self.func_args,
+                wrap_io=wrap_io,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
@@ -892,37 +912,36 @@ def customize(
 ):
     # Get Python AST
     if isinstance(fn, str):
-        src = fn
+        src, starting_line_no = fn, 1
     else:
-        src, _ = getsourcelines(fn)
+        src, starting_line_no = inspect.getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
-    tree = parse_ast(src, verbose)
+    tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
     if instantiate is None:
         instantiate = []
     if global_vars is None:
         global_vars = get_global_vars(fn)
-    # Use-def chain analysis
-    use_def_chain = UseDefChain(global_vars.copy(), instantiate)
-    use_def_chain.visit(tree)
     # Type construction
     ctx_type_inf = ASTContext(
+        tree=tree,
         global_vars=global_vars.copy(),
         mlir_ctx=Context() if context is None else context,
+        inst=instantiate,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    ctx_type_inf.inst = instantiate
     tree = TypeInferer()(ctx_type_inf, tree)
     ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
+        tree=tree,
         global_vars=global_vars,
         mlir_ctx=Context() if context is None else context,
+        inst=instantiate,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    ctx.inst = instantiate
     module = ASTTransformer()(ctx, tree)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
@@ -933,7 +952,6 @@ def customize(
         ctx.func_args,
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
         ext_libs=ctx.ext_libs,
-        use_def_chain=use_def_chain,
         inst_list=instantiate,
     )
     # Attach buffers to schedule:

@@ -3,6 +3,8 @@
 # pylint: disable=unused-argument, eval-used
 
 import ast
+import sys
+import traceback
 import inspect
 import textwrap
 import warnings
@@ -15,12 +17,14 @@ from .types import (
     AlloType,
     Int,
     UInt,
+    Float,
     Fixed,
     UFixed,
     Index,
     uint1,
     int32,
     float32,
+    Struct,
     Stream,
 )
 from .typing_rule import get_typing_rule
@@ -32,6 +36,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
 
@@ -71,17 +76,17 @@ class TypeInferer(ASTVisitor):
             if dtype is Stream:
                 # create an actual class instance
                 base_type, base_shape = TypeInferer.visit_type_hint(ctx, node.slice)
-                dtype = Stream(base_type, base_shape)
+                stream_dtype = Stream(base_type, base_shape)
                 shape = tuple()
-                return dtype, shape
-            assert dtype is not None, f"Unsupported type {node.value.id}"
+                return stream_dtype, shape
+            assert dtype is not None, f"Unsupported type `{node.value.id}`"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
             return dtype, shape
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
-            assert dtype is not None, f"Unsupported type {node.id}"
+            assert dtype is not None, f"Unsupported type `{node.id}`"
             return dtype, tuple()
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
@@ -111,9 +116,9 @@ class TypeInferer(ASTVisitor):
                 node.dtype = Index()
                 node.shape = tuple()
             else:
-                raise RuntimeError(f"Unsupported global variable {node.id}")
+                raise RuntimeError(f"Unsupported global variable `{node.id}`")
             return node
-        raise RuntimeError(f"Unsupported Name {node.id}")
+        raise RuntimeError(f"Unsupported Name `{node.id}`")
 
     @staticmethod
     def visit_Constant(ctx, node):
@@ -122,6 +127,8 @@ class TypeInferer(ASTVisitor):
             node.dtype = int32
         elif isinstance(node.value, float):
             node.dtype = float32
+        elif isinstance(node.value, str):
+            node.dtype = str
         elif node.value is None:
             return ASTResolver.resolve_constant(node.value, ctx)
         else:
@@ -133,6 +140,17 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.elts)
         node.shape = [elt.shape for elt in node.elts]
         node.dtype = [elt.dtype for elt in node.elts]
+        return node
+
+    @staticmethod
+    def visit_Dict(ctx, node):
+        # Visit all keys and values
+        visit_stmts(ctx, node.keys)
+        visit_stmts(ctx, node.values)
+
+        # Dictionary type is a mapping of keys to value types
+        node.dtype = Struct({k.value: v.dtype for k, v in zip(node.keys, node.values)})
+        node.shape = ()  # one dict is considered as one Struct-type scalar
         return node
 
     @staticmethod
@@ -399,6 +417,20 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx, node):
         value = visit_stmt(ctx, node.value)
+        # Handle struct field access
+        if len(value.shape) == 0 and isinstance(value.dtype, Struct):
+            if not isinstance(node.slice, ast.Constant) or not isinstance(
+                node.slice.value, str
+            ):
+                raise RuntimeError("Struct field access must use string literal")
+            field = node.slice.value
+            if field not in value.dtype.dtype_dict:
+                raise RuntimeError(f"Field {field} not found in struct type")
+            node.dtype = value.dtype.dtype_dict[field]
+            node.shape = tuple()
+            return node
+
+        # Handle tensor subscript
         if len(value.shape) > 0:
             visit_stmt(ctx, node.slice)
             # calculate tensor slicing
@@ -746,9 +778,20 @@ class TypeInferer(ASTVisitor):
                     # stream type itself
                     node.func.value.shape = tuple()
                     node.func.value.dtype = ctx.buffers[vid].dtype
+                elif node.func.attr == "bitcast":
+                    visit_stmt(ctx, node.func.value)
+                    # single-element operation
+                    node.shape = tuple()
+                    if isinstance(node.func.value.dtype, (UInt, Int)):
+                        node.dtype = Float(node.func.value.dtype.bits)
+                    else:
+                        # casting between signed and unsigned types in C/C++
+                        # does not modify the underlying bit representation,
+                        # but only the interpretation.
+                        node.dtype = UInt(node.func.value.dtype.bits)
                 else:
                     raise RuntimeError(
-                        f"Unsupported function call or attribute method {node.func.attr}"
+                        f"Unsupported function call or attribute method `.{node.func.attr}`"
                     )
             elif node.func.id in {"float", "int"}:
                 # Python-Builtin functions
@@ -795,6 +838,7 @@ class TypeInferer(ASTVisitor):
                 # No argument
                 if fn_name == "get_pid":
                     node.shape = (tuple(), tuple())
+                    # pylint: disable=redefined-variable-type
                     node.dtype = (Index(), Index())
                 else:
                     node.shape = None
@@ -818,10 +862,12 @@ class TypeInferer(ASTVisitor):
             # Visit arguments in the top-level
             visit_stmts(ctx, node.args)
             func = ctx.global_vars[obj_name]
-            src, _ = inspect.getsourcelines(func)
+            src, starting_line_no = inspect.getsourcelines(func)
             src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
             src = textwrap.dedent("\n".join(src))
-            tree = parse_ast(src, ctx.verbose)
+            tree = parse_ast(
+                src, starting_line_no=starting_line_no, verbose=ctx.verbose
+            )
             # Create a new context to avoid name collision
             func_ctx = ctx.copy()
             stmts = visit_stmts(func_ctx, tree.body)
@@ -993,25 +1039,38 @@ class TypeInferer(ASTVisitor):
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
-                ctx.meta_if_stack.append(final_cond)
+                if len(ctx.meta_if_stack) > ctx.with_scope_level:
+                    ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
+                else:
+                    ctx.meta_if_stack.append([final_cond])
             else:  # meta_elif
-                assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_elif()"
-                if ctx.meta_if_stack[-1]:  # previous `if` has already satisfied
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(True)
+                assert (
+                    len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+                ), "Unmatched allo.meta_elif()"
+                if ctx.meta_if_stack[ctx.with_scope_level][
+                    -1
+                ]:  # previous `if` has already satisfied
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(True)
                     final_cond = False
                 else:
-                    ctx.meta_if_stack.pop()
-                    ctx.meta_if_stack.append(cond)
+                    ctx.meta_if_stack[ctx.with_scope_level].pop()
+                    ctx.meta_if_stack[ctx.with_scope_level].append(cond)
                     final_cond = cond
         elif node.items[0].context_expr.func.attr == "meta_else":
-            assert len(ctx.meta_if_stack) > 0, "Unmatched allo.meta_else()"
-            final_cond = not ctx.meta_if_stack[-1]
-            ctx.meta_if_stack.pop()
+            assert (
+                len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
+            ), "Unmatched allo.meta_else()"
+            final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
+            ctx.meta_if_stack[ctx.with_scope_level].pop()
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
+            ctx.with_scope_level += 1
             visit_stmts(ctx, node.body)
+            # clear inner context
+            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
+            ctx.with_scope_level -= 1
         node.dtype = None
         node.shape = None
         return node
@@ -1045,10 +1104,9 @@ def visit_stmts(ctx, stmts):
     for stmt in stmts:
         try:
             results.append(visit_stmt(ctx, stmt))
+        # pylint: disable=broad-exception-caught
         except Exception as e:
-            raise e
-            # raise RuntimeError(
-            #     f"\033[91m[Error]\033[0m Line {stmt.lineno}: {ast.unparse(stmt)}"
-            #     + f" {e}"
-            # )
+            print(f"{traceback.format_exc()}")
+            print_error_message(str(e), stmt, ctx.top_func_tree)
+            sys.exit(1)
     return results

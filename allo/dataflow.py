@@ -14,10 +14,11 @@ from ._mlir.ir import (
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize
+from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
+from .passes import df_pipeline
 
 
 def get_pid():
@@ -41,6 +42,7 @@ def array(element, shape):
 def move_stream_to_interface(s):
     stream_info = {}
     funcs = get_all_funcs_except_top(s)
+    new_func_args = s.func_args.copy()
 
     for func in funcs:
         func_name = func.attributes["sym_name"].value
@@ -50,6 +52,7 @@ def move_stream_to_interface(s):
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
+        new_arg_names = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_ops.append(op)
@@ -65,8 +68,10 @@ def move_stream_to_interface(s):
                         raise ValueError("Stream is not used correctly.")
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
+                new_arg_names.append(stream_name)
         # create new func to update arguments
         in_types += stream_types
+        new_func_args[func_name] = new_arg_names
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
             new_func = func_d.FuncOp(
@@ -95,18 +100,24 @@ def move_stream_to_interface(s):
             for i, arg in enumerate(func.arguments):
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
+    s.func_args = new_func_args
     return stream_info
 
 
 def remove_unused_func_ops(s, func_names):
-    for i in range(len(func_names) - 1, -1, -1):
-        func_op = s.module.body.operations[i]
+    for func_op in s.module.body.operations:
+        if not (
+            isinstance(func_op, func_d.FuncOp)
+            and func_op.attributes["sym_name"].value in func_names
+        ):
+            continue
         blocks = func_op.body.blocks
         if (
             len(blocks) == 1
             and len(blocks[0].operations) == 1
             and blocks[0].operations[0].name == "func.return"
         ):
+            s.func_args.pop(func_op.attributes["sym_name"].value)
             func_op.erase()
 
 
@@ -141,6 +152,7 @@ def _build_top(s, stream_info):
                 if arg_name not in used_args:
                     used_args[arg_name] = len(input_types)
                     input_types.append(arg.type)
+                    s.func_args[s.top_func_name].append(arg_name)
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
@@ -151,10 +163,13 @@ def _build_top(s, stream_info):
         ):
             top_func = func
             break
+    assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
         func_type = FunctionType.get(input_types, [])
-        new_top = func_d.FuncOp(name="top", type=func_type, ip=InsertionPoint(top_func))
+        new_top = func_d.FuncOp(
+            name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
+        )
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
         for op in top_func.entry_block.operations:
@@ -181,7 +196,7 @@ def _build_top(s, stream_info):
                 arg_lst + stream_lst,
                 ip=InsertionPoint.at_block_terminator(new_top.entry_block),
             )
-            if i == len(stream_info) - 1:
+            if i == len(funcs) - 1:
                 call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
@@ -218,22 +233,45 @@ def region():
     return actual_decorator
 
 
-def build(func, target="vitis_hls", mode="csim", project="top.prj"):
+def df_primitive_default(s):
+    df_pipeline(s.module, rewind=True)
+
+
+def customize(func, opt_default=True):
     global_vars = get_global_vars(func)
-    s = customize(func, global_vars=global_vars)
+    s = _customize(func, global_vars=global_vars)
+    stream_info = move_stream_to_interface(s)
+    s = _build_top(s, stream_info)
+
+    if opt_default:
+        df_primitive_default(s)
+
+    return s
+
+
+def build(
+    func,
+    target="vitis_hls",
+    mode="csim",
+    project="top.prj",
+    configs=None,
+    wrap_io=True,
+    opt_default=True,
+):
     if target == "aie":
+        global_vars = get_global_vars(func)
+        s = _customize(func, global_vars=global_vars)
         mapping = func.mapping
-        print(s.module)
         mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
     # FPGA backend
-    stream_info = move_stream_to_interface(s)
-    s = _build_top(s, stream_info)
-    print(s.module)
+    s = customize(func, opt_default)
     hls_mod = s.build(
         target=target,
         mode=mode,
         project=project,
+        configs=configs,
+        wrap_io=wrap_io,
     )
     return hls_mod

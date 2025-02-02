@@ -105,9 +105,12 @@ def test_meta_if():
 
     def top[Ty, M, N]() -> "Ty[M, N]":
         with allo.meta_if(Ty == int8):
-            return kernel_int8[M, N]()
+            with allo.meta_if(M == N):
+                return kernel_int8[M, N]()
         with allo.meta_elif(Ty == float32):
-            return kernel_float32[M, N]()
+            with allo.meta_if(M == N):
+                return kernel_float32[M, N]()
+        # test whether the following meta_else will be incorrectly matched
         with allo.meta_else():
             with allo.meta_if(M + 2 == N + 2):
                 A = kernel_int32[M * 2, N * 2]()

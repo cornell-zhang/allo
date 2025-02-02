@@ -7,10 +7,6 @@ import allo
 from allo.ir.types import int32, float32
 
 
-def get_user_names(users):
-    return set([user.path + ":" + user.name for user in users])
-
-
 def test_use_def_chain():
     def foo2(A: int32) -> int32:
         B: int32 = A + 1
@@ -28,31 +24,10 @@ def test_use_def_chain():
         E: int32 = foo(D)
         return E
 
-    s = allo.customize(kernel, verbose=True)
-    assert get_user_names(s.use_def_chain.get_equivalent_tensors("kernel:D")) == set(
-        ["foo:A", "foo2:A"]
+    s = allo.customize(kernel)
+    assert s.get_equivalent_variables("kernel:D") == set(
+        ["foo2:0", "foo:0", "kernel:D"]
     )
-    assert get_user_names(s.use_def_chain["kernel:A"].users) == set(
-        [
-            "kernel:D",
-            "kernel:C",
-            "kernel:B",
-        ]
-    )
-    assert get_user_names(s.use_def_chain["kernel:B"].users) == set(
-        ["kernel:D", "kernel:C"]
-    )
-    assert get_user_names(s.use_def_chain["kernel:D"].users) == set(
-        ["foo:A", "kernel:E"]
-    )
-    assert get_user_names(s.use_def_chain["foo:A"].users) == set(
-        [
-            "foo2:A",
-            "foo:C",
-            "foo:B",
-        ]
-    )
-    assert get_user_names(s.use_def_chain["foo:C"].users) == set(["kernel:E"])
 
 
 def test_use_def_chain_array():
@@ -68,16 +43,7 @@ def test_use_def_chain_array():
         return ret
 
     s = allo.customize(gemm, verbose=True)
-    print(s.module)
-    assert get_user_names(s.use_def_chain["gemm:A"].users) == set(
-        ["gemm:ret", "kernel:A"]
-    )
-    assert get_user_names(s.use_def_chain["gemm:B"].users) == set(
-        ["gemm:ret", "kernel:B"]
-    )
-    assert get_user_names(s.use_def_chain["kernel:A"].users) == set(["kernel:C"])
-    assert get_user_names(s.use_def_chain["kernel:B"].users) == set(["kernel:C"])
-    assert get_user_names(s.use_def_chain["kernel:C"].users) == set(["gemm:ret"])
+    assert s.get_equivalent_variables("kernel:0") == set(["kernel:0", "gemm:0"])
 
 
 def test_nested_functions():
