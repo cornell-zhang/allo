@@ -45,6 +45,7 @@ def test_nested_functions_2():
 
     allo.verify(s, s1)
 
+
 def test_range_for():
     def kernel(A: int32[20]):
         for i in range(10):
@@ -56,8 +57,9 @@ def test_range_for():
 
     s = allo.customize(kernel)
     verifier = allo.verify(s, s)
-    
+
     assert verifier
+
 
 # test that ap_int types are correctly handled
 def test_get_bit():
@@ -71,6 +73,7 @@ def test_get_bit():
     verifier = allo.verify(s, s)
 
     assert verifier
+
 
 def test_fusion():
     def separate_gemm(A: float32[32, 32], B: float32[32, 32]) -> float32[32, 32]:
@@ -113,6 +116,7 @@ def test_memory_layout():
     verifier = allo.verify(s1, s2)
     assert verifier
 
+
 def test_strength_reduction():
     def mul_by_2(A: int32[10]) -> int32[10]:
         B: int32[10]
@@ -148,7 +152,9 @@ def test_compose_non_equivalence():
             D[i, j] = C[i, j] - bias[j]  # incorrect function
         return D
 
-    def top(A: float32[32, 32], B: float32[32, 32], bias: float32[32]) -> float32[32, 32]:
+    def top(
+        A: float32[32, 32], B: float32[32, 32], bias: float32[32]
+    ) -> float32[32, 32]:
         C = gemm(A, B)
         D = incorrect(C, bias)
         return D
@@ -163,11 +169,13 @@ def test_compose_non_equivalence():
 
     # negative test: should return false
     verifier = allo.verify(s_top, s_gemm)
-    assert not verifier, "Verifier incorrectly claims equivalence when functions are different"
+    assert (
+        not verifier
+    ), "Verifier incorrectly claims equivalence when functions are different"
 
     verifier = allo.verify(s_top, s_add_bias_wrong)
     assert not verifier, "Verifier failed to detect incorrect transformation"
 
+
 if __name__ == "__main__":
     pytest.main([__file__])
-    
