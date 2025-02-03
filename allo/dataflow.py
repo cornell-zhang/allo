@@ -266,7 +266,7 @@ def build(
         mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
-    elif target == "llvm":
+    if target == "llvm":
         s = customize(func, opt_default)
         return LLVMOMPModule(s.module, s.top_func_name)
     # FPGA backend

@@ -377,6 +377,7 @@ class LLVMModule:
 
 class LLVMOMPModule(LLVMModule):
     def __init__(self, mod: Module, top_func_name: str, ext_libs=None):
+        super().__init__(mod, top_func_name, ext_libs)
         with Context() as ctx:
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)

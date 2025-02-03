@@ -39,7 +39,6 @@ from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
-from .ir.transform import find_func_in_module
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
 
@@ -407,7 +406,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
         for op in top_func_ops:
             if isinstance(op, memref_d.AllocOp):
                 continue
-            elif isinstance(op, func_d.CallOp):
+            if isinstance(op, func_d.CallOp):
                 callee_name = str(op.callee)[1:]
                 if not callee_name.startswith(("load_buf", "store_res")):
                     for mod_op in module.body.operations:
@@ -431,7 +430,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
 
         # Add `omp.section`s for PE calls
         ip_omp_sections = InsertionPoint(omp_sections_block)
-        for call_op in pe_call_define_ops.keys():
+        for call_op in pe_call_define_ops:
             assert isinstance(call_op, OpView)
             omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
             omp_section_block = Block.create_at_start(omp_section_op.region, [])
