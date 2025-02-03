@@ -24,6 +24,7 @@ from ..passes import (
     _mlir_lower_pipeline,
     decompose_library_function,
     call_ext_libs_in_ptr,
+    build_dataflow_simulator
 )
 from ..utils import (
     get_func_inputs_outputs,
@@ -372,3 +373,61 @@ class LLVMModule:
                     ret_i = np_arr
                 ret.append(ret_i)
         return ret
+
+
+class LLVMOMPModule(LLVMModule):
+    def __init__(self, mod: Module, top_func_name: str, ext_libs=None):
+        with Context() as ctx:
+            allo_d.register_dialect(ctx)
+            self.module = Module.parse(str(mod), ctx)
+            self.top_func_name = top_func_name
+            func = find_func_in_module(self.module, top_func_name)
+            ext_libs = [] if ext_libs is None else ext_libs
+            # Get input/output types
+            self.in_types, self.out_types = get_func_inputs_outputs(func)
+            self.module = decompose_library_function(self.module)
+            
+            build_dataflow_simulator(self.module, self.top_func_name)
+            # Attach necessary attributes
+            func = find_func_in_module(self.module, top_func_name)
+            if func is None:
+                raise RuntimeError(
+                    "No top-level function found in the built MLIR module"
+                )
+            func.attributes["llvm.emit_c_interface"] = UnitAttr.get()
+            func.attributes["top"] = UnitAttr.get()
+            
+            # Start lowering
+            # Reference: https://discourse.llvm.org/t/help-lowering-affine-loop-to-openmp/72441/9
+            pm = PassManager.parse(
+                "builtin.module("
+                "lower-affine,"
+                "convert-scf-to-cf,"
+                "finalize-memref-to-llvm,"
+                "convert-func-to-llvm,"
+                "convert-index-to-llvm,"
+                "convert-cf-to-llvm,"
+                "convert-openmp-to-llvm,"
+                "canonicalize"
+                ")"
+            )
+            pm.run(self.module.operation)
+            
+            if os.getenv("LLVM_BUILD_DIR") is not None:
+                shared_libs = [
+                    os.path.join(
+                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
+                    ),
+                    os.path.join(
+                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
+                    ),
+                    os.path.join(
+                        os.getenv("LLVM_BUILD_DIR"), "lib", "libomp.so"
+                    )
+                ]
+            else:
+                shared_libs = []
+            shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
+            self.execution_engine = ExecutionEngine(
+                self.module, opt_level=2, shared_libs=shared_libs
+            )
