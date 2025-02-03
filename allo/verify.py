@@ -3,13 +3,17 @@
 
 import os
 import re
+import difflib
 import past
 
 def verify(schedule_a, schedule_b):
     """
-    Run PAST verifier on the two schedules, returns whether they are equivalent
+    Run PAST verifier on the two schedules, returning whether they are equivalent.
+    
+    If equivalence fails, output a diff of the generated code files to help diagnose the
+    source of the mismatch.
     """
-    temp_dir = 'tmp'
+    temp_dir = "tmp"
     os.makedirs(temp_dir, exist_ok=True)
 
     prog_a_path = os.path.join(temp_dir, "a.c")
@@ -38,6 +42,26 @@ def verify(schedule_a, schedule_b):
         out_b = out_a
 
     is_equivalent = past.verify(prog_a_path, prog_b_path, out_a)
+
+    # if not equivalent, produce a diff of the two programs
+    if not is_equivalent:
+        with open(prog_a_path, "r") as f:
+            code_a = f.readlines()
+        with open(prog_b_path, "r") as f:
+            code_b = f.readlines()
+        diff = difflib.unified_diff(
+            code_a, code_b,
+            fromfile="Program A (Schedule A)",
+            tofile="Program B (Schedule B)",
+            lineterm=""
+        )
+        diff_text = "\n".join(diff)
+        print("Verifier reported non-equivalence between schedules.")
+        print("Differences between generated programs:")
+        print(diff_text)
+        print(f"Detected output variable in schedule A: {out_a}")
+        print(f"Detected output variable in schedule B: {out_b}")
+
     return is_equivalent
 
 
@@ -50,15 +74,17 @@ def rewrite_output_variable(file_path, old_var, new_var):
     with open(file_path, "r") as f:
         content = f.read()
     if "#pragma pocc-region-start" in content and "#pragma pocc-region-end" in content:
-        # only rewrite call region
+        # only rewrite the call region
         pattern = re.compile(
             r"(#pragma\s+pocc-region-start\s*(?:\{)?\s*)(.*?)(\s*(?:\})?\s*#pragma\s+pocc-region-end)",
-            re.DOTALL
+            re.DOTALL,
         )
+
         def repl(match):
             start, block, end = match.groups()
             new_block = re.sub(r"\b" + re.escape(old_var) + r"\b", new_var, block)
             return start + new_block + end
+
         new_content = pattern.sub(repl, content)
     else:
         # global rewrite: not in call region
@@ -88,14 +114,15 @@ def get_output_var_from_file(file_path):
     # 2. look for call region
     m_region = re.search(
         r"#pragma\s+pocc-region-start\s*(?:\{)?\s*(.*?)\s*(?:\})?\s*#pragma\s+pocc-region-end",
-        content, re.DOTALL
+        content,
+        re.DOTALL,
     )
     if m_region:
         region = m_region.group(1)
         calls = re.findall(r"\b\w+\s*\(([^)]*)\)\s*;", region)
         if calls:
             last_call = calls[-1]
-            args = last_call.split(',')
+            args = last_call.split(",")
             if args:
                 output_candidate = args[-1].strip()
                 output_candidate = re.sub(r"[\)\s]+$", "", output_candidate)
@@ -110,7 +137,7 @@ def add_pocc_pragmas(file_path):
     Inserts Pocc pragmas into the generated C code
     
     For a multi–function (composed) schedule, wrap the entire file in:
-      #pragma pocc-region-start 
+      #pragma pocc-region-start
       {contents...}
       #pragma pocc-region-end
     For a single–function schedule, insert pragmas inside the function body
@@ -118,9 +145,13 @@ def add_pocc_pragmas(file_path):
     with open(file_path, "r") as f:
         content = f.read()
 
-    func_defs = re.findall(r"^\s*(?:void|int|float|double)\s+\w+\s*\(.*?\)\s*\{", content, re.MULTILINE)
+    func_defs = re.findall(
+        r"^\s*(?:void|int|float|double)\s+\w+\s*\(.*?\)\s*\{", content, re.MULTILINE
+    )
     if len(func_defs) > 1:
-        new_content = "#pragma pocc-region-start\n" + content + "\n#pragma pocc-region-end\n"
+        new_content = (
+            "#pragma pocc-region-start\n" + content + "\n#pragma pocc-region-end\n"
+        )
     else:
         lines = content.splitlines(keepends=True)
         inserted_start = False
@@ -138,16 +169,19 @@ def add_pocc_pragmas(file_path):
     with open(file_path, "w") as f:
         f.write(new_content)
 
+
 def replace_unsupported_types(file_path):
     with open(file_path, "r") as f:
         content = f.read()
-    
+
     updated_content = content.replace("int32_t", "int").replace("int64_t", "int")
     updated_content = updated_content.replace("(float)", "")
     updated_content = re.sub(r"ap_int<\d{1,2}>", "int", updated_content)
-    
+
     # rewrite bitshift operation
-    updated_content = re.sub(r"(\w+\s*(?:\[[^\]]+\])?)\s*\*\s*2\b", r"\1 << 1", updated_content)
-    
-    with open(file_path, 'w') as f:
+    updated_content = re.sub(
+        r"(\w+\s*(?:\[[^\]]+\])?)\s*\*\s*2\b", r"\1 << 1", updated_content
+    )
+
+    with open(file_path, "w") as f:
         f.write(updated_content)
