@@ -6,10 +6,11 @@ import re
 import difflib
 import past
 
+
 def verify(schedule_a, schedule_b):
     """
     Run PAST verifier on the two schedules, returning whether they are equivalent.
-    
+
     If equivalence fails, output a diff of the generated code files to help diagnose the
     source of the mismatch.
     """
@@ -50,10 +51,11 @@ def verify(schedule_a, schedule_b):
         with open(prog_b_path, "r") as f:
             code_b = f.readlines()
         diff = difflib.unified_diff(
-            code_a, code_b,
+            code_a,
+            code_b,
             fromfile="Program A (Schedule A)",
             tofile="Program B (Schedule B)",
-            lineterm=""
+            lineterm="",
         )
         diff_text = "\n".join(diff)
         print("Verifier reported non-equivalence between schedules.")
@@ -96,7 +98,7 @@ def rewrite_output_variable(file_path, old_var, new_var):
 def get_output_var_from_file(file_path):
     """
     Attempt to extract the output (live-out) variable from the generated code
-    
+
     1. First, search for a return statement
     2. If no return is found, look for a call region wrapped by
        "#pragma pocc-region-start" and "#pragma pocc-region-end" and take the last argument
@@ -135,7 +137,7 @@ def get_output_var_from_file(file_path):
 def add_pocc_pragmas(file_path):
     """
     Inserts Pocc pragmas into the generated C code
-    
+
     For a multi–function (composed) schedule, wrap the entire file in:
       #pragma pocc-region-start
       {contents...}
