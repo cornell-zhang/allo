@@ -409,26 +409,26 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                 continue
             elif isinstance(op, func_d.CallOp):
                 callee_name = str(op.callee)[1:]
-                if not callee_name.startswith(('load_buf', 'store_res')):
+                if not callee_name.startswith(("load_buf", "store_res")):
                     for mod_op in module.body.operations:
                         if isinstance(mod_op, func_d.FuncOp):
-                            if callee_name == str(mod_op.sym_name).strip('\"'):
+                            if callee_name == str(mod_op.sym_name).strip('"'):
                                 pe_call_define_ops[op] = mod_op
                                 break
 
         # Add the outmost `omp.parallel`
-        assert(len(pe_call_define_ops) > 0)
+        assert len(pe_call_define_ops) > 0
         omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
         omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
-        assert(isinstance(omp_parallel_op.region, Region))
+        assert isinstance(omp_parallel_op.region, Region)
         omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
-        
+
         # Add `omp.sections`
         ip_omp_parallel = InsertionPoint(omp_parallel_block)
         omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
         omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
         openmp_d.TerminatorOp(ip=ip_omp_parallel)
-        
+
         # Add `omp.section`s for PE calls
         ip_omp_sections = InsertionPoint(omp_sections_block)
         for call_op in pe_call_define_ops.keys():
@@ -439,8 +439,8 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
             omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
             call_op.operation.move_before(omp_term_op.operation)
         openmp_d.TerminatorOp(ip=ip_omp_sections)
-            
-            
+
+
 def call_ext_libs_in_ptr(module, ext_libs):
     lib_map = {lib.top: lib for lib in ext_libs}
     with module.context, Location.unknown():

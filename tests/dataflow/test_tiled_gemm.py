@@ -28,10 +28,10 @@ def test_tiled_gemm():
     C = np.zeros((M, N), dtype=np.float32)
     mod_llvm = df.build(top, target="llvm")
     mod = df.build(top)
-        
+
     mod_llvm(A, B, C)
     np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5)
-    
+
     if hls.is_available("vitis_hls"):
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)
