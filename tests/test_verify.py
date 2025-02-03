@@ -6,6 +6,7 @@ import numpy as np
 import allo
 from allo.ir.types import int32, float32
 
+
 def test_gemm():
     def gemm(A: float32[32, 32], B: float32[32, 32]) -> float32[32, 32]:
         C: float32[32, 32] = 0
