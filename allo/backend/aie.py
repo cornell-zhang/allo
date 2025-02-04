@@ -211,7 +211,7 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, orig_input_args, mapping):
+def codegen_aie_mlir(mod, orig_input_args):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     mem_tile_size = 2 if len(input_args) > 2 else 1
@@ -221,18 +221,22 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
     code += format_str("%tile_shim = aie.tile(0, 0)")
     for mid in range(mem_tile_size):
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
-    assert len(mapping) == 1, "Only support 1D mapping for now"
-    pe_size = mapping[0]
+    # assert len(mapping) == 1, "Only support 1D mapping for now"
+    # TODO: maybe use name of the function to support 2D?
+    # number of function declaration except top
+    funcs = list(mod.body.operations)
+    pe_size = len(funcs) - 1
     for pid in range(pe_size):
         code += format_str(f"%tile_comp{pid} = aie.tile(0, {pid + 2})")
     # update module and args
-    mod_str = str(mod)
+    func_strs = list(map(str, funcs))[:-1]
     for i, (ele_type, shape) in enumerate(input_args):
         orig_ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         shape = (shape[0] // pe_size, *shape[1:])
         ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         input_args[i] = (ele_type, orig_ele_type, shape)
-        mod_str = mod_str.replace(orig_ele_type, ele_type)
+        for i, func_str in enumerate(func_strs):
+            func_strs[i] = func_str.replace(orig_ele_type, ele_type)
     # create object fifos
     # connect each argument to a separate mem tile
     for i, (in_type, orig_in_type, shape) in enumerate(input_args[:-1]):
@@ -268,7 +272,7 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
         f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh]({out_mem_stride} [])"
     )
     # create core computation
-    for pid in range(pe_size):
+    for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
         with format_code(indent=6):
             code += format_str("%c0 = arith.constant 0 : index")
@@ -287,16 +291,16 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
                     code += format_str(
                         f"%local{i} = aie.objectfifo.subview.access %fifo{i}[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
                     )
-                    mod_str = mod_str.replace(f"%arg{i}", f"%local{i}")
+                    func_str = func_str.replace(f"%arg{i}", f"%local{i}")
                 code += format_str(
                     f"%fifo_out = aie.objectfifo.acquire @out_p{pid}(Produce, 1) : !aie.objectfifosubview<{out_type}>"
                 )
                 code += format_str(
                     f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{out_type}> -> {out_type}"
                 )
-                mod_str = mod_str.replace(f"%arg{out_id}", "%local_out")
+                func_str = func_str.replace(f"%arg{out_id}", "%local_out")
                 with format_code(indent=4):
-                    for line in mod_str.splitlines()[2:-3]:
+                    for line in func_str.splitlines()[1:-2]:
                         code += format_str(line, strip=False)
                 for i in range(len(input_args[:-1])):
                     code += format_str(
@@ -345,20 +349,19 @@ def codegen_aie_mlir(mod, orig_input_args, mapping):
 
 
 class AIEModule:
-    def __init__(self, module, top_func_name, project, mapping):
+    def __init__(self, module, top_func_name, project):
         self.module = module
         self.top_func_name = top_func_name
         self.top_func = find_func_in_module(self.module, self.top_func_name)
         self.project = project
         self.module = module
-        self.mapping = mapping
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         inputs, outputs = get_func_inputs_outputs(self.top_func)
         input_args = inputs + outputs
-        code = codegen_aie_mlir(self.module, input_args, self.mapping)
+        code = codegen_aie_mlir(self.module, input_args)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
