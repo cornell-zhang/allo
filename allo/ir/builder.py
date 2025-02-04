@@ -980,15 +980,20 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_slices(ctx, node, in_shape):
         # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
-        slices = node.slice.dims
+        slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
         static_offsets = []
         static_sizes = []
         static_strides = []
+        offsets = []
+        sizes = []
+        # Not support dynamic strides?
         for index, size in zip(slices, in_shape):
             if isinstance(index, ast.Slice):
-                lower = 0 if index.lower is None else build_stmt(ctx, index.lower).val
+                lower = (
+                    0 if index.lower is None else ASTResolver.resolve_constant(index.lower, ctx)
+                )
                 upper = (
-                    size if index.upper is None else build_stmt(ctx, index.upper).val
+                    size if index.upper is None else ASTResolver.resolve_constant(index.upper, ctx)
                 )
                 if index.step is None:
                     step = 1
@@ -996,6 +1001,27 @@ class ASTTransformer(ASTBuilder):
                     step = index.step.value
                 else:
                     raise RuntimeError("Unsupported step type")
+                if lower is None:
+                    static_offsets.append(ShapedType.get_dynamic_size())
+                    offset_expr = build_stmt(ctx, index.lower)
+                    offset = ASTTransformer.build_cast_op(ctx, offset_expr, index.dtype, Index()).result
+                    offsets.append(offset)
+                    static_sizes.append(ShapedType.get_dynamic_size())
+                    if upper is None:
+                        upper_expr = build_stmt(ctx, index.upper)
+                        size_expr = tensor_d.FloorDivSOp(tensor_d.SubOp(upper_expr, offset_expr).result, step)
+                    else:
+                        size_expr = tensor_d.FloorDivSOp(tensor_d.SubOp(upper, offset_expr).result, step)
+                    size = ASTTransformer.build_cast_op(ctx, size_expr, index.dtype, Index()).result
+                    sizes.append(size)
+                    continue
+                elif upper is None:
+                    static_sizes.append(ShapedType.get_dynamic_size())
+                    upper_expr = build_stmt(ctx, index.upper)
+                    size_expr = tensor_d.FloorDivSOp(tensor_d.SubOp(upper_expr, lower).result, step)
+                    size = ASTTransformer.build_cast_op(ctx, size_expr, index.dtype, Index()).result
+                    sizes.append(size)
+                    continue
             elif isinstance(index, (ast.Index, ast.Constant)):
                 lower = (
                     index.value.value if isinstance(index, ast.Index) else index.value
@@ -1019,7 +1045,7 @@ class ASTTransformer(ASTBuilder):
     def build_tensor_access(ctx, node, val=None, idx=0):
         # TODO: Fix tuple idx
         value = build_stmt(ctx, node.value)
-        if len(node.shape) > 1:
+        if len(node.shape) >= 1:
             dtype = RankedTensorType(value.result.type).element_type
             in_shape = RankedTensorType(value.result.type).shape
             (
