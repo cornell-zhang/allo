@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>IP Integration &#8212; Allo Documentation</title>
+    <title>AMD AI Engine &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -23,8 +23,8 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="PyTorch Integration" href="pytorch.html" />
-    <link rel="prev" title="Kernel Composition" href="../gallery/dive_03_composition.html" /> 
+    <link rel="next" title="Developer Setup" href="../developer/index.html" />
+    <link rel="prev" title="Other Features" href="../gallery/dive_04_features.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -144,17 +144,17 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_01_data_types.html">Data Types and Type Casting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_02_template.html">Template Kernels</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">IP Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dive/ip.html">IP Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dive/pytorch.html">PyTorch Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD AI Engine</a></li>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">AMD AI Engine</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -177,62 +177,81 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <section id="ip-integration">
-<h1>IP Integration<a class="headerlink" href="#ip-integration" title="Link to this heading"><span>¶</span></a></h1>
-<p>Apart from directly writing Allo kernels in Python, we also support integrating existing C++ HLS kernels into Allo. This feature is useful when you have a existing optimized C++ HLS code that wants to be integrated into Allo. The following example shows how to integrate a simple vector addition kernel written in C++ into Allo.</p>
-<p>Suppose the C++ kernel header is defined in the <code class="docutils literal notranslate"><span class="pre">vadd.h</span></code> file:</p>
-<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#ifndef VADD_H</span>
-<span class="cp">#define VADD_H</span>
-
-<span class="kt">void</span><span class="w"> </span><span class="nf">vadd</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">C</span><span class="p">[</span><span class="mi">32</span><span class="p">]);</span>
-
-<span class="cp">#endif </span><span class="c1">// VADD_H</span>
+  <section id="amd-ai-engine">
+<h1>AMD AI Engine<a class="headerlink" href="#amd-ai-engine" title="Link to this heading"><span>¶</span></a></h1>
+<p><a class="reference external" href="https://www.amd.com/en/products/adaptive-socs-and-fpgas/technologies/ai-engine.html">AMD AI Engine (AIE)</a> is a hardware accelerator specifically designed for AI applications. It is a TPU-like architecture with an array of AIE cores.
+In this document, we target the <a class="reference external" href="https://www.amd.com/en/products/processors/laptop/ryzen-for-business.html">AMD Ryzen 7040</a> and 8040 Series processors that are built on <a class="reference external" href="https://www.amd.com/en/technologies/xdna.html">AMD XDNA NPUs</a>, which are equipped with the second-generation AI Engine cores.</p>
+<img alt="AMD Ryzen AI Engine Array" class="align-center" src="https://riallto.ai/notebooks/images/png/ryzenai_array_5x4.png" />
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"><span>¶</span></a></h2>
+<p>Before proceeding with the Allo installation, please follow the instructions on the <a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai---linux-quick-setup-instructions">MLIR-AIE website</a> to install the required <a class="reference external" href="https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html">Vitis</a> and XRT environment. Stop when you reach the “Install IRON for AMD Ryzen™ AI AIE Application” section as we need a separate process to install MLIR-AIE under the Allo environment.</p>
+</section>
+<section id="install-from-source">
+<h2>Install from Source<a class="headerlink" href="#install-from-source" title="Link to this heading"><span>¶</span></a></h2>
+<p>Please follow the general instructions in <a class="reference internal" href="../setup/index.html#install-from-source"><span class="std std-ref">Install from Source</span></a> to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project and enable the <code class="docutils literal notranslate"><span class="pre">allo</span></code> conda environment.</p>
+<p>We depend on the <a class="reference external" href="https://github.com/Xilinx/mlir-aie">MLIR-AIE</a> project to compile the Allo IR to AIE, but since we are using a specific LLVM-19 version that is not compatible with the latest MLIR-AIE project, we cannot follow the offical instructions but build the MLIR-AIE project from source.</p>
+<p>First, clone the MLIR-AIE project and checkout to the specific commit.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>--recursive<span class="w"> </span>https://github.com/Xilinx/mlir-aie.git
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>mlir-aie<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>checkout<span class="w"> </span>fd89c9
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">MLIR_AIE_ROOT_DIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>
 </pre></div>
 </div>
-<p>And the corresponding implementation is defined in the <code class="docutils literal notranslate"><span class="pre">vadd.cpp</span></code> file:</p>
-<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;vadd.h&quot;</span>
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">std</span><span class="p">;</span>
-
-<span class="kt">void</span><span class="w"> </span><span class="nf">vadd</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">C</span><span class="p">[</span><span class="mi">32</span><span class="p">])</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">32</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<p>Then, build the MLIR-AIE project. The second command will install the PEANO backend compiler for AIE. Please make sure the current Python environment is Python 3.12 and you have already set up the Vitis and XRT environment. You can check by running <code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">vitis</span></code>.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>./utils/build-mlir-aie.sh<span class="w"> </span><span class="nv">$LLVM_BUILD_DIR</span>
+<span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>env_setup.sh<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install<span class="w"> </span><span class="nv">$LLVM_BUILD_DIR</span>
 </pre></div>
 </div>
-<p>In Allo, we can create an <em>IP module</em> to wrap the C++ kernel. Basically, we need to provide the top-level function name, the header files, and the implementation files. Also, currently an Allo signature is required to specify the input and output types of the kernel. Allo will automatically compile the C++ kernel and generate the corresponding Python wrapper based on the provided files and signature. The last argument <code class="docutils literal notranslate"><span class="pre">link_hls</span></code> determines whether the C++ compiler should link the Vitis HLS libraries (e.g., <code class="docutils literal notranslate"><span class="pre">ap_int</span></code>), which is only available when your machine has installed Vitis HLS.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vadd</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">IPModule</span><span class="p">(</span>
-    <span class="n">top</span><span class="o">=</span><span class="s2">&quot;vadd&quot;</span><span class="p">,</span>
-    <span class="n">headers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;vadd.h&quot;</span><span class="p">],</span>
-    <span class="n">impls</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;vadd.cpp&quot;</span><span class="p">],</span>
-    <span class="n">signature</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;int32[32]&quot;</span><span class="p">,</span> <span class="s2">&quot;int32[32]&quot;</span><span class="p">,</span> <span class="s2">&quot;int32[32]&quot;</span><span class="p">],</span>
-    <span class="n">link_hls</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span>
+<p>As the above setup script will append additional environment variables to your current shell, you need to relaunch a new shell for the following steps.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install/bin:<span class="nv">$PATH</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install/python:<span class="nv">$PYTHONPATH</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">MLIR_AIE_INSTALL_DIR</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PEANO_INSTALL_DIR</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/utils/my_install/llvm-aie
+<span class="gp">$ </span><span class="c1"># install python packages under the allo conda environment</span>
+<span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/python/requirements.txt
+<span class="gp">$ </span><span class="nv">HOST_MLIR_PYTHON_PACKAGE_PREFIX</span><span class="o">=</span>aie<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/requirements_extras.txt
 </pre></div>
 </div>
-<p>After creating the IP module, we can use it in Allo as a normal Python function. For example, we can directly call the <code class="docutils literal notranslate"><span class="pre">vadd</span></code> function to perform vector addition. The inputs and outputs will be automatically wrapped and unwrapped as NumPy arrays, which greatly simplies the burden of complex C-Python interface management. This is also very useful when you want to debug the HLS kernels with the Python data.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-<span class="n">np_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">32</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-<span class="n">vadd</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">np_C</span><span class="p">)</span>
-<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">np_A</span> <span class="o">+</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">np_C</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+<p>Lastly, you can verify the AIE backend by running the following command under the <code class="docutils literal notranslate"><span class="pre">allo</span></code> folder.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>tests/dataflow/aie/test_vector.py
 </pre></div>
 </div>
-<p>Moreover, the IP module can also be called in a normal Allo kernel. In the following example, we wrap the <code class="docutils literal notranslate"><span class="pre">vadd</span></code> function into an Allo <code class="docutils literal notranslate"><span class="pre">kernel</span></code> and use it to perform vector addition. The Allo kernel can then be further customized and compiled with the external C++ HLS kernel.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]:</span>
-    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">vadd</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">C</span>
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
-<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">()</span>
-<span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-<span class="n">allo_C</span> <span class="o">=</span> <span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">)</span>
-<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">np_A</span> <span class="o">+</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+</section>
+<section id="internal-installation-cornell">
+<h2>Internal Installation (Cornell)<a class="headerlink" href="#internal-installation-cornell" title="Link to this heading"><span>¶</span></a></h2>
+<p>For Zhang Group students, we have already set up the environment for LLVM and MLIR-AIE, so you do not need to build everything from source. Firstly, you need to create a new conda environment with Python 3.12 and activate it.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
+<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
 </pre></div>
 </div>
+<p>To set up the environment, all you need to do is to source the following script.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>/opt/common/setup.sh
+</pre></div>
+</div>
+<p>Then, go through the normal steps to install Allo:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>allo
+<span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Some additional packages are required to run the MLIR-AIE compiler. You can install them by running the following commands:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/opt/mlir-aie/python/requirements.txt
+<span class="gp">$ </span><span class="nv">HOST_MLIR_PYTHON_PACKAGE_PREFIX</span><span class="o">=</span>aie<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/opt/mlir-aie/python/requirements_extras.txt
+</pre></div>
+</div>
+<p>Lastly, to verify the installation, you can run the following command:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>tests/dataflow/aie/test_vector.py
+</pre></div>
+</div>
+<p>If the unit tests pass, then the installation is successful. Otherwise, please contact us for help.</p>
+</section>
+<section id="learning-materials">
+<h2>Learning Materials<a class="headerlink" href="#learning-materials" title="Link to this heading"><span>¶</span></a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/programming_guide">IRON AIE Programming Guide</a></p></li>
+<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/programming_examples">MLIR-AIE Programming Examples</a></p></li>
+<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/tutorial">MLIR-based AI Engine Design Tutorial</a></p></li>
+<li><p><a class="reference external" href="https://riallto.ai/index.html">Riallto - an exploration framework for the AMD Ryzen AI NPU</a></p></li>
+</ul>
+</section>
 </section>
 
 
@@ -241,6 +260,26 @@
         </div>
       </div>
     
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">AMD AI Engine</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#install-from-source">Install from Source</a></li>
+<li><a class="reference internal" href="#internal-installation-cornell">Internal Installation (Cornell)</a></li>
+<li><a class="reference internal" href="#learning-materials">Learning Materials</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
+    
 
       <div class="clearer"></div>
     </div>
@@ -248,14 +287,14 @@
         <div class="button_nav">
             <div class="left">
                 
-                <a href="../gallery/dive_03_composition.html">
-                    <span class="icon">&lt;</span><span>Kernel Composition</span></a>
+                <a href="../gallery/dive_04_features.html">
+                    <span class="icon">&lt;</span><span>Other Features</span></a>
                 
             </div>
 
             <div class="right">
                 
-                    <a href="pytorch.html"><span>PyTorch Integration</span><span class="icon">&gt;</span></a>
+                    <a href="../developer/index.html"><span>Developer Setup</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
