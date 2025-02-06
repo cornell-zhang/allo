@@ -6,6 +6,12 @@
 import os
 import subprocess
 import numpy as np
+from .._mlir.ir import (
+    IntegerAttr,
+    IntegerType,
+    DenseI64ArrayAttr,
+)
+from .._mlir.passmanager import PassManager as mlir_pass_manager
 
 from .vitis import read_tensor_from_file
 from ..ir.transform import find_func_in_module
@@ -224,12 +230,12 @@ def codegen_aie_mlir(mod, orig_input_args):
     # assert len(mapping) == 1, "Only support 1D mapping for now"
     # TODO: maybe use name of the function to support 2D?
     # number of function declaration except top
-    funcs = list(mod.body.operations)
-    pe_size = len(funcs) - 1
+    funcs = list(mod.body.operations)[:-1]
+    pe_size = len(funcs)
     for pid in range(pe_size):
         code += format_str(f"%tile_comp{pid} = aie.tile(0, {pid + 2})")
     # update module and args
-    func_strs = list(map(str, funcs))[:-1]
+    func_strs = list(map(str, funcs))
     for i, (ele_type, shape) in enumerate(input_args):
         orig_ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         shape = (shape[0] // pe_size, *shape[1:])
@@ -348,6 +354,71 @@ def codegen_aie_mlir(mod, orig_input_args):
     return code
 
 
+def reindex_tensor_access(mod):
+    ctx = mod.context
+    funcs = list(mod.body.operations)[:-1]
+    pe_size = len(funcs)
+    for pi, func in enumerate(funcs):
+        entry_block = func.regions[0].blocks[0]
+        for block in func.regions[0].blocks:
+            for op in block.operations:
+                if op.operation.name == "tensor.extract":
+                    # TODO: need testing
+                    if op.operands[0] not in entry_block.arguments:
+                        continue
+                    for index_val in op.operands[1:]:
+                        const_op = index_val.definingOp
+                        if const_op is None or const_op.operation.name != "arith.constant":
+                            raise RuntimeError("Dynamic index tensor unsupported")
+                        const_attr = const_op.attributes["value"]
+                        new_val = const_attr.value - 1
+                        new_const_attr = IntegerAttr.get(const_attr.type, new_val)
+                        const_op.attributes["value"] = new_const_attr
+
+                elif op.operation.name == "tensor.extract_slice":
+                    if op.operands[0] not in entry_block.arguments:
+                        continue
+                    offsets = op.attributes["static_offsets"]
+                    if offsets is None:
+                        continue
+                    new_offsets = []
+                    for offset in offsets:
+                        # TODO: need to support multi-dim mappings
+                        diff = pi * (op.operands[0].type.shape[0] // pe_size)
+                        new_offset = offset - diff
+                        new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
+                        new_offsets.append(new_offset_attr)
+                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+
+                elif op.operation.name == "tensor.insert":
+                    # TODO: need testing
+                    if op.operands[1] not in entry_block.arguments:
+                        continue
+                    for index_val in op.operands[2:]:
+                        const_op = index_val.definingOp
+                        if const_op is None or const_op.operation.name != "arith.constant":
+                            raise RuntimeError("Dynamic index tensor unsupported")
+                        const_attr = const_op.attributes["value"]
+                        new_val = const_attr.value - 1
+                        new_const_attr = IntegerAttr.get(const_attr.type, new_val)
+                        const_op.attributes["value"] = new_const_attr
+
+                elif op.operation.name == "tensor.insert_slice":
+                    if op.operands[1] not in entry_block.arguments:
+                        continue
+                    offsets = op.attributes["static_offsets"]
+                    if offsets is None:
+                        continue
+                    new_offsets = []
+                    for offset in offsets:
+                        # TODO: need to support multi-dim mappings
+                        diff = pi * (op.operands[1].type.shape[0] // pe_size)
+                        new_offset = offset - diff
+                        new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
+                        new_offsets.append(new_offset_attr)
+                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+
+
 class AIEModule:
     def __init__(self, module, top_func_name, project):
         self.module = module
@@ -361,6 +432,7 @@ class AIEModule:
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         inputs, outputs = get_func_inputs_outputs(self.top_func)
         input_args = inputs + outputs
+        reindex_tensor_access(self.module)
         code = codegen_aie_mlir(self.module, input_args)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
