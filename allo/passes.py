@@ -18,12 +18,9 @@ from ._mlir.ir import (
     AffineMapAttr,
     InsertionPoint,
     Module,
-    Region,
-    Block,
     IntegerAttr,
     IntegerType,
     Operation,
-    OpView,
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -33,7 +30,6 @@ from ._mlir.dialects import (
     scf as scf_d,
     linalg as linalg_d,
     arith as arith_d,
-    openmp as openmp_d,
 )
 from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager
@@ -395,49 +391,6 @@ def decompose_library_function(module):
         for op in body_op_to_remove:
             op.operation.erase()
         return module
-
-
-def build_dataflow_simulator(module: Module, top_func_name: str):
-    with module.context, Location.unknown():
-        func = find_func_in_module(module, top_func_name)
-        assert isinstance(func.body, Region)
-        top_func_ops = func.body.blocks[0].operations
-        pe_call_define_ops: dict[func_d.CallOp, func_d.FuncOp] = {}
-        for op in top_func_ops:
-            if isinstance(op, memref_d.AllocOp):
-                continue
-            if isinstance(op, func_d.CallOp):
-                callee_name = str(op.callee)[1:]
-                if not callee_name.startswith(("load_buf", "store_res")):
-                    for mod_op in module.body.operations:
-                        if isinstance(mod_op, func_d.FuncOp):
-                            if callee_name == str(mod_op.sym_name).strip('"'):
-                                pe_call_define_ops[op] = mod_op
-                                break
-
-        # Add the outmost `omp.parallel`
-        assert len(pe_call_define_ops) > 0
-        omp_ip = InsertionPoint(beforeOperation=list(pe_call_define_ops.keys())[0])
-        omp_parallel_op = openmp_d.ParallelOp([], [], [], [], ip=omp_ip)
-        assert isinstance(omp_parallel_op.region, Region)
-        omp_parallel_block = Block.create_at_start(omp_parallel_op.region, [])
-
-        # Add `omp.sections`
-        ip_omp_parallel = InsertionPoint(omp_parallel_block)
-        omp_sections_op = openmp_d.SectionsOp([], [], [], [], ip=ip_omp_parallel)
-        omp_sections_block = Block.create_at_start(omp_sections_op.region, [])
-        openmp_d.TerminatorOp(ip=ip_omp_parallel)
-
-        # Add `omp.section`s for PE calls
-        ip_omp_sections = InsertionPoint(omp_sections_block)
-        for call_op in pe_call_define_ops:
-            assert isinstance(call_op, OpView)
-            omp_section_op = openmp_d.SectionOp(ip=ip_omp_sections)
-            omp_section_block = Block.create_at_start(omp_section_op.region, [])
-            ip_omp_section = InsertionPoint(omp_section_block)
-            omp_term_op = openmp_d.TerminatorOp(ip=ip_omp_section)
-            call_op.operation.move_before(omp_term_op.operation)
-        openmp_d.TerminatorOp(ip=ip_omp_sections)
 
 
 def call_ext_libs_in_ptr(module, ext_libs):

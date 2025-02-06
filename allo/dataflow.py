@@ -17,7 +17,7 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
-from .backend.llvm import LLVMOMPModule
+from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
 
@@ -266,7 +266,7 @@ def build(
         mod = AIEModule(s.module, s.top_func_name, project, mapping)
         mod.build()
         return mod
-    if target == "llvm":
+    if target == "simulator":
         s = customize(func, opt_default)
         return LLVMOMPModule(s.module, s.top_func_name)
     # FPGA backend
