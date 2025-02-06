@@ -12,6 +12,7 @@ from .._mlir.ir import (
     DenseI64ArrayAttr,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
+from .._mlir.dialects import allo as allo_d
 
 from .vitis import read_tensor_from_file
 from ..ir.transform import find_func_in_module
@@ -417,6 +418,16 @@ def reindex_tensor_access(mod):
                         new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
                         new_offsets.append(new_offset_attr)
                     op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+                    
+
+def lower_tensor_to_memref(mod):
+    passes = [
+        "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
+    ]
+    pipeline = f'builtin.module({",".join(passes)})'
+    with mod.context:
+        mlir_pass_manager.parse(pipeline).run(mod.operation)
+        # allo_d.remove_stride_map(mod)
 
 
 class AIEModule:
@@ -433,6 +444,7 @@ class AIEModule:
         inputs, outputs = get_func_inputs_outputs(self.top_func)
         input_args = inputs + outputs
         reindex_tensor_access(self.module)
+        lower_tensor_to_memref(self.module)
         code = codegen_aie_mlir(self.module, input_args)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
