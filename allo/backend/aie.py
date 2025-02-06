@@ -11,6 +11,7 @@ from .._mlir.ir import (
     IntegerType,
     DenseI64ArrayAttr,
 )
+from .._mlir.dialects import func as func_d
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 from .._mlir.dialects import allo as allo_d
 
@@ -434,15 +435,18 @@ class AIEModule:
     def __init__(self, module, top_func_name, project):
         self.module = module
         self.top_func_name = top_func_name
-        self.top_func = find_func_in_module(self.module, self.top_func_name)
+        # TODO: need to support multiple kernels
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp) and op.name.value != top_func_name:
+                self.kernel_func = op
         self.project = project
         self.module = module
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        inputs, outputs = get_func_inputs_outputs(self.top_func)
-        input_args = inputs + outputs
+        self.inputs, self.outputs = get_func_inputs_outputs(self.kernel_func)
+        input_args = self.inputs + self.outputs
         reindex_tensor_access(self.module)
         lower_tensor_to_memref(self.module)
         code = codegen_aie_mlir(self.module, input_args)
@@ -480,8 +484,7 @@ class AIEModule:
         process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
-        inputs, _ = get_func_inputs_outputs(self.top_func)
         result = read_tensor_from_file(
-            inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+            self.inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
         )
         args[-1][:] = result
