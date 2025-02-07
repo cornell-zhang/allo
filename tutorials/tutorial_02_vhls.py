@@ -139,9 +139,9 @@ print(code)
 # the synthesis mode that are supported by Vitis HLS (e.g., ``sw_emu``, ``hw_emu``, and ``hw``),
 # and the target project folder name. Allo will automatically generate
 # the HLS project and invoke the compiler to generate the RTL design.
-# 
+#
 # .. note::
-# 
+#
 #    - ``sw_emu``: Software emulation mode, which is similar to C simulation that compiles the program using C compiler and runs it on the CPU. Depending on the size of your input data, this mode may take within one minute.
 #    - ``hw_emu``: Hardware emulation mode, which is similar to co-simulation that compiles the program into RTL design using HLS compiler and runs the RTL with the test bench on the FPGA emulator. Since it needs to go through the HLS synthesis flow, it may take several minutes to finish.
 #    - ``hw``: Hardware mode, which compiles the program into RTL design using HLS, goes through placement and routing, generates the bitstream, and finally executes on FPGA. This mode may take several hours to finish.
