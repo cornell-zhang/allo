@@ -13,6 +13,7 @@ from allo.ir.types import (
     bool,
     uint1,
     int32,
+    float16,
     float32,
     index,
 )
@@ -41,6 +42,21 @@ def test_int32_float32_casting():
     print(s.module)
     mod = s.build()
     assert mod(1) == kernel(1)
+
+
+def test_uint():
+    def casting():
+        buf1: UInt(17)[16, 16] = 0
+        buf2: float32[16, 16]
+
+        for i, j in allo.grid(16, 16):
+            buf2[i, j] = float(buf1[i, j] + buf1[j, i])
+
+    s = allo.customize(casting)
+    mod = s.build(target="vhls")
+    code = mod.hls_code
+    assert "ap_uint<17>" in code and "ap_uint<18>" in code
+    assert "ap_int<" not in code
 
 
 def test_index_fixed_casting():
@@ -305,6 +321,45 @@ def test_dynamic_type():
 
     s = allo.customize(kernel, instantiate=[Int(7)], verbose=True)
     print(s.module)
+
+
+def test_fp16():
+    def kernel(a: float16) -> float16:
+        return a + 1
+
+    s = allo.customize(kernel)
+    assert "f16" in str(s.module)
+    mod = s.build()
+    assert mod(1.0) == kernel(1.0)
+
+
+def test_fp16_array():
+    def kernel(A: float16[10]) -> float16[10]:
+        B: float16[10]
+        for i in range(10):
+            B[i] = A[i] + 1
+        return B
+
+    s = allo.customize(kernel)
+    assert "f16" in str(s.module)
+    mod = s.build()
+    A = np.random.rand(10).astype(np.float16)
+    B = mod(A)
+    np.testing.assert_allclose(B, A + 1, rtol=1e-5)
+
+
+def test_fp16_array_inplace():
+    def kernel(A: float16[10]):
+        for i in range(10):
+            A[i] += 1
+
+    s = allo.customize(kernel)
+    assert "f16" in str(s.module)
+    mod = s.build()
+    A = np.random.rand(10).astype(np.float16)
+    res = A + 1
+    mod(A)
+    np.testing.assert_allclose(A, res, rtol=1e-5)
 
 
 def test_select_typing():

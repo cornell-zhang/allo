@@ -9,6 +9,7 @@ from ._mlir.ir import (
     RankedTensorType,
     IntegerType,
     IndexType,
+    F16Type,
     F32Type,
     F64Type,
 )
@@ -18,6 +19,7 @@ from ._mlir.dialects import allo as allo_d
 
 
 np_supported_types = {
+    "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
     "i8": np.int8,
@@ -33,6 +35,9 @@ np_supported_types = {
 
 
 ctype_map = {
+    # ctypes.c_float16 does not exist
+    # similar implementation in _mlir/runtime/np_to_memref.py/F16
+    "f16": ctypes.c_int16,
     "f32": ctypes.c_float,
     "f64": ctypes.c_double,
     "i8": ctypes.c_int8,
@@ -152,6 +157,8 @@ def get_dtype_and_shape_from_type(dtype):
         return "index", tuple()
     if IntegerType.isinstance(dtype):
         return str(IntegerType(dtype)), tuple()
+    if F16Type.isinstance(dtype):
+        return str(F16Type(dtype)), tuple()
     if F32Type.isinstance(dtype):
         return str(F32Type(dtype)), tuple()
     if F64Type.isinstance(dtype):

@@ -119,7 +119,7 @@ def deprecated_check(target, data):
     target.write("\n")
 
 
-def mk_run(target, data, desc_file, path):
+def mk_run(target, data, desc_file, path, platform):
     if "targets" in data:
         target.write("ifneq ($(TARGET),$(findstring $(TARGET),")
         args = data["targets"]
@@ -182,7 +182,7 @@ def mk_run(target, data, desc_file, path):
     }
 
     for i in makefile_lst:
-        gen_func[i](desc_file, path)
+        gen_func[i](desc_file, path, platform)
 
     if ("platform_type" in data and data["platform_type"] == "pcie") and (
         "vck" in blocklist
@@ -218,34 +218,35 @@ def mk_run(target, data, desc_file, path):
         target.write("endif\n")
 
 
-def mk_help(target):
+def mk_help(target, platform):
     target.write(
         "\n############################## Help Section ##############################\n"
     )
 
+    modes = "<hw_emu/hw>" if platform == "tapa" else "<sw_emu/hw_emu/hw>"
+
     target.write("help:\n")
     target.write('\t$(ECHO) "Makefile Usage:"\n')
-    target.write(
-        '\t$(ECHO) "  make all TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make all TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
     target.write(
         '\t$(ECHO) "      Command to generate the design for specified Target and Shell."\n'
     )
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        '\t$(ECHO) "  make run TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make run TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EMU_PS=<X86/QEMU> EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
-    target.write(
-        '\t$(ECHO) "      Command to run application in emulation.Default sw_emu will run on x86 ,to launch on qemu specify EMU_PS=QEMU."\n'
-    )
+    if platform == "tapa":
+        target.write('\t$(ECHO) "     sw_emu is unavailable with tapa, please use csim')
+        target.write('\t$(ECHO) "     make csim\n')
+        target.write('\t$(ECHO) "     make fast_hw_emu\n')
+    else:
+        target.write(
+            '\t$(ECHO) "      Command to run application in emulation.Default sw_emu will run on x86 ,to launch on qemu specify EMU_PS=QEMU."\n'
+        )
     target.write('\t$(ECHO) ""\n')
-    target.write(
-        '\t$(ECHO) "  make build TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform>'
-    )
+    target.write(f'\t$(ECHO) "  make build TARGET={modes} PLATFORM=<FPGA platform>')
     target.write(" EDGE_COMMON_SW=<rootfs and kernel image path>")
     target.write('"\n')
     target.write('\t$(ECHO) "      Command to build xclbin application."\n')
@@ -262,7 +263,7 @@ def mk_help(target):
     )
     target.write('\t$(ECHO) ""\n')
     target.write(
-        '\t$(ECHO) "  make sd_card TARGET=<sw_emu/hw_emu/hw> PLATFORM=<FPGA platform> EDGE_COMMON_SW=<rootfs and kernel image path>"\n'
+        f'\t$(ECHO) "  make sd_card TARGET={modes} PLATFORM=<FPGA platform> EDGE_COMMON_SW=<rootfs and kernel image path>"\n'
     )
     target.write('\t$(ECHO) "      Command to prepare sd_card files."\n')
     target.write('\t$(ECHO) ""\n')
@@ -491,11 +492,11 @@ def readme_gen(target):
     target.write("\n")
 
 
-def create_mk(target, data, desc_file, path):
+def create_mk(target, data, desc_file, path, platform):
     mk_copyright(target)
     create_params(target, data)
-    mk_run(target, data, desc_file, path)
-    mk_help(target)
+    mk_run(target, data, desc_file, path, platform)
+    mk_help(target, platform)
     return
 
 
@@ -509,7 +510,7 @@ def create_utils(target, data):
     return
 
 
-def generate_makefile(desc_file, path):
+def generate_makefile(desc_file, path, platform="vitis_hls"):
     global data, init_cur_dir, cur_dir
     desc = open(desc_file, "r")
     data = json.load(desc)
@@ -544,7 +545,7 @@ def generate_makefile(desc_file, path):
     else:
         # print("Generating Auto-Makefile for %s" % data["name"])
         target = open(os.path.join(path, "Makefile"), "w")
-        create_mk(target, data, desc_file, path)
+        create_mk(target, data, desc_file, path, platform)
         # print("Generating utils.mk file for %s" % data["name"])
         target = open(os.path.join(path, "utils.mk"), "w+")
         create_utils(target, data)

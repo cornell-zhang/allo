@@ -18,6 +18,7 @@ from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .ir.types import Stream
+from .passes import df_pipeline
 
 
 def get_pid():
@@ -166,7 +167,9 @@ def _build_top(s, stream_info):
     with s.module.context, Location.unknown():
         # create new func
         func_type = FunctionType.get(input_types, [])
-        new_top = func_d.FuncOp(name="top", type=func_type, ip=InsertionPoint(top_func))
+        new_top = func_d.FuncOp(
+            name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
+        )
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
         for op in top_func.entry_block.operations:
@@ -193,7 +196,7 @@ def _build_top(s, stream_info):
                 arg_lst + stream_lst,
                 ip=InsertionPoint.at_block_terminator(new_top.entry_block),
             )
-            if i == len(stream_info) - 1:
+            if i == len(funcs) - 1:
                 call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
@@ -230,15 +233,31 @@ def region():
     return actual_decorator
 
 
-def customize(func):
+def df_primitive_default(s):
+    df_pipeline(s.module, rewind=True)
+
+
+def customize(func, opt_default=True):
     global_vars = get_global_vars(func)
     s = _customize(func, global_vars=global_vars)
     stream_info = move_stream_to_interface(s)
     s = _build_top(s, stream_info)
+
+    if opt_default:
+        df_primitive_default(s)
+
     return s
 
 
-def build(func, target="vitis_hls", mode="csim", project="top.prj"):
+def build(
+    func,
+    target="vitis_hls",
+    mode="csim",
+    project="top.prj",
+    configs=None,
+    wrap_io=True,
+    opt_default=True,
+):
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars)
@@ -247,10 +266,12 @@ def build(func, target="vitis_hls", mode="csim", project="top.prj"):
         mod.build()
         return mod
     # FPGA backend
-    s = customize(func)
+    s = customize(func, opt_default)
     hls_mod = s.build(
         target=target,
         mode=mode,
         project=project,
+        configs=configs,
+        wrap_io=wrap_io,
     )
     return hls_mod
