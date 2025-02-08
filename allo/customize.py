@@ -11,7 +11,6 @@ from functools import wraps
 from types import FunctionType as PyFunctionType
 from typing import Union
 from collections.abc import Callable
-import os
 
 from ._mlir.ir import (
     Context,
@@ -945,7 +944,7 @@ def customize(
         verbose=verbose,
     )
 
-    file_name = os.path.basename(inspect.getfile(fn))
+    file_name = inspect.getfile(fn)
 
     module = ASTTransformer()(ctx, tree, file_name)
 
