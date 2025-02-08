@@ -6,6 +6,8 @@ import pytest
 import allo
 from allo.ir.types import bool, int8, int32, float32, index
 import allo.backend.hls as hls
+import io
+from contextlib import redirect_stdout
 
 
 def test_grid_for_gemm():
@@ -749,6 +751,83 @@ def test_scalar():
     mod = s.build(target="vhls")
     assert "," not in mod.hls_code
 
+def test_line_trace():
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+    def get_mlir_string(schedule):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            schedule.module.operation.print(
+                large_elements_limit=2,
+                enable_debug_info=True,
+                use_local_scope=True,
+            )
+        return buffer.getvalue()
+
+    mlir_string = get_mlir_string(s)
+    assert(mlir_string == 
+    '''module {\n  func.func @gemm(%arg0: memref<32x32xi32> loc("test_builder.py":755:0), '''
+    '''%arg1: memref<32x32xi32> loc("test_builder.py":755:0)) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {\n'''
+    '''    %alloc = memref.alloc() {name = "C"} : memref<32x32xi32> loc("test_builder.py":756:4)\n'''
+    '''    %c0_i32 = arith.constant 0 : i32 loc("test_builder.py":756:4)\n'''
+    '''    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>) loc("test_builder.py":756:4)\n'''
+    '''    affine.for %arg2 loc("test_builder.py":757:4) = 0 to 32 {\n'''
+    '''      affine.for %arg3 loc("test_builder.py":757:4) = 0 to 32 {\n'''
+    '''        affine.for %arg4 loc("test_builder.py":757:4) = 0 to 32 {\n'''
+    '''          %0 = affine.load %arg0[%arg2, %arg4] {from = "A"} : memref<32x32xi32> loc("test_builder.py":758:19)\n'''
+    '''          %1 = affine.load %arg1[%arg4, %arg3] {from = "B"} : memref<32x32xi32> loc("test_builder.py":758:29)\n'''
+    '''          %2 = arith.extsi %0 : i32 to i64 loc("test_builder.py":758:19)\n'''
+    '''          %3 = arith.extsi %1 : i32 to i64 loc("test_builder.py":758:19)\n'''
+    '''          %4 = arith.muli %2, %3 : i64 loc("test_builder.py":758:19)\n'''
+    '''          %5 = affine.load %alloc[%arg2, %arg3] {from = "C"} : memref<32x32xi32> loc("test_builder.py":758:8)\n'''
+    '''          %6 = arith.trunci %4 : i64 to i32 loc("test_builder.py":758:8)\n'''
+    '''          %7 = arith.addi %5, %6 : i32 loc("test_builder.py":758:8)\n'''
+    '''          affine.store %7, %alloc[%arg2, %arg3] {to = "C"} : memref<32x32xi32> loc("test_builder.py":758:8)\n'''
+    '''        } {loop_name = "k"} loc("test_builder.py":757:4)\n'''
+    '''      } {loop_name = "j"} loc("test_builder.py":757:4)\n'''
+    '''    } {loop_name = "i", op_name = "S_i_j_k_0"} loc("test_builder.py":757:4)\n'''
+    '''    return %alloc : memref<32x32xi32> loc("test_builder.py":759:4)\n'''
+    '''  } loc("test_builder.py":755:0)\n'''
+    '''} loc(unknown)''')
+    
+    s.split("i", factor=8)
+
+    mlir_string = get_mlir_string(s)
+    
+    assert(mlir_string == 
+    '''module {\n  func.func @gemm(%arg0: memref<32x32xi32> loc("test_builder.py":755:0), '''
+    '''%arg1: memref<32x32xi32> loc("test_builder.py":755:0)) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {\n'''
+    '''    %alloc = memref.alloc() {name = "C"} : memref<32x32xi32> loc("test_builder.py":756:4)\n'''
+    '''    %c0_i32 = arith.constant 0 : i32 loc("test_builder.py":756:4)\n'''
+    '''    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>) loc("test_builder.py":756:4)\n'''
+    '''    affine.for %arg2 loc("test_builder.py":757:4) = 0 to 4 {\n'''
+    '''      affine.for %arg3 loc("test_builder.py":757:4) = 0 to 8 {\n'''
+    '''        affine.for %arg4 loc("test_builder.py":757:4) = 0 to 32 {\n'''
+    '''          affine.for %arg5 loc("test_builder.py":757:4) = 0 to 32 {\n'''
+    '''            %1 = affine.apply affine_map<(d0, d1) -> (d0 + d1 * 8)>(%arg3, %arg2) loc("test_builder.py":757:4)\n'''
+    '''            %2 = affine.load %arg0[%1, %arg5] {from = "A"} : memref<32x32xi32> loc("test_builder.py":758:19)\n'''
+    '''            %3 = affine.load %arg1[%arg5, %arg4] {from = "B"} : memref<32x32xi32> loc("test_builder.py":758:29)\n'''
+    '''            %4 = arith.extsi %2 : i32 to i64 loc("test_builder.py":758:19)\n'''
+    '''            %5 = arith.extsi %3 : i32 to i64 loc("test_builder.py":758:19)\n'''
+    '''            %6 = arith.muli %4, %5 : i64 loc("test_builder.py":758:19)\n'''
+    '''            %7 = affine.load %alloc[%1, %arg4] {from = "C"} : memref<32x32xi32> loc("test_builder.py":758:8)\n'''
+    '''            %8 = arith.trunci %6 : i64 to i32 loc("test_builder.py":758:8)\n'''
+    '''            %9 = arith.addi %7, %8 : i32 loc("test_builder.py":758:8)\n'''
+    '''            affine.store %9, %alloc[%1, %arg4] {to = "C"} : memref<32x32xi32> loc("test_builder.py":758:8)\n'''
+    '''          } {loop_name = "k"} loc("test_builder.py":757:4)\n'''
+    '''        } {loop_name = "j"} loc("test_builder.py":757:4)\n'''
+    '''      } {loop_name = "i.inner"} loc("test_builder.py":757:4)\n'''
+    '''    } {loop_name = "i.outer", op_name = "S_i_j_k_0"} loc("test_builder.py":757:4)\n'''
+    '''    %0 = allo.create_op_handle "S_i_j_k_0" loc(unknown)\n'''
+    '''    return %alloc : memref<32x32xi32> loc("test_builder.py":759:4)\n'''
+    '''  } loc("test_builder.py":755:0)\n'''
+    '''} loc(unknown)''')
+    
 
 if __name__ == "__main__":
     pytest.main([__file__])
