@@ -21,7 +21,7 @@ jobs:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
       run: |
-        apt-get install git
+        apt-get -y install git
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
