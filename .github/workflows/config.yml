@@ -15,7 +15,7 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/allo:llvm-19.x-py3.12
+      image: chhzh123/allo:latest
 
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
