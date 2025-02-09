@@ -772,13 +772,13 @@ def test_line_trace():
         return buffer.getvalue()
 
     mlir_string = get_mlir_string(s)
-    assert "loc(\"" in mlir_string
+    assert 'loc("' in mlir_string
 
     s.split("i", factor=8)
 
     mlir_string = get_mlir_string(s)
 
-    assert "loc(\"" in mlir_string
+    assert 'loc("' in mlir_string
 
 
 if __name__ == "__main__":
