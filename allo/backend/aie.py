@@ -5,6 +5,7 @@
 
 import os
 import subprocess
+import re
 import numpy as np
 from .._mlir.ir import (
     IntegerAttr,
@@ -17,7 +18,7 @@ from .._mlir.dialects import allo as allo_d
 
 from .vitis import read_tensor_from_file
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs
+from ..utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
 from .utils import format_str, format_code
 from .vitis import ctype_map
 
@@ -219,7 +220,7 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, orig_input_args):
+def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     mem_tile_size = 2 if len(input_args) > 2 else 1
@@ -234,8 +235,21 @@ def codegen_aie_mlir(mod, orig_input_args):
     # number of function declaration except top
     funcs = list(mod.body.operations)[:-1]
     pe_size = len(funcs)
+    buf_name_dicts = []
     for pid in range(pe_size):
         code += format_str(f"%tile_comp{pid} = aie.tile(0, {pid + 2})")
+        buf_dict = buf_dicts[pid]
+        buf_name_dict = {}
+        for i, name in enumerate(buf_dict.keys()):
+            tile_name = f"%tile_comp{pid}"
+            new_name = f"{tile_name}_buf{i}"
+            buf_name_dict[name] = new_name
+            ele_type, shape = buf_dict[name]
+            str_list = list(map(str, shape))
+            str_list.append(ele_type)
+            buf_type = f"memref<{'x'.join(map(str, str_list))}>"
+            code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
+        buf_name_dicts.append(buf_name_dict)
     # update module and args
     func_strs = list(map(str, funcs))
     for i, (ele_type, shape) in enumerate(input_args):
@@ -245,6 +259,20 @@ def codegen_aie_mlir(mod, orig_input_args):
         input_args[i] = (ele_type, orig_ele_type, shape)
         for i, func_str in enumerate(func_strs):
             func_strs[i] = func_str.replace(orig_ele_type, ele_type)
+    # update buffers
+    for pid in range(pe_size):
+        func_str = func_strs[pid]
+        buf_name_dict = buf_name_dicts[pid]
+        # remove memref.alloc
+        pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
+        func_str = re.sub(pattern_alloc, "", func_str)
+        # replace new buffer name
+        pattern_boundary = r'(?<![\w.]){old}(?![\w.])'
+        for name, new_name in buf_name_dict.items():
+            escaped_name = re.escape(name)
+            pattern = pattern_boundary.format(old=escaped_name)
+            func_str = re.sub(pattern, new_name, func_str)
+        func_strs[pid] = func_str
     # create object fifos
     # connect each argument to a separate mem tile
     for i, (in_type, orig_in_type, shape) in enumerate(input_args[:-1]):
@@ -283,13 +311,13 @@ def codegen_aie_mlir(mod, orig_input_args):
     for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
         with format_code(indent=6):
-            code += format_str("%c0 = arith.constant 0 : index")
-            code += format_str("%c1 = arith.constant 1 : index")
+            code += format_str("%c1000 = arith.constant 0 : index")
+            code += format_str("%c1001 = arith.constant 1 : index")
             code += format_str(
                 "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
             )
             code += format_str(
-                "scf.for %arg0 = %c0 to %c9223372036854775807 step %c1 {"
+                "scf.for %arg0 = %c1000 to %c9223372036854775807 step %c1001 {"
             )
             with format_code(indent=8):
                 for i, (in_type, _, shape) in enumerate(input_args[:-1]):
@@ -423,12 +451,31 @@ def reindex_tensor_access(mod):
 
 def lower_tensor_to_memref(mod):
     passes = [
+        # "linalg-generalize-named-ops",
+        # "linalg-fuse-elementwise-ops",
         "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
+        "func.func(convert-linalg-to-affine-loops),lower-affine",
     ]
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
         # allo_d.remove_stride_map(mod)
+    print(mod)
+
+
+def record_local_buffer(mod):
+    buf_dicts = []
+    funcs = list(mod.body.operations)[:-1]
+    for pi, func in enumerate(funcs):
+        buf_dict = {}
+        for block in func.regions[0].blocks:
+            for op in block.operations:
+                if op.operation.name == "memref.alloc":
+                    name = op.result.get_name()
+                    dtype, shape = get_dtype_and_shape_from_type(op.result.type)
+                    buf_dict[name] = (dtype, shape)
+        buf_dicts.append(buf_dict)
+    return buf_dicts
 
 
 class AIEModule:
@@ -449,7 +496,8 @@ class AIEModule:
         input_args = self.inputs + self.outputs
         reindex_tensor_access(self.module)
         lower_tensor_to_memref(self.module)
-        code = codegen_aie_mlir(self.module, input_args)
+        buf_dicts = record_local_buffer(self.module)
+        code = codegen_aie_mlir(self.module, input_args, buf_dicts)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
