@@ -6,6 +6,8 @@ import pytest
 import allo
 from allo.ir.types import bool, int8, int32, float32, index
 import allo.backend.hls as hls
+import io
+from contextlib import redirect_stdout
 
 
 def test_grid_for_gemm():
@@ -748,6 +750,31 @@ def test_scalar():
     assert mod() == 1
     mod = s.build(target="vhls")
     assert "," not in mod.hls_code
+
+
+def test_line_trace():
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    def get_mlir_string(schedule):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            schedule.module.operation.print(
+                large_elements_limit=2,
+                enable_debug_info=True,
+                use_local_scope=True,
+            )
+        return buffer.getvalue()
+
+    s = allo.customize(gemm)
+    mlir_string = get_mlir_string(s)
+    assert 'loc("' in mlir_string
+    s.split("i", factor=8)
+    mlir_string = get_mlir_string(s)
+    assert 'loc("' in mlir_string
 
 
 if __name__ == "__main__":

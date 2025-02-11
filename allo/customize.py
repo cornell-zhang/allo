@@ -942,7 +942,8 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    module = ASTTransformer()(ctx, tree)
+    file_name = inspect.getfile(fn)
+    module = ASTTransformer()(ctx, tree, file_name)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
         ctx.top_func = find_func_in_module(module, fn.__name__)
