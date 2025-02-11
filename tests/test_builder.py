@@ -759,8 +759,6 @@ def test_line_trace():
             C[i, j] += A[i, k] * B[k, j]
         return C
 
-    s = allo.customize(gemm)
-
     def get_mlir_string(schedule):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
@@ -771,13 +769,11 @@ def test_line_trace():
             )
         return buffer.getvalue()
 
+    s = allo.customize(gemm)
     mlir_string = get_mlir_string(s)
     assert 'loc("' in mlir_string
-
     s.split("i", factor=8)
-
     mlir_string = get_mlir_string(s)
-
     assert 'loc("' in mlir_string
 
 
