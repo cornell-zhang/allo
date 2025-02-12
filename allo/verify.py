@@ -7,7 +7,7 @@ import difflib
 
 try:
     import past
-except:
+except ImportError:
     pass
 
 
@@ -27,9 +27,9 @@ def verify(schedule_a, schedule_b):
     mod_a = schedule_a.build(target="vhls")
     mod_b = schedule_b.build(target="vhls")
 
-    with open(prog_a_path, "w") as f:
+    with open(prog_a_path, "w", encoding="utf-8") as f:
         f.write(str(mod_a))
-    with open(prog_b_path, "w") as f:
+    with open(prog_b_path, "w", encoding="utf-8") as f:
         f.write(str(mod_b))
 
     add_pocc_pragmas(prog_a_path)
@@ -50,9 +50,9 @@ def verify(schedule_a, schedule_b):
 
     # if not equivalent, produce a diff of the two programs
     if not is_equivalent:
-        with open(prog_a_path, "r") as f:
+        with open(prog_a_path, "r", encoding="utf-8") as f:
             code_a = f.readlines()
-        with open(prog_b_path, "r") as f:
+        with open(prog_b_path, "r", encoding="utf-8") as f:
             code_b = f.readlines()
         diff = difflib.unified_diff(
             code_a,
@@ -77,7 +77,7 @@ def rewrite_output_variable(file_path, old_var, new_var):
     but (if possible) only inside the call block—the region between
     "#pragma pocc-region-start" and "#pragma pocc-region-end".
     """
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
     if "#pragma pocc-region-start" in content and "#pragma pocc-region-end" in content:
         # only rewrite the call region
@@ -95,7 +95,7 @@ def rewrite_output_variable(file_path, old_var, new_var):
     else:
         # global rewrite: not in call region
         new_content = re.sub(r"\b" + re.escape(old_var) + r"\b", new_var, content)
-    with open(file_path, "w") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
 
@@ -109,7 +109,7 @@ def get_output_var_from_file(file_path):
        of the final function call
     3. If all else fails, default to "v0"
     """
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     # look for return statement
@@ -148,7 +148,7 @@ def add_pocc_pragmas(file_path):
       #pragma pocc-region-end
     For a single–function schedule, insert pragmas inside the function body
     """
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     func_defs = re.findall(
@@ -172,12 +172,12 @@ def add_pocc_pragmas(file_path):
                 break
         new_content = "".join(lines)
 
-    with open(file_path, "w") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
 
 def replace_unsupported_types(file_path):
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     updated_content = content.replace("int32_t", "int").replace("int64_t", "int")
@@ -189,5 +189,5 @@ def replace_unsupported_types(file_path):
         r"(\w+\s*(?:\[[^\]]+\])?)\s*\*\s*2\b", r"\1 << 1", updated_content
     )
 
-    with open(file_path, "w") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(updated_content)
