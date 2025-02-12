@@ -4,10 +4,12 @@
 import os
 import re
 import difflib
+
 try:
     import past
 except:
     pass
+
 
 def verify(schedule_a, schedule_b):
     """
