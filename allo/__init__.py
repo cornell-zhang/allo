@@ -9,3 +9,4 @@ from .backend.hls import HLSModule
 from .backend.ip import IPModule
 from .dsl import *
 from .template import *
+from .verify import verify
