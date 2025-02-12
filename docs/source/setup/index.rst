@@ -40,6 +40,8 @@ To simplify the installation process, we provide a docker image that has already
   (docker) $ python3 -m pip install -v -e .
 
 
+.. _install-from-source:
+
 Install from Source
 -------------------
 

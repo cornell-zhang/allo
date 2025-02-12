@@ -181,6 +181,8 @@ class HLSModule:
             configs = new_configs
         else:
             configs = DEFAULT_CONFIG
+        if self.mode is not None:
+            configs["mode"] = self.mode
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -452,6 +454,7 @@ class HLSModule:
             # prepare data
             func = find_func_in_module(self.module, self.top_func_name)
             inputs, _ = get_func_inputs_outputs(func)
+            assert len(args) == len(inputs) + 1, "Number of arguments mismatch"
             for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
                 write_tensor_to_file(
                     arg,

@@ -356,7 +356,6 @@ class AIEModule:
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        assert "LLVM_BUILD_DIR" in os.environ, "Please set LLVM_BUILD_DIR"
         inputs, outputs = get_func_inputs_outputs(self.top_func)
         input_args = inputs + outputs
         code = codegen_aie_mlir(self.module, input_args, self.mapping)
