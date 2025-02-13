@@ -220,7 +220,7 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
+def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_dicts):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     mem_tile_size = 2 if len(input_args) > 2 else 1
@@ -252,13 +252,14 @@ def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
         buf_name_dicts.append(buf_name_dict)
     # update module and args
     func_strs = list(map(str, funcs))
-    for i, (ele_type, shape) in enumerate(input_args):
-        orig_ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
-        shape = (shape[0] // pe_size, *shape[1:])
+    for j, (ele_type, orig_shape) in enumerate(input_args):
+        orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
+        # TODO: need to deal with different sizes for different funcs
+        shape = func_sizes[0][j]
         ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
-        input_args[i] = (ele_type, orig_ele_type, shape)
-        for i, func_str in enumerate(func_strs):
-            func_strs[i] = func_str.replace(orig_ele_type, ele_type)
+        input_args[j] = (ele_type, orig_ele_type, shape, orig_shape)
+        for pi, func_str in enumerate(func_strs):
+            func_strs[pi] = func_str.replace(orig_ele_type, ele_type)
     # update buffers
     for pid in range(pe_size):
         func_str = func_strs[pid]
@@ -275,38 +276,80 @@ def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
         func_strs[pid] = func_str
     # create object fifos
     # connect each argument to a separate mem tile
-    for i, (in_type, orig_in_type, shape) in enumerate(input_args[:-1]):
-        # depth=2 means double buffer
-        code += format_str(
-            f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
-        )
+    for i, (in_type, orig_in_type, shape, orig_shape) in enumerate(input_args[:-1]):
+        linking = False
+        total_sizes = [0] * len(orig_shape)
+        for sizes in func_sizes:
+            for dim in range(len(orig_shape)):
+                total_sizes[dim] += sizes[i][dim]
+        for dim in range(len(orig_shape)):
+            if total_sizes[dim] <= orig_shape[dim]:
+                linking = True
+                break
+        if linking:
+            # depth=2 means double buffer
+            code += format_str(
+                f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+            )
+            for pid in range(pe_size):
+                code += format_str(
+                    f"aie.objectfifo @in{i}_p{pid}(%tile_mem{i}, {{%tile_comp{pid}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                )
+            in_mem_str = ", ".join([f"@in{i}_p{pid}" for pid in range(pe_size)])
+            shape_prod = np.prod(shape)
+            in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
+            # (src_offsets, dst_offsets)
+            code += format_str(
+                f"aie.objectfifo.link [@in_sh{i}] -> [{in_mem_str}]([] {in_mem_stride})"
+            )
+        else:
+            code += format_str(
+                f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+            )
+            in_tile_str = ", ".join([f"%tile_comp{pid}" for pid in range(pe_size)])
+            code += format_str(
+                f"aie.objectfifo @in{i}_p0(%tile_mem{i}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+            )
+            code += format_str(
+                f"aie.objectfifo.link [@in_sh{i}] -> [@in{i}_p0]([] [])"
+            )
+    out_id = len(input_args) - 1
+    out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
+    linking = False
+    total_sizes = [0] * len(orig_out_shape)
+    for sizes in func_sizes:
+        for dim in range(len(orig_out_shape)):
+            total_sizes[dim] += sizes[-1][dim]
+    for dim in range(len(orig_out_shape)):
+        if total_sizes[dim] <= orig_out_shape[dim]:
+            linking = True
+            break
+    if linking:
+        # output uses tile_mem0
         for pid in range(pe_size):
             code += format_str(
-                f"aie.objectfifo @in{i}_p{pid}(%tile_mem{i}, {{%tile_comp{pid}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                f"aie.objectfifo @out_p{pid}(%tile_comp{pid}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
             )
-        in_mem_str = ", ".join([f"@in{i}_p{pid}" for pid in range(pe_size)])
-        shape_prod = np.prod(shape)
-        in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
-        # (src_offsets, dst_offsets)
         code += format_str(
-            f"aie.objectfifo.link [@in_sh{i}] -> [{in_mem_str}]([] {in_mem_stride})"
+            f"aie.objectfifo @out_sh(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
         )
-    out_id = len(input_args) - 1
-    out_type, orig_out_type, out_shape = input_args[-1]
-    # output uses tile_mem0
-    for pid in range(pe_size):
+        out_mem_str = ", ".join([f"@out_p{pid}" for pid in range(pe_size)])
+        shape_prod = np.prod(out_shape)
+        out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
         code += format_str(
-            f"aie.objectfifo @out_p{pid}(%tile_comp{pid}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+            f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh]({out_mem_stride} [])"
         )
-    code += format_str(
-        f"aie.objectfifo @out_sh(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-    )
-    out_mem_str = ", ".join([f"@out_p{pid}" for pid in range(pe_size)])
-    shape_prod = np.prod(out_shape)
-    out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
-    code += format_str(
-        f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh]({out_mem_stride} [])"
-    )
+    else:
+        out_tile_str = ", ".join([f"%tile_comp{pid}" for pid in range(pe_size)])
+        code += format_str(
+            f"aie.objectfifo @out_sh(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
+        )
+        code += format_str(
+            f"aie.objectfifo @out_p0({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+        )
+        code += format_str(
+            f"aie.objectfifo.link [@out_p0] -> [@out_sh]([] [])"
+        )
     # create core computation
     for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
@@ -320,7 +363,7 @@ def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
                 "scf.for %arg0 = %c1000 to %c9223372036854775807 step %c1001 {"
             )
             with format_code(indent=8):
-                for i, (in_type, _, shape) in enumerate(input_args[:-1]):
+                for i, (in_type, _, shape, _) in enumerate(input_args[:-1]):
                     code += format_str(
                         f"%fifo{i} = aie.objectfifo.acquire @in{i}_p{pid}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
                     )
@@ -349,14 +392,14 @@ def codegen_aie_mlir(mod, orig_input_args, buf_dicts):
     in_args = ", ".join(
         [
             f"%arg{i}: {orig_in_type}"
-            for i, (_, orig_in_type, _) in enumerate(input_args[:-1])
+            for i, (_, orig_in_type, _, _) in enumerate(input_args[:-1])
         ]
     )
     code += format_str(
         f"aiex.runtime_sequence({in_args}, %arg{out_id}: {orig_out_type}) {{"
     )
     with format_code(indent=6):
-        for i, (_, orig_in_type, shape) in enumerate(input_args[:-1]):
+        for i, (_, orig_in_type, shape, _) in enumerate(input_args[:-1]):
             # (x, y, memref[offset][size][stride])
             # issue_token: MM2S-false, S2MM-true
             if len(shape) == 1:
@@ -388,65 +431,76 @@ def reindex_tensor_access(mod):
     ctx = mod.context
     funcs = list(mod.body.operations)[:-1]
     pe_size = len(funcs)
+    # func -> arg -> dim
+    func_lower_bounds = []
+    func_sizes = []
     for pi, func in enumerate(funcs):
         entry_block = func.regions[0].blocks[0]
+        args = entry_block.arguments
+        arg_types = args.types
+        # TODO: might need some specialization for scalar input arg
+        lower_bounds = [[float("inf") for _ in range(len(arg_type.shape))] for arg_type in arg_types]
+        sizes = [[0 for _ in range(len(arg_type.shape))] for arg_type in arg_types]
         for block in func.regions[0].blocks:
             for op in block.operations:
-                if op.operation.name == "tensor.extract":
-                    # TODO: need testing
-                    if op.operands[0] not in entry_block.arguments:
+                if op.operation.name in ["tensor.extract_slice", "tensor.insert_slice"]:
+                    operand_idx = 0 if op.operation.name == "tensor.extract_slice" else 1
+                    if op.operands[operand_idx] not in args:
                         continue
-                    for index_val in op.operands[1:]:
-                        const_op = index_val.definingOp
-                        if const_op is None or const_op.operation.name != "arith.constant":
-                            raise RuntimeError("Dynamic index tensor unsupported")
-                        const_attr = const_op.attributes["value"]
-                        new_val = const_attr.value - 1
-                        new_const_attr = IntegerAttr.get(const_attr.type, new_val)
-                        const_op.attributes["value"] = new_const_attr
+                    index = list(args).index(op.operands[operand_idx])
+                    static_offsets = op.attributes["static_offsets"]
+                    static_sizes = op.attributes["static_sizes"]
+                    for i, (offset, size) in enumerate(zip(static_offsets, static_sizes)):
+                        lower_bounds[index][i] = min(lower_bounds[index][i], offset)
+                        sizes[index][i] = max(sizes[index][i], size)
+        for i, lower_bound in enumerate(lower_bounds):
+            # Arguments never used with slice
+            if lower_bound[0] == float("inf"):
+                # If ever used, assume using entire tensor
+                if len(list(args[i].uses)) > 0:
+                    lower_bounds[i] = [0] * len(lower_bound)
+                    sizes[i] = args[i].type.shape
+                else:
+                    lower_bounds[i] = [0] * len(lower_bound)
+                    sizes[i] = [0] * len(lower_bound)
+                    
+        func_lower_bounds.append(lower_bounds)
+        func_sizes.append(sizes)
 
-                elif op.operation.name == "tensor.extract_slice":
-                    if op.operands[0] not in entry_block.arguments:
+    for pi, func in enumerate(funcs):
+        entry_block = func.regions[0].blocks[0]
+        args = entry_block.arguments
+        lower_bounds = func_lower_bounds[pi]
+        sizes = func_sizes[pi]
+        for block in func.regions[0].blocks:
+            for op in block.operations:
+                if op.operation.name == "tensor.extract_slice":
+                    if op.operands[0] not in args:
                         continue
-                    offsets = op.attributes["static_offsets"]
-                    if offsets is None:
-                        continue
+                    index = list(args).index(op.operands[0])
+                    static_offsets = op.attributes["static_offsets"]
                     new_offsets = []
-                    for offset in offsets:
+                    for i, offset in enumerate(static_offsets):
                         # TODO: need to support multi-dim mappings
-                        diff = pi * (op.operands[0].type.shape[0] // pe_size)
-                        new_offset = offset - diff
+                        # diff = pi * (op.operands[0].type.shape[0] // pe_size)
+                        new_offset = offset - lower_bounds[index][i]
                         new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
                         new_offsets.append(new_offset_attr)
                     op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
-
-                elif op.operation.name == "tensor.insert":
-                    # TODO: need testing
-                    if op.operands[1] not in entry_block.arguments:
-                        continue
-                    for index_val in op.operands[2:]:
-                        const_op = index_val.definingOp
-                        if const_op is None or const_op.operation.name != "arith.constant":
-                            raise RuntimeError("Dynamic index tensor unsupported")
-                        const_attr = const_op.attributes["value"]
-                        new_val = const_attr.value - 1
-                        new_const_attr = IntegerAttr.get(const_attr.type, new_val)
-                        const_op.attributes["value"] = new_const_attr
-
                 elif op.operation.name == "tensor.insert_slice":
-                    if op.operands[1] not in entry_block.arguments:
+                    if op.operands[1] not in args:
                         continue
-                    offsets = op.attributes["static_offsets"]
-                    if offsets is None:
-                        continue
+                    index = list(args).index(op.operands[1])
+                    static_offsets = op.attributes["static_offsets"]
                     new_offsets = []
-                    for offset in offsets:
+                    for i, offset in enumerate(static_offsets):
                         # TODO: need to support multi-dim mappings
-                        diff = pi * (op.operands[1].type.shape[0] // pe_size)
-                        new_offset = offset - diff
+                        # diff = pi * (op.operands[1].type.shape[0] // pe_size)
+                        new_offset = offset - lower_bounds[index][i]
                         new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
                         new_offsets.append(new_offset_attr)
                     op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+    return func_lower_bounds, func_sizes
                     
 
 def lower_tensor_to_memref(mod):
@@ -494,10 +548,10 @@ class AIEModule:
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         self.inputs, self.outputs = get_func_inputs_outputs(self.kernel_func)
         input_args = self.inputs + self.outputs
-        reindex_tensor_access(self.module)
+        func_lower_bounds, func_sizes = reindex_tensor_access(self.module)
         lower_tensor_to_memref(self.module)
         buf_dicts = record_local_buffer(self.module)
-        code = codegen_aie_mlir(self.module, input_args, buf_dicts)
+        code = codegen_aie_mlir(self.module, input_args, func_lower_bounds, func_sizes, buf_dicts)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
