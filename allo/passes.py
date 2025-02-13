@@ -734,3 +734,165 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
                 for op_ in func.entry_block.operations:
                     if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
                         pipe_loop_innermost(op_, ii, rewind)
+
+def check_perfect_affine_kernel(module):
+    """
+    Checks whether the module is a perfect affine kernel (https://arxiv.org/pdf/2501.09118).
+    
+    A perfect affine kernel is defined as a module in which every function
+    consists solely of perfectly nested affine.for loops with constant bounds.
+    In each perfect nest, if an affine.for contains an inner loop, it must be
+    the only operation in its body (ignoring the terminator). In the innermost
+    loop, only allowed arithmetic/memory ops (e.g. loads, stores, arithmetic,
+    and affine.apply) are permitted.
+    """
+    def is_constant_affine_for(loop_op):
+        lower = loop_op.attributes.get("lower_bound")
+        upper = loop_op.attributes.get("upper_bound")
+        if lower is None or upper is None:
+            return False
+        try:
+            int(lower.value)
+            int(upper.value)
+            return True
+        except Exception:
+            return False
+
+    def is_allowed_innermost_body(op):
+        allowed_types = (
+            arith_d.AddIOp, arith_d.AddFOp, arith_d.MulIOp, arith_d.MulFOp,
+            memref_d.LoadOp, affine_d.AffineLoadOp,
+            memref_d.StoreOp, affine_d.AffineStoreOp,
+            arith_d.ConstantOp, affine_d.AffineApplyOp,
+        )
+        return isinstance(op, allowed_types)
+
+    def check_perfect_loop_nest(loop_op):
+        # check for constant loop bounds
+        if not is_constant_affine_for(loop_op):
+            return False
+
+        # check each affine.for has one region with a single block.
+        region = loop_op.regions[0]
+        block = region.blocks[0]
+        body_ops = [op for op in block.operations if op.name != "affine.yield"]
+        if not body_ops:
+            return False
+
+        inner_loops = [op for op in body_ops if isinstance(op, affine_d.AffineForOp)]
+        if inner_loops:
+            if len(body_ops) != 1:
+                #print("Loop", loop_op, "has extra ops besides the inner loop:", body_ops)
+                return False
+            return check_perfect_loop_nest(inner_loops[0])
+        else:
+            for op in body_ops:
+                if not is_allowed_innermost_body(op):
+                    #print("Operation", op, "in innermost loop is not allowed.")
+                    return False
+            return True
+
+    def check_function_perfect_affine(func):
+        top_level_ops = [op for op in func.entry_block.operations if not op.is_terminator()]
+        if not top_level_ops:
+            return False
+        for op in top_level_ops:
+            if not isinstance(op, affine_d.AffineForOp) or not check_perfect_loop_nest(op):
+                return False
+        return True
+
+    with module.context, Location.unknown():
+        for op in module.body.operations:
+            if isinstance(op, func_d.FuncOp):
+                func_name = op.attributes["sym_name"].value
+                if not check_function_perfect_affine(op):
+                    return False
+    return True
+
+
+def dataflow_canonicalization(module):
+    def canonicalize_fn(func):
+        alloc_ops = [
+            op for op in func.entry_block.operations if isinstance(op, memref_d.AllocOp)
+        ]
+
+        for alloc in alloc_ops: 
+            orig_buffer = alloc.result
+
+            producers = []
+            consumers = []
+            for use in orig_buffer.uses:
+                op = use.owner
+                if isinstance(op, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+                    producers.append(op)  
+                elif isinstance(op, (memref_d.LoadOp, affine_d.AffineLoadOp)):
+                    consumers.append(op) 
+            # check that it is in a single-producer-single-consumer relationship
+            if len(producers) == 1 and len(consumers) <= 1:
+                continue  
+
+            for consumer in consumers: 
+                # duplicate consumer buffer
+                new_alloc = memref_d.AllocOp(
+                    orig_buffer.type,
+                    [],
+                    [],
+                    ip=InsertionPoint(consumer)
+                )
+
+                new_alloc.attributes["name"] = StringAttr.get(alloc.attributes["name"].value + "_dup")
+
+                if producers:
+                    producer = producers[0]
+                    copy_ip = InsertionPoint.after(producer)
+                    memref_d.CopyOp(orig_buffer, new_alloc.result, ip=copy_ip)
+                for idx, operand in enumerate(consumer.operands):
+                    if operand is orig_buffer:
+                        consumer.operands[idx] = new_alloc.result
+                
+    with module.context:
+        for func in module.body.operations:
+            if isinstance(func, func_d.FuncOp):
+                canonicalize_fn(func)
+
+def dataflow_canonicalization(module):
+    with module.context, Location.unknown():
+        for func in module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue 
+            
+            alloc_ops = [op for op in func.walk() if isinstance(op, memref_d.AllocOp)]
+            
+            for alloc in alloc_ops:
+                orig_buffer = alloc.result
+                consumer_map = {}
+                for use in list(orig_buffer.uses):
+                    consumer = use.owner
+                    if consumer not in consumer_map:
+                        consumer_map[consumer] = []
+                    consumer_map[consumer].append(use)
+                
+                if len(consumer_map) <= 1:
+                    continue
+                
+                for consumer_op, use_list in consumer_map.items():
+                    ip = InsertionPoint(consumer_op)
+                    
+                    new_alloc = memref_d.AllocOp(
+                        orig_buffer.type,  
+                        [],    
+                        [],
+                        ip=ip
+                    )
+                    
+                    orig_name = alloc.attributes["name"].value if "name" in alloc.attributes else "buffer"
+                    new_alloc.attributes["name"] = StringAttr.get(f'{orig_name}_dup')
+                    
+                    memref_d.CopyOp(orig_buffer, new_alloc.result, ip=ip)
+                    
+                    for use in use_list:
+                        consumer_op.replace_operand(use.operand_number, new_alloc.result)
+
+
+        
+            
