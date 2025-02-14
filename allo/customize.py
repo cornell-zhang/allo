@@ -27,6 +27,7 @@ from ._mlir.ir import (
     FlatSymbolRefAttr,
     AffineMap,
     AffineMapAttr,
+    FunctionType
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -61,6 +62,7 @@ from .passes import (
     lower_linalg_and_attach_names,
     analyze_use_def,
 )
+from .utils import mlir_to_allo_type
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 from .library import KERNEL2SCHEDULE
@@ -662,6 +664,183 @@ class Schedule:
         return prim.to(
             self.module, target, dst, axis, depth, self.func_args, self.top_func_name
         )
+
+
+    @wrapped_apply
+    def prepare_systolic(self, band_name):
+        if ":" in band_name:
+            func = self._find_function(band_name.split(":")[0])
+            band_name = band_name.split(":")[1]
+        else:
+            func = self.top_func
+
+        band = self._find_band(band_name, func)
+        loops = list(band)
+        outer_loop = loops[0][1].loop
+        middle_loop = loops[1][1].loop # Middle loop 
+        inner_loop = loops[-1][1].loop # Last/innermost loop
+        i_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(outer_loop.attributes["upperBoundMap"]))[0]
+            )
+        j_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(middle_loop.attributes["upperBoundMap"]))[0]
+            )
+        k_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(inner_loop.attributes["upperBoundMap"]))[0]
+            )
+        # Find arithmetic operations in innermost loop
+        add_ops = []
+        mul_ops = []
+        load_ops = []
+        for op in inner_loop.body.operations:
+            # Check for integer arithmetic
+            if isinstance(op, arith_d.AddIOp) or isinstance(op, arith_d.AddFOp):
+                add_ops.append(op)
+            elif isinstance(op, arith_d.MulIOp) or isinstance(op, arith_d.MulFOp):
+                mul_ops.append(op)
+            elif isinstance(op, affine_d.AffineLoadOp):
+                load_ops.append(op)
+        assert len(add_ops) == 1
+        assert len(mul_ops) == 1
+        assert len(load_ops) > 1
+
+        # Get result type of first affine load operation
+        load_type = load_ops[0].result.type
+        arith_type = mul_ops[0].result.type
+        # Create 1D memref type with k_size elements
+        fifo_memref_type = MemRefType.get([k_size], load_type)
+        res_memref_type = MemRefType.get([i_size, j_size], arith_type)
+        # Create function type with four memref arguments
+        func_type = func_d.FunctionType.get([fifo_memref_type]*4 + [res_memref_type] + [IndexType.get()] * 2, [])
+        # Insert the function at the beginning of the module
+        ip = InsertionPoint.at_block_begin(self.module.body)
+        pe_kernel = func_d.FuncOp("PE_kernel", func_type, ip=ip)
+        pe_kernel.attributes["sym_visibility"] = StringAttr.get("private")
+
+        # Create function body block and entry point
+        entry_block = pe_kernel.add_entry_block()
+        ip = InsertionPoint(entry_block)
+
+        # Create memref for accumulator
+        acc_type = MemRefType.get([1], arith_type)
+        acc = memref_d.AllocOp(acc_type, [], [], ip=ip).result
+        
+        # Store zero into accumulator
+        zero = arith_d.ConstantOp(arith_type, 0, ip=ip).result
+        zero_idx = arith_d.ConstantOp(IndexType.get(), 0, ip=ip).result
+        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[AffineExpr.get_constant(0)])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(zero, acc, [zero_idx], affine_attr, ip=ip)
+
+        # Create affine loop
+        loop = affine_d.AffineForOp(
+            lower_bound=0,
+            upper_bound=k_size,
+            step=1,
+            iter_args=[],
+            lower_bound_operands=None,
+            upper_bound_operands=None,
+            ip=ip,
+        )
+        loop.attributes["loop_name"] = StringAttr.get("k")
+
+        # # Create loop body
+        ip = InsertionPoint(loop.body)
+        
+        # Load from first input fifo (arg 0)
+        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[AffineExpr.get_dim(0)])
+        affine_attr = AffineMapAttr.get(affine_map)
+        a = affine_d.AffineLoadOp(
+            load_type,
+            pe_kernel.arguments[0], 
+            [loop.induction_variable], 
+            affine_attr, 
+            ip=ip)
+
+        # load from the second input fifo (arg 1)
+        b = affine_d.AffineLoadOp(
+            load_type,
+            pe_kernel.arguments[1], 
+            [loop.induction_variable], 
+            affine_attr, 
+            ip=ip)
+
+        # move the cast, cast, mul tree over
+        lhs_cast = mul_ops[0].operands[0].owner
+        rhs_cast = mul_ops[0].operands[1].owner
+        lhs_cast_new = lhs_cast.clone(ip=ip)
+        lhs_cast_new.operation.replace_uses_of_with(lhs_cast.operands[0], a.result)
+        rhs_cast_new = rhs_cast.clone(ip=ip)
+        rhs_cast_new.operation.replace_uses_of_with(rhs_cast.operands[0], b.result)
+        new_mul_op = mul_ops[0].clone(ip=ip)
+        new_mul_op.operation.replace_uses_of_with(mul_ops[0].operands[0], lhs_cast_new.result)
+        new_mul_op.operation.replace_uses_of_with(mul_ops[0].operands[1], rhs_cast_new.result)
+        # Load from accumulator
+        acc_val = affine_d.AffineLoadOp(
+            arith_type,
+            acc,
+            [zero_idx],
+            affine_attr,
+            ip=ip
+        )
+
+        # Add multiplication result to accumulator value
+        add_op = arith_d.AddIOp(acc_val.result, new_mul_op.result, ip=ip)
+
+        # Store result back to accumulator
+        affine_d.AffineStoreOp(
+            add_op.result,
+            acc,
+            [zero_idx], 
+            affine_attr,
+            ip=ip
+        )
+        
+
+        # store a to first output fifo (arg 2)
+        affine_d.AffineStoreOp(
+            a.result, 
+            pe_kernel.arguments[2], 
+            [loop.induction_variable], 
+            affine_attr, 
+            ip=ip)
+
+        # store b to second output fifo (arg 3)
+        affine_d.AffineStoreOp(
+            b.result, 
+            pe_kernel.arguments[3], 
+            [loop.induction_variable], 
+            affine_attr, 
+            ip=ip)
+        
+        # # Load from second input fifo (arg 1) 
+        # b = affine_d.AffineLoadOp(pe_kernel.arguments[1], [loop.induction_variable], [], ip=ip).result
+        affine_d.AffineYieldOp([], ip=InsertionPoint(loop.body))
+
+
+        # Load final value from accumulator
+        acc_final = affine_d.AffineLoadOp(
+            arith_type,
+            acc,
+            [zero_idx],
+            affine_attr,
+            ip=InsertionPoint(entry_block)
+        )
+
+        # Store accumulator value to output matrix C (arg 4) using indices i,j (args 5,6)
+        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(
+            acc_final.result,
+            pe_kernel.arguments[4],
+            [pe_kernel.arguments[5], pe_kernel.arguments[6]],
+            affine_attr,
+            ip=InsertionPoint(entry_block)
+        )
+
+        func_d.ReturnOp([], ip=InsertionPoint(entry_block))
+
+        
 
     @wrapped_apply
     def unfold(self, band_name, axes):

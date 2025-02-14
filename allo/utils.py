@@ -16,7 +16,7 @@ from ._mlir.ir import (
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
-
+from .ir.types import Int, UInt, Float
 
 np_supported_types = {
     "f16": np.float16,
@@ -118,6 +118,34 @@ def get_signed_type_by_hint(dtype, hint):
         return "u" + dtype
     return dtype
 
+
+def mlir_to_allo_type(mlir_type):
+    """Convert MLIR type to Allo type"""
+    # Handle Integer types
+    if isinstance(mlir_type, IntegerType):
+        width = mlir_type.width
+        if mlir_type.is_unsigned:
+            return UInt(width)
+        else:
+            return Int(width)
+            
+    # Handle Index type
+    if isinstance(mlir_type, IndexType):
+        return Index()
+        
+    # Handle Float types
+    if isinstance(mlir_type, F32Type):
+        return Float(32)
+    if isinstance(mlir_type, F64Type):
+        return Float(64)
+        
+    # Handle Fixed/UFixed types
+    if isinstance(mlir_type, allo_d.FixedType):
+        return Fixed(mlir_type.width, mlir_type.frac)
+    if isinstance(mlir_type, allo_d.UFixedType):
+        return UFixed(mlir_type.width, mlir_type.frac)
+        
+    raise TypeError(f"Unsupported MLIR type conversion: {mlir_type}")
 
 def get_mlir_dtype_from_str(dtype):
     if dtype.startswith("i"):
