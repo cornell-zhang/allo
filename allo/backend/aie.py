@@ -11,6 +11,11 @@ from .._mlir.ir import (
     IntegerAttr,
     IntegerType,
     DenseI64ArrayAttr,
+    Context,
+    RankedTensorType,
+    FunctionType,
+    TypeAttr,
+    Location,
 )
 from .._mlir.dialects import func as func_d
 from .._mlir.passmanager import PassManager as mlir_pass_manager
@@ -18,7 +23,7 @@ from .._mlir.dialects import allo as allo_d
 
 from .vitis import read_tensor_from_file
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
+from ..utils import get_func_inputs_outputs, get_dtype_and_shape_from_type, get_element_type_from_str
 from .utils import format_str, format_code
 from .vitis import ctype_map
 
@@ -251,15 +256,13 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
             code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
         buf_name_dicts.append(buf_name_dict)
     # update module and args
-    func_strs = list(map(str, funcs))
     for j, (ele_type, orig_shape) in enumerate(input_args):
         orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
         # TODO: need to deal with different sizes for different funcs
         shape = func_sizes[0][j]
         ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         input_args[j] = (ele_type, orig_ele_type, shape, orig_shape)
-        for pi, func_str in enumerate(func_strs):
-            func_strs[pi] = func_str.replace(orig_ele_type, ele_type)
+    func_strs = list(map(str, funcs))
     # update buffers
     for pid in range(pe_size):
         func_str = func_strs[pid]
@@ -501,6 +504,25 @@ def reindex_tensor_access(mod):
                         new_offsets.append(new_offset_attr)
                     op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
     return func_lower_bounds, func_sizes
+
+
+def update_func_op_arg_types(func_op: func_d.FuncOp, 
+                             input_args, 
+                             new_shapes,
+                             context: Context):
+    old_func_type = func_op.function_type
+    old_result_types = old_func_type.value.results
+    new_input_types = []
+    for (ele_type_str, _), shape in zip(input_args, new_shapes):
+        elem_ty = get_element_type_from_str(ele_type_str, context)
+        memref_ty = RankedTensorType.get(shape, elem_ty)
+        new_input_types.append(memref_ty)
+    new_func_type = FunctionType.get(new_input_types, old_result_types, context)
+    new_type = TypeAttr.get(new_func_type, context)
+    func_op.operation.attributes["function_type"] = new_type
+    entry_block = func_op.entry_block
+    for i, block_arg in enumerate(entry_block.arguments):
+        block_arg.set_type(new_input_types[i])
                     
 
 def lower_tensor_to_memref(mod):
@@ -513,8 +535,6 @@ def lower_tensor_to_memref(mod):
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
-        # allo_d.remove_stride_map(mod)
-    print(mod)
 
 
 def record_local_buffer(mod):
@@ -549,6 +569,10 @@ class AIEModule:
         self.inputs, self.outputs = get_func_inputs_outputs(self.kernel_func)
         input_args = self.inputs + self.outputs
         func_lower_bounds, func_sizes = reindex_tensor_access(self.module)
+        with self.module.context as ctx, Location.unknown():
+            for i, func_op in enumerate(list(self.module.body.operations)[:-1]):
+                shapes = func_sizes[i]
+                update_func_op_arg_types(func_op, input_args, shapes, ctx)
         lower_tensor_to_memref(self.module)
         buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(self.module, input_args, func_lower_bounds, func_sizes, buf_dicts)
