@@ -892,17 +892,17 @@ class TypeInferer(ASTVisitor):
             "log",
             "add",
             "sub",
+            "mul",
             "div",
             "relu",
             "copy",
         }:
             # Element-wise operation
-            if op_name in {"add", "sub", "div"}:
-                assert (
-                    new_args[0].shape == new_args[1].shape
-                ), f"Only support element-wise {op_name} of two inputs with the same shape, got {new_args[0].shape} and {new_args[1].shape}"
-            node.shape = new_args[0].shape
+            if op_name in {"add", "sub", "mul", "div"}:
+                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(ctx, new_args[0], new_args[1])
+            node.shape = final_shape
             node.dtype = new_args[0].dtype
+            node.dims = (lhs_dims, rhs_dims)
             return node
         if op_name in {"matmul", "bmm", "linear", "conv2d", "sumpool", "maxpool"}:
             argAshape = new_args[0].shape

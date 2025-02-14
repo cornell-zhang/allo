@@ -1959,6 +1959,7 @@ class ASTTransformer(ASTBuilder):
                 "log",
                 "add",
                 "sub",
+                "mul",
                 "div",
                 "relu",
                 "conv2d",
@@ -1970,6 +1971,13 @@ class ASTTransformer(ASTBuilder):
                 "view",
                 "concat",
             }:
+                if fn_name in {"add", "sub", "mul", "div"}:
+                    new_args[0] = ASTTransformer.build_broadcast_op(
+                        ctx, new_args[0], node.dtype, node.args[0].shape, node.shape, node.dims[0]
+                    )
+                    new_args[1] = ASTTransformer.build_broadcast_op(
+                        ctx, new_args[1], node.dtype, node.args[1].shape, node.shape, node.dims[1]
+                    )
                 return ASTTransformer.build_library_op(
                     ctx, node=node, attr=fn_name, new_args=new_args
                 )
