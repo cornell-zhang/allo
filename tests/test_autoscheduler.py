@@ -35,3 +35,5 @@ def test_detect_perfect_affine_kernel():
     is_perfect = check_perfect_affine_kernel(s_imperfect.module)
     assert not is_perfect, "Expected the not_perfect_kernel to fail perfect-affine detection."
 
+if __name__ == "__main__":
+    pytest.main([__file__])

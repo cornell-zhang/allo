@@ -5,6 +5,7 @@
 import os
 import numpy as np
 
+
 from ._mlir.ir import (
     Location,
     MemRefType,
@@ -21,6 +22,7 @@ from ._mlir.ir import (
     IntegerAttr,
     IntegerType,
     Operation,
+    WalkResult
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -735,41 +737,49 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
                     if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
                         pipe_loop_innermost(op_, ii, rewind)
 
+def is_terminator(op):
+    ## TODO: can we do trait inspection with python bindings?
+    return isinstance(op, (affine_d.AffineYieldOp, func_d.ReturnOp))
+
 def check_perfect_affine_kernel(module):
     """
     Checks whether the module is a perfect affine kernel (https://arxiv.org/pdf/2501.09118).
-    
+
     A perfect affine kernel is defined as a module in which every function
     consists solely of perfectly nested affine.for loops with constant bounds.
     In each perfect nest, if an affine.for contains an inner loop, it must be
     the only operation in its body (ignoring the terminator). In the innermost
     loop, only allowed arithmetic/memory ops (e.g. loads, stores, arithmetic,
-    and affine.apply) are permitted.
+    and affine operations) are permitted.
     """
+
     def is_constant_affine_for(loop_op):
-        lower = loop_op.attributes.get("lower_bound")
-        upper = loop_op.attributes.get("upper_bound")
-        if lower is None or upper is None:
-            return False
+        def is_constant_affine_map(affine_map):
+            return affine_map.n_dims == 0 and len(affine_map.results) == 1
+
         try:
-            int(lower.value)
-            int(upper.value)
-            return True
-        except Exception:
+            lower_map = loop_op.lowerBoundMap.value
+            lower_operands = loop_op.lowerBoundOperands
+            upper_map = loop_op.upperBoundMap.value
+            upper_operands = loop_op.upperBoundOperands
+
+            lower_constant = is_constant_affine_map(lower_map) and not len(lower_operands)
+            upper_constant = is_constant_affine_map(upper_map) and not len(upper_operands)
+            return lower_constant and upper_constant
+
+        except AttributeError as e:
+            print(f"Error accessing affine.for properties: {e}")
             return False
 
+
     def is_allowed_innermost_body(op):
-        allowed_types = (
-            arith_d.AddIOp, arith_d.AddFOp, arith_d.MulIOp, arith_d.MulFOp,
-            memref_d.LoadOp, affine_d.AffineLoadOp,
-            memref_d.StoreOp, affine_d.AffineStoreOp,
-            arith_d.ConstantOp, affine_d.AffineApplyOp,
-        )
-        return isinstance(op, allowed_types)
+        # TODO: are there other ops that should be allowed?
+        return op.OPERATION_NAME.startswith("arith.") or op.OPERATION_NAME.startswith("memref.") or op.OPERATION_NAME.startswith("affine.")
 
     def check_perfect_loop_nest(loop_op):
         # check for constant loop bounds
         if not is_constant_affine_for(loop_op):
+            print("not constant affine for", loop_op)
             return False
 
         # check each affine.for has one region with a single block.
@@ -782,22 +792,25 @@ def check_perfect_affine_kernel(module):
         inner_loops = [op for op in body_ops if isinstance(op, affine_d.AffineForOp)]
         if inner_loops:
             if len(body_ops) != 1:
-                #print("Loop", loop_op, "has extra ops besides the inner loop:", body_ops)
+                print("Loop", loop_op, "has extra ops besides the inner loop:", body_ops)
                 return False
             return check_perfect_loop_nest(inner_loops[0])
         else:
             for op in body_ops:
                 if not is_allowed_innermost_body(op):
-                    #print("Operation", op, "in innermost loop is not allowed.")
+                    print("Operation", op, "in innermost loop is not allowed.")
                     return False
             return True
 
     def check_function_perfect_affine(func):
-        top_level_ops = [op for op in func.entry_block.operations if not op.is_terminator()]
+        top_level_ops = [op for op in func.entry_block.operations if not is_terminator(op)]
         if not top_level_ops:
+            print('no top level ops', top_level_ops)
             return False
         for op in top_level_ops:
-            if not isinstance(op, affine_d.AffineForOp) or not check_perfect_loop_nest(op):
+            if not (isinstance(op, memref_d.AllocOp)
+                or (isinstance(op, affine_d.AffineForOp) and check_perfect_loop_nest(op))):
+                print(op, "is not a perfect affine loop.")
                 return False
         return True
 
@@ -806,93 +819,172 @@ def check_perfect_affine_kernel(module):
             if isinstance(op, func_d.FuncOp):
                 func_name = op.attributes["sym_name"].value
                 if not check_function_perfect_affine(op):
+                    print("Function", func_name, "is not a perfect affine kernel.")
                     return False
     return True
 
+# def canonicalize_buffer_value_producer_split(buffer_value):
+#     consumer_map = {}
+#     for use in list(buffer_value.uses):
+#         # ignore terminators and write ops
+#         if is_terminator(use.owner) or isinstance(use.owner, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+#             continue
+#         consumer_map.setdefault(use.owner, []).append(use)
+    
+#     if len(consumer_map) <= 1:
+#         return
 
-def dataflow_canonicalization(module):
-    def canonicalize_fn(func):
-        alloc_ops = [
-            op for op in func.entry_block.operations if isinstance(op, memref_d.AllocOp)
-        ]
+#     consumers = list(consumer_map.keys())
+#     num_consumers = len(consumers)
 
-        for alloc in alloc_ops: 
-            orig_buffer = alloc.result
+#     producer_op = buffer_value.owner
+#     ip = InsertionPoint(producer_op)
+#     orig_type = buffer_value.type
+#     orig_name = (
+#         producer_op.attributes["name"].value
+#         if "name" in producer_op.attributes
+#         else "buffer"
+#     )
 
-            producers = []
-            consumers = []
-            for use in orig_buffer.uses:
-                op = use.owner
-                if isinstance(op, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-                    producers.append(op)  
-                elif isinstance(op, (memref_d.LoadOp, affine_d.AffineLoadOp)):
-                    consumers.append(op) 
-            # check that it is in a single-producer-single-consumer relationship
-            if len(producers) == 1 and len(consumers) <= 1:
-                continue  
+#     new_allocs = []
+#     for i in range(num_consumers):
+#         new_alloc = memref_d.AllocOp(orig_type, [], [], ip=ip)
+#         new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
+#         new_allocs.append(new_alloc)
 
-            for consumer in consumers: 
-                # duplicate consumer buffer
-                new_alloc = memref_d.AllocOp(
-                    orig_buffer.type,
-                    [],
-                    [],
-                    ip=InsertionPoint(consumer)
-                )
+#     # find all operations that write to the original buffer.
+#     writes = []  # list of tuples (op, operand_index)
+#     def collect_writes(op):
+#         if isinstance(op.opview, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+#             for idx, operand in enumerate(op.operands):
+#                 if operand == buffer_value:
+#                     writes.append((op, idx))
+#         return WalkResult(0)
+    
+#     producer_op.parent.walk(collect_writes)
+#     print("1", writes)
+#     for w in writes:
+#         print(w[0])
+#     # for each writing op, clone it for every new allocated buffer.
+#     for (write_op, operand_idx) in writes:
+#         for new_alloc in new_allocs:
+#             ip = InsertionPoint(write_op)
+#             new_op = write_op.clone(ip)
+#             new_op.operation.operands[operand_idx] = new_alloc.result
+     
 
-                new_alloc.attributes["name"] = StringAttr.get(alloc.attributes["name"].value + "_dup")
+#     # update each consumer op so that each gets its corresponding new buffer.
+#     for consumer_op, use_list in consumer_map.items():
+#         for use in use_list:
+#             consumer_idx = consumers.index(consumer_op)
+#             new_buffer = new_allocs[consumer_idx].result
+#             consumer_op.operation.replace_uses_of_with(buffer_value, new_buffer)
 
-                if producers:
-                    producer = producers[0]
-                    copy_ip = InsertionPoint.after(producer)
-                    memref_d.CopyOp(orig_buffer, new_alloc.result, ip=copy_ip)
-                for idx, operand in enumerate(consumer.operands):
-                    if operand is orig_buffer:
-                        consumer.operands[idx] = new_alloc.result
-                
-    with module.context:
-        for func in module.body.operations:
-            if isinstance(func, func_d.FuncOp):
-                canonicalize_fn(func)
+
+# def canonicalize_buffer_callback(op):
+#     # assume all buffers created by allocOp, is this ok?
+#     if isinstance(op.opview, memref_d.AllocOp):
+#         canonicalize_buffer_value_producer_split(op.result)
+#     return WalkResult(0)
+
+
+# def dataflow_canonicalization(module):
+#     with module.context, Location.unknown():
+#         for func in module.body.operations:
+#             if not isinstance(func, func_d.FuncOp):
+#                 continue
+#             func.walk(canonicalize_buffer_callback)
+#     return module
+
+def canonicalize_buffer_value_producer_split(buffer_value, processed=set()):
+    # Avoid reprocessing the same buffer value (to handle chains and potential cycles).
+    if buffer_value in processed:
+        return
+    processed.add(buffer_value)
+
+    # Gather consumer ops that are not terminators or direct writes.
+    consumer_map = {}
+    for use in list(buffer_value.uses):
+        # ignore terminators and write ops (e.g. stores)
+        if is_terminator(use.owner) or isinstance(use.owner, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+            continue
+        consumer_map.setdefault(use.owner, []).append(use)
+    
+    # If there’s only one consumer op, nothing to split.
+    if len(consumer_map) <= 1:
+        # Propagate canonicalization further down the chain.
+        for consumer_op in consumer_map.keys():
+            for res in consumer_op.results:
+                if isinstance(res.type, MemRefType):  # assume helper checking for memref
+                    canonicalize_buffer_value_producer_split(res, processed)
+        return
+
+    consumers = list(consumer_map.keys())
+    num_consumers = len(consumers)
+
+    # Get the original producer op and related info.
+    producer_op = buffer_value.owner
+    ip = InsertionPoint(producer_op)
+    orig_type = buffer_value.type
+    orig_name = (producer_op.attributes["name"].value 
+                 if "name" in producer_op.attributes 
+                 else "buffer")
+
+    # Create a new alloc for each consumer.
+    new_allocs = []
+    for i in range(num_consumers):
+        new_alloc = memref_d.AllocOp(orig_type, [], [], ip=ip)
+        new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
+        new_allocs.append(new_alloc)
+
+    # For all operations that write to the original buffer, clone them for each new alloc.
+    writes = []  # list of tuples (write_op, operand_index)
+    def collect_writes(op):
+        if isinstance(op.opview, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+            for idx, operand in enumerate(op.operands):
+                if operand == buffer_value:
+                    writes.append((op, idx))
+        return WalkResult(0)
+        
+    producer_op.parent.walk(collect_writes)
+    for (write_op, operand_idx) in writes:
+        for new_alloc in new_allocs:
+            ip = InsertionPoint(write_op)
+            new_op = write_op.clone(ip)
+            # Redirect the write to use the corresponding new alloc.
+            new_op.operation.operands[operand_idx] = new_alloc.result
+        #write_op.erase()
+
+    # Update each consumer op so that each gets its corresponding new buffer.
+    for consumer_op, use_list in consumer_map.items():
+        # Identify which branch this consumer gets.
+        consumer_idx = consumers.index(consumer_op)
+        new_buffer = new_allocs[consumer_idx].result
+        for use in use_list:
+            consumer_op.operation.replace_uses_of_with(buffer_value, new_buffer)
+
+    # **Recursive Propagation:**
+    # Now that each consumer op has been updated to use its dedicated buffer,
+    # check if any consumer op is itself a producer (i.e. it produces memref results)
+    # that are used downstream. If so, recursively canonicalize its result.
+    for consumer_op in consumers:
+        for res in consumer_op.results:
+            if isinstance(res.type, MemRefType):  # helper to check if the type is a memref
+                canonicalize_buffer_value_producer_split(res, processed)
+
+
+def canonicalize_buffer_callback(op):
+    # Assuming canonicalization applies to memref allocation ops.
+    if isinstance(op.opview, memref_d.AllocOp):
+        canonicalize_buffer_value_producer_split(op.result)
+    return WalkResult(0)
+
 
 def dataflow_canonicalization(module):
     with module.context, Location.unknown():
         for func in module.body.operations:
             if not isinstance(func, func_d.FuncOp):
-                continue 
-            
-            alloc_ops = [op for op in func.walk() if isinstance(op, memref_d.AllocOp)]
-            
-            for alloc in alloc_ops:
-                orig_buffer = alloc.result
-                consumer_map = {}
-                for use in list(orig_buffer.uses):
-                    consumer = use.owner
-                    if consumer not in consumer_map:
-                        consumer_map[consumer] = []
-                    consumer_map[consumer].append(use)
-                
-                if len(consumer_map) <= 1:
-                    continue
-                
-                for consumer_op, use_list in consumer_map.items():
-                    ip = InsertionPoint(consumer_op)
-                    
-                    new_alloc = memref_d.AllocOp(
-                        orig_buffer.type,  
-                        [],    
-                        [],
-                        ip=ip
-                    )
-                    
-                    orig_name = alloc.attributes["name"].value if "name" in alloc.attributes else "buffer"
-                    new_alloc.attributes["name"] = StringAttr.get(f'{orig_name}_dup')
-                    
-                    memref_d.CopyOp(orig_buffer, new_alloc.result, ip=ip)
-                    
-                    for use in use_list:
-                        consumer_op.replace_operand(use.operand_number, new_alloc.result)
+                continue
+            func.walk(canonicalize_buffer_callback)
+    return module
 
-
-        
-            
