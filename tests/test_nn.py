@@ -3,6 +3,7 @@
 
 import numpy as np
 import allo
+import allo.library.nn as nn
 from allo.ir.types import int8, float32
 import pytest
 
@@ -26,6 +27,54 @@ def test_linear():
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
     print("Passed!")
     print(s.build(target="vhls"))
+
+
+def test_builtin_linear():
+    M, N, K = 16, 32, 16
+    X = np.random.randn(M, K)
+    W = np.random.randn(N, K)
+    b = np.random.randn(
+        N,
+    )
+    s = allo.customize(nn.linear, instantiate=[float32, M, N, K])
+    mod = s.build(target="llvm")
+    Z = mod(X, W, b)
+    np.testing.assert_allclose(Z, np.dot(X, W.T) + b, atol=1e-5)
+    print("Passed!")
+
+
+def test_cascased_linear():
+    BS, M0, M1, M2 = 16, 32, 16, 10
+    X = np.random.randn(BS, M0)
+    W0 = np.random.randn(M1, M0)
+    W1 = np.random.randn(M2, M1)
+    b0 = np.random.randn(
+        M1,
+    )
+    b1 = np.random.randn(
+        M2,
+    )
+
+    def cascaded_linear(
+        X: float32[BS, M0],
+        # weights are transposed
+        W0: float32[M1, M0],
+        W1: float32[M2, M1],
+        b0: float32[M1],
+        b1: float32[M2],
+    ) -> float32[BS, M2]:
+        Z0 = nn.linear[float32, BS, M1, M0](X, W0, b0)
+        Z1 = nn.linear[float32, BS, M2, M1](Z0, W1, b1)
+        return Z1
+
+    s = allo.customize(cascaded_linear)
+    s.compose(nn.linear, instantiate=[float32, BS, M1, M0])
+    s.compose(nn.linear, id="1", instantiate=[float32, BS, M2, M1])
+    print(s.module)
+    mod = s.build(target="llvm")
+    Z = mod(X, W0, W1, b0, b1)
+    np.testing.assert_allclose(Z, np.dot(np.dot(X, W0.T) + b0, W1.T) + b1, atol=1e-4)
+    print("Passed!")
 
 
 def test_linear_float():
