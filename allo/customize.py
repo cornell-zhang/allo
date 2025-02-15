@@ -704,6 +704,9 @@ class Schedule:
         assert len(mul_ops) == 1
         assert len(load_ops) > 1
 
+
+        ### Create outlined PE Kernel Func
+
         # Get result type of first affine load operation
         load_type = load_ops[0].result.type
         arith_type = mul_ops[0].result.type
@@ -840,7 +843,167 @@ class Schedule:
 
         func_d.ReturnOp([], ip=InsertionPoint(entry_block))
 
-        
+
+        ### Create load loop
+
+        # Set insertion point to beginning of function body
+        ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+
+        # Create memref types for FIFOs and drains
+        fifo_memref_type = MemRefType.get([i_size, j_size + 1, k_size], load_type)
+        drain_memref_type = MemRefType.get([k_size], load_type)
+
+        # Create the memrefs
+        A_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+        B_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+        A_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
+        B_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
+
+        # Create data load loop nest
+        # Outer k loop
+        k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
+        k_loop = affine_d.AffineForOp(0, k_map, 1, ip=ip)
+        k_loop.attributes["name"] = StringAttr.get("data_load")
+
+        # Inner i loop for loading A
+        i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
+        i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
+
+        # Load from A and store to A_fifo
+        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
+        affine_attr = AffineMapAttr.get(affine_map)
+        a_val = affine_d.AffineLoadOp(
+            load_type,
+            func.arguments[0],
+            [i_loop.induction_variable, k_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(i_loop.body)
+        )
+
+        # Store to A_fifo[i, 0, k]
+        zero_idx = arith_d.ConstantOp(IndexType.get(), 0, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
+        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0),
+            AffineExpr.get_constant(0),
+            AffineExpr.get_dim(1)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(
+            a_val.result,
+            A_fifo.result,
+            [i_loop.induction_variable, zero_idx, k_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(i_loop.body)
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(i_loop.body))
+
+        # Inner j loop for loading B
+        j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
+        j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
+
+        # Load from B and store to B_fifo
+        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(1), AffineExpr.get_dim(0)])
+        affine_attr = AffineMapAttr.get(affine_map)
+        b_val = affine_d.AffineLoadOp(
+            load_type,
+            func.arguments[1],
+            [k_loop.induction_variable, j_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(j_loop.body)
+        )
+
+        # Store to B_fifo[j, 0, k]
+        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0),
+            AffineExpr.get_constant(0),
+            AffineExpr.get_dim(1)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(
+            b_val.result,
+            B_fifo.result,
+            [j_loop.induction_variable, zero_idx, k_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(j_loop.body)
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(j_loop.body))
+        affine_d.AffineYieldOp([], ip=InsertionPoint(k_loop.body))
+
+        ### Create drain loop band
+
+        k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
+        k_loop = affine_d.AffineForOp(0, k_map, 1, ip=InsertionPoint.at_block_terminator(func.body.blocks[0]))
+        k_loop.attributes["name"] = StringAttr.get("data_drain")
+
+        # Inner i loop for draining A
+        i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
+        i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
+
+        # Load from A_fifo[i, 4, k] and store to A_drain[i]
+        i_size_idx = arith_d.ConstantOp(IndexType.get(), i_size, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
+        j_size_idx = arith_d.ConstantOp(IndexType.get(), j_size, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
+        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0),
+            AffineExpr.get_constant(i_size),
+            AffineExpr.get_dim(2)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        a_val = affine_d.AffineLoadOp(
+            load_type,
+            A_fifo.result,
+            [i_loop.induction_variable, i_size_idx, k_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(i_loop.body)
+        )
+
+        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(
+            a_val.result,
+            A_drain.result,
+            [i_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(i_loop.body)
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(i_loop.body))
+
+        # Inner j loop for draining B
+        j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
+        j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
+
+        # Load from B_fifo[j, 4, k] and store to B_drain[j]
+        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0),
+            AffineExpr.get_constant(j_size),
+            AffineExpr.get_dim(2)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        b_val = affine_d.AffineLoadOp(
+            load_type,
+            B_fifo.result,
+            [j_loop.induction_variable, j_size_idx, k_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(j_loop.body)
+        )
+
+        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[
+            AffineExpr.get_dim(0)
+        ])
+        affine_attr = AffineMapAttr.get(affine_map)
+        affine_d.AffineStoreOp(
+            b_val.result,
+            B_drain.result,
+            [j_loop.induction_variable],
+            affine_attr,
+            ip=InsertionPoint(j_loop.body)
+        )
+        affine_d.AffineYieldOp([], ip=InsertionPoint(j_loop.body))
+        affine_d.AffineYieldOp([], ip=InsertionPoint(k_loop.body))
+
+        import ipdb; ipdb.set_trace()
+
 
     @wrapped_apply
     def unfold(self, band_name, axes):

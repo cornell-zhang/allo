@@ -51,6 +51,7 @@ def systolic_tile(
 
 
 s = allo.customize(systolic_tile)
+print(s.module)
 s.partition(s.C, dim=0)
 s.partition(s.A, dim=1)
 s.partition(s.B, dim=2)
