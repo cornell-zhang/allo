@@ -27,8 +27,10 @@ from ._mlir.ir import (
     FlatSymbolRefAttr,
     AffineMap,
     AffineMapAttr,
-    FunctionType
+    FunctionType,
+    ShapedType
 )
+from ._mlir.ir import Type as MLIRType
 from ._mlir.dialects import (
     allo as allo_d,
     memref as memref_d,
@@ -711,7 +713,9 @@ class Schedule:
         load_type = load_ops[0].result.type
         arith_type = mul_ops[0].result.type
         # Create 1D memref type with k_size elements
-        fifo_memref_type = MemRefType.get([k_size], load_type)
+        fifo_memref_type = MLIRType.parse(
+            f"memref<{k_size}x{load_type}, strided<{[1]}, offset: ?>>"
+        )
         res_memref_type = MemRefType.get([i_size, j_size], arith_type)
         # Create function type with four memref arguments
         func_type = func_d.FunctionType.get([fifo_memref_type]*4 + [res_memref_type] + [IndexType.get()] * 2, [])
@@ -885,7 +889,7 @@ class Schedule:
         affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
             AffineExpr.get_dim(0),
             AffineExpr.get_constant(0),
-            AffineExpr.get_dim(1)
+            AffineExpr.get_dim(2)
         ])
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
@@ -902,7 +906,7 @@ class Schedule:
         j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
 
         # Load from B and store to B_fifo
-        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(1), AffineExpr.get_dim(0)])
+        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
         affine_attr = AffineMapAttr.get(affine_map)
         b_val = affine_d.AffineLoadOp(
             load_type,
@@ -916,7 +920,7 @@ class Schedule:
         affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
             AffineExpr.get_dim(0),
             AffineExpr.get_constant(0),
-            AffineExpr.get_dim(1)
+            AffineExpr.get_dim(2)
         ])
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
@@ -1002,7 +1006,86 @@ class Schedule:
         affine_d.AffineYieldOp([], ip=InsertionPoint(j_loop.body))
         affine_d.AffineYieldOp([], ip=InsertionPoint(k_loop.body))
 
-        import ipdb; ipdb.set_trace()
+
+        ### Build func call
+        # first get the slice
+        iv_i = outer_loop.induction_variable
+        iv_j = middle_loop.induction_variable
+        # Remove all ops except terminator
+        ops = list(middle_loop.body.operations)
+        for op in ops[:-1]:
+            op.operation.erase()
+        idx_one = arith_d.ConstantOp(IndexType.get(), 1, ip=InsertionPoint.at_block_terminator(middle_loop.body))
+        i_plus_one = arith_d.AddIOp(iv_i, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body))
+        j_plus_one = arith_d.AddIOp(iv_j, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body))
+        result = MLIRType.parse(
+            f"memref<{k_size}x{A_fifo.result.type.element_type}, strided<{[1]}, offset: ?>>"
+        )
+        a_fifo_slice_in = memref_d.SubViewOp(
+            source=A_fifo.result,
+            result=result,
+            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_sizes=[1, 1, k_size],
+            static_strides=[1] * 3,
+            offsets=[iv_i, iv_j],
+            sizes=[],
+            strides=[],
+            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+        a_fifo_slice_out = memref_d.SubViewOp(
+            source=A_fifo.result,
+            result=result,
+            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_sizes=[1, 1, k_size],
+            static_strides=[1] * 3,
+            offsets=[iv_i, j_plus_one],
+            sizes=[],
+            strides=[],
+            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+        result = MLIRType.parse(
+            f"memref<{k_size}x{B_fifo.result.type.element_type}, strided<{[1]}, offset: ?>>"
+        )
+        b_fifo_slice_in = memref_d.SubViewOp(
+            source=B_fifo.result,
+            result=result,
+            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_sizes=[1, 1, k_size],
+            static_strides=[1] * 3,
+            offsets=[iv_j, iv_i],
+            sizes=[],
+            strides=[],
+            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+        b_fifo_slice_out = memref_d.SubViewOp(
+            source=B_fifo.result,
+            result=result,
+            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_sizes=[1, 1, k_size],
+            static_strides=[1] * 3,
+            offsets=[iv_j, i_plus_one],
+            sizes=[],
+            strides=[],
+            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+
+        func_d.CallOp(
+            [],
+            FlatSymbolRefAttr.get("PE_kernel"),
+            [
+                a_fifo_slice_in.result,
+                b_fifo_slice_in.result, 
+                a_fifo_slice_out.result,
+                b_fifo_slice_out.result,
+                func.arguments[2],
+                outer_loop.induction_variable,
+                middle_loop.induction_variable
+            ],
+            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+
+
+
 
 
     @wrapped_apply
