@@ -15,8 +15,8 @@ def gemm(
 
 s = allo.customize(gemm)
 s.prepare_systolic("PE")
-print(s.module)
-# s.partition(s.C, dim=0)
+# print(s.module)
+s.partition(s.C, dim=0)
 # s.partition(s.A, dim=1)
 # s.partition(s.B, dim=2)
 # pe = s.unfold("PE", [0, 1])

@@ -728,6 +728,11 @@ class Schedule:
         entry_block = pe_kernel.add_entry_block()
         ip = InsertionPoint(entry_block)
 
+        # Add argument names to self.func_args
+        # Assuming your arguments are named arg0, arg1, etc.
+        arg_names = [f"arg{i}" for i in range(len(pe_kernel.arguments))]
+        self.func_args["PE_kernel"] = arg_names
+
         # Create memref for accumulator
         acc_type = MemRefType.get([1], arith_type)
         acc = memref_d.AllocOp(acc_type, [], [], ip=ip).result
