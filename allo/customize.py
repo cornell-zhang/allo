@@ -134,6 +134,7 @@ class Schedule:
             for func_name, args in func_args.items():
                 if func_name not in self.func_args:
                     self.func_args[func_name] = []
+        self.systolic = self.check_systolic()
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -417,8 +418,8 @@ class Schedule:
                     )
                 )
 
-    @wrapped_apply
-    def buffer_at(self, target, axis):
+    # @wrapped_apply
+    def buffer_at_regular(self, target, axis):
         """
         Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
         instead of immediately writing them to memory.
@@ -442,7 +443,53 @@ class Schedule:
         allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
 
 
+    def buffer_at(self, target, axis):
+        """
+        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
+        instead of immediately writing them to memory.
+
+        Parameters
+        ----------
+        target: allo.ir.utils.MockBuffer
+            An array written to in a loop.
+
+        axis: str
+            The loop index whose body contains writes to target
+        """
+        if self.systolic:
+            return self.buffer_at_systolic(target, axis)
+
+        with self.module.context, Location.unknown():
+            res = self.buffer_at_regular(target, axis)
+        _mlir_lower_pipeline(self.module)
+        # Remove previous Python-C++ references
+        self.module.context._clear_live_operations()
+        # Update top function in the current context
+        for op in self.module.body.operations:
+            if isinstance(op, func_d.FuncOp) and op.name.value == self.top_func_name:
+                self.top_func = op
+                break
+        else:
+            raise RuntimeError("Top function not found")
+        # Update insertion point
+        self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
+        # Record primitive sequences
+        self.primitive_sequences.append(("buffer_at", [target, axis], None))
+        return res
+
     def buffer_at_systolic(self, target, axis):
+        """
+        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
+        instead of immediately writing them to memory in a systolic array.
+
+        Parameters
+        ----------
+        target: allo.ir.utils.MockBuffer
+            An array written to in a loop.
+
+        axis: str
+            The loop index whose body contains writes to target
+        """
         buff_name = target.name
         _, _, target = find_buffer(self.module, target, self.func_args)
         func, axis = self._get_func_and_axis(axis)
@@ -703,8 +750,33 @@ class Schedule:
         )
 
 
-    @wrapped_apply
+    def check_systolic(self):
+        """
+        This function checks if there's only one function and it has only one three-level perfect loop.
+        """
+        if len(self.module.body.operations) == 1:
+            gemm_func = self.module.body.operations[0]
+            if len(gemm_func.body.blocks[0].operations) == 2:
+                if isinstance(gemm_func.body.blocks[0].operations[0], affine_d.AffineForOp):
+                    affine_for_op = gemm_func.body.blocks[0].operations[0]
+                    if len(affine_for_op.body.operations) == 2:
+                        if isinstance(affine_for_op.body.operations[0], affine_d.AffineForOp):
+                            affine_for_op = affine_for_op.body.operations[0]
+                            if len(affine_for_op.body.operations) == 2:
+                                if isinstance(affine_for_op.body.operations[0], affine_d.AffineForOp):
+                                    return True
+        return False
+
     def prepare_systolic(self, band_name):
+        """
+        This function outlines the k loop and builds the load/drain loops.
+
+        Parameters
+        ----------
+        band_name: str
+            The name of the band.
+
+        """
         if ":" in band_name:
             func = self._find_function(band_name.split(":")[0])
             band_name = band_name.split(":")[1]
@@ -891,10 +963,6 @@ class Schedule:
 
 
         ### Create load loop
-
-        # Set insertion point to beginning of function body
-        # ip = InsertionPoint.at_block_begin(func.body.blocks[0])
-
         ip = InsertionPoint(outer_loop)
 
         # Create memref types for FIFOs and drains
@@ -902,8 +970,6 @@ class Schedule:
         drain_memref_type = MemRefType.get([k_size], load_type)
 
         # Create the memrefs
-        # A_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
-        # B_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
         A_fifo = self.A_fifo
         B_fifo = self.B_fifo
         # Move A_fifo, B_fifo's op to the beginning of the function body block[0]
@@ -911,19 +977,13 @@ class Schedule:
         B_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
 
         # After creating the AllocOps, add name attributes
-        # A_fifo.attributes["name"] = StringAttr.get("A_fifo")
-        # B_fifo.attributes["name"] = StringAttr.get("B_fifo")
         A_drain.attributes["name"] = StringAttr.get("A_drain")
         B_drain.attributes["name"] = StringAttr.get("B_drain")
 
         # Then create and attach MockBuffers as you already have
-        # A_fifo_mock_buffer = MockBuffer(func.name.value, "A_fifo")
-        # B_fifo_mock_buffer = MockBuffer(func.name.value, "B_fifo")
         A_drain_mock_buffer = MockBuffer(func.name.value, "A_drain") 
         B_drain_mock_buffer = MockBuffer(func.name.value, "B_drain")
 
-        # A_fifo_mock_buffer.op = A_fifo
-        # B_fifo_mock_buffer.op = B_fifo
         A_drain_mock_buffer.op = A_drain
         B_drain_mock_buffer.op = B_drain
 
@@ -1165,9 +1225,6 @@ class Schedule:
         )
 
 
-
-
-
     @wrapped_apply
     def unfold(self, band_name, axes):
         """
@@ -1182,6 +1239,9 @@ class Schedule:
         axes: list[int]
             A list of the axes to unroll.
         """
+
+        if self.systolic:
+            self.prepare_systolic(band_name)
 
         assert isinstance(axes, list), "Axes must be a list"
         axes.sort()

@@ -588,5 +588,53 @@ def test_subview_systolic_dsp_packed_int4xint8():
     np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
 
 
+def test_three_level_systolic():
+    M, N, K = 4, 4, 4
+    def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
+        for i, j in allo.grid(M, N, name="PE"):
+            for k in range(K):
+                C[i, j] += A[i, k] * B[k, j]
+
+    s = allo.customize(gemm)
+    buf_A = s.buffer_at(s.A, "i")
+    buf_B = s.buffer_at(s.B, "j")
+    pe = s.unfold("PE", [0, 1])
+    s.partition(s.C, dim=0)
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    mod = s.build()
+    A = np.random.randint(0, 10, size=(4, 4), dtype=np.int8)
+    B = np.random.randint(0, 10, size=(4, 4), dtype=np.int8)
+    C = np.zeros((4, 4), dtype=np.int16)
+    mod(A, B, C)
+    np_C = A.astype(np.int32) @ B.astype(np.int32)
+    np.testing.assert_allclose(C, np_C, rtol=1e-3)
+
+def test_three_level_systolic_csim():
+    M, N, K = 4, 4, 4
+    def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
+        for i, j in allo.grid(M, N, name="PE"):
+            for k in range(K):
+                C[i, j] += A[i, k] * B[k, j]
+
+    s = allo.customize(gemm)
+    buf_A = s.buffer_at(s.A, "i")
+    buf_B = s.buffer_at(s.B, "j")
+    pe = s.unfold("PE", [0, 1])
+    s.partition(s.C, dim=0)
+    s.partition(s.A, dim=1)
+    s.partition(s.B, dim=2)
+    s.to(buf_A, pe, axis=1, depth=M + 1)
+    s.to(buf_B, pe, axis=0, depth=N + 1)
+    if hls.is_available("vitis_hls"):
+        mod = s.build(target="vitis_hls", mode="csim", project="systolic_csim.prj")
+        np_A = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
+        np_B = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
+        np_C = np.matmul(np_A, np_B)
+        np_C_allo = np.zeros((4, 4), dtype=np.int16)
+        mod(np_A, np_B, np_C_allo)
+        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-3)
+        print("Passed!")
+
 if __name__ == "__main__":
     pytest.main([__file__])
