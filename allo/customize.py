@@ -130,6 +130,10 @@ class Schedule:
         self.ext_libs = ext_libs
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
+        if func_args:
+            for func_name, args in func_args.items():
+                if func_name not in self.func_args:
+                    self.func_args[func_name] = []
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -730,7 +734,8 @@ class Schedule:
 
         # Add argument names to self.func_args
         # Assuming your arguments are named arg0, arg1, etc.
-        arg_names = [f"arg{i}" for i in range(len(pe_kernel.arguments))]
+        # arg_names = [f"arg{i}" for i in range(len(pe_kernel.arguments))]
+        arg_names = ["A_in", "B_in", "A_out", "B_out", "C", "i", "j"]
         self.func_args["PE_kernel"] = arg_names
 
         # Create memref for accumulator
@@ -755,6 +760,7 @@ class Schedule:
             ip=ip,
         )
         loop.attributes["loop_name"] = StringAttr.get("k")
+        loop.attributes["op_name"] = StringAttr.get("S_k_0")
 
         # # Create loop body
         ip = InsertionPoint(loop.body)
@@ -868,15 +874,41 @@ class Schedule:
         A_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
         B_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
 
+        # After creating the AllocOps, add name attributes
+        A_fifo.attributes["name"] = StringAttr.get("A_fifo")
+        B_fifo.attributes["name"] = StringAttr.get("B_fifo")
+        A_drain.attributes["name"] = StringAttr.get("A_drain")
+        B_drain.attributes["name"] = StringAttr.get("B_drain")
+
+        # Then create and attach MockBuffers as you already have
+        A_fifo_mock_buffer = MockBuffer(func.name.value, "A_fifo")
+        B_fifo_mock_buffer = MockBuffer(func.name.value, "B_fifo")
+        A_drain_mock_buffer = MockBuffer(func.name.value, "A_drain") 
+        B_drain_mock_buffer = MockBuffer(func.name.value, "B_drain")
+
+        A_fifo_mock_buffer.op = A_fifo
+        B_fifo_mock_buffer.op = B_fifo
+        A_drain_mock_buffer.op = A_drain
+        B_drain_mock_buffer.op = B_drain
+
+        setattr(self, "A_fifo", MockBuffer(func.name.value, "A_fifo"))
+        setattr(self, "B_fifo", MockBuffer(func.name.value, "B_fifo"))
+        setattr(self, "A_drain", MockBuffer(func.name.value, "A_drain"))
+        setattr(self, "B_drain", MockBuffer(func.name.value, "B_drain"))
+
+
         # Create data load loop nest
         # Outer k loop
         k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
         k_loop = affine_d.AffineForOp(0, k_map, 1, ip=ip)
-        k_loop.attributes["name"] = StringAttr.get("data_load")
+        k_loop.attributes["loop_name"] = StringAttr.get("k")
+        k_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Inner i loop for loading A
         i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
         i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
+        i_loop.attributes["loop_name"] = StringAttr.get("i")
+        i_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Load from A and store to A_fifo
         affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
@@ -909,6 +941,8 @@ class Schedule:
         # Inner j loop for loading B
         j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
         j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
+        j_loop.attributes["loop_name"] = StringAttr.get("j")
+        j_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Load from B and store to B_fifo
         affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
@@ -942,11 +976,14 @@ class Schedule:
 
         k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
         k_loop = affine_d.AffineForOp(0, k_map, 1, ip=InsertionPoint.at_block_terminator(func.body.blocks[0]))
-        k_loop.attributes["name"] = StringAttr.get("data_drain")
+        k_loop.attributes["loop_name"] = StringAttr.get("k")
+        k_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Inner i loop for draining A
         i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
         i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
+        i_loop.attributes["loop_name"] = StringAttr.get("i")
+        k_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Load from A_fifo[i, 4, k] and store to A_drain[i]
         i_size_idx = arith_d.ConstantOp(IndexType.get(), i_size, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
@@ -981,6 +1018,8 @@ class Schedule:
         # Inner j loop for draining B
         j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
         j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
+        j_loop.attributes["loop_name"] = StringAttr.get("j")
+        j_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Load from B_fifo[j, 4, k] and store to B_drain[j]
         affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
@@ -1181,6 +1220,8 @@ class Schedule:
                             f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
                         )
                         dup_func.attributes["sym_name"] = StringAttr.get(new_name)
+                        # extend self.func_args
+                        self.func_args[new_name] = self.func_args[FlatSymbolRefAttr(op.attributes["callee"]).value]
                         op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
                         if old_func not in op_to_remove:
                             op_to_remove.append(old_func)
