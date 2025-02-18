@@ -590,6 +590,7 @@ def test_subview_systolic_dsp_packed_int4xint8():
 
 def test_three_level_systolic():
     M, N, K = 4, 4, 4
+
     def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
         for i, j in allo.grid(M, N, name="PE"):
             for k in range(K):
@@ -610,8 +611,10 @@ def test_three_level_systolic():
     np_C = A.astype(np.int32) @ B.astype(np.int32)
     np.testing.assert_allclose(C, np_C, rtol=1e-3)
 
+
 def test_three_level_systolic_csim():
     M, N, K = 4, 4, 4
+
     def gemm(A: int8[M, K], B: int8[K, N], C: int16[M, N]):
         for i, j in allo.grid(M, N, name="PE"):
             for k in range(K):
@@ -635,6 +638,7 @@ def test_three_level_systolic_csim():
         mod(np_A, np_B, np_C_allo)
         np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-3)
         print("Passed!")
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

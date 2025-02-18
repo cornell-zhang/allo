@@ -28,7 +28,7 @@ from ._mlir.ir import (
     AffineMap,
     AffineMapAttr,
     FunctionType,
-    ShapedType
+    ShapedType,
 )
 from ._mlir.ir import Type as MLIRType
 from ._mlir.dialects import (
@@ -442,7 +442,6 @@ class Schedule:
         memref_type = MemRefType.get((1,), F32Type.get())
         allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
 
-
     def buffer_at(self, target, axis):
         """
         Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
@@ -497,17 +496,26 @@ class Schedule:
         band = self._find_band(band_name, func)
         loops = list(band)
         outer_loop = loops[0][1].loop
-        middle_loop = loops[1][1].loop # Middle loop 
-        inner_loop = loops[-1][1].loop # Last/innermost loop
+        middle_loop = loops[1][1].loop  # Middle loop
+        inner_loop = loops[-1][1].loop  # Last/innermost loop
         i_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(outer_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(outer_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         j_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(middle_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(middle_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         k_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(inner_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(inner_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         load_type = MemRefType(target.result.type).element_type
         with self.module.context, Location.unknown():
             ip = InsertionPoint.at_block_begin(func.body.blocks[0])
@@ -749,7 +757,6 @@ class Schedule:
             self.module, target, dst, axis, depth, self.func_args, self.top_func_name
         )
 
-
     def check_systolic(self):
         """
         This function checks if there's only one function and it has only one three-level perfect loop.
@@ -757,13 +764,20 @@ class Schedule:
         if len(self.module.body.operations) == 1:
             gemm_func = self.module.body.operations[0]
             if len(gemm_func.body.blocks[0].operations) == 2:
-                if isinstance(gemm_func.body.blocks[0].operations[0], affine_d.AffineForOp):
+                if isinstance(
+                    gemm_func.body.blocks[0].operations[0], affine_d.AffineForOp
+                ):
                     affine_for_op = gemm_func.body.blocks[0].operations[0]
                     if len(affine_for_op.body.operations) == 2:
-                        if isinstance(affine_for_op.body.operations[0], affine_d.AffineForOp):
+                        if isinstance(
+                            affine_for_op.body.operations[0], affine_d.AffineForOp
+                        ):
                             affine_for_op = affine_for_op.body.operations[0]
                             if len(affine_for_op.body.operations) == 2:
-                                if isinstance(affine_for_op.body.operations[0], affine_d.AffineForOp):
+                                if isinstance(
+                                    affine_for_op.body.operations[0],
+                                    affine_d.AffineForOp,
+                                ):
                                     return True
         return False
 
@@ -786,17 +800,26 @@ class Schedule:
         band = self._find_band(band_name, func)
         loops = list(band)
         outer_loop = loops[0][1].loop
-        middle_loop = loops[1][1].loop # Middle loop 
-        inner_loop = loops[-1][1].loop # Last/innermost loop
+        middle_loop = loops[1][1].loop  # Middle loop
+        inner_loop = loops[-1][1].loop  # Last/innermost loop
         i_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(outer_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(outer_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         j_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(middle_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(middle_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         k_size = int(
-                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(inner_loop.attributes["upperBoundMap"]))[0]
-            )
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(inner_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
         # Find arithmetic operations in innermost loop
         add_ops = []
         mul_ops = []
@@ -813,7 +836,6 @@ class Schedule:
         assert len(mul_ops) == 1
         assert len(load_ops) > 1
 
-
         ### Create outlined PE Kernel Func
 
         # Get result type of first affine load operation
@@ -825,7 +847,9 @@ class Schedule:
         )
         res_memref_type = MemRefType.get([i_size, j_size], arith_type)
         # Create function type with four memref arguments
-        func_type = func_d.FunctionType.get([fifo_memref_type]*4 + [res_memref_type] + [IndexType.get()] * 2, [])
+        func_type = func_d.FunctionType.get(
+            [fifo_memref_type] * 4 + [res_memref_type] + [IndexType.get()] * 2, []
+        )
         # Insert the function at the beginning of the module
         ip = InsertionPoint.at_block_begin(self.module.body)
         pe_kernel = func_d.FuncOp("PE_kernel", func_type, ip=ip)
@@ -844,11 +868,13 @@ class Schedule:
         # Create memref for accumulator
         acc_type = MemRefType.get([1], arith_type)
         acc = memref_d.AllocOp(acc_type, [], [], ip=ip).result
-        
+
         # Store zero into accumulator
         zero = arith_d.ConstantOp(arith_type, 0, ip=ip).result
         zero_idx = arith_d.ConstantOp(IndexType.get(), 0, ip=ip).result
-        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[AffineExpr.get_constant(0)])
+        affine_map = AffineMap.get(
+            dim_count=1, symbol_count=0, exprs=[AffineExpr.get_constant(0)]
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(zero, acc, [zero_idx], affine_attr, ip=ip)
 
@@ -867,24 +893,28 @@ class Schedule:
 
         # # Create loop body
         ip = InsertionPoint(loop.body)
-        
+
         # Load from first input fifo (arg 0)
-        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[AffineExpr.get_dim(0)])
+        affine_map = AffineMap.get(
+            dim_count=1, symbol_count=0, exprs=[AffineExpr.get_dim(0)]
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         a = affine_d.AffineLoadOp(
             load_type,
-            pe_kernel.arguments[0], 
-            [loop.induction_variable], 
-            affine_attr, 
-            ip=ip)
+            pe_kernel.arguments[0],
+            [loop.induction_variable],
+            affine_attr,
+            ip=ip,
+        )
 
         # load from the second input fifo (arg 1)
         b = affine_d.AffineLoadOp(
             load_type,
-            pe_kernel.arguments[1], 
-            [loop.induction_variable], 
-            affine_attr, 
-            ip=ip)
+            pe_kernel.arguments[1],
+            [loop.induction_variable],
+            affine_attr,
+            ip=ip,
+        )
 
         # move the cast, cast, mul tree over
         lhs_cast = mul_ops[0].operands[0].owner
@@ -894,73 +924,64 @@ class Schedule:
         rhs_cast_new = rhs_cast.clone(ip=ip)
         rhs_cast_new.operation.replace_uses_of_with(rhs_cast.operands[0], b.result)
         new_mul_op = mul_ops[0].clone(ip=ip)
-        new_mul_op.operation.replace_uses_of_with(mul_ops[0].operands[0], lhs_cast_new.result)
-        new_mul_op.operation.replace_uses_of_with(mul_ops[0].operands[1], rhs_cast_new.result)
-        # Load from accumulator
-        acc_val = affine_d.AffineLoadOp(
-            arith_type,
-            acc,
-            [zero_idx],
-            affine_attr,
-            ip=ip
+        new_mul_op.operation.replace_uses_of_with(
+            mul_ops[0].operands[0], lhs_cast_new.result
         )
+        new_mul_op.operation.replace_uses_of_with(
+            mul_ops[0].operands[1], rhs_cast_new.result
+        )
+        # Load from accumulator
+        acc_val = affine_d.AffineLoadOp(arith_type, acc, [zero_idx], affine_attr, ip=ip)
 
         # Add multiplication result to accumulator value
         add_op = arith_d.AddIOp(acc_val.result, new_mul_op.result, ip=ip)
 
         # Store result back to accumulator
-        affine_d.AffineStoreOp(
-            add_op.result,
-            acc,
-            [zero_idx], 
-            affine_attr,
-            ip=ip
-        )
-        
+        affine_d.AffineStoreOp(add_op.result, acc, [zero_idx], affine_attr, ip=ip)
 
         # store a to first output fifo (arg 2)
         affine_d.AffineStoreOp(
-            a.result, 
-            pe_kernel.arguments[2], 
-            [loop.induction_variable], 
-            affine_attr, 
-            ip=ip)
+            a.result,
+            pe_kernel.arguments[2],
+            [loop.induction_variable],
+            affine_attr,
+            ip=ip,
+        )
 
         # store b to second output fifo (arg 3)
         affine_d.AffineStoreOp(
-            b.result, 
-            pe_kernel.arguments[3], 
-            [loop.induction_variable], 
-            affine_attr, 
-            ip=ip)
-        
-        # # Load from second input fifo (arg 1) 
+            b.result,
+            pe_kernel.arguments[3],
+            [loop.induction_variable],
+            affine_attr,
+            ip=ip,
+        )
+
+        # # Load from second input fifo (arg 1)
         # b = affine_d.AffineLoadOp(pe_kernel.arguments[1], [loop.induction_variable], [], ip=ip).result
         affine_d.AffineYieldOp([], ip=InsertionPoint(loop.body))
 
-
         # Load final value from accumulator
         acc_final = affine_d.AffineLoadOp(
-            arith_type,
-            acc,
-            [zero_idx],
-            affine_attr,
-            ip=InsertionPoint(entry_block)
+            arith_type, acc, [zero_idx], affine_attr, ip=InsertionPoint(entry_block)
         )
 
         # Store accumulator value to output matrix C (arg 4) using indices i,j (args 5,6)
-        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
+        affine_map = AffineMap.get(
+            dim_count=2,
+            symbol_count=0,
+            exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
             acc_final.result,
             pe_kernel.arguments[4],
             [pe_kernel.arguments[5], pe_kernel.arguments[6]],
             affine_attr,
-            ip=InsertionPoint(entry_block)
+            ip=InsertionPoint(entry_block),
         )
 
         func_d.ReturnOp([], ip=InsertionPoint(entry_block))
-
 
         ### Create load loop
         ip = InsertionPoint(outer_loop)
@@ -981,7 +1002,7 @@ class Schedule:
         B_drain.attributes["name"] = StringAttr.get("B_drain")
 
         # Then create and attach MockBuffers as you already have
-        A_drain_mock_buffer = MockBuffer(func.name.value, "A_drain") 
+        A_drain_mock_buffer = MockBuffer(func.name.value, "A_drain")
         B_drain_mock_buffer = MockBuffer(func.name.value, "B_drain")
 
         A_drain_mock_buffer.op = A_drain
@@ -992,160 +1013,206 @@ class Schedule:
         setattr(self, "A_drain", MockBuffer(func.name.value, "A_drain"))
         setattr(self, "B_drain", MockBuffer(func.name.value, "B_drain"))
 
-
         # Create data load loop nest
         # Outer k loop
-        k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
+        k_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)]
+        )
         k_loop = affine_d.AffineForOp(0, k_map, 1, ip=ip)
         k_loop.attributes["loop_name"] = StringAttr.get("k")
         k_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Inner i loop for loading A
-        i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
+        i_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)]
+        )
         i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
         i_loop.attributes["loop_name"] = StringAttr.get("i")
         i_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Load from A and store to A_fifo
-        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
+        affine_map = AffineMap.get(
+            dim_count=2,
+            symbol_count=0,
+            exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         a_val = affine_d.AffineLoadOp(
             load_type,
             func.arguments[0],
             [i_loop.induction_variable, k_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(i_loop.body)
+            ip=InsertionPoint(i_loop.body),
         )
 
         # Store to A_fifo[i, 0, k]
-        zero_idx = arith_d.ConstantOp(IndexType.get(), 0, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
-        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0),
-            AffineExpr.get_constant(0),
-            AffineExpr.get_dim(2)
-        ])
+        zero_idx = arith_d.ConstantOp(
+            IndexType.get(), 0, ip=InsertionPoint.at_block_begin(func.body.blocks[0])
+        ).result
+        affine_map = AffineMap.get(
+            dim_count=3,
+            symbol_count=0,
+            exprs=[
+                AffineExpr.get_dim(0),
+                AffineExpr.get_constant(0),
+                AffineExpr.get_dim(2),
+            ],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
             a_val.result,
             A_fifo.result,
             [i_loop.induction_variable, zero_idx, k_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(i_loop.body)
+            ip=InsertionPoint(i_loop.body),
         )
         affine_d.AffineYieldOp([], ip=InsertionPoint(i_loop.body))
 
         # Inner j loop for loading B
-        j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
+        j_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)]
+        )
         j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
         j_loop.attributes["loop_name"] = StringAttr.get("j")
         j_loop.attributes["op_name"] = StringAttr.get("data_load")
 
         # Load from B and store to B_fifo
-        affine_map = AffineMap.get(dim_count=2, symbol_count=0, exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)])
+        affine_map = AffineMap.get(
+            dim_count=2,
+            symbol_count=0,
+            exprs=[AffineExpr.get_dim(0), AffineExpr.get_dim(1)],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         b_val = affine_d.AffineLoadOp(
             load_type,
             func.arguments[1],
             [k_loop.induction_variable, j_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(j_loop.body)
+            ip=InsertionPoint(j_loop.body),
         )
 
         # Store to B_fifo[j, 0, k]
-        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0),
-            AffineExpr.get_constant(0),
-            AffineExpr.get_dim(2)
-        ])
+        affine_map = AffineMap.get(
+            dim_count=3,
+            symbol_count=0,
+            exprs=[
+                AffineExpr.get_dim(0),
+                AffineExpr.get_constant(0),
+                AffineExpr.get_dim(2),
+            ],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
             b_val.result,
             B_fifo.result,
             [j_loop.induction_variable, zero_idx, k_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(j_loop.body)
+            ip=InsertionPoint(j_loop.body),
         )
         affine_d.AffineYieldOp([], ip=InsertionPoint(j_loop.body))
         affine_d.AffineYieldOp([], ip=InsertionPoint(k_loop.body))
 
         ### Create drain loop band
 
-        k_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)])
-        k_loop = affine_d.AffineForOp(0, k_map, 1, ip=InsertionPoint.at_block_terminator(func.body.blocks[0]))
+        k_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(k_size)]
+        )
+        k_loop = affine_d.AffineForOp(
+            0, k_map, 1, ip=InsertionPoint.at_block_terminator(func.body.blocks[0])
+        )
         k_loop.attributes["loop_name"] = StringAttr.get("k")
         k_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Inner i loop for draining A
-        i_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)])
+        i_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(i_size)]
+        )
         i_loop = affine_d.AffineForOp(0, i_map, 1, ip=InsertionPoint(k_loop.body))
         i_loop.attributes["loop_name"] = StringAttr.get("i")
         k_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Load from A_fifo[i, 4, k] and store to A_drain[i]
-        i_size_idx = arith_d.ConstantOp(IndexType.get(), i_size, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
-        j_size_idx = arith_d.ConstantOp(IndexType.get(), j_size, ip=InsertionPoint.at_block_begin(func.body.blocks[0])).result
-        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0),
-            AffineExpr.get_constant(i_size),
-            AffineExpr.get_dim(2)
-        ])
+        i_size_idx = arith_d.ConstantOp(
+            IndexType.get(),
+            i_size,
+            ip=InsertionPoint.at_block_begin(func.body.blocks[0]),
+        ).result
+        j_size_idx = arith_d.ConstantOp(
+            IndexType.get(),
+            j_size,
+            ip=InsertionPoint.at_block_begin(func.body.blocks[0]),
+        ).result
+        affine_map = AffineMap.get(
+            dim_count=3,
+            symbol_count=0,
+            exprs=[
+                AffineExpr.get_dim(0),
+                AffineExpr.get_constant(i_size),
+                AffineExpr.get_dim(2),
+            ],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         a_val = affine_d.AffineLoadOp(
             load_type,
             A_fifo.result,
             [i_loop.induction_variable, i_size_idx, k_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(i_loop.body)
+            ip=InsertionPoint(i_loop.body),
         )
 
-        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0)
-        ])
+        affine_map = AffineMap.get(
+            dim_count=1, symbol_count=0, exprs=[AffineExpr.get_dim(0)]
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
             a_val.result,
             A_drain.result,
             [i_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(i_loop.body)
+            ip=InsertionPoint(i_loop.body),
         )
         affine_d.AffineYieldOp([], ip=InsertionPoint(i_loop.body))
 
         # Inner j loop for draining B
-        j_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)])
+        j_map = AffineMap.get(
+            dim_count=0, symbol_count=0, exprs=[AffineExpr.get_constant(j_size)]
+        )
         j_loop = affine_d.AffineForOp(0, j_map, 1, ip=InsertionPoint(k_loop.body))
         j_loop.attributes["loop_name"] = StringAttr.get("j")
         j_loop.attributes["op_name"] = StringAttr.get("data_drain")
 
         # Load from B_fifo[j, 4, k] and store to B_drain[j]
-        affine_map = AffineMap.get(dim_count=3, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0),
-            AffineExpr.get_constant(j_size),
-            AffineExpr.get_dim(2)
-        ])
+        affine_map = AffineMap.get(
+            dim_count=3,
+            symbol_count=0,
+            exprs=[
+                AffineExpr.get_dim(0),
+                AffineExpr.get_constant(j_size),
+                AffineExpr.get_dim(2),
+            ],
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         b_val = affine_d.AffineLoadOp(
             load_type,
             B_fifo.result,
             [j_loop.induction_variable, j_size_idx, k_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(j_loop.body)
+            ip=InsertionPoint(j_loop.body),
         )
 
-        affine_map = AffineMap.get(dim_count=1, symbol_count=0, exprs=[
-            AffineExpr.get_dim(0)
-        ])
+        affine_map = AffineMap.get(
+            dim_count=1, symbol_count=0, exprs=[AffineExpr.get_dim(0)]
+        )
         affine_attr = AffineMapAttr.get(affine_map)
         affine_d.AffineStoreOp(
             b_val.result,
             B_drain.result,
             [j_loop.induction_variable],
             affine_attr,
-            ip=InsertionPoint(j_loop.body)
+            ip=InsertionPoint(j_loop.body),
         )
         affine_d.AffineYieldOp([], ip=InsertionPoint(j_loop.body))
         affine_d.AffineYieldOp([], ip=InsertionPoint(k_loop.body))
-
 
         ### Build func call
         # first get the slice
@@ -1155,33 +1222,47 @@ class Schedule:
         ops = list(middle_loop.body.operations)
         for op in ops[:-1]:
             op.operation.erase()
-        idx_one = arith_d.ConstantOp(IndexType.get(), 1, ip=InsertionPoint.at_block_terminator(middle_loop.body))
-        i_plus_one = arith_d.AddIOp(iv_i, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body))
-        j_plus_one = arith_d.AddIOp(iv_j, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body))
+        idx_one = arith_d.ConstantOp(
+            IndexType.get(), 1, ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+        i_plus_one = arith_d.AddIOp(
+            iv_i, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
+        j_plus_one = arith_d.AddIOp(
+            iv_j, idx_one, ip=InsertionPoint.at_block_terminator(middle_loop.body)
+        )
         result = MLIRType.parse(
             f"memref<{k_size}x{A_fifo.result.type.element_type}, strided<{[1]}, offset: ?>>"
         )
         a_fifo_slice_in = memref_d.SubViewOp(
             source=A_fifo.result,
             result=result,
-            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_offsets=[
+                ShapedType.get_dynamic_size(),
+                ShapedType.get_dynamic_size(),
+                0,
+            ],
             static_sizes=[1, 1, k_size],
             static_strides=[1] * 3,
             offsets=[iv_i, iv_j],
             sizes=[],
             strides=[],
-            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+            ip=InsertionPoint.at_block_terminator(middle_loop.body),
         )
         a_fifo_slice_out = memref_d.SubViewOp(
             source=A_fifo.result,
             result=result,
-            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_offsets=[
+                ShapedType.get_dynamic_size(),
+                ShapedType.get_dynamic_size(),
+                0,
+            ],
             static_sizes=[1, 1, k_size],
             static_strides=[1] * 3,
             offsets=[iv_i, j_plus_one],
             sizes=[],
             strides=[],
-            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+            ip=InsertionPoint.at_block_terminator(middle_loop.body),
         )
         result = MLIRType.parse(
             f"memref<{k_size}x{B_fifo.result.type.element_type}, strided<{[1]}, offset: ?>>"
@@ -1189,24 +1270,32 @@ class Schedule:
         b_fifo_slice_in = memref_d.SubViewOp(
             source=B_fifo.result,
             result=result,
-            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_offsets=[
+                ShapedType.get_dynamic_size(),
+                ShapedType.get_dynamic_size(),
+                0,
+            ],
             static_sizes=[1, 1, k_size],
             static_strides=[1] * 3,
             offsets=[iv_j, iv_i],
             sizes=[],
             strides=[],
-            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+            ip=InsertionPoint.at_block_terminator(middle_loop.body),
         )
         b_fifo_slice_out = memref_d.SubViewOp(
             source=B_fifo.result,
             result=result,
-            static_offsets=[ShapedType.get_dynamic_size(), ShapedType.get_dynamic_size(), 0],
+            static_offsets=[
+                ShapedType.get_dynamic_size(),
+                ShapedType.get_dynamic_size(),
+                0,
+            ],
             static_sizes=[1, 1, k_size],
             static_strides=[1] * 3,
             offsets=[iv_j, i_plus_one],
             sizes=[],
             strides=[],
-            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+            ip=InsertionPoint.at_block_terminator(middle_loop.body),
         )
 
         func_d.CallOp(
@@ -1214,16 +1303,15 @@ class Schedule:
             FlatSymbolRefAttr.get("PE_kernel"),
             [
                 a_fifo_slice_in.result,
-                b_fifo_slice_in.result, 
+                b_fifo_slice_in.result,
                 a_fifo_slice_out.result,
                 b_fifo_slice_out.result,
                 func.arguments[2],
                 outer_loop.induction_variable,
-                middle_loop.induction_variable
+                middle_loop.induction_variable,
             ],
-            ip=InsertionPoint.at_block_terminator(middle_loop.body)
+            ip=InsertionPoint.at_block_terminator(middle_loop.body),
         )
-
 
     @wrapped_apply
     def unfold(self, band_name, axes):
@@ -1317,7 +1405,9 @@ class Schedule:
                         )
                         dup_func.attributes["sym_name"] = StringAttr.get(new_name)
                         # extend self.func_args
-                        self.func_args[new_name] = self.func_args[FlatSymbolRefAttr(op.attributes["callee"]).value]
+                        self.func_args[new_name] = self.func_args[
+                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                        ]
                         op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
                         if old_func not in op_to_remove:
                             op_to_remove.append(old_func)

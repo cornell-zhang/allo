@@ -128,24 +128,25 @@ def mlir_to_allo_type(mlir_type):
             return UInt(width)
         else:
             return Int(width)
-            
+
     # Handle Index type
     if isinstance(mlir_type, IndexType):
         return Index()
-        
+
     # Handle Float types
     if isinstance(mlir_type, F32Type):
         return Float(32)
     if isinstance(mlir_type, F64Type):
         return Float(64)
-        
+
     # Handle Fixed/UFixed types
     if isinstance(mlir_type, allo_d.FixedType):
         return Fixed(mlir_type.width, mlir_type.frac)
     if isinstance(mlir_type, allo_d.UFixedType):
         return UFixed(mlir_type.width, mlir_type.frac)
-        
+
     raise TypeError(f"Unsupported MLIR type conversion: {mlir_type}")
+
 
 def get_mlir_dtype_from_str(dtype):
     if dtype.startswith("i"):
