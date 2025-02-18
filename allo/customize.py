@@ -131,7 +131,7 @@ class Schedule:
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
         if func_args:
-            for func_name, args in func_args.items():
+            for func_name, _ in func_args.items():
                 if func_name not in self.func_args:
                     self.func_args[func_name] = []
         self.systolic = self.check_systolic()
@@ -459,7 +459,7 @@ class Schedule:
             return self.buffer_at_systolic(target, axis)
 
         with self.module.context, Location.unknown():
-            res = self.buffer_at_regular(target, axis)
+            self.buffer_at_regular(target, axis)
         _mlir_lower_pipeline(self.module)
         # Remove previous Python-C++ references
         self.module.context._clear_live_operations()
@@ -474,7 +474,6 @@ class Schedule:
         self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
         # Record primitive sequences
         self.primitive_sequences.append(("buffer_at", [target, axis], None))
-        return res
 
     def buffer_at_systolic(self, target, axis):
         """
@@ -761,6 +760,7 @@ class Schedule:
         """
         This function checks if there's only one function and it has only one three-level perfect loop.
         """
+        # pylint: disable=too-many-nested-blocks
         if len(self.module.body.operations) == 1:
             gemm_func = self.module.body.operations[0]
             if len(gemm_func.body.blocks[0].operations) == 2:
@@ -781,6 +781,7 @@ class Schedule:
                                     return True
         return False
 
+    # pylint: disable=all
     def prepare_systolic(self, band_name):
         """
         This function outlines the k loop and builds the load/drain loops.
@@ -826,9 +827,9 @@ class Schedule:
         load_ops = []
         for op in inner_loop.body.operations:
             # Check for integer arithmetic
-            if isinstance(op, arith_d.AddIOp) or isinstance(op, arith_d.AddFOp):
+            if isinstance(op, (arith_d.AddIOp, arith_d.AddFOp)):
                 add_ops.append(op)
-            elif isinstance(op, arith_d.MulIOp) or isinstance(op, arith_d.MulFOp):
+            elif isinstance(op, (arith_d.MulIOp, arith_d.MulFOp)):
                 mul_ops.append(op)
             elif isinstance(op, affine_d.AffineLoadOp):
                 load_ops.append(op)

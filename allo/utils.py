@@ -126,8 +126,7 @@ def mlir_to_allo_type(mlir_type):
         width = mlir_type.width
         if mlir_type.is_unsigned:
             return UInt(width)
-        else:
-            return Int(width)
+        return Int(width)
 
     # Handle Index type
     if isinstance(mlir_type, IndexType):
