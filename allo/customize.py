@@ -473,7 +473,7 @@ class Schedule:
         # Update insertion point
         self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
         # Record primitive sequences
-        self.primitive_sequences.append(("buffer_at", [target, axis], None))
+        self.primitive_sequences.append(("buffer_at", [target, axis], {}))
 
     def buffer_at_systolic(self, target, axis):
         """
@@ -762,23 +762,24 @@ class Schedule:
         """
         # pylint: disable=too-many-nested-blocks
         if len(self.module.body.operations) == 1:
-            gemm_func = self.module.body.operations[0]
-            if len(gemm_func.body.blocks[0].operations) == 2:
-                if isinstance(
-                    gemm_func.body.blocks[0].operations[0], affine_d.AffineForOp
-                ):
-                    affine_for_op = gemm_func.body.blocks[0].operations[0]
-                    if len(affine_for_op.body.operations) == 2:
-                        if isinstance(
-                            affine_for_op.body.operations[0], affine_d.AffineForOp
-                        ):
-                            affine_for_op = affine_for_op.body.operations[0]
-                            if len(affine_for_op.body.operations) == 2:
-                                if isinstance(
-                                    affine_for_op.body.operations[0],
-                                    affine_d.AffineForOp,
-                                ):
-                                    return True
+            if self.module.body.operations[0].name == "gemm":
+                gemm_func = self.module.body.operations[0]
+                if len(gemm_func.body.blocks[0].operations) == 2:
+                    if isinstance(
+                        gemm_func.body.blocks[0].operations[0], affine_d.AffineForOp
+                    ):
+                        affine_for_op = gemm_func.body.blocks[0].operations[0]
+                        if len(affine_for_op.body.operations) == 2:
+                            if isinstance(
+                                affine_for_op.body.operations[0], affine_d.AffineForOp
+                            ):
+                                affine_for_op = affine_for_op.body.operations[0]
+                                if len(affine_for_op.body.operations) == 2:
+                                    if isinstance(
+                                        affine_for_op.body.operations[0],
+                                        affine_d.AffineForOp,
+                                    ):
+                                        return True
         return False
 
     # pylint: disable=all
