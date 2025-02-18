@@ -441,6 +441,37 @@ class Schedule:
         memref_type = MemRefType.get((1,), F32Type.get())
         allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
 
+
+    def buffer_at_systolic(self, target, axis):
+        buff_name = target.name
+        _, _, target = find_buffer(self.module, target, self.func_args)
+        func, axis = self._get_func_and_axis(axis)
+        band_name, axis = find_loop_in_bands(func, axis)
+        band = self._find_band(band_name, func)
+        loops = list(band)
+        outer_loop = loops[0][1].loop
+        middle_loop = loops[1][1].loop # Middle loop 
+        inner_loop = loops[-1][1].loop # Last/innermost loop
+        i_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(outer_loop.attributes["upperBoundMap"]))[0]
+            )
+        j_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(middle_loop.attributes["upperBoundMap"]))[0]
+            )
+        k_size = int(
+                re.findall(r"affine_map<\(\) -> \(([0-9]*)\)>", str(inner_loop.attributes["upperBoundMap"]))[0]
+            )
+        load_type = MemRefType(target.result.type).element_type
+        with self.module.context, Location.unknown():
+            ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+            fifo_memref_type = MemRefType.get([i_size, j_size + 1, k_size], load_type)
+            fifo_memref = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+            fifo_memref.attributes["name"] = StringAttr.get(f"{buff_name}_fifo")
+        fifo_mock_buffer = MockBuffer(func.name.value, f"{buff_name}_fifo")
+        fifo_mock_buffer.result = fifo_memref.result
+        setattr(self, f"{buff_name}_fifo", fifo_mock_buffer)
+        return fifo_mock_buffer
+
     @wrapped_apply
     def reshape(self, target, shape):
         """
@@ -862,37 +893,42 @@ class Schedule:
         ### Create load loop
 
         # Set insertion point to beginning of function body
-        ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+        # ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+
+        ip = InsertionPoint(outer_loop)
 
         # Create memref types for FIFOs and drains
         fifo_memref_type = MemRefType.get([i_size, j_size + 1, k_size], load_type)
         drain_memref_type = MemRefType.get([k_size], load_type)
 
         # Create the memrefs
-        A_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
-        B_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+        # A_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+        # B_fifo = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+        A_fifo = self.A_fifo
+        B_fifo = self.B_fifo
+        # Move A_fifo, B_fifo's op to the beginning of the function body block[0]
         A_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
         B_drain = memref_d.AllocOp(drain_memref_type, [], [], ip=ip)
 
         # After creating the AllocOps, add name attributes
-        A_fifo.attributes["name"] = StringAttr.get("A_fifo")
-        B_fifo.attributes["name"] = StringAttr.get("B_fifo")
+        # A_fifo.attributes["name"] = StringAttr.get("A_fifo")
+        # B_fifo.attributes["name"] = StringAttr.get("B_fifo")
         A_drain.attributes["name"] = StringAttr.get("A_drain")
         B_drain.attributes["name"] = StringAttr.get("B_drain")
 
         # Then create and attach MockBuffers as you already have
-        A_fifo_mock_buffer = MockBuffer(func.name.value, "A_fifo")
-        B_fifo_mock_buffer = MockBuffer(func.name.value, "B_fifo")
+        # A_fifo_mock_buffer = MockBuffer(func.name.value, "A_fifo")
+        # B_fifo_mock_buffer = MockBuffer(func.name.value, "B_fifo")
         A_drain_mock_buffer = MockBuffer(func.name.value, "A_drain") 
         B_drain_mock_buffer = MockBuffer(func.name.value, "B_drain")
 
-        A_fifo_mock_buffer.op = A_fifo
-        B_fifo_mock_buffer.op = B_fifo
+        # A_fifo_mock_buffer.op = A_fifo
+        # B_fifo_mock_buffer.op = B_fifo
         A_drain_mock_buffer.op = A_drain
         B_drain_mock_buffer.op = B_drain
 
-        setattr(self, "A_fifo", MockBuffer(func.name.value, "A_fifo"))
-        setattr(self, "B_fifo", MockBuffer(func.name.value, "B_fifo"))
+        # setattr(self, "A_fifo", MockBuffer(func.name.value, "A_fifo"))
+        # setattr(self, "B_fifo", MockBuffer(func.name.value, "B_fifo"))
         setattr(self, "A_drain", MockBuffer(func.name.value, "A_drain"))
         setattr(self, "B_drain", MockBuffer(func.name.value, "B_drain"))
 
