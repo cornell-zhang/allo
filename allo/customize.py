@@ -762,7 +762,7 @@ class Schedule:
         """
         # pylint: disable=too-many-nested-blocks
         if len(self.module.body.operations) == 1:
-            if self.module.body.operations[0].name == "gemm":
+            if self.module.body.operations[0].name.value == "gemm":
                 gemm_func = self.module.body.operations[0]
                 if len(gemm_func.body.blocks[0].operations) == 2:
                     if isinstance(
