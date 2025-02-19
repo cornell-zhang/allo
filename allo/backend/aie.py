@@ -349,9 +349,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
         code += format_str(
             f"aie.objectfifo @out_p0({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
         )
-        code += format_str(
-            f"aie.objectfifo.link [@out_p0] -> [@out_sh]([] [])"
-        )
+        code += format_str(f"aie.objectfifo.link [@out_p0] -> [@out_sh]([] [])")
     # create core computation
     for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
