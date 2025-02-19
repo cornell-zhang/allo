@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=consider-using-with, bad-builtin, no-name-in-module
+# pylint: disable=consider-using-with, bad-builtin, no-name-in-module, too-many-branches
 
 import os
 import subprocess
