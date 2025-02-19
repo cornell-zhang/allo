@@ -584,9 +584,7 @@ class AIEModule:
                 update_func_op_arg_types(func_op, input_args, shapes, ctx)
         lower_tensor_to_memref(self.module)
         buf_dicts = record_local_buffer(self.module)
-        code = codegen_aie_mlir(
-            self.module, input_args, func_sizes, buf_dicts
-        )
+        code = codegen_aie_mlir(self.module, input_args, func_sizes, buf_dicts)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
