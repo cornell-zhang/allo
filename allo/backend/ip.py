@@ -118,6 +118,7 @@ class IPModule:
             if len(arg_shape) == 1:
                 in_ptrs.append(f"p_arg{i}")
             else:
+                # pylint: disable=bad-builtin
                 tail_shape = "[" + "][".join(map(str, arg_shape[1:])) + "]"
                 out_str += f"  {resolved_type} (*p_arg{i}_nd){tail_shape} = "
                 out_str += (
@@ -186,6 +187,7 @@ class IPModule:
             if len(arg_shape) == 1:
                 in_ptrs.append(f"in{i}_ptr")
             else:
+                # pylint: disable=bad-builtin
                 tail_shape = "[" + "][".join(map(str, arg_shape[1:])) + "]"
                 out_str += f"  {resolved_type} (*in{i}_nd){tail_shape} = "
                 out_str += (
