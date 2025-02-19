@@ -41,6 +41,26 @@ def test_extern_c():
     print("Passed!")
 
 
+def test_4d():
+    mod = allo.IPModule(
+        top="vadd_4d",
+        headers=["vadd_4d.h"],
+        impls=["vadd_4d.cpp"],
+        signature=[
+            "float32[4, 4, 16, 16]",
+            "float32[4, 4, 16, 16]",
+            "float32[4, 4, 16, 16]",
+        ],
+        link_hls=False,
+    )
+    a = np.random.random((4, 4, 16, 16)).astype(np.float32)
+    b = np.random.random((4, 4, 16, 16)).astype(np.float32)
+    c = np.zeros((4, 4, 16, 16)).astype(np.float32)
+    mod(a, b, c)
+    np.testing.assert_allclose(a + b, c, atol=1e-6)
+    print("Passed!")
+
+
 def test_shared_lib():
     vadd = allo.IPModule(
         top="vadd",

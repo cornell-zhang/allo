@@ -113,16 +113,17 @@ class IPModule:
             if len(arg_shape) == 0:
                 in_ptrs.append(f"p_arg{i}")
                 continue
-            if len(arg_shape) > 2:
-                raise RuntimeError("Only support scalar, 1D and 2D arrays for now")
             resolved_type = allo2c_type.get(arg_type)
             out_str += f"  {resolved_type} *p_arg{i} = ({resolved_type} *)buf{i}.ptr;\n"
             if len(arg_shape) == 1:
                 in_ptrs.append(f"p_arg{i}")
             else:
-                out_str += f"  {resolved_type} (*p_arg{i}_2d)[{arg_shape[-1]}] = "
-                out_str += f"reinterpret_cast<{resolved_type} (*)[{arg_shape[-1]}]>(p_arg{i});\n"
-                in_ptrs.append(f"p_arg{i}_2d")
+                tail_shape = "[" + "][".join(map(str, arg_shape[1:])) + "]"
+                out_str += f"  {resolved_type} (*p_arg{i}_nd){tail_shape} = "
+                out_str += (
+                    f"reinterpret_cast<{resolved_type} (*){tail_shape}>(p_arg{i});\n"
+                )
+                in_ptrs.append(f"p_arg{i}_nd")
         # function call
         out_str += "\n"
         out_str += f"  {self.top}({', '.join(in_ptrs)});\n"
@@ -175,8 +176,6 @@ class IPModule:
         out_str += f'extern "C" void {self.lib_name}({unranked_memrefs_str}) {{\n'
         in_ptrs = []
         for i, (arg_type, arg_shape) in enumerate(self.args):
-            if len(arg_shape) > 2:
-                raise RuntimeError("Only support 1D and 2D arrays for now")
             if len(arg_shape) == 0:  # scalar
                 in_ptrs.append(f"in{i}")
                 continue
@@ -187,9 +186,12 @@ class IPModule:
             if len(arg_shape) == 1:
                 in_ptrs.append(f"in{i}_ptr")
             else:
-                out_str += f"  {resolved_type} (*in{i}_2d)[{arg_shape[-1]}] = "
-                out_str += f"reinterpret_cast<{resolved_type} (*)[{arg_shape[-1]}]>(in{i}_ptr);\n"
-                in_ptrs.append(f"in{i}_2d")
+                tail_shape = "[" + "][".join(map(str, arg_shape[1:])) + "]"
+                out_str += f"  {resolved_type} (*in{i}_nd){tail_shape} = "
+                out_str += (
+                    f"reinterpret_cast<{resolved_type} (*){tail_shape}>(in{i}_ptr);\n"
+                )
+                in_ptrs.append(f"in{i}_nd")
         # Call library function
         out_str += f"  {self.top}({', '.join(in_ptrs)});\n"
         out_str += "}\n"
