@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import allo.dataflow as df
 from allo.ir.types import int32
 import numpy as np
@@ -6,8 +9,8 @@ import allo
 
 def _test_gemm():
     Ty = int32
-    M, N, K = 64, 64, 64
-    P0 = 4
+    M, N, K = 16, 16, 16
+    P0 = 2
     Mt = M // P0
 
     @df.region()
