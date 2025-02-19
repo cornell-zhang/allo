@@ -279,17 +279,17 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
         func_strs[pid] = func_str
     # create object fifos
     # connect each argument to a separate mem tile
+    linkings = [False] * len(input_args)
     for i, (in_type, orig_in_type, shape, orig_shape) in enumerate(input_args[:-1]):
-        linking = False
         total_sizes = [0] * len(orig_shape)
         for sizes in func_sizes:
             for dim in range(len(orig_shape)):
                 total_sizes[dim] += sizes[i][dim]
         for dim in range(len(orig_shape)):
             if total_sizes[dim] <= orig_shape[dim]:
-                linking = True
+                linkings[i] = True
                 break
-        if linking:
+        if linkings[i]:
             # depth=2 means double buffer
             code += format_str(
                 f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
@@ -318,16 +318,15 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
             )
     out_id = len(input_args) - 1
     out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
-    linking = False
     total_sizes = [0] * len(orig_out_shape)
     for sizes in func_sizes:
         for dim in range(len(orig_out_shape)):
             total_sizes[dim] += sizes[-1][dim]
     for dim in range(len(orig_out_shape)):
         if total_sizes[dim] <= orig_out_shape[dim]:
-            linking = True
+            linkings[-1] = True
             break
-    if linking:
+    if linkings[-1]:
         # output uses tile_mem0
         for pid in range(pe_size):
             code += format_str(
@@ -368,7 +367,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
             with format_code(indent=8):
                 for i, (in_type, _, shape, _) in enumerate(input_args[:-1]):
                     code += format_str(
-                        f"%fifo{i} = aie.objectfifo.acquire @in{i}_p{pid}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
+                        f"%fifo{i} = aie.objectfifo.acquire @in{i}_p{pid if linkings[i] else 0}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
                     )
                     code += format_str(
                         f"%local{i} = aie.objectfifo.subview.access %fifo{i}[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
@@ -386,7 +385,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
                         code += format_str(line, strip=False)
                 for i in range(len(input_args[:-1])):
                     code += format_str(
-                        f"aie.objectfifo.release @in{i}_p{pid}(Consume, 1)"
+                        f"aie.objectfifo.release @in{i}_p{pid if linkings[i] else 0}(Consume, 1)"
                     )
                 code += format_str(f"aie.objectfifo.release @out_p{pid}(Produce, 1)")
             code += format_str("}")
@@ -406,7 +405,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
             # (x, y, memref[offset][size][stride])
             # issue_token: MM2S-false, S2MM-true
             if len(shape) == 1:
-                size_n_stride = f"[1, 1, 1, {shape[0] * pe_size}][0, 0, 0, 1]"
+                size_n_stride = f"[1, 1, 1, {shape[0] * (pe_size if linkings[i] else 1)}][0, 0, 0, 1]"
             else:
                 size_n_stride = (
                     f"[1, 1, {shape[0] * pe_size}, {shape[1]}][0, 0, {shape[1]}, 1]"
