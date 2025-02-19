@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=consider-using-with, bad-builtin
+# pylint: disable=consider-using-with, bad-builtin, no-name-in-module
 
 import os
 import subprocess
@@ -227,7 +227,7 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_dicts):
+def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     mem_tile_size = 2 if len(input_args) > 2 else 1
@@ -287,8 +287,8 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
         for sizes in func_sizes:
             for dim in range(len(orig_shape)):
                 total_sizes[dim] += sizes[i][dim]
-        for dim in range(len(orig_shape)):
-            if total_sizes[dim] <= orig_shape[dim]:
+        for dim, orig_len in enumerate(orig_shape):
+            if total_sizes[dim] <= orig_len:
                 linkings[i] = True
                 break
         if linkings[i]:
@@ -322,8 +322,8 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
     for sizes in func_sizes:
         for dim in range(len(orig_out_shape)):
             total_sizes[dim] += sizes[-1][dim]
-    for dim in range(len(orig_out_shape)):
-        if total_sizes[dim] <= orig_out_shape[dim]:
+    for dim, orig_out_len in enumerate(orig_out_shape):
+        if total_sizes[dim] <= orig_out_len:
             linkings[-1] = True
             break
     if linkings[-1]:
@@ -349,7 +349,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
         code += format_str(
             f"aie.objectfifo @out_p0({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
         )
-        code += format_str(f"aie.objectfifo.link [@out_p0] -> [@out_sh]([] [])")
+        code += format_str("aie.objectfifo.link [@out_p0] -> [@out_sh]([] [])")
     # create core computation
     for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
@@ -430,7 +430,6 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
 def reindex_tensor_access(mod):
     ctx = mod.context
     funcs = list(mod.body.operations)[:-1]
-    pe_size = len(funcs)
     # func -> arg -> dim
     func_lower_bounds = []
     func_sizes = []
@@ -445,7 +444,7 @@ def reindex_tensor_access(mod):
         sizes = [[0 for _ in range(len(arg_type.shape))] for arg_type in arg_types]
         for block in func.regions[0].blocks:
             for op in block.operations:
-                if op.operation.name in ["tensor.extract_slice", "tensor.insert_slice"]:
+                if op.operation.name in {"tensor.extract_slice", "tensor.insert_slice"}:
                     operand_idx = (
                         0 if op.operation.name == "tensor.extract_slice" else 1
                     )
@@ -550,7 +549,7 @@ def lower_tensor_to_memref(mod):
 def record_local_buffer(mod):
     buf_dicts = []
     funcs = list(mod.body.operations)[:-1]
-    for pi, func in enumerate(funcs):
+    for func in funcs:
         buf_dict = {}
         for block in func.regions[0].blocks:
             for op in block.operations:
@@ -578,7 +577,7 @@ class AIEModule:
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         self.inputs, self.outputs = get_func_inputs_outputs(self.kernel_func)
         input_args = self.inputs + self.outputs
-        func_lower_bounds, func_sizes = reindex_tensor_access(self.module)
+        _, func_sizes = reindex_tensor_access(self.module)
         with self.module.context as ctx, Location.unknown():
             for i, func_op in enumerate(list(self.module.body.operations)[:-1]):
                 shapes = func_sizes[i]
@@ -586,7 +585,7 @@ class AIEModule:
         lower_tensor_to_memref(self.module)
         buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(
-            self.module, input_args, func_lower_bounds, func_sizes, buf_dicts
+            self.module, input_args, func_sizes, buf_dicts
         )
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:

@@ -1027,7 +1027,7 @@ class ASTTransformer(ASTBuilder):
                     ).result
                     sizes.append(size)
                     continue
-                elif upper is None:
+                if upper is None:
                     static_sizes.append(ShapedType.get_dynamic_size())
                     upper_expr = build_stmt(ctx, index.upper)
                     size_expr = tensor_d.FloorDivSOp(

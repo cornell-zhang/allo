@@ -427,8 +427,7 @@ def get_element_type_from_str(element_type_str, context):
     if element_type_str.startswith("f"):
         bits = int(element_type_str[1:])
         return F32Type.get(context) if bits == 32 else F64Type.get(context)
-    elif element_type_str.startswith("i"):
+    if element_type_str.startswith("i"):
         bits = int(element_type_str[1:])
         return IntegerType.get_signless(bits, context)
-    else:
-        raise ValueError(f"unknown element_type_str: {element_type_str}")
+    raise ValueError(f"unknown element_type_str: {element_type_str}")
