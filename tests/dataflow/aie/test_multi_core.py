@@ -22,7 +22,7 @@ def _test_vector_scalar_add():
         @df.kernel(mapping=[P0])
         def core(A: Ty[M], B: Ty[M]):
             pi = df.get_pid()
-            B[pi * Mt: (pi + 1) * Mt] = allo.add(A[pi * Mt: (pi + 1) * Mt], 1)
+            B[pi * Mt : (pi + 1) * Mt] = allo.add(A[pi * Mt : (pi + 1) * Mt], 1)
             return
 
     mod = df.build(top, target="aie", enable_tensor=True)
@@ -48,7 +48,9 @@ def _test_vector_vector_add():
         @df.kernel(mapping=[P0])
         def core(A: Ty[M], B: Ty[M], C: Ty[M]):
             pi = df.get_pid()
-            C[pi * Mt: (pi + 1) * Mt] = allo.add(A[pi * Mt: (pi + 1) * Mt], B[pi * Mt: (pi + 1) * Mt])
+            C[pi * Mt : (pi + 1) * Mt] = allo.add(
+                A[pi * Mt : (pi + 1) * Mt], B[pi * Mt : (pi + 1) * Mt]
+            )
 
     mod = df.build(top, target="aie", enable_tensor=True)
     A = np.random.randint(0, 100, M).astype(np.int32)

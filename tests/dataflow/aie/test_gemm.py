@@ -18,9 +18,10 @@ def _test_gemm():
         @df.kernel(mapping=[P0])
         def gemm(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
             pi = df.get_pid()
-            C[pi * Mt: (pi + 1) * Mt, :] = allo.matmul(
-                A[pi * Mt: (pi + 1) * Mt, :], B)
-            
+            C[pi * Mt : (pi + 1) * Mt, :] = allo.matmul(
+                A[pi * Mt : (pi + 1) * Mt, :], B
+            )
+
     mod = df.build(top, target="aie", enable_tensor=True)
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
@@ -28,7 +29,7 @@ def _test_gemm():
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
-    
-    
+
+
 if __name__ == "__main__":
     _test_gemm()

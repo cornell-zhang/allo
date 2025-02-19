@@ -19,11 +19,13 @@ from .._mlir.ir import (
 )
 from .._mlir.dialects import func as func_d
 from .._mlir.passmanager import PassManager as mlir_pass_manager
-from .._mlir.dialects import allo as allo_d
 
 from .vitis import read_tensor_from_file
-from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_dtype_and_shape_from_type, get_element_type_from_str
+from ..utils import (
+    get_func_inputs_outputs,
+    get_dtype_and_shape_from_type,
+    get_element_type_from_str,
+)
 from .utils import format_str, format_code
 from .vitis import ctype_map
 
@@ -271,7 +273,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
         pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
         func_str = re.sub(pattern_alloc, "", func_str)
         # replace new buffer name
-        pattern_boundary = r'(?<![\w.]){old}(?![\w.])'
+        pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
         for name, new_name in buf_name_dict.items():
             escaped_name = re.escape(name)
             pattern = pattern_boundary.format(old=escaped_name)
@@ -313,9 +315,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_lower_bounds, func_sizes, buf_di
             code += format_str(
                 f"aie.objectfifo @in{i}_p0(%tile_mem{i}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
             )
-            code += format_str(
-                f"aie.objectfifo.link [@in_sh{i}] -> [@in{i}_p0]([] [])"
-            )
+            code += format_str(f"aie.objectfifo.link [@in_sh{i}] -> [@in{i}_p0]([] [])")
     out_id = len(input_args) - 1
     out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
     total_sizes = [0] * len(orig_out_shape)
@@ -441,18 +441,24 @@ def reindex_tensor_access(mod):
         args = entry_block.arguments
         arg_types = args.types
         # TODO: might need some specialization for scalar input arg
-        lower_bounds = [[float("inf") for _ in range(len(arg_type.shape))] for arg_type in arg_types]
+        lower_bounds = [
+            [float("inf") for _ in range(len(arg_type.shape))] for arg_type in arg_types
+        ]
         sizes = [[0 for _ in range(len(arg_type.shape))] for arg_type in arg_types]
         for block in func.regions[0].blocks:
             for op in block.operations:
                 if op.operation.name in ["tensor.extract_slice", "tensor.insert_slice"]:
-                    operand_idx = 0 if op.operation.name == "tensor.extract_slice" else 1
+                    operand_idx = (
+                        0 if op.operation.name == "tensor.extract_slice" else 1
+                    )
                     if op.operands[operand_idx] not in args:
                         continue
                     index = list(args).index(op.operands[operand_idx])
                     static_offsets = op.attributes["static_offsets"]
                     static_sizes = op.attributes["static_sizes"]
-                    for i, (offset, size) in enumerate(zip(static_offsets, static_sizes)):
+                    for i, (offset, size) in enumerate(
+                        zip(static_offsets, static_sizes)
+                    ):
                         lower_bounds[index][i] = min(lower_bounds[index][i], offset)
                         sizes[index][i] = max(sizes[index][i], size)
         for i, lower_bound in enumerate(lower_bounds):
@@ -465,7 +471,7 @@ def reindex_tensor_access(mod):
                 else:
                     lower_bounds[i] = [0] * len(lower_bound)
                     sizes[i] = [0] * len(lower_bound)
-                    
+
         func_lower_bounds.append(lower_bounds)
         func_sizes.append(sizes)
 
@@ -486,9 +492,13 @@ def reindex_tensor_access(mod):
                         # TODO: need to support multi-dim mappings
                         # diff = pi * (op.operands[0].type.shape[0] // pe_size)
                         new_offset = offset - lower_bounds[index][i]
-                        new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
+                        new_offset_attr = IntegerAttr.get(
+                            IntegerType.get_signless(64, ctx), new_offset
+                        )
                         new_offsets.append(new_offset_attr)
-                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
+                        new_offsets, ctx
+                    )
                 elif op.operation.name == "tensor.insert_slice":
                     if op.operands[1] not in args:
                         continue
@@ -499,16 +509,19 @@ def reindex_tensor_access(mod):
                         # TODO: need to support multi-dim mappings
                         # diff = pi * (op.operands[1].type.shape[0] // pe_size)
                         new_offset = offset - lower_bounds[index][i]
-                        new_offset_attr = IntegerAttr.get(IntegerType.get_signless(64, ctx), new_offset)
+                        new_offset_attr = IntegerAttr.get(
+                            IntegerType.get_signless(64, ctx), new_offset
+                        )
                         new_offsets.append(new_offset_attr)
-                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(new_offsets, ctx)
+                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
+                        new_offsets, ctx
+                    )
     return func_lower_bounds, func_sizes
 
 
-def update_func_op_arg_types(func_op: func_d.FuncOp, 
-                             input_args, 
-                             new_shapes,
-                             context: Context):
+def update_func_op_arg_types(
+    func_op: func_d.FuncOp, input_args, new_shapes, context: Context
+):
     old_func_type = func_op.function_type
     old_result_types = old_func_type.value.results
     new_input_types = []
@@ -522,7 +535,7 @@ def update_func_op_arg_types(func_op: func_d.FuncOp,
     entry_block = func_op.entry_block
     for i, block_arg in enumerate(entry_block.arguments):
         block_arg.set_type(new_input_types[i])
-                    
+
 
 def lower_tensor_to_memref(mod):
     passes = [
@@ -574,7 +587,9 @@ class AIEModule:
                 update_func_op_arg_types(func_op, input_args, shapes, ctx)
         lower_tensor_to_memref(self.module)
         buf_dicts = record_local_buffer(self.module)
-        code = codegen_aie_mlir(self.module, input_args, func_lower_bounds, func_sizes, buf_dicts)
+        code = codegen_aie_mlir(
+            self.module, input_args, func_lower_bounds, func_sizes, buf_dicts
+        )
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)

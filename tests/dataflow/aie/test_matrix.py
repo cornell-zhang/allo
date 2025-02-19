@@ -18,7 +18,7 @@ def _test_matrix_scalar_add():
         @df.kernel(mapping=[P0])
         def core(A: Ty[M, N], B: Ty[M, N]):
             pi = df.get_pid()
-            B[pi * Mt: (pi + 1) * Mt, :] = allo.add(A[pi * Mt: (pi + 1) * Mt, :], 1)
+            B[pi * Mt : (pi + 1) * Mt, :] = allo.add(A[pi * Mt : (pi + 1) * Mt, :], 1)
 
     mod = df.build(top, target="aie", enable_tensor=True)
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
@@ -39,7 +39,9 @@ def _test_matrix_matrix_add():
         @df.kernel(mapping=[P0])
         def core(A: Ty[M, N], B: Ty[M, N], C: Ty[M, N]):
             pi = df.get_pid()
-            C[pi * Mt: (pi + 1) * Mt, :] = allo.add(A[pi * Mt: (pi + 1) * Mt, :], B[pi * Mt: (pi + 1) * Mt, :])
+            C[pi * Mt : (pi + 1) * Mt, :] = allo.add(
+                A[pi * Mt : (pi + 1) * Mt, :], B[pi * Mt : (pi + 1) * Mt, :]
+            )
 
     mod = df.build(top, target="aie", enable_tensor=True)
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)

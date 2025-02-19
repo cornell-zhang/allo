@@ -899,7 +899,9 @@ class TypeInferer(ASTVisitor):
         }:
             # Element-wise operation
             if op_name in {"add", "sub", "mul", "div"}:
-                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(ctx, new_args[0], new_args[1])
+                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+                    ctx, new_args[0], new_args[1]
+                )
             node.shape = final_shape
             node.dtype = new_args[0].dtype
             node.dims = (lhs_dims, rhs_dims)

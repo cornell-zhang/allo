@@ -424,10 +424,10 @@ def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
 
 
 def get_element_type_from_str(element_type_str, context):
-    if element_type_str.startswith('f'):
+    if element_type_str.startswith("f"):
         bits = int(element_type_str[1:])
         return F32Type.get(context) if bits == 32 else F64Type.get(context)
-    elif element_type_str.startswith('i'):
+    elif element_type_str.startswith("i"):
         bits = int(element_type_str[1:])
         return IntegerType.get_signless(bits, context)
     else:
