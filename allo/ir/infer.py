@@ -902,9 +902,11 @@ class TypeInferer(ASTVisitor):
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
                     ctx, new_args[0], new_args[1]
                 )
-            node.shape = final_shape
+                node.dims = (lhs_dims, rhs_dims)
+                node.shape = final_shape
+            else:
+                node.shape = new_args[0].shape
             node.dtype = new_args[0].dtype
-            node.dims = (lhs_dims, rhs_dims)
             return node
         if op_name in {"matmul", "bmm", "linear", "conv2d", "sumpool", "maxpool"}:
             argAshape = new_args[0].shape
