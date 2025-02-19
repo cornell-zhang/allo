@@ -50,19 +50,21 @@ def test_shared_lib():
         link_hls=False,
     )
 
-    def kernel(A: int32[32], B: int32[32]) -> int32[32]:
+    def top(A: int32[32], B: int32[32]) -> int32[32]:
         C: int32[32] = 0
         vadd(A, B, C)
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(top)
     print(s.module)
     mod = s.build()
     np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
     np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
-    print("Passed!")
+    print("Passed CPU simulation!")
+    s.build(target="vitis_hls", mode="csyn", project="vadd.prj")
+    print("Passed generating HLS project!")
 
 
 def test_scalar():
