@@ -421,3 +421,13 @@ def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
             ranked_memref_to_numpy(getattr(out_struct_ptr_ptr[0][0], f"memref{i}"))
         )
     return out_np_arrays
+
+
+def get_element_type_from_str(element_type_str, context):
+    if element_type_str.startswith("f"):
+        bits = int(element_type_str[1:])
+        return F32Type.get(context) if bits == 32 else F64Type.get(context)
+    if element_type_str.startswith("i"):
+        bits = int(element_type_str[1:])
+        return IntegerType.get_signless(bits, context)
+    raise ValueError(f"unknown element_type_str: {element_type_str}")

@@ -11,16 +11,19 @@ def _test_matrix_scalar_add():
     Ty = int32
     M, N = 64, 64
     P0 = 4
+    Mt = M // P0
 
-    @df.kernel(mapping=[P0])
-    def core(A: Ty[M, N], B: Ty[M, N]):
-        for i, j in allo.grid(M // P0, N):
-            B[i, j] = A[i, j] + 1
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M, N], B: Ty[M, N]):
+            pi = df.get_pid()
+            B[pi * Mt : (pi + 1) * Mt, :] = allo.add(A[pi * Mt : (pi + 1) * Mt, :], 1)
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.zeros((M, N)).astype(np.int32)
-    top(A, B)
+    mod(A, B)
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
@@ -29,17 +32,22 @@ def _test_matrix_matrix_add():
     Ty = int32
     M, N = 64, 64
     P0 = 4
+    Mt = M // P0
 
-    @df.kernel(mapping=[P0])
-    def core(A: Ty[M, N], B: Ty[M, N], C: Ty[M, N]):
-        for i, j in allo.grid(M // P0, N):
-            C[i, j] = A[i, j] + B[i, j]
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M, N], B: Ty[M, N], C: Ty[M, N]):
+            pi = df.get_pid()
+            C[pi * Mt : (pi + 1) * Mt, :] = allo.add(
+                A[pi * Mt : (pi + 1) * Mt, :], B[pi * Mt : (pi + 1) * Mt, :]
+            )
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.random.randint(0, 100, (M, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
-    top(A, B, C)
+    mod(A, B, C)
     np.testing.assert_allclose(C, A + B)
     print("PASSED!")
 

@@ -121,21 +121,22 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info):
+def _build_top(s, stream_info, enable_tensor):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
     """
     # remove unused kernel
-    passes = ["canonicalize"]
-    pipeline = f'builtin.module(func.func({",".join(passes)}))'
-    try:
-        with s.module.context:
-            mlir_pass_manager.parse(pipeline).run(s.module.operation)
-    except Exception as e:
-        print("Error: failed to run MLIR lower pipeline, printing module...")
-        print(s.module)
-        raise e
+    if not enable_tensor:
+        passes = ["canonicalize"]
+        pipeline = f'builtin.module(func.func({",".join(passes)}))'
+        try:
+            with s.module.context:
+                mlir_pass_manager.parse(pipeline).run(s.module.operation)
+        except Exception as e:
+            print("Error: failed to run MLIR lower pipeline, printing module...")
+            print(s.module)
+            raise e
     remove_unused_func_ops(s, stream_info.keys())
 
     # create argument mapping
@@ -237,11 +238,11 @@ def df_primitive_default(s):
     df_pipeline(s.module, rewind=True)
 
 
-def customize(func, opt_default=True):
+def customize(func, opt_default=True, enable_tensor=False):
     global_vars = get_global_vars(func)
-    s = _customize(func, global_vars=global_vars)
+    s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
     stream_info = move_stream_to_interface(s)
-    s = _build_top(s, stream_info)
+    s = _build_top(s, stream_info, enable_tensor)
 
     if opt_default:
         df_primitive_default(s)
@@ -257,16 +258,18 @@ def build(
     configs=None,
     wrap_io=True,
     opt_default=True,
+    enable_tensor=False,
 ):
     if target == "aie":
         global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars)
-        mapping = func.mapping
-        mod = AIEModule(s.module, s.top_func_name, project, mapping)
+        s = _customize(func, global_vars=global_vars, enable_tensor=True)
+        # stream_info = move_stream_to_interface(s)
+        # s = _build_top(s, stream_info, enable_tensor)
+        mod = AIEModule(s.module, s.top_func_name, project)
         mod.build()
         return mod
     # FPGA backend
-    s = customize(func, opt_default)
+    s = customize(func, opt_default, enable_tensor=enable_tensor)
     hls_mod = s.build(
         target=target,
         mode=mode,
