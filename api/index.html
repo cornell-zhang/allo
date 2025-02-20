@@ -180,7 +180,7 @@
 <h1>Schedule Primitives<a class="headerlink" href="#schedule-primitives" title="Link to this heading"><span>¶</span></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="allo.customize.Schedule">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">allo.customize.</span></span><span class="sig-name descname"><span class="pre">Schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_func</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">func_args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ip</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ext_libs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inst_list</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule" title="Link to this definition"><span>¶</span></a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">allo.customize.</span></span><span class="sig-name descname"><span class="pre">Schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_func</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">func_args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ip</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ext_libs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inst_list</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule" title="Link to this definition"><span>¶</span></a></dt>
 <dd><p><strong>Methods:</strong></p>
 <table class="autosummary longtable docutils align-default">
 <tbody>
@@ -199,8 +199,14 @@
 <tr class="row-odd"><td><p><a class="reference internal" href="#allo.customize.Schedule.partition" title="allo.customize.Schedule.partition"><code class="xref py py-obj docutils literal notranslate"><span class="pre">partition</span></code></a>(target[, partition_type, dim, factor])</p></td>
 <td><p>Partitions a given array, for example if the array is <cite>B</cite>, this would be <cite>&lt;schedule&gt;.B</cite>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#allo.customize.Schedule.buffer_at" title="allo.customize.Schedule.buffer_at"><code class="xref py py-obj docutils literal notranslate"><span class="pre">buffer_at</span></code></a>(target, axis)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#allo.customize.Schedule.buffer_at_regular" title="allo.customize.Schedule.buffer_at_regular"><code class="xref py py-obj docutils literal notranslate"><span class="pre">buffer_at_regular</span></code></a>(target, axis)</p></td>
 <td><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite> instead of immediately writing them to memory.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#allo.customize.Schedule.buffer_at" title="allo.customize.Schedule.buffer_at"><code class="xref py py-obj docutils literal notranslate"><span class="pre">buffer_at</span></code></a>(target, axis)</p></td>
+<td><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite> instead of immediately writing them to memory.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#allo.customize.Schedule.buffer_at_systolic" title="allo.customize.Schedule.buffer_at_systolic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">buffer_at_systolic</span></code></a>(target, axis)</p></td>
+<td><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite> instead of immediately writing them to memory in a systolic array.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#allo.customize.Schedule.reshape" title="allo.customize.Schedule.reshape"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reshape</span></code></a>(target, shape)</p></td>
 <td><p>Takes an array in the kernel, <cite>target</cite>, for example if the array is <cite>B</cite>, then would be <cite>target</cite> would be <cite>&lt;schedule&gt;.B</cite>, and reshapes it to tuple <cite>shape</cite>.</p></td>
@@ -299,10 +305,40 @@ complete: The original array is split into its individual elements. This corresp
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="allo.customize.Schedule.buffer_at_regular">
+<span class="sig-name descname"><span class="pre">buffer_at_regular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule.buffer_at_regular"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule.buffer_at_regular" title="Link to this definition"><span>¶</span></a></dt>
+<dd><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite>
+instead of immediately writing them to memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>allo.ir.utils.MockBuffer</em>) – An array written to in a loop.</p></li>
+<li><p><strong>axis</strong> (<em>str</em>) – The loop index whose body contains writes to target</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="allo.customize.Schedule.buffer_at">
 <span class="sig-name descname"><span class="pre">buffer_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule.buffer_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule.buffer_at" title="Link to this definition"><span>¶</span></a></dt>
 <dd><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite>
 instead of immediately writing them to memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>allo.ir.utils.MockBuffer</em>) – An array written to in a loop.</p></li>
+<li><p><strong>axis</strong> (<em>str</em>) – The loop index whose body contains writes to target</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="allo.customize.Schedule.buffer_at_systolic">
+<span class="sig-name descname"><span class="pre">buffer_at_systolic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/allo/customize.html#Schedule.buffer_at_systolic"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#allo.customize.Schedule.buffer_at_systolic" title="Link to this definition"><span>¶</span></a></dt>
+<dd><p>Creates a chip buffer to hold the values of <cite>target</cite> written to in loop with index <cite>axis</cite>
+instead of immediately writing them to memory in a systolic array.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -493,7 +529,9 @@ This schedule in <cite>self</cite> must be annotated if <cite>id</cite> is speci
 <li><a class="reference internal" href="#allo.customize.Schedule.unroll"><code class="docutils literal notranslate"><span class="pre">Schedule.unroll()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.fuse"><code class="docutils literal notranslate"><span class="pre">Schedule.fuse()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.partition"><code class="docutils literal notranslate"><span class="pre">Schedule.partition()</span></code></a></li>
+<li><a class="reference internal" href="#allo.customize.Schedule.buffer_at_regular"><code class="docutils literal notranslate"><span class="pre">Schedule.buffer_at_regular()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.buffer_at"><code class="docutils literal notranslate"><span class="pre">Schedule.buffer_at()</span></code></a></li>
+<li><a class="reference internal" href="#allo.customize.Schedule.buffer_at_systolic"><code class="docutils literal notranslate"><span class="pre">Schedule.buffer_at_systolic()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.reshape"><code class="docutils literal notranslate"><span class="pre">Schedule.reshape()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.pipeline"><code class="docutils literal notranslate"><span class="pre">Schedule.pipeline()</span></code></a></li>
 <li><a class="reference internal" href="#allo.customize.Schedule.parallel"><code class="docutils literal notranslate"><span class="pre">Schedule.parallel()</span></code></a></li>
@@ -538,7 +576,7 @@ This schedule in <cite>self</cite> must be annotated if <cite>id</cite> is speci
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2025, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.0.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>

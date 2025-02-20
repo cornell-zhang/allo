@@ -233,6 +233,11 @@
 <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">np_A</span> <span class="o">+</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
 </pre></div>
 </div>
+<p>Similar to other Allo kernels, we can also change the build target to invoke the HLS compiler to generate the hardware design with the external C++ kernel. Make sure you have installed Vitis environment before running the following code.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;csyn&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;vadd.prj&quot;</span><span class="p">)</span>
+<span class="n">mod</span><span class="p">()</span>
+</pre></div>
+</div>
 </section>
 
 
@@ -264,7 +269,7 @@
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2025, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.0.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
