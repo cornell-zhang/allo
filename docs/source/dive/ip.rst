@@ -86,3 +86,10 @@ Moreover, the IP module can also be called in a normal Allo kernel. In the follo
     np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
+
+Similar to other Allo kernels, we can also change the build target to invoke the HLS compiler to generate the hardware design with the external C++ kernel. Make sure you have installed Vitis environment before running the following code.
+
+.. code-block:: python
+
+    mod = s.build(target="vitis_hls", mode="csyn", project="vadd.prj")
+    mod()

@@ -1,29 +1,18 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
 
 from .. import dsl, template
 from ..ir.types import int4, int8, int16, int32, index, Int, UInt
 from ..ir.utils import MockBuffer
-from ..ir.transform import (
-    get_affine_loop_nests,
-    find_loop_in_bands,
-    find_buffer,
-    find_func_in_module,
-)
 
 from .._mlir.ir import (
-    Context,
-    Location,
     InsertionPoint,
     StringAttr,
-    UnitAttr,
     IndexType,
     MemRefType,
     FlatSymbolRefAttr,
     AffineMap,
     AffineMapAttr,
-    FunctionType,
     ShapedType,
 )
 from .._mlir.ir import Type as MLIRType
@@ -34,7 +23,7 @@ from .._mlir.dialects import (
     arith as arith_d,
     func as func_d,
 )
-from .._mlir.dialects.affine import AffineExpr, AffineDimExpr
+from .._mlir.dialects.affine import AffineExpr
 import re
 
 
@@ -245,7 +234,6 @@ def packed_systolic[
         for sj, si in dsl.grid(Nt, Mt // P, name="store_C_tile"):
             c: Int(TyC.bits * P) = 0
             for p in range(P):
-                # pylint: disable=unsupported-assignment-operation
                 c[p * TyC.bits : (p + 1) * TyC.bits] = local_C[si * P + p, sj]
             C[mi * Mt // P + si, ni * Nt + sj] = c
 
@@ -289,7 +277,6 @@ def packed_int8xint8_systolic[
             c0: Int(8 * P) = 0
             c1: Int(8 * P) = 0
             for p in range(P):
-                # pylint: disable=unsupported-assignment-operation
                 x: int32 = local_C[si * P + p, sj]
                 c0[p * 8 : (p + 1) * 8] = x[0:16]
                 c1[p * 8 : (p + 1) * 8] = x[16:32]
@@ -341,7 +328,6 @@ def check_systolic(sch):
     """
     This function checks if there's only one function and it has only one three-level perfect loop.
     """
-    # pylint: disable=too-many-nested-blocks
     if len(sch.module.body.operations) == 1:
         if sch.module.body.operations[0].name.value == "gemm":
             gemm_func = sch.module.body.operations[0]
