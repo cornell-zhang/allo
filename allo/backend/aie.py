@@ -259,7 +259,6 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
     code += format_str("%tile_shim = aie.tile(0, 0)")
     for mid in range(mem_tile_size):
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
-    # assert len(mapping) == 1, "Only support 1D mapping for now"
     # TODO: maybe use name of the function to support 2D?
     # number of function declaration except top
     funcs = list(mod.body.operations)[:-1]
@@ -304,7 +303,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
     # create object fifos
     # connect each argument to a separate mem tile
     """
-    linkings define the allocation strategy for each argument. Currently, there are only two options: True or False.
+    dist_allocs define the allocation strategy for each argument. Currently, there are only two options: True or False.
 
     - If True: The memory tile divides the memory of the argument and distributes it among all compute tiles using 
     `aie.objectfifo.link`. This is only feasible if the total memory consumed by all compute tiles does not exceed 
@@ -313,7 +312,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
 
     - If False: The memory tile assigns the entire memory of the argument to each compute tile.
     """
-    linkings = [False] * len(input_args)
+    dist_allocs = [False] * len(input_args)
     for i, (in_type, orig_in_type, shape, orig_shape) in enumerate(input_args[:-1]):
         total_sizes = [0] * len(orig_shape)
         for sizes in func_arg_sizes:
@@ -321,9 +320,9 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
                 total_sizes[dim] += sizes[i][dim]
         for dim, orig_len in enumerate(orig_shape):
             if total_sizes[dim] <= orig_len:
-                linkings[i] = True
+                dist_allocs[i] = True
                 break
-        if linkings[i]:
+        if dist_allocs[i]:
             # depth=2 means double buffer
             code += format_str(
                 f"aie.objectfifo @in_sh{i}(%tile_shim, {{%tile_mem{i}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
@@ -356,9 +355,9 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
             total_sizes[dim] += sizes[-1][dim]
     for dim, orig_out_len in enumerate(orig_out_shape):
         if total_sizes[dim] <= orig_out_len:
-            linkings[-1] = True
+            dist_allocs[-1] = True
             break
-    if linkings[-1]:
+    if dist_allocs[-1]:
         # output uses tile_mem0
         for pid in range(pe_size):
             code += format_str(
@@ -386,18 +385,18 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
     for pid, func_str in enumerate(func_strs):
         code += format_str(f"%core_0_{pid + 2} = aie.core(%tile_comp{pid}) {{")
         with format_code(indent=6):
-            code += format_str("%c1000 = arith.constant 0 : index")
-            code += format_str("%c1001 = arith.constant 1 : index")
+            code += format_str("%global_c0 = arith.constant 0 : index")
+            code += format_str("%global_c1 = arith.constant 1 : index")
             code += format_str(
                 "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
             )
             code += format_str(
-                "scf.for %arg0 = %c1000 to %c9223372036854775807 step %c1001 {"
+                "scf.for %arg0 = %global_c0 to %c9223372036854775807 step %global_c1 {"
             )
             with format_code(indent=8):
                 for i, (in_type, _, shape, _) in enumerate(input_args[:-1]):
                     code += format_str(
-                        f"%fifo{i} = aie.objectfifo.acquire @in{i}_p{pid if linkings[i] else 0}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
+                        f"%fifo{i} = aie.objectfifo.acquire @in{i}_p{pid if dist_allocs[i] else 0}(Consume, 1) : !aie.objectfifosubview<{in_type}>"
                     )
                     code += format_str(
                         f"%local{i} = aie.objectfifo.subview.access %fifo{i}[0] : !aie.objectfifosubview<{in_type}> -> {in_type}"
@@ -415,7 +414,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
                         code += format_str(line, strip=False)
                 for i in range(len(input_args[:-1])):
                     code += format_str(
-                        f"aie.objectfifo.release @in{i}_p{pid if linkings[i] else 0}(Consume, 1)"
+                        f"aie.objectfifo.release @in{i}_p{pid if dist_allocs[i] else 0}(Consume, 1)"
                     )
                 code += format_str(f"aie.objectfifo.release @out_p{pid}(Produce, 1)")
             code += format_str("}")
@@ -435,7 +434,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
             # (x, y, memref[offset][size][stride])
             # issue_token: MM2S-false, S2MM-true
             if len(shape) == 1:
-                size_n_stride = f"[1, 1, 1, {shape[0] * (pe_size if linkings[i] else 1)}][0, 0, 0, 1]"
+                size_n_stride = f"[1, 1, 1, {shape[0] * (pe_size if dist_allocs[i] else 1)}][0, 0, 0, 1]"
             else:
                 size_n_stride = (
                     f"[1, 1, {shape[0] * pe_size}, {shape[1]}][0, 0, {shape[1]}, 1]"
