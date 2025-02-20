@@ -22,7 +22,7 @@ def _test_gemm():
                 A[pi * Mt : (pi + 1) * Mt, :], B
             )
 
-    mod = df.build(top, target="aie", enable_tensor=True)
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)

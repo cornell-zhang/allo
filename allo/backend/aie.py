@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=consider-using-with, bad-builtin, no-name-in-module, too-many-branches
+# pylint: disable=consider-using-with, bad-builtin, no-name-in-module, too-many-branches, pointless-string-statement
 
 import os
 import subprocess
@@ -227,7 +227,29 @@ def codegen_host(input_args):
     return code
 
 
-def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
+def codegen_aie_mlir(mod, orig_input_args, func_arg_sizes, func_buf_dicts):
+    """
+    Generates MLIR-AIE code with MLIR module and extra information
+
+    Parameters
+    ----------
+    mod: allo._mlir.ir.Module
+        The MLIR module built by allo.
+
+    orig_input_args: List[Tuple[str, List[int]]]
+        The original types of the argument of the function.
+        Each element in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
+        For current version, we assume all function in the module have the same input arguments.
+
+    func_arg_sizes: List[List[List[int]]]
+        The actual size of each argument that each function will be using.
+        The first dim stands for each function, the second dim stands for each argument, the last dim stands for shape.
+
+    func_buf_dicts: List[Dict[str, Tuple[str, List[int]]]]
+        The local buffer each function creates.
+        Each function in the list is a dictionary, where the key is the name of the buffer, and the value is the type of
+        the element. e.g. ('i32', [16, 16]).
+    """
     input_args = orig_input_args.copy()
     code = format_str("module {", indent=0)
     mem_tile_size = 2 if len(input_args) > 2 else 1
@@ -245,7 +267,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
     buf_name_dicts = []
     for pid in range(pe_size):
         code += format_str(f"%tile_comp{pid} = aie.tile(0, {pid + 2})")
-        buf_dict = buf_dicts[pid]
+        buf_dict = func_buf_dicts[pid]
         buf_name_dict = {}
         for i, name in enumerate(buf_dict.keys()):
             tile_name = f"%tile_comp{pid}"
@@ -261,7 +283,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
     for j, (ele_type, orig_shape) in enumerate(input_args):
         orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
         # TODO: need to deal with different sizes for different funcs
-        shape = func_sizes[0][j]
+        shape = func_arg_sizes[0][j]
         ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
         input_args[j] = (ele_type, orig_ele_type, shape, orig_shape)
     func_strs = list(map(str, funcs))
@@ -281,10 +303,20 @@ def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
         func_strs[pid] = func_str
     # create object fifos
     # connect each argument to a separate mem tile
+    """
+    linkings define the allocation strategy for each argument. Currently, there are only two options: True or False.
+
+    - If True: The memory tile divides the memory of the argument and distributes it among all compute tiles using 
+    `aie.objectfifo.link`. This is only feasible if the total memory consumed by all compute tiles does not exceed 
+    the original memory allocated to the argument.  
+    Example: If there are 3 compute tiles, each consuming 1/3 of matrix A, this strategy can be applied.
+
+    - If False: The memory tile assigns the entire memory of the argument to each compute tile.
+    """
     linkings = [False] * len(input_args)
     for i, (in_type, orig_in_type, shape, orig_shape) in enumerate(input_args[:-1]):
         total_sizes = [0] * len(orig_shape)
-        for sizes in func_sizes:
+        for sizes in func_arg_sizes:
             for dim in range(len(orig_shape)):
                 total_sizes[dim] += sizes[i][dim]
         for dim, orig_len in enumerate(orig_shape):
@@ -319,7 +351,7 @@ def codegen_aie_mlir(mod, orig_input_args, func_sizes, buf_dicts):
     out_id = len(input_args) - 1
     out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
     total_sizes = [0] * len(orig_out_shape)
-    for sizes in func_sizes:
+    for sizes in func_arg_sizes:
         for dim in range(len(orig_out_shape)):
             total_sizes[dim] += sizes[-1][dim]
     for dim, orig_out_len in enumerate(orig_out_shape):
@@ -431,8 +463,8 @@ def reindex_tensor_access(mod):
     ctx = mod.context
     funcs = list(mod.body.operations)[:-1]
     # func -> arg -> dim
-    func_lower_bounds = []
-    func_sizes = []
+    func_arg_lower_bounds = []
+    func_arg_sizes = []
     for pi, func in enumerate(funcs):
         entry_block = func.regions[0].blocks[0]
         args = entry_block.arguments
@@ -469,14 +501,14 @@ def reindex_tensor_access(mod):
                     lower_bounds[i] = [0] * len(lower_bound)
                     sizes[i] = [0] * len(lower_bound)
 
-        func_lower_bounds.append(lower_bounds)
-        func_sizes.append(sizes)
+        func_arg_lower_bounds.append(lower_bounds)
+        func_arg_sizes.append(sizes)
 
     for pi, func in enumerate(funcs):
         entry_block = func.regions[0].blocks[0]
         args = entry_block.arguments
-        lower_bounds = func_lower_bounds[pi]
-        sizes = func_sizes[pi]
+        lower_bounds = func_arg_lower_bounds[pi]
+        sizes = func_arg_sizes[pi]
         for block in func.regions[0].blocks:
             for op in block.operations:
                 if op.operation.name == "tensor.extract_slice":
@@ -513,7 +545,7 @@ def reindex_tensor_access(mod):
                     op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
                         new_offsets, ctx
                     )
-    return func_lower_bounds, func_sizes
+    return func_arg_lower_bounds, func_arg_sizes
 
 
 def update_func_op_arg_types(
@@ -547,7 +579,7 @@ def lower_tensor_to_memref(mod):
 
 
 def record_local_buffer(mod):
-    buf_dicts = []
+    func_buf_dicts = []
     funcs = list(mod.body.operations)[:-1]
     for func in funcs:
         buf_dict = {}
@@ -557,8 +589,8 @@ def record_local_buffer(mod):
                     name = op.result.get_name()
                     dtype, shape = get_dtype_and_shape_from_type(op.result.type)
                     buf_dict[name] = (dtype, shape)
-        buf_dicts.append(buf_dict)
-    return buf_dicts
+        func_buf_dicts.append(buf_dict)
+    return func_buf_dicts
 
 
 class AIEModule:
@@ -577,14 +609,14 @@ class AIEModule:
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         self.inputs, self.outputs = get_func_inputs_outputs(self.kernel_func)
         input_args = self.inputs + self.outputs
-        _, func_sizes = reindex_tensor_access(self.module)
+        _, func_arg_sizes = reindex_tensor_access(self.module)
         with self.module.context as ctx, Location.unknown():
             for i, func_op in enumerate(list(self.module.body.operations)[:-1]):
-                shapes = func_sizes[i]
+                shapes = func_arg_sizes[i]
                 update_func_op_arg_types(func_op, input_args, shapes, ctx)
         lower_tensor_to_memref(self.module)
-        buf_dicts = record_local_buffer(self.module)
-        code = codegen_aie_mlir(self.module, input_args, func_sizes, buf_dicts)
+        func_buf_dicts = record_local_buffer(self.module)
+        code = codegen_aie_mlir(self.module, input_args, func_arg_sizes, func_buf_dicts)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)

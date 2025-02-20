@@ -20,7 +20,7 @@ def _test_matrix_scalar_add():
             pi = df.get_pid()
             B[pi * Mt : (pi + 1) * Mt, :] = allo.add(A[pi * Mt : (pi + 1) * Mt, :], 1)
 
-    mod = df.build(top, target="aie", enable_tensor=True)
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.zeros((M, N)).astype(np.int32)
     mod(A, B)
@@ -43,7 +43,7 @@ def _test_matrix_matrix_add():
                 A[pi * Mt : (pi + 1) * Mt, :], B[pi * Mt : (pi + 1) * Mt, :]
             )
 
-    mod = df.build(top, target="aie", enable_tensor=True)
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.random.randint(0, 100, (M, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
