@@ -85,7 +85,9 @@ def move_stream_to_interface(s):
             return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
             # copy old attributes
             if "itypes" in func.attributes:
-                new_func.attributes["itypes"] = StringAttr.get(func.attributes["itypes"].value + stream_signed)
+                new_func.attributes["itypes"] = StringAttr.get(
+                    func.attributes["itypes"].value + stream_signed
+                )
             if "otypes" in func.attributes:
                 new_func.attributes["otypes"] = func.attributes["otypes"]
             # tag stream types
