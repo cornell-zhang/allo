@@ -48,6 +48,7 @@ def move_stream_to_interface(s):
         func_name = func.attributes["sym_name"].value
         stream_ops = []
         stream_types = []
+        stream_signed = ""
         stream_info[func_name] = []
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
@@ -58,6 +59,7 @@ def move_stream_to_interface(s):
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
                 stream_name = op.attributes["name"].value
+                stream_signed = "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
                     if isinstance(use.owner, allo_d.StreamGetOp):
@@ -81,6 +83,11 @@ def move_stream_to_interface(s):
             )
             new_func.add_entry_block()
             return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            # copy old attributes
+            if "itypes" in func.attributes:
+                new_func.attributes["itypes"] = StringAttr.get(func.attributes["itypes"].value + stream_signed)
+            if "otypes" in func.attributes:
+                new_func.attributes["otypes"] = func.attributes["otypes"]
             # tag stream types
             new_func.attributes["stypes"] = StringAttr.get(s_type_str)
             # move operations from old func to new func
@@ -141,6 +148,7 @@ def _build_top(s, stream_info):
     # create argument mapping
     funcs = get_all_funcs_except_top(s)
     input_types = []
+    input_signed = ""
     arg_mapping = {}
     used_args = {}  # {arg_name: arg_idx in top_func}
     for func in funcs:
@@ -152,6 +160,8 @@ def _build_top(s, stream_info):
                 if arg_name not in used_args:
                     used_args[arg_name] = len(input_types)
                     input_types.append(arg.type)
+                    if "itypes" in func.attributes:
+                        input_signed += func.attributes["itypes"].value[i]
                     s.func_args[s.top_func_name].append(arg_name)
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
@@ -170,6 +180,7 @@ def _build_top(s, stream_info):
         new_top = func_d.FuncOp(
             name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
         )
+        new_top.attributes["itypes"] = StringAttr.get(input_signed)
         new_top.add_entry_block()
         return_op = func_d.ReturnOp([], ip=InsertionPoint(new_top.entry_block))
         for op in top_func.entry_block.operations:
