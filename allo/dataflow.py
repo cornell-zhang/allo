@@ -59,7 +59,7 @@ def move_stream_to_interface(s):
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
                 stream_name = op.attributes["name"].value
-                stream_signed = "u" if "unsigned" in op.attributes else "_"
+                stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
                     if isinstance(use.owner, allo_d.StreamGetOp):
