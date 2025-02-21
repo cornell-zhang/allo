@@ -64,6 +64,7 @@ from .passes import (
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 from .library import KERNEL2SCHEDULE
+from .library.systolic import check_systolic, prepare_systolic
 
 
 def getsourcefile(obj):
@@ -126,6 +127,11 @@ class Schedule:
         self.ext_libs = ext_libs
         self.partitioned_arrays = {}
         self.inst_list = inst_list if inst_list is not None else []
+        if func_args:
+            for func_name, _ in func_args.items():
+                if func_name not in self.func_args:
+                    self.func_args[func_name] = []
+        self.systolic = check_systolic(self)
 
     def get_loops(self, func=None):
         if isinstance(func, str):
@@ -409,8 +415,8 @@ class Schedule:
                     )
                 )
 
-    @wrapped_apply
-    def buffer_at(self, target, axis):
+    # @wrapped_apply
+    def buffer_at_regular(self, target, axis):
         """
         Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
         instead of immediately writing them to memory.
@@ -432,6 +438,90 @@ class Schedule:
         loop_hdl = allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
         memref_type = MemRefType.get((1,), F32Type.get())
         allo_d.BufferAtOp(memref_type, target.result, loop_hdl.result, ip=ip)
+
+    def buffer_at(self, target, axis):
+        """
+        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
+        instead of immediately writing them to memory.
+
+        Parameters
+        ----------
+        target: allo.ir.utils.MockBuffer
+            An array written to in a loop.
+
+        axis: str
+            The loop index whose body contains writes to target
+        """
+        if self.systolic:
+            return self.buffer_at_systolic(target, axis)
+
+        with self.module.context, Location.unknown():
+            self.buffer_at_regular(target, axis)
+        _mlir_lower_pipeline(self.module)
+        # Remove previous Python-C++ references
+        self.module.context._clear_live_operations()
+        # Update top function in the current context
+        for op in self.module.body.operations:
+            if isinstance(op, func_d.FuncOp) and op.name.value == self.top_func_name:
+                self.top_func = op
+                break
+        else:
+            raise RuntimeError("Top function not found")
+        # Update insertion point
+        self.ip = InsertionPoint.at_block_terminator(self.top_func.entry_block)
+        # Record primitive sequences
+        self.primitive_sequences.append(("buffer_at", [target, axis], {}))
+
+    def buffer_at_systolic(self, target, axis):
+        """
+        Creates a chip buffer to hold the values of `target` written to in loop with index `axis`
+        instead of immediately writing them to memory in a systolic array.
+
+        Parameters
+        ----------
+        target: allo.ir.utils.MockBuffer
+            An array written to in a loop.
+
+        axis: str
+            The loop index whose body contains writes to target
+        """
+        buff_name = target.name
+        _, _, target = find_buffer(self.module, target, self.func_args)
+        func, axis = self._get_func_and_axis(axis)
+        band_name, axis = find_loop_in_bands(func, axis)
+        band = self._find_band(band_name, func)
+        loops = list(band)
+        outer_loop = loops[0][1].loop
+        middle_loop = loops[1][1].loop  # Middle loop
+        inner_loop = loops[-1][1].loop  # Last/innermost loop
+        i_size = int(
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(outer_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
+        j_size = int(
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(middle_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
+        k_size = int(
+            re.findall(
+                r"affine_map<\(\) -> \(([0-9]*)\)>",
+                str(inner_loop.attributes["upperBoundMap"]),
+            )[0]
+        )
+        load_type = MemRefType(target.result.type).element_type
+        with self.module.context, Location.unknown():
+            ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+            fifo_memref_type = MemRefType.get([i_size, j_size + 1, k_size], load_type)
+            fifo_memref = memref_d.AllocOp(fifo_memref_type, [], [], ip=ip)
+            fifo_memref.attributes["name"] = StringAttr.get(f"{buff_name}_fifo")
+        fifo_mock_buffer = MockBuffer(func.name.value, f"{buff_name}_fifo")
+        fifo_mock_buffer.result = fifo_memref.result
+        setattr(self, f"{buff_name}_fifo", fifo_mock_buffer)
+        return fifo_mock_buffer
 
     @wrapped_apply
     def reshape(self, target, shape):
@@ -678,6 +768,9 @@ class Schedule:
             A list of the axes to unroll.
         """
 
+        if self.systolic:
+            prepare_systolic(self, band_name)
+
         assert isinstance(axes, list), "Axes must be a list"
         axes.sort()
         assert axes == list(
@@ -751,6 +844,10 @@ class Schedule:
                             f"{FlatSymbolRefAttr(op.attributes['callee']).value}_{idx}"
                         )
                         dup_func.attributes["sym_name"] = StringAttr.get(new_name)
+                        # extend self.func_args
+                        self.func_args[new_name] = self.func_args[
+                            FlatSymbolRefAttr(op.attributes["callee"]).value
+                        ]
                         op.attributes["callee"] = FlatSymbolRefAttr.get(new_name)
                         if old_func not in op_to_remove:
                             op_to_remove.append(old_func)
@@ -942,7 +1039,8 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    module = ASTTransformer()(ctx, tree)
+    file_name = inspect.getfile(fn)
+    module = ASTTransformer()(ctx, tree, file_name)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
         ctx.top_func = find_func_in_module(module, fn.__name__)

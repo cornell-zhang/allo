@@ -41,6 +41,26 @@ def test_extern_c():
     print("Passed!")
 
 
+def test_4d():
+    mod = allo.IPModule(
+        top="vadd_4d",
+        headers=["vadd_4d.h"],
+        impls=["vadd_4d.cpp"],
+        signature=[
+            "float32[4, 4, 16, 16]",
+            "float32[4, 4, 16, 16]",
+            "float32[4, 4, 16, 16]",
+        ],
+        link_hls=False,
+    )
+    a = np.random.random((4, 4, 16, 16)).astype(np.float32)
+    b = np.random.random((4, 4, 16, 16)).astype(np.float32)
+    c = np.zeros((4, 4, 16, 16)).astype(np.float32)
+    mod(a, b, c)
+    np.testing.assert_allclose(a + b, c, atol=1e-6)
+    print("Passed!")
+
+
 def test_shared_lib():
     vadd = allo.IPModule(
         top="vadd",
@@ -50,19 +70,21 @@ def test_shared_lib():
         link_hls=False,
     )
 
-    def kernel(A: int32[32], B: int32[32]) -> int32[32]:
+    def top(A: int32[32], B: int32[32]) -> int32[32]:
         C: int32[32] = 0
         vadd(A, B, C)
         return C
 
-    s = allo.customize(kernel)
+    s = allo.customize(top)
     print(s.module)
     mod = s.build()
     np_A = np.random.randint(0, 100, (32,)).astype(np.int32)
     np_B = np.random.randint(0, 100, (32,)).astype(np.int32)
     allo_C = mod(np_A, np_B)
     np.testing.assert_allclose(np_A + np_B, allo_C, atol=1e-6)
-    print("Passed!")
+    print("Passed CPU simulation!")
+    s.build(target="vitis_hls", mode="csyn", project="vadd.prj")
+    print("Passed generating HLS project!")
 
 
 def test_scalar():

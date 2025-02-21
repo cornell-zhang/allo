@@ -31,7 +31,7 @@ jobs:
         apt-get update && apt-get install -y rsync
     - name: Install git
       run: |
-        apt-get install git
+        apt-get install -y git
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:

@@ -12,15 +12,16 @@ def _test_vector_scalar_add():
     Ty = int32
     M = 1024
 
-    @df.kernel(mapping=[1])
-    def core(A: Ty[M], B: Ty[M]):
-        for i in range(M):
-            B[i] = A[i] + 1
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M], B: Ty[M]):
+            B[:] = allo.add(A, 1)
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.zeros(M).astype(np.int32)
-    top(A, B)
+    mod(A, B)
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
@@ -30,15 +31,16 @@ def _test_vector_scalar_mul():
     Ty = float32
     M = 512
 
-    @df.kernel(mapping=[1])
-    def core(A: Ty[M], B: Ty[M]):
-        for i in range(M):
-            B[i] = A[i] * 2
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M], B: Ty[M]):
+            B[:] = allo.mul(A, 2)
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.random(M).astype(np.float32)
     B = np.zeros(M).astype(np.float32)
-    top(A, B)
+    mod(A, B)
     np.testing.assert_allclose(B, A * 2, rtol=1e-5)
     print("PASSED!")
 
@@ -48,16 +50,17 @@ def _test_vector_vector_add():
     Ty = int32
     M = 1024
 
-    @df.kernel(mapping=[1])
-    def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-        for i in range(M):
-            C[i] = A[i] + B[i]
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
+            C[:] = allo.add(A, B)
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.random.randint(0, 100, M).astype(np.int32)
     C = np.zeros(M).astype(np.int32)
-    top(A, B, C)
+    mod(A, B, C)
     np.testing.assert_allclose(C, A + B)
     print("PASSED!")
 
@@ -67,16 +70,17 @@ def _test_vector_vector_mul():
     Ty = float32
     M = 1024
 
-    @df.kernel(mapping=[1])
-    def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-        for i in range(M):
-            C[i] = A[i] * B[i]
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
+            C[:] = allo.mul(A, B)
 
-    top = df.build(core, target="aie")
+    mod = df.build(top, target="aie")
     A = np.random.random(M).astype(np.float32)
     B = np.random.random(M).astype(np.float32)
     C = np.zeros(M).astype(np.float32)
-    top(A, B, C)
+    mod(A, B, C)
     np.testing.assert_allclose(C, A * B, rtol=1e-5)
     print("PASSED!")
 

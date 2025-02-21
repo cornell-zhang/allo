@@ -23,7 +23,7 @@ jobs:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
       run: |
-        apt-get install git
+        apt-get -y install git
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
@@ -34,6 +34,7 @@ jobs:
       run: |
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install https://github.com/cornell-zhang/past-python-bindings/releases/download/65f989b/past-0.7.2-cp312-cp312-linux_x86_64.whl
         python3 -m pip install -v -e .
     - name: Formatting Check
       shell: bash
