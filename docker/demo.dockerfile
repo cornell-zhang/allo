@@ -49,7 +49,7 @@ RUN cd /root/llvm-project && \
     python3 -m pip install --upgrade pip && \
     python3 -m pip install numpy PyYAML dataclasses pybind11>=2.9.0  && \
     mkdir build && cd build && \
-    cmake -G Ninja ../llvm -DLLVM_ENABLE_PROJECTS=mlir \
+    cmake -G Ninja ../llvm -DLLVM_ENABLE_PROJECTS="clang;mlir;openmp" \
         -DLLVM_BUILD_EXAMPLES=ON -DLLVM_TARGETS_TO_BUILD="X86" \
         -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON \
         -DLLVM_INSTALL_UTILS=ON -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
