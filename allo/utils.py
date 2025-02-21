@@ -16,7 +16,7 @@ from ._mlir.ir import (
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
-from .ir.types import Int, UInt, Float
+from .ir.types import Int, UInt, Float, Index, Fixed, UFixed
 
 np_supported_types = {
     "f16": np.float16,

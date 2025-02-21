@@ -570,7 +570,7 @@ class ASTTransformer(ASTBuilder):
                 cast_op = cast_op if ctx.enable_tensor else alloc_op
             else:
                 cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
-            if isinstance(res_type, (UInt, Struct)):
+            if isinstance(res_type, UInt):
                 cast_op.attributes["unsigned"] = UnitAttr.get()
         else:
             cast_op = opcls(mlir_type, op.result, ip=ctx.get_ip())
@@ -1788,12 +1788,14 @@ class ASTTransformer(ASTBuilder):
                     stream = ctx.buffers[new_name].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
-                    allo_d.StreamPutOp(
+                    put_op = allo_d.StreamPutOp(
                         stream.result,
                         [],
                         stmts[0].result,
                         ip=ctx.get_ip(),
                     )
+                    if isinstance(node.func.value.dtype, UInt):
+                        put_op.attributes["unsigned"] = UnitAttr.get()
                     return
                 if node.func.attr == "get":
                     vid = (
@@ -1820,12 +1822,15 @@ class ASTTransformer(ASTBuilder):
                     stream = ctx.buffers[new_name].clone(
                         ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
-                    return allo_d.StreamGetOp(
+                    get_op = allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,
                         [],
                         ip=ctx.get_ip(),
                     )
+                    if isinstance(node.func.value.dtype.dtype, UInt):
+                        get_op.attributes["unsigned"] = UnitAttr.get()
+                    return get_op
                 if node.func.attr == "bitcast":
                     val = build_stmt(ctx, node.func.value)
                     op = arith_d.BitcastOp(
@@ -1946,6 +1951,8 @@ class ASTTransformer(ASTBuilder):
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
                 stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
+                if isinstance(stream.dtype, UInt):
+                    stream_op.attributes["unsigned"] = UnitAttr.get()
                 return stream_op
             if isinstance(new_args[0].result, OpResultList):
                 arg_type = new_args[0].result[0].type
