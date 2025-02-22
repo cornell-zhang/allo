@@ -1,270 +1,196 @@
-# test_dataflow_canonicalization.py
+# Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
 import pytest
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import int32, float32, MemRefType
+from allo._mlir.dialects import func as func_d
 from allo._mlir.dialects import memref as memref_d
-from allo._mlir.ir import Operation
+from allo._mlir.dialects import affine as affine_d
+from allo.passes import dataflow_canonicalization_pass as dcp 
+from allo._mlir.ir import WalkResult
+from allo.customize import Schedule
 
-###############################################################################
-# 1. Single-producer, single-consumer: No duplication needed.
-###############################################################################
+def check_spsc(module):
+    spsc = True
+
+    def checker(op):
+        nonlocal spsc
+        if isinstance(op.opview, (func_d.CallOp, memref_d.AllocOp)):
+            for produced_val in op.results:
+                if produced_val is None or not isinstance(produced_val.type, MemRefType):
+                    return WalkResult(0)
+                if len(produced_val.type.shape) == 0: 
+                    return WalkResult(0)
+                consumers = sum(1 for use in produced_val.uses if isinstance(use.owner, (func_d.CallOp, memref_d.LoadOp, affine_d.AffineLoadOp)))
+                if consumers > 1:
+                    spsc = False
+                    return WalkResult(0)
+        return WalkResult(0)
+
+    with module.context:
+        for func in module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            func.walk(checker)
+    return spsc
+
+def canonicalize(schedule: Schedule) -> Schedule:
+    return Schedule(
+        dcp(schedule.module),
+        schedule.top_func,
+        schedule.func_args,
+        schedule.ip,
+        schedule.ext_libs,
+        schedule.inst_list
+    )
+
 
 def test_single_producer_single_consumer():
-    def kernel(A: int32[10]) -> int32[10]:
-        B: int32[10] = 0
+    def producer() -> int32[10]:
+        A: int32[10]
+        for i in range(10):
+            A[i] = i
+        return A
+    def consumer(A: int32[10]) -> int32[10]:
+        B: int32[10]
         for i in range(10):
             B[i] = A[i] + 1
         return B
 
-    s = allo.customize(kernel)
+    def top() -> int32[10]: 
+        A = producer()
+        return consumer(A)
+
+    p = allo.customize(producer)
+    c = allo.customize(consumer)
+    
+    s = allo.customize(top)
+    s.compose([p, c])
+    s = canonicalize(s)
+    print(s.module)
     mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    np_B = mod(np_A)
-    np.testing.assert_array_equal(np_B, np_A + 1)
-
-
-###############################################################################
-# 2. Single producer, multiple consumers: Buffer must be duplicated.
-###############################################################################
+    res = mod()
+    np.testing.assert_array_equal(res, np.arange(1, 11))
+    assert check_spsc(s.module)
 
 def test_single_producer_multiple_consumers():
-    def kernel(A: int32[10]) -> (int32[10], int32[10]):
-        B: int32[10] = 0
+    def producer() -> int32[10]:
+        A: int32[10]
         for i in range(10):
-            B[i] = A[i] * 2
-        # Two different consumer loops use the same buffer.
-        C: int32[10] = 0
-        D: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] + 3
-            D[i] = B[i] - 1
-        return C, D
+            A[i] = i + 1
+        return A
 
-    s = allo.customize(kernel)
+    def consumer1(A: int32[10]) -> int32:
+        sum: int32 = 0
+        for i in range(10):
+            sum += A[i]
+        return sum
+    
+    def consumer2(A: int32[10]) -> int32:
+        prod: int32 = 1
+        for i in range(10):
+            prod *= A[i]
+        return prod
+    
+    def top() -> int32: 
+        A = producer()
+        return consumer1(A) + consumer2(A)
+
+    p = allo.customize(producer)
+    c1 = allo.customize(consumer1)
+    c2 = allo.customize(consumer2)
+    
+    s = allo.customize(top)
+    print(s.module)
+    s.compose([p, c1, c2])
+    s = canonicalize(s)
+    print(s.module)
+
     mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    C, D = mod(np_A)
-    np.testing.assert_array_equal(C, np_A * 2 + 3)
-    np.testing.assert_array_equal(D, np_A * 2 - 1)
+    res = mod()
+    np.testing.assert_array_equal(res, np.sum(np.arange(1, 11)) + np.prod(np.arange(1, 11)))
+    assert check_spsc(s.module)
 
-
-###############################################################################
-# 3. Multiple producers, single consumer: Merge must happen.
-###############################################################################
-
-def test_multiple_producers_single_consumer():
-    def kernel(A: int32[10]) -> int32[10]:
-        # Two loops write to the same buffer.
-        B: int32[10] = 0
+def test_single_kernel():
+    def producer() -> (int32[10], int32[10]):
+        A: int32[10]
         for i in range(10):
-            # Producer 1: write a first value.
-            B[i] = A[i] + 5
+            A[i] = i
+        
+        B: int32[10]
+        C: int32[10]
         for i in range(10):
-            # Producer 2: update the buffer.
-            B[i] = B[i] - 2
-        # Consumer: reads the merged result.
-        C: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] * 3
-        return C
-
-    s = allo.customize(kernel)
+            B[i] = A[i] + 1
+            C[i] = A[i] + 1
+        return B, C
+    
+    s = allo.customize(producer)
+    s = canonicalize(s)
+    print(s.module)
     mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    C = mod(np_A)
-    expected = (np_A + 5 - 2) * 3
-    np.testing.assert_array_equal(C, expected)
+    res1, res2 = mod()
+    np.testing.assert_array_equal(res1, np.arange(1, 11))
+    np.testing.assert_array_equal(res2, np.arange(1, 11))
+    assert check_spsc(s.module)
 
-
-###############################################################################
-# 4. Multiple producers, multiple consumers: Merge then duplicate.
-###############################################################################
-
-def test_multiple_producers_multiple_consumers():
-    def kernel(A: int32[10]) -> (int32[10], int32[10]):
-        # Two producers write to the same shared buffer.
-        B: int32[10] = 0
+def test_nd_array():
+    def producer() -> int32[10, 10]:
+        A: int32[10, 10] = 0
+        return A
+    def consumer(A: int32[10, 10]) -> int32:
+        sum: int32 = 0
         for i in range(10):
-            if i < 5:
-                B[i] = A[i] + 10  # Producer 1
-            else:
-                B[i] = A[i] - 3   # Producer 2
-        # Two consumers read B.
-        C: int32[10] = 0
-        D: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] * 2
-            D[i] = B[i] - 1
-        return C, D
+            for j in range(10):
+                sum += A[i, j]
+        return sum
 
-    s = allo.customize(kernel)
+    def top() -> int32:
+        A = producer()
+        return consumer(A) + consumer(A)
+    
+    p = allo.customize(producer)
+    c = allo.customize(consumer)
+
+    s = allo.customize(top)
+    s.compose([p, c])
+    s = canonicalize(s)
+    print(s.module)
     mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    B = np.concatenate([np_A[:5] + 10, np_A[5:] - 3])
-    C, D = mod(np_A)
-    np.testing.assert_array_equal(C, B * 2)
-    np.testing.assert_array_equal(D, B - 1)
+    res = mod()
+    np.testing.assert_array_equal(res, 0)
+    assert check_spsc(s.module)
+
+# def test_detect_perfect_affine_kernel():
+#     def perfect_kernel() -> int32[4, 4]:
+#         C: int32[4, 4]
+#         for i in range(4):
+#             for j in range(4):
+#                 C[i, j] = i + j
+#         return C
+
+#     s_perfect = allo.customize(perfect_kernel)
+#     s_perfect.build()
+
+#     is_perfect = check_perfect_affine_kernel(s_perfect.module)
+#     assert is_perfect, "Expected the perfect_kernel to be detected as perfect."
 
 
-###############################################################################
-# 5. Buffer with interleaved read/write (non read-only)
-###############################################################################
+#     def not_perfect_kernel(A: int32[4, 4]) -> int32[4, 4]:
+#         B: int32[4, 4]
+#         B[0, 0] = A[0, 0] + 42
+#         for i in range(4):
+#             for j in range(4):
+#                 B[i, j] = A[i, j] * 2
+#         return B
 
-def test_buffer_written_and_read():
-    def kernel(A: int32[10]) -> int32[10]:
-        # First, fill B.
-        B: int32[10] = 0
-        for i in range(10):
-            B[i] = A[i] * 2
-        # Consumer reads B into C.
-        C: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] + 7
-        # Then update B using C.
-        for i in range(10):
-            B[i] = C[i] - 3
-        return B
+#     s_imperfect = allo.customize(not_perfect_kernel)
+#     s_imperfect.build()
+#     print("Imperfect kernel module:\n", s_imperfect.module)
 
-    s = allo.customize(kernel)
-    mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    np_B = mod(np_A)
-    expected = (np_A * 2 + 7) - 3
-    np.testing.assert_array_equal(np_B, expected)
-
-
-###############################################################################
-# 6. Preservation of data dependencies: Even when B is used in two ways.
-###############################################################################
-
-def test_dependency_preservation():
-    def kernel(A: int32[10]) -> int32[10]:
-        # Compute B from A.
-        B: int32[10] = 0
-        for i in range(10):
-            B[i] = A[i] + 100
-        # Consumer 1 computes C from B.
-        C: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] - 50
-        # Consumer 2 computes D from B.
-        D: int32[10] = 0
-        for i in range(10):
-            D[i] = B[i] * 2
-        # Final result depends on both.
-        E: int32[10] = 0
-        for i in range(10):
-            E[i] = C[i] + D[i]
-        return E
-
-    s = allo.customize(kernel)
-    mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    B = np_A + 100
-    C = B - 50
-    D = B * 2
-    expected = C + D
-    np.testing.assert_array_equal(mod(np_A), expected)
-
-
-###############################################################################
-# 7. Control–flow test: Conditional writes to a shared buffer.
-###############################################################################
-
-def test_control_flow():
-    def kernel(A: int32[10], flag: int32) -> int32[10]:
-        B: int32[10] = 0
-        if flag:
-            for i in range(10):
-                B[i] = A[i] + 1
-        else:
-            for i in range(10):
-                B[i] = A[i] - 1
-        C: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] * 4
-        return C
-
-    s = allo.customize(kernel)
-    mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    np.testing.assert_array_equal(mod(np_A, 1), (np_A + 1) * 4)
-    np.testing.assert_array_equal(mod(np_A, 0), (np_A - 1) * 4)
-
-
-###############################################################################
-# 8. IR inspection: Ensure no allocation is used by more than one consumer.
-###############################################################################
-
-def test_ir_single_consumer_property():
-    def kernel(A: int32[10]) -> int32[10]:
-        B: int32[10] = 0
-        for i in range(10):
-            B[i] = A[i] + 5
-        # B is used in two different loops.
-        C: int32[10] = 0
-        D: int32[10] = 0
-        for i in range(10):
-            C[i] = B[i] * 2
-        for i in range(10):
-            D[i] = B[i] - 3
-        # Final result is computed from both.
-        E: int32[10] = 0
-        for i in range(10):
-            E[i] = C[i] + D[i]
-        return E
-
-    s = allo.customize(kernel)
-    mod = s.build()
-    # Traverse the module IR to inspect allocation ops.
-    # (This code is illustrative; adjust according to your IR API.)
-    for op in mod.operation.walk():
-        if isinstance(op, memref_d.AllocOp):
-            # For each alloc, check that its result is used by only one
-            # consumer op per “duplication” (i.e. no multi-consumer sharing).
-            uses = list(op.result.uses)
-            consumer_ops = set(use.owner for use in uses)
-            # In canonicalized IR, every alloc should have been duplicated so
-            # that each consumer uses its own unique alloc.
-            assert len(uses) == len(consumer_ops), (
-                f"Alloc {op} is shared among multiple consumers: {consumer_ops}"
-            )
-
-
-###############################################################################
-# 9. Merge multiple producers writing to the same buffer.
-###############################################################################
-
-def test_merge_multiple_producers():
-    def kernel(A: int32[10], B: int32[10]) -> int32[10]:
-        # First loop: Producer 1 writes to D.
-        D: int32[10] = 0
-        for i in range(10):
-            D[i] = A[i]
-        # Second loop: Producer 2 updates D.
-        for i in range(10):
-            D[i] = D[i] + B[i]
-        # Consumer reads D.
-        C: int32[10] = 0
-        for i in range(10):
-            C[i] = D[i] * 2
-        return C
-
-    s = allo.customize(kernel)
-    mod = s.build()
-    np_A = np.arange(10, dtype=np.int32)
-    np_B = np.arange(10, 20, dtype=np.int32)
-    C = mod(np_A, np_B)
-    expected = (np_A + np_B) * 2
-    np.testing.assert_array_equal(C, expected)
-
-
-###############################################################################
-# Run all tests when executed directly.
-###############################################################################
+#     is_perfect = check_perfect_affine_kernel(s_imperfect.module)
+#     assert not is_perfect, "Expected the not_perfect_kernel to fail perfect-affine detection."
 
 if __name__ == "__main__":
     pytest.main([__file__])

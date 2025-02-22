@@ -823,168 +823,88 @@ def check_perfect_affine_kernel(module):
                     return False
     return True
 
-# def canonicalize_buffer_value_producer_split(buffer_value):
-#     consumer_map = {}
-#     for use in list(buffer_value.uses):
-#         # ignore terminators and write ops
-#         if is_terminator(use.owner) or isinstance(use.owner, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-#             continue
-#         consumer_map.setdefault(use.owner, []).append(use)
-    
-#     if len(consumer_map) <= 1:
-#         return
-
-#     consumers = list(consumer_map.keys())
-#     num_consumers = len(consumers)
-
-#     producer_op = buffer_value.owner
-#     ip = InsertionPoint(producer_op)
-#     orig_type = buffer_value.type
-#     orig_name = (
-#         producer_op.attributes["name"].value
-#         if "name" in producer_op.attributes
-#         else "buffer"
-#     )
-
-#     new_allocs = []
-#     for i in range(num_consumers):
-#         new_alloc = memref_d.AllocOp(orig_type, [], [], ip=ip)
-#         new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
-#         new_allocs.append(new_alloc)
-
-#     # find all operations that write to the original buffer.
-#     writes = []  # list of tuples (op, operand_index)
-#     def collect_writes(op):
-#         if isinstance(op.opview, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-#             for idx, operand in enumerate(op.operands):
-#                 if operand == buffer_value:
-#                     writes.append((op, idx))
-#         return WalkResult(0)
-    
-#     producer_op.parent.walk(collect_writes)
-#     print("1", writes)
-#     for w in writes:
-#         print(w[0])
-#     # for each writing op, clone it for every new allocated buffer.
-#     for (write_op, operand_idx) in writes:
-#         for new_alloc in new_allocs:
-#             ip = InsertionPoint(write_op)
-#             new_op = write_op.clone(ip)
-#             new_op.operation.operands[operand_idx] = new_alloc.result
-     
-
-#     # update each consumer op so that each gets its corresponding new buffer.
-#     for consumer_op, use_list in consumer_map.items():
-#         for use in use_list:
-#             consumer_idx = consumers.index(consumer_op)
-#             new_buffer = new_allocs[consumer_idx].result
-#             consumer_op.operation.replace_uses_of_with(buffer_value, new_buffer)
-
-
-# def canonicalize_buffer_callback(op):
-#     # assume all buffers created by allocOp, is this ok?
-#     if isinstance(op.opview, memref_d.AllocOp):
-#         canonicalize_buffer_value_producer_split(op.result)
-#     return WalkResult(0)
-
-
-# def dataflow_canonicalization(module):
-#     with module.context, Location.unknown():
-#         for func in module.body.operations:
-#             if not isinstance(func, func_d.FuncOp):
-#                 continue
-#             func.walk(canonicalize_buffer_callback)
-#     return module
-
-def canonicalize_buffer_value_producer_split(buffer_value, processed=set()):
-    # Avoid reprocessing the same buffer value (to handle chains and potential cycles).
-    if buffer_value in processed:
-        return
-    processed.add(buffer_value)
-
-    # Gather consumer ops that are not terminators or direct writes.
-    consumer_map = {}
-    for use in list(buffer_value.uses):
-        # ignore terminators and write ops (e.g. stores)
-        if is_terminator(use.owner) or isinstance(use.owner, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-            continue
-        consumer_map.setdefault(use.owner, []).append(use)
-    
-    # If there’s only one consumer op, nothing to split.
-    if len(consumer_map) <= 1:
-        # Propagate canonicalization further down the chain.
-        for consumer_op in consumer_map.keys():
-            for res in consumer_op.results:
-                if isinstance(res.type, MemRefType):  # assume helper checking for memref
-                    canonicalize_buffer_value_producer_split(res, processed)
-        return
-
-    consumers = list(consumer_map.keys())
-    num_consumers = len(consumers)
-
-    # Get the original producer op and related info.
-    producer_op = buffer_value.owner
-    ip = InsertionPoint(producer_op)
-    orig_type = buffer_value.type
-    orig_name = (producer_op.attributes["name"].value 
-                 if "name" in producer_op.attributes 
-                 else "buffer")
-
-    # Create a new alloc for each consumer.
-    new_allocs = []
-    for i in range(num_consumers):
-        new_alloc = memref_d.AllocOp(orig_type, [], [], ip=ip)
-        new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
-        new_allocs.append(new_alloc)
-
-    # For all operations that write to the original buffer, clone them for each new alloc.
-    writes = []  # list of tuples (write_op, operand_index)
-    def collect_writes(op):
-        if isinstance(op.opview, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-            for idx, operand in enumerate(op.operands):
-                if operand == buffer_value:
-                    writes.append((op, idx))
-        return WalkResult(0)
-        
-    producer_op.parent.walk(collect_writes)
-    for (write_op, operand_idx) in writes:
-        for new_alloc in new_allocs:
-            ip = InsertionPoint(write_op)
-            new_op = write_op.clone(ip)
-            # Redirect the write to use the corresponding new alloc.
-            new_op.operation.operands[operand_idx] = new_alloc.result
-        #write_op.erase()
-
-    # Update each consumer op so that each gets its corresponding new buffer.
-    for consumer_op, use_list in consumer_map.items():
-        # Identify which branch this consumer gets.
-        consumer_idx = consumers.index(consumer_op)
-        new_buffer = new_allocs[consumer_idx].result
-        for use in use_list:
-            consumer_op.operation.replace_uses_of_with(buffer_value, new_buffer)
-
-    # **Recursive Propagation:**
-    # Now that each consumer op has been updated to use its dedicated buffer,
-    # check if any consumer op is itself a producer (i.e. it produces memref results)
-    # that are used downstream. If so, recursively canonicalize its result.
-    for consumer_op in consumers:
-        for res in consumer_op.results:
-            if isinstance(res.type, MemRefType):  # helper to check if the type is a memref
-                canonicalize_buffer_value_producer_split(res, processed)
-
-
-def canonicalize_buffer_callback(op):
-    # Assuming canonicalization applies to memref allocation ops.
-    if isinstance(op.opview, memref_d.AllocOp):
-        canonicalize_buffer_value_producer_split(op.result)
-    return WalkResult(0)
-
-
-def dataflow_canonicalization(module):
+def dataflow_canonicalization_pass(module):
     with module.context, Location.unknown():
-        for func in module.body.operations:
-            if not isinstance(func, func_d.FuncOp):
+        for op in module.body.operations:
+            if not isinstance(op, func_d.FuncOp):
                 continue
-            func.walk(canonicalize_buffer_callback)
+            canonicalize_fn(op)
     return module
 
+
+def canonicalize_fn(op: func_d.FuncOp):
+    ops = list(op.entry_block.operations)
+    for op_in_block in ops:
+        if isinstance(op_in_block, memref_d.AllocOp):
+            canonicalize_alloc(op_in_block)
+        elif isinstance(op_in_block, func_d.CallOp):
+            canonicalize_call(op_in_block)
+
+def canonicalize_call(op: func_d.CallOp):
+    for result in op.results:
+        uses = list(result.uses)
+        n_uses = len(uses)
+        if not isinstance(result.type, MemRefType) or n_uses <= 1:
+            continue
+            
+        ip = InsertionPoint(op)
+        new_allocs = [memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_uses)]
+
+        shape = result.type.shape
+    
+        loop_ivs, loops = list(), list()
+        loop_ip = ip
+        for dim in shape: 
+            loop = affine_d.AffineForOp(lower_bound=0, upper_bound=dim, step=1, ip=loop_ip)
+            loop_ivs.append(loop.induction_variable)
+            loops.append(loop)
+            loop_ip = InsertionPoint(loop.body)
+        
+        loops[0].move_after(op)
+
+        with InsertionPoint(loops[-1].body):
+            orig_value = affine_d.AffineLoadOp(result.type.element_type, result, loop_ivs, affine_d.AffineMap.get_identity(len(shape)))
+            for alloc in new_allocs:
+                affine_d.AffineStoreOp(orig_value.result, alloc, loop_ivs, affine_d.AffineMap.get_identity(len(shape)))
+        
+        for loop in loops:
+            with InsertionPoint(loop.body):
+                affine_d.AffineYieldOp([])
+
+        for idx, use in enumerate(uses):
+            use.owner.operation.replace_uses_of_with(result, new_allocs[idx].result)
+        
+
+def canonicalize_alloc(alloc_op):
+    loads = []
+    stores = []
+    for use in alloc_op.result.uses:
+        user = use.owner
+        if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
+            loads.append(user)
+        elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+            stores.append(user)
+
+    memref_type = alloc_op.result.type
+    shape = memref_type.shape
+    orig_name = (alloc_op.attributes["name"].value 
+                 if "name" in alloc_op.attributes else "buffer")
+    if len(shape) == 0:
+        # should constants be propogated?
+        return
+
+    # single store with multiple loads.
+    if len(stores) == 1 and len(loads) > 1:
+        store = stores[0]
+        for i, load in enumerate(loads[1:]):
+            new_alloc = alloc_op.operation.clone(ip = InsertionPoint(alloc_op))
+            new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
+            store_dup = store.clone(ip = InsertionPoint(store))
+            store_dup.operation.replace_uses_of_with(alloc_op.result, new_alloc.result)
+            print(store_dup.memref, new_alloc.result)
+            load.operation.replace_uses_of_with(store.memref, new_alloc.result)
+        return
+
+    # multiple loads and multiple stores
+    if len(stores) >= 2 or len(loads) >= 2:
+        raise Exception("Complex pattern detected in alloc op; additional canonicalization not implemented yet.")
