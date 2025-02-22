@@ -1010,10 +1010,12 @@ def customize(
     # Get Python AST
     if isinstance(fn, str):
         src, starting_line_no = fn, 1
+        file_name = None
     else:
         src, starting_line_no = inspect.getsourcelines(fn)
         src = [textwrap.fill(line, tabsize=4, width=9999) for line in src]
         src = textwrap.dedent("\n".join(src))
+        file_name = inspect.getfile(fn)
     tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
     if instantiate is None:
         instantiate = []
@@ -1039,7 +1041,6 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    file_name = inspect.getfile(fn)
     module = ASTTransformer()(ctx, tree, file_name)
     if lower_linalg:
         lower_linalg_and_attach_names(module)

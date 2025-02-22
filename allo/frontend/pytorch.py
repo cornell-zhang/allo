@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=too-many-public-methods
 
+import re
 import operator
 import inspect
 import math
@@ -17,8 +18,15 @@ except ImportError:
     pass
 from .library import CoreAttention_lib, KVCache_lib
 from .. import dsl
+from ..library import nn
 from ..ir import types
 from ..customize import customize
+from ..ir.types import float32
+
+compose_mapping = {
+    "linear": nn.linear,
+    "relu": nn.relu,
+}
 
 
 def from_pytorch(
@@ -53,23 +61,29 @@ def from_pytorch(
     gm = GraphModule(tracer.root, graph, name)
     ShapeProp(gm).propagate(*args)
     if verbose:
-        print(gm.graph)
+        print(str(gm.graph) + "\n")
     global_vars = {}
     for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
-    global_vars.update({"dsl": dsl})
+    global_vars.update({"dsl": dsl, "nn": nn})
     for name, param in gm.named_parameters():
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
 
     builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
-    s = customize(
-        code, verbose=verbose, global_vars=global_vars, enable_tensor=enable_tensor
-    )
-    mod = s.build(target=target, mode=mode, project=project)
+    if verbose:
+        print(code)
+    s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
+    # composition
+    for func, idx, inst in builder.composition:
+        if func in compose_mapping:
+            s.compose(compose_mapping[func], id=idx, instantiate=inst)
     if verbose:
         print(s.module)
+    if target == "mlir":
+        return s
+    mod = s.build(target=target, mode=mode, project=project)
     return mod
 
 
@@ -86,9 +100,10 @@ class TorchBuilder:
         self.example_inputs = example_inputs
         self.leaf_modules = leaf_modules
         self.input_args = []
-        self.named_params = gm.named_parameters()
+        self.named_params = dict(gm.named_parameters())
         self.subfunctions = []
         self.output = []
+        self.composition = []
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -125,7 +140,7 @@ class TorchBuilder:
         if self.subfunctions:
             res += "\n".join(self.subfunctions) + "\n"
         if self.named_params:
-            for name, param in self.named_params:
+            for name, param in self.named_params.items():
                 new_name = name.replace(".", "_")
                 res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
         # function body
@@ -283,7 +298,12 @@ class TorchBuilder:
 
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
-        return f"{node.name} = dsl.relu({inp})"
+        bs, n = tuple(node.meta["tensor_meta"].shape)
+        match = re.search(r"\d+$", str(node.target).replace(".", "_"))
+        self.composition.append(
+            ("relu", match.group() if match else None, [float32, bs, n])
+        )
+        return f"{node.name} = nn.relu[float32, {bs}, {n}]({inp})"
 
     def build_linear(self, node, bias):
         target_name = node.target.replace(".", "_")
@@ -291,7 +311,16 @@ class TorchBuilder:
         weight = get_var_name(target_name + "_weight")
         if bias:
             bias = get_var_name(target_name + "_bias")
-            return f"{node.name} = dsl.linear({inp}, {weight}, {bias})"
+            # output shape: bs * n
+            bs, n = tuple(node.meta["tensor_meta"].shape)
+            _, m = self.named_params[f"{str(node.target)}.weight"].shape
+            match = re.search(r"\d+$", target_name)
+            name = f', "{match.group()}"' if match else ""
+            # bs*m x (n*m)^T + (n*1) = bs*n
+            self.composition.append(
+                ("linear", match.group() if match else None, [float32, bs, n, m])
+            )
+            return f"{node.name} = nn.linear[float32, {bs}, {n}, {m}{name}]({inp}, {weight}, {bias})"
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):

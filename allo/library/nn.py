@@ -6,6 +6,42 @@ from .. import dsl
 from .systolic import systolic
 
 
+def linear[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
+    Z: Ty[M, N]
+    buf: Ty[N]
+    for i in range(M):
+        for j_init in range(N):
+            buf[j_init] = 0
+        for k in range(K):
+            # reorder reduction loop outside, and pipeline
+            x: Ty = X[i, k]
+            for j in range(N):
+                buf[j] += x * W[j, k]
+        for j_back in range(N):
+            Z[i, j_back] = buf[j_back] + b[j_back]
+    return Z
+
+
+def schedule_linear(s):
+    s.pipeline("linear:j")
+    s.pipeline("linear:j_init")
+    s.pipeline("linear:j_back")
+    return s
+
+
+def relu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
+    Z: Ty[L, D]
+    for i, j in dsl.grid(L, D):
+        Z[i, j] = max(0.0, X[i, j])
+    return Z
+
+
+def schedule_relu(s):
+    s.pipeline("relu:j")
+    return s
+
+
 def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
     Z: Ty[L, L]
     E: Ty[L, L]
