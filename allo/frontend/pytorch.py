@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=too-many-public-methods
 
+import re
 import operator
 import inspect
 import math
@@ -20,6 +21,7 @@ from .. import dsl
 from ..library import nn
 from ..ir import types
 from ..customize import customize
+from ..ir.types import float32
 
 
 def from_pytorch(
@@ -54,7 +56,7 @@ def from_pytorch(
     gm = GraphModule(tracer.root, graph, name)
     ShapeProp(gm).propagate(*args)
     if verbose:
-        print(gm.graph)
+        print(str(gm.graph) + "\n")
     global_vars = {}
     for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
@@ -67,7 +69,11 @@ def from_pytorch(
     code = builder.build()
     if verbose:
         print(code)
-    s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor, verbose=True)
+    s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
+    # composition
+    for func, idx, inst in builder.composition:
+        if func == "linear":
+            s.compose(nn.linear, id=idx, instantiate=inst)
     if verbose:
         print(s.module)
     if target == "mlir":
@@ -92,6 +98,7 @@ class TorchBuilder:
         self.named_params = dict(gm.named_parameters())
         self.subfunctions = []
         self.output = []
+        self.composition = []
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -297,8 +304,11 @@ class TorchBuilder:
             # output shape: bs * n
             bs, n = tuple(node.meta["tensor_meta"].shape)
             _, m = self.named_params[f"{str(node.target)}.weight"].shape
+            match = re.search(r"\d+$", target_name)
+            name = f', "{match.group()}"' if match else ""
             # bs*m x (n*m)^T + (n*1) = bs*n
-            return f"{node.name} = nn.linear[float32, {bs}, {n}, {m}]({inp}, {weight}, {bias})"
+            self.composition.append(("linear", match.group(), [float32, bs, n, m]))
+            return f"{node.name} = nn.linear[float32, {bs}, {n}, {m}{name}]({inp}, {weight}, {bias})"
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):

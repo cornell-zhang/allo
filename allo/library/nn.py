@@ -27,9 +27,6 @@ def schedule_linear(s):
     s.pipeline(f"linear:j")
     s.pipeline(f"linear:j_init")
     s.pipeline(f"linear:j_back")
-    # s.partition(
-    #     MockBuffer(f"linear{lid}", "buf"), dim=0, partition_type=2, factor=factor
-    # )
     return s
 
 
