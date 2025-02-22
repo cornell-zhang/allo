@@ -23,6 +23,11 @@ from ..ir import types
 from ..customize import customize
 from ..ir.types import float32
 
+compose_mapping = {
+    "linear": nn.linear,
+    "relu": nn.relu,
+}
+
 
 def from_pytorch(
     model,
@@ -72,8 +77,8 @@ def from_pytorch(
     s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
     # composition
     for func, idx, inst in builder.composition:
-        if func == "linear":
-            s.compose(nn.linear, id=idx, instantiate=inst)
+        if func in compose_mapping:
+            s.compose(compose_mapping[func], id=idx, instantiate=inst)
     if verbose:
         print(s.module)
     if target == "mlir":
@@ -293,7 +298,12 @@ class TorchBuilder:
 
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
-        return f"{node.name} = dsl.relu({inp})"
+        bs, n = tuple(node.meta["tensor_meta"].shape)
+        match = re.search(r"\d+$", str(node.target).replace(".", "_"))
+        self.composition.append(
+            ("relu", match.group() if match else None, [float32, bs, n])
+        )
+        return f"{node.name} = nn.relu[float32, {bs}, {n}]({inp})"
 
     def build_linear(self, node, bias):
         target_name = node.target.replace(".", "_")
@@ -307,7 +317,9 @@ class TorchBuilder:
             match = re.search(r"\d+$", target_name)
             name = f', "{match.group()}"' if match else ""
             # bs*m x (n*m)^T + (n*1) = bs*n
-            self.composition.append(("linear", match.group(), [float32, bs, n, m]))
+            self.composition.append(
+                ("linear", match.group() if match else None, [float32, bs, n, m])
+            )
             return f"{node.name} = nn.linear[float32, {bs}, {n}, {m}{name}]({inp}, {weight}, {bias})"
         return f"{node.name} = dsl.linear({inp}, {weight})"
 

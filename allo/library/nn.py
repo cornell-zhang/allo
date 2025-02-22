@@ -30,6 +30,18 @@ def schedule_linear(s):
     return s
 
 
+def relu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
+    Z: Ty[L, D]
+    for i, j in dsl.grid(L, D):
+        Z[i, j] = max(0.0, X[i, j])
+    return Z
+
+
+def schedule_relu(s):
+    s.pipeline(f"relu:j")
+    return s
+
+
 def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
     Z: Ty[L, L]
     E: Ty[L, L]

@@ -18,6 +18,8 @@ from .gemv import (
 from .nn import (
     linear,
     schedule_linear,
+    relu,
+    schedule_relu,
     softmax,
     schedule_softmax,
     layer_norm,
@@ -41,6 +43,7 @@ KERNEL2SCHEDULE[int8xint8_mat_vec] = schedule_int8xint8_mat_vec
 KERNEL2SCHEDULE.update(
     {
         linear: schedule_linear,
+        relu: schedule_relu,
         softmax: schedule_softmax,
         layer_norm: schedule_layernorm,
         GeLU: schedule_gelu,
