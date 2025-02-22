@@ -24,9 +24,9 @@ def linear[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
 
 
 def schedule_linear(s):
-    s.pipeline(f"linear:j")
-    s.pipeline(f"linear:j_init")
-    s.pipeline(f"linear:j_back")
+    s.pipeline("linear:j")
+    s.pipeline("linear:j_init")
+    s.pipeline("linear:j_back")
     return s
 
 
@@ -38,7 +38,7 @@ def relu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
 
 
 def schedule_relu(s):
-    s.pipeline(f"relu:j")
+    s.pipeline("relu:j")
     return s
 
 

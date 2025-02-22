@@ -10,7 +10,7 @@ import allo
 class MLP(nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear1 = torch.nn.Linear(16, 32) # 8*16 * 32*16
+        self.linear1 = torch.nn.Linear(16, 32)  # 8*16 * 32*16
         self.linear2 = torch.nn.Linear(32, 10)
 
     def forward(self, data):
