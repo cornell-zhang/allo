@@ -83,6 +83,7 @@ class LLVMOMPModule(LLVMModule):
             self.module = decompose_library_function(self.module)
 
             build_dataflow_simulator(self.module, self.top_func_name)
+            print(self.module)
             # Attach necessary attributes
             func = find_func_in_module(self.module, top_func_name)
             if func is None:
