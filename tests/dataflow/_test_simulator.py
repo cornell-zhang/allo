@@ -28,6 +28,7 @@ def test_tiled_gemm():
     mod = df.build(top, target="simulator")
     mod(A, B, C)
     np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5)
+    print("Passed!")
 
 
 if __name__ == "__main__":
