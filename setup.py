@@ -52,14 +52,20 @@ class CMakeBuild(build_ext):
                 cwd=build_temp,
                 check=True,
             )
-            subprocess.run(["ninja"], cwd=build_temp, check=True)
+            if NUM_THREADS := os.environ.get("NUM_THREADS"):
+                subprocess.run(["ninja", f"-j{NUM_THREADS}"], cwd=build_temp, check=True)
+            else:
+                subprocess.run(["ninja"], cwd=build_temp, check=True)
         elif BUILD_WITH == "make":
             subprocess.run(
                 ["cmake", "-G Unix Makefiles", ext.sourcedir] + cmake_args,
                 cwd=build_temp,
                 check=True,
             )
-            subprocess.run(["make", "-j4"], cwd=build_temp, check=True)
+            if NUM_THREADS := os.environ.get("NUM_THREADS"):
+                subprocess.run(["make", f"-j{NUM_THREADS}"], cwd=build_temp, check=True)
+            else:
+                subprocess.run(["make", "-j"], cwd=build_temp, check=True)
         else:
             raise RuntimeError(f"Unsupported BUILD_WITH={BUILD_WITH}")
 
