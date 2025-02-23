@@ -35,7 +35,8 @@ jobs:
           command: |
             source activate allo
             export PATH=/root/llvm-project/build/bin:${PATH}
-            OMP_NUM_THREADS=2 python3 -m pytest tests -v
+            OMP_NUM_THREADS=2 python3 -m pytest tests/dataflow/_test_simulator.py
+            python3 -m pytest tests -v
       - run:
           name: Run Tutorials and Benchmarks
           shell: bash
