@@ -53,7 +53,9 @@ class CMakeBuild(build_ext):
                 check=True,
             )
             if NUM_THREADS := os.environ.get("NUM_THREADS"):
-                subprocess.run(["ninja", f"-j{NUM_THREADS}"], cwd=build_temp, check=True)
+                subprocess.run(
+                    ["ninja", f"-j{NUM_THREADS}"], cwd=build_temp, check=True
+                )
             else:
                 subprocess.run(["ninja"], cwd=build_temp, check=True)
         elif BUILD_WITH == "make":
