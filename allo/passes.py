@@ -755,13 +755,25 @@ def canonicalize_fn(op: func_d.FuncOp):
 
 def canonicalize_call(op: func_d.CallOp):
     for result in op.results:
-        uses = list(result.uses)
-        n_uses = len(uses)
-        if not isinstance(result.type, MemRefType) or n_uses <= 1:
-            continue
+        loads = []
+        stores = []
+        for use in result.uses:
+            user = use.owner
+            if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
+                loads.append(user)
+            elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+                stores.append(user)
             
+        if not isinstance(result.type, MemRefType) or len(loads) == 1:
+            # already SPSPC pattern
+            continue
+        
+        if len(stores) > 1: 
+            raise Exception("Complex pattern detected in call op; additional canonicalization not implemented yet.")
+        
+        n_loads = len(loads)
         ip = InsertionPoint(op)
-        new_allocs = [memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_uses)]
+        new_allocs = [memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_loads)]
 
         shape = result.type.shape
     
@@ -784,8 +796,8 @@ def canonicalize_call(op: func_d.CallOp):
             with InsertionPoint(loop.body):
                 affine_d.AffineYieldOp([])
 
-        for idx, use in enumerate(uses):
-            use.owner.operation.replace_uses_of_with(result, new_allocs[idx].result)
+        for idx, user in enumerate(loads):
+            user.operation.replace_uses_of_with(result, new_allocs[idx].result)
         
 
 def canonicalize_alloc(alloc_op):
