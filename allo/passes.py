@@ -22,7 +22,6 @@ from ._mlir.ir import (
     IntegerAttr,
     IntegerType,
     Operation,
-    WalkResult
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -737,6 +736,7 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
                     if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
                         pipe_loop_innermost(op_, ii, rewind)
 
+
 def dataflow_canonicalization_pass(module):
     with module.context, Location.unknown():
         for op in module.body.operations:
@@ -744,6 +744,7 @@ def dataflow_canonicalization_pass(module):
                 continue
             canonicalize_fn(op)
     return module
+
 
 def canonicalize_fn(op: func_d.FuncOp):
     ops = list(op.entry_block.operations)
@@ -753,52 +754,71 @@ def canonicalize_fn(op: func_d.FuncOp):
         elif isinstance(op_in_block, func_d.CallOp):
             canonicalize_call(op_in_block)
 
+
 def canonicalize_call(op: func_d.CallOp):
     for result in op.results:
         loads = []
         stores = []
         for use in result.uses:
             user = use.owner
-            if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
+            if isinstance(
+                user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)
+            ):
                 loads.append(user)
             elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
                 stores.append(user)
-            
+
         if not isinstance(result.type, MemRefType) or len(loads) == 1:
             # already SPSPC pattern
             continue
-        
-        if len(stores) > 1: 
-            raise Exception("Complex pattern detected in call op; additional canonicalization not implemented yet.")
-        
+
+        if len(stores) > 1:
+            raise NotImplementedError(
+                "Complex pattern detected in call op; additional canonicalization not implemented yet."
+            )
+
         n_loads = len(loads)
         ip = InsertionPoint(op)
-        new_allocs = [memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_loads)]
+        new_allocs = [
+            memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_loads)
+        ]
 
         shape = result.type.shape
-    
-        loop_ivs, loops = list(), list()
+
+        loop_ivs, loops = [], []
         loop_ip = ip
-        for dim in shape: 
-            loop = affine_d.AffineForOp(lower_bound=0, upper_bound=dim, step=1, ip=loop_ip)
+        for dim in shape:
+            loop = affine_d.AffineForOp(
+                lower_bound=0, upper_bound=dim, step=1, ip=loop_ip
+            )
             loop_ivs.append(loop.induction_variable)
             loops.append(loop)
             loop_ip = InsertionPoint(loop.body)
-        
+
         loops[0].move_after(op)
 
         with InsertionPoint(loops[-1].body):
-            orig_value = affine_d.AffineLoadOp(result.type.element_type, result, loop_ivs, affine_d.AffineMap.get_identity(len(shape)))
+            orig_value = affine_d.AffineLoadOp(
+                result.type.element_type,
+                result,
+                loop_ivs,
+                affine_d.AffineMap.get_identity(len(shape)),
+            )
             for alloc in new_allocs:
-                affine_d.AffineStoreOp(orig_value.result, alloc, loop_ivs, affine_d.AffineMap.get_identity(len(shape)))
-        
+                affine_d.AffineStoreOp(
+                    orig_value.result,
+                    alloc,
+                    loop_ivs,
+                    affine_d.AffineMap.get_identity(len(shape)),
+                )
+
         for loop in loops:
             with InsertionPoint(loop.body):
                 affine_d.AffineYieldOp([])
 
         for idx, user in enumerate(loads):
             user.operation.replace_uses_of_with(result, new_allocs[idx].result)
-        
+
 
 def canonicalize_alloc(alloc_op):
     loads = []
@@ -812,8 +832,9 @@ def canonicalize_alloc(alloc_op):
 
     memref_type = alloc_op.result.type
     shape = memref_type.shape
-    orig_name = (alloc_op.attributes["name"].value 
-                 if "name" in alloc_op.attributes else "buffer")
+    orig_name = (
+        alloc_op.attributes["name"].value if "name" in alloc_op.attributes else "buffer"
+    )
     if len(shape) == 0:
         # should constants be propogated?
         return
@@ -822,9 +843,9 @@ def canonicalize_alloc(alloc_op):
     if len(stores) == 1 and len(loads) > 1:
         store = stores[0]
         for i, load in enumerate(loads[1:]):
-            new_alloc = alloc_op.operation.clone(ip = InsertionPoint(alloc_op))
+            new_alloc = alloc_op.operation.clone(ip=InsertionPoint(alloc_op))
             new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
-            store_dup = store.clone(ip = InsertionPoint(store))
+            store_dup = store.clone(ip=InsertionPoint(store))
             store_dup.operation.replace_uses_of_with(alloc_op.result, new_alloc.result)
             print(store_dup.memref, new_alloc.result)
             load.operation.replace_uses_of_with(store.memref, new_alloc.result)
@@ -832,4 +853,6 @@ def canonicalize_alloc(alloc_op):
 
     # multiple loads and multiple stores
     if len(stores) >= 2 or len(loads) >= 2:
-        raise Exception("Complex pattern detected in alloc op; additional canonicalization not implemented yet.")
+        raise NotImplementedError(
+            "Complex pattern detected in alloc op; additional canonicalization not implemented yet."
+        )
