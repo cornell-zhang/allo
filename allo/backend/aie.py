@@ -245,7 +245,53 @@ def get_position_str(mapping, index):
     return "_".join(map(str, reversed(indices)))
 
 
-def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args, kernel_func_arg_sizes, kernel_func_buf_dicts):
+def check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes):
+    """
+    Check if there is a non-empty intersection among all functions' usage regions for each parameter.
+
+    Parameters:
+    ----------
+    func_arg_sizes: list
+        Each element represents a function's usage sizes for all arguments.
+        For example, [[8, 16], [16, 8], [8, 8]] means the function has three parameters,
+        each being a 2D tensor with usage sizes 8x16, 16x8, and 8x8 respectively.
+    func_arg_lower_bounds: list
+        Has the same structure as func_arg_sizes, representing the lower bounds
+        of the usage regions for each parameter for each function.
+    orig_shapes: list
+        Each element represents the original shape of the corresponding parameter,
+        e.g., [[16, 16], [16, 16], [16, 16]]. It is assumed that all provided usage regions
+        are within the bounds of the original shape.
+
+    Returns:
+        A list of booleans. For each parameter, True indicates that there isn't any intersection
+        among all functions' usage regions within the original shape; False otherwise.
+    """
+    num_funcs = len(func_arg_sizes)
+    num_params = len(orig_shapes)
+    results = []
+    for param in range(num_params):
+        boxes = []
+        has_intersection = False
+        dims = len(orig_shapes[param])
+        for f in range(num_funcs):
+            box = []
+            for d in range(dims):
+                lower = func_arg_lower_bounds[f][param][d]
+                upper = lower + func_arg_sizes[f][param][d]
+                box.append((lower, upper))
+            for b in boxes:
+                if all(max(b[d][0], box[d][0]) < min(b[d][1], box[d][1]) for d in range(dims)):
+                    has_intersection = True
+                    break
+            if has_intersection:
+                break
+            boxes.append(box)
+        results.append(not has_intersection)
+    return results
+
+
+def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args, kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_func_buf_dicts):
     """
     Generates MLIR-AIE code with MLIR module and extra information
 
@@ -339,20 +385,22 @@ def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args,
     """
     kernel_dist_allocs = {}
     for kernel_name, (start, end) in kernel_index_ranges.items():
-        dist_allocs = [False] * len(input_args)
         input_args = kernel_input_args[kernel_name]
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
+        func_arg_lower_bounds = kernel_func_arg_lower_bounds[kernel_name]
         mapping = mappings[kernel_name]
+        orig_shapes = [input_arg[-1] for input_arg in input_args]
+        dist_allocs = check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes)
         for arg_id, (in_type, orig_in_type, shape, orig_shape) in enumerate(input_args[:-1]):
-            total_sizes = [0] * len(orig_shape)
-            for sizes in func_arg_sizes:
-                for dim in range(len(orig_shape)):
-                    total_sizes[dim] += sizes[arg_id][dim]
-            alloc_count = 0
-            for dim, orig_len in enumerate(orig_shape):
-                if total_sizes[dim] <= orig_len:
-                    alloc_count += 1
-            dist_allocs[arg_id] = alloc_count == len(mapping)
+            # total_sizes = [0] * len(orig_shape)
+            # for sizes in func_arg_sizes:
+            #     for dim in range(len(orig_shape)):
+            #         total_sizes[dim] += sizes[arg_id][dim]
+            # alloc_count = 0
+            # for dim, orig_len in enumerate(orig_shape):
+            #     if total_sizes[dim] <= orig_len:
+            #         alloc_count += 1
+            # dist_allocs[arg_id] = alloc_count >= len(mapping)
             if dist_allocs[arg_id]:
                 # depth=2 means double buffer
                 code += format_str(
@@ -384,18 +432,19 @@ def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args,
     for kernel_name, (start, end) in kernel_index_ranges.items():
         dist_allocs = kernel_dist_allocs[kernel_name]
         input_args = kernel_input_args[kernel_name]
+        func_arg_lower_bounds = kernel_func_arg_lower_bounds[kernel_name]
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
         mapping = mappings[kernel_name]
-        out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
-        total_sizes = [0] * len(orig_out_shape)
-        for sizes in func_arg_sizes:
-            for dim in range(len(orig_out_shape)):
-                total_sizes[dim] += sizes[-1][dim]
-        alloc_count = 0
-        for dim, orig_out_len in enumerate(orig_out_shape):
-            if total_sizes[dim] <= orig_out_len:
-                alloc_count += 1
-        dist_allocs[-1] = alloc_count == len(mapping)
+        out_type, orig_out_type, out_shape, _ = input_args[-1]
+        # total_sizes = [0] * len(orig_out_shape)
+        # for sizes in func_arg_sizes:
+        #     for dim in range(len(orig_out_shape)):
+        #         total_sizes[dim] += sizes[-1][dim]
+        # alloc_count = 0
+        # for dim, orig_out_len in enumerate(orig_out_shape):
+        #     if total_sizes[dim] <= orig_out_len:
+        #         alloc_count += 1
+        # dist_allocs[-1] = alloc_count >= len(mapping)
         if dist_allocs[-1]:
             # output uses tile_mem0
             for fid in range(start, end):
@@ -420,7 +469,7 @@ def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args,
             code += format_str(
                 f"aie.objectfifo @out_{kernel_name}_0({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
             )
-            code += format_str("aie.objectfifo.link [@out_{kernel_name}_0] -> [@out_sh_{kernel_name}]([] [])")
+            code += format_str(f"aie.objectfifo.link [@out_{kernel_name}_0] -> [@out_sh_{kernel_name}]([] [])")
     # create core computation
     in_args = []
     out_args = []
@@ -482,23 +531,23 @@ def codegen_aie_mlir(mod, mappings, kernel_index_ranges, orig_kernel_input_args,
             input_args = kernel_input_args[kernel_name]
             dist_allocs = kernel_dist_allocs[kernel_name]
             out_id = len(input_args) - 1
-            pe_size = end - start
-            for arg_id, (_, orig_in_type, shape, _) in enumerate(input_args[:-1]):
+            for arg_id, (_, orig_in_type, _, orig_shape) in enumerate(input_args[:-1]):
                 # (x, y, memref[offset][size][stride])
                 # issue_token: MM2S-false, S2MM-true
                 if len(shape) == 1:
-                    size_n_stride = f"[1, 1, 1, {shape[0] * (pe_size if dist_allocs[arg_id] else 1)}][0, 0, 0, 1]"
+                    size_n_stride = f"[1, 1, 1, {orig_shape[0]}][0, 0, 0, 1]"
                 else:
                     size_n_stride = (
-                        f"[1, 1, {shape[0] * pe_size}, {shape[1]}][0, 0, {shape[1]}, 1]"
+                        f"[1, 1, {orig_shape[0]}, {orig_shape[1]}][0, 0, {orig_shape[1]}, 1]"
                     )
                 code += format_str(
                     f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_{arg_id}}} : {orig_in_type}"
                 )
-            if len(out_shape) == 1:
-                out_size_n_stride = f"[1, 1, 1, {out_shape[0] * pe_size}][0, 0, 0, 1]"
+            orig_out_shape = input_args[-1][-1]
+            if len(orig_out_shape) == 1:
+                out_size_n_stride = f"[1, 1, 1, {orig_out_shape[0]}][0, 0, 0, 1]"
             else:
-                out_size_n_stride = f"[1, 1, {out_shape[0] * pe_size}, {out_shape[1]}][0, 0, {out_shape[1]}, 1]"
+                out_size_n_stride = f"[1, 1, {orig_out_shape[0]}, {orig_out_shape[1]}][0, 0, {orig_out_shape[1]}, 1]"
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{out_id}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
             )
@@ -576,6 +625,7 @@ def reindex_tensor_access(mod, kernel_index_ranges):
         func_arg_lower_bounds = kernel_func_arg_lower_bounds[kernel_name]
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
         for fid in range(start, end):
+            func = funcs[fid]
             entry_block = func.regions[0].blocks[0]
             args = entry_block.arguments
             lower_bounds = func_arg_lower_bounds[fid - start]
@@ -694,7 +744,7 @@ class AIEModule:
             self.kernel_outputs[kernel_name] = outputs
             self.kernel_input_args[kernel_name] = inputs + outputs
         # Assume all functions of the same kernel have the same input and output arguments
-        _, kernel_func_arg_sizes = reindex_tensor_access(self.module, self.kernel_index_ranges)
+        kernel_func_arg_lower_bounds, kernel_func_arg_sizes = reindex_tensor_access(self.module, self.kernel_index_ranges)
         with self.module.context as ctx, Location.unknown():
             for kernel_name, (start, end) in self.kernel_index_ranges.items():
                 func_arg_sizes = kernel_func_arg_sizes[kernel_name]
@@ -704,7 +754,7 @@ class AIEModule:
                     update_func_op_arg_types(func, self.kernel_input_args[kernel_name], shapes, ctx)
         lower_tensor_to_memref(self.module)
         kernel_func_buf_dicts = record_local_buffer(self.module, self.kernel_index_ranges)
-        code = codegen_aie_mlir(self.module, self.mappings, self.kernel_index_ranges, self.kernel_input_args, kernel_func_arg_sizes, kernel_func_buf_dicts)
+        code = codegen_aie_mlir(self.module, self.mappings, self.kernel_index_ranges, self.kernel_input_args, kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_func_buf_dicts)
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
