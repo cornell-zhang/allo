@@ -34,10 +34,10 @@ jobs:
           name: Run Unit Tests
           shell: bash
           command: |
-            apt-get -y install libomp-dev
+            source activate allo
+            apt-get install -y libgomp1 libomp-dev
             echo 'export LD_LIBRARY_PATH=/root/llvm-project/build/lib:$LD_LIBRARY_PATH' >> $BASH_ENV
             echo $LD_LIBRARY_PATH
-            source activate allo
             export PATH=/root/llvm-project/build/bin:${PATH}
             export OMP_NUM_THREADS=2
             python3 tests/dataflow/_test_simulator.py

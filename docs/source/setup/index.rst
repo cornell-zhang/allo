@@ -62,6 +62,7 @@ Please follow the instructions below to build the LLVM-19 project from source. Y
         -DCMAKE_BUILD_TYPE=Release \
         -DLLVM_ENABLE_ASSERTIONS=ON \
         -DLLVM_INSTALL_UTILS=ON \
+        -DLIBOMP_ENABLE_SHARED=OFF \
         -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
         -DPython3_EXECUTABLE=`which python3`
     ninja
