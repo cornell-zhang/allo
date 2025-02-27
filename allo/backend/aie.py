@@ -18,7 +18,6 @@ from .._mlir.ir import (
     TypeAttr,
     Location,
 )
-from .._mlir.dialects import func as func_d
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
 from .vitis import read_tensor_from_file
