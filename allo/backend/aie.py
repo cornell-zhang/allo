@@ -490,7 +490,7 @@ def codegen_aie_mlir(
                         f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
                     )
                     func_str = func_str.replace(f"%arg{out_id}", "%local_out")
-                    with format_code(indent=4):
+                    with format_code(indent=6):
                         for line in func_str.splitlines()[1:-2]:
                             code += format_str(line, strip=False)
                     for arg_id in range(len(input_args[:-1])):
