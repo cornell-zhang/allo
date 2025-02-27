@@ -786,10 +786,6 @@ class AIEModule:
     def __init__(self, module, top_func_name, project, kernel_mappings):
         self.module = module
         self.top_func_name = top_func_name
-        # TODO: need to support multiple kernels
-        for op in module.body.operations:
-            if isinstance(op, func_d.FuncOp) and op.name.value != top_func_name:
-                self.kernel_func = op
         self.project = project
         self.module = module
         self.kernel_mappings = kernel_mappings
@@ -807,7 +803,7 @@ class AIEModule:
         for kernel_name, (start, _) in self.kernel_index_ranges.items():
             kernel_func = self.module.body.operations[start]
             self.kernel_funcs[kernel_name] = kernel_func
-            inputs, outputs = get_func_inputs_outputs(self.kernel_func)
+            inputs, outputs = get_func_inputs_outputs(kernel_func)
             self.kernel_inputs[kernel_name] = inputs
             self.kernel_outputs[kernel_name] = outputs
             self.kernel_input_args[kernel_name] = inputs + outputs
