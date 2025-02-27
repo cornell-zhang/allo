@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
 
 import functools
 
@@ -247,7 +247,7 @@ def region():
         _current_region_context = {}
         try:
             func()
-        except Exception as e:
+        except Exception as _:
             pass
         func.mappings = _current_region_context
         _current_region_context = None
