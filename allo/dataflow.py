@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement
 
 import functools
 
@@ -220,6 +220,7 @@ def _build_top(s, stream_info, enable_tensor):
 # record kernel mapping in the current region context
 _current_region_context = None
 
+
 def kernel(mapping=None):
 
     def actual_decorator(func):
@@ -247,6 +248,7 @@ def region():
         func()
         func.mappings = _current_region_context
         _current_region_context = None
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # *args and **kwargs are the actual arguments that are passed into the kernel function
