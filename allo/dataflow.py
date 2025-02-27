@@ -245,7 +245,10 @@ def region():
     def actual_decorator(func):
         global _current_region_context
         _current_region_context = {}
-        func()
+        try:
+            func()
+        except Exception as e:
+            pass
         func.mappings = _current_region_context
         _current_region_context = None
 
