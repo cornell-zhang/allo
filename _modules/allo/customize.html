@@ -1244,10 +1244,12 @@
     <span class="c1"># Get Python AST</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span> <span class="o">=</span> <span class="n">fn</span><span class="p">,</span> <span class="mi">1</span>
+        <span class="n">file_name</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsourcelines</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
         <span class="n">src</span> <span class="o">=</span> <span class="p">[</span><span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">tabsize</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">9999</span><span class="p">)</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">src</span><span class="p">]</span>
         <span class="n">src</span> <span class="o">=</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">src</span><span class="p">))</span>
+        <span class="n">file_name</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getfile</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
     <span class="n">tree</span> <span class="o">=</span> <span class="n">parse_ast</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">starting_line_no</span><span class="o">=</span><span class="n">starting_line_no</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">instantiate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">instantiate</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1273,7 +1275,6 @@
         <span class="n">enable_tensor</span><span class="o">=</span><span class="n">enable_tensor</span><span class="p">,</span>
         <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">file_name</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getfile</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
     <span class="n">module</span> <span class="o">=</span> <span class="n">ASTTransformer</span><span class="p">()(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">tree</span><span class="p">,</span> <span class="n">file_name</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">lower_linalg</span><span class="p">:</span>
         <span class="n">lower_linalg_and_attach_names</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
@@ -1339,7 +1340,7 @@
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2025, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.0.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.1.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>

@@ -183,8 +183,8 @@
 <section id="install-from-docker">
 <h2>Install from Docker<a class="headerlink" href="#install-from-docker" title="Link to this heading"><span>¶</span></a></h2>
 <p>To simplify the installation process, we provide a docker image that has already installed the LLVM-19 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the <code class="code docutils literal notranslate"><span class="pre">/root/llvm-project</span></code> folder in the docker image.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>pull<span class="w"> </span>chhzh123/allo:llvm-19.x-py3.12
-<span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>chhzh123/allo:llvm-19.x-py3.12
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>pull<span class="w"> </span>chhzh123/allo:latest
+<span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>chhzh123/allo:latest
 <span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>allo
 <span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
@@ -200,7 +200,7 @@ git<span class="w"> </span>apply<span class="w"> </span>../llvm_patch
 <span class="c1"># Python 3.12 is required</span>
 mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
 cmake<span class="w"> </span>-G<span class="w"> </span>Ninja<span class="w"> </span>../llvm<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DLLVM_ENABLE_PROJECTS<span class="o">=</span>mlir<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DLLVM_ENABLE_PROJECTS<span class="o">=</span><span class="s2">&quot;clang;mlir;openmp&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DLLVM_BUILD_EXAMPLES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DLLVM_TARGETS_TO_BUILD<span class="o">=</span><span class="s2">&quot;host&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
@@ -310,7 +310,7 @@ ninja
 
     <div class="footer" role="contentinfo">
     &#169; Copyright 2025, Allo Authors.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.0.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.1.
     </div>
 
 <p id="theme_credit">Styled using the <a href="https://github.com/piccolo-orm/piccolo_theme">Piccolo Theme</a></p>
