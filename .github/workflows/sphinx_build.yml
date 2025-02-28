@@ -23,7 +23,7 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/allo:llvm-19.x-py3.12
+      image: chhzh123/allo:latest
 
     steps:
     - name: Install rsync 📚
@@ -49,6 +49,7 @@ jobs:
         source activate allo
         export PATH=/root/llvm-project/build/bin:${PATH}
         cd docs
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install -r requirements.txt
         make html
     - run: touch docs/build/html/.nojekyll

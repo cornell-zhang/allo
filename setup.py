@@ -45,12 +45,31 @@ class CMakeBuild(build_ext):
         if not os.path.exists(build_temp):
             os.makedirs(build_temp)
 
-        subprocess.run(
-            ["cmake", "-G Ninja", ext.sourcedir] + cmake_args,
-            cwd=build_temp,
-            check=True,
-        )
-        subprocess.run(["ninja"], cwd=build_temp, check=True)
+        BUILD_WITH = os.environ.get("BUILD_WITH")
+        if not BUILD_WITH or BUILD_WITH == "ninja":
+            subprocess.run(
+                ["cmake", "-G Ninja", ext.sourcedir] + cmake_args,
+                cwd=build_temp,
+                check=True,
+            )
+            if NUM_THREADS := os.environ.get("NUM_THREADS"):
+                subprocess.run(
+                    ["ninja", f"-j{NUM_THREADS}"], cwd=build_temp, check=True
+                )
+            else:
+                subprocess.run(["ninja"], cwd=build_temp, check=True)
+        elif BUILD_WITH == "make":
+            subprocess.run(
+                ["cmake", "-G Unix Makefiles", ext.sourcedir] + cmake_args,
+                cwd=build_temp,
+                check=True,
+            )
+            if NUM_THREADS := os.environ.get("NUM_THREADS"):
+                subprocess.run(["make", f"-j{NUM_THREADS}"], cwd=build_temp, check=True)
+            else:
+                subprocess.run(["make", "-j"], cwd=build_temp, check=True)
+        else:
+            raise RuntimeError(f"Unsupported BUILD_WITH={BUILD_WITH}")
 
 
 def parse_requirements(filename):

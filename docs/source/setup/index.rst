@@ -34,8 +34,8 @@ To simplify the installation process, we provide a docker image that has already
 
 .. code-block:: console
 
-  $ docker pull chhzh123/allo:llvm-19.x-py3.12
-  $ docker run --rm -it chhzh123/allo:llvm-19.x-py3.12
+  $ docker pull chhzh123/allo:latest
+  $ docker run --rm -it chhzh123/allo:latest
   (docker) $ git clone https://github.com/cornell-zhang/allo.git && cd allo
   (docker) $ python3 -m pip install -v -e .
 
@@ -56,7 +56,7 @@ Please follow the instructions below to build the LLVM-19 project from source. Y
     # Python 3.12 is required
     mkdir -p build && cd build
     cmake -G Ninja ../llvm \
-        -DLLVM_ENABLE_PROJECTS=mlir \
+        -DLLVM_ENABLE_PROJECTS="clang;mlir;openmp" \
         -DLLVM_BUILD_EXAMPLES=ON \
         -DLLVM_TARGETS_TO_BUILD="host" \
         -DCMAKE_BUILD_TYPE=Release \

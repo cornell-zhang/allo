@@ -18,7 +18,7 @@ PASSWORD="$2"
 shift 1
 
 LOCAL_IMAGE_NAME=allo:latest
-REMOTE_IMAGE_NAME_VER=${DOCKER_HUB_ACCOUNT}/allo:llvm-19.x-py3.12
+REMOTE_IMAGE_NAME_VER=${DOCKER_HUB_ACCOUNT}/allo:latest
 
 echo "Login docker hub"
 docker login -u ${DOCKER_HUB_ACCOUNT} -p ${PASSWORD}

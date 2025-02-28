@@ -15,7 +15,7 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/allo:llvm-19.x-py3.12
+      image: chhzh123/allo:latest
 
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
@@ -44,6 +44,7 @@ jobs:
       run: |
         source activate allo
         export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest tests -v
         python3 -m pytest tutorials -v
         python3 -m pytest examples/polybench -v
