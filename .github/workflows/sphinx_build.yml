@@ -23,7 +23,7 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/allo:latest
+      image: chhzh123/allo:llvm-19.x-omp
 
     steps:
     - name: Install rsync 📚
