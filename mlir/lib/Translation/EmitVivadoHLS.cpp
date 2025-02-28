@@ -138,6 +138,7 @@ public:
   void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);
   void emitSubView(memref::SubViewOp op);
+  void emitReshape(memref::ReshapeOp op);
 
   /// Tensor-related statement emitters.
   void emitTensorExtract(tensor::ExtractOp op);
@@ -327,6 +328,7 @@ public:
   bool visitOp(memref::GlobalOp op) { return emitter.emitGlobal(op), true; }
   bool visitOp(memref::DeallocOp op) { return true; }
   bool visitOp(memref::SubViewOp op) { return emitter.emitSubView(op), true; }
+  bool visitOp(memref::ReshapeOp op) { return emitter.emitReshape(op), true; }
 
   /// Tensor-related statements.
   bool visitOp(tensor::ExtractOp op) {
@@ -1666,6 +1668,30 @@ void ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   os << " = ";
   emitValue(op.getNum());
   os << ".reverse();";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitReshape(memref::ReshapeOp op) {
+  auto array = op->getResult(0);
+  assert(!isDeclared(array) && "has been declared before.");
+
+  auto arrayType = array.getType().template cast<ShapedType>();
+  indent() << getTypeName(array) << " (*";
+
+  // Add the new value to nameTable and emit its name.
+  os << addName(array, false);
+  os << ")";
+
+  for (auto &shape : llvm::drop_begin(arrayType.getShape(), 1))
+    os << "[" << shape << "]";
+
+  os << " = (" << getTypeName(array) << "(*)";
+  for (auto &shape : llvm::drop_begin(arrayType.getShape(), 1))
+    os << "[" << shape << "]";
+  os << ") ";
+
+  emitValue(op->getOperand(0));
+  os << ";";
   emitInfoAndNewLine(op);
 }
 

@@ -43,7 +43,7 @@ public:
             // Memref-related statements.
             memref::AllocOp, memref::AllocaOp, memref::LoadOp, memref::StoreOp,
             memref::GetGlobalOp, allo::GetGlobalFixedOp, memref::GlobalOp,
-            memref::DeallocOp, memref::DmaStartOp, memref::DmaWaitOp,
+            memref::DeallocOp, memref::DmaStartOp, memref::DmaWaitOp, memref::ReshapeOp,
             memref::ViewOp, memref::SubViewOp, memref::ReinterpretCastOp,
             memref::AtomicRMWOp,
             // Tensor-related statements.
@@ -144,6 +144,7 @@ public:
   HANDLE(memref::ViewOp);
   HANDLE(memref::SubViewOp);
   HANDLE(memref::ReinterpretCastOp);
+  HANDLE(memref::ReshapeOp);
 
   // Tensor-related statements.
   HANDLE(tensor::ExtractOp);
