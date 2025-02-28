@@ -39,8 +39,6 @@ class CMakeBuild(build_ext):
         cmake_args = [
             f"-DMLIR_DIR={llvm_build_dir}/lib/cmake/mlir",
             f"-DPython3_EXECUTABLE={sys.executable}",
-            '-DCMAKE_CXX_FLAGS="-fopenmp"',
-            '-DCMAKE_EXE_LINKER_FLAGS="-fopenmp"',
         ]
 
         build_temp = os.path.join(ext.sourcedir, "build")
