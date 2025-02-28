@@ -6,7 +6,7 @@ from .. import dsl
 from .systolic import systolic
 
 
-def linear[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
+def linear2d[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
     Z: Ty[M, N]
     buf: Ty[N]
@@ -23,22 +23,61 @@ def linear[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
     return Z
 
 
-def schedule_linear(s):
-    s.pipeline("linear:j")
-    s.pipeline("linear:j_init")
-    s.pipeline("linear:j_back")
+def schedule_linear2d(s):
+    s.pipeline("linear2d:j")
+    s.pipeline("linear2d:j_init")
+    s.pipeline("linear2d:j_back")
     return s
 
 
-def relu[Ty, L, D](X: "Ty[L, D]") -> "Ty[L, D]":
-    Z: Ty[L, D]
-    for i, j in dsl.grid(L, D):
-        Z[i, j] = max(0.0, X[i, j])
+def linear3d[
+    Ty, B, L, D, M
+](X: "Ty[B, L, D]", W: "Ty[M, D]", bias: "Ty[M]") -> "Ty[B, L, M]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
+    Z: Ty[B, L, M]
+    buf: Ty[M]
+    for b in range(B):
+        for i in range(L):
+            for j_init in range(M):
+                buf[j_init] = 0
+            for k in range(D):
+                # reorder reduction loop outside, and pipeline
+                x: Ty = X[b, i, k]
+                for j in range(M):
+                    buf[j] += x * W[j, k]
+            for j_back in range(M):
+                Z[b, i, j_back] = buf[j_back] + bias[j_back]
     return Z
 
 
-def schedule_relu(s):
-    s.pipeline("relu:j")
+def schedule_linear3d(s):
+    s.pipeline("linear3d:j")
+    s.pipeline("linear3d:j_init")
+    s.pipeline("linear3d:j_back")
+    return s
+
+
+def relu2d[Ty, H, W](X: "Ty[H, W]") -> "Ty[H, W]":
+    Z: Ty[H, W]
+    for h, w in dsl.grid(H, W):
+        Z[h, w] = max(0.0, X[h, w])
+    return Z
+
+
+def schedule_relu2d(s):
+    s.pipeline("relu2d:w")
+    return s
+
+
+def relu4d[Ty, N, C, H, W](X: "Ty[N, C, H, W]") -> "Ty[N, C, H, W]":
+    Z: Ty[N, C, H, W]
+    for n, c, h, w in dsl.grid(N, C, H, W):
+        Z[n, c, h, w] = max(0.0, X[n, c, h, w])
+    return Z
+
+
+def schedule_relu4d(s):
+    s.pipeline("relu4d:w")
     return s
 
 

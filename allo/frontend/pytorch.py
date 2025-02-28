@@ -1,8 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=too-many-public-methods
+# pylint: disable=too-many-public-methods, too-many-instance-attributes
 
-import re
 import operator
 import inspect
 import math
@@ -22,11 +21,6 @@ from ..library import nn
 from ..ir import types
 from ..customize import customize
 from ..ir.types import float32
-
-compose_mapping = {
-    "linear": nn.linear,
-    "relu": nn.relu,
-}
 
 
 def from_pytorch(
@@ -77,8 +71,7 @@ def from_pytorch(
     s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
     # composition
     for func, idx, inst in builder.composition:
-        if func in compose_mapping:
-            s.compose(compose_mapping[func], id=idx, instantiate=inst)
+        s.compose(getattr(nn, func), id=idx, instantiate=inst)
     if verbose:
         print(s.module)
     if target == "mlir":
@@ -104,6 +97,7 @@ class TorchBuilder:
         self.subfunctions = []
         self.output = []
         self.composition = []
+        self.unique_id = {}
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -155,6 +149,13 @@ class TorchBuilder:
             self.code.append(ret)
         return ret
 
+    def get_unique_id(self, name):
+        if name not in self.unique_id:
+            self.unique_id[name] = 0
+            return 0
+        self.unique_id[name] += 1
+        return self.unique_id[name]
+
     def get_module(self, name):
         return dict(self.gm.named_modules())[name]
 
@@ -180,8 +181,13 @@ class TorchBuilder:
             raise NotImplementedError("Unsupported module")
         if op == "linear":
             bias = True if module.bias is not None else None
-            return getattr(self, "build_linear")(node, bias)
-        return getattr(self, f"build_{op}")(node)
+            res = getattr(self, "build_linear")(node, bias)
+        else:
+            res = getattr(self, f"build_{op}")(node)
+        # append shape after the operation
+        if "tensor_meta" in node.meta:
+            res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
+        return res
 
     def build_call_function(self, node):
         opcls = {
@@ -203,11 +209,12 @@ class TorchBuilder:
             torch.cat: "concat",
         }.get(node.target)
         # Only nodes with shape need to be built.
-        return (
-            getattr(self, f"build_{opcls}")(node)
-            if "tensor_meta" in node.meta
-            else None
-        )
+        if "tensor_meta" in node.meta:
+            res = getattr(self, f"build_{opcls}")(node)
+            # append shape after the operation
+            res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
+            return res
+        return None
 
     def build_call_method(self, node):
         if node.target == "contiguous":
@@ -298,12 +305,17 @@ class TorchBuilder:
 
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
-        bs, n = tuple(node.meta["tensor_meta"].shape)
-        match = re.search(r"\d+$", str(node.target).replace(".", "_"))
-        self.composition.append(
-            ("relu", match.group() if match else None, [float32, bs, n])
-        )
-        return f"{node.name} = nn.relu[float32, {bs}, {n}]({inp})"
+        shape = tuple(node.meta["tensor_meta"].shape)
+        name_id = self.get_unique_id("relu")
+        if len(shape) == 2:
+            n, d = shape
+            self.composition.append(("relu2d", name_id, [float32, n, d]))
+            return f'{node.name} = nn.relu2d[float32, {n}, {d}, "{name_id}"]({inp})'
+        if len(shape) == 4:
+            n, c, h, w = shape
+            self.composition.append(("relu4d", name_id, [float32, n, c, h, w]))
+            return f'{node.name} = nn.relu4d[float32, {n}, {c}, {h}, {w}, "{name_id}"]({inp})'
+        raise NotImplementedError("Unsupported shape for relu")
 
     def build_linear(self, node, bias):
         target_name = node.target.replace(".", "_")
@@ -311,16 +323,26 @@ class TorchBuilder:
         weight = get_var_name(target_name + "_weight")
         if bias:
             bias = get_var_name(target_name + "_bias")
-            # output shape: bs * n
-            bs, n = tuple(node.meta["tensor_meta"].shape)
-            _, m = self.named_params[f"{str(node.target)}.weight"].shape
-            match = re.search(r"\d+$", target_name)
-            name = f', "{match.group()}"' if match else ""
-            # bs*m x (n*m)^T + (n*1) = bs*n
-            self.composition.append(
-                ("linear", match.group() if match else None, [float32, bs, n, m])
-            )
-            return f"{node.name} = nn.linear[float32, {bs}, {n}, {m}{name}]({inp}, {weight}, {bias})"
+            shape = tuple(node.meta["tensor_meta"].shape)
+            name_id = self.get_unique_id("linear")
+            if len(shape) == 2:
+                n, d = shape
+                _, m = self.named_params[f"{str(node.target)}.weight"].shape
+                # n*m x (m*d)^T + (n*1) = n*d
+                self.composition.append(("linear2d", name_id, [float32, n, d, m]))
+                return f'{node.name} = nn.linear2d[float32, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+            if len(shape) == 3:
+                bs, l, m = shape
+                _, d = self.named_params[f"{str(node.target)}.weight"].shape
+                self.composition.append(
+                    (
+                        "linear3d",
+                        name_id,
+                        [float32, bs, l, d, m],
+                    )
+                )
+                return f'{node.name} = nn.linear3d[float32, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+            raise NotImplementedError("Unsupported shape for linear")
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):
