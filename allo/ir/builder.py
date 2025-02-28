@@ -1138,7 +1138,10 @@ class ASTTransformer(ASTBuilder):
                 strides=[],
                 ip=ctx.get_ip(),
             )
-            op = subview
+            if isinstance(node.ctx, ast.Load):
+                op = subview
+            else:
+                op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
         else:
             new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
             if len(node.value.shape) > len(new_indices):  # partial access
