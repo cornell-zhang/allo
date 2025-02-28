@@ -10,6 +10,7 @@
 // Global memrefs and memrefs in function args are not removed.
 //===----------------------------------------------------------------------===//
 #include "PassDetail.h"
+#include "allo/Dialect/AlloOps.h"
 #include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -52,6 +53,9 @@ void removeNeverLoadedMemRef(func::FuncOp &func) {
         loaded_from = true;
         break;
       } else if (isa<func::CallOp>(u)) {
+        loaded_from = true;
+        break;
+      } else if (isa<StructConstructOp>(u)) {
         loaded_from = true;
         break;
       }

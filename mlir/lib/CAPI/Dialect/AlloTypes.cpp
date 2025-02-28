@@ -89,3 +89,7 @@ MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType,
 MlirType alloMlirStreamTypeGetBaseType(MlirType type) {
   return wrap(unwrap(type).cast<allo::StreamType>().getBaseType());
 }
+
+unsigned alloMlirStreamTypeGetDepth(MlirType type) {
+  return unwrap(type).cast<allo::StreamType>().getDepth();
+}
