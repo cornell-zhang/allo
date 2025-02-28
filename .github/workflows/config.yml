@@ -1,0 +1,49 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: "Allo Test"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    # This job runs on Linux
+    runs-on: ubuntu-latest
+    container:
+      image: chhzh123/allo:latest
+
+    steps:
+    # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
+    - name: Install git in container
+      run: |
+        apt-get install git
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
+    - name: Build Allo
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install -v -e .
+    - name: Formatting Check
+      shell: bash
+      run: |
+        source activate allo
+        bash scripts/lint/task_lint.sh
+    - name: Testing
+      shell: bash
+      run: |
+        source activate allo
+        export PATH=/root/llvm-project/build/bin:${PATH}
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pytest tests -v
+        python3 -m pytest tutorials -v
+        python3 -m pytest examples/polybench -v

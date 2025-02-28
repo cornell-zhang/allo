@@ -118,9 +118,6 @@ class LLVMOMPModule(LLVMModule):
                     os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
                 ),
                 os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libomp.so"),
-                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libompd.so"),
-                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libgomp.so"),
-                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libiomp5.so"),
             ]
             shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
             self.execution_engine = ExecutionEngine(
