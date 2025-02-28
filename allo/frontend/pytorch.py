@@ -98,6 +98,7 @@ class TorchBuilder:
         self.subfunctions = []
         self.output = []
         self.composition = []
+        self.unique_id = {}
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -148,6 +149,13 @@ class TorchBuilder:
         if ret:
             self.code.append(ret)
         return ret
+
+    def get_unique_id(self, name):
+        if name not in self.unique_id:
+            self.unique_id[name] = 0
+            return 0
+        self.unique_id[name] += 1
+        return self.unique_id[name]
 
     def get_module(self, name):
         return dict(self.gm.named_modules())[name]
@@ -299,22 +307,16 @@ class TorchBuilder:
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
         shape = tuple(node.meta["tensor_meta"].shape)
-        match = re.search(r"\d+$", str(node.target).replace(".", "_"))
-        name = f', "{match.group()}"' if match else ""
+        name_id = self.get_unique_id("relu")
         if len(shape) == 2:
             n, d = shape
-            self.composition.append(
-                ("relu2d", match.group() if match else None, [float32, n, d])
-            )
-            return f"{node.name} = nn.relu2d[float32, {n}, {d}]({inp})"
-        elif len(shape) == 4:
+            self.composition.append(("relu2d", name_id, [float32, n, d]))
+            return f'{node.name} = nn.relu2d[float32, {n}, {d}, "{name_id}"]({inp})'
+        if len(shape) == 4:
             n, c, h, w = shape
-            self.composition.append(
-                ("relu4d", match.group() if match else None, [float32, n, c, h, w])
-            )
-            return f"{node.name} = nn.relu4d[float32, {n}, {c}, {h}, {w}{name}]({inp})"
-        else:
-            raise NotImplementedError("Unsupported shape for relu")
+            self.composition.append(("relu4d", name_id, [float32, n, c, h, w]))
+            return f'{node.name} = nn.relu4d[float32, {n}, {c}, {h}, {w}, "{name_id}"]({inp})'
+        raise NotImplementedError("Unsupported shape for relu")
 
     def build_linear(self, node, bias):
         target_name = node.target.replace(".", "_")
@@ -323,29 +325,25 @@ class TorchBuilder:
         if bias:
             bias = get_var_name(target_name + "_bias")
             shape = tuple(node.meta["tensor_meta"].shape)
-            match = re.search(r"\d+$", target_name)
-            name = f', "{match.group()}"' if match else ""
+            name_id = self.get_unique_id("linear")
             if len(shape) == 2:
                 n, d = shape
                 _, m = self.named_params[f"{str(node.target)}.weight"].shape
                 # n*m x (m*d)^T + (n*1) = n*d
-                self.composition.append(
-                    ("linear2d", match.group() if match else None, [float32, n, d, m])
-                )
-                return f"{node.name} = nn.linear2d[float32, {n}, {d}, {m}{name}]({inp}, {weight}, {bias})"
-            elif len(shape) == 3:
+                self.composition.append(("linear2d", name_id, [float32, n, d, m]))
+                return f'{node.name} = nn.linear2d[float32, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+            if len(shape) == 3:
                 bs, l, m = shape
                 _, d = self.named_params[f"{str(node.target)}.weight"].shape
                 self.composition.append(
                     (
                         "linear3d",
-                        match.group() if match else None,
+                        name_id,
                         [float32, bs, l, d, m],
                     )
                 )
-                return f"{node.name} = nn.linear3d[float32, {bs}, {l}, {d}, {m}{name}]({inp}, {weight}, {bias})"
-            else:
-                raise NotImplementedError("Unsupported shape for linear")
+                return f'{node.name} = nn.linear3d[float32, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+            raise NotImplementedError("Unsupported shape for linear")
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
     def build_gelu(self, node):
