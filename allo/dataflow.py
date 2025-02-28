@@ -243,8 +243,10 @@ def kernel(mapping=None):
 def region():
 
     def actual_decorator(func):
+        # TODO: ideally this context information should be recorded in the builder
         global _current_region_context
         _current_region_context = {}
+        # The function call is only to collect the kernel mapping info, use try except to avoid any exception
         try:
             func()
         except Exception as _:
@@ -294,7 +296,7 @@ def build(
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=True)
         # stream_info = move_stream_to_interface(s)
-        # s = _build_top(s, stream_info, enable_tensor)
+        # s = _build_top(s, stream_info, enable_tensor=True)
         mod = AIEModule(s.module, s.top_func_name, project, func.mappings)
         mod.build()
         return mod
