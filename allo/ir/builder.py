@@ -32,6 +32,7 @@ from .._mlir.ir import (
     ArrayAttr,
     Attribute,
     OpResultList,
+    StridedLayoutAttr,
 )
 from .._mlir.ir import Type as MLIRType
 from .._mlir.dialects import (
@@ -1115,91 +1116,114 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_memory_access(ctx, node, val=None, idx=0):
-        new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
         value = build_stmt(ctx, node.value)
-        if len(node.value.shape) > len(new_indices):  # partial access
-            # In this case, always access the first few dimensions
-            assert (
-                is_affine
-            ), "Non-affine memory access for memref.subview is not supported yet"
-            static_strides = [1] * len(node.value.shape)
-            static_offsets = [0] * len(node.value.shape)
-            static_sizes = list(node.value.shape)
-            slices = ASTResolver.resolve_slice(node.slice, ctx)
-            if isinstance(slices, int):
-                slices = [slices]
-                offsets = []
-            elif slices is None or slices == [None] * len(slices):
-                offsets, _ = ASTTransformer.build_indices(
-                    ctx, node.slice, enable_affine=False
-                )
-                slices = [None] * len(offsets)
-            else:
-                offsets = []
-            offset = 0
-            for i, index in enumerate(slices):
-                if isinstance(index, int):
-                    static_offsets[i] = index
-                    offset += int(index * np.prod(node.value.shape[i + 1 :]))
-                elif index is None:
-                    static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
-                    offset = "?"
-                else:
-                    raise RuntimeError("Unsupported slice type")
-                static_sizes[i] = 1
-            strides = [1]
-            for i in range(len(node.shape) - 2, -1, -1):
-                strides.insert(0, strides[-1] * node.shape[i + 1])
-            result = MLIRType.parse(
-                f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
-                f", strided<{strides}, offset: {offset}>>"
-            )
+        if len(node.shape) >= 1:
+            dtype = MemRefType(value.result.type).element_type
+            in_shape = MemRefType(value.result.type).shape
+            (
+                static_offsets,
+                static_sizes,
+                static_strides,
+            ) = ASTTransformer.build_slices(ctx, node, in_shape)
+            layout = StridedLayoutAttr.get(static_offsets[0], static_strides)
+            result = MemRefType.get(static_sizes, dtype, layout=layout)
             subview = memref_d.SubViewOp(
                 source=value.result,
                 result=result,
                 static_offsets=static_offsets,
                 static_sizes=static_sizes,
                 static_strides=static_strides,
-                offsets=offsets,
+                offsets=[],
                 sizes=[],
                 strides=[],
                 ip=ctx.get_ip(),
             )
             op = subview
-        elif is_affine:
-            affine_map = AffineMap.get(
-                dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
-            )
-            affine_attr = AffineMapAttr.get(affine_map)
-            ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
-            if isinstance(node.ctx, ast.Load):
-                op = affine_d.AffineLoadOp(
-                    node.value.dtype.build(),
-                    value.result,
-                    ivs,
-                    affine_attr,
+        else:
+            new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
+            if len(node.value.shape) > len(new_indices):  # partial access
+                # In this case, always access the first few dimensions
+                assert (
+                    is_affine
+                ), "Non-affine memory access for memref.subview is not supported yet"
+                static_strides = [1] * len(node.value.shape)
+                static_offsets = [0] * len(node.value.shape)
+                static_sizes = list(node.value.shape)
+                slices = ASTResolver.resolve_slice(node.slice, ctx)
+                if isinstance(slices, int):
+                    slices = [slices]
+                    offsets = []
+                elif slices is None or slices == [None] * len(slices):
+                    offsets, _ = ASTTransformer.build_indices(
+                        ctx, node.slice, enable_affine=False
+                    )
+                    slices = [None] * len(offsets)
+                else:
+                    offsets = []
+                offset = 0
+                for i, index in enumerate(slices):
+                    if isinstance(index, int):
+                        static_offsets[i] = index
+                        offset += int(index * np.prod(node.value.shape[i + 1 :]))
+                    elif index is None:
+                        static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
+                        offset = "?"
+                    else:
+                        raise RuntimeError("Unsupported slice type")
+                    static_sizes[i] = 1
+                strides = [1]
+                for i in range(len(node.shape) - 2, -1, -1):
+                    strides.insert(0, strides[-1] * node.shape[i + 1])
+                result = MLIRType.parse(
+                    f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
+                    f", strided<{strides}, offset: {offset}>>"
+                )
+                subview = memref_d.SubViewOp(
+                    source=value.result,
+                    result=result,
+                    static_offsets=static_offsets,
+                    static_sizes=static_sizes,
+                    static_strides=static_strides,
+                    offsets=offsets,
+                    sizes=[],
+                    strides=[],
                     ip=ctx.get_ip(),
                 )
-                if isinstance(node.value.dtype, UInt):
-                    op.attributes["unsigned"] = UnitAttr.get()
-            else:  # ast.Store
-                op = affine_d.AffineStoreOp(
-                    val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
+                op = subview
+            elif is_affine:
+                affine_map = AffineMap.get(
+                    dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
                 )
-        else:  # Not affine
-            # pylint: disable=else-if-used
-            if isinstance(node.ctx, ast.Load):
-                # pylint: disable=redefined-variable-type
-                op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
-                if isinstance(node.value.dtype, UInt):
-                    op.attributes["unsigned"] = UnitAttr.get()
-            else:  # ast.Store
-                op = memref_d.StoreOp(
-                    val.result,
-                    value.result,
-                    new_indices,
-                    ip=ctx.get_ip(),
-                )
+                affine_attr = AffineMapAttr.get(affine_map)
+                ivs = [ctx.buffers[x].result for x in ctx.affine_vars]
+                if isinstance(node.ctx, ast.Load):
+                    op = affine_d.AffineLoadOp(
+                        node.value.dtype.build(),
+                        value.result,
+                        ivs,
+                        affine_attr,
+                        ip=ctx.get_ip(),
+                    )
+                    if isinstance(node.value.dtype, UInt):
+                        op.attributes["unsigned"] = UnitAttr.get()
+                else:  # ast.Store
+                    op = affine_d.AffineStoreOp(
+                        val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
+                    )
+            else:  # Not affine
+                # pylint: disable=else-if-used
+                if isinstance(node.ctx, ast.Load):
+                    # pylint: disable=redefined-variable-type
+                    op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
+                    if isinstance(node.value.dtype, UInt):
+                        op.attributes["unsigned"] = UnitAttr.get()
+                else:  # ast.Store
+                    op = memref_d.StoreOp(
+                        val.result,
+                        value.result,
+                        new_indices,
+                        ip=ctx.get_ip(),
+                    )
         attr = "from" if isinstance(node.ctx, ast.Load) else "to"
         op.attributes[attr] = StringAttr.get(node.value.id)
         return op
