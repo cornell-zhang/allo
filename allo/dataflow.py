@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
 
 import functools
 
@@ -218,6 +218,10 @@ def _build_top(s, stream_info, enable_tensor):
     return s
 
 
+# record kernel mapping in the current region context
+_current_region_context = None
+
+
 def kernel(mapping=None):
 
     def actual_decorator(func):
@@ -229,6 +233,9 @@ def kernel(mapping=None):
             return hls_mod(*args, **kwargs)
 
         wrapper.mapping = mapping
+        global _current_region_context
+        if _current_region_context is not None:
+            _current_region_context[func.__name__] = mapping
         return wrapper
 
     return actual_decorator
@@ -237,12 +244,24 @@ def kernel(mapping=None):
 def region():
 
     def actual_decorator(func):
+        # TODO: ideally this context information should be recorded in the builder
+        global _current_region_context
+        _current_region_context = {}
+        # The function call is only to collect the kernel mapping info, use try except to avoid any exception
+        try:
+            func()
+        except Exception as _:
+            pass
+        func.mappings = _current_region_context
+        _current_region_context = None
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # *args and **kwargs are the actual arguments that are passed into the kernel function
             hls_mod = build(funcs=[func])
             return hls_mod(*args, **kwargs)
 
+        wrapper.mappings = func.mappings
         return wrapper
 
     return actual_decorator
@@ -278,8 +297,8 @@ def build(
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=True)
         # stream_info = move_stream_to_interface(s)
-        # s = _build_top(s, stream_info, enable_tensor)
-        mod = AIEModule(s.module, s.top_func_name, project)
+        # s = _build_top(s, stream_info, enable_tensor=True)
+        mod = AIEModule(s.module, s.top_func_name, project, func.mappings)
         mod.build()
         return mod
     if target == "simulator":
