@@ -230,8 +230,8 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
       if (field_memrefs[index].getDefiningOp() != nullptr) {
         OpBuilder load_builder(op);
         Value loaded_field = load_builder.create<affine::AffineLoadOp>(
-          loc, field_memrefs[index], affine_load.getAffineMap(),
-          affine_load.getIndices());
+            loc, field_memrefs[index], affine_load.getAffineMap(),
+            affine_load.getIndices());
         struct_field.replaceAllUsesWith(loaded_field);
       } else { // For arguments, just replace with themselves
         struct_field.replaceAllUsesWith(field_memrefs[index]);
@@ -279,7 +279,7 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
       auto callOp = dyn_cast<func::CallOp>(userOp);
       if (!callOp)
         continue;
-      
+
       Operation::operand_range orig_params = callOp.getArgOperands();
       // Find parameters of memref<struct> type
       for (int i = 0; i < origFuncArgNum; i++) {

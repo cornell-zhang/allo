@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, super-init-not-called, too-many-nested-blocks
+# pylint: disable=no-name-in-module, super-init-not-called, too-many-nested-blocks, too-many-branches
+# pylint: disable=consider-using-enumerate, no-value-for-parameter, too-many-function-args
 
 import os
 from ..backend.llvm import LLVMModule
@@ -126,7 +127,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
             stream_head_op = memref_d.AllocOp(memref_scalar_int_type, [], [], ip=ip)
             stream_tail_op = memref_d.AllocOp(memref_scalar_int_type, [], [], ip=ip)
             if not const_0_defined:
-                const_zero = arith_d.ConstantOp(result=int_type, value=0, ip=ip)
+                const_zero = arith_d.ConstantOp(int_type, 0, ip=ip)
                 const_0_defined = True
             memref_d.StoreOp(value=const_zero, memref=stream_head_op, indices=[], ip=ip)
             memref_d.StoreOp(value=const_zero, memref=stream_tail_op, indices=[], ip=ip)
@@ -232,9 +233,9 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                 fifo_ptr = allo_d.StructGetOp(
                     output=stream_type, input=stream_struct, index=0, ip=replace_ip
                 )
-                const_one = arith_d.ConstantOp(result=int_type, value=1, ip=replace_ip)
+                const_one = arith_d.ConstantOp(int_type, 1, ip=replace_ip)
                 const_fifo_depth = arith_d.ConstantOp(
-                    result=int_type, value=stream_type.get_dim_size(0), ip=replace_ip
+                    int_type, stream_type.get_dim_size(0), ip=replace_ip
                 )
                 if isinstance(stream_access_op, allo_d.StreamPutOp):
                     tail_val_op = memref_d.LoadOp(
@@ -301,9 +302,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         )  # Reserved to insert affine.yield ops later
                         for i in range(rank):
                             dim_size = data.type.get_dim_size(i)
-                            for_loop_op = affine_d.AffineForOp(
-                                lower_bound=0, upper_bound=dim_size, ip=for_ip
-                            )
+                            for_loop_op = affine_d.AffineForOp(0, dim_size, ip=for_ip)
                             for_induction_vars.append(for_loop_op.induction_variable)
                             for_ip = InsertionPoint(for_loop_op.body)
                             for_ips.append(for_ip)
@@ -326,7 +325,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             map=AffineMapAttr.get(element_dim_map),
                             ip=for_ip,
                         )  # Fetch the element
-                        element_store_op = affine_d.AffineStoreOp(
+                        affine_d.AffineStoreOp(
                             value=element_load_op,
                             memref=fifo_ptr,
                             indices=[tail_index_op] + for_induction_vars,
@@ -347,9 +346,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                     critical_ip = InsertionPoint(
                         Block.create_at_start(critical_op.region)
                     )
-                    tail_update_op = memref_d.StoreOp(
-                        tail_next_op, tail_ptr, [], ip=critical_ip
-                    )
+                    memref_d.StoreOp(tail_next_op, tail_ptr, [], ip=critical_ip)
                     openmp_d.TerminatorOp(ip=critical_ip)
                 else:
                     assert isinstance(stream_access_op, allo_d.StreamGetOp)
@@ -387,8 +384,8 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         for_ips: list[InsertionPoint] = []
                         for i in range(rank):
                             for_loop_op = affine_d.AffineForOp(
-                                lower_bound=0,
-                                upper_bound=orig_got_val.type.get_dim_size(i),
+                                0,
+                                orig_got_val.type.get_dim_size(i),
                                 ip=for_ip,
                             )
                             for_induction_vars.append(for_loop_op.induction_variable)
@@ -413,7 +410,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             map=AffineMapAttr.get(fifo_dim_map),
                             ip=for_ip,  # The innermost Loop body
                         )
-                        element_store_op = affine_d.AffineStoreOp(
+                        affine_d.AffineStoreOp(
                             value=element_load_op,
                             memref=element_alloc_op,
                             indices=for_induction_vars,
@@ -431,11 +428,8 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                     critical_ip = InsertionPoint(
                         Block.create_at_start(critical_op.region)
                     )
-                    head_update_op = memref_d.StoreOp(
-                        head_next_op, head_ptr, [], ip=critical_ip
-                    )
+                    memref_d.StoreOp(head_next_op, head_ptr, [], ip=critical_ip)
                     openmp_d.TerminatorOp(ip=critical_ip)
-                    # openmp_d.FlushOp([], ip=replace_ip)
                 stream_access_op.operation.erase()
 
         for op in stream_construct_ops.values():
