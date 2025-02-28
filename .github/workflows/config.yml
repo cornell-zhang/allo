@@ -39,12 +39,30 @@ jobs:
       run: |
         source activate allo
         bash scripts/lint/task_lint.sh
-    - name: Testing
+    - name: Unit tests
       shell: bash
       run: |
         source activate allo
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest tests -v
+    - name: Tutorial
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest tutorials -v
+    - name: Benchmark
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest examples/polybench -v
+    - name: PyTorch
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install torch==2.5.1
+        python3 examples/torch/toy.py
+        python3 examples/torch/mlp.py
