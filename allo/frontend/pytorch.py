@@ -174,8 +174,13 @@ class TorchBuilder:
             raise NotImplementedError("Unsupported module")
         if op == "linear":
             bias = True if module.bias is not None else None
-            return getattr(self, "build_linear")(node, bias)
-        return getattr(self, f"build_{op}")(node)
+            res = getattr(self, "build_linear")(node, bias)
+        else:
+            res = getattr(self, f"build_{op}")(node)
+        # append shape after the operation
+        if "tensor_meta" in node.meta:
+            res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
+        return res
 
     def build_call_function(self, node):
         opcls = {
@@ -197,11 +202,12 @@ class TorchBuilder:
             torch.cat: "concat",
         }.get(node.target)
         # Only nodes with shape need to be built.
-        return (
-            getattr(self, f"build_{opcls}")(node)
-            if "tensor_meta" in node.meta
-            else None
-        )
+        if "tensor_meta" in node.meta:
+            res = getattr(self, f"build_{opcls}")(node)
+            # append shape after the operation
+            res += f'  # shape: {str(tuple(node.meta["tensor_meta"].shape))}'
+            return res
+        return None
 
     def build_call_method(self, node):
         if node.target == "contiguous":
@@ -328,8 +334,8 @@ class TorchBuilder:
                 )
                 return f"{node.name} = nn.linear2d[float32, {n}, {d}, {m}{name}]({inp}, {weight}, {bias})"
             elif len(shape) == 3:
-                bs, l, d = shape
-                _, m = self.named_params[f"{str(node.target)}.weight"].shape
+                bs, l, m = shape
+                _, d = self.named_params[f"{str(node.target)}.weight"].shape
                 self.composition.append(
                     (
                         "linear3d",
