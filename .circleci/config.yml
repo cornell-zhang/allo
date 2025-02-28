@@ -40,6 +40,7 @@ jobs:
             echo $LD_LIBRARY_PATH
             export PATH=/root/llvm-project/build/bin:${PATH}
             export OMP_NUM_THREADS=2
+            export LLVM_BUILD_DIR=/root/llvm-project/build
             python3 tests/dataflow/_test_simulator.py
             # python3 -m pytest tests -v
       - run:

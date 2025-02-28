@@ -102,17 +102,15 @@ class LLVMModule:
             pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")
             pm.run(self.module.operation)
             # Add shared library
-            if os.getenv("LLVM_BUILD_DIR") is not None:
-                shared_libs = [
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
-                    ),
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
-                    ),
-                ]
-            else:
-                shared_libs = []
+            assert os.getenv("LLVM_BUILD_DIR") is not None, "LLVM_BUILD_DIR is not set"
+            shared_libs = [
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
+                ),
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
+                ),
+            ]
             shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
             # opt_level should be set to 2 to avoid the following issue
             # https://github.com/cornell-zhang/allo/issues/72

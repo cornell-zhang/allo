@@ -109,18 +109,19 @@ class LLVMOMPModule(LLVMModule):
             )
             pm.run(self.module.operation)
 
-            if os.getenv("LLVM_BUILD_DIR") is not None:
-                shared_libs = [
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
-                    ),
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
-                    ),
-                    os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libomp.so"),
-                ]
-            else:
-                shared_libs = []
+            assert os.getenv("LLVM_BUILD_DIR") is not None, "LLVM_BUILD_DIR is not set"
+            shared_libs = [
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
+                ),
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
+                ),
+                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libomp.so"),
+                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libompd.so"),
+                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libgomp.so"),
+                os.path.join(os.getenv("LLVM_BUILD_DIR"), "lib", "libiomp5.so"),
+            ]
             shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
             self.execution_engine = ExecutionEngine(
                 self.module, opt_level=2, shared_libs=shared_libs
