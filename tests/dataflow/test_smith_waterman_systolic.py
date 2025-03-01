@@ -91,8 +91,16 @@ def test_systolic():
     A = np.random.choice(possible_chars, size=M).view(np.int8)
     B = np.random.choice(possible_chars, size=N).view(np.int8)
     S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B, S)
+    S_1 = smith_waterman_score_matrix(A, B)
+    np.testing.assert_equal(S[1:, 1:], S_1[1:, 1:])
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top, target="vitis_hls", mode="hw", project="smith_waterman.prj")
     if hls.is_available("vitis_hls"):
+        S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
         mod(A, B, S)
 
 
