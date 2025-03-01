@@ -1141,8 +1141,12 @@ class ASTTransformer(ASTBuilder):
                 orig_strides = list(reversed(orig_strides))
             else:
                 raise RuntimeError("Unsupported layout type")
-            new_offset = orig_offset + sum(o * s for o, s in zip(static_offsets, orig_strides))
-            new_strides = [orig_strides[i] * static_strides[i] for i in range(len(static_strides))]
+            new_offset = orig_offset + sum(
+                o * s for o, s in zip(static_offsets, orig_strides)
+            )
+            new_strides = [
+                orig_strides[i] * static_strides[i] for i in range(len(static_strides))
+            ]
             layout = StridedLayoutAttr.get(new_offset, new_strides)
             result = MemRefType.get(static_sizes, dtype, layout=layout)
             subview = memref_d.SubViewOp(
@@ -1187,7 +1191,9 @@ class ASTTransformer(ASTBuilder):
                         static_offsets[i] = index
                         offset += int(index * np.prod(node.value.shape[i + 1 :]))
                     elif index is None:
-                        static_offsets[i] = ShapedType.get_dynamic_size()  # dynamic offset
+                        static_offsets[i] = (
+                            ShapedType.get_dynamic_size()
+                        )  # dynamic offset
                         offset = "?"
                     else:
                         raise RuntimeError("Unsupported slice type")
@@ -1210,6 +1216,7 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
+                # pylint: disable=redefined-variable-type
                 op = subview
             elif is_affine:
                 affine_map = AffineMap.get(
@@ -1229,12 +1236,15 @@ class ASTTransformer(ASTBuilder):
                         op.attributes["unsigned"] = UnitAttr.get()
                 else:  # ast.Store
                     op = affine_d.AffineStoreOp(
-                        val.results[idx], value.result, ivs, affine_attr, ip=ctx.get_ip()
+                        val.results[idx],
+                        value.result,
+                        ivs,
+                        affine_attr,
+                        ip=ctx.get_ip(),
                     )
             else:  # Not affine
                 # pylint: disable=else-if-used
                 if isinstance(node.ctx, ast.Load):
-                    # pylint: disable=redefined-variable-type
                     op = memref_d.LoadOp(value.result, new_indices, ip=ctx.get_ip())
                     if isinstance(node.value.dtype, UInt):
                         op.attributes["unsigned"] = UnitAttr.get()

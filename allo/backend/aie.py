@@ -728,14 +728,20 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
     return kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_dist_allocs
 
 
-def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allocs, enable_tensor):
+def update_func_op_arg_types(
+    func_op, input_args, new_shapes, context, dist_allocs, enable_tensor
+):
     old_func_type = func_op.function_type
     old_result_types = old_func_type.value.results
     new_input_types = []
     for arg_id, ((ele_type_str, _), shape) in enumerate(zip(input_args, new_shapes)):
         elem_ty = get_element_type_from_str(ele_type_str, context)
         old_ty = old_func_type.value.inputs[arg_id]
-        memref_ty = RankedTensorType.get(shape, elem_ty) if enable_tensor else MemRefType.get(shape, elem_ty)
+        memref_ty = (
+            RankedTensorType.get(shape, elem_ty)
+            if enable_tensor
+            else MemRefType.get(shape, elem_ty)
+        )
         new_input_types.append(memref_ty if dist_allocs[arg_id] else old_ty)
         # Update subview results memory layout
         if not enable_tensor and dist_allocs[arg_id]:
@@ -743,7 +749,10 @@ def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allo
             args = entry_block.arguments
             for block in func_op.regions[0].blocks:
                 for op in block.operations:
-                    if op.operation.name == "memref.subview" and op.operands[0] == args[arg_id]:
+                    if (
+                        op.operation.name == "memref.subview"
+                        and op.operands[0] == args[arg_id]
+                    ):
                         old_result_type = op.results.types[0]
                         strides = []
                         times = 1
@@ -752,7 +761,11 @@ def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allo
                             times *= size
                         strides = list(reversed(strides))
                         layout = StridedLayoutAttr.get(0, strides)
-                        result = MemRefType.get(old_result_type.shape, old_result_type.element_type, layout=layout)
+                        result = MemRefType.get(
+                            old_result_type.shape,
+                            old_result_type.element_type,
+                            layout=layout,
+                        )
                         subview = memref_d.SubViewOp(
                             source=op.source,
                             result=result,
@@ -775,16 +788,20 @@ def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allo
 
 
 def lower_tensor_to_memref(mod, enable_tensor):
-    passes = [
-        # "linalg-generalize-named-ops",
-        # "linalg-fuse-elementwise-ops",
-        "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
-        "func.func(convert-linalg-to-affine-loops),lower-affine",
-    ] if enable_tensor else [
-        # "linalg-generalize-named-ops",
-        # "linalg-fuse-elementwise-ops",
-        "func.func(convert-linalg-to-affine-loops),lower-affine",
-    ]
+    passes = (
+        [
+            # "linalg-generalize-named-ops",
+            # "linalg-fuse-elementwise-ops",
+            "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
+            "func.func(convert-linalg-to-affine-loops),lower-affine",
+        ]
+        if enable_tensor
+        else [
+            # "linalg-generalize-named-ops",
+            # "linalg-fuse-elementwise-ops",
+            "func.func(convert-linalg-to-affine-loops),lower-affine",
+        ]
+    )
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
