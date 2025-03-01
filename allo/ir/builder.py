@@ -1117,7 +1117,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_memory_access(ctx, node, val=None, idx=0):
         value = build_stmt(ctx, node.value)
-        if len(node.shape) >= 1:
+        if isinstance(node.slice, ast.Slice) and len(node.shape) >= 1:
             dtype = MemRefType(value.result.type).element_type
             in_shape = MemRefType(value.result.type).shape
             (
