@@ -1131,7 +1131,7 @@ class ASTTransformer(ASTBuilder):
                 orig_offset = orig_layout.offset
                 orig_strides = orig_layout.strides
             elif isinstance(orig_layout, AffineMapAttr):
-                # TODO: need to non-identity affine map
+                # TODO: need to support non-identity affine map
                 orig_offset = 0
                 orig_strides = []
                 times = 1

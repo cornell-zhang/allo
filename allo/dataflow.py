@@ -295,10 +295,10 @@ def build(
 ):
     if target == "aie":
         global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=True)
+        s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
         # stream_info = move_stream_to_interface(s)
         # s = _build_top(s, stream_info, enable_tensor=True)
-        mod = AIEModule(s.module, s.top_func_name, project, func.mappings)
+        mod = AIEModule(s.module, s.top_func_name, project, func.mappings, enable_tensor)
         mod.build()
         return mod
     if target == "simulator":

@@ -18,6 +18,11 @@ from .._mlir.ir import (
     FunctionType,
     TypeAttr,
     Location,
+    StridedLayoutAttr,
+    InsertionPoint,
+)
+from .._mlir.dialects import (
+    memref as memref_d,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
@@ -732,6 +737,35 @@ def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allo
         old_ty = old_func_type.value.inputs[arg_id]
         memref_ty = RankedTensorType.get(shape, elem_ty) if enable_tensor else MemRefType.get(shape, elem_ty)
         new_input_types.append(memref_ty if dist_allocs[arg_id] else old_ty)
+        # Update subview results memory layout
+        if not enable_tensor and dist_allocs[arg_id]:
+            entry_block = func_op.regions[0].blocks[0]
+            args = entry_block.arguments
+            for block in func_op.regions[0].blocks:
+                for op in block.operations:
+                    if op.operation.name == "memref.subview" and op.operands[0] == args[arg_id]:
+                        old_result_type = op.results.types[0]
+                        strides = []
+                        times = 1
+                        for size in reversed(shape):
+                            strides.append(times)
+                            times *= size
+                        strides = list(reversed(strides))
+                        layout = StridedLayoutAttr.get(0, strides)
+                        result = MemRefType.get(old_result_type.shape, old_result_type.element_type, layout=layout)
+                        subview = memref_d.SubViewOp(
+                            source=op.source,
+                            result=result,
+                            static_offsets=op.static_offsets,
+                            static_sizes=op.static_sizes,
+                            static_strides=op.static_strides,
+                            offsets=[],
+                            sizes=[],
+                            strides=[],
+                            ip=InsertionPoint(op),
+                        )
+                        op.result.replace_all_uses_with(subview.result)
+                        op.erase()
     new_func_type = FunctionType.get(new_input_types, old_result_types, context)
     new_type = TypeAttr.get(new_func_type, context)
     func_op.operation.attributes["function_type"] = new_type
@@ -747,6 +781,8 @@ def lower_tensor_to_memref(mod, enable_tensor):
         "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
         "func.func(convert-linalg-to-affine-loops),lower-affine",
     ] if enable_tensor else [
+        # "linalg-generalize-named-ops",
+        # "linalg-fuse-elementwise-ops",
         "func.func(convert-linalg-to-affine-loops),lower-affine",
     ]
     pipeline = f'builtin.module({",".join(passes)})'
