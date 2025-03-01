@@ -14,9 +14,15 @@ from .._mlir.ir import (
     IntegerType,
     DenseI64ArrayAttr,
     RankedTensorType,
+    MemRefType,
     FunctionType,
     TypeAttr,
     Location,
+    StridedLayoutAttr,
+    InsertionPoint,
+)
+from .._mlir.dialects import (
+    memref as memref_d,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
@@ -641,9 +647,10 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
                     if op.operation.name in {
                         "tensor.extract_slice",
                         "tensor.insert_slice",
+                        "memref.subview",
                     }:
                         operand_idx = (
-                            0 if op.operation.name == "tensor.extract_slice" else 1
+                            1 if op.operation.name == "tensor.insert_slice" else 0
                         )
                         if op.operands[operand_idx] not in args:
                             continue
@@ -692,29 +699,17 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
             sizes = func_arg_sizes[fid - start]
             for block in func.regions[0].blocks:
                 for op in block.operations:
-                    if op.operation.name == "tensor.extract_slice":
-                        if op.operands[0] not in args:
-                            continue
-                        arg_id = list(args).index(op.operands[0])
-                        static_offsets = op.attributes["static_offsets"]
-                        new_offsets = []
-                        for i, offset in enumerate(static_offsets):
-                            new_offset = (
-                                offset - lower_bounds[arg_id][i]
-                                if dist_allocs[arg_id]
-                                else offset
-                            )
-                            new_offset_attr = IntegerAttr.get(
-                                IntegerType.get_signless(64, ctx), new_offset
-                            )
-                            new_offsets.append(new_offset_attr)
-                        op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
-                            new_offsets, ctx
+                    if op.operation.name in {
+                        "tensor.extract_slice",
+                        "tensor.insert_slice",
+                        "memref.subview",
+                    }:
+                        operand_idx = (
+                            1 if op.operation.name == "tensor.insert_slice" else 0
                         )
-                    elif op.operation.name == "tensor.insert_slice":
-                        if op.operands[1] not in args:
+                        if op.operands[operand_idx] not in args:
                             continue
-                        arg_id = list(args).index(op.operands[1])
+                        arg_id = list(args).index(op.operands[operand_idx])
                         static_offsets = op.attributes["static_offsets"]
                         new_offsets = []
                         for i, offset in enumerate(static_offsets):
@@ -733,15 +728,57 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
     return kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_dist_allocs
 
 
-def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allocs):
+def update_func_op_arg_types(
+    func_op, input_args, new_shapes, context, dist_allocs, enable_tensor
+):
     old_func_type = func_op.function_type
     old_result_types = old_func_type.value.results
     new_input_types = []
     for arg_id, ((ele_type_str, _), shape) in enumerate(zip(input_args, new_shapes)):
         elem_ty = get_element_type_from_str(ele_type_str, context)
         old_ty = old_func_type.value.inputs[arg_id]
-        memref_ty = RankedTensorType.get(shape, elem_ty)
+        memref_ty = (
+            RankedTensorType.get(shape, elem_ty)
+            if enable_tensor
+            else MemRefType.get(shape, elem_ty)
+        )
         new_input_types.append(memref_ty if dist_allocs[arg_id] else old_ty)
+        # Update subview results memory layout
+        if not enable_tensor and dist_allocs[arg_id]:
+            entry_block = func_op.regions[0].blocks[0]
+            args = entry_block.arguments
+            for block in func_op.regions[0].blocks:
+                for op in block.operations:
+                    if (
+                        op.operation.name == "memref.subview"
+                        and op.operands[0] == args[arg_id]
+                    ):
+                        old_result_type = op.results.types[0]
+                        strides = []
+                        times = 1
+                        for size in reversed(shape):
+                            strides.append(times)
+                            times *= size
+                        strides = list(reversed(strides))
+                        layout = StridedLayoutAttr.get(0, strides)
+                        result = MemRefType.get(
+                            old_result_type.shape,
+                            old_result_type.element_type,
+                            layout=layout,
+                        )
+                        subview = memref_d.SubViewOp(
+                            source=op.source,
+                            result=result,
+                            static_offsets=op.static_offsets,
+                            static_sizes=op.static_sizes,
+                            static_strides=op.static_strides,
+                            offsets=[],
+                            sizes=[],
+                            strides=[],
+                            ip=InsertionPoint(op),
+                        )
+                        op.result.replace_all_uses_with(subview.result)
+                        op.erase()
     new_func_type = FunctionType.get(new_input_types, old_result_types, context)
     new_type = TypeAttr.get(new_func_type, context)
     func_op.operation.attributes["function_type"] = new_type
@@ -750,13 +787,21 @@ def update_func_op_arg_types(func_op, input_args, new_shapes, context, dist_allo
         block_arg.set_type(new_input_types[i])
 
 
-def lower_tensor_to_memref(mod):
-    passes = [
-        # "linalg-generalize-named-ops",
-        # "linalg-fuse-elementwise-ops",
-        "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
-        "func.func(convert-linalg-to-affine-loops),lower-affine",
-    ]
+def lower_tensor_to_memref(mod, enable_tensor):
+    passes = (
+        [
+            # "linalg-generalize-named-ops",
+            # "linalg-fuse-elementwise-ops",
+            "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
+            "func.func(convert-linalg-to-affine-loops),lower-affine",
+        ]
+        if enable_tensor
+        else [
+            # "linalg-generalize-named-ops",
+            # "linalg-fuse-elementwise-ops",
+            "func.func(convert-linalg-to-affine-loops),lower-affine",
+        ]
+    )
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
@@ -782,12 +827,13 @@ def record_local_buffer(mod, kernel_index_ranges):
 
 
 class AIEModule:
-    def __init__(self, module, top_func_name, project, kernel_mappings):
+    def __init__(self, module, top_func_name, project, kernel_mappings, enable_tensor):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
         self.module = module
         self.kernel_mappings = kernel_mappings
+        self.enable_tensor = enable_tensor
         self.kernel_funcs = {}
         self.kernel_inputs = {}
         self.kernel_outputs = {}
@@ -823,8 +869,9 @@ class AIEModule:
                         shapes,
                         ctx,
                         dist_allocs,
+                        enable_tensor=self.enable_tensor,
                     )
-        lower_tensor_to_memref(self.module)
+        lower_tensor_to_memref(self.module, self.enable_tensor)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
         )
