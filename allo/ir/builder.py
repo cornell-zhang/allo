@@ -981,7 +981,10 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_slices(ctx, node, in_shape):
         # caculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
-        slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
+        if isinstance(node.slice, ast.Tuple):
+            slices = list(node.slice.elts)
+        else:
+            slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
         static_offsets = []
         static_sizes = []
         static_strides = []
@@ -1117,7 +1120,10 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_memory_access(ctx, node, val=None, idx=0):
         value = build_stmt(ctx, node.value)
-        if isinstance(node.slice, ast.Slice) and len(node.shape) >= 1:
+        if isinstance(node.slice, ast.Slice) or (
+            isinstance(node.slice, ast.Tuple)
+            and any(isinstance(elt, ast.Slice) for elt in node.slice.elts)
+        ):
             dtype = MemRefType(value.result.type).element_type
             in_shape = MemRefType(value.result.type).shape
             (
