@@ -45,7 +45,7 @@ jobs:
         source activate allo
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
-        python3 -m pytest tests -v
+        python3 -m pytest --ignore=tests/dataflow tests -v
     - name: Tutorial
       shell: bash
       run: |

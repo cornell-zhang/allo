@@ -46,6 +46,7 @@ def test_cooperative_gemm():
     C = np.zeros((M, N), dtype=np.float32)
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
+        C = np.zeros((M, N), dtype=np.float32)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")

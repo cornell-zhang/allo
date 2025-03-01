@@ -100,6 +100,7 @@ def test_systolic():
 
     mod = df.build(top, target="vitis_hls", mode="hw", project="smith_waterman.prj")
     if hls.is_available("vitis_hls"):
+        S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
         mod(A, B, S)
 
 
