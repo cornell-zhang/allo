@@ -1125,7 +1125,25 @@ class ASTTransformer(ASTBuilder):
                 static_sizes,
                 static_strides,
             ) = ASTTransformer.build_slices(ctx, node, in_shape)
-            layout = StridedLayoutAttr.get(static_offsets[0], static_strides)
+            orig_type = value.result.type
+            orig_layout = orig_type.layout
+            if isinstance(orig_layout, StridedLayoutAttr):
+                orig_offset = orig_layout.offset
+                orig_strides = orig_layout.strides
+            elif isinstance(orig_layout, AffineMapAttr):
+                # TODO: need to non-identity affine map
+                orig_offset = 0
+                orig_strides = []
+                times = 1
+                for i in range(orig_type.rank):
+                    orig_strides.append(times)
+                    times *= orig_type.shape[orig_type.rank - i - 1]
+                orig_strides = list(reversed(orig_strides))
+            else:
+                raise RuntimeError("Unsupported layout type")
+            new_offset = orig_offset + sum(o * s for o, s in zip(static_offsets, orig_strides))
+            new_strides = [orig_strides[i] * static_strides[i] for i in range(len(static_strides))]
+            layout = StridedLayoutAttr.get(new_offset, new_strides)
             result = MemRefType.get(static_sizes, dtype, layout=layout)
             subview = memref_d.SubViewOp(
                 source=value.result,
