@@ -13,7 +13,7 @@ from allo._mlir.ir import WalkResult
 from allo.customize import Schedule
 
 
-def check_spsc(module):
+def check_single_producer_single_consumer(module):
     spsc = True
 
     def checker(op):
@@ -85,7 +85,7 @@ def test_single_producer_single_consumer():
     mod = s.build()
     res = mod()
     np.testing.assert_array_equal(res, np.arange(1, 11))
-    assert check_spsc(s.module)
+    assert check_single_producer_single_consumer(s.module)
 
 
 def test_single_producer_multiple_consumers():
@@ -126,7 +126,7 @@ def test_single_producer_multiple_consumers():
     np.testing.assert_array_equal(
         res, np.sum(np.arange(1, 11)) + np.prod(np.arange(1, 11))
     )
-    assert check_spsc(s.module)
+    assert check_single_producer_single_consumer(s.module)
 
 
 def test_single_kernel():
@@ -149,7 +149,7 @@ def test_single_kernel():
     res1, res2 = mod()
     np.testing.assert_array_equal(res1, np.arange(1, 11))
     np.testing.assert_array_equal(res2, np.arange(1, 11))
-    assert check_spsc(s.module)
+    assert check_single_producer_single_consumer(s.module)
 
 
 def test_nd_array():
@@ -180,7 +180,7 @@ def test_nd_array():
     mod = s.build()
     res = mod()
     np.testing.assert_array_equal(res, 0)
-    assert check_spsc(s.module)
+    assert check_single_producer_single_consumer(s.module)
 
 
 if __name__ == "__main__":

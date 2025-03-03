@@ -5,7 +5,6 @@
 import os
 import numpy as np
 
-
 from ._mlir.ir import (
     Location,
     MemRefType,
@@ -738,6 +737,11 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
 
 
 def dataflow_canonicalization_pass(module):
+    '''
+    Implements the dataflow canonicalization pass as described in the Stream-HLS paper (https://arxiv.org/pdf/2501.09118)
+
+    This pass ensures that the program is compatible with dataflow architectures by transforming shared buffers to adhere to single-producer-single-consumer patterns. This pass does not handle complex patterns involving multiple producers writin gto the same buffer. 
+    '''
     with module.context, Location.unknown():
         for op in module.body.operations:
             if not isinstance(op, func_d.FuncOp):
@@ -769,7 +773,7 @@ def canonicalize_call(op: func_d.CallOp):
                 stores.append(user)
 
         if not isinstance(result.type, MemRefType) or len(loads) == 1:
-            # already SPSPC pattern
+            # already single produer single consumer pattern
             continue
 
         if len(stores) > 1:
