@@ -39,7 +39,7 @@ def check_single_producer_single_consumer(module):
                     and not isinstance(use.owner.parent.opview, affine_d.AffineForOp)
                 )
                 if consumers > 1:
-                    print(op)
+                    print("Multiple consumers of buffer allocated by,", op)
                     spsc = False
                     return WalkResult(0)
         return WalkResult(0)

@@ -316,6 +316,8 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 # pylint: disable=dangerous-default-value
 def analyze_arg_load_store_in_func(func, mapping={}):
     res = []
+    if func.is_external:
+        return ["in"] * len(func.type.inputs)
     for _, arg in enumerate(func.arguments):
         if not isinstance(arg.type, MemRefType):
             res.append("scalar")
