@@ -14,6 +14,7 @@ from allo.customize import Schedule
 
 from allo.ir.transform import find_func_in_module
 
+
 def check_single_producer_single_consumer(module):
     spsc = True
 
@@ -213,7 +214,6 @@ def test_matmul_addition_condition1():
 
     s = allo.customize(matmul_addition)
     print(s.module)
-
     s = canonicalize(s)
     print(s.module)
 
@@ -263,12 +263,8 @@ def test_matmul_addition_nested_condition1():
 
     s.compose([mm, ma])
 
-    print("Before preprocessing:")
     print(s.module)
-
     s = canonicalize(s)
-
-    print("After preprocessing:")
     print(s.module)
 
     mod = s.build()
