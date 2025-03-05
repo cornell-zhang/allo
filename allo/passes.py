@@ -20,7 +20,9 @@ from ._mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
+    IntegerSetAttr,
     Operation,
+    Block,
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -742,7 +744,7 @@ def dataflow_canonicalization_pass(module):
     """
     Implements the dataflow canonicalization pass as described in the Stream-HLS paper (https://arxiv.org/pdf/2501.09118)
 
-    This pass ensures that the program is compatible with dataflow architectures by transforming shared buffers to adhere to single-producer-single-consumer patterns. This pass does not handle complex patterns involving multiple producers writing to the same buffer.
+    This pass ensures that the program is compatible with dataflow architectures by transforming shared buffers to adhere to single-producer-single-consumer patterns. This pass does not handle complex patterns involving multiple producers writing to the same buffer, except in the case of reduction loops.
     """
     with module.context, Location.unknown():
         for op in module.body.operations:
@@ -763,14 +765,16 @@ def canonicalize_fn(op: func_d.FuncOp):
 
 def canonicalize_call(op: func_d.CallOp):
     for result in op.results:
-        loads = []
-        stores = []
+        loads = []  # (op, idx)
+        stores = []  # ops
         for use in result.uses:
             user = use.owner
             if isinstance(
                 user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)
             ):
-                loads.append(user)
+                for idx, operand in enumerate(user.operands):
+                    if operand == op.result:
+                        loads.append((user, idx))
             elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
                 stores.append(user)
 
@@ -822,19 +826,27 @@ def canonicalize_call(op: func_d.CallOp):
             with InsertionPoint(loop.body):
                 affine_d.AffineYieldOp([])
 
-        for idx, user in enumerate(loads):
-            user.operation.replace_uses_of_with(result, new_allocs[idx].result)
+        for idx, (user, op_idx) in enumerate(loads):
+            user.operation.operands[op_idx] = new_allocs[idx].result
 
 
 def canonicalize_alloc(alloc_op):
-    loads = []
-    stores = []
+    """
+    Updated canonicalize_alloc function that incorporates the StoreLoadStoreLoad pattern.
+    """
+    loads = []  # (op, idx)
+    stores = []  # ops
+    returns = []  # ops
     for use in alloc_op.result.uses:
         user = use.owner
         if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
-            loads.append(user)
+            for idx, operand in enumerate(user.operands):
+                if operand == alloc_op.result:
+                    loads.append((user, idx))
         elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
             stores.append(user)
+        elif isinstance(user, func_d.ReturnOp):
+            returns.append(user)
 
     memref_type = alloc_op.result.type
     shape = memref_type.shape
@@ -848,17 +860,136 @@ def canonicalize_alloc(alloc_op):
     # single store with multiple loads.
     if len(stores) == 1 and len(loads) > 1:
         store = stores[0]
-        for i, load in enumerate(loads[1:]):
+        for i, (load, idx) in enumerate(loads[1:]):
             new_alloc = alloc_op.operation.clone(ip=InsertionPoint(alloc_op))
             new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
             store_dup = store.clone(ip=InsertionPoint(store))
             store_dup.operation.replace_uses_of_with(alloc_op.result, new_alloc.result)
-            print(store_dup.memref, new_alloc.result)
-            load.operation.replace_uses_of_with(store.memref, new_alloc.result)
+            # load.operation.replace_uses_of_with(store.memref, new_alloc.result)
+            load.operation.operands[idx] = new_alloc.result
         return
+
+    # store-load-store-load loop redunction pattern
+    if len(stores) == 2 and len(loads) + len(returns) == 2:
+        l_ops = [l[0] for l in loads]
+        l_ops.extend(returns)
+        if store_load_store_load_pattern(alloc_op, l_ops, stores):
+            return
 
     # multiple loads and multiple stores
     if len(stores) >= 2 or len(loads) >= 2:
         raise NotImplementedError(
             "Complex pattern detected in alloc op; additional canonicalization not implemented yet."
         )
+
+
+def store_load_store_load_pattern(alloc_op, loads, stores):
+    """
+    Transforms reduction loops to satisfy the condition that the number of writes to a shared buffer equals the number of reads.
+    """
+    assert len(loads) == 2 and len(stores) == 2
+
+    loop_load, loop_store = None, None
+
+    # find loop_load and loop_store
+    for load in loads:
+        for store in stores:
+            if load.parent == store.parent:
+                loop_load = load
+                loop_store = store
+                break
+        if loop_load:
+            break
+
+    if not loop_load or not loop_store:
+        return False
+
+    store_op = [s for s in stores if s != loop_store][0]
+    load_op = [l for l in loads if l != loop_load][0]
+
+    # check for unsupported store_op in an if block
+    parent = store_op.parent
+    while parent:
+        if isinstance(parent, affine_d.AffineIfOp):
+            return False
+        parent = parent.parent
+
+    loop_nest = []
+    current_op = loop_load.parent
+    while current_op:
+        if isinstance(current_op.opview, affine_d.AffineForOp):
+            loop_nest.append(current_op.opview)
+        current_op = current_op.parent
+    if not loop_nest:
+        return False
+
+    ip = InsertionPoint(alloc_op)
+    memref_type = alloc_op.result.type
+    new_alloc1 = memref_d.AllocOp(memref_type, [], [], ip=ip)
+    new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
+
+    loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+
+    with InsertionPoint.at_block_begin(loop_nest[0].body):
+        first_iter_set = affine_d.IntegerSet.get(
+            1, 0, [affine_d.AffineExpr.get_dim(0)], [True]
+        )
+
+        first_iter_if = affine_d.AffineIfOp(
+            results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown()
+        )
+
+        first_iter_if.attributes["condition"] = IntegerSetAttr.get(first_iter_set)
+
+    # In the if block, load from original buffer and store to new_alloc1
+    then_block = Block.create_at_start(parent=first_iter_if.thenRegion)
+    with InsertionPoint(then_block):
+        new_load = affine_d.AffineLoadOp(
+            memref_type.element_type, alloc_op.result, loop_load.indices, loop_load.map
+        )
+        affine_d.AffineStoreOp(
+            new_load.result, new_alloc1.result, loop_load.indices, loop_load.map
+        )
+        affine_d.AffineYieldOp([])
+
+    loop_load.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
+    loop_store.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
+
+    inner_loop_upper_map = loop_nest[-1].upperBoundMap.value
+
+    # check upper bound is a constant
+    if not (
+        inner_loop_upper_map.n_dims == 0 and len(inner_loop_upper_map.results) == 1
+    ):
+        return False
+
+    loop_upper_bound = inner_loop_upper_map.results[0]
+
+    last_iter_set = affine_d.IntegerSet.get(
+        1, 0, [affine_d.AffineExpr.get_dim(0) - loop_upper_bound + 1], [True]
+    )
+
+    last_iter_if = affine_d.AffineIfOp(
+        results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown(), ip=ip
+    )
+
+    last_iter_if.move_after(loop_store)
+
+    last_iter_if.attributes["condition"] = IntegerSetAttr.get(last_iter_set)
+
+    final_then_block = Block.create_at_start(parent=last_iter_if.thenRegion)
+    with InsertionPoint(final_then_block):
+        final_loop_load = affine_d.AffineLoadOp(
+            memref_type.element_type,
+            new_alloc1.result,
+            loop_load.indices,
+            loop_load.map,
+        )
+        affine_d.AffineStoreOp(
+            final_loop_load.result, new_alloc2.result, loop_load.indices, loop_load.map
+        )
+        affine_d.AffineYieldOp([])
+
+    load_op.operation.replace_uses_of_with(alloc_op.result, new_alloc2.result)
+
+    return True
