@@ -311,7 +311,7 @@ def inject_aie_kernels(mod):
                         shape = MemRefType(op.inputs[0].type).shape
                         func_d.CallOp(
                             [],
-                            FlatSymbolRefAttr.get(f"eltwise_{op_name}_{dtype}_vector"),
+                            FlatSymbolRefAttr.get(f"{op_name}_{dtype}_vector"),
                             [op.inputs[0], op.inputs[1], op.outputs[0]],
                             ip=InsertionPoint(op),
                         )
@@ -319,11 +319,11 @@ def inject_aie_kernels(mod):
                         external_kernels[func.attributes["sym_name"].value].append(
                             (op_name, dtype, shape)
                         )
-                        if f"eltwise_{op_name}_{dtype}_vector" in injected_kernels:
+                        if f"{op_name}_{dtype}_vector" in injected_kernels:
                             continue
-                        injected_kernels.add(f"eltwise_{op_name}_{dtype}_vector")
+                        injected_kernels.add(f"{op_name}_{dtype}_vector")
                         kernel = func_d.FuncOp(
-                            f"eltwise_{op_name}_{dtype}_vector",
+                            f"{op_name}_{dtype}_vector",
                             func_type,
                             ip=InsertionPoint(func),
                         )
@@ -339,10 +339,8 @@ def codegen_external_kernels(external_kernels):
     code += "#include <stdlib.h>\n"
     code += "#include <type_traits>\n"
     code += "#include <aie_api/aie.hpp>\n\n"
-    code += '#include "add.h"\n'
-    code += '#include "mul.h"\n\n'
-    code += 'extern "C" {\n\n'
     generated_kernels = set()
+    kernel_code = ""
     for _, kernel_lst in external_kernels.items():
         for kernel, dtype, shape in kernel_lst:
             if kernel in generated_kernels:
@@ -350,12 +348,22 @@ def codegen_external_kernels(external_kernels):
             ctype = ctype_map[dtype]
             if "bfloat" in ctype:
                 ctype = "bfloat16"
-            code += f"void eltwise_{kernel}_{dtype}_vector"
-            code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-            code += " {\n"
-            code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
-            code += "}\n\n"
+            kernel_code += f"void {kernel}_{dtype}_vector"
+            kernel_code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+            kernel_code += " {\n"
+            kernel_code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
+            kernel_code += "}\n\n"
             generated_kernels.add(kernel)
+    for kernel in generated_kernels:
+        match kernel:
+            case "add":
+                code += '#include "add.cc"\n'
+            case "mul":
+                code += '#include "mul.cc"\n'
+            case "mm":
+                code += '#include "mm.cc"\n'
+    code += '\nextern "C" {\n\n'
+    code += kernel_code
     code += '} // extern "C"\n'
     return code, generated_kernels
 
@@ -1252,6 +1260,8 @@ class AIEModule:
                         enable_tensor=self.enable_tensor,
                     )
         external_kernels = inject_aie_kernels(self.module)
+        print(self.module)
+        sys.exit()
         lower_tensor_to_memref(self.module, self.enable_tensor)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
@@ -1279,9 +1289,11 @@ class AIEModule:
             ) as f:
                 f.write(kernel_code)
             path = os.path.join(os.path.dirname(__file__), "aie_kernels")
-            cmd = f"cd {self.project} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $(dirname $(which aie-opt))/../include -I {path} -c external.cc -o external.o"
+            cmd = f"cd {self.project} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $(dirname $(which aie-opt))/../include -I $MLIR_AIE_INSTALL_DIR/../aie_kernels/aie2 -c external.cc -o external.o"
             process = subprocess.Popen(cmd, shell=True)
             process.wait()
+            if process.returncode != 0:
+                raise RuntimeError("Failed to compile external kernels.")
         # build mlir-aie
         cmd = f"cd {self.project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
         process = subprocess.Popen(cmd, shell=True)
