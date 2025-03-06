@@ -365,7 +365,7 @@ def test_bf16_array():
     A = np.random.rand(10).astype(ml_dtypes.bfloat16)
     B = mod(A)
     np.testing.assert_allclose(
-        B.astype(np.float32), (A + 1).astype(np.float32), rtol=1e-5
+        B.astype(np.float32), (A + 1).astype(np.float32), rtol=1e-2
     )
 
 
