@@ -282,7 +282,7 @@ def inject_aie_kernels(mod):
             for block in func.regions[0].blocks:
                 for op in block.operations:
                     if (
-                        op.operation.name in ["linalg.add", "linalg.mul"]
+                        op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
                     ):
                         op_name = op.operation.name.split(".")[1]
@@ -615,7 +615,7 @@ def codegen_aie_mlir(
                 code += format_str("aie.end")
             code += "    }"
             if len(external_kernels[f"{kernel_name}_{suffix}"]) > 0:
-                code += f' {{link_with = "external.o"}}\n'
+                code += ' {link_with = "external.o"}\n'
             else:
                 code += "\n"
         in_args += [
