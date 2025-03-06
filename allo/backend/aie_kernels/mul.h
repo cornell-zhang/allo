@@ -2,7 +2,7 @@
  * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-//===- scale.cc -------------------------------------------------*- C++ -*-===//
+//===- mul.h -------------------------------------------------*- C++ -*-===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -51,20 +51,3 @@ void eltwise_vmul(T_in *a, T_in *b, T_out *c) {
     }
   event1();
 }
-
-extern "C" {
-
-// not supported by aie::mul
-// void eltwise_mul_i32_vector(int32_t *a_in, int32_t *b_in, int32_t *c_out) {
-//   eltwise_vmul<int32_t, int32_t, 1024>(a_in, b_in, c_out);
-// }
-
-void eltwise_mul_f32_vector(float *a_in, float *b_in, float *c_out) {
-  eltwise_vmul<float, float, 1024>(a_in, b_in, c_out);
-}
-
-void eltwise_mul_bf16_vector(bfloat16 *a_in, bfloat16 *b_in, bfloat16 *c_out) {
-  eltwise_vmul<bfloat16, bfloat16, 1024>(a_in, b_in, c_out);
-}
-
-} // extern "C"
