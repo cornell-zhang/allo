@@ -4,7 +4,17 @@
 
 import ast
 import types as python_types
-from .types import AlloType, Index, Float, Int, UInt, Fixed, UFixed
+from .types import (
+    AlloType,
+    Index,
+    Float,
+    Int,
+    UInt,
+    Fixed,
+    UFixed,
+    float32,
+    float64,
+)
 
 
 def get_typing_rule(node):
@@ -215,7 +225,7 @@ def add_sub_rule():
         (Float, Index): lambda t1, t2: t1,
         (Float, Fixed): lambda t1, t2: t1,
         (Float, UFixed): lambda t1, t2: t1,
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -271,7 +281,7 @@ def mul_rule():
     }
     float_rules = {
         # (Float, (Int, UInt, Index, Fixed, UFixed)) covered
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits))
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -334,7 +344,7 @@ def div_rule():
         (Float, Index): lambda t1, t2: t1,
         (Float, Fixed): lambda t1, t2: t1,
         (Float, UFixed): lambda t1, t2: t1,
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -424,7 +434,7 @@ def mod_rule():
         (Float, Index): lambda t1, t2: t1,
         (Float, Fixed): lambda t1, t2: t1,
         (Float, UFixed): lambda t1, t2: t1,
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -540,7 +550,7 @@ def cmp_rule():
         (Float, Index): lambda t1, t2: (t1, UInt(1)),
         (Float, Fixed): lambda t1, t2: (t1, UInt(1)),
         (Float, UFixed): lambda t1, t2: (t1, UInt(1)),
-        (Float, Float): lambda t1, t2: (Float(max(t1.bits, t2.bits)), UInt(1)),
+        (Float, Float): lambda t1, t2: (t1 if t1.bits >= t2.bits else t2, UInt(1)),
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -600,7 +610,7 @@ def select_rule():
         (UFixed, Float): lambda t1, t2: t1 if isinstance(t1, Float) else t2,
     }
     float_rules = {
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     return TypingRule(
         [int_rules, uint_rules, index_rules, fixed_rules, ufixed_rules, float_rules],
@@ -663,8 +673,8 @@ def logic_op_rule():
 def pow_rule():
     def select_float(t1, _):
         if t1.bits <= 32:
-            return Float(32)
-        return Float(64)
+            return float32
+        return float64
 
     int_rule = {
         (Int, Int): select_float,
@@ -694,7 +704,7 @@ def pow_rule():
     }
     ufixed_rule = {(UFixed, UFixed): select_float, (UFixed, Float): select_float}
     float_rule = {
-        (Float, Float): lambda t1, t2: Float(max(t1.bits, t2.bits)),
+        (Float, Float): lambda t1, t2: t1 if t1.bits >= t2.bits else t2,
     }
     # Commutative=True here doesn't mean that power operation is commutative.
     # It means that the type rule is commutative, to reduce the number of rules.
@@ -712,11 +722,11 @@ def intrin_rule():
     # sin, cos, tanh
     unaryrules = {
         (Float,): lambda t: t,
-        (Int,): lambda t: Float(32) if t.bits <= 32 else Float(64),
-        (UInt,): lambda t: Float(32) if t.bits <= 32 else Float(64),
-        (Index,): lambda t: Float(32) if t.bits <= 32 else Float(64),
-        (Fixed,): lambda t: Float(32) if t.bits <= 32 else Float(64),
-        (UFixed,): lambda t: Float(32) if t.bits <= 32 else Float(64),
+        (Int,): lambda t: float32 if t.bits <= 32 else float64,
+        (UInt,): lambda t: float32 if t.bits <= 32 else float64,
+        (Index,): lambda t: float32 if t.bits <= 32 else float64,
+        (Fixed,): lambda t: float32 if t.bits <= 32 else float64,
+        (UFixed,): lambda t: float32 if t.bits <= 32 else float64,
     }
     return TypingRule([unaryrules])
 

@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used
+# pylint: disable=unused-argument, eval-used, redefined-variable-type
 
 import ast
 import sys
@@ -17,13 +17,14 @@ from .types import (
     AlloType,
     Int,
     UInt,
-    Float,
     Fixed,
     UFixed,
     Index,
     uint1,
     int32,
+    float16,
     float32,
+    float64,
     Struct,
     Stream,
 )
@@ -95,6 +96,10 @@ class TypeInferer(ASTVisitor):
             assert isinstance(node.value, str), "Only support string type annotation"
             tree = ast.parse(node.value)
             return TypeInferer.visit_type_hint(ctx, tree.body[0].value)
+        if isinstance(node, ast.Attribute):
+            # e.g., allo.ir.types.float32
+            dtype = ASTResolver.resolve(node, ctx.global_vars)
+            return dtype, tuple()
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -784,7 +789,16 @@ class TypeInferer(ASTVisitor):
                     # single-element operation
                     node.shape = tuple()
                     if isinstance(node.func.value.dtype, (UInt, Int)):
-                        node.dtype = Float(node.func.value.dtype.bits)
+                        if node.func.value.dtype.bits == 16:
+                            node.dtype = float16
+                        elif node.func.value.dtype.bits == 32:
+                            node.dtype = float32
+                        elif node.func.value.dtype.bits == 64:
+                            node.dtype = float64
+                        else:
+                            raise RuntimeError(
+                                f"Unsupported bitwidth {node.func.value.dtype.bits}"
+                            )
                     else:
                         # casting between signed and unsigned types in C/C++
                         # does not modify the underlying bit representation,
@@ -839,7 +853,6 @@ class TypeInferer(ASTVisitor):
                 # No argument
                 if fn_name == "get_pid":
                     node.shape = (tuple(), tuple())
-                    # pylint: disable=redefined-variable-type
                     node.dtype = (Index(), Index())
                 else:
                     node.shape = None

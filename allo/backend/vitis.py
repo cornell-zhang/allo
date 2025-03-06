@@ -53,6 +53,7 @@ dtype_size_map = {
 }
 
 ctype_map = {
+    "bf16": "std::bfloat16_t",
     "f32": "float",
     "f64": "double",
     "i8": "int8_t",
@@ -416,5 +417,8 @@ def write_tensor_to_file(tensor, shape, file_path):
 
 
 def read_tensor_from_file(dtype, shape, file_path):
+    if dtype == "bf16":
+        # numpy does not support bf16
+        dtype = "f32"
     arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
     return arr.reshape(shape)
