@@ -25,6 +25,7 @@ from .._mlir.ir import (
 )
 from .._mlir.dialects import (
     memref as memref_d,
+    allo as allo_d,
     func as func_d,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
@@ -260,16 +261,19 @@ def get_position_str(mapping, index):
 
 def get_public_funcs(mod):
     funcs = []
+    top_func = None
     for func in mod.body.operations:
         if (
             isinstance(func, func_d.FuncOp)
-            and func.attributes["sym_name"].value != "top"
             and (
                 "sym_visibility" not in func.attributes
                 or func.attributes["sym_visibility"].value != "private"
             )
         ):
-            funcs.append(func)
+            if func.attributes["sym_name"].value != "top":
+                top_func = func
+            else:
+                funcs.append(func)
     return funcs
 
 
@@ -413,15 +417,15 @@ def codegen_aie_mlir(
     for mid in range(mem_tile_size):
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
     # number of function declaration except top
-    funcs = get_public_funcs(mod)
+    top_func, funcs = get_public_funcs(mod)
     buf_name_dicts = []
     # create compute tiles and buffers
     for kernel_name, (start, end) in kernel_index_ranges.items():
         mapping = kernel_mappings[kernel_name]
         func_buf_dicts = kernel_func_buf_dicts[kernel_name]
         for fid in range(start, end):
-            suffix = get_position_str(mapping, fid - start)
-            tile_name = f"%tile_comp_{kernel_name}_{suffix}"
+            func_name = funcs[fid].attributes["sym_name"].value
+            tile_name = f"%tile_comp_{func_name}"
             code += format_str(f"{tile_name} = aie.tile(0, {fid + 2})")
             buf_dict = func_buf_dicts[fid - start]
             buf_name_dict = {}
@@ -472,16 +476,16 @@ def codegen_aie_mlir(
             if dist_allocs[arg_id]:
                 # depth=2 means double buffer
                 code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_sh_{kernel_name}_a{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 for fid in range(start, end):
-                    suffix = get_position_str(mapping, fid - start)
+                    func_name = funcs[fid].attributes["sym_name"].value
                     code += format_str(
-                        f"aie.objectfifo @in_{kernel_name}_{arg_id}_{suffix}(%tile_mem{arg_id}, {{%tile_comp_{kernel_name}_{suffix}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                        f"aie.objectfifo @in_{func_name}_a{arg_id}(%tile_mem{arg_id}, {{%tile_comp_{func_name}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
                     )
                 in_mem_str = ", ".join(
                     [
-                        f"@in_{kernel_name}_{arg_id}_{get_position_str(mapping, fid - start)}"
+                        f"@in_{funcs[fid].attributes["sym_name"].value}_a{arg_id}"
                         for fid in range(start, end)
                     ]
                 )
@@ -490,23 +494,23 @@ def codegen_aie_mlir(
                 in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
                 # (src_offsets, dst_offsets)
                 code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
+                    f"aie.objectfifo.link [@in_sh_{kernel_name}_a{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
                 )
             else:
                 code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_sh_{kernel_name}_a{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 in_tile_str = ", ".join(
                     [
-                        f"%tile_comp_{kernel_name}_{get_position_str(mapping, fid - start)}"
+                        f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
                         for fid in range(start, end)
                     ]
                 )
                 code += format_str(
-                    f"aie.objectfifo @in_{kernel_name}_{arg_id}_0(%tile_mem{arg_id}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_{kernel_name}_a{arg_id}(%tile_mem{arg_id}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_{arg_id}] -> [@in_{kernel_name}_{arg_id}_0]([] [])"
+                    f"aie.objectfifo.link [@in_sh_{kernel_name}_a{arg_id}] -> [@in_{kernel_name}_a{arg_id}]([] [])"
                 )
         kernel_dist_allocs[kernel_name] = dist_allocs
     # create output object fifos
@@ -518,16 +522,16 @@ def codegen_aie_mlir(
         if dist_allocs[-1]:
             # output uses tile_mem0
             for fid in range(start, end):
-                suffix = get_position_str(mapping, fid - start)
+                func_name = funcs[fid].attributes["sym_name"].value
                 code += format_str(
-                    f"aie.objectfifo @out_{kernel_name}_{suffix}(%tile_comp_{kernel_name}_{suffix}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+                    f"aie.objectfifo @out_{func_name}(%tile_comp_{func_name}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
                 )
             code += format_str(
                 f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
             )
             out_mem_str = ", ".join(
                 [
-                    f"@out_{kernel_name}_{get_position_str(mapping, fid - start)}"
+                    f"@out_{funcs[fid].attributes["sym_name"].value}"
                     for fid in range(start, end)
                 ]
             )
@@ -540,7 +544,7 @@ def codegen_aie_mlir(
         else:
             out_tile_str = ", ".join(
                 [
-                    f"%tile_comp_{kernel_name}_{get_position_str(mapping, fid - start)}"
+                    f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
                     for fid in range(start, end)
                 ]
             )
@@ -548,10 +552,16 @@ def codegen_aie_mlir(
                 f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
             )
             code += format_str(
-                f"aie.objectfifo @out_{kernel_name}_0({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
+                f"aie.objectfifo @out_{kernel_name}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
             )
             code += format_str(
-                f"aie.objectfifo.link [@out_{kernel_name}_0] -> [@out_sh_{kernel_name}]([] [])"
+                f"aie.objectfifo.link [@out_{kernel_name}] -> [@out_sh_{kernel_name}]([] [])"
+            )
+    # create other object fifos from top_func
+    for op in top_func.entry_block.operations:
+        if isinstance(op, allo_d.StreamConstructOp):
+            code += format_str(
+                f"aie.objectfifo @{op.attributes["name"]}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
             )
     # create core computation
     in_args = []
@@ -563,9 +573,9 @@ def codegen_aie_mlir(
         out_id = len(input_args) - 1
         for fid in range(start, end):
             func_str = func_strs[fid]
-            suffix = get_position_str(mapping, fid - start)
+            func_name = funcs[fid].attributes["sym_name"].value
             code += format_str(
-                f"%core_0_{fid + 2} = aie.core(%tile_comp_{kernel_name}_{suffix}) {{"
+                f"%core_0_{fid + 2} = aie.core(%tile_comp_{func_name}) {{"
             )
             with format_code(indent=6):
                 code += format_str("%global_c0 = arith.constant 0 : index")
@@ -582,7 +592,7 @@ def codegen_aie_mlir(
                     ):
                         dtype = in_type if dist_allocs[arg_id] else orig_in_type
                         code += format_str(
-                            f"%fifo{arg_id} = aie.objectfifo.acquire @in_{kernel_name}_{arg_id}_{suffix if dist_allocs[arg_id] else 0}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
+                            f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
                         )
                         code += format_str(
                             f"%local{arg_id} = aie.objectfifo.subview.access %fifo{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
@@ -591,7 +601,7 @@ def codegen_aie_mlir(
                     out_type, orig_out_type, _, _ = input_args[-1]
                     dtype = out_type if dist_allocs[-1] else orig_out_type
                     code += format_str(
-                        f"%fifo_out = aie.objectfifo.acquire @out_{kernel_name}_{suffix if dist_allocs[-1] else 0}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
+                        f"%fifo_out = aie.objectfifo.acquire @out_{func_name if dist_allocs[-1] else kernel_name}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
                     )
                     code += format_str(
                         f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
@@ -606,10 +616,10 @@ def codegen_aie_mlir(
                     # release fifos
                     for arg_id in range(len(input_args[:-1])):
                         code += format_str(
-                            f"aie.objectfifo.release @in_{kernel_name}_{arg_id}_{suffix if dist_allocs[arg_id] else 0}(Consume, 1)"
+                            f"aie.objectfifo.release @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1)"
                         )
                     code += format_str(
-                        f"aie.objectfifo.release @out_{kernel_name}_{suffix if dist_allocs[-1] else 0}(Produce, 1)"
+                        f"aie.objectfifo.release @out_{func_name if dist_allocs[-1] else kernel_name}(Produce, 1)"
                     )
                 code += format_str("}")
                 code += format_str("aie.end")
@@ -643,7 +653,7 @@ def codegen_aie_mlir(
                 else:
                     size_n_stride = f"[1, 1, {orig_shape[0]}, {orig_shape[1]}][0, 0, {orig_shape[1]}, 1]"
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_{arg_id}}} : {orig_in_type}"
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_a{arg_id}}} : {orig_in_type}"
                 )
             orig_out_shape = input_args[-1][-1]
             if len(orig_out_shape) == 1:
@@ -658,7 +668,7 @@ def codegen_aie_mlir(
             )
             for arg_id in range(len(input_args) - 1):
                 code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_{arg_id}}}"
+                    f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_a{arg_id}}}"
                 )
             code += format_str(f"aiex.npu.dma_wait {{symbol = @out_sh_{kernel_name}}}")
     code += format_str("}")
@@ -667,13 +677,24 @@ def codegen_aie_mlir(
     return code
 
 
-def get_kernel_index_ranges_from_mappings(kernel_mappings):
+def get_kernel_index_ranges(mod, kernel_mappings):
+    kernel_names = list(kernel_mappings.keys())
     kernel_index_ranges = {}
-    index = 0
-    for func_name, mapping in kernel_mappings.items():
-        start = index
-        end = index = start + math.prod(mapping)
-        kernel_index_ranges[func_name] = (start, end)
+    start = end = 0
+    k_id = 0
+    for func in list(mod.body.operations)[:-1]:
+        if isinstance(func, func_d.FuncOp):
+            while not func.attributes["sym_name"].value.startswith(kernel_names[k_id]):
+                kernel_index_ranges[kernel_names[k_id]] = (start, end)
+                kid += 1
+                start = end
+            end += 1
+    if k_id < len(kernel_names):
+        kernel_index_ranges[kernel_names[k_id]] = (start, end)
+        k_id += 1
+    while k_id < len(kernel_names):
+        kernel_index_ranges[kernel_names[k_id]] = (end, end)
+        k_id += 1
     return kernel_index_ranges
 
 
@@ -750,8 +771,13 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
             lower_bounds = [
                 [float("inf") for _ in range(len(arg_type.shape))]
                 for arg_type in arg_types
+                if "!allo.stream" not in str(arg_type)
             ]
-            sizes = [[0 for _ in range(len(arg_type.shape))] for arg_type in arg_types]
+            sizes = [
+                [0 for _ in range(len(arg_type.shape))]
+                for arg_type in arg_types
+                if "!allo.stream" not in str(arg_type)
+            ]
             for block in func.regions[0].blocks:
                 for op in block.operations:
                     if op.operation.name in {
@@ -889,12 +915,18 @@ def update_func_op_arg_types(
                         )
                         op.result.replace_all_uses_with(subview.result)
                         op.erase()
+    # Add remaining stream arguments
+    arg_id += 1
+    while arg_id < len(old_func_type.value.inputs):
+        new_input_types.append(old_func_type.value.inputs[arg_id])
+        arg_id += 1
     new_func_type = FunctionType.get(new_input_types, old_result_types, context)
     new_type = TypeAttr.get(new_func_type, context)
     func_op.operation.attributes["function_type"] = new_type
     entry_block = func_op.entry_block
-    for i, block_arg in enumerate(entry_block.arguments):
-        block_arg.set_type(new_input_types[i])
+    for arg_id, block_arg in enumerate(entry_block.arguments):
+        if arg_id < len(new_input_types):
+            block_arg.set_type(new_input_types[arg_id])
 
 
 def lower_tensor_to_memref(mod, enable_tensor):
@@ -952,9 +984,8 @@ class AIEModule:
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        self.kernel_index_ranges = get_kernel_index_ranges_from_mappings(
-            self.kernel_mappings
-        )
+        self.kernel_index_ranges = get_kernel_index_ranges(self.module, self.kernel_mappings)
+        # Assume the last arguent of all kernels is the output
         for kernel_name, (start, _) in self.kernel_index_ranges.items():
             kernel_func = self.module.body.operations[start]
             self.kernel_funcs[kernel_name] = kernel_func
