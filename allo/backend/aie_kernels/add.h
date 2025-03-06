@@ -2,7 +2,7 @@
  * Copyright Allo authors. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-//===- scale.cc -------------------------------------------------*- C++ -*-===//
+//===- add.h -------------------------------------------------*- C++ -*-===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -51,19 +51,3 @@ void eltwise_vadd(T_in *a, T_in *b, T_out *c) {
     }
   event1();
 }
-
-extern "C" {
-
-void eltwise_add_i32_vector(int32_t *a, int32_t *b, int32_t *c) {
-  eltwise_vadd<int32_t, int32_t, 1024>(a, b, c);
-}
-
-void eltwise_add_f32_vector(float *a, float *b, float *c) {
-  eltwise_vadd<float, float, 1024>(a, b, c);
-}
-
-void eltwise_add_bf16_vector(bfloat16 *a_in, bfloat16 *b_in, bfloat16 *c_out) {
-  eltwise_vadd<bfloat16, bfloat16, 1024>(a_in, b_in, c_out);
-}
-
-} // extern "C"
