@@ -16,3 +16,4 @@ psutil
 ninja
 sympy
 rich
+ml_dtypes

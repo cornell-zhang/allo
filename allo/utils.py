@@ -4,6 +4,7 @@
 
 import ctypes
 import numpy as np
+import ml_dtypes
 from ._mlir.ir import (
     MemRefType,
     RankedTensorType,
@@ -12,13 +13,25 @@ from ._mlir.ir import (
     F16Type,
     F32Type,
     F64Type,
+    BF16Type,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
-from .ir.types import Int, UInt, Float, Index, Fixed, UFixed
+from .ir.types import (
+    Int,
+    UInt,
+    Index,
+    Fixed,
+    UFixed,
+    bfloat16,
+    float16,
+    float32,
+    float64,
+)
 
 np_supported_types = {
+    "bf16": ml_dtypes.bfloat16,
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -37,6 +50,7 @@ np_supported_types = {
 ctype_map = {
     # ctypes.c_float16 does not exist
     # similar implementation in _mlir/runtime/np_to_memref.py/F16
+    "bf16": ctypes.c_int16,
     "f16": ctypes.c_int16,
     "f32": ctypes.c_float,
     "f64": ctypes.c_double,
@@ -133,10 +147,14 @@ def mlir_to_allo_type(mlir_type):
         return Index()
 
     # Handle Float types
+    if isinstance(mlir_type, BF16Type):
+        return bfloat16
+    if isinstance(mlir_type, F16Type):
+        return float16
     if isinstance(mlir_type, F32Type):
-        return Float(32)
+        return float32
     if isinstance(mlir_type, F64Type):
-        return Float(64)
+        return float64
 
     # Handle Fixed/UFixed types
     if isinstance(mlir_type, allo_d.FixedType):
@@ -191,6 +209,8 @@ def get_dtype_and_shape_from_type(dtype):
         return str(F32Type(dtype)), tuple()
     if F64Type.isinstance(dtype):
         return str(F64Type(dtype)), tuple()
+    if BF16Type.isinstance(dtype):
+        return str(BF16Type(dtype)), tuple()
     if allo_d.FixedType.isinstance(dtype):
         dtype = allo_d.FixedType(dtype)
         width, frac = dtype.width, dtype.frac
@@ -424,6 +444,8 @@ def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
 
 
 def get_element_type_from_str(element_type_str, context):
+    if element_type_str.startswith("bf"):
+        return BF16Type.get(context)
     if element_type_str.startswith("f"):
         bits = int(element_type_str[1:])
         return F32Type.get(context) if bits == 32 else F64Type.get(context)

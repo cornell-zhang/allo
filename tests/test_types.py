@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+import ml_dtypes
 import numpy as np
 import allo
 from allo.ir.types import (
@@ -15,6 +16,8 @@ from allo.ir.types import (
     int32,
     float16,
     float32,
+    float64,
+    bfloat16,
     index,
 )
 import allo.ir.types as T
@@ -138,7 +141,7 @@ def test_large_bitwidth():
 
 
 def test_load_type():
-    def kernel(A: allo.ir.types.Float(32)[32, 32]) -> Int(32)[32, 32]:
+    def kernel(A: allo.ir.types.float32[32, 32]) -> Int(32)[32, 32]:
         B: int32[32, 32] = 0
         v: T.Int(32) = 1
         for i, j in allo.grid(32, 32):
@@ -244,8 +247,8 @@ def test_arbitrary_bitwidth_gemm_alloc_output():
 
 
 def test_load_type_scalar():
-    def kernel(a: allo.ir.types.Float(32)) -> Int(32):
-        b: Float(32) = float(int(1))
+    def kernel(a: allo.ir.types.float32) -> Int(32):
+        b: float32 = float(int(1))
         c: float32 = int(a)
         return int(b + c)
 
@@ -274,7 +277,7 @@ def test_compare_int_float():
     mod = s.build()
     assert mod(2) == kernel(2)
 
-    Ty = Float(32)
+    Ty = float32
     s = allo.customize(kernel)
     mod = s.build()
     assert abs(mod(-1.3) - kernel(-1.3)) < 1e-6
@@ -346,6 +349,24 @@ def test_fp16_array():
     A = np.random.rand(10).astype(np.float16)
     B = mod(A)
     np.testing.assert_allclose(B, A + 1, rtol=1e-5)
+
+
+def test_bf16_array():
+    def kernel(A: bfloat16[10]) -> bfloat16[10]:
+        B: bfloat16[10]
+        for i in range(10):
+            B[i] = A[i] + 1
+        return B
+
+    s = allo.customize(kernel)
+    assert "bf16" in str(s.module)
+    print(s.module)
+    mod = s.build()
+    A = np.random.rand(10).astype(ml_dtypes.bfloat16)
+    B = mod(A)
+    np.testing.assert_allclose(
+        B.astype(np.float32), (A + 1).astype(np.float32), rtol=1e-2
+    )
 
 
 def test_fp16_array_inplace():
@@ -500,7 +521,13 @@ def test_anywidth_int_constant():
 
 def test_polymorphism():
     def gemm[
-        T: (float32, int32), M: int32, N: int32, K: int32
+        T: (
+            float32,
+            int32,
+        ),
+        M: int32,
+        N: int32,
+        K: int32,
     ](A: "T[M, K]", B: "T[K, N]") -> "T[M, N]":
         C: T[M, N] = 0
         for i, j, k in allo.grid(M, N, K):
@@ -526,7 +553,14 @@ def test_polymorphism():
 
 def test_multiple_poly_types():
     def vadd[
-        T0, T1: Int, T2: (Float, Int), M: int32, N: int32
+        T0,
+        T1: Int,
+        T2: (
+            Float,
+            Int,
+        ),
+        M: int32,
+        N: int32,
     ](A: "T0[M, N]", B: "T1[M, N]") -> "T2[M, N]":
         C: T2[M, N] = 0
         for i in range(M):
@@ -601,14 +635,14 @@ def test_struct_simple():
 
 def test_type_comparison():
     # float type attributes
-    assert Float(32).fracs == 23
-    assert Float(32).exponent == 8
-    assert Float(32).bits == 32
-    assert Float(64).fracs == 52
-    assert Float(64).exponent == 11
-    assert Float(64).bits == 64
+    assert float32.fracs == 23
+    assert float32.exponent == 8
+    assert float32.bits == 32
+    assert float64.fracs == 52
+    assert float64.exponent == 11
+    assert float64.bits == 64
     # type comparision
-    list_of_types = [Float(32), Float(64)]
+    list_of_types = [float32, float64]
     list_of_types += [Int(i) for i in range(2, 66, 4)]
     list_of_types += [UInt(i) for i in range(2, 66, 4)]
     list_of_types += [Fixed(i, i - 2) for i in range(2, 66, 4)]

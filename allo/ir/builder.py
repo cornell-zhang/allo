@@ -57,7 +57,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct
+from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule
@@ -1913,7 +1913,7 @@ class ASTTransformer(ASTBuilder):
                     ctx,
                     stmts[0],
                     node.args[0].dtype,
-                    Int(32) if node.func.id == "int" else Float(32),
+                    Int(32) if node.func.id == "int" else float32,
                 )
 
             if node.func.id in {"min", "max"}:
