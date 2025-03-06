@@ -19,7 +19,7 @@ from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
-from .passes import df_pipeline
+from .passes import df_pipeline, analyze_arg_load_store
 
 
 def get_pid():
@@ -131,7 +131,7 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, enable_tensor):
+def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
@@ -205,14 +205,15 @@ def _build_top(s, stream_info, enable_tensor):
             stream_lst = [
                 stream_map[stream_name] for stream_name, _ in stream_info[func_name]
             ]
-            call_op = func_d.CallOp(
-                [],
-                FlatSymbolRefAttr.get(func_name),
-                arg_lst + stream_lst,
-                ip=InsertionPoint.at_block_terminator(new_top.entry_block),
-            )
-            if i == len(funcs) - 1:
-                call_op.attributes["last"] = UnitAttr.get()
+            if target != "aie":
+                call_op = func_d.CallOp(
+                    [],
+                    FlatSymbolRefAttr.get(func_name),
+                    arg_lst + stream_lst,
+                    ip=InsertionPoint.at_block_terminator(new_top.entry_block),
+                )
+                if i == len(funcs) - 1:
+                    call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
     return s
@@ -296,8 +297,9 @@ def build(
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
-        # stream_info = move_stream_to_interface(s)
-        # s = _build_top(s, stream_info, enable_tensor=True)
+        stream_info = move_stream_to_interface(s)
+        s = _build_top(s, stream_info, enable_tensor=enable_tensor, target=target)
+        load_store_mapping = analyze_arg_load_store(s.module)
         mod = AIEModule(
             s.module, s.top_func_name, project, func.mappings, enable_tensor
         )
