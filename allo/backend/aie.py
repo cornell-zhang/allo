@@ -20,9 +20,12 @@ from .._mlir.ir import (
     Location,
     StridedLayoutAttr,
     InsertionPoint,
+    FlatSymbolRefAttr,
+    StringAttr,
 )
 from .._mlir.dialects import (
     memref as memref_d,
+    func as func_d,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
@@ -255,6 +258,61 @@ def get_position_str(mapping, index):
     return "_".join(map(str, reversed(indices)))
 
 
+def get_public_funcs(mod):
+    funcs = []
+    for func in mod.body.operations:
+        if (
+            isinstance(func, func_d.FuncOp)
+            and func.attributes["sym_name"].value != "top"
+            and (
+                "sym_visibility" not in func.attributes
+                or func.attributes["sym_visibility"].value != "private"
+            )
+        ):
+            funcs.append(func)
+    return funcs
+
+
+def inject_aie_kernels(mod):
+    external_kernels = {}
+    injected_kernels = set()
+    with mod.context, Location.unknown():
+        for func in mod.body.operations:
+            external_kernels[func.attributes["sym_name"].value] = []
+            for block in func.regions[0].blocks:
+                for op in block.operations:
+                    if (
+                        op.operation.name == "linalg.add"
+                        and len(MemRefType(op.inputs[0].type).shape) == 1
+                    ):
+                        # Inject AIE kernel
+                        func_type = func_d.FunctionType.get(
+                            [op.inputs[0].type, op.inputs[1].type, op.outputs[0].type],
+                            [],
+                        )
+                        dtype = str(op.inputs[0].type.element_type)
+                        if f"eltwise_add_{dtype}_vector" in injected_kernels:
+                            continue
+                        injected_kernels.add(f"eltwise_add_{dtype}_vector")
+                        kernel = func_d.FuncOp(
+                            f"eltwise_add_{dtype}_vector",
+                            func_type,
+                            ip=InsertionPoint(func),
+                        )
+                        kernel.attributes["sym_visibility"] = StringAttr.get("private")
+                        func_d.CallOp(
+                            [],
+                            FlatSymbolRefAttr.get(f"eltwise_add_{dtype}_vector"),
+                            [op.inputs[0], op.inputs[1], op.outputs[0]],
+                            ip=InsertionPoint(op),
+                        )
+                        op.erase()
+                        external_kernels[func.attributes["sym_name"].value].append(
+                            "add"
+                        )
+    return external_kernels
+
+
 def codegen_aie_mlir(
     mod,
     kernel_mappings,
@@ -263,6 +321,7 @@ def codegen_aie_mlir(
     kernel_func_arg_sizes,
     kernel_func_buf_dicts,
     kernel_dist_allocs,
+    external_kernels,
 ):
     """
     Generates MLIR-AIE code with MLIR module and extra information
@@ -299,6 +358,10 @@ def codegen_aie_mlir(
     kernel_dist_allocs: Dict[str, List[bool]]
         The allocation strategy for each argument in each kernel.
         More info can be find in function check_usage_intersection.
+
+    external_kernels: Dict[str, List[str]]
+        The external kernels that will be injected into the module.
+        The key is the name of the function, and the value is a list of names of the external kernels.
     """
     kernel_input_args = copy.deepcopy(orig_kernel_input_args)
     code = format_str("module {", indent=0)
@@ -306,12 +369,20 @@ def codegen_aie_mlir(
     mem_tile_size = 2 if num_tensors > 2 else 1
     device = "npu1_2col" if num_tensors > 2 else "npu1_1col"
     code += format_str(f"aie.device({device}) {{", indent=2)
+    # external functions
+    for func in mod.body.operations:
+        if (
+            isinstance(func, func_d.FuncOp)
+            and "sym_visibility" in func.attributes
+            and func.attributes["sym_visibility"].value == "private"
+        ):
+            code += format_str(str(func), indent=4)
     # create tiles
     code += format_str("%tile_shim = aie.tile(0, 0)")
     for mid in range(mem_tile_size):
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
     # number of function declaration except top
-    funcs = list(mod.body.operations)[:-1]
+    funcs = get_public_funcs(mod)
     buf_name_dicts = []
     # create compute tiles and buffers
     for kernel_name, (start, end) in kernel_index_ranges.items():
@@ -495,9 +566,13 @@ def codegen_aie_mlir(
                         f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
                     )
                     func_str = func_str.replace(f"%arg{out_id}", "%local_out")
+                    while " call @" in func_str:
+                        func_str = func_str.replace(" call @", " func.call @")
+                    # main body
                     with format_code(indent=6):
                         for line in func_str.splitlines()[1:-2]:
                             code += format_str(line, strip=False)
+                    # release fifos
                     for arg_id in range(len(input_args[:-1])):
                         code += format_str(
                             f"aie.objectfifo.release @in_{kernel_name}_{arg_id}_{suffix if dist_allocs[arg_id] else 0}(Consume, 1)"
@@ -507,7 +582,10 @@ def codegen_aie_mlir(
                     )
                 code += format_str("}")
                 code += format_str("aie.end")
-            code += format_str("}")
+            code += "    }"
+            if len(external_kernels[f"{kernel_name}_{suffix}"]) > 0:
+                ext = external_kernels[f"{kernel_name}_{suffix}"][0]
+                code += f' {{link_with = "{ext}.o"}}\n'
         in_args += [
             f"%arg{i}: {orig_in_type}"
             for i, (_, orig_in_type, _, _) in enumerate(input_args[:-1])
@@ -624,7 +702,7 @@ def check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes)
 
 def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
     ctx = mod.context
-    funcs = list(mod.body.operations)[:-1]
+    funcs = get_public_funcs(mod)
     # kernel->func -> arg -> dim
     kernel_func_arg_lower_bounds = {}
     kernel_func_arg_sizes = {}
@@ -809,7 +887,7 @@ def lower_tensor_to_memref(mod, enable_tensor):
 
 def record_local_buffer(mod, kernel_index_ranges):
     kernel_func_buf_dicts = {}
-    funcs = list(mod.body.operations)[:-1]
+    funcs = get_public_funcs(mod)
     for kernel_name, (start, end) in kernel_index_ranges.items():
         func_buf_dicts = []
         for fid in range(start, end):
@@ -871,6 +949,7 @@ class AIEModule:
                         dist_allocs,
                         enable_tensor=self.enable_tensor,
                     )
+        external_kernels = inject_aie_kernels(self.module)
         lower_tensor_to_memref(self.module, self.enable_tensor)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
@@ -883,10 +962,23 @@ class AIEModule:
             kernel_func_arg_sizes,
             kernel_func_buf_dicts,
             kernel_dist_allocs,
+            external_kernels,
         )
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
+        # compile external kernels
+        compiled_kernels = set()
+        for _, kernel_lst in external_kernels.items():
+            for kernel in kernel_lst:
+                if kernel in compiled_kernels:
+                    continue
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "aie_kernels")
+                cmd = f"cd {self.project} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $(dirname $(which aie-opt))/../include -c {path}/{kernel}.cc -o {kernel}.o"
+                compiled_kernels.add(kernel)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
         # build mlir-aie
         cmd = f"cd {self.project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
         process = subprocess.Popen(cmd, shell=True)
