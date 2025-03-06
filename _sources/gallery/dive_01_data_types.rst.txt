@@ -46,7 +46,7 @@ All the data types are defined in the ``allo.ir.types`` module.
 Currently, Allo supports three base data types for mathematical operations:
 
 - Integers: ``Int(bitwdith)``, ``UInt(bitwidth)``
-- Floating points: ``Float(bitwidth)`` (only support 16, 32, and 64 bits)
+- Floating points: ``Float(bitwidth, fracs)`` (we can use float32, float64, etc. as shorthands)
 - Fixed points: ``Fixed(bitwidth, frac)``, ``UFixed(bitwidth, frac)``
 
 For example, one can declare a 15-bit integer as ``Int(15)`` and an unsigned 8-bit fixed-point number with 3 fractional bits as ``UFixed(8, 3)``.
@@ -237,7 +237,7 @@ Not only constant values are supported, but also variables can be used as the in
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.170 seconds)
+   **Total running time of the script:** (0 minutes 0.181 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_01_data_types.py:
