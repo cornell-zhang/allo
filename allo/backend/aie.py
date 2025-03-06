@@ -282,7 +282,7 @@ def inject_aie_kernels(mod):
             for block in func.regions[0].blocks:
                 for op in block.operations:
                     if (
-                        "linalg" in op.operation.name
+                        op.operation.name in ["linalg.add", "linalg.mul"]
                         and len(MemRefType(op.inputs[0].type).shape) == 1
                     ):
                         op_name = op.operation.name.split(".")[1]
@@ -292,15 +292,6 @@ def inject_aie_kernels(mod):
                             [],
                         )
                         dtype = str(op.inputs[0].type.element_type)
-                        if f"eltwise_{op_name}_{dtype}_vector" in injected_kernels:
-                            continue
-                        injected_kernels.add(f"eltwise_{op_name}_{dtype}_vector")
-                        kernel = func_d.FuncOp(
-                            f"eltwise_{op_name}_{dtype}_vector",
-                            func_type,
-                            ip=InsertionPoint(func),
-                        )
-                        kernel.attributes["sym_visibility"] = StringAttr.get("private")
                         func_d.CallOp(
                             [],
                             FlatSymbolRefAttr.get(f"eltwise_{op_name}_{dtype}_vector"),
@@ -311,6 +302,15 @@ def inject_aie_kernels(mod):
                         external_kernels[func.attributes["sym_name"].value].append(
                             op_name
                         )
+                        if f"eltwise_{op_name}_{dtype}_vector" in injected_kernels:
+                            continue
+                        injected_kernels.add(f"eltwise_{op_name}_{dtype}_vector")
+                        kernel = func_d.FuncOp(
+                            f"eltwise_{op_name}_{dtype}_vector",
+                            func_type,
+                            ip=InsertionPoint(func),
+                        )
+                        kernel.attributes["sym_visibility"] = StringAttr.get("private")
     return external_kernels
 
 
@@ -587,6 +587,8 @@ def codegen_aie_mlir(
             if len(external_kernels[f"{kernel_name}_{suffix}"]) > 0:
                 ext = external_kernels[f"{kernel_name}_{suffix}"][0]
                 code += f' {{link_with = "{ext}.o"}}\n'
+            else:
+                code += "\n"
         in_args += [
             f"%arg{i}: {orig_in_type}"
             for i, (_, orig_in_type, _, _) in enumerate(input_args[:-1])
