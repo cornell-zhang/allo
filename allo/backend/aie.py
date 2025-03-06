@@ -282,33 +282,34 @@ def inject_aie_kernels(mod):
             for block in func.regions[0].blocks:
                 for op in block.operations:
                     if (
-                        op.operation.name == "linalg.add"
+                        "linalg" in op.operation.name
                         and len(MemRefType(op.inputs[0].type).shape) == 1
                     ):
+                        op_name = op.operation.name.split(".")[1]
                         # Inject AIE kernel
                         func_type = func_d.FunctionType.get(
                             [op.inputs[0].type, op.inputs[1].type, op.outputs[0].type],
                             [],
                         )
                         dtype = str(op.inputs[0].type.element_type)
-                        if f"eltwise_add_{dtype}_vector" in injected_kernels:
+                        if f"eltwise_{op_name}_{dtype}_vector" in injected_kernels:
                             continue
-                        injected_kernels.add(f"eltwise_add_{dtype}_vector")
+                        injected_kernels.add(f"eltwise_{op_name}_{dtype}_vector")
                         kernel = func_d.FuncOp(
-                            f"eltwise_add_{dtype}_vector",
+                            f"eltwise_{op_name}_{dtype}_vector",
                             func_type,
                             ip=InsertionPoint(func),
                         )
                         kernel.attributes["sym_visibility"] = StringAttr.get("private")
                         func_d.CallOp(
                             [],
-                            FlatSymbolRefAttr.get(f"eltwise_add_{dtype}_vector"),
+                            FlatSymbolRefAttr.get(f"eltwise_{op_name}_{dtype}_vector"),
                             [op.inputs[0], op.inputs[1], op.outputs[0]],
                             ip=InsertionPoint(op),
                         )
                         op.erase()
                         external_kernels[func.attributes["sym_name"].value].append(
-                            "add"
+                            op_name
                         )
     return external_kernels
 
