@@ -277,11 +277,11 @@ def get_public_funcs(mod):
                 or func.attributes["sym_visibility"].value != "private"
             )
         ):
-            if func.attributes["sym_name"].value != "top":
+            if func.attributes["sym_name"].value == "top":
                 top_func = func
             else:
                 funcs.append(func)
-    return funcs
+    return top_func, funcs
 
 
 def inject_aie_kernels(mod):
@@ -660,9 +660,9 @@ def codegen_aie_mlir(
                         code += format_str(
                             f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
                         )
+                        func_str = func_str.replace(f"%arg{arg_id}", "%local_out")
                     while " call @" in func_str:
                         func_str = func_str.replace(" call @", " func.call @")
-                        func_str = func_str.replace(f"%arg{arg_id}", "%local_out")
                     # Main computation
                     with format_code(indent=6):
                         lines = func_str.splitlines()
@@ -762,7 +762,11 @@ def codegen_aie_mlir(
                         )
                 code += format_str("}")
                 code += format_str("aie.end")
-            code += format_str("}")
+            code += "    }"
+            if len(external_kernels[f"{func_name}"]) > 0:
+                code += ' {link_with = "external.o"}\n'
+            else:
+                code += "\n"
         for _, orig_in_type, _, _ in inputs:
             in_args.append(f"%arg{arg_index}: {orig_in_type}")
             arg_index += 1
@@ -899,7 +903,7 @@ def check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes)
 
 def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_outputs):
     ctx = mod.context
-    funcs = get_public_funcs(mod)
+    _, funcs = get_public_funcs(mod)
     # kernel->func -> arg -> dim
     kernel_func_arg_lower_bounds = {}
     kernel_func_arg_sizes = {}
@@ -1118,7 +1122,7 @@ def lower_tensor_to_memref(mod, enable_tensor):
 
 def record_local_buffer(mod, kernel_index_ranges):
     kernel_func_buf_dicts = {}
-    funcs = get_public_funcs(mod)
+    _, funcs = get_public_funcs(mod)
     for kernel_name, (start, end) in kernel_index_ranges.items():
         func_buf_dicts = []
         for fid in range(start, end):
