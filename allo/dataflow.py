@@ -19,7 +19,7 @@ from .ir.utils import get_global_vars, get_all_funcs_except_top
 from .backend.aie import AIEModule
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
-from .passes import df_pipeline, analyze_arg_load_store
+from .passes import df_pipeline
 
 
 def get_pid():
@@ -300,7 +300,12 @@ def build(
         stream_info = move_stream_to_interface(s)
         s = _build_top(s, stream_info, enable_tensor=enable_tensor, target=target)
         mod = AIEModule(
-            s.module, s.top_func_name, project, func.mappings, enable_tensor, stream_info
+            s.module,
+            s.top_func_name,
+            project,
+            func.mappings,
+            enable_tensor,
+            stream_info,
         )
         mod.build()
         return mod

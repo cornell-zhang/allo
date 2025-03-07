@@ -6,7 +6,6 @@
 import os
 import subprocess
 import re
-import math
 import copy
 import numpy as np
 from .._mlir.ir import (
@@ -154,16 +153,8 @@ file_close_str = """  ofile.close();
 
 def codegen_host(kernel_inputs, kernel_outputs):
     code = host_header
-    inputs = [
-        input
-        for sublist in kernel_inputs.values()
-        for input in sublist
-    ]
-    outputs = [
-        output
-        for sublist in kernel_outputs.values()
-        for output in sublist
-    ]
+    inputs = [input for sublist in kernel_inputs.values() for input in sublist]
+    outputs = [output for sublist in kernel_outputs.values() for output in sublist]
     with format_code(indent=2):
         # write input data
         for i, (dtype, shape) in enumerate(inputs):
@@ -259,9 +250,9 @@ def get_stream_in_out(stream_info):
         for fifo_name, direction in fifos:
             if fifo_name not in stream_in_out:
                 stream_in_out[fifo_name] = (None, None)
-            if direction == 'in':
+            if direction == "in":
                 stream_in_out[fifo_name] = (stream_in_out[fifo_name][0], core)
-            elif direction == 'out':
+            elif direction == "out":
                 stream_in_out[fifo_name] = (core, stream_in_out[fifo_name][1])
     return stream_in_out
 
@@ -270,12 +261,9 @@ def get_public_funcs(mod):
     funcs = []
     top_func = None
     for func in mod.body.operations:
-        if (
-            isinstance(func, func_d.FuncOp)
-            and (
-                "sym_visibility" not in func.attributes
-                or func.attributes["sym_visibility"].value != "private"
-            )
+        if isinstance(func, func_d.FuncOp) and (
+            "sym_visibility" not in func.attributes
+            or func.attributes["sym_visibility"].value != "private"
         ):
             if func.attributes["sym_name"].value == "top":
                 top_func = func
@@ -388,8 +376,8 @@ def codegen_aie_mlir(
         The key is the name of the kernel, and the value is a list of tuples.
         Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
         For current version, we assume all function in the module have the same input arguments.
-    
-    orig_kernel_inputs: Dict[str, List[Tuple[str, List[int]]]]
+
+    orig_kernel_outputs: Dict[str, List[Tuple[str, List[int]]]]
         The original types of the output argument of the kernels.
         The key is the name of the kernel, and the value is a list of tuples.
         Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
@@ -412,7 +400,7 @@ def codegen_aie_mlir(
     external_kernels: Dict[str, List[str]]
         The external kernels that will be injected into the module.
         The key is the name of the function, and the value is a list of names of the external kernels.
-    
+
     stream_info: Dict[str, List[Tuple[str, str]]]
         The input and output stream of each kernel.
         The key is the name of the kernel, and the value is a list of tuples.
@@ -421,7 +409,9 @@ def codegen_aie_mlir(
     kernel_inputs = copy.deepcopy(orig_kernel_inputs)
     kernel_outputs = copy.deepcopy(orig_kernel_outputs)
     code = format_str("module {", indent=0)
-    kernel_inputs_outputs_val = list(kernel_inputs.values()) + list(kernel_outputs.values())
+    kernel_inputs_outputs_val = list(kernel_inputs.values()) + list(
+        kernel_outputs.values()
+    )
     num_tensors = sum(len(v) for v in kernel_inputs_outputs_val)
     mem_tile_size = 2 if num_tensors > 2 else 1
     device = "npu1_2col" if num_tensors > 2 else "npu1_1col"
@@ -502,9 +492,7 @@ def codegen_aie_mlir(
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
         mapping = kernel_mappings[kernel_name]
         dist_allocs = kernel_dist_allocs[kernel_name]
-        for arg_id, (in_type, orig_in_type, shape, orig_shape) in enumerate(
-            inputs
-        ):
+        for arg_id, (in_type, orig_in_type, shape, orig_shape) in enumerate(inputs):
             if dist_allocs[arg_id]:
                 # depth=2 means double buffer
                 code += format_str(
@@ -551,7 +539,9 @@ def codegen_aie_mlir(
         inputs = kernel_inputs[kernel_name]
         outputs = kernel_outputs[kernel_name]
         mapping = kernel_mappings[kernel_name]
-        for i, (out_type, orig_out_type, out_shape, orig_out_shape) in enumerate(outputs):
+        for i, (out_type, orig_out_type, out_shape, orig_out_shape) in enumerate(
+            outputs
+        ):
             arg_id = len(inputs) + i
             if dist_allocs[arg_id]:
                 # output uses tile_mem0
@@ -601,9 +591,9 @@ def codegen_aie_mlir(
             if stream_name in stream_in_out:
                 in_out = stream_in_out[stream_name]
                 stream_type_str = str(op.results.types[0])
-                start = stream_type_str.find('<') + 1
-                end = stream_type_str.rfind('>')
-                type_str, depth_str = stream_type_str[start:end].split(',')
+                start = stream_type_str.find("<") + 1
+                end = stream_type_str.rfind(">")
+                type_str, depth_str = stream_type_str[start:end].split(",")
                 type_str = type_str.strip()
                 if not type_str.startswith("memref"):
                     type_str = f"memref<{type_str}>"
@@ -639,9 +629,7 @@ def codegen_aie_mlir(
                 )
                 with format_code(indent=8):
                     # Acquire input fifos
-                    for arg_id, (in_type, orig_in_type, _, _) in enumerate(
-                        inputs
-                    ):
+                    for arg_id, (in_type, orig_in_type, _, _) in enumerate(inputs):
                         dtype = in_type if dist_allocs[arg_id] else orig_in_type
                         code += format_str(
                             f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
@@ -682,8 +670,10 @@ def codegen_aie_mlir(
                                 arg_id = int(line[start:end])
                                 # Extract return variable
                                 return_var = line.split("=")[0].strip()
-                                stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
-                                indent = 6 + len(line) - len(line.lstrip(' '))
+                                stream_name = streams[
+                                    arg_id - len(inputs) - len(outputs)
+                                ][0]
+                                indent = 6 + len(line) - len(line.lstrip(" "))
                                 with format_code(indent=indent):
                                     # Acquire fifo
                                     ele_type = stream_ele_types[stream_name]
@@ -719,12 +709,14 @@ def codegen_aie_mlir(
                                 # Extract put variable
                                 start = line.find("%", end)
                                 end = start + 1
-                                while end < len(line) and line[end] != ')':
+                                while end < len(line) and line[end] != ")":
                                     end += 1
                                 put_var = line[start:end]
-                                stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
+                                stream_name = streams[
+                                    arg_id - len(inputs) - len(outputs)
+                                ][0]
                                 ele_type = stream_ele_types[stream_name]
-                                indent = 6 + len(line) - len(line.lstrip(' '))
+                                indent = 6 + len(line) - len(line.lstrip(" "))
                                 with format_code(indent=indent):
                                     # Acquire fifo
                                     ele_type = stream_ele_types[stream_name]
@@ -801,7 +793,11 @@ def codegen_aie_mlir(
                 arg_id = len(inputs) + i
                 if len(orig_out_shape) == 1:
                     out_size_n_stride = f"[1, 1, 1, {orig_out_shape[0]}][0, 0, 0, 1]"
-                elif len(mapping) == 2 and len(orig_out_shape) == 2 and dist_allocs[arg_id]:
+                elif (
+                    len(mapping) == 2
+                    and len(orig_out_shape) == 2
+                    and dist_allocs[arg_id]
+                ):
                     # now only support 2D mapping and 2D tensor
                     out_size_n_stride = f"[{mapping[0]}, {mapping[1]}, {orig_out_shape[0] // mapping[0]}, {orig_out_shape[1] // mapping[1]}][{orig_out_shape[0] // mapping[0] * orig_out_shape[1]}, {orig_out_shape[1] // mapping[1]}, {orig_out_shape[1]}, 1]"
                 else:
@@ -937,9 +933,7 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_output
                     "tensor.insert_slice",
                     "memref.subview",
                 }:
-                    operand_idx = (
-                        1 if op.operation.name == "tensor.insert_slice" else 0
-                    )
+                    operand_idx = 1 if op.operation.name == "tensor.insert_slice" else 0
                     if op.operands[operand_idx] not in args:
                         continue
                     arg_id = list(args).index(op.operands[operand_idx])
@@ -948,9 +942,7 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_output
                     for i, (offset, size) in enumerate(
                         zip(static_offsets, static_sizes)
                     ):
-                        lower_bounds[arg_id][i] = min(
-                            lower_bounds[arg_id][i], offset
-                        )
+                        lower_bounds[arg_id][i] = min(lower_bounds[arg_id][i], offset)
                         sizes[arg_id][i] = max(sizes[arg_id][i], size)
                     for region in op.regions:
                         for block in region.blocks:
@@ -1000,9 +992,7 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_output
                     "tensor.insert_slice",
                     "memref.subview",
                 }:
-                    operand_idx = (
-                        1 if op.operation.name == "tensor.insert_slice" else 0
-                    )
+                    operand_idx = 1 if op.operation.name == "tensor.insert_slice" else 0
                     if op.operands[operand_idx] not in args:
                         continue
                     arg_id = list(args).index(op.operands[operand_idx])
@@ -1034,7 +1024,9 @@ def update_func_op_arg_types(
     old_result_types = old_func_type.value.results
     new_input_types = []
     inputs_outputs = inputs + outputs
-    for arg_id, ((ele_type_str, _), shape) in enumerate(zip(inputs_outputs, new_shapes)):
+    for arg_id, ((ele_type_str, _), shape) in enumerate(
+        zip(inputs_outputs, new_shapes)
+    ):
         elem_ty = get_element_type_from_str(ele_type_str, context)
         old_ty = old_func_type.value.inputs[arg_id]
         memref_ty = (
@@ -1087,7 +1079,7 @@ def update_func_op_arg_types(
                         for block in region.blocks:
                             ops_stack.extend(block.operations)
     # Add remaining stream arguments
-    arg_id += 1
+    arg_id = len(inputs_outputs)
     while arg_id < len(old_func_type.value.inputs):
         new_input_types.append(old_func_type.value.inputs[arg_id])
         arg_id += 1
@@ -1146,7 +1138,15 @@ def record_local_buffer(mod, kernel_index_ranges):
 
 
 class AIEModule:
-    def __init__(self, module, top_func_name, project, kernel_mappings, enable_tensor, stream_info):
+    def __init__(
+        self,
+        module,
+        top_func_name,
+        project,
+        kernel_mappings,
+        enable_tensor,
+        stream_info,
+    ):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
@@ -1161,13 +1161,15 @@ class AIEModule:
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        self.kernel_index_ranges = get_kernel_index_ranges(self.module, self.kernel_mappings)
+        self.kernel_index_ranges = get_kernel_index_ranges(
+            self.module, self.kernel_mappings
+        )
         for i, (kernel_name, (start, _)) in enumerate(self.kernel_index_ranges.items()):
             kernel_func = self.module.body.operations[start]
             self.kernel_funcs[kernel_name] = kernel_func
             # Assume the last arguent of all kernels is the output
             inputs, _ = get_func_inputs_outputs(kernel_func)
-            if i < len (self.kernel_index_ranges) - 1:
+            if i < len(self.kernel_index_ranges) - 1:
                 self.kernel_inputs[kernel_name] = inputs
                 self.kernel_outputs[kernel_name] = []
             else:
@@ -1175,7 +1177,10 @@ class AIEModule:
                 self.kernel_outputs[kernel_name] = [inputs[-1]]
         # Assume all functions of the same kernel have the same input and output arguments
         _, kernel_func_arg_sizes, kernel_dist_allocs = reindex_tensor_access(
-            self.module, self.kernel_index_ranges, self.kernel_inputs, self.kernel_outputs
+            self.module,
+            self.kernel_index_ranges,
+            self.kernel_inputs,
+            self.kernel_outputs,
         )
         with self.module.context as ctx, Location.unknown():
             for kernel_name, (start, end) in self.kernel_index_ranges.items():
@@ -1260,6 +1265,8 @@ class AIEModule:
         for i, outputs in enumerate(self.kernel_outputs.values()):
             if i == len(self.kernel_outputs) - 1:
                 result = read_tensor_from_file(
-                    outputs[0][0], args[-1 * (i + 1)].shape, f"{self.project}/output.data"
+                    outputs[0][0],
+                    args[-1 * (i + 1)].shape,
+                    f"{self.project}/output.data",
                 )
         args[-1][:] = result
