@@ -408,18 +408,15 @@ def codegen_aie_mlir(
     kernel_dist_allocs: Dict[str, List[bool]]
         The allocation strategy for each argument in each kernel.
         More info can be find in function check_usage_intersection.
-<<<<<<< HEAD
 
     external_kernels: Dict[str, List[str]]
         The external kernels that will be injected into the module.
         The key is the name of the function, and the value is a list of names of the external kernels.
-=======
     
     stream_info: Dict[str, List[Tuple[str, str]]]
         The input and output stream of each kernel.
         The key is the name of the kernel, and the value is a list of tuples.
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
->>>>>>> ce98437 (create objectfifo from allo.stream)
     """
     kernel_inputs = copy.deepcopy(orig_kernel_inputs)
     kernel_outputs = copy.deepcopy(orig_kernel_outputs)
@@ -588,6 +585,7 @@ def codegen_aie_mlir(
                 code += format_str(
                     f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
                 )
+                # TODO: can't specify multi-input of a fifo
                 code += format_str(
                     f"aie.objectfifo @out_{kernel_name}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
                 )
@@ -611,12 +609,13 @@ def codegen_aie_mlir(
                     type_str = f"memref<{type_str}>"
                 depth = int(depth_str.strip())
                 code += format_str(
-                    f"aie.objectfifo @{stream_name}({{%tile_comp_{in_out[0]}}}, {{%tile_comp_{in_out[1]}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
+                    f"aie.objectfifo @{stream_name}(%tile_comp_{in_out[0]}, {{%tile_comp_{in_out[1]}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
     # create core computation
     in_args = []
     out_args = []
+    arg_index = 0
     for kernel_name, (start, end) in kernel_index_ranges.items():
         mapping = kernel_mappings[kernel_name]
         inputs = kernel_inputs[kernel_name]
@@ -681,7 +680,7 @@ def codegen_aie_mlir(
                     with format_code(indent=6):
                         for line in func_str.splitlines()[1:-2]:
                             # Replace stream.get and stream.put
-                            if "stream.get" in line:
+                            if "stream_get" in line:
                                 # Extract argument id
                                 keyword = "stream_get(%arg"
                                 start = line.find(keyword)
@@ -696,7 +695,7 @@ def codegen_aie_mlir(
                                 func_str = func_str.replace(
                                     return_var, f"%local_{stream_name}"
                                 )
-                            elif "stream.put" in line:
+                            elif "stream_put" in line:
                                 # Extract argument id
                                 keyword = "stream_put(%arg"
                                 start = line.find(keyword)
@@ -713,9 +712,14 @@ def codegen_aie_mlir(
                                 put_var = line[start:end]
                                 stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
                                 ele_type = stream_ele_types[stream_name]
-                                code += format_str(
-                                    f"memref.copy {put_var}, %local_{stream_name} : {ele_type}, {ele_type}"
-                                )
+                                if "x" in ele_type:
+                                    code += format_str(
+                                        f"memref.copy {put_var}, %local_{stream_name} : {ele_type} to {ele_type}"
+                                    )
+                                else:
+                                    code + format_str(
+                                        f"memref.store {put_var}, %local_{stream_name}[] : {ele_type}"
+                                    )
                             else:
                                 code += format_str(line, strip=False)
                     # Release input fifos
@@ -739,19 +743,13 @@ def codegen_aie_mlir(
                         )
                 code += format_str("}")
                 code += format_str("aie.end")
-            code += "    }"
-            if len(external_kernels[f"{kernel_name}_{suffix}"]) > 0:
-                code += ' {link_with = "external.o"}\n'
-            else:
-                code += "\n"
-        in_args += [
-            f"%arg{i}: {orig_in_type}"
-            for i, (_, orig_in_type, _, _) in enumerate(inputs)
-        ]
-        out_args += [
-            f"%arg{len(inputs) + i}: {orig_out_type}"
-            for i, (_, orig_out_type, _, _) in enumerate(outputs)
-        ]
+            code += format_str("}")
+        for _, orig_in_type, _, _ in inputs:
+            in_args.append(f"%arg{arg_index}: {orig_in_type}")
+            arg_index += 1
+        for _, orig_out_type, _, _ in outputs:
+            out_args.append(f"%arg{arg_index}: {orig_out_type}")
+            arg_index += 1
     code += format_str(
         f"aiex.runtime_sequence({",".join(in_args)}, {",".join(out_args)}) {{"
     )
@@ -809,7 +807,7 @@ def get_kernel_index_ranges(mod, kernel_mappings):
         if isinstance(func, func_d.FuncOp):
             while not func.attributes["sym_name"].value.startswith(kernel_names[k_id]):
                 kernel_index_ranges[kernel_names[k_id]] = (start, end)
-                kid += 1
+                k_id += 1
                 start = end
             end += 1
     if k_id < len(kernel_names):
@@ -1143,6 +1141,7 @@ class AIEModule:
                     )
         external_kernels = inject_aie_kernels(self.module)
         lower_tensor_to_memref(self.module, self.enable_tensor)
+        print(self.module)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
         )
