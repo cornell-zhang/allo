@@ -899,28 +899,35 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_output
                 for arg_type in arg_types
                 if "!allo.stream" not in str(arg_type)
             ]
+            # Support nested block traversal
+            ops_stack = []
             for block in func.regions[0].blocks:
-                for op in block.operations:
-                    if op.operation.name in {
-                        "tensor.extract_slice",
-                        "tensor.insert_slice",
-                        "memref.subview",
-                    }:
-                        operand_idx = (
-                            1 if op.operation.name == "tensor.insert_slice" else 0
+                ops_stack.extend(block.operations)
+            while ops_stack:
+                op = ops_stack.pop()
+                if op.operation.name in {
+                    "tensor.extract_slice",
+                    "tensor.insert_slice",
+                    "memref.subview",
+                }:
+                    operand_idx = (
+                        1 if op.operation.name == "tensor.insert_slice" else 0
+                    )
+                    if op.operands[operand_idx] not in args:
+                        continue
+                    arg_id = list(args).index(op.operands[operand_idx])
+                    static_offsets = op.attributes["static_offsets"]
+                    static_sizes = op.attributes["static_sizes"]
+                    for i, (offset, size) in enumerate(
+                        zip(static_offsets, static_sizes)
+                    ):
+                        lower_bounds[arg_id][i] = min(
+                            lower_bounds[arg_id][i], offset
                         )
-                        if op.operands[operand_idx] not in args:
-                            continue
-                        arg_id = list(args).index(op.operands[operand_idx])
-                        static_offsets = op.attributes["static_offsets"]
-                        static_sizes = op.attributes["static_sizes"]
-                        for i, (offset, size) in enumerate(
-                            zip(static_offsets, static_sizes)
-                        ):
-                            lower_bounds[arg_id][i] = min(
-                                lower_bounds[arg_id][i], offset
-                            )
-                            sizes[arg_id][i] = max(sizes[arg_id][i], size)
+                        sizes[arg_id][i] = max(sizes[arg_id][i], size)
+                    for region in op.regions:
+                        for block in region.blocks:
+                            ops_stack.extend(block.operations)
             for i, lower_bound in enumerate(lower_bounds):
                 # Arguments never used with slice
                 if lower_bound[0] == float("inf"):
@@ -955,34 +962,41 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_output
             args = entry_block.arguments
             lower_bounds = func_arg_lower_bounds[fid - start]
             sizes = func_arg_sizes[fid - start]
+            # Support nested block traversal
+            ops_stack = []
             for block in func.regions[0].blocks:
-                for op in block.operations:
-                    if op.operation.name in {
-                        "tensor.extract_slice",
-                        "tensor.insert_slice",
-                        "memref.subview",
-                    }:
-                        operand_idx = (
-                            1 if op.operation.name == "tensor.insert_slice" else 0
+                ops_stack.extend(block.operations)
+            while ops_stack:
+                op = ops_stack.pop()
+                if op.operation.name in {
+                    "tensor.extract_slice",
+                    "tensor.insert_slice",
+                    "memref.subview",
+                }:
+                    operand_idx = (
+                        1 if op.operation.name == "tensor.insert_slice" else 0
+                    )
+                    if op.operands[operand_idx] not in args:
+                        continue
+                    arg_id = list(args).index(op.operands[operand_idx])
+                    static_offsets = op.attributes["static_offsets"]
+                    new_offsets = []
+                    for i, offset in enumerate(static_offsets):
+                        new_offset = (
+                            offset - lower_bounds[arg_id][i]
+                            if dist_allocs[arg_id]
+                            else offset
                         )
-                        if op.operands[operand_idx] not in args:
-                            continue
-                        arg_id = list(args).index(op.operands[operand_idx])
-                        static_offsets = op.attributes["static_offsets"]
-                        new_offsets = []
-                        for i, offset in enumerate(static_offsets):
-                            new_offset = (
-                                offset - lower_bounds[arg_id][i]
-                                if dist_allocs[arg_id]
-                                else offset
-                            )
-                            new_offset_attr = IntegerAttr.get(
-                                IntegerType.get_signless(64, ctx), new_offset
-                            )
-                            new_offsets.append(new_offset_attr)
-                        op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
-                            new_offsets, ctx
+                        new_offset_attr = IntegerAttr.get(
+                            IntegerType.get_signless(64, ctx), new_offset
                         )
+                        new_offsets.append(new_offset_attr)
+                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
+                        new_offsets, ctx
+                    )
+                    for region in op.regions:
+                        for block in region.blocks:
+                            ops_stack.extend(block.operations)
     return kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_dist_allocs
 
 
@@ -1006,38 +1020,45 @@ def update_func_op_arg_types(
         if not enable_tensor and dist_allocs[arg_id]:
             entry_block = func_op.regions[0].blocks[0]
             args = entry_block.arguments
+            ops_stack = []
             for block in func_op.regions[0].blocks:
-                for op in block.operations:
-                    if (
-                        op.operation.name == "memref.subview"
-                        and op.operands[0] == args[arg_id]
-                    ):
-                        old_result_type = op.results.types[0]
-                        strides = []
-                        times = 1
-                        for size in reversed(shape):
-                            strides.append(times)
-                            times *= size
-                        strides = list(reversed(strides))
-                        layout = StridedLayoutAttr.get(0, strides)
-                        result = MemRefType.get(
-                            old_result_type.shape,
-                            old_result_type.element_type,
-                            layout=layout,
-                        )
-                        subview = memref_d.SubViewOp(
-                            source=op.source,
-                            result=result,
-                            static_offsets=op.static_offsets,
-                            static_sizes=op.static_sizes,
-                            static_strides=op.static_strides,
-                            offsets=[],
-                            sizes=[],
-                            strides=[],
-                            ip=InsertionPoint(op),
-                        )
-                        op.result.replace_all_uses_with(subview.result)
-                        op.erase()
+                ops_stack.extend(block.operations)
+            while ops_stack:
+                op = ops_stack.pop()
+                if (
+                    op.operation.name == "memref.subview"
+                    and op.operands[0] == args[arg_id]
+                ):
+                    old_result_type = op.results.types[0]
+                    strides = []
+                    times = 1
+                    for size in reversed(shape):
+                        strides.append(times)
+                        times *= size
+                    strides = list(reversed(strides))
+                    layout = StridedLayoutAttr.get(0, strides)
+                    result = MemRefType.get(
+                        old_result_type.shape,
+                        old_result_type.element_type,
+                        layout=layout,
+                    )
+                    subview = memref_d.SubViewOp(
+                        source=op.source,
+                        result=result,
+                        static_offsets=op.static_offsets,
+                        static_sizes=op.static_sizes,
+                        static_strides=op.static_strides,
+                        offsets=[],
+                        sizes=[],
+                        strides=[],
+                        ip=InsertionPoint(op),
+                    )
+                    op.result.replace_all_uses_with(subview.result)
+                    op.erase()
+                else:
+                    for region in op.regions:
+                        for block in region.blocks:
+                            ops_stack.extend(block.operations)
     # Add remaining stream arguments
     arg_id += 1
     while arg_id < len(old_func_type.value.inputs):
@@ -1080,12 +1101,18 @@ def record_local_buffer(mod, kernel_index_ranges):
         for fid in range(start, end):
             func = funcs[fid]
             buf_dict = {}
+            ops_stack = []
             for block in func.regions[0].blocks:
-                for op in block.operations:
-                    if op.operation.name == "memref.alloc":
-                        name = op.result.get_name()
-                        dtype, shape = get_dtype_and_shape_from_type(op.result.type)
-                        buf_dict[name] = (dtype, shape)
+                ops_stack.extend(block.operations)
+            while ops_stack:
+                op = ops_stack.pop()
+                if op.operation.name == "memref.alloc":
+                    name = op.result.get_name()
+                    dtype, shape = get_dtype_and_shape_from_type(op.result.type)
+                    buf_dict[name] = (dtype, shape)
+                for region in op.regions:
+                    for block in region.blocks:
+                        ops_stack.extend(block.operations)
             func_buf_dicts.append(buf_dict)
         kernel_func_buf_dicts[kernel_name] = func_buf_dicts
     return kernel_func_buf_dicts
