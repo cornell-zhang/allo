@@ -152,17 +152,21 @@ file_close_str = """  ofile.close();
 """
 
 
-def codegen_host(kernel_input_args):
+def codegen_host(kernel_inputs, kernel_outputs):
     code = host_header
-    input_args = [
-        input_arg
-        for sublist in kernel_input_args.values()
-        for input_arg in sublist[:-1]
+    inputs = [
+        input
+        for sublist in kernel_inputs.values()
+        for input in sublist
     ]
-    output_args = [sublist[-1] for sublist in kernel_input_args.values()]
+    outputs = [
+        output
+        for sublist in kernel_outputs.values()
+        for output in sublist
+    ]
     with format_code(indent=2):
         # write input data
-        for i, (dtype, shape) in enumerate(input_args):
+        for i, (dtype, shape) in enumerate(inputs):
             dtype = ctype_map[dtype]
             code += format_str(f'std::ifstream ifile{i}("input{i}.data");')
             code += format_str(f"if (!ifile{i}.is_open()) {{")
@@ -190,7 +194,7 @@ def codegen_host(kernel_input_args):
             code += format_str(
                 f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));"
             )
-        for i, (dtype, shape) in enumerate(output_args):
+        for i, (dtype, shape) in enumerate(outputs):
             dtype = ctype_map[dtype]
             out_size = np.prod(shape)
             code += format_str(
@@ -199,14 +203,14 @@ def codegen_host(kernel_input_args):
             )
             with format_code(indent=24):
                 code += format_str(
-                    f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(input_args) + 2 + i}));"
+                    f"XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(inputs) + 2 + i}));"
                 )
         code += format_str("if (verbosity >= 1)")
         code += format_str(
             '  std::cout << "Writing data into buffer objects.\\n";', strip=False
         )
         code += format_str("\nbo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
-        for i in range(len(input_args)):
+        for i in range(len(inputs)):
             code += format_str(f"bo_in{i}.sync(XCL_BO_SYNC_BO_TO_DEVICE);")
         # run kernels
         code += format_str("if (verbosity >= 1)")
@@ -215,8 +219,8 @@ def codegen_host(kernel_input_args):
             "\nauto start = std::chrono::high_resolution_clock::now();", strip=False
         )
         code += format_str("unsigned int opcode = 3;", strip=False)
-        inbufs = ", ".join([f"bo_in{i}" for i in range(len(input_args))])
-        outbufs = ", ".join([f"bo_out{i}" for i in range(len(output_args))])
+        inbufs = ", ".join([f"bo_in{i}" for i in range(len(inputs))])
+        outbufs = ", ".join([f"bo_out{i}" for i in range(len(outputs))])
         code += format_str("// gid: (opcode, instr, instr_size, ...)")
         code += format_str(
             f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
@@ -232,7 +236,7 @@ def codegen_host(kernel_input_args):
             'std::cout << "NPU execution time: " << npu_time << "us\\n";'
         )
         # get results
-        for i, (dtype, shape) in enumerate(output_args):
+        for i, (dtype, shape) in enumerate(outputs):
             dtype = ctype_map[dtype]
             out_size = np.prod(shape)
             code += format_str(
@@ -243,7 +247,7 @@ def codegen_host(kernel_input_args):
             code += format_str(f'  ofile << *(bufOut{i} + i) << "\\n";', strip=False)
             code += format_str("}")
         code += format_str("\n// Close files", strip=False)
-        for i in range(len(input_args)):
+        for i in range(len(inputs)):
             code += format_str(f"ifile{i}.close();")
         code += file_close_str
     return code
@@ -355,7 +359,8 @@ def codegen_aie_mlir(
     mod,
     kernel_mappings,
     kernel_index_ranges,
-    orig_kernel_input_args,
+    orig_kernel_inputs,
+    orig_kernel_outputs,
     kernel_func_arg_sizes,
     kernel_func_buf_dicts,
     kernel_dist_allocs,
@@ -378,11 +383,17 @@ def codegen_aie_mlir(
         The index range of each kernel in the module.
         The key is the name of the kernel, and the value is a tuple of integers representing the start and end index of the kernel.
 
-    orig_kernel_input_args: Dict[str, List[Tuple[str, List[int]]]]
-        The original types of the argument of the kernels.
+    orig_kernel_inputs: Dict[str, List[Tuple[str, List[int]]]]
+        The original types of the input argument of the kernels.
         The key is the name of the kernel, and the value is a list of tuples.
         Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
         For current version, we assume all function in the module have the same input arguments.
+    
+    orig_kernel_inputs: Dict[str, List[Tuple[str, List[int]]]]
+        The original types of the output argument of the kernels.
+        The key is the name of the kernel, and the value is a list of tuples.
+        Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
+        For current version, we assume all function in the module have the same output arguments.
 
     kernel_func_arg_sizes: Dict[str, List[List[List[int]]]]
         The actual size of each argument that each function in each kernel will be using.
@@ -410,9 +421,11 @@ def codegen_aie_mlir(
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
 >>>>>>> ce98437 (create objectfifo from allo.stream)
     """
-    kernel_input_args = copy.deepcopy(orig_kernel_input_args)
+    kernel_inputs = copy.deepcopy(orig_kernel_inputs)
+    kernel_outputs = copy.deepcopy(orig_kernel_outputs)
     code = format_str("module {", indent=0)
-    num_tensors = sum(len(v) for v in kernel_input_args.values())
+    kernel_inputs_outputs_val = list(kernel_inputs.values()) + list(kernel_outputs.values())
+    num_tensors = sum(len(v) for v in kernel_inputs_outputs_val)
     mem_tile_size = 2 if num_tensors > 2 else 1
     device = "npu1_2col" if num_tensors > 2 else "npu1_1col"
     code += format_str(f"aie.device({device}) {{", indent=2)
@@ -452,15 +465,24 @@ def codegen_aie_mlir(
             buf_name_dicts.append(buf_name_dict)
     # update module and args
     for kernel_name in kernel_index_ranges.keys():
-        input_args = kernel_input_args[kernel_name]
+        inputs = kernel_inputs[kernel_name]
+        outputs = kernel_outputs[kernel_name]
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
-        for arg_id, (ele_type, orig_shape) in enumerate(input_args):
+        for arg_id, (ele_type, orig_shape) in enumerate(inputs):
             orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
             # assume all functions of the same kernel have the same input args
             shape = func_arg_sizes[0][arg_id]
             ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
-            input_args[arg_id] = (ele_type, orig_ele_type, shape, orig_shape)
-        kernel_input_args[kernel_name] = input_args
+            inputs[arg_id] = (ele_type, orig_ele_type, shape, orig_shape)
+        for i, (ele_type, orig_shape) in enumerate(outputs):
+            arg_id = len(inputs) + i
+            orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
+            # assume all functions of the same kernel have the same input args
+            shape = func_arg_sizes[0][arg_id]
+            ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
+            outputs[i] = (ele_type, orig_ele_type, shape, orig_shape)
+        kernel_inputs[kernel_name] = inputs
+        kernel_outputs[kernel_name] = outputs
     func_strs = list(map(str, funcs))
     # update buffers
     for fid, func_str in enumerate(func_strs):
@@ -478,12 +500,13 @@ def codegen_aie_mlir(
     # create input object fifos
     # connect each argument to a separate mem tile
     for kernel_name, (start, end) in kernel_index_ranges.items():
-        input_args = kernel_input_args[kernel_name]
+        inputs = kernel_inputs[kernel_name]
+        outputs = kernel_outputs[kernel_name]
         func_arg_sizes = kernel_func_arg_sizes[kernel_name]
         mapping = kernel_mappings[kernel_name]
         dist_allocs = kernel_dist_allocs[kernel_name]
         for arg_id, (in_type, orig_in_type, shape, orig_shape) in enumerate(
-            input_args[:-1]
+            inputs
         ):
             if dist_allocs[arg_id]:
                 # depth=2 means double buffer
@@ -528,47 +551,49 @@ def codegen_aie_mlir(
     # create output object fifos
     for kernel_name, (start, end) in kernel_index_ranges.items():
         dist_allocs = kernel_dist_allocs[kernel_name]
-        input_args = kernel_input_args[kernel_name]
+        inputs = kernel_inputs[kernel_name]
+        outputs = kernel_outputs[kernel_name]
         mapping = kernel_mappings[kernel_name]
-        out_type, orig_out_type, out_shape, orig_out_shape = input_args[-1]
-        if dist_allocs[-1]:
-            # output uses tile_mem0
-            for fid in range(start, end):
-                func_name = funcs[fid].attributes["sym_name"].value
+        for i, (out_type, orig_out_type, out_shape, orig_out_shape) in enumerate(outputs):
+            arg_id = len(inputs) + i
+            if dist_allocs[arg_id]:
+                # output uses tile_mem0
+                for fid in range(start, end):
+                    func_name = funcs[fid].attributes["sym_name"].value
+                    code += format_str(
+                        f"aie.objectfifo @out_{func_name}(%tile_comp_{func_name}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+                    )
                 code += format_str(
-                    f"aie.objectfifo @out_{func_name}(%tile_comp_{func_name}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+                    f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
                 )
-            code += format_str(
-                f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-            )
-            out_mem_str = ", ".join(
-                [
-                    f"@out_{funcs[fid].attributes["sym_name"].value}"
-                    for fid in range(start, end)
-                ]
-            )
-            pe_size = end - start
-            shape_prod = np.prod(out_shape)
-            out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
-            code += format_str(
-                f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh_{kernel_name}]({out_mem_stride} [])"
-            )
-        else:
-            out_tile_str = ", ".join(
-                [
-                    f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
-                    for fid in range(start, end)
-                ]
-            )
-            code += format_str(
-                f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-            )
-            code += format_str(
-                f"aie.objectfifo @out_{kernel_name}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-            )
-            code += format_str(
-                f"aie.objectfifo.link [@out_{kernel_name}] -> [@out_sh_{kernel_name}]([] [])"
-            )
+                out_mem_str = ", ".join(
+                    [
+                        f"@out_{funcs[fid].attributes["sym_name"].value}"
+                        for fid in range(start, end)
+                    ]
+                )
+                pe_size = end - start
+                shape_prod = np.prod(out_shape)
+                out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
+                code += format_str(
+                    f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh_{kernel_name}]({out_mem_stride} [])"
+                )
+            else:
+                out_tile_str = ", ".join(
+                    [
+                        f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
+                        for fid in range(start, end)
+                    ]
+                )
+                code += format_str(
+                    f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
+                )
+                code += format_str(
+                    f"aie.objectfifo @out_{kernel_name}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
+                )
+                code += format_str(
+                    f"aie.objectfifo.link [@out_{kernel_name}] -> [@out_sh_{kernel_name}]([] [])"
+                )
     # create other object fifos from top_func
     stream_in_out = get_stream_in_out(stream_info)
     stream_ele_types = {}
@@ -594,9 +619,9 @@ def codegen_aie_mlir(
     out_args = []
     for kernel_name, (start, end) in kernel_index_ranges.items():
         mapping = kernel_mappings[kernel_name]
-        input_args = kernel_input_args[kernel_name]
+        inputs = kernel_inputs[kernel_name]
+        outputs = kernel_outputs[kernel_name]
         dist_allocs = kernel_dist_allocs[kernel_name]
-        out_id = len(input_args) - 1
         for fid in range(start, end):
             func_str = func_strs[fid]
             func_name = funcs[fid].attributes["sym_name"].value
@@ -616,7 +641,7 @@ def codegen_aie_mlir(
                 with format_code(indent=8):
                     # Acquire input fifos
                     for arg_id, (in_type, orig_in_type, _, _) in enumerate(
-                        input_args[:-1]
+                        inputs
                     ):
                         dtype = in_type if dist_allocs[arg_id] else orig_in_type
                         code += format_str(
@@ -627,15 +652,18 @@ def codegen_aie_mlir(
                         )
                         func_str = func_str.replace(f"%arg{arg_id}", f"%local{arg_id}")
                     # Acquire output fifos
-                    out_type, orig_out_type, _, _ = input_args[-1]
-                    dtype = out_type if dist_allocs[-1] else orig_out_type
-                    code += format_str(
-                        f"%fifo_out = aie.objectfifo.acquire @out_{func_name if dist_allocs[-1] else kernel_name}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
-                    )
-                    code += format_str(
-                        f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
-                    )
-                    func_str = func_str.replace(f"%arg{out_id}", "%local_out")
+                    for i, (out_type, orig_out_type, _, _) in enumerate(outputs):
+                        arg_id = len(inputs) + i
+                        dtype = out_type if dist_allocs[arg_id] else orig_out_type
+                        code += format_str(
+                            f"%fifo_out = aie.objectfifo.acquire @out_{func_name if dist_allocs[arg_id] else kernel_name}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
+                        )
+                        code += format_str(
+                            f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
+                        )
+                    while " call @" in func_str:
+                        func_str = func_str.replace(" call @", " func.call @")
+                        func_str = func_str.replace(f"%arg{arg_id}", "%local_out")
                     # Acquire other fifos
                     streams = stream_info[func_name]
                     for i, stream in enumerate(streams):
@@ -649,11 +677,6 @@ def codegen_aie_mlir(
                         code += format_str(
                             f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                         )
-                        # func_str = func_str.replace(
-                        #     f"%arg{len(input_args) + i}", f"%local_{stream_name}"
-                        # )
-                    while " call @" in func_str:
-                        func_str = func_str.replace(" call @", " func.call @")
                     # Main computation
                     with format_code(indent=6):
                         for line in func_str.splitlines()[1:-2]:
@@ -669,7 +692,7 @@ def codegen_aie_mlir(
                                 arg_id = int(line[start:end])
                                 # Extract return variable
                                 return_var = line.split("=")[0].strip()
-                                stream_name = streams[arg_id - len(input_args)][0]
+                                stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
                                 func_str = func_str.replace(
                                     return_var, f"%local_{stream_name}"
                                 )
@@ -688,7 +711,7 @@ def codegen_aie_mlir(
                                 while end < len(line) and line[end] != ')':
                                     end += 1
                                 put_var = line[start:end]
-                                stream_name = streams[arg_id - len(input_args)][0]
+                                stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
                                 ele_type = stream_ele_types[stream_name]
                                 code += format_str(
                                     f"memref.copy {put_var}, %local_{stream_name} : {ele_type}, {ele_type}"
@@ -696,14 +719,16 @@ def codegen_aie_mlir(
                             else:
                                 code += format_str(line, strip=False)
                     # Release input fifos
-                    for arg_id in range(len(input_args[:-1])):
+                    for arg_id in range(len(inputs)):
                         code += format_str(
                             f"aie.objectfifo.release @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1)"
                         )
                     # Release output fifos
-                    code += format_str(
-                        f"aie.objectfifo.release @out_{func_name if dist_allocs[-1] else kernel_name}(Produce, 1)"
-                    )
+                    for i in range(len(outputs)):
+                        arg_id = len(inputs) + i
+                        code += format_str(
+                            f"aie.objectfifo.release @out_{func_name if dist_allocs[arg_id] else kernel_name}(Produce, 1)"
+                        )
                     # Release other fifos
                     for stream in streams:
                         stream_name = stream[0]
@@ -721,19 +746,21 @@ def codegen_aie_mlir(
                 code += "\n"
         in_args += [
             f"%arg{i}: {orig_in_type}"
-            for i, (_, orig_in_type, _, _) in enumerate(input_args[:-1])
+            for i, (_, orig_in_type, _, _) in enumerate(inputs)
         ]
-        out_args.append(f"%arg{out_id}: {orig_out_type}")
+        out_args += [
+            f"%arg{len(inputs) + i}: {orig_out_type}"
+            for i, (_, orig_out_type, _, _) in enumerate(outputs)
+        ]
     code += format_str(
         f"aiex.runtime_sequence({",".join(in_args)}, {",".join(out_args)}) {{"
     )
     with format_code(indent=6):
         for kernel_name, (start, end) in kernel_index_ranges.items():
-            input_args = kernel_input_args[kernel_name]
+            inputs = kernel_inputs[kernel_name]
             dist_allocs = kernel_dist_allocs[kernel_name]
             mapping = kernel_mappings[kernel_name]
-            out_id = len(input_args) - 1
-            for arg_id, (_, orig_in_type, _, orig_shape) in enumerate(input_args[:-1]):
+            for arg_id, (_, orig_in_type, _, orig_shape) in enumerate(inputs):
                 # (x, y, memref[offset][size][stride])
                 # issue_token: MM2S-false, S2MM-true
                 if len(orig_shape) == 1:
@@ -746,22 +773,27 @@ def codegen_aie_mlir(
                 code += format_str(
                     f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_a{arg_id}}} : {orig_in_type}"
                 )
-            orig_out_shape = input_args[-1][-1]
-            if len(orig_out_shape) == 1:
-                out_size_n_stride = f"[1, 1, 1, {orig_out_shape[0]}][0, 0, 0, 1]"
-            elif len(mapping) == 2 and len(orig_out_shape) == 2 and dist_allocs[-1]:
-                # now only support 2D mapping and 2D tensor
-                out_size_n_stride = f"[{mapping[0]}, {mapping[1]}, {orig_out_shape[0] // mapping[0]}, {orig_out_shape[1] // mapping[1]}][{orig_out_shape[0] // mapping[0] * orig_out_shape[1]}, {orig_out_shape[1] // mapping[1]}, {orig_out_shape[1]}, 1]"
-            else:
-                out_size_n_stride = f"[1, 1, {orig_out_shape[0]}, {orig_out_shape[1]}][0, 0, {orig_out_shape[1]}, 1]"
-            code += format_str(
-                f"aiex.npu.dma_memcpy_nd(0, 0, %arg{out_id}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
-            )
-            for arg_id in range(len(input_args) - 1):
+            for i, (_, orig_out_type, _, orig_out_shape) in enumerate(outputs):
+                arg_id = len(inputs) + i
+                if len(orig_out_shape) == 1:
+                    out_size_n_stride = f"[1, 1, 1, {orig_out_shape[0]}][0, 0, 0, 1]"
+                elif len(mapping) == 2 and len(orig_out_shape) == 2 and dist_allocs[arg_id]:
+                    # now only support 2D mapping and 2D tensor
+                    out_size_n_stride = f"[{mapping[0]}, {mapping[1]}, {orig_out_shape[0] // mapping[0]}, {orig_out_shape[1] // mapping[1]}][{orig_out_shape[0] // mapping[0] * orig_out_shape[1]}, {orig_out_shape[1] // mapping[1]}, {orig_out_shape[1]}, 1]"
+                else:
+                    out_size_n_stride = f"[1, 1, {orig_out_shape[0]}, {orig_out_shape[1]}][0, 0, {orig_out_shape[1]}, 1]"
+                code += format_str(
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
+                )
+            for arg_id in range(len(inputs)):
                 code += format_str(
                     f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_a{arg_id}}}"
                 )
-            code += format_str(f"aiex.npu.dma_wait {{symbol = @out_sh_{kernel_name}}}")
+            for i in range(len(outputs)):
+                arg_id = len(inputs) + i
+                code += format_str(
+                    f"aiex.npu.dma_wait {{symbol = @out_sh_{kernel_name}}}"
+                )
     code += format_str("}")
     code += format_str("}", indent=2)
     code += "}"
@@ -844,7 +876,7 @@ def check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes)
     return dist_allocs
 
 
-def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
+def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_outputs):
     ctx = mod.context
     funcs = get_public_funcs(mod)
     # kernel->func -> arg -> dim
@@ -909,7 +941,8 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
 
     kernel_dist_allocs = {}
     for kernel_name in kernel_index_ranges.keys():
-        orig_shapes = [input_arg[-1] for input_arg in kernel_input_args[kernel_name]]
+        inputs_outputs = kernel_inputs[kernel_name] + kernel_outputs[kernel_name]
+        orig_shapes = [arg[-1] for arg in inputs_outputs]
         kernel_dist_allocs[kernel_name] = check_usage_intersection(
             func_arg_sizes, func_arg_lower_bounds, orig_shapes
         )
@@ -956,12 +989,13 @@ def reindex_tensor_access(mod, kernel_index_ranges, kernel_input_args):
 
 
 def update_func_op_arg_types(
-    func_op, input_args, new_shapes, context, dist_allocs, enable_tensor
+    func_op, inputs, outputs, new_shapes, context, dist_allocs, enable_tensor
 ):
     old_func_type = func_op.function_type
     old_result_types = old_func_type.value.results
     new_input_types = []
-    for arg_id, ((ele_type_str, _), shape) in enumerate(zip(input_args, new_shapes)):
+    inputs_outputs = inputs + outputs
+    for arg_id, ((ele_type_str, _), shape) in enumerate(zip(inputs_outputs, new_shapes)):
         elem_ty = get_element_type_from_str(ele_type_str, context)
         old_ty = old_func_type.value.inputs[arg_id]
         memref_ty = (
@@ -1071,23 +1105,25 @@ class AIEModule:
         self.kernel_funcs = {}
         self.kernel_inputs = {}
         self.kernel_outputs = {}
-        self.kernel_input_args = {}
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         self.kernel_index_ranges = get_kernel_index_ranges(self.module, self.kernel_mappings)
-        # Assume the last arguent of all kernels is the output
-        for kernel_name, (start, _) in self.kernel_index_ranges.items():
+        for i, (kernel_name, (start, _)) in enumerate(self.kernel_index_ranges.items()):
             kernel_func = self.module.body.operations[start]
             self.kernel_funcs[kernel_name] = kernel_func
-            inputs, outputs = get_func_inputs_outputs(kernel_func)
-            self.kernel_inputs[kernel_name] = inputs
-            self.kernel_outputs[kernel_name] = outputs
-            self.kernel_input_args[kernel_name] = inputs + outputs
+            # Assume the last arguent of all kernels is the output
+            inputs, _ = get_func_inputs_outputs(kernel_func)
+            if i < len (self.kernel_index_ranges) - 1:
+                self.kernel_inputs[kernel_name] = inputs
+                self.kernel_outputs[kernel_name] = []
+            else:
+                self.kernel_inputs[kernel_name] = inputs[:-1]
+                self.kernel_outputs[kernel_name] = [inputs[-1]]
         # Assume all functions of the same kernel have the same input and output arguments
         _, kernel_func_arg_sizes, kernel_dist_allocs = reindex_tensor_access(
-            self.module, self.kernel_index_ranges, self.kernel_input_args
+            self.module, self.kernel_index_ranges, self.kernel_inputs, self.kernel_outputs
         )
         with self.module.context as ctx, Location.unknown():
             for kernel_name, (start, end) in self.kernel_index_ranges.items():
@@ -1098,7 +1134,8 @@ class AIEModule:
                     shapes = func_arg_sizes[fid - start]
                     update_func_op_arg_types(
                         func,
-                        self.kernel_input_args[kernel_name],
+                        self.kernel_inputs[kernel_name],
+                        self.kernel_outputs[kernel_name],
                         shapes,
                         ctx,
                         dist_allocs,
@@ -1113,7 +1150,8 @@ class AIEModule:
             self.module,
             self.kernel_mappings,
             self.kernel_index_ranges,
-            self.kernel_input_args,
+            self.kernel_inputs,
+            self.kernel_outputs,
             kernel_func_arg_sizes,
             kernel_func_buf_dicts,
             kernel_dist_allocs,
@@ -1143,7 +1181,7 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        host_code = codegen_host(self.kernel_input_args)
+        host_code = codegen_host(self.kernel_inputs, self.kernel_outputs)
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
