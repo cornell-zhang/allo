@@ -260,9 +260,9 @@ def get_stream_in_out(stream_info):
             if fifo_name not in stream_in_out:
                 stream_in_out[fifo_name] = (None, None)
             if direction == 'in':
-                stream_in_out[fifo_name] = (core, stream_in_out[fifo_name][1])
-            elif direction == 'out':
                 stream_in_out[fifo_name] = (stream_in_out[fifo_name][0], core)
+            elif direction == 'out':
+                stream_in_out[fifo_name] = (core, stream_in_out[fifo_name][1])
     return stream_in_out
 
 
@@ -663,19 +663,6 @@ def codegen_aie_mlir(
                     while " call @" in func_str:
                         func_str = func_str.replace(" call @", " func.call @")
                         func_str = func_str.replace(f"%arg{arg_id}", "%local_out")
-                    # Acquire other fifos
-                    streams = stream_info[func_name]
-                    for i, stream in enumerate(streams):
-                        stream_name = stream[0]
-                        stream_type = stream[1]
-                        ele_type = stream_ele_types[stream_name]
-                        fifo_type = "Produce" if stream_type == "in" else "Consume"
-                        code += format_str(
-                            f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(f{fifo_type}, 1) : !aie.objectfifosubview<{ele_type}>"
-                        )
-                        code += format_str(
-                            f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
-                        )
                     # Main computation
                     with format_code(indent=6):
                         lines = func_str.splitlines()
@@ -696,15 +683,30 @@ def codegen_aie_mlir(
                                 # Extract return variable
                                 return_var = line.split("=")[0].strip()
                                 stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
-                                if "x" not in ele_type:
+                                indent = 6 + len(line) - len(line.lstrip(' '))
+                                with format_code(indent=indent):
+                                    # Acquire fifo
+                                    ele_type = stream_ele_types[stream_name]
                                     code += format_str(
-                                        f"{return_var} = memref.load %local_{stream_name}[] : {ele_type}"
+                                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
                                     )
-                                else:
-                                    func_str = func_str.replace(
-                                        return_var, f"%local_{stream_name}"
+                                    code += format_str(
+                                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                                     )
-                                    lines = func_str.splitlines()
+                                    # Load to local
+                                    if "x" not in ele_type:
+                                        code += format_str(
+                                            f"{return_var} = memref.load %local_{stream_name}[] : {ele_type}"
+                                        )
+                                    else:
+                                        func_str = func_str.replace(
+                                            return_var, f"%local_{stream_name}"
+                                        )
+                                        lines = func_str.splitlines()
+                                    # Release fifo
+                                    code += format_str(
+                                        f"aie.objectfifo.release @{stream_name}(Consume, 1)"
+                                    )
                             elif "stream_put" in line:
                                 # Extract argument id
                                 keyword = "stream_put(%arg"
@@ -722,13 +724,28 @@ def codegen_aie_mlir(
                                 put_var = line[start:end]
                                 stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
                                 ele_type = stream_ele_types[stream_name]
-                                if "x" in ele_type:
+                                indent = 6 + len(line) - len(line.lstrip(' '))
+                                with format_code(indent=indent):
+                                    # Acquire fifo
+                                    ele_type = stream_ele_types[stream_name]
                                     code += format_str(
-                                        f"memref.copy {put_var}, %local_{stream_name} : {ele_type} to {ele_type}"
+                                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
                                     )
-                                else:
-                                    code + format_str(
-                                        f"memref.store {put_var}, %local_{stream_name}[] : {ele_type}"
+                                    code += format_str(
+                                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                                    )
+                                    # Store into fifo
+                                    if "x" in ele_type:
+                                        code += format_str(
+                                            f"memref.copy {put_var}, %local_{stream_name} : {ele_type} to {ele_type}"
+                                        )
+                                    else:
+                                        code += format_str(
+                                            f"memref.store {put_var}, %local_{stream_name}[] : {ele_type}"
+                                        )
+                                    # Release fifo
+                                    code += format_str(
+                                        f"aie.objectfifo.release @{stream_name}(Produce, 1)"
                                     )
                             else:
                                 code += format_str(line, strip=False)
@@ -743,14 +760,6 @@ def codegen_aie_mlir(
                         code += format_str(
                             f"aie.objectfifo.release @out_{func_name if dist_allocs[arg_id] else kernel_name}(Produce, 1)"
                         )
-                    # Release other fifos
-                    for stream in streams:
-                        stream_name = stream[0]
-                        stream_type = stream[1]
-                        fifo_type = "Produce" if stream_type == "in" else "Consume"
-                        code += format_str(
-                            f"aie.objectfifo.release @{stream_name}({fifo_type}, 1)"
-                        )
                 code += format_str("}")
                 code += format_str("aie.end")
             code += format_str("}")
@@ -764,8 +773,10 @@ def codegen_aie_mlir(
         f"aiex.runtime_sequence({",".join(in_args)}, {",".join(out_args)}) {{"
     )
     with format_code(indent=6):
+        arg_index = 0
         for kernel_name, (start, end) in kernel_index_ranges.items():
             inputs = kernel_inputs[kernel_name]
+            outputs = kernel_outputs[kernel_name]
             dist_allocs = kernel_dist_allocs[kernel_name]
             mapping = kernel_mappings[kernel_name]
             for arg_id, (_, orig_in_type, _, orig_shape) in enumerate(inputs):
@@ -779,8 +790,9 @@ def codegen_aie_mlir(
                 else:
                     size_n_stride = f"[1, 1, {orig_shape[0]}, {orig_shape[1]}][0, 0, {orig_shape[1]}, 1]"
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_a{arg_id}}} : {orig_in_type}"
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_index + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_a{arg_id}}} : {orig_in_type}"
                 )
+                arg_index += 1
             for i, (_, orig_out_type, _, orig_out_shape) in enumerate(outputs):
                 arg_id = len(inputs) + i
                 if len(orig_out_shape) == 1:
@@ -791,8 +803,9 @@ def codegen_aie_mlir(
                 else:
                     out_size_n_stride = f"[1, 1, {orig_out_shape[0]}, {orig_out_shape[1]}][0, 0, {orig_out_shape[1]}, 1]"
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
                 )
+                arg_index += 1
             for arg_id in range(len(inputs)):
                 code += format_str(
                     f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_a{arg_id}}}"
@@ -1240,8 +1253,9 @@ class AIEModule:
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
-        for i, inputs in enumerate(self.kernel_inputs.values()):
-            result = read_tensor_from_file(
-                inputs[-1][0], args[-1 * (i + 1)].shape, f"{self.project}/output.data"
-            )
+        for i, outputs in enumerate(self.kernel_outputs.values()):
+            if i == len(self.kernel_outputs) - 1:
+                result = read_tensor_from_file(
+                    outputs[0][0], args[-1 * (i + 1)].shape, f"{self.project}/output.data"
+                )
         args[-1][:] = result
