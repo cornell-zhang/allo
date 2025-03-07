@@ -678,7 +678,11 @@ def codegen_aie_mlir(
                         )
                     # Main computation
                     with format_code(indent=6):
-                        for line in func_str.splitlines()[1:-2]:
+                        lines = func_str.splitlines()
+                        i = 1
+                        while i < len(lines) - 2:
+                            line = lines[i]
+                            i += 1
                             # Replace stream.get and stream.put
                             if "stream_get" in line:
                                 # Extract argument id
@@ -692,9 +696,15 @@ def codegen_aie_mlir(
                                 # Extract return variable
                                 return_var = line.split("=")[0].strip()
                                 stream_name = streams[arg_id - len(inputs) - len(outputs)][0]
-                                func_str = func_str.replace(
-                                    return_var, f"%local_{stream_name}"
-                                )
+                                if "x" not in ele_type:
+                                    code += format_str(
+                                        f"{return_var} = memref.load %local_{stream_name}[] : {ele_type}"
+                                    )
+                                else:
+                                    func_str = func_str.replace(
+                                        return_var, f"%local_{stream_name}"
+                                    )
+                                    lines = func_str.splitlines()
                             elif "stream_put" in line:
                                 # Extract argument id
                                 keyword = "stream_put(%arg"
