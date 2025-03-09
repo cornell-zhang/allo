@@ -230,6 +230,8 @@ def get_func_inputs_outputs(func):
         else "_" * len(func.type.inputs)
     )
     for in_type, in_hint in zip(func.type.inputs, in_hints):
+        if "!allo.stream" in str(in_type):
+            continue
         dtype, shape = get_dtype_and_shape_from_type(in_type)
         in_type = get_signed_type_by_hint(dtype, in_hint)
         inputs.append((in_type, shape))
