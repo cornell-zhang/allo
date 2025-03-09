@@ -398,11 +398,7 @@ class HLSModule:
                 cwd = os.getcwd()
                 mod = IPModule(
                     top=self.top_func_name,
-                    headers=[f"{cwd}/{self.project}/kernel.h"],
-                    impls=[f"{cwd}/{self.project}/kernel.cpp"],
-                    signature=[
-                        f"{dtype}[{', '.join(shape)}]" for dtype, shape in self.args
-                    ],
+                    impl=f"{cwd}/{self.project}/kernel.cpp",
                     link_hls=True,
                 )
                 mod(*args)

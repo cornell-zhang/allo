@@ -56,7 +56,7 @@ def parse_cpp_function(code, target_function):
         return None
 
     # Extract return type and parameters
-    return_type = function_match.group(1)
+    # return_type = function_match.group(1)
     params_str = function_match.group(2)
 
     # Split parameters
@@ -146,9 +146,9 @@ class IPModule:
                 )
 
         # Parse signature
-        self.args = parse_cpp_function(
-            open(self.impl, "r", encoding="utf-8").read(), self.top
-        )
+        with open(self.impl, "r", encoding="utf-8") as f:
+            code = f.read()
+            self.args = parse_cpp_function(code, self.top)
         assert self.args is not None, f"Failed to parse {self.impl}"
         self.lib_name = f"py{self.top}_{hash(time.time_ns())}"
         self.c_wrapper_file = os.path.join(self.temp_path, f"{self.lib_name}.cpp")
