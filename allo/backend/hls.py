@@ -409,6 +409,7 @@ class HLSModule:
                 return
             if self.mode == "csyn":
                 cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                assert len(args) == 0, "csyn mode does not need to pass in arguments"
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
