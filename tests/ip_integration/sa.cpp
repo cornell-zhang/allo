@@ -16,8 +16,8 @@
 #include <hls_stream.h>
 #include <math.h>
 #include <stdint.h>
-#include "sa.h"
 using namespace std;
+
 void kernel_0_0(
   hls::stream< int8_t > &v0 /* v0[2] */,
   hls::stream< int8_t > &v1 /* v1[2] */,
