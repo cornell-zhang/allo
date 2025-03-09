@@ -245,6 +245,23 @@ def codegen_host(kernel_inputs, kernel_outputs):
 
 
 def get_stream_in_out(stream_info):
+    """
+    Computes the mapping of FIFO names to their producer (output) and consumer (input) cores.
+
+    Parameters
+    ----------
+    stream_info (Dict[int, List[Tuple[str, str]]]):
+        A dictionary where the key is a core ID (int), and the value is a list of tuples.
+        Each tuple contains:
+        - fifo_name (str): The name of the FIFO.
+        - direction (str): The direction of data flow, either "in" (consumer) or "out" (producer).
+
+    Returns
+    -------
+    Dict[str, Tuple[Optional[int], Optional[int]]]]:
+        A dictionary where the key is a FIFO name, and the value is a tuple:
+        - The first element is the producer function and the second element is the consumer function.
+    """
     stream_in_out = {}
     for core, fifos in stream_info.items():
         for fifo_name, direction in fifos:
@@ -341,6 +358,108 @@ def codegen_external_kernels(external_kernels):
             generated_kernels.add(kernel)
     code += '} // extern "C"\n'
     return code, generated_kernels
+
+
+def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_types):
+    """
+    Process a function string by replacing stream_get and stream_put calls with
+    corresponding formatted FIFO code.
+
+    Parameters
+    ----------
+        func_str (str): The input function string to be processed.
+        streams (list): List of streams (each stream is a tuple/list where the first element is the stream name).
+        inputs (list): List of input identifiers.
+        outputs (list): List of output identifiers.
+        stream_ele_types (dict): Dictionary mapping stream names to their element types.
+
+    Returns
+    -------
+        str: The resulting formatted code.
+    """
+    code = ""
+    with format_code(indent=6):
+        lines = func_str.splitlines()
+        for i in range(1, len(lines) - 2):
+            line = lines[i]
+            # Process stream_get
+            if "stream_get" in line:
+                # extract the argument id from the pattern "stream_get(%arg<digits>"
+                m_get = re.search(r"stream_get\(%arg(\d+)", line)
+                if m_get:
+                    arg_id = int(m_get.group(1))
+                else:
+                    continue
+                # Extract the return variable
+                return_var = line.split("=")[0].strip()
+                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_name = streams[stream_index][0]
+                current_indent = 6 + (len(line) - len(line.lstrip(" ")))
+                with format_code(indent=current_indent):
+                    # Acquire the FIFO
+                    ele_type = stream_ele_types[stream_name]
+                    code += format_str(
+                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
+                    )
+                    code += format_str(
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                    )
+                    # Load the value into a local variable if the element type is scalar
+                    if "x" not in ele_type:
+                        code += format_str(
+                            f"{return_var} = memref.load %local_{stream_name}[] : {ele_type}"
+                        )
+                    else:
+                        # Otherwise, replace the return variable with the local stream variable
+                        func_str = func_str.replace(return_var, f"%local_{stream_name}")
+                        lines = func_str.splitlines()
+                    # Release the FIFO
+                    code += format_str(
+                        f"aie.objectfifo.release @{stream_name}(Consume, 1)"
+                    )
+            # Process stream_put
+            elif "stream_put" in line:
+                # Extract the argument id from the pattern "stream_put(%arg<digits>"
+                m_put_id = re.search(r"stream_put\(%arg(\d+)", line)
+                if m_put_id:
+                    arg_id = int(m_put_id.group(1))
+                else:
+                    continue
+                # Extract the put variable
+                search_start = m_put_id.end()
+                m_put_var = re.search(r"(%[^)]+)", line[search_start:])
+                if m_put_var:
+                    put_var = m_put_var.group(1)
+                else:
+                    continue
+                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_name = streams[stream_index][0]
+                ele_type = stream_ele_types[stream_name]
+                current_indent = 6 + (len(line) - len(line.lstrip(" ")))
+                with format_code(indent=current_indent):
+                    # Acquire the FIFO
+                    code += format_str(
+                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
+                    )
+                    code += format_str(
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                    )
+                    # Depending on the element type, either perform a memref.copy or a memref.store
+                    if "x" in ele_type:
+                        code += format_str(
+                            f"memref.copy {put_var}, %local_{stream_name} : {ele_type} to {ele_type}"
+                        )
+                    else:
+                        code += format_str(
+                            f"memref.store {put_var}, %local_{stream_name}[] : {ele_type}"
+                        )
+                    # Release the FIFO
+                    code += format_str(
+                        f"aie.objectfifo.release @{stream_name}(Produce, 1)"
+                    )
+            else:
+                code += format_str(line, strip=False)
+    return code, func_str
 
 
 def codegen_aie_mlir(
@@ -496,16 +615,16 @@ def codegen_aie_mlir(
             if dist_allocs[arg_id]:
                 # depth=2 means double buffer
                 code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_a{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 for fid in range(start, end):
                     func_name = funcs[fid].attributes["sym_name"].value
                     code += format_str(
-                        f"aie.objectfifo @in_{func_name}_a{arg_id}(%tile_mem{arg_id}, {{%tile_comp_{func_name}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                        f"aie.objectfifo @in_{func_name}_arg{arg_id}(%tile_mem{arg_id}, {{%tile_comp_{func_name}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
                     )
                 in_mem_str = ", ".join(
                     [
-                        f"@in_{funcs[fid].attributes["sym_name"].value}_a{arg_id}"
+                        f"@in_{funcs[fid].attributes["sym_name"].value}_arg{arg_id}"
                         for fid in range(start, end)
                     ]
                 )
@@ -514,11 +633,11 @@ def codegen_aie_mlir(
                 in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
                 # (src_offsets, dst_offsets)
                 code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_a{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
+                    f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
                 )
             else:
                 code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_a{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 in_tile_str = ", ".join(
                     [
@@ -527,10 +646,10 @@ def codegen_aie_mlir(
                     ]
                 )
                 code += format_str(
-                    f"aie.objectfifo @in_{kernel_name}_a{arg_id}(%tile_mem{arg_id}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
+                    f"aie.objectfifo @in_{kernel_name}_arg{arg_id}(%tile_mem{arg_id}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
                 )
                 code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_a{arg_id}] -> [@in_{kernel_name}_a{arg_id}]([] [])"
+                    f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [@in_{kernel_name}_arg{arg_id}]([] [])"
                 )
         kernel_dist_allocs[kernel_name] = dist_allocs
     # create output object fifos
@@ -632,7 +751,7 @@ def codegen_aie_mlir(
                     for arg_id, (in_type, orig_in_type, _, _) in enumerate(inputs):
                         dtype = in_type if dist_allocs[arg_id] else orig_in_type
                         code += format_str(
-                            f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
+                            f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name if dist_allocs[arg_id] else kernel_name}_arg{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
                         )
                         code += format_str(
                             f"%local{arg_id} = aie.objectfifo.subview.access %fifo{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
@@ -652,99 +771,14 @@ def codegen_aie_mlir(
                     while " call @" in func_str:
                         func_str = func_str.replace(" call @", " func.call @")
                     # Main computation
-                    with format_code(indent=6):
-                        lines = func_str.splitlines()
-                        i = 1
-                        while i < len(lines) - 2:
-                            line = lines[i]
-                            i += 1
-                            # Replace stream.get and stream.put
-                            if "stream_get" in line:
-                                # Extract argument id
-                                keyword = "stream_get(%arg"
-                                start = line.find(keyword)
-                                start += len(keyword)
-                                end = start
-                                while end < len(line) and line[end].isdigit():
-                                    end += 1
-                                arg_id = int(line[start:end])
-                                # Extract return variable
-                                return_var = line.split("=")[0].strip()
-                                stream_name = streams[
-                                    arg_id - len(inputs) - len(outputs)
-                                ][0]
-                                indent = 6 + len(line) - len(line.lstrip(" "))
-                                with format_code(indent=indent):
-                                    # Acquire fifo
-                                    ele_type = stream_ele_types[stream_name]
-                                    code += format_str(
-                                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
-                                    )
-                                    code += format_str(
-                                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
-                                    )
-                                    # Load to local
-                                    if "x" not in ele_type:
-                                        code += format_str(
-                                            f"{return_var} = memref.load %local_{stream_name}[] : {ele_type}"
-                                        )
-                                    else:
-                                        func_str = func_str.replace(
-                                            return_var, f"%local_{stream_name}"
-                                        )
-                                        lines = func_str.splitlines()
-                                    # Release fifo
-                                    code += format_str(
-                                        f"aie.objectfifo.release @{stream_name}(Consume, 1)"
-                                    )
-                            elif "stream_put" in line:
-                                # Extract argument id
-                                keyword = "stream_put(%arg"
-                                start = line.find(keyword)
-                                start += len(keyword)
-                                end = start + 1
-                                while end < len(line) and line[end].isdigit():
-                                    end += 1
-                                arg_id = int(line[start:end])
-                                # Extract put variable
-                                start = line.find("%", end)
-                                end = start + 1
-                                while end < len(line) and line[end] != ")":
-                                    end += 1
-                                put_var = line[start:end]
-                                stream_name = streams[
-                                    arg_id - len(inputs) - len(outputs)
-                                ][0]
-                                ele_type = stream_ele_types[stream_name]
-                                indent = 6 + len(line) - len(line.lstrip(" "))
-                                with format_code(indent=indent):
-                                    # Acquire fifo
-                                    ele_type = stream_ele_types[stream_name]
-                                    code += format_str(
-                                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
-                                    )
-                                    code += format_str(
-                                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
-                                    )
-                                    # Store into fifo
-                                    if "x" in ele_type:
-                                        code += format_str(
-                                            f"memref.copy {put_var}, %local_{stream_name} : {ele_type} to {ele_type}"
-                                        )
-                                    else:
-                                        code += format_str(
-                                            f"memref.store {put_var}, %local_{stream_name}[] : {ele_type}"
-                                        )
-                                    # Release fifo
-                                    code += format_str(
-                                        f"aie.objectfifo.release @{stream_name}(Produce, 1)"
-                                    )
-                            else:
-                                code += format_str(line, strip=False)
+                    stream_code, func_str = process_stream_operations(
+                        func_str, streams, inputs, outputs, stream_ele_types
+                    )
+                    code += stream_code
                     # Release input fifos
                     for arg_id in range(len(inputs)):
                         code += format_str(
-                            f"aie.objectfifo.release @in_{func_name if dist_allocs[arg_id] else kernel_name}_a{arg_id}(Consume, 1)"
+                            f"aie.objectfifo.release @in_{func_name if dist_allocs[arg_id] else kernel_name}_arg{arg_id}(Consume, 1)"
                         )
                     # Release output fifos
                     for i in range(len(outputs)):
@@ -786,7 +820,7 @@ def codegen_aie_mlir(
                 else:
                     size_n_stride = f"[1, 1, {orig_shape[0]}, {orig_shape[1]}][0, 0, {orig_shape[1]}, 1]"
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_index + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_a{arg_id}}} : {orig_in_type}"
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_index + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_arg{arg_id}}} : {orig_in_type}"
                 )
                 arg_index += 1
             for i, (_, orig_out_type, _, orig_out_shape) in enumerate(outputs):
@@ -808,7 +842,7 @@ def codegen_aie_mlir(
                 arg_index += 1
             for arg_id in range(len(inputs)):
                 code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_a{arg_id}}}"
+                    f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_arg{arg_id}}}"
                 )
             for i in range(len(outputs)):
                 arg_id = len(inputs) + i
@@ -822,11 +856,30 @@ def codegen_aie_mlir(
 
 
 def get_kernel_index_ranges(mod, kernel_mappings):
+    """
+    Get the index range of each kernel in the module
+
+    Parameters
+    ----------
+    mod: allo._mlir.ir.Module
+        The MLIR module built by allo.
+
+    kernel_mappings: Dict[str, List[int]]
+        The mapping of each kernel in the module.
+        The key is the name of the kernel, and the value is a list of integers representing the mapping of the kernel.
+
+    Returns:
+    -------
+    kernel_index_ranges: Dict[str, Tuple[int, int]]
+        The index range of each kernel in the module.
+        The key is the name of the kernel, and the value is a tuple of integers representing the start and end index of the kernel.
+    """
     kernel_names = list(kernel_mappings.keys())
     kernel_index_ranges = {}
     start = end = 0
     k_id = 0
-    for func in list(mod.body.operations)[:-1]:
+    _, funcs = get_public_funcs(mod)
+    for func in funcs:
         if isinstance(func, func_d.FuncOp):
             while not func.attributes["sym_name"].value.startswith(kernel_names[k_id]):
                 kernel_index_ranges[kernel_names[k_id]] = (start, end)
@@ -1200,7 +1253,6 @@ class AIEModule:
                     )
         external_kernels = inject_aie_kernels(self.module)
         lower_tensor_to_memref(self.module, self.enable_tensor)
-        print(self.module)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
         )
@@ -1262,11 +1314,9 @@ class AIEModule:
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
-        for i, outputs in enumerate(self.kernel_outputs.values()):
-            if i == len(self.kernel_outputs) - 1:
-                result = read_tensor_from_file(
-                    outputs[0][0],
-                    args[-1 * (i + 1)].shape,
-                    f"{self.project}/output.data",
-                )
+        result = read_tensor_from_file(
+            list(self.kernel_outputs.values())[-1][0][0],
+            args[-1].shape,
+            f"{self.project}/output.data",
+        )
         args[-1][:] = result
