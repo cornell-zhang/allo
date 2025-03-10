@@ -37,11 +37,10 @@ The GEMM kernel is implemented with `float32` precision using pre-defined consta
    # Define matrix dimensions
    M, N, K = 32, 32, 32
 
-   def gemm(A: float32[M, K], B: float32[K, N]) -> float32[M, N]:
-       C: float32[M, N] = 0.0
-       for i, j in allo.grid(M, N):
-           for k in allo.reduction(K):
-               C[i, j] += A[i, k] * B[k, j]
+   def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+       C: int32[32, 32] = 0
+       for i, j, k in allo.grid(32, 32, 32):
+           C[i, j] += A[i, k] * B[k, j]
        return C
 
 Code Generation for Vivado/Vitis HLS
