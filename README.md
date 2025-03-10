@@ -4,7 +4,7 @@
 <img src="tutorials/allo-icon.png" width=128/> Accelerator Design Language
 ==============================================================================
 
-[**Documentation**](https://cornell-zhang.github.io/allo) 
+[**Documentation**](https://cornell-zhang.github.io/allo) | [**Installation**](https://cornell-zhang.github.io/allo/setup/index.html) | [**Tutorials**](https://github.com/cornell-zhang/allo-tutorials)
 
 ![GitHub](https://img.shields.io/github/license/cornell-zhang/allo)
 ![Allo Test](https://github.com/cornell-zhang/allo/actions/workflows/config.yml/badge.svg)

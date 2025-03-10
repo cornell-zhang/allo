@@ -84,3 +84,4 @@ log
 
 _tmp
 *.txt
+sg_execution_times.rst
