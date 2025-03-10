@@ -179,11 +179,11 @@ np_B = np.random.randint(0, 100, (32, 32)).astype(np.int32)
 # Notice our module can return a new array as output, so we can directly
 # assign the output to a new variable.
 
-np_C = mod(np_A, np_B)
+allo_C = mod(np_A, np_B)
 
 ##############################################################################
 # Finally, we can do a sanity check to see if the results are correct.
 
 golden_C = np.matmul(np_A, np_B)
-np.testing.assert_allclose(np_C, golden_C, rtol=1e-5, atol=1e-5)
+np.testing.assert_allclose(allo_C, golden_C, rtol=1e-5, atol=1e-5)
 print("Results are correct!")
