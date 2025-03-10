@@ -237,7 +237,7 @@ Not only constant values are supported, but also variables can be used as the in
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.181 seconds)
+   **Total running time of the script:** (0 minutes 0.171 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_01_data_types.py:
