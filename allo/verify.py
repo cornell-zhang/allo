@@ -38,15 +38,19 @@ def verify(schedule_a, schedule_b):
     replace_unsupported_types(prog_b_path)
 
     # detect output vars
-    out_a = get_output_var_from_file(prog_a_path)
-    out_b = get_output_var_from_file(prog_b_path)
+    out_a = find_live_out_variable(prog_a_path, schedule_a.top_func_name)
+    out_b = find_live_out_variable(prog_b_path, schedule_b.top_func_name)
+    print(out_a, out_b)
 
-    # if output vars have different names, rename program B's output var
+    # if output vars have different names
     if out_a != out_b:
-        rewrite_output_variable(prog_b_path, out_b, out_a)
-        out_b = out_a
+        rewrite_output_variable(prog_a_path, out_a, "live_out")
+        rewrite_output_variable(prog_b_path, out_b, "live_out")
+        live_out = "live_out"
+    else:
+        live_out = out_a
 
-    is_equivalent = past.verify(prog_a_path, prog_b_path, out_a)
+    is_equivalent = past.verify(prog_a_path, prog_b_path, live_out)
 
     # if not equivalent, produce a diff of the two programs
     if not is_equivalent:
@@ -73,7 +77,7 @@ def verify(schedule_a, schedule_b):
 
 def rewrite_output_variable(file_path, old_var, new_var):
     """
-    Rewrite the file at file_path by replacing all whole–word occurrences of old_var with new_var,
+    Rewrite the file at file_path by replacing all whole-word occurrences of old_var with new_var,
     but (if possible) only inside the call block—the region between
     "#pragma pocc-region-start" and "#pragma pocc-region-end".
     """
@@ -99,54 +103,98 @@ def rewrite_output_variable(file_path, old_var, new_var):
         f.write(new_content)
 
 
-def get_output_var_from_file(file_path):
+def find_live_out_variable(file_path, top_function_name):
     """
-    Attempt to extract the output (live-out) variable from the generated code
+    Identify the live-out variable of a C kernel function.
 
-    1. First, search for a return statement
-    2. If no return is found, look for a call region wrapped by
-       "#pragma pocc-region-start" and "#pragma pocc-region-end" and take the last argument
-       of the final function call
-    3. If all else fails, default to "v0"
+    Args:
+        file_path (str): Path to the C/C++ code file
+        top_function_name (str): Name of the top-level function to analyze
+
+    Returns:
+        str: The name of the live-out variable
     """
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    # Read the file
+    with open(file_path, "r") as file:
+        c_code = file.read()
 
-    # look for return statement
-    m = re.search(r"\breturn\s+\(?\s*([a-zA-Z_]\w*)\s*\)?\s*;", content)
-    if m:
-        return m.group(1).strip()
+    # Extract all function definitions
+    function_pattern = r"void\s+(\w+)\s*\(([\s\S]*?)\)\s*\{([\s\S]*?)(?=void|\Z)"
+    functions = re.finditer(function_pattern, c_code)
 
-    # 2. look for call region
-    m_region = re.search(
-        r"#pragma\s+pocc-region-start\s*(?:\{)?\s*(.*?)\s*(?:\})?\s*#pragma\s+pocc-region-end",
-        content,
-        re.DOTALL,
-    )
-    if m_region:
-        region = m_region.group(1)
-        calls = re.findall(r"\b\w+\s*\(([^)]*)\)\s*;", region)
-        if calls:
-            last_call = calls[-1]
-            args = last_call.split(",")
-            if args:
-                output_candidate = args[-1].strip()
-                output_candidate = re.sub(r"[\)\s]+$", "", output_candidate)
-                return output_candidate
+    function_dict = {}
+    for match in functions:
+        func_name = match.group(1)
+        params_str = match.group(2)
+        body_str = match.group(3)
 
-    # default if no output var is detected
-    return "v0"
+        # Extract parameter names
+        param_pattern = r"(?:[\w:]+\s+)+(\w+)(?:\s*\[.*?\])*"
+        param_matches = re.finditer(param_pattern, params_str)
+        params = [match.group(1) for match in param_matches]
+
+        function_dict[func_name] = {"params": params, "body": body_str}
+
+    # Check if top function exists
+    if top_function_name not in function_dict:
+        return ""
+
+    # Find all function calls in the top function
+    top_func_body = function_dict[top_function_name]["body"]
+    call_pattern = r"(\w+)\((.*?)\);"
+    calls = list(re.finditer(call_pattern, top_func_body))
+
+    if not calls:
+        # No function calls, find the parameter that's written to
+        params = function_dict[top_function_name]["params"]
+        written_params = []
+        for param in params:
+            assignment_pattern = rf"{param}\s*\[.*?\]\s*="
+            if re.search(assignment_pattern, top_func_body):
+                written_params.append(param)
+
+        return written_params[-1] if written_params else ""
+    else:
+        # Get the last function call
+        last_call = calls[-1]
+        called_func = last_call.group(1)
+        args_str = last_call.group(2)
+
+        # Extract arguments
+        args = [arg.strip() for arg in args_str.split(",")]
+
+        # If the called function exists in our dictionary, map its parameters
+        if called_func in function_dict:
+            called_params = function_dict[called_func]["params"]
+
+            # Find which parameter is written to in the called function
+            called_body = function_dict[called_func]["body"]
+            for i, param in enumerate(called_params):
+                if i < len(args):  # Make sure we don't go out of bounds
+                    assignment_pattern = rf"{param}\s*\[.*?\]\s*="
+                    if re.search(assignment_pattern, called_body):
+                        # This is an output parameter, map it to the argument
+                        arg = args[i]
+                        # If the arg is a top-level parameter, it's our live-out variable
+                        if arg in function_dict[top_function_name]["params"]:
+                            return arg
+
+            # If we get here, the last argument is likely the live-out
+            return args[-1]
+        else:
+            # Fallback: assume the last argument is the live-out variable
+            return args[-1]
 
 
 def add_pocc_pragmas(file_path):
     """
     Inserts Pocc pragmas into the generated C code
 
-    For a multi–function (composed) schedule, wrap the entire file in:
+    For a multi-function (composed) schedule, wrap the entire file in:
       #pragma pocc-region-start
       {contents...}
       #pragma pocc-region-end
-    For a single–function schedule, insert pragmas inside the function body
+    For a single-function schedule, insert pragmas inside the function body
     """
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
