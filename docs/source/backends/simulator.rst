@@ -67,8 +67,6 @@ To verify the correctness of the dataflow design, a simulation is executed using
 
     A = np.random.rand(M, N).astype(np.float32)
     B = np.zeros((M, N), dtype=np.float32)
-
-    # Build the simulation module using the simulator backend
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, B)
     np.testing.assert_allclose(B, A + 1, rtol=1e-5, atol=1e-5)

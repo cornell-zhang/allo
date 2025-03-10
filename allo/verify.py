@@ -40,7 +40,6 @@ def verify(schedule_a, schedule_b):
     # detect output vars
     out_a = find_live_out_variable(prog_a_path, schedule_a.top_func_name)
     out_b = find_live_out_variable(prog_b_path, schedule_b.top_func_name)
-    print(out_a, out_b)
 
     # if output vars have different names
     if out_a != out_b:
@@ -69,8 +68,8 @@ def verify(schedule_a, schedule_b):
         print("Verifier reported non-equivalence between schedules.")
         print("Differences between generated programs:")
         print(diff_text)
-        print(f"Detected output variable in schedule A: {out_a}")
-        print(f"Detected output variable in schedule B: {out_b}")
+        # print(f"Detected output variable in schedule A: {out_a}")
+        # print(f"Detected output variable in schedule B: {out_b}")
 
     return is_equivalent
 
@@ -115,7 +114,7 @@ def find_live_out_variable(file_path, top_function_name):
         str: The name of the live-out variable
     """
     # Read the file
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         c_code = file.read()
 
     # Extract all function definitions
@@ -154,36 +153,35 @@ def find_live_out_variable(file_path, top_function_name):
                 written_params.append(param)
 
         return written_params[-1] if written_params else ""
-    else:
-        # Get the last function call
-        last_call = calls[-1]
-        called_func = last_call.group(1)
-        args_str = last_call.group(2)
 
-        # Extract arguments
-        args = [arg.strip() for arg in args_str.split(",")]
+    # Get the last function call
+    last_call = calls[-1]
+    called_func = last_call.group(1)
+    args_str = last_call.group(2)
 
-        # If the called function exists in our dictionary, map its parameters
-        if called_func in function_dict:
-            called_params = function_dict[called_func]["params"]
+    # Extract arguments
+    args = [arg.strip() for arg in args_str.split(",")]
 
-            # Find which parameter is written to in the called function
-            called_body = function_dict[called_func]["body"]
-            for i, param in enumerate(called_params):
-                if i < len(args):  # Make sure we don't go out of bounds
-                    assignment_pattern = rf"{param}\s*\[.*?\]\s*="
-                    if re.search(assignment_pattern, called_body):
-                        # This is an output parameter, map it to the argument
-                        arg = args[i]
-                        # If the arg is a top-level parameter, it's our live-out variable
-                        if arg in function_dict[top_function_name]["params"]:
-                            return arg
+    # If the called function exists in our dictionary, map its parameters
+    if called_func in function_dict:
+        called_params = function_dict[called_func]["params"]
 
-            # If we get here, the last argument is likely the live-out
-            return args[-1]
-        else:
-            # Fallback: assume the last argument is the live-out variable
-            return args[-1]
+        # Find which parameter is written to in the called function
+        called_body = function_dict[called_func]["body"]
+        for i, param in enumerate(called_params):
+            if i < len(args):  # Make sure we don't go out of bounds
+                assignment_pattern = rf"{param}\s*\[.*?\]\s*="
+                if re.search(assignment_pattern, called_body):
+                    # This is an output parameter, map it to the argument
+                    arg = args[i]
+                    # If the arg is a top-level parameter, it's our live-out variable
+                    if arg in function_dict[top_function_name]["params"]:
+                        return arg
+
+        # If we get here, the last argument is likely the live-out
+        return args[-1]
+    # Fallback: assume the last argument is the live-out variable
+    return args[-1]
 
 
 def add_pocc_pragmas(file_path):
