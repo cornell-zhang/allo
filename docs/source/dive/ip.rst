@@ -38,7 +38,7 @@ In Allo, we can create an *IP module* to wrap the C++ kernel. Basically, we need
 
 .. code-block:: python
 
-    vadd = allo.IPModule(top="vadd", impl=["vadd.cpp"], link_hls=False)
+    vadd = allo.IPModule(top="vadd", impl="vadd.cpp", link_hls=False)
 
 After creating the IP module, we can use it in Allo as a normal Python function. For example, we can directly call the ``vadd`` function to perform vector addition. The inputs and outputs will be automatically wrapped and unwrapped as NumPy arrays, which greatly simplies the burden of complex C-Python interface management. This is also very useful when you want to debug the HLS kernels with the Python data.
 
