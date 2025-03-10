@@ -344,36 +344,45 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code, top=None):
+def postprocess_hls_code(hls_code, top=None, pragma=True):
     out_str = ""
     func_decl = False
     has_endif = False
+    extern_decl = False
     func_args = []
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
+            extern_decl = True
         elif line.startswith(f"void {top}"):
             func_decl = True
+            if not extern_decl:
+                out_str += '\nextern "C" {\n\n'
+                extern_decl = True
             out_str += line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
             # Add extra interfaces
-            for i, arg in enumerate(func_args):
-                out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
+            if pragma:
+                for i, arg in enumerate(func_args):
+                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
         elif func_decl:
-            dtype, var = line.strip().rsplit(" ", 1)
-            comma = "," if var[-1] == "," else ""
-            if "[" in var:  # array
-                var = var.split("[")[0]
-                out_str += "  " + dtype + " *" + var + f"{comma}\n"
-                # only add array to interface
-                func_args.append(var)
-            else:  # scalar
-                var = var.split(",")[0]
-                out_str += "  " + dtype + " " + var + f"{comma}\n"
+            if pragma:
+                dtype, var = line.strip().rsplit(" ", 1)
+                comma = "," if var[-1] == "," else ""
+                if "[" in var:  # array
+                    var = var.split("[")[0]
+                    out_str += "  " + dtype + " *" + var + f"{comma}\n"
+                    # only add array to interface
+                    func_args.append(var)
+                else:  # scalar
+                    var = var.split(",")[0]
+                    out_str += "  " + dtype + " " + var + f"{comma}\n"
+            else:
+                out_str += line + "\n"
         elif line.startswith("#endif"):
             out_str += '} // extern "C"\n\n'
             out_str += line + "\n"
@@ -400,8 +409,7 @@ def update_makefile(file_name, ext_libs):
         makefile = f.read()
     cpp_files = ["kernel.cpp"]
     for lib in ext_libs:
-        for impl_path in lib.impls:
-            cpp_files.append(impl_path.split("/")[-1])
+        cpp_files.append(lib.impl.split("/")[-1])
     makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
     with open(file_name, "w", encoding="utf-8") as outfile:
         outfile.write(makefile)

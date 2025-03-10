@@ -3,10 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "vadd_4d.h"
-#include <iostream>
-using namespace std;
-
 void vadd_4d(float A[4][4][16][16], float B[4][4][16][16],
              float C[4][4][16][16]) {
   for (int i = 0; i < 4; ++i) {

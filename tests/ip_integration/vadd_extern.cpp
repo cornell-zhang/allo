@@ -1,6 +1,7 @@
-#include <iostream>
-#include "vadd_extern.h"
-using namespace std;
+/*
+ * Copyright Allo authors. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 extern "C" {
 

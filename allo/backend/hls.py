@@ -20,7 +20,6 @@ from .vitis import (
     codegen_host,
     postprocess_hls_code,
     generate_description_file,
-    update_makefile,
     write_tensor_to_file,
     read_tensor_from_file,
 )
@@ -108,20 +107,11 @@ open_solution "solution1"
 
 
 def copy_ext_libs(ext_libs, project):
-    impls = []
-    headers = []
     for ext_lib in ext_libs:
-        for header in ext_lib.headers:
-            header_path = os.path.join(ext_lib.abs_path, header)
-            os.system(f"cp {header_path} {project}")
-            headers.append(header)
-        for impl_path in ext_lib.impls:
-            cpp_file = impl_path.split("/")[-1]
-            assert (
-                cpp_file != "kernel.cpp"
-            ), "kernel.cpp is reserved for the top function"
-            os.system(f"cp {impl_path} {project}/{cpp_file}")
-            impls.append(cpp_file)
+        impl_path = ext_lib.impl
+        cpp_file = impl_path.split("/")[-1]
+        assert cpp_file != "kernel.cpp", "kernel.cpp is reserved for the top function"
+        os.system(f"cp {impl_path} {project}/{cpp_file}")
 
 
 def separate_header(hls_code, top=None):
@@ -275,35 +265,20 @@ class HLSModule:
                     frequency=configs["frequency"],
                 )
                 generate_makefile(dst_path, project, self.platform)
-                for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
-                    update_makefile(
-                        os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
-                    )
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
                 for lib in self.ext_libs:
-                    for header in lib.headers:
-                        header = header.split("/")[-1]
-                        with open(
-                            f"{project}/{header}", "r", encoding="utf-8"
-                        ) as infile:
-                            new_code = postprocess_hls_code(infile.read())
-                        with open(
-                            f"{project}/{header}", "w", encoding="utf-8"
-                        ) as outfile:
-                            outfile.write(new_code)
-                    for impl_path in lib.impls:
-                        cpp_file = impl_path.split("/")[-1]
-                        with open(
-                            f"{project}/{cpp_file}", "r", encoding="utf-8"
-                        ) as infile:
-                            new_code = postprocess_hls_code(infile.read())
-                        with open(
-                            f"{project}/{cpp_file}", "w", encoding="utf-8"
-                        ) as outfile:
-                            outfile.write(new_code)
+                    cpp_file = lib.impl.split("/")[-1]
+                    with open(f"{project}/{cpp_file}", "r", encoding="utf-8") as infile:
+                        new_code = postprocess_hls_code(
+                            infile.read(), lib.top, pragma=False
+                        )
+                    with open(
+                        f"{project}/{cpp_file}", "w", encoding="utf-8"
+                    ) as outfile:
+                        outfile.write(new_code)
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -329,10 +304,6 @@ class HLSModule:
                 )
                 self.args = []
                 generate_makefile(dst_path, project, self.platform)
-                for postfix in ("us_alveo", "versal_alveo", "versal_ps", "zynqmp"):
-                    update_makefile(
-                        os.path.join(project, f"makefile_{postfix}.mk"), self.ext_libs
-                    )
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -360,9 +331,7 @@ class HLSModule:
                         for line in kernel:
                             new_kernel += line
                             if "#include <stdint.h>" in line:
-                                for header in lib.headers:
-                                    header = header.split("/")[-1]
-                                    new_kernel += f'#include "{header}"\n'
+                                new_kernel += f'#include "{lib.impl.split("/")[-1]}"\n'
                     with open(
                         os.path.join(project, "kernel.cpp"), "w", encoding="utf-8"
                     ) as kernel:
@@ -375,9 +344,8 @@ class HLSModule:
                         for line in tcl_file:
                             new_tcl += line
                             if "# Add design and testbench files" in line:
-                                for impl in lib.impls:
-                                    cpp_file = impl.split("/")[-1]
-                                    new_tcl += f"add_files {cpp_file}\n"
+                                cpp_file = lib.impl.split("/")[-1]
+                                new_tcl += f"add_files {cpp_file}\n"
                     with open(
                         os.path.join(project, "run.tcl"), "w", encoding="utf-8"
                     ) as tcl_file:
@@ -430,17 +398,14 @@ class HLSModule:
                 cwd = os.getcwd()
                 mod = IPModule(
                     top=self.top_func_name,
-                    headers=[f"{cwd}/{self.project}/kernel.h"],
-                    impls=[f"{cwd}/{self.project}/kernel.cpp"],
-                    signature=[
-                        f"{dtype}[{', '.join(shape)}]" for dtype, shape in self.args
-                    ],
+                    impl=f"{cwd}/{self.project}/kernel.cpp",
                     link_hls=True,
                 )
                 mod(*args)
                 return
             if self.mode == "csyn":
                 cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                assert len(args) == 0, "csyn mode does not need to pass in arguments"
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
@@ -453,8 +418,10 @@ class HLSModule:
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
             # prepare data
             func = find_func_in_module(self.module, self.top_func_name)
-            inputs, _ = get_func_inputs_outputs(func)
-            assert len(args) == len(inputs) + 1, "Number of arguments mismatch"
+            inputs, outputs = get_func_inputs_outputs(func)
+            assert len(args) == len(inputs) + len(
+                outputs
+            ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
             for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
                 write_tensor_to_file(
                     arg,

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import re
 import importlib
 import subprocess
 import traceback
@@ -32,19 +33,99 @@ c2allo_type["int32_t"] = "int32"
 c2allo_type["uint32_t"] = "uint32"
 
 
+def parse_cpp_function(code, target_function):
+    """
+    Parse a C++ file to find a specific function and extract its parameter types and shapes.
+
+    Args:
+        code (str): The C++ code as a string
+        target_function (str): The name of the function to find
+
+    Returns:
+        list: A list of tuples containing (type, shape) for each parameter
+            - shape is a tuple of dimensions for arrays
+            - shape is () for scalars
+            - shape is None for pointers
+    """
+    # Function pattern that works for both declarations and definitions
+    function_pattern = r"(\w+)\s+" + re.escape(target_function) + r"\s*\((.*?)\)\s*[{;]"
+
+    # Find the function in the code
+    function_match = re.search(function_pattern, code, re.DOTALL)
+    if not function_match:
+        return None
+
+    # Extract return type and parameters
+    # return_type = function_match.group(1)
+    params_str = function_match.group(2)
+
+    # Split parameters
+    params = []
+    current_param = ""
+    bracket_count = 0
+
+    for char in params_str:
+        if char == "," and bracket_count == 0:
+            params.append(current_param.strip())
+            current_param = ""
+        else:
+            current_param += char
+            if char == "[":
+                bracket_count += 1
+            elif char == "]":
+                bracket_count -= 1
+
+    if current_param.strip():
+        params.append(current_param.strip())
+
+    # Process each parameter to extract type and shape
+    result = []
+    for param in params:
+        # Check if parameter is a pointer
+        pointer_pattern = r"(\w+)\s+\*(\w+)"
+        pointer_match = re.search(pointer_pattern, param)
+
+        if pointer_match:
+            param_type = pointer_match.group(1)
+            result.append((param_type, None))
+            continue
+
+        # Check if parameter is an array (more careful matching)
+        # We'll extract the full array part and process it separately
+        array_pattern = r"(\w+)\s+(\w+)(\[\d+\](?:\[\d+\])*)"
+        array_match = re.search(array_pattern, param)
+
+        if array_match:
+            param_type = array_match.group(1)
+            array_dims_str = array_match.group(3)
+
+            # Extract all dimensions using a separate regex
+            dims = []
+            dim_pattern = r"\[(\d+)\]"
+            for dim_match in re.finditer(dim_pattern, array_dims_str):
+                dims.append(int(dim_match.group(1)))
+
+            result.append((param_type, tuple(dims)))
+            continue
+
+        # If we get here, it's a scalar
+        scalar_pattern = r"(\w+)\s+(\w+)"
+        scalar_match = re.search(scalar_pattern, param)
+
+        if scalar_match:
+            param_type = scalar_match.group(1)
+            result.append((param_type, ()))
+
+    return result
+
+
 class IPModule:
-    def __init__(
-        self, top, headers, impls, signature, include_paths=None, link_hls=True
-    ):
+    def __init__(self, top, impl, include_paths=None, link_hls=True):
         self.top = top
-        self.headers = headers
         self.abs_path = os.path.dirname(traceback.extract_stack()[-2].filename)
         self.temp_path = os.path.join(self.abs_path, "_tmp")
         os.makedirs(self.temp_path, exist_ok=True)
-        abs_impls = []
-        for impl in impls:
-            abs_impls.append(os.path.join(self.abs_path, impl))
-        self.impls = abs_impls
+        self.impl = os.path.join(self.abs_path, impl)
         if include_paths is None:
             include_paths = []
         self.include_paths = include_paths + [self.abs_path]
@@ -65,18 +146,10 @@ class IPModule:
                 )
 
         # Parse signature
-        arg_types = signature
-        self.args = []
-        for arg_type in arg_types:
-            arg_type = arg_type.strip()
-            if "[" not in arg_type or "[]" in arg_type:
-                # scalar
-                self.args.append((arg_type.split("[")[0], ()))
-                continue
-            ele_type = arg_type.split("[")[0].strip()
-            # pylint: disable=eval-used
-            shape = eval(f'({arg_type.split("[")[1].split("]")[0].strip()},)')
-            self.args.append((ele_type, shape))
+        with open(self.impl, "r", encoding="utf-8") as f:
+            code = f.read()
+            self.args = parse_cpp_function(code, self.top)
+        assert self.args is not None, f"Failed to parse {self.impl}"
         self.lib_name = f"py{self.top}_{hash(time.time_ns())}"
         self.c_wrapper_file = os.path.join(self.temp_path, f"{self.lib_name}.cpp")
 
@@ -86,43 +159,37 @@ class IPModule:
         out_str += "#include <iostream>\n"
         out_str += "#include <pybind11/numpy.h>\n"
         out_str += "#include <pybind11/pybind11.h>\n"
-        for header in self.headers:
-            out_str += f'#include "{header}"\n'
+        out_str += f'#include "{self.impl}"\n'
         # Add source headers
         out_str += "\nnamespace py = pybind11;\n\n"
         # Generate function interface
         out_str += f"void {self.lib_name}(\n"
         for i, (arg_type, arg_shape) in enumerate(self.args):
-            resolved_type = allo2c_type.get(arg_type)
-            if len(arg_shape) == 0:
-                out_str += f"  {resolved_type} arg{i}"
+            if arg_shape is None or len(arg_shape) > 0:
+                # pointer or array
+                out_str += f"  py::array_t<{arg_type}> &arg{i}"
             else:
-                out_str += f"  py::array_t<{resolved_type}> &arg{i}"
+                # scalar
+                out_str += f"  {arg_type} arg{i}"
             out_str += ",\n" if i < len(self.args) - 1 else ") {\n"
         # Generate function body
         out_str += "\n"
-        for i, (arg_type, arg_shape) in enumerate(self.args):
-            if len(arg_shape) == 0:
-                out_str += f"  {resolved_type} p_arg{i} = arg{i};\n"
-            else:
-                out_str += f"  py::buffer_info buf{i} = arg{i}.request();\n"
-        # Pointer reads and writes numpy.ndarray
-        out_str += "\n"
         in_ptrs = []
         for i, (arg_type, arg_shape) in enumerate(self.args):
-            if len(arg_shape) == 0:
+            if arg_shape is None or len(arg_shape) == 1:
+                # pointer or rank-1 array
+                out_str += f"  py::buffer_info buf{i} = arg{i}.request();\n"
+                out_str += f"  {arg_type} *p_arg{i} = ({arg_type} *)buf{i}.ptr;\n"
                 in_ptrs.append(f"p_arg{i}")
-                continue
-            resolved_type = allo2c_type.get(arg_type)
-            out_str += f"  {resolved_type} *p_arg{i} = ({resolved_type} *)buf{i}.ptr;\n"
-            if len(arg_shape) == 1:
+            elif len(arg_shape) == 0:
+                out_str += f"  {arg_type} p_arg{i} = arg{i};\n"
                 in_ptrs.append(f"p_arg{i}")
             else:
+                out_str += f"  py::buffer_info buf{i} = arg{i}.request();\n"
+                out_str += f"  {arg_type} *p_arg{i} = ({arg_type} *)buf{i}.ptr;\n"
                 tail_shape = "[" + "][".join([str(s) for s in arg_shape[1:]]) + "]"
-                out_str += f"  {resolved_type} (*p_arg{i}_nd){tail_shape} = "
-                out_str += (
-                    f"reinterpret_cast<{resolved_type} (*){tail_shape}>(p_arg{i});\n"
-                )
+                out_str += f"  {arg_type} (*p_arg{i}_nd){tail_shape} = "
+                out_str += f"reinterpret_cast<{arg_type} (*){tail_shape}>(p_arg{i});\n"
                 in_ptrs.append(f"p_arg{i}_nd")
         # function call
         out_str += "\n"
@@ -144,7 +211,7 @@ class IPModule:
         cmd += " ".join(
             ["-I" + (path if path != "" else ".") for path in self.include_paths]
         )
-        srcs = self.impls + [self.c_wrapper_file]
+        srcs = [self.c_wrapper_file]
         cmd += " " + " ".join(srcs)
         cmd += (
             f" -o {self.temp_path}/{self.lib_name}`python3-config --extension-suffix`"
@@ -162,8 +229,7 @@ class IPModule:
         # Add headers
         out_str += "#include <iostream>\n"
         out_str += '#include "mlir/ExecutionEngine/CRunnerUtils.h"\n'
-        for header in self.headers:
-            out_str += f'#include "{header}"\n'
+        out_str += f'#include "{self.impl}"\n'
         out_str += "\n"
         # Generate function interface
         unranked_memrefs = []
@@ -171,7 +237,7 @@ class IPModule:
             if len(arg_shape) > 0:
                 unranked_memrefs.append(f"int64_t rank_{i}, void *ptr_{i}")
             else:
-                unranked_memrefs.append(f"{allo2c_type.get(arg_type)} in{i}")
+                unranked_memrefs.append(f"{arg_type} in{i}")
         unranked_memrefs_str = ", ".join(unranked_memrefs)
         out_str += f'extern "C" void {self.lib_name}({unranked_memrefs_str}) {{\n'
         in_ptrs = []
@@ -179,18 +245,17 @@ class IPModule:
             if len(arg_shape) == 0:  # scalar
                 in_ptrs.append(f"in{i}")
                 continue
-            resolved_type = allo2c_type.get(arg_type)
-            out_str += f"  UnrankedMemRefType<{resolved_type}> in{i} = {{rank_{i}, ptr_{i}}};\n"
-            out_str += f"  DynamicMemRefType<{resolved_type}> ranked_in{i}(in{i});\n"
-            out_str += f"  {resolved_type} *in{i}_ptr = ({resolved_type} *)ranked_in{i}.data;\n"
+            out_str += (
+                f"  UnrankedMemRefType<{arg_type}> in{i} = {{rank_{i}, ptr_{i}}};\n"
+            )
+            out_str += f"  DynamicMemRefType<{arg_type}> ranked_in{i}(in{i});\n"
+            out_str += f"  {arg_type} *in{i}_ptr = ({arg_type} *)ranked_in{i}.data;\n"
             if len(arg_shape) == 1:
                 in_ptrs.append(f"in{i}_ptr")
             else:
                 tail_shape = "[" + "][".join([str(s) for s in arg_shape[1:]]) + "]"
-                out_str += f"  {resolved_type} (*in{i}_nd){tail_shape} = "
-                out_str += (
-                    f"reinterpret_cast<{resolved_type} (*){tail_shape}>(in{i}_ptr);\n"
-                )
+                out_str += f"  {arg_type} (*in{i}_nd){tail_shape} = "
+                out_str += f"reinterpret_cast<{arg_type} (*){tail_shape}>(in{i}_ptr);\n"
                 in_ptrs.append(f"in{i}_nd")
         # Call library function
         out_str += f"  {self.top}({', '.join(in_ptrs)});\n"
@@ -213,7 +278,7 @@ class IPModule:
         cmd += " ".join(
             ["-I" + (path if path != "" else ".") for path in self.include_paths]
         )
-        srcs = self.impls + [self.c_wrapper_file]
+        srcs = [self.c_wrapper_file]
         obj_files = []
         for src in srcs:
             subcmd = cmd

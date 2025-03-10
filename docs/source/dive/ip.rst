@@ -24,23 +24,9 @@ IP Integration
 
 Apart from directly writing Allo kernels in Python, we also support integrating existing C++ HLS kernels into Allo. This feature is useful when you have a existing optimized C++ HLS code that wants to be integrated into Allo. The following example shows how to integrate a simple vector addition kernel written in C++ into Allo.
 
-Suppose the C++ kernel header is defined in the ``vadd.h`` file:
+Suppose the C++ kernel is implemented in the ``vadd.cpp`` file:
 
 .. code-block:: cpp
-
-    #ifndef VADD_H
-    #define VADD_H
-
-    void vadd(int A[32], int B[32], int C[32]);
-
-    #endif // VADD_H
-
-And the corresponding implementation is defined in the ``vadd.cpp`` file:
-
-.. code-block:: cpp
-
-    #include "vadd.h"
-    using namespace std;
 
     void vadd(int A[32], int B[32], int C[32]) {
         for (int i = 0; i < 32; ++i) {
@@ -48,17 +34,11 @@ And the corresponding implementation is defined in the ``vadd.cpp`` file:
         }
     }
 
-In Allo, we can create an *IP module* to wrap the C++ kernel. Basically, we need to provide the top-level function name, the header files, and the implementation files. Also, currently an Allo signature is required to specify the input and output types of the kernel. Allo will automatically compile the C++ kernel and generate the corresponding Python wrapper based on the provided files and signature. The last argument ``link_hls`` determines whether the C++ compiler should link the Vitis HLS libraries (e.g., ``ap_int``), which is only available when your machine has installed Vitis HLS.
+In Allo, we can create an *IP module* to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The last argument ``link_hls`` of the ``IPModule`` determines whether the C++ compiler should link the Vitis HLS libraries (e.g., ``ap_int``), which is only available when your machine has installed Vitis HLS.
 
 .. code-block:: python
 
-    vadd = allo.IPModule(
-        top="vadd",
-        headers=["vadd.h"],
-        impls=["vadd.cpp"],
-        signature=["int32[32]", "int32[32]", "int32[32]"],
-        link_hls=False,
-    )
+    vadd = allo.IPModule(top="vadd", impl=["vadd.cpp"], link_hls=False)
 
 After creating the IP module, we can use it in Allo as a normal Python function. For example, we can directly call the ``vadd`` function to perform vector addition. The inputs and outputs will be automatically wrapped and unwrapped as NumPy arrays, which greatly simplies the burden of complex C-Python interface management. This is also very useful when you want to debug the HLS kernels with the Python data.
 

@@ -39,6 +39,7 @@ from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
 from .utils import get_mlir_dtype_from_str
+from .backend.ip import c2allo_type
 
 
 def _mlir_lower_pipeline(module, **kwargs):
@@ -411,7 +412,7 @@ def call_ext_libs_in_ptr(module, ext_libs):
                 # external functions, reconstruct func type
                 input_types = []
                 for arg_type, shape in obj.args:
-                    ele_type = get_mlir_dtype_from_str(arg_type)
+                    ele_type = get_mlir_dtype_from_str(c2allo_type[arg_type])
                     if len(shape) == 0:
                         memref = ele_type
                     else:
