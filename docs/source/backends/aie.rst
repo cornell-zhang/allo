@@ -18,9 +18,9 @@
     specific language governing permissions and limitations
     under the License.
 
-##############
-AMD AI Engine
-##############
+################################
+AMD MLIR-AIE (AI Engine)
+################################
 
 `AMD AI Engine (AIE) <https://www.amd.com/en/products/adaptive-socs-and-fpgas/technologies/ai-engine.html>`_ is a hardware accelerator specifically designed for AI applications. It is a TPU-like architecture with an array of AIE cores.
 In this document, we target the `AMD Ryzen 7040 <https://www.amd.com/en/products/processors/laptop/ryzen-for-business.html>`_ and 8040 Series processors that are built on `AMD XDNA NPUs <https://www.amd.com/en/technologies/xdna.html>`_, which are equipped with the second-generation AI Engine cores.

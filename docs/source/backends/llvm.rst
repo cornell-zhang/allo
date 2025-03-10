@@ -19,10 +19,10 @@
     under the License.
 
 ##################
-LLVM (CPU Backend)
+LLVM (CPU)
 ##################
 
-The CPU backend leverages the `LLVM <https://llvm.org/>`_ infrastructure to compile high-level kernels into LLVM IR for CPU simulation. This example demonstrates the workflow of defining a matrix multiplication (GEMM) kernel in Allo, compiling it into an LLVM executable, and validating the results with NumPy.
+The CPU backend leverages the `LLVM <https://llvm.org/>`_ infrastructure to compile high-level kernels into LLVM IR for CPU simulation. This example demonstrates the workflow of defining a matrix multiplication (GEMM) kernel in Allo, compiling it into an LLVM executable, and validating the results with NumPy. For more details on kernel customizations and scheduling optimizations, please refer to the `Allo-CPU tutorial <https://cornell-zhang.github.io/allo/gallery/tutorial_01_get_started.html>`_.
 
 Kernel Definition
 -----------------
