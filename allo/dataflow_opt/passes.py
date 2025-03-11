@@ -49,7 +49,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
 
 def _mlir_preprocess(module, top_func_name):
     """
-    Performs linalg-to-affine lowering, then aggressive inlining on an MLIR module, then removes all functions except the top-level function.
+    Performs linalg-to-affine lowering, then aggressive inlining on an MLIR module, then removes all (dead) functions except the top-level function.
     """
     # Configure for maximum inlining - no recursion limit and always inline
     MAX_ITER = INLINE_THRESHOLD = 999999
@@ -82,76 +82,6 @@ def canonicalize_fn(op: func_d.FuncOp):
     for op_in_block in ops:
         if isinstance(op_in_block, memref_d.AllocOp):
             canonicalize_alloc(op_in_block)
-        elif isinstance(op_in_block, func_d.CallOp):
-            canonicalize_call(op_in_block)
-
-
-def canonicalize_call(op: func_d.CallOp):
-    for result in op.results:
-        loads = []  # (op, idx)
-        stores = []  # ops
-        for use in result.uses:
-            user = use.owner
-            if isinstance(
-                user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)
-            ):
-                for idx, operand in enumerate(user.operands):
-                    if operand == op.result:
-                        loads.append((user, idx))
-            elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
-                stores.append(user)
-
-        if not isinstance(result.type, MemRefType) or len(loads) == 1:
-            # already single produer single consumer pattern
-            continue
-
-        if len(stores) > 1:
-            raise NotImplementedError(
-                "Complex pattern detected in call op; additional canonicalization not implemented yet."
-            )
-
-        n_loads = len(loads)
-        ip = InsertionPoint(op)
-        new_allocs = [
-            memref_d.AllocOp(result.type, [], [], ip=ip) for _ in range(n_loads)
-        ]
-
-        shape = result.type.shape
-
-        loop_ivs, loops = [], []
-        loop_ip = ip
-        for dim in shape:
-            loop = affine_d.AffineForOp(
-                lower_bound=0, upper_bound=dim, step=1, ip=loop_ip
-            )
-            loop_ivs.append(loop.induction_variable)
-            loops.append(loop)
-            loop_ip = InsertionPoint(loop.body)
-
-        loops[0].move_after(op)
-
-        with InsertionPoint(loops[-1].body):
-            orig_value = affine_d.AffineLoadOp(
-                result.type.element_type,
-                result,
-                loop_ivs,
-                affine_d.AffineMap.get_identity(len(shape)),
-            )
-            for alloc in new_allocs:
-                affine_d.AffineStoreOp(
-                    orig_value.result,
-                    alloc,
-                    loop_ivs,
-                    affine_d.AffineMap.get_identity(len(shape)),
-                )
-
-        for loop in loops:
-            with InsertionPoint(loop.body):
-                affine_d.AffineYieldOp([])
-
-        for idx, (user, op_idx) in enumerate(loads):
-            user.operation.operands[op_idx] = new_allocs[idx].result
-
 
 def canonicalize_alloc(alloc_op):
     loads = []  # (op, idx)
