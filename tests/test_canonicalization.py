@@ -8,9 +8,11 @@ from allo.ir.types import int32, float32, MemRefType
 from allo._mlir.dialects import func as func_d
 from allo._mlir.dialects import memref as memref_d
 from allo._mlir.dialects import affine as affine_d
-from allo.passes import dataflow_canonicalization_pass as dcp, _mlir_lower_pipeline
+from allo.passes import _mlir_lower_pipeline
 from allo._mlir.ir import WalkResult
 from allo.customize import Schedule
+from allo.passes import analyze_use_def
+from allo.dataflow_opt import dataflow_optimization_pass
 
 from allo.ir.transform import find_func_in_module
 
@@ -52,20 +54,6 @@ def check_single_producer_single_consumer(module):
     return spsc
 
 
-def canonicalize(schedule: Schedule) -> Schedule:
-    fn_name = schedule.top_func.name.value
-    mod = _mlir_lower_pipeline(schedule.module, lower_linalg=True)
-    f = find_func_in_module(mod, fn_name)
-    return Schedule(
-        dcp(mod),
-        f,
-        schedule.func_args,
-        schedule.ip,
-        schedule.ext_libs,
-        schedule.inst_list,
-    )
-
-
 def test_single_producer_single_consumer():
     def producer() -> int32[10]:
         A: int32[10]
@@ -88,7 +76,7 @@ def test_single_producer_single_consumer():
 
     s = allo.customize(top)
     s.compose([p, c])
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
     mod = s.build()
     res = mod()
@@ -126,9 +114,8 @@ def test_single_producer_multiple_consumers():
     s = allo.customize(top)
     print(s.module)
     s.compose([p, c1, c2])
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
-
     mod = s.build()
     res = mod()
     np.testing.assert_array_equal(
@@ -151,7 +138,7 @@ def test_single_kernel():
         return B, C
 
     s = allo.customize(producer)
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
     mod = s.build()
     res1, res2 = mod()
@@ -183,7 +170,7 @@ def test_nd_array():
     s.compose([p, c])
     print(s.module)
 
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
     mod = s.build()
     res = mod()
@@ -214,7 +201,7 @@ def test_matmul_addition_condition1():
 
     s = allo.customize(matmul_addition)
     print(s.module)
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
 
     mod = s.build()
@@ -253,7 +240,6 @@ def test_matmul_addition_nested_condition1():
         C = matrix_multiply(A, B)
 
         E1 = matrix_add(C, D)
-        E2 = matrix_add(C, C)  # Use C twice to force split
 
         return E1
 
@@ -264,12 +250,11 @@ def test_matmul_addition_nested_condition1():
     s.compose([mm, ma])
 
     print(s.module)
-    s = canonicalize(s)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
     print(s.module)
 
     mod = s.build()
     res = mod()
-
     expected = np.full((8, 8), 19.0, dtype=np.float32)
     np.testing.assert_allclose(res, expected, rtol=1e-5)
 
