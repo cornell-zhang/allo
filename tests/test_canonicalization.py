@@ -12,7 +12,7 @@ from allo.passes import _mlir_lower_pipeline
 from allo._mlir.ir import WalkResult
 from allo.customize import Schedule
 from allo.passes import analyze_use_def
-from allo.dataflow_opt import dataflow_optimization_pass
+from allo.dataflow_opt.passes import dataflow_optimization_pass
 
 from allo.ir.transform import find_func_in_module
 
@@ -88,24 +88,29 @@ def test_single_producer_multiple_consumers():
     def producer() -> int32[10]:
         A: int32[10]
         for i in range(10):
-            A[i] = i + 1
+            A[i] = i
         return A
 
-    def consumer1(A: int32[10]) -> int32:
-        sum: int32 = 0
+    def consumer1(A: int32[10]) -> int32[10]:
+        B: int32[10]
         for i in range(10):
-            sum += A[i]
-        return sum
+            B[i] = A[i] - 1
+        return B
 
-    def consumer2(A: int32[10]) -> int32:
-        prod: int32 = 1
+    def consumer2(A: int32[10]) -> int32[10]:
+        B: int32[10]
         for i in range(10):
-            prod *= A[i]
-        return prod
+            B[i] = A[i] + 1
+        return B
 
-    def top() -> int32:
+    def top() -> int32[10]:
         A = producer()
-        return consumer1(A) + consumer2(A)
+        res1 = consumer1(A)
+        res2 = consumer2(A)
+        B: int32[10] 
+        for i in range(10):
+            B[i] = res1[i] + res2[i]
+        return B
 
     p = allo.customize(producer)
     c1 = allo.customize(consumer1)
@@ -119,7 +124,7 @@ def test_single_producer_multiple_consumers():
     mod = s.build()
     res = mod()
     np.testing.assert_array_equal(
-        res, np.sum(np.arange(1, 11)) + np.prod(np.arange(1, 11))
+        res, 2 * np.arange(10)
     )
     assert check_single_producer_single_consumer(s.module)
 
@@ -152,16 +157,16 @@ def test_nd_array():
         A: int32[10, 10] = 0
         return A
 
-    def consumer(A: int32[10, 10]) -> int32:
-        sum: int32 = 0
+    def consumer(A: int32[10, 10], B: int32[10, 10]) -> int32[10, 10]:
+        sum: int32[10, 10]
         for i in range(10):
             for j in range(10):
-                sum += A[i, j]
+                sum[i, j] = A[i, j] + B[i, j]
         return sum
 
-    def top() -> int32:
+    def top() -> int32[10, 10]:
         A = producer()
-        return consumer(A) + consumer(A)
+        return consumer(A, A)
 
     p = allo.customize(producer)
     c = allo.customize(consumer)

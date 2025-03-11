@@ -15,11 +15,12 @@ from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from allo._mlir._mlir_libs._mlir.ir import Module
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
+from .util import check_perfect_affine_kernel
 
 def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
     fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, fn_name)
-    assert check_valid_kernel(mod)
+    assert check_perfect_affine_kernel(mod), "Input kernel is not a perfect affine kernel"
 
     # Dataflow canonicalization pass 
     mod = _dataflow_canonicalization_pass(mod)
@@ -33,7 +34,10 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
             schedule.inst_list,
         )
 
-    # Other passes
+    # other passes (not implemented)
+    dfg = build_dataflow_graph(mod)
+    build_performance_model(mod, dfg)
+
     return Schedule(
         mod,
         find_func_in_module(mod, fn_name),
@@ -43,18 +47,13 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
         schedule.inst_list,
     )
 
-
-def check_valid_kernel(mod: Module) -> bool:
-    # unimplemented
-    return True
-
 def _mlir_preprocess(module, top_func_name):
     """
     Performs linalg-to-affine lowering, then aggressive inlining on an MLIR module, then removes all functions except the top-level function.
     """
     # Configure for maximum inlining - no recursion limit and always inline
     MAX_ITER = INLINE_THRESHOLD = 999999
-    pipeline = f"builtin.module(convert-linalg-to-affine-loops,inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},symbol-privatize{{exclude={top_func_name}}},symbol-dce)"
+    pipeline = f"builtin.module(convert-linalg-to-affine-loops,inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},symbol-privatize{{exclude={top_func_name}}},symbol-dce,canonicalize)"
     try:
         with module.context:
             mlir_pass_manager.parse(pipeline).run(module.operation)
@@ -313,3 +312,9 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
     load_op.operation.replace_uses_of_with(alloc_op.result, new_alloc2.result)
 
     return True
+
+def build_dataflow_graph(module: Module):
+    pass
+
+def build_performance_model(module: Module, dfg):
+    pass
