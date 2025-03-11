@@ -3,8 +3,9 @@
 <html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Overview: module code &#8212; Allo Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>RapidStream TAPA (FPGA) &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -21,7 +22,9 @@
     <script src="../_static/js/theme.js"></script>
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" /> 
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Multi-Threaded Simulator (CPU)" href="simulator.html" />
+    <link rel="prev" title="AMD Vitis HLS (FPGA)" href="vitis.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -151,12 +154,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD MLIR-AIE (AI Engine)</a></li>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aie.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -179,14 +182,90 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <h1>All modules for which code is available</h1>
-<ul><li><a href="allo/customize.html">allo.customize</a></li>
+  <section id="rapidstream-tapa-fpga">
+<h1>RapidStream TAPA (FPGA)<a class="headerlink" href="#rapidstream-tapa-fpga" title="Link to this heading"><span>¶</span></a></h1>
+<p><a class="reference external" href="https://github.com/rapidstream-org/rapidstream-tapa">RapidStream TAPA</a> is an open-source backend that enables agile synthesis for designing high-frequency FPGA dataflow accelerators. Please refer to their <a class="reference external" href="https://doi.org/10.1145/3593025">TRETS papers</a> for more details.
+It still requires the <a class="reference external" href="https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis/vitis-hls.html">Vitis HLS</a> toolchain to generate hardware accelerators for FPGA devices, so please set up the environment in advance. This document demonstrates how to define a general matrix multiplication (GEMM) kernel using the Allo ADL and generate TAPA code for FPGA synthesis.</p>
+<section id="kernel-definition">
+<h2>Kernel Definition<a class="headerlink" href="#kernel-definition" title="Link to this heading"><span>¶</span></a></h2>
+<p>The GEMM kernel is implemented using <cite>float32</cite> precision and pre-defined constants for the matrix dimensions. The kernel utilizes the <cite>allo.grid</cite> API to iterate over output indices and the <cite>allo.reduction</cite> API to designate the reduction axis for accumulating the dot-product.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># Define matrix dimensions</span>
+<span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
+</pre></div>
+</div>
+</section>
+<section id="code-generation-for-rapidstream-tapa">
+<h2>Code Generation for RapidStream TAPA<a class="headerlink" href="#code-generation-for-rapidstream-tapa" title="Link to this heading"><span>¶</span></a></h2>
+<p>Allo supports the generation of TAPA code by setting the target to <cite>“tapa”</cite>. Four synthesis modes are available:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">csim</span></code>: C simulation mode, which compiles the design for software simulation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fast_hw_emu</span></code>: Fast hardware emulation mode developed by RapidStream, offering a rapid emulation of the hardware design.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hw_emu</span></code>: Hardware emulation mode, synthesizing the design into an RTL model and simulating it on an FPGA emulator.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hw</span></code>: Full hardware synthesis mode, performing complete synthesis, placement, routing, and bitstream generation for execution on FPGA hardware.</p></li>
 </ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;tapa&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw_emu&quot;</span><span class="p">,</span> <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="project-structure-and-execution">
+<h2>Project Structure and Execution<a class="headerlink" href="#project-structure-and-execution" title="Link to this heading"><span>¶</span></a></h2>
+<p>The generated TAPA project (e.g., in the folder <code class="docutils literal notranslate"><span class="pre">gemm.prj</span></code>) typically includes:</p>
+<ul class="simple">
+<li><p><strong>host.cpp</strong>: The host (CPU) code that interfaces with the generated accelerator.</p></li>
+<li><p><strong>kernel.cpp</strong>: The accelerator kernel code generated for TAPA.</p></li>
+<li><p><strong>Makefile</strong>: Build scripts that streamline the project compilation.</p></li>
+</ul>
+<p>To execute the design, prepare the input matrices using NumPy. For instance, generate random matrices for the inputs and allocate an output array:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">K</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">allo_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">,</span> <span class="n">allo_C</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">),</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Note:</dt><dd><p>Ensure that the TAPA and required toolchain environments are correctly configured before running the flow. For further environment setup and detailed information on synthesis modes, please consult the <a class="reference external" href="https://tapa.readthedocs.io/en/main/">RapidStream TAPA</a> documentation.</p>
+</dd>
+</dl>
+</section>
+</section>
+
 
             <div class="clearer"></div>
           </div>
         </div>
       </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">RapidStream TAPA (FPGA)</a><ul>
+<li><a class="reference internal" href="#kernel-definition">Kernel Definition</a></li>
+<li><a class="reference internal" href="#code-generation-for-rapidstream-tapa">Code Generation for RapidStream TAPA</a></li>
+<li><a class="reference internal" href="#project-structure-and-execution">Project Structure and Execution</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
     
 
       <div class="clearer"></div>
@@ -195,9 +274,14 @@
         <div class="button_nav">
             <div class="left">
                 
+                <a href="vitis.html">
+                    <span class="icon">&lt;</span><span>AMD Vitis HLS (FPGA)</span></a>
+                
             </div>
 
             <div class="right">
+                
+                    <a href="simulator.html"><span>Multi-Threaded Simulator (CPU)</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

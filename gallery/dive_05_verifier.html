@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Data Types and Type Casting &#8212; Allo Documentation</title>
+    <title>Equivalence Checking &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -23,8 +23,8 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Template Kernels" href="dive_02_template.html" />
-    <link rel="prev" title="Vivado/Vitis HLS Backend" href="tutorial_02_vhls.html" /> 
+    <link rel="next" title="Other Features" href="dive_04_features.html" />
+    <link rel="prev" title="PyTorch Integration" href="../dive/pytorch.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -145,12 +145,12 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Data Types and Type Casting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dive_01_data_types.html">Data Types and Type Casting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="dive_02_template.html">Template Kernels</a></li>
 <li class="toctree-l1"><a class="reference internal" href="dive_03_composition.html">Kernel Composition</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../dive/ip.html">IP Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../dive/pytorch.html">PyTorch Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="dive_05_verifier.html">Equivalence Checking</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Equivalence Checking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
@@ -184,148 +184,223 @@
             
   <div class="sphx-glr-download-link-note admonition note">
 <p class="admonition-title">Note</p>
-<p><a class="reference internal" href="#sphx-glr-download-gallery-dive-01-data-types-py"><span class="std std-ref">Go to the end</span></a>
+<p><a class="reference internal" href="#sphx-glr-download-gallery-dive-05-verifier-py"><span class="std std-ref">Go to the end</span></a>
 to download the full example code.</p>
 </div>
-<section class="sphx-glr-example-title" id="data-types-and-type-casting">
-<span id="sphx-glr-gallery-dive-01-data-types-py"></span><h1>Data Types and Type Casting<a class="headerlink" href="#data-types-and-type-casting" title="Link to this heading"><span>¶</span></a></h1>
+<section class="sphx-glr-example-title" id="equivalence-checking">
+<span id="sphx-glr-gallery-dive-05-verifier-py"></span><h1>Equivalence Checking<a class="headerlink" href="#equivalence-checking" title="Link to this heading"><span>¶</span></a></h1>
 <p><strong>Author</strong>: Hongzheng Chen (<a class="reference external" href="mailto:hzchen&#37;&#52;&#48;cs&#46;cornell&#46;edu">hzchen<span>&#64;</span>cs<span>&#46;</span>cornell<span>&#46;</span>edu</a>)</p>
-<p>This document will discuss the Allo-supported data types in detail.
-All the data types are defined in the <code class="docutils literal notranslate"><span class="pre">allo.ir.types</span></code> module.</p>
+<p>In this tutorial, we demonstrate how to use Allo’s verifier facility to check the equivalence of different scheduling transformations. The verifier ensures that various optimizations applied to the same algorithm do not alter its functional behavior.</p>
+<p>First, we import the necessary packages:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int16</span><span class="p">,</span> <span class="n">int32</span><span class="p">,</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Int</span><span class="p">,</span> <span class="n">UInt</span><span class="p">,</span> <span class="n">Float</span><span class="p">,</span> <span class="n">Fixed</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
 </pre></div>
 </div>
-<p>Currently, Allo supports three base data types for mathematical operations:</p>
-<ul class="simple">
-<li><p>Integers: <code class="docutils literal notranslate"><span class="pre">Int(bitwdith)</span></code>, <code class="docutils literal notranslate"><span class="pre">UInt(bitwidth)</span></code></p></li>
-<li><p>Floating points: <code class="docutils literal notranslate"><span class="pre">Float(bitwidth,</span> <span class="pre">fracs)</span></code> (we can use float32, float64, etc. as shorthands)</p></li>
-<li><p>Fixed points: <code class="docutils literal notranslate"><span class="pre">Fixed(bitwidth,</span> <span class="pre">frac)</span></code>, <code class="docutils literal notranslate"><span class="pre">UFixed(bitwidth,</span> <span class="pre">frac)</span></code></p></li>
-</ul>
-<p>For example, one can declare a 15-bit integer as <code class="docutils literal notranslate"><span class="pre">Int(15)</span></code> and an unsigned 8-bit fixed-point number with 3 fractional bits as <code class="docutils literal notranslate"><span class="pre">UFixed(8,</span> <span class="pre">3)</span></code>.
-For all the C/C++ supported data types, we provide shorthands like <code class="docutils literal notranslate"><span class="pre">float32</span></code> and <code class="docutils literal notranslate"><span class="pre">int16</span></code> to easily declare them.</p>
-<p>Notice different from native Python, Allo requires the program to be <strong>strongly and statically typed</strong>.
-The variable types are either declared explicitly or inferred from the context.
-For a variable that first appears in the program, we should declare it with an expected data type using Python’s type hint notation:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span>
+<section id="create-the-schedule">
+<h2>Create the Schedule<a class="headerlink" href="#create-the-schedule" title="Link to this heading"><span>¶</span></a></h2>
+<p>We define a general matrix multiplication (GEMM) kernel that takes two 32x32 matrices as inputs
+and produces a 32x32 output matrix. The reduction loop is used to accumulate the multiplication results.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
 </pre></div>
 </div>
-<p>Once the data types are defined, an important consideration is how to handle
-operations between variables of different types. Allo supports two types of casting:
-(1) implicit casting that is automatically done by the Allo compiler;
-and (2) explicit casting that is manually done by the user.</p>
-<section id="implicit-casting">
-<h2>Implicit Casting<a class="headerlink" href="#implicit-casting" title="Link to this heading"><span>¶</span></a></h2>
-<p>Allo has a strong type system that follows the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/ArithOps/">MLIR convention</a> to enforce the operand types are the same for the arithmetic operations.
-However, it is burdensome for users to cast the variables every time, and it is also error-prone to avoid overflow when performing computations.
-Therefore, Allo is equipped with builtin casting rules to automatically cast the variables to the same type before the operation, which is called <em>implicit casting</em>.
-An example is shown below:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">:</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">add</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+<p>We create two schedules for the GEMM kernel using different transformations.
+The first schedule, <strong>s1</strong>, applies a loop reordering transformation, while the second schedule, <strong>s2</strong>, applies a buffering transformation on the output tensor.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s1</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<span class="n">s1</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="s2">&quot;gemm:i&quot;</span><span class="p">,</span> <span class="s2">&quot;gemm:j&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s1</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @add(%arg0: i32, %arg1: i32) -&gt; i32 attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %0 = arith.extsi %arg0 : i32 to i33
-    %1 = arith.extsi %arg1 : i32 to i33
-    %2 = arith.addi %0, %1 : i33
-    %3 = arith.trunci %2 : i33 to i32
-    return %3 : i32
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = arith.sitofp %c0_i32 : i32 to f32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %3 = arith.mulf %1, %2 : f32
+          %4 = affine.load %alloc[%arg2, %arg3] {from = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+          %5 = arith.addf %4, %3 : f32
+          affine.store %5, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+      } {loop_name = &quot;j&quot;}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+    return %alloc : memref&lt;32x32xf32&gt;
   }
 }
 </pre></div>
 </div>
-<p>We can see that <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code> are firstly casted to <code class="docutils literal notranslate"><span class="pre">int33</span></code>, added
-together, and converted back to <code class="docutils literal notranslate"><span class="pre">int32</span></code>.
-This is to avoid overflow and is automatically inferred by the Allo compiler.</p>
-</section>
-<section id="explicit-casting">
-<h2>Explicit Casting<a class="headerlink" href="#explicit-casting" title="Link to this heading"><span>¶</span></a></h2>
-<p>One can also explicitly cast the variable to a specific type by creating an intermediate variable,
-or use Python-builtin functions like <code class="docutils literal notranslate"><span class="pre">float()</span></code> and <code class="docutils literal notranslate"><span class="pre">int()</span></code> to explicitly cast a variable to <code class="docutils literal notranslate"><span class="pre">float32</span></code> or <code class="docutils literal notranslate"><span class="pre">int32</span></code>.
-Another example is shown below:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">cast</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">int16</span><span class="p">:</span>
-    <span class="n">b</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">a</span>  <span class="c1"># explicit</span>
-    <span class="n">c</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="n">b</span> <span class="o">*</span> <span class="mi">2</span>
-    <span class="n">d</span><span class="p">:</span> <span class="n">float32</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span>
-    <span class="n">e</span><span class="p">:</span> <span class="n">int16</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="n">d</span>
-    <span class="k">return</span> <span class="n">e</span>
-
-
-<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">cast</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+<p>In the code above, <strong>s1</strong> is customized by reordering the loops corresponding to indices <code class="docutils literal notranslate"><span class="pre">i</span></code> and <code class="docutils literal notranslate"><span class="pre">j</span></code>.
+The printed intermediate representation (IR) shows the effect of this transformation.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">s2</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<span class="n">s2</span><span class="o">.</span><span class="n">buffer_at</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s2</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
-  func.func @cast(%arg0: i32) -&gt; i16 attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %0 = arith.sitofp %arg0 : i32 to f32
-    %alloc = memref.alloc() {name = &quot;b&quot;} : memref&lt;f32&gt;
-    affine.store %0, %alloc[] {to = &quot;b&quot;} : memref&lt;f32&gt;
-    %c2_i32 = arith.constant 2 : i32
-    %1 = arith.sitofp %c2_i32 : i32 to f32
-    %2 = affine.load %alloc[] {from = &quot;b&quot;} : memref&lt;f32&gt;
-    %3 = arith.mulf %2, %1 : f32
-    %alloc_0 = memref.alloc() {name = &quot;c&quot;} : memref&lt;f32&gt;
-    affine.store %3, %alloc_0[] {to = &quot;c&quot;} : memref&lt;f32&gt;
-    %4 = arith.sitofp %arg0 : i32 to f32
-    %c2_i32_1 = arith.constant 2 : i32
-    %5 = arith.sitofp %c2_i32_1 : i32 to f32
-    %6 = arith.mulf %4, %5 : f32
-    %alloc_2 = memref.alloc() {name = &quot;d&quot;} : memref&lt;f32&gt;
-    affine.store %6, %alloc_2[] {to = &quot;d&quot;} : memref&lt;f32&gt;
-    %7 = affine.load %alloc_0[] {from = &quot;c&quot;} : memref&lt;f32&gt;
-    %8 = affine.load %alloc_2[] {from = &quot;d&quot;} : memref&lt;f32&gt;
-    %9 = arith.addf %7, %8 : f32
-    %10 = arith.fptosi %9 : f32 to i16
-    %alloc_3 = memref.alloc() {name = &quot;e&quot;} : memref&lt;i16&gt;
-    affine.store %10, %alloc_3[] {to = &quot;e&quot;} : memref&lt;i16&gt;
-    %11 = affine.load %alloc_3[] {from = &quot;e&quot;} : memref&lt;i16&gt;
-    %12 = affine.load %alloc_3[] {from = &quot;e&quot;} : memref&lt;i16&gt;
-    return %12 : i16
+  func.func @gemm(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = arith.sitofp %c0_i32 : i32 to f32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      %alloc_0 = memref.alloc() : memref&lt;32xf32&gt;
+      %cst = arith.constant 0.000000e+00 : f32
+      affine.for %arg3 = 0 to 32 {
+        affine.store %cst, %alloc_0[%arg3] : memref&lt;32xf32&gt;
+      } {buffer, loop_name = &quot;j_init&quot;, pipeline_ii = 1 : i32}
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %3 = arith.mulf %1, %2 : f32
+          %4 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
+          %5 = arith.addf %4, %3 : f32
+          affine.store %5, %alloc_0[%arg3] : memref&lt;32xf32&gt;
+        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+      } {loop_name = &quot;j&quot;}
+      affine.for %arg3 = 0 to 32 {
+        %1 = affine.load %alloc_0[%arg3] : memref&lt;32xf32&gt;
+        affine.store %1, %alloc[%arg2, %arg3] : memref&lt;32x32xf32&gt;
+      } {buffer, loop_name = &quot;j_back&quot;, pipeline_ii = 1 : i32}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+    return %alloc : memref&lt;32x32xf32&gt;
   }
 }
 </pre></div>
 </div>
-<p>By explicitly creating an intermediate variable <code class="docutils literal notranslate"><span class="pre">b</span></code>, we can cast the <code class="docutils literal notranslate"><span class="pre">int32</span></code> variable <code class="docutils literal notranslate"><span class="pre">a</span></code> to the desired floating-point type.
-Similarly, calling <code class="docutils literal notranslate"><span class="pre">float(a)</span></code> can also cast <code class="docutils literal notranslate"><span class="pre">a</span></code> to a floating-point type.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The above stated explicit casting between integers and floating points preserves the value but the precision may be changed.
-If you want to use a union type to represent both integers and floating points, please use the <cite>.bitcast()</cite> API instead. For example, <code class="docutils literal notranslate"><span class="pre">a.bitcast()</span></code> can convert <code class="docutils literal notranslate"><span class="pre">int32</span></code> to <code class="docutils literal notranslate"><span class="pre">float32</span></code> representation with the bit pattern preserved.</p>
-</div>
+<p>Here, a buffering transformation is applied on tensor <code class="docutils literal notranslate"><span class="pre">C</span></code> along the <code class="docutils literal notranslate"><span class="pre">i</span></code> axis.
+The IR output confirms that the transformation has been incorporated.
+Although the schedules differ in structure, they should implement equivalent functionality.</p>
 </section>
-<section id="bit-operations">
-<h2>Bit Operations<a class="headerlink" href="#bit-operations" title="Link to this heading"><span>¶</span></a></h2>
-<p>As hardware accelerators have ability to manipulate each bit of the data, Allo supports bit operations on
-those integer types. For example, we can access a specific bit in an integer <code class="docutils literal notranslate"><span class="pre">a</span></code> using the indexing operator:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">[</span><span class="mi">15</span><span class="p">]</span>
+<section id="verifying-equivalence">
+<h2>Verifying Equivalence<a class="headerlink" href="#verifying-equivalence" title="Link to this heading"><span>¶</span></a></h2>
+<p>Next, we use the verifier facility to check whether the two schedules, <strong>s1</strong> and <strong>s2</strong>,
+are equivalent. The <code class="docutils literal notranslate"><span class="pre">allo.verify</span></code> function compares the schedules and returns a truthy
+value if they are functionally identical.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;Failed to verify the equivalence of two schedules!&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;s1 and s2 are equivalent!&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>We can also extract a chunk of bits from an integer using the slicing operator:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">16</span><span class="p">]</span>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>s1 and s2 are equivalent!
 </pre></div>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Allo follows the Python convention that the upper bound is not included, so <code class="docutils literal notranslate"><span class="pre">[0:16]</span></code> means
-extracting the first 16 bits, which is different from the Xilinx HLS convention that uses <code class="docutils literal notranslate"><span class="pre">[0:15]</span></code>
-to indicate the first 16 bits.</p>
+<p>The assertion confirms that the transformations applied in <strong>s1</strong> and <strong>s2</strong> preserve the semantics of the original GEMM algorithm.</p>
+</section>
+<section id="introducing-a-non-equivalent-schedule">
+<h2>Introducing a Non-equivalent Schedule<a class="headerlink" href="#introducing-a-non-equivalent-schedule" title="Link to this heading"><span>¶</span></a></h2>
+<p>To illustrate the effectiveness of the verifier, we define an alternative GEMM kernel, <strong>gemm_wrong</strong>,
+which incorrectly implements the multiplication by overwriting the output instead of
+accumulating the results. The schedule derived from <strong>gemm_wrong</strong> (named <strong>s3</strong>)
+should not be equivalent to <strong>s1</strong>.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gemm_wrong</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">float32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">reduction</span><span class="p">(</span><span class="mi">32</span><span class="p">):</span>
+            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
+
+
+<span class="n">s3</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm_wrong</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">s3</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+<span class="n">verifier</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s3</span><span class="p">)</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">verifier</span><span class="p">,</span> <span class="s2">&quot;Failed to verify the equivalence of two schedules!&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;s1 and s3 are not equivalent!&quot;</span><span class="p">)</span>
+</pre></div>
 </div>
-<p>Not only constant values are supported, but also variables can be used as the index or the slice range.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.170 seconds)</p>
-<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-01-data-types-py">
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
+  func.func @gemm_wrong(%arg0: memref&lt;32x32xf32&gt;, %arg1: memref&lt;32x32xf32&gt;) -&gt; memref&lt;32x32xf32&gt; attributes {itypes = &quot;__&quot;, otypes = &quot;_&quot;} {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = arith.sitofp %c0_i32 : i32 to f32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+    linalg.fill ins(%0 : f32) outs(%alloc : memref&lt;32x32xf32&gt;)
+    affine.for %arg2 = 0 to 32 {
+      affine.for %arg3 = 0 to 32 {
+        affine.for %arg4 = 0 to 32 {
+          %1 = affine.load %arg0[%arg2, %arg4] {from = &quot;A&quot;} : memref&lt;32x32xf32&gt;
+          %2 = affine.load %arg1[%arg4, %arg3] {from = &quot;B&quot;} : memref&lt;32x32xf32&gt;
+          %3 = arith.mulf %1, %2 : f32
+          affine.store %3, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xf32&gt;
+        } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
+      } {loop_name = &quot;j&quot;}
+    } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
+    return %alloc : memref&lt;32x32xf32&gt;
+  }
+}
+
+Verifier reported non-equivalence between schedules.
+Differences between generated programs:
+--- Program A (Schedule A)
++++ Program B (Schedule B)
+@@ -13,7 +13,7 @@
+ #include &lt;math.h&gt;
+
+ #include &lt;stdint.h&gt;
+
+ using namespace std;
+
+-void gemm(
+
++void gemm_wrong(
+
+   float v0[32][32],
+
+   float v1[32][32],
+
+   float v2[32][32]
+
+@@ -30,9 +30,7 @@
+         float v8 = v0[i][k];   // L10
+
+         float v9 = v1[k][j];   // L11
+
+         float v10 = v8 * v9;   // L12
+
+-        float v11 = v2[i][j];  // L13
+
+-        float v12 = v11 + v10; // L14
+
+-        v2[i][j] = v12;        // L15
+
++        v2[i][j] = v10;        // L13
+
+       }
+
+     }
+
+   }
+
+s1 and s3 are not equivalent!
+</pre></div>
+</div>
+<p>The verifier correctly detects that <strong>s3</strong> does not preserve the intended accumulation,
+thus confirming that <strong>s1</strong> and <strong>s3</strong> are not equivalent.</p>
+</section>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading"><span>¶</span></a></h2>
+<p>This tutorial has demonstrated how to use Allo’s verifier facility to ensure that different
+scheduling transformations yield equivalent computational behavior. By verifying the equivalence
+of various schedules, you can confidently apply optimizations without compromising the
+functional correctness of your algorithms.</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.243 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-05-verifier-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
-<p><a class="reference download internal" download="" href="../_downloads/68e0932078b39343e70c899a03d3ae7c/dive_01_data_types.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_01_data_types.ipynb</span></code></a></p>
+<p><a class="reference download internal" download="" href="../_downloads/d49a7fad4fb3589abd0d5cb43befd164/dive_05_verifier.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_05_verifier.ipynb</span></code></a></p>
 </div>
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
-<p><a class="reference download internal" download="" href="../_downloads/4fba383e419c1fc1ea22179140eb2d12/dive_01_data_types.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">dive_01_data_types.py</span></code></a></p>
+<p><a class="reference download internal" download="" href="../_downloads/ba2848cd4845220e831e5343cd9b73c0/dive_05_verifier.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">dive_05_verifier.py</span></code></a></p>
 </div>
 <div class="sphx-glr-download sphx-glr-download-zip docutils container">
-<p><a class="reference download internal" download="" href="../_downloads/77583a2b4d388a5f4b2bf7b3eec828d2/dive_01_data_types.zip"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">zipped:</span> <span class="pre">dive_01_data_types.zip</span></code></a></p>
+<p><a class="reference download internal" download="" href="../_downloads/89ca601c17478f83314e73f8b56c4faa/dive_05_verifier.zip"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">zipped:</span> <span class="pre">dive_05_verifier.zip</span></code></a></p>
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
@@ -346,10 +421,11 @@ to indicate the first 16 bits.</p>
             <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
             <div class="page_toc">
                 <ul>
-<li><a class="reference internal" href="#">Data Types and Type Casting</a><ul>
-<li><a class="reference internal" href="#implicit-casting">Implicit Casting</a></li>
-<li><a class="reference internal" href="#explicit-casting">Explicit Casting</a></li>
-<li><a class="reference internal" href="#bit-operations">Bit Operations</a></li>
+<li><a class="reference internal" href="#">Equivalence Checking</a><ul>
+<li><a class="reference internal" href="#create-the-schedule">Create the Schedule</a></li>
+<li><a class="reference internal" href="#verifying-equivalence">Verifying Equivalence</a></li>
+<li><a class="reference internal" href="#introducing-a-non-equivalent-schedule">Introducing a Non-equivalent Schedule</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 </li>
 </ul>
@@ -364,14 +440,14 @@ to indicate the first 16 bits.</p>
         <div class="button_nav">
             <div class="left">
                 
-                <a href="tutorial_02_vhls.html">
-                    <span class="icon">&lt;</span><span>Vivado/Vitis HLS Backend</span></a>
+                <a href="../dive/pytorch.html">
+                    <span class="icon">&lt;</span><span>PyTorch Integration</span></a>
                 
             </div>
 
             <div class="right">
                 
-                    <a href="dive_02_template.html"><span>Template Kernels</span><span class="icon">&gt;</span></a>
+                    <a href="dive_04_features.html"><span>Other Features</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

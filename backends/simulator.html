@@ -3,8 +3,9 @@
 <html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Overview: module code &#8212; Allo Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Multi-Threaded Simulator (CPU) &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -21,7 +22,9 @@
     <script src="../_static/js/theme.js"></script>
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" /> 
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="AMD MLIR-AIE (AI Engine)" href="aie.html" />
+    <link rel="prev" title="RapidStream TAPA (FPGA)" href="tapa.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -151,12 +154,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD MLIR-AIE (AI Engine)</a></li>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aie.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -179,14 +182,81 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <h1>All modules for which code is available</h1>
-<ul><li><a href="allo/customize.html">allo.customize</a></li>
-</ul>
+  <section id="multi-threaded-simulator-cpu">
+<h1>Multi-Threaded Simulator (CPU)<a class="headerlink" href="#multi-threaded-simulator-cpu" title="Link to this heading"><span>¶</span></a></h1>
+<p>This document demonstrates how to simulate a dataflow design using the simulator backend in Allo. The simulator backend provides a fast and flexible environment for verifying the behavior of dataflow kernels before deploying them to hardware. In this example, a simple producer-consumer model is implemented, where data is produced from an input matrix, sent through a pipe, and then consumed with a basic arithmetic operation.</p>
+<section id="dataflow-kernel-definition">
+<h2>Dataflow Kernel Definition<a class="headerlink" href="#dataflow-kernel-definition" title="Link to this heading"><span>¶</span></a></h2>
+<p>The design consists of a top-level region that contains two kernels: a producer and a consumer. The producer reads data from an input matrix and sends each element through a pipe, while the consumer receives the data, increments it by one, and writes the result to an output matrix. The following code illustrates the kernel definitions using Allo’s dataflow API:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">allo.dataflow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">df</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">Ty</span> <span class="o">=</span> <span class="n">float32</span>
+<span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span>
+
+<span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">():</span>
+    <span class="c1"># Create a pipe with a depth of 4</span>
+    <span class="n">pipe</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">Ty</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(),</span> <span class="n">depth</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+            <span class="c1"># Load data from the input matrix</span>
+            <span class="n">out</span><span class="p">:</span> <span class="n">Ty</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+            <span class="c1"># Send data to the pipe</span>
+            <span class="n">pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+
+    <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">consumer</span><span class="p">(</span><span class="n">B</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+            <span class="c1"># Receive data from the pipe</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="c1"># Perform a simple computation (increment by 1)</span>
+            <span class="n">B</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div>
+</div>
+</section>
+<section id="simulation-and-testing">
+<h2>Simulation and Testing<a class="headerlink" href="#simulation-and-testing" title="Link to this heading"><span>¶</span></a></h2>
+<p>To verify the correctness of the dataflow design, a simulation is executed using the simulator backend. The test function initializes an input matrix with random values and an output matrix filled with zeros. The simulation is performed by building the module with the target set to <cite>“simulator”</cite>. After running the simulation, the output is compared against the expected result using NumPy’s testing utilities.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<span class="n">sim_mod</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;simulator&quot;</span><span class="p">)</span>
+<span class="n">sim_mod</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">A</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Dataflow Simulator Passed!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The simulator is implemented using the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/OpenMPDialect/">OMP dialect</a> in MLIR, so it can natively support multi-threaded execution on CPU, which greatly speeds up functional testing at the first place.</p>
+</section>
+</section>
+
 
             <div class="clearer"></div>
           </div>
         </div>
       </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">Multi-Threaded Simulator (CPU)</a><ul>
+<li><a class="reference internal" href="#dataflow-kernel-definition">Dataflow Kernel Definition</a></li>
+<li><a class="reference internal" href="#simulation-and-testing">Simulation and Testing</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
     
 
       <div class="clearer"></div>
@@ -195,9 +265,14 @@
         <div class="button_nav">
             <div class="left">
                 
+                <a href="tapa.html">
+                    <span class="icon">&lt;</span><span>RapidStream TAPA (FPGA)</span></a>
+                
             </div>
 
             <div class="right">
+                
+                    <a href="aie.html"><span>AMD MLIR-AIE (AI Engine)</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>AMD AI Engine &#8212; Allo Documentation</title>
+    <title>AMD MLIR-AIE (AI Engine) &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -24,7 +24,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Developer Setup" href="../developer/index.html" />
-    <link rel="prev" title="Other Features" href="../gallery/dive_04_features.html" /> 
+    <link rel="prev" title="Multi-Threaded Simulator (CPU)" href="simulator.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -150,11 +150,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../dive/ip.html">IP Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../dive/pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">AMD AI Engine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -177,8 +182,8 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <section id="amd-ai-engine">
-<h1>AMD AI Engine<a class="headerlink" href="#amd-ai-engine" title="Link to this heading"><span>¶</span></a></h1>
+  <section id="amd-mlir-aie-ai-engine">
+<h1>AMD MLIR-AIE (AI Engine)<a class="headerlink" href="#amd-mlir-aie-ai-engine" title="Link to this heading"><span>¶</span></a></h1>
 <p><a class="reference external" href="https://www.amd.com/en/products/adaptive-socs-and-fpgas/technologies/ai-engine.html">AMD AI Engine (AIE)</a> is a hardware accelerator specifically designed for AI applications. It is a TPU-like architecture with an array of AIE cores.
 In this document, we target the <a class="reference external" href="https://www.amd.com/en/products/processors/laptop/ryzen-for-business.html">AMD Ryzen 7040</a> and 8040 Series processors that are built on <a class="reference external" href="https://www.amd.com/en/technologies/xdna.html">AMD XDNA NPUs</a>, which are equipped with the second-generation AI Engine cores.</p>
 <img alt="AMD Ryzen AI Engine Array" class="align-center" src="https://riallto.ai/notebooks/images/png/ryzenai_array_5x4.png" />
@@ -268,7 +273,7 @@ In this document, we target the <a class="reference external" href="https://www.
             <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
             <div class="page_toc">
                 <ul>
-<li><a class="reference internal" href="#">AMD AI Engine</a><ul>
+<li><a class="reference internal" href="#">AMD MLIR-AIE (AI Engine)</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li><a class="reference internal" href="#install-from-source">Install from Source</a></li>
 <li><a class="reference internal" href="#internal-installation-cornell">Internal Installation (Cornell)</a></li>
@@ -287,8 +292,8 @@ In this document, we target the <a class="reference external" href="https://www.
         <div class="button_nav">
             <div class="left">
                 
-                <a href="../gallery/dive_04_features.html">
-                    <span class="icon">&lt;</span><span>Other Features</span></a>
+                <a href="simulator.html">
+                    <span class="icon">&lt;</span><span>Multi-Threaded Simulator (CPU)</span></a>
                 
             </div>
 

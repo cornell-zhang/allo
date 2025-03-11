@@ -150,11 +150,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">IP Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD AI Engine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -189,7 +194,7 @@
 </pre></div>
 </div>
 <p>In Allo, we can create an <em>IP module</em> to wrap the C++ kernel. Basically, we need to provide the top-level function name and the implementation file. Allo will automatically parse the C++ kernel signature, compile the kernel, and generate the corresponding Python wrapper based on the provided files. Multi-dimensional arrays and pointers are supported in this C++ function definition. The last argument <code class="docutils literal notranslate"><span class="pre">link_hls</span></code> of the <code class="docutils literal notranslate"><span class="pre">IPModule</span></code> determines whether the C++ compiler should link the Vitis HLS libraries (e.g., <code class="docutils literal notranslate"><span class="pre">ap_int</span></code>), which is only available when your machine has installed Vitis HLS.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vadd</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">IPModule</span><span class="p">(</span><span class="n">top</span><span class="o">=</span><span class="s2">&quot;vadd&quot;</span><span class="p">,</span> <span class="n">impl</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;vadd.cpp&quot;</span><span class="p">],</span> <span class="n">link_hls</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vadd</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">IPModule</span><span class="p">(</span><span class="n">top</span><span class="o">=</span><span class="s2">&quot;vadd&quot;</span><span class="p">,</span> <span class="n">impl</span><span class="o">=</span><span class="s2">&quot;vadd.cpp&quot;</span><span class="p">,</span> <span class="n">link_hls</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>After creating the IP module, we can use it in Allo as a normal Python function. For example, we can directly call the <code class="docutils literal notranslate"><span class="pre">vadd</span></code> function to perform vector addition. The inputs and outputs will be automatically wrapped and unwrapped as NumPy arrays, which greatly simplies the burden of complex C-Python interface management. This is also very useful when you want to debug the HLS kernels with the Python data.</p>

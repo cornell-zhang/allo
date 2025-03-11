@@ -3,8 +3,9 @@
 <html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Overview: module code &#8212; Allo Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>LLVM (CPU) &#8212; Allo Documentation</title>
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -21,7 +22,9 @@
     <script src="../_static/js/theme.js"></script>
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" /> 
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="AMD Vitis HLS (FPGA)" href="vitis.html" />
+    <link rel="prev" title="Other Features" href="../gallery/dive_04_features.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -151,12 +154,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD MLIR-AIE (AI Engine)</a></li>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aie.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -179,14 +182,83 @@
         <div class="bodywrapper">
           <div class="body" role="main">
             
-  <h1>All modules for which code is available</h1>
-<ul><li><a href="allo/customize.html">allo.customize</a></li>
-</ul>
+  <section id="llvm-cpu">
+<h1>LLVM (CPU)<a class="headerlink" href="#llvm-cpu" title="Link to this heading"><span>¶</span></a></h1>
+<p>The CPU backend leverages the <a class="reference external" href="https://llvm.org/">LLVM</a> infrastructure to compile high-level kernels into LLVM IR for CPU simulation. This example demonstrates the workflow of defining a matrix multiplication (GEMM) kernel in Allo, compiling it into an LLVM executable, and validating the results with NumPy. For more details on kernel customizations and scheduling optimizations, please refer to the <a class="reference external" href="https://cornell-zhang.github.io/allo/gallery/tutorial_01_get_started.html">Allo-CPU tutorial</a>.</p>
+<section id="kernel-definition">
+<h2>Kernel Definition<a class="headerlink" href="#kernel-definition" title="Link to this heading"><span>¶</span></a></h2>
+<p>In this section, we define the GEMM kernel. The kernel uses strict type annotations to ensure all variables are of type <cite>int32</cite>. The iteration space is constructed with the <cite>allo.grid</cite> API, which simplifies the creation of nested loops for matrix multiplication.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
+</pre></div>
+</div>
+</section>
+<section id="compilation-to-llvm">
+<h2>Compilation to LLVM<a class="headerlink" href="#compilation-to-llvm" title="Link to this heading"><span>¶</span></a></h2>
+<p>After defining the kernel, the next step is to compile it for the CPU. The Allo framework creates a schedule for the kernel with <cite>allo.customize</cite> and then compiles the kernel into an LLVM module using the <cite>build</cite> method. This process converts the high-level description into LLVM IR, which is used for CPU simulation.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;llvm&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="execution-and-data-preparation">
+<h2>Execution and Data Preparation<a class="headerlink" href="#execution-and-data-preparation" title="Link to this heading"><span>¶</span></a></h2>
+<p>Once the LLVM module is built, input data must be prepared for execution. In this example, two random 32x32 matrices are generated using NumPy. The data is explicitly cast to <cite>int32</cite> to match the kernel’s requirements, ensuring consistency in the computation.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">np_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="n">np_B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="n">allo_C</span> <span class="o">=</span> <span class="n">mod</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Link to this heading"><span>¶</span></a></h2>
+<p>To verify the correctness of the compiled kernel, the output produced by the LLVM module is compared with the result of NumPy’s matrix multiplication. The comparison uses NumPy’s testing utilities to ensure that the computed result meets the desired numerical precision.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">golden_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">np_A</span><span class="p">,</span> <span class="n">np_B</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">allo_C</span><span class="p">,</span> <span class="n">golden_C</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Results are correct!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading"><span>¶</span></a></h2>
+<p>This example illustrates the process of defining a numerical kernel using the Allo DSL, compiling it with the LLVM backend for CPU simulation. Notice as Allo does not optimize the CPU code, the CPU backend is purely for functional correctness checking but <em>not</em> for performance evaluation.</p>
+</section>
+</section>
+
 
             <div class="clearer"></div>
           </div>
         </div>
       </div>
+    
+        <div id="show_right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
+        </div>
+
+        <div id="right_sidebar">
+            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
+            <div class="page_toc">
+                <ul>
+<li><a class="reference internal" href="#">LLVM (CPU)</a><ul>
+<li><a class="reference internal" href="#kernel-definition">Kernel Definition</a></li>
+<li><a class="reference internal" href="#compilation-to-llvm">Compilation to LLVM</a></li>
+<li><a class="reference internal" href="#execution-and-data-preparation">Execution and Data Preparation</a></li>
+<li><a class="reference internal" href="#testing">Testing</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+        </div>
     
 
       <div class="clearer"></div>
@@ -195,9 +267,14 @@
         <div class="button_nav">
             <div class="left">
                 
+                <a href="../gallery/dive_04_features.html">
+                    <span class="icon">&lt;</span><span>Other Features</span></a>
+                
             </div>
 
             <div class="right">
+                
+                    <a href="vitis.html"><span>AMD Vitis HLS (FPGA)</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>

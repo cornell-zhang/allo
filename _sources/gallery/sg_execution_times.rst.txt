@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:02.112** total execution time for 8 files **from gallery**:
+**00:05.138** total execution time for 9 files **from gallery**:
 
 .. container::
 
@@ -32,26 +32,29 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
+   * - :ref:`sphx_glr_gallery_dive_05_verifier.py` (``dive_05_verifier.py``)
+     - 00:03.243
+     - 0.0
    * - :ref:`sphx_glr_gallery_dive_03_composition.py` (``dive_03_composition.py``)
-     - 00:00.804
+     - 00:00.686
      - 0.0
    * - :ref:`sphx_glr_gallery_dive_02_template.py` (``dive_02_template.py``)
-     - 00:00.402
+     - 00:00.348
      - 0.0
    * - :ref:`sphx_glr_gallery_dive_04_features.py` (``dive_04_features.py``)
-     - 00:00.259
+     - 00:00.249
      - 0.0
    * - :ref:`sphx_glr_gallery_tutorial_01_get_started.py` (``tutorial_01_get_started.py``)
-     - 00:00.209
+     - 00:00.185
      - 0.0
    * - :ref:`sphx_glr_gallery_tutorial_02_vhls.py` (``tutorial_02_vhls.py``)
-     - 00:00.188
+     - 00:00.180
      - 0.0
    * - :ref:`sphx_glr_gallery_dive_01_data_types.py` (``dive_01_data_types.py``)
-     - 00:00.171
+     - 00:00.170
      - 0.0
    * - :ref:`sphx_glr_gallery_developer_02_mlir.py` (``developer_02_mlir.py``)
-     - 00:00.072
+     - 00:00.071
      - 0.0
    * - :ref:`sphx_glr_gallery_developer_01_ir_builder.py` (``developer_01_ir_builder.py``)
      - 00:00.006

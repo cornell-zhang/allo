@@ -23,7 +23,7 @@
     <script src="../_static/js/petite-vue.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Other Features" href="../gallery/dive_04_features.html" />
+    <link rel="next" title="Equivalence Checking" href="../gallery/dive_05_verifier.html" />
     <link rel="prev" title="IP Integration" href="ip.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
@@ -150,11 +150,16 @@
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
 <li class="toctree-l1"><a class="reference internal" href="ip.html">IP Integration</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD AI Engine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backends/aie.html">AMD MLIR-AIE (AI Engine)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
@@ -218,6 +223,7 @@ The default target is LLVM. We can also change the backend to other compilers su
 <span class="nb">print</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">hls_code</span><span class="p">)</span>
 </pre></div>
 </div>
+<p>For more target device selection, please refer to the <a class="reference external" href="https://cornell-zhang.github.io/allo/index.html">Backend</a> section of the document.</p>
 </section>
 
 
@@ -240,7 +246,7 @@ The default target is LLVM. We can also change the backend to other compilers su
 
             <div class="right">
                 
-                    <a href="../gallery/dive_04_features.html"><span>Other Features</span><span class="icon">&gt;</span></a>
+                    <a href="../gallery/dive_05_verifier.html"><span>Equivalence Checking</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
