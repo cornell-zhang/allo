@@ -20,9 +20,7 @@ from ._mlir.ir import (
     Module,
     IntegerAttr,
     IntegerType,
-    IntegerSetAttr,
     Operation,
-    Block,
 )
 from ._mlir.dialects import (
     allo as allo_d,

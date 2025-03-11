@@ -1,6 +1,7 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 from allo._mlir.ir import (
     Location,
-    MemRefType,
     InsertionPoint,
     IntegerSetAttr,
     Block,
@@ -17,12 +18,15 @@ from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
 from .util import check_perfect_affine_kernel
 
+
 def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
     fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, fn_name)
-    assert check_perfect_affine_kernel(mod), "Input kernel is not a perfect affine kernel"
+    assert check_perfect_affine_kernel(
+        mod
+    ), "Input kernel is not a perfect affine kernel"
 
-    # Dataflow canonicalization pass 
+    # Dataflow canonicalization pass
     mod = _dataflow_canonicalization_pass(mod)
     if debugPoint == "dataflow_canonicalization":
         return Schedule(
@@ -47,6 +51,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
         schedule.inst_list,
     )
 
+
 def _mlir_preprocess(module, top_func_name):
     """
     Performs linalg-to-affine lowering, then aggressive inlining on an MLIR module, then removes all (dead) functions except the top-level function.
@@ -62,7 +67,8 @@ def _mlir_preprocess(module, top_func_name):
         print("Error: failed to run MLIR passes, printing module...")
         print(module)
         raise e
-    
+
+
 def _dataflow_canonicalization_pass(module):
     """
     Implements the dataflow canonicalization pass as described in the Stream-HLS paper (https://arxiv.org/pdf/2501.09118)
@@ -82,6 +88,7 @@ def canonicalize_fn(op: func_d.FuncOp):
     for op_in_block in ops:
         if isinstance(op_in_block, memref_d.AllocOp):
             canonicalize_alloc(op_in_block)
+
 
 def canonicalize_alloc(alloc_op):
     loads = []  # (op, idx)
@@ -243,8 +250,10 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
 
     return True
 
+
 def build_dataflow_graph(module: Module):
     pass
+
 
 def build_performance_model(module: Module, dfg):
     pass

@@ -1,3 +1,5 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 from allo._mlir.ir import (
     Location,
     Module,
@@ -8,17 +10,19 @@ from allo._mlir.dialects import (
     memref as memref_d,
 )
 
+
 def is_terminator(op):
     ## TODO: can we do trait inspection with python bindings?
     return isinstance(op, (affine_d.AffineYieldOp, func_d.ReturnOp))
+
 
 def check_perfect_affine_kernel(module: Module) -> bool:
     """
     Checks whether the module is a perfect affine kernel (https://arxiv.org/pdf/2501.09118).
 
-    A perfect affine kernel is defined as a module with perfectly nested affine.for loops 
-    with constant bounds. In each perfect nest, if an affine.for contains an inner loop, 
-    it must be the only operation in its body (ignoring the terminator). 
+    A perfect affine kernel is defined as a module with perfectly nested affine.for loops
+    with constant bounds. In each perfect nest, if an affine.for contains an inner loop,
+    it must be the only operation in its body (ignoring the terminator).
     The innermost loop can contain any operations.
     At the top level, alloc operations and returns are allowed.
     """
@@ -33,8 +37,12 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             upper_map = loop_op.upperBoundMap.value
             upper_operands = loop_op.upperBoundOperands
 
-            lower_constant = is_constant_affine_map(lower_map) and not len(lower_operands)
-            upper_constant = is_constant_affine_map(upper_map) and not len(upper_operands)
+            lower_constant = is_constant_affine_map(lower_map) and not len(
+                lower_operands
+            )
+            upper_constant = is_constant_affine_map(upper_map) and not len(
+                upper_operands
+            )
             return lower_constant and upper_constant
 
         except AttributeError as e:
@@ -58,32 +66,38 @@ def check_perfect_affine_kernel(module: Module) -> bool:
         if inner_loops:
             # If there are inner loops, ensure that's the only op in the body
             if len(body_ops) != 1:
-                print("Loop", loop_op, "has extra ops besides the inner loop:", body_ops)
+                print(
+                    "Loop", loop_op, "has extra ops besides the inner loop:", body_ops
+                )
                 return False
             return check_perfect_loop_nest(inner_loops[0])
-        else:
-            # For innermost loop, allow any operations
-            return True
+        return True
 
     # Since all functions are inlined, we only need to check the main function
     def check_function_perfect_affine(func):
-        top_level_ops = [op for op in func.entry_block.operations if not is_terminator(op)]
+        top_level_ops = [
+            op for op in func.entry_block.operations if not is_terminator(op)
+        ]
         if not top_level_ops:
-            print('no top level ops', top_level_ops)
+            print("no top level ops", top_level_ops)
             return False
-        
+
         # Check each top-level op
         for op in top_level_ops:
             # Allow allocs and returns at top level
-            if (isinstance(op, memref_d.AllocOp) or 
-                is_terminator(op) or 
-                op.OPERATION_NAME.endswith(".constant")):
+            if (
+                isinstance(op, memref_d.AllocOp)
+                or is_terminator(op)
+                or op.OPERATION_NAME.endswith(".constant")
+            ):
                 continue
             # Check if it's a perfectly nested affine loop
             elif isinstance(op, affine_d.AffineForOp) and check_perfect_loop_nest(op):
                 continue
             else:
-                print(op, "is not a perfect affine loop or allowed top-level operation.")
+                print(
+                    op, "is not a perfect affine loop or allowed top-level operation."
+                )
                 return False
         return True
 
