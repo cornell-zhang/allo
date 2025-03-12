@@ -300,7 +300,7 @@ def inject_aie_kernels(mod):
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ):
+                    ) or op.operation.name == "linalg.matmul":
                         op_name = op.operation.name.split(".")[1]
                         # Inject AIE kernel
                         func_type = func_d.FunctionType.get(
@@ -309,9 +309,13 @@ def inject_aie_kernels(mod):
                         )
                         dtype = str(op.inputs[0].type.element_type)
                         shape = MemRefType(op.inputs[0].type).shape
+                        if op.operation.name in {"linalg.add", "linalg.mul"}:
+                            kernel_name = f"{op_name}_{dtype}_vector"
+                        else:  # linalg.matmul
+                            kernel_name = f"matmul_{dtype}_i32"
                         func_d.CallOp(
                             [],
-                            FlatSymbolRefAttr.get(f"{op_name}_{dtype}_vector"),
+                            FlatSymbolRefAttr.get(kernel_name),
                             [op.inputs[0], op.inputs[1], op.outputs[0]],
                             ip=InsertionPoint(op),
                         )
@@ -319,11 +323,11 @@ def inject_aie_kernels(mod):
                         external_kernels[func.attributes["sym_name"].value].append(
                             (op_name, dtype, shape)
                         )
-                        if f"{op_name}_{dtype}_vector" in injected_kernels:
+                        if kernel_name in injected_kernels:
                             continue
-                        injected_kernels.add(f"{op_name}_{dtype}_vector")
+                        injected_kernels.add(kernel_name)
                         kernel = func_d.FuncOp(
-                            f"{op_name}_{dtype}_vector",
+                            kernel_name,
                             func_type,
                             ip=InsertionPoint(func),
                         )
@@ -360,7 +364,7 @@ def codegen_external_kernels(external_kernels):
                 code += '#include "add.cc"\n'
             case "mul":
                 code += '#include "mul.cc"\n'
-            case "mm":
+            case "matmul":
                 code += '#include "mm.cc"\n'
     code += '\nextern "C" {\n\n'
     code += kernel_code
@@ -1261,7 +1265,6 @@ class AIEModule:
                     )
         external_kernels = inject_aie_kernels(self.module)
         print(self.module)
-        sys.exit()
         lower_tensor_to_memref(self.module, self.enable_tensor)
         kernel_func_buf_dicts = record_local_buffer(
             self.module, self.kernel_index_ranges
