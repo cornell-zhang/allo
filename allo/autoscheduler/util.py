@@ -41,12 +41,12 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             upper_map = loop_op.upperBoundMap.value
             upper_operands = loop_op.upperBoundOperands
 
-            lower_constant = is_constant_affine_map(lower_map) and len(
-                lower_operands
-            ) != 0
-            upper_constant = is_constant_affine_map(upper_map) and len(
-                upper_operands
-            ) != 0
+            lower_constant = (
+                is_constant_affine_map(lower_map) and len(lower_operands) != 0
+            )
+            upper_constant = (
+                is_constant_affine_map(upper_map) and len(upper_operands) != 0
+            )
             return lower_constant and upper_constant
 
         except AttributeError as e:
@@ -98,11 +98,9 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             # Check if it's a perfectly nested affine loop
             if isinstance(op, affine_d.AffineForOp) and check_perfect_loop_nest(op):
                 continue
-            
+
             # Disallowed top level op
-            print(
-                op, "is not a perfect affine loop or allowed top-level operation."
-            )
+            print(op, "is not a perfect affine loop or allowed top-level operation.")
             return False
         return True
 
@@ -141,7 +139,9 @@ def check_call_graph_acyclic(module: Module) -> bool:
         return True
 
     visited = defaultdict(int)
-    return not any(visited[node] != 2 and not dfs(node, visited) for node in list(callgraph.keys()))
+    return not any(
+        visited[node] != 2 and not dfs(node, visited) for node in list(callgraph.keys())
+    )
 
 
 def check_all_functions_inlined(mod: Module, top_fn_name: str) -> bool:
