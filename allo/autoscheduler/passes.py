@@ -13,7 +13,6 @@ from allo._mlir.dialects import (
 )
 from allo._mlir.ir import StringAttr
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
-from allo._mlir.ir import Module
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
 from .util import (
