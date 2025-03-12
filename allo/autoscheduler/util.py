@@ -42,11 +42,12 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             upper_operands = loop_op.upperBoundOperands
 
             lower_constant = (
-                is_constant_affine_map(lower_map) and len(lower_operands) != 0
+                is_constant_affine_map(lower_map) and len(lower_operands) == 0
             )
             upper_constant = (
-                is_constant_affine_map(upper_map) and len(upper_operands) != 0
+                is_constant_affine_map(upper_map) and len(upper_operands) == 0
             )
+
             return lower_constant and upper_constant
 
         except AttributeError as e:
@@ -77,7 +78,6 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             return check_perfect_loop_nest(inner_loops[0])
         return True
 
-    # Since all functions are inlined, we only need to check the main function
     def check_function_perfect_affine(func):
         top_level_ops = [
             op for op in func.entry_block.operations if not is_terminator(op)
