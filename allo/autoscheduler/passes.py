@@ -13,7 +13,7 @@ from allo._mlir.dialects import (
 )
 from allo._mlir.ir import StringAttr
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
-from allo._mlir._mlir_libs._mlir.ir import Module
+from allo._mlir.ir import Module
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
 from .util import (
@@ -56,9 +56,8 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
         )
 
     # other passes (not implemented)
-    dfg = build_dataflow_graph(mod)
-    build_performance_model(mod, dfg)
-
+    # dfg = build_dataflow_graph(mod)
+    # build_performance_model(mod, dfg)
     return Schedule(
         mod,
         find_func_in_module(mod, top_fn_name),
@@ -269,9 +268,9 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
     return True
 
 
-def build_dataflow_graph(module: Module):
-    pass
+# def build_dataflow_graph(module: Module):
+#     pass
 
 
-def build_performance_model(module: Module, dfg):
-    pass
+# def build_performance_model(module: Module, dfg):
+#     pass

@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import allo
 from allo.ir.types import int32
-from allo.dataflow_opt.passes import dataflow_optimization_pass
-from allo.dataflow_opt.util import check_preprocess_ok
+from allo.autoscheduler.passes import dataflow_optimization_pass
+from allo.autoscheduler.util import check_preprocess_ok
 
 
 def test_single_producer_single_consumer():

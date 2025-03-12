@@ -1,5 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+from collections import defaultdict
 from allo._mlir.ir import (
     Location,
     Module,
@@ -12,7 +13,6 @@ from allo._mlir.dialects import (
 from allo.customize import Schedule
 from allo.ir.types import MemRefType
 from allo._mlir.ir import WalkResult
-from collections import defaultdict
 
 
 def is_terminator(op):
@@ -41,12 +41,12 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             upper_map = loop_op.upperBoundMap.value
             upper_operands = loop_op.upperBoundOperands
 
-            lower_constant = is_constant_affine_map(lower_map) and not len(
+            lower_constant = is_constant_affine_map(lower_map) and len(
                 lower_operands
-            )
-            upper_constant = is_constant_affine_map(upper_map) and not len(
+            ) != 0
+            upper_constant = is_constant_affine_map(upper_map) and len(
                 upper_operands
-            )
+            ) != 0
             return lower_constant and upper_constant
 
         except AttributeError as e:
@@ -96,13 +96,14 @@ def check_perfect_affine_kernel(module: Module) -> bool:
             ):
                 continue
             # Check if it's a perfectly nested affine loop
-            elif isinstance(op, affine_d.AffineForOp) and check_perfect_loop_nest(op):
+            if isinstance(op, affine_d.AffineForOp) and check_perfect_loop_nest(op):
                 continue
-            else:
-                print(
-                    op, "is not a perfect affine loop or allowed top-level operation."
-                )
-                return False
+            
+            # Disallowed top level op
+            print(
+                op, "is not a perfect affine loop or allowed top-level operation."
+            )
+            return False
         return True
 
     with module.context, Location.unknown():
@@ -140,10 +141,7 @@ def check_call_graph_acyclic(module: Module) -> bool:
         return True
 
     visited = defaultdict(int)
-    for node in list(callgraph.keys()):
-        if visited[node] != 2 and not dfs(node, visited):
-            return False
-    return True
+    return not any(visited[node] != 2 and not dfs(node, visited) for node in list(callgraph.keys()))
 
 
 def check_all_functions_inlined(mod: Module, top_fn_name: str) -> bool:
