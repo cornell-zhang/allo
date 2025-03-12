@@ -9,6 +9,10 @@ from allo._mlir.dialects import (
     affine as affine_d,
     memref as memref_d,
 )
+from allo.customize import Schedule
+from allo.ir.types import MemRefType
+from allo._mlir.ir import WalkResult
+from collections import defaultdict
 
 
 def is_terminator(op):
@@ -24,7 +28,7 @@ def check_perfect_affine_kernel(module: Module) -> bool:
     with constant bounds. In each perfect nest, if an affine.for contains an inner loop,
     it must be the only operation in its body (ignoring the terminator).
     The innermost loop can contain any operations.
-    At the top level, alloc operations and returns are allowed.
+    At the top level, alloc operations, constant declarations, and returns are allowed.
     """
 
     def is_constant_affine_for(loop_op):
@@ -110,3 +114,90 @@ def check_perfect_affine_kernel(module: Module) -> bool:
                     print("Function", func_name, "is not a perfect affine kernel.")
                     return False
     return True
+
+
+def check_call_graph_acyclic(module: Module) -> bool:
+    callgraph = defaultdict(list)
+    with module.context, Location.unknown():
+        for func_op in module.body.operations:
+            if isinstance(func_op, func_d.FuncOp):
+                for op in func_op.entry_block.operations:
+                    if isinstance(op, func_d.CallOp):
+                        callgraph[func_op.attributes["sym_name"].value].append(
+                            op.callee.value
+                        )
+
+    def dfs(node, visited):
+        if visited[node] == 1:
+            return False
+        if visited[node] == 2:
+            return True
+        visited[node] = 1
+        for neighbor in callgraph[node]:
+            if not dfs(neighbor, visited):
+                return False
+        visited[node] = 2
+        return True
+
+    visited = defaultdict(int)
+    for node in list(callgraph.keys()):
+        if visited[node] != 2 and not dfs(node, visited):
+            return False
+    return True
+
+
+def check_all_functions_inlined(mod: Module, top_fn_name: str) -> bool:
+    with mod.context, Location.unknown():
+        for op in mod.body.operations:
+            if isinstance(op, func_d.FuncOp):
+                if op.attributes["sym_name"].value != top_fn_name:
+                    return False
+    return True
+
+
+def check_single_producer_single_consumer(module):
+    spsc = True
+
+    def checker(op):
+        nonlocal spsc
+        if isinstance(op.opview, (func_d.CallOp, memref_d.AllocOp)):
+            for produced_val in op.results:
+                if produced_val is None or not isinstance(
+                    produced_val.type, MemRefType
+                ):
+                    return WalkResult(0)
+                if len(produced_val.type.shape) == 0:
+                    return WalkResult(0)
+                consumers = sum(
+                    1
+                    for use in produced_val.uses
+                    if isinstance(
+                        use.owner,
+                        (func_d.CallOp, memref_d.LoadOp, affine_d.AffineLoadOp),
+                    )
+                    # ignore if inside if-statement
+                    and not isinstance(use.owner.parent.opview, affine_d.AffineForOp)
+                )
+                if consumers > 1:
+                    print("Multiple consumers of buffer allocated by,", op)
+                    spsc = False
+                    return WalkResult(0)
+        return WalkResult(0)
+
+    with module.context:
+        for func in module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            func.walk(checker)
+    return spsc
+
+
+def check_preprocess_ok(schedule: Schedule) -> bool:
+    module = schedule.module
+    top_fn_name = schedule.top_func_name
+    return (
+        check_perfect_affine_kernel(module)
+        and check_call_graph_acyclic(module)
+        and check_all_functions_inlined(module, top_fn_name)
+        and check_single_producer_single_consumer(module)
+    )

@@ -16,12 +16,29 @@ from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from allo._mlir._mlir_libs._mlir.ir import Module
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
-from .util import check_perfect_affine_kernel
+from .util import (
+    check_perfect_affine_kernel,
+    check_call_graph_acyclic,
+    check_all_functions_inlined,
+)
 
 
 def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
-    fn_name = schedule.top_func.name.value
-    mod = _mlir_preprocess(schedule.module, fn_name)
+    assert check_call_graph_acyclic(schedule.module), "Call graph is not acyclic"
+    top_fn_name = schedule.top_func.name.value
+    mod = _mlir_preprocess(schedule.module, top_fn_name)
+    if debugPoint == "mlir_preprocess":
+        return Schedule(
+            mod,
+            find_func_in_module(mod, top_fn_name),
+            schedule.func_args,
+            schedule.ip,
+            schedule.ext_libs,
+            schedule.inst_list,
+        )
+    assert check_all_functions_inlined(
+        mod, top_fn_name
+    ), "All functions are not inlined"
     assert check_perfect_affine_kernel(
         mod
     ), "Input kernel is not a perfect affine kernel"
@@ -31,7 +48,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
     if debugPoint == "dataflow_canonicalization":
         return Schedule(
             mod,
-            find_func_in_module(mod, fn_name),
+            find_func_in_module(mod, top_fn_name),
             schedule.func_args,
             schedule.ip,
             schedule.ext_libs,
@@ -44,7 +61,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
 
     return Schedule(
         mod,
-        find_func_in_module(mod, fn_name),
+        find_func_in_module(mod, top_fn_name),
         schedule.func_args,
         schedule.ip,
         schedule.ext_libs,
@@ -58,7 +75,7 @@ def _mlir_preprocess(module, top_func_name):
     """
     # Configure for maximum inlining - no recursion limit and always inline
     MAX_ITER = INLINE_THRESHOLD = 999999
-    pipeline = f"builtin.module(convert-linalg-to-affine-loops,inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},symbol-privatize{{exclude={top_func_name}}},symbol-dce,canonicalize)"
+    pipeline = f"builtin.module(convert-linalg-to-affine-loops,inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},symbol-privatize{{exclude={top_func_name}}},symbol-dce)"
     try:
         with module.context:
             mlir_pass_manager.parse(pipeline).run(module.operation)
@@ -133,9 +150,10 @@ def canonicalize_alloc(alloc_op):
             return
 
     # multiple loads and multiple stores
-    if len(stores) >= 2 or len(loads) >= 2:
+    if len(stores) >= 2 and len(loads) >= 2:
+        print(stores, loads)
         raise NotImplementedError(
-            "Complex pattern detected in alloc op; additional canonicalization not implemented yet."
+            f"Complex pattern detected in alloc op {alloc_op}; additional canonicalization not implemented yet."
         )
 
 
