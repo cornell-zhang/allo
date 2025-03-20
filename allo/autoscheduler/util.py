@@ -225,6 +225,10 @@ def get_minimal_access_pattern(op: Operation, loop_info: list[LoopInfo]) -> Affi
     """
     Analyzes an affine load or store operation and returns an AffineMap representing
     minimal access function under the permutation provided in loop_info.
+
+    For instance, if the loop nest is [i, j, k], and we load fromm buffer[j, i],
+    the minimal access function would be (i, j) -> (j, i) since the load is independent
+    of the last induction variable k.
     """
     # Handle load or store
     mapOperands = []
@@ -442,7 +446,7 @@ def compute_loop_II(
 
 def estimate_critical_path(load_op, store_op, latencies):
     """
-    Estimate the critical path latency from load to store using a simple approach.
+    Estimate the critical path latency from load to store.
     """
     # minimum latency for a load and store operation
     min_latency = 2
