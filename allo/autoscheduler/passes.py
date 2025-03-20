@@ -149,7 +149,6 @@ def canonicalize_alloc(alloc_op):
 
     # multiple loads and multiple stores
     if len(stores) >= 2 and len(loads) >= 2:
-        print(stores, loads)
         raise NotImplementedError(
             f"Complex pattern detected in alloc op {alloc_op}; additional canonicalization not implemented yet."
         )
