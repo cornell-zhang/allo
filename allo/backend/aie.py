@@ -382,7 +382,6 @@ def inject_aie_kernels(mod):
             external_kernels[func.attributes["sym_name"].value] = []
             for block in func.regions[0].blocks:
                 for op in block.operations:
-                    continue
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
@@ -643,6 +642,7 @@ def calculate_tensor_access(shape, partition, num_devices=None):
 def codegen_aie_mlir(
     mod,
     kernel_func,
+    kernel_buf_dicts,
     external_kernels,
     stream_info,
 ):
@@ -688,7 +688,7 @@ def codegen_aie_mlir(
         code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
     # number of function declaration except top
     top_func, funcs = get_public_funcs(mod)
-    # buf_name_dicts = []
+    buf_name_dicts = []
     # create compute tiles and buffers
     func_names = []
     for idx, func in enumerate(funcs):
@@ -696,17 +696,17 @@ def codegen_aie_mlir(
         tile_name = f"%tile_comp_{func_name}"
         code += format_str(f"{tile_name} = aie.tile(0, {idx + 2})")
         func_names.append(func_name)
-        # buf_dict = {} #TODO: func_buf_dicts[func_id - start]
-        # buf_name_dict = {}
-        # for i, name in enumerate(buf_dict.keys()):
-        #     new_name = f"{tile_name}_buf{i}"
-        #     buf_name_dict[name] = new_name
-        #     ele_type, shape = buf_dict[name]
-        #     str_list = list(map(str, shape))
-        #     str_list.append(ele_type)
-        #     buf_type = f"memref<{'x'.join(map(str, str_list))}>"
-        #     code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
-        # buf_name_dicts.append(buf_name_dict)
+        buf_dict = kernel_buf_dicts[func_name]
+        buf_name_dict = {}
+        for i, name in enumerate(buf_dict.keys()):
+            new_name = f"{tile_name}_buf{i}"
+            buf_name_dict[name] = new_name
+            ele_type, shape = buf_dict[name]
+            str_list = list(map(str, shape))
+            str_list.append(ele_type)
+            buf_type = f"memref<{'x'.join(map(str, str_list))}>"
+            code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
+        buf_name_dicts.append(buf_name_dict)
     # update module and args
     # (global_memref_type, global_shape, [(func_name, local_memref_type0, local_shape0), ...])
     inputs = []
@@ -736,18 +736,18 @@ def codegen_aie_mlir(
         outputs.append((get_memref_type_str(dtype, shape), shape, dtensors))
     func_strs = list(map(str, funcs))
     # update buffers
-    # for func_id, func_str in enumerate(func_strs):
-    #     buf_name_dict = buf_name_dicts[func_id]
-    #     # remove memref.alloc
-    #     pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
-    #     func_str = re.sub(pattern_alloc, "", func_str)
-    #     # replace new buffer name
-    #     pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
-    #     for name, new_name in buf_name_dict.items():
-    #         escaped_name = re.escape(name)
-    #         pattern = pattern_boundary.format(old=escaped_name)
-    #         func_str = re.sub(pattern, new_name, func_str)
-    #     func_strs[func_id] = func_str
+    for func_id, func_str in enumerate(func_strs):
+        buf_name_dict = buf_name_dicts[func_id]
+        # remove memref.alloc
+        pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
+        func_str = re.sub(pattern_alloc, "", func_str)
+        # replace new buffer name
+        pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
+        for name, new_name in buf_name_dict.items():
+            escaped_name = re.escape(name)
+            pattern = pattern_boundary.format(old=escaped_name)
+            func_str = re.sub(pattern, new_name, func_str)
+        func_strs[func_id] = func_str
     # create input object fifos
     # connect each argument to a separate mem tile
     for arg_id, (global_memref_type, _, dtensors) in enumerate(inputs):
@@ -819,9 +819,6 @@ def codegen_aie_mlir(
                 )
                 stream_ele_types[stream_name] = type_str
     # create core computation
-    in_args = []
-    out_args = []
-    arg_index = 0
     for func_id, func in enumerate(funcs):
         func_str = func_strs[func_id]
         func_name = func.attributes["sym_name"].value
@@ -886,14 +883,15 @@ def codegen_aie_mlir(
             code += ' {link_with = "external.o"}\n'
         else:
             code += "\n"
+    in_args = []
+    out_args = []
     for arg_id, (global_memref_type, _, _) in enumerate(inputs):
-        in_args.append(f"%arg{arg_index}: {global_memref_type}")
+        in_args.append(f"%arg{arg_id}: {global_memref_type}")
     for arg_id, (global_memref_type, _, _) in enumerate(outputs, start=len(inputs)):
-        out_args.append(f"%arg{arg_index}: {global_memref_type}")
-        arg_index += 1
+        out_args.append(f"%arg{arg_id}: {global_memref_type}")
     # create dma transfer from off-chip mem to shim tile
     code += format_str(
-        f"aiex.runtime_sequence({",".join(in_args)}, {",".join(out_args)}) {{"
+        f"aiex.runtime_sequence({", ".join(in_args)}, {", ".join(out_args)}) {{"
     )
     with format_code(indent=6):
         for arg_id, (global_memref_type, global_shape, _) in enumerate(inputs):
@@ -916,7 +914,6 @@ def codegen_aie_mlir(
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size}{stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {global_memref_type}"
             )
-            arg_index += 1
         for arg_id in range(len(inputs)):
             code += format_str(
                 f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_arg{arg_id}}}"
@@ -979,29 +976,19 @@ def lower_tensor_to_memref(mod, enable_tensor):
         mlir_pass_manager.parse(pipeline).run(mod.operation)
 
 
-def record_local_buffer(mod, kernel_index_ranges):
-    kernel_func_buf_dicts = {}
+def record_local_buffer(mod):
+    kernel_buf_dicts = {}
     _, funcs = get_public_funcs(mod)
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        func_buf_dicts = []
-        for func_id in range(start, end):
-            func = funcs[func_id]
-            buf_dict = {}
-            ops_stack = []
-            for block in func.regions[0].blocks:
-                ops_stack.extend(block.operations)
-            while ops_stack:
-                op = ops_stack.pop()
-                if op.operation.name == "memref.alloc":
-                    name = op.result.get_name()
-                    dtype, shape = get_dtype_and_shape_from_type(op.result.type)
-                    buf_dict[name] = (dtype, shape)
-                for region in op.regions:
-                    for block in region.blocks:
-                        ops_stack.extend(block.operations)
-            func_buf_dicts.append(buf_dict)
-        kernel_func_buf_dicts[kernel_name] = func_buf_dicts
-    return kernel_func_buf_dicts
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        buf_dict = {}
+        for op in func.regions[0].blocks[0].operations:
+            if op.operation.name == "memref.alloc":
+                name = op.result.get_name()
+                dtype, shape = get_dtype_and_shape_from_type(op.result.type)
+                buf_dict[name] = (dtype, shape)
+        kernel_buf_dicts[func_name] = buf_dict
+    return kernel_buf_dicts
 
 
 def parse_mlir_to_kernel_function(module):
@@ -1285,19 +1272,17 @@ class AIEModule:
             f.write(str(self.module))
         lower_tensor_to_memref(self.module, self.enable_tensor)
         print(self.module)
-        # kernel_func_buf_dicts = record_local_buffer(
-        #     self.module, self.kernel_index_ranges
-        # )
+        kernel_buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(
             self.module,
             kernel_func,
+            kernel_buf_dicts,
             external_kernels,
             self.stream_info,
         )
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
-        sys.exit()
         # compile external kernels
         kernel_code, generated_kernels = codegen_external_kernels(external_kernels)
         if len(generated_kernels) > 0:
