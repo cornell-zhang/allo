@@ -236,10 +236,10 @@ file_close_str = """  ofile.close();
 """
 
 
-def codegen_host(kernel_inputs, kernel_outputs):
+def codegen_host(kernel_func):
     code = host_header
-    inputs = [input for sublist in kernel_inputs.values() for input in sublist]
-    outputs = [output for sublist in kernel_outputs.values() for output in sublist]
+    inputs = kernel_func.inputs
+    outputs = kernel_func.outputs
     with format_code(indent=2):
         # write input data
         for i, (dtype, shape) in enumerate(inputs):
@@ -1248,20 +1248,21 @@ class AIEModule:
         self.kernel_mappings = kernel_mappings
         self.enable_tensor = enable_tensor
         self.stream_info = stream_info
+        self.kernel_func = None
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        kernel_func = parse_mlir_to_kernel_function(self.module)
-        for i, func_op in enumerate(kernel_func.funcs):
-            kernel_func.set_dtensors(
-                create_dtensors_from_kernel(kernel_func, func_op), i
+        self.kernel_func = parse_mlir_to_kernel_function(self.module)
+        for i, func_op in enumerate(self.kernel_func.funcs):
+            self.kernel_func.set_dtensors(
+                create_dtensors_from_kernel(self.kernel_func, func_op), i
             )
             update_func_op_arg_types(
                 func_op,
-                kernel_func.inputs,
-                kernel_func.outputs,
-                kernel_func.dtensors[i],
+                self.kernel_func.inputs,
+                self.kernel_func.outputs,
+                self.kernel_func.dtensors[i],
                 self.enable_tensor,
             )
         print(self.module)
@@ -1275,7 +1276,7 @@ class AIEModule:
         kernel_buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(
             self.module,
-            kernel_func,
+            self.kernel_func,
             kernel_buf_dicts,
             external_kernels,
             self.stream_info,
@@ -1305,7 +1306,7 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        host_code = codegen_host(self.kernel_inputs, self.kernel_outputs)
+        host_code = codegen_host(self.kernel_func)
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
@@ -1329,7 +1330,7 @@ class AIEModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            list(self.kernel_outputs.values())[-1][0][0],
+            list(self.kernel_func.outputs)[-1][0],
             args[-1].shape,
             f"{self.project}/output.data",
         )
