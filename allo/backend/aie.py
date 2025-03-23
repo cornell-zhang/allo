@@ -648,6 +648,10 @@ def codegen_aie_mlir(
     kernel_func: KernelFunction
         The kernel function object containing the mapping, inputs, and outputs.
 
+    kernel_buf_dicts: Dict[str, Dict[str, Tuple[str, List[int]]]]
+        The kernel buffer dictionaries for each function in the module.
+        The key is the function name, and the value is a dictionary mapping buffer names to their types and shapes.
+
     external_kernels: Dict[str, List[str]]
         The external kernels that will be injected into the module.
         The key is the name of the function, and the value is a list of names of the external kernels.
@@ -681,11 +685,14 @@ def codegen_aie_mlir(
     top_func, funcs = get_public_funcs(mod)
     buf_name_dicts = []
     # create compute tiles and buffers
+    for i, j in np.ndindex(tuple(mapping)):
+        code += format_str(
+            f"%tile_comp_{kernel_func.name}_{i}_{j} = aie.tile({i}, {j + 2})"
+        )
     func_names = []
-    for idx, func in enumerate(funcs):
+    for _, func in enumerate(funcs):
         func_name = func.attributes["sym_name"].value
         tile_name = f"%tile_comp_{func_name}"
-        code += format_str(f"{tile_name} = aie.tile(0, {idx + 2})")
         func_names.append(func_name)
         buf_dict = kernel_buf_dicts[func_name]
         buf_name_dict = {}
@@ -762,7 +769,6 @@ def codegen_aie_mlir(
             # mem tile to compute tile (partition the tensor)
             mem_stride = []
             placement = kernel_func.dtensors[0][arg_id].placement
-            mapping = kernel_func.mapping
             fifos = []
             # Define iteration ranges based on placement pattern
             if placement == "S":
