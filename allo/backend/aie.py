@@ -386,7 +386,9 @@ def inject_aie_kernels(mod):
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ) or op.operation.name == "linalg.matmul":
+                    ):
+                        # TODO: Fix matmul
+                        # or op.operation.name == "linalg.matmul":
                         op_name = op.operation.name.split(".")[1]
                         # Inject AIE kernel
                         func_type = func_d.FunctionType.get(
@@ -398,7 +400,7 @@ def inject_aie_kernels(mod):
                         if op.operation.name in {"linalg.add", "linalg.mul"}:
                             kernel_name = f"{op_name}_{dtype}_vector"
                         else:  # linalg.matmul
-                            kernel_name = f"matmul_{dtype}_i32"
+                            kernel_name = f"matmul_{dtype}_i16"
                         func_d.CallOp(
                             [],
                             FlatSymbolRefAttr.get(kernel_name),
@@ -438,11 +440,14 @@ def codegen_external_kernels(external_kernels):
             ctype = ctype_map[dtype]
             if "bfloat" in ctype:
                 ctype = "bfloat16"
-            kernel_code += f"void {kernel}_{dtype}_vector"
-            kernel_code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-            kernel_code += " {\n"
-            kernel_code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
-            kernel_code += "}\n\n"
+            if kernel == "matmul":
+                pass
+            else:
+                kernel_code += f"void {kernel}_{dtype}_vector"
+                kernel_code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                kernel_code += " {\n"
+                kernel_code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
+                kernel_code += "}\n\n"
             generated_kernels.add(kernel)
     for kernel in generated_kernels:
         match kernel:
@@ -451,6 +456,10 @@ def codegen_external_kernels(external_kernels):
             case "mul":
                 code += '#include "mul.cc"\n'
             case "matmul":
+                # code += f"#define DIM_M {8}\n"
+                # code += f"#define DIM_N {8}\n"
+                # code += f"#define DIM_K {16}\n"
+                # code += f"#define i16_i16_ONLY\n"
                 code += '#include "mm.cc"\n'
     code += '\nextern "C" {\n\n'
     code += kernel_code
@@ -567,6 +576,8 @@ def get_memref_type_str(ele_type, shape):
 def calculate_tensor_access(shape, partition, device_mesh):
     """
     Calculate the size and stride for tensor access based on shape and partition method.
+    Layout visualization tool:
+    https://andreroesti.com/data-layout-viz/data_layout.html
 
     Parameters:
     -----------
