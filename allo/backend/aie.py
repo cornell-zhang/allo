@@ -6,6 +6,7 @@
 import os
 import subprocess
 import re
+from collections import defaultdict
 import numpy as np
 from .._mlir.ir import (
     RankedTensorType,
@@ -564,7 +565,7 @@ def get_memref_type_str(ele_type, shape):
     return f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
 
 
-def calculate_tensor_access(shape, partition, num_devices=None):
+def calculate_tensor_access(shape, partition, device_mesh):
     """
     Calculate the size and stride for tensor access based on shape and partition method.
 
@@ -576,66 +577,55 @@ def calculate_tensor_access(shape, partition, num_devices=None):
         The partition method for each dimension:
         - 'S': Sharded (distributed across devices)
         - 'R': Replicated (copied to each device)
-    num_devices : int or None, optional
-        For 1D tensor or SR/RS: total number of devices
-        For SS: assumed to be a square number (devices per dimension will be sqrt)
+    device_mesh : tuple, optional
+        The mesh of devices (default: (2, 2))
 
     Returns:
     --------
     tuple
         A tuple containing two lists: (size, stride)
     """
-    # Set default num_devices based on partition strategy
-    if num_devices is None:
-        if partition in ["S", "R", "SR", "RS"]:
-            num_devices = 2
-        elif partition == "SS":
-            num_devices = 4  # 2x2 mesh by default
-
     # Handle 1D tensor case
     if len(shape) == 1:
         if partition == "S":
-            shard_size = shape[0] // num_devices
-            size = [1, 1, num_devices, shard_size]
+            # For 1D tensor with "S", shard across all devices
+            total_devices = device_mesh[0]
+            shard_size = shape[0] // total_devices
+            size = [1, 1, total_devices, shard_size]
             stride = [0, 0, shard_size, 1]
         elif partition == "R":
-            size = [1, num_devices, 1, shape[0]]
+            # For 1D tensor with "R", replicate across all devices
+            total_devices = device_mesh[0]
+            size = [1, total_devices, 1, shape[0]]
             stride = [0, 0, 0, 1]
         return size, stride
 
     # Handle 2D tensor case
     elif len(shape) == 2:
+        m, n = shape
+        a, b = device_mesh
+
         if partition == "SS":
             # Both dimensions sharded
-            devices_per_dim = int(num_devices**0.5)  # Square mesh of devices
-            dim0_shard = shape[0] // devices_per_dim
-            dim1_shard = shape[1] // devices_per_dim
-
-            size = [devices_per_dim, devices_per_dim, dim0_shard, dim1_shard]
-
-            # Correct stride calculation for SS
-            stride = [
-                dim0_shard
-                * shape[1],  # Stride between device rows: dim0_shard * full_width
-                dim1_shard,  # Stride between device columns: just the shard width
-                shape[1],  # Stride between rows within a device: full width
-                1,  # Stride between columns within a device
-            ]
+            size = [a, b, m // a, n // b]
+            stride = [(m // a) * n, n // b, n, 1]
 
         elif partition == "SR":
-            # First dim sharded, second replicated
-            size = [1, num_devices, shape[0] // num_devices, shape[1]]
-            stride = [0, shape[0] * shape[1] // num_devices, shape[1], 1]
+            # First dim sharded across all devices, second replicated
+            total_devices = a * b
+            size = [1, total_devices, m // total_devices, n]
+            stride = [0, (m // total_devices) * n, n, 1]
 
         elif partition == "RS":
-            # First dim replicated, second sharded
-            size = [1, num_devices, shape[0], shape[1] // num_devices]
-            stride = [0, shape[0] * shape[1] // num_devices, shape[1], 1]
+            # First dim replicated, second sharded across second dim of mesh
+            size = [1, b, m, n // b]
+            stride = [(m * n) // (a * b), n // b, n, 1]
 
         elif partition == "RR":
             # Both dimensions replicated
-            size = [1, num_devices, shape[0], shape[1]]
-            stride = [0, 0, shape[1], 1]
+            total_devices = a * b
+            size = [1, total_devices, m, n]
+            stride = [0, 0, n, 1]
 
         return size, stride
 
@@ -750,6 +740,8 @@ def codegen_aie_mlir(
             func_str = re.sub(pattern, new_name, func_str)
         func_strs[func_id] = func_str
 
+    tile2fifo = defaultdict(list)
+
     # create input/output object fifos
     def create_io_object_fifos(args, prefix):
         nonlocal code
@@ -776,57 +768,48 @@ def codegen_aie_mlir(
             if placement == "S":
                 outer_range, inner_range = mapping[0], 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_arg{arg_id}"
-                get_tiles = lambda i, j: f"%tile_comp_{kernel_name}_{i}"
+                get_tiles = lambda i, j: [i]
             elif placement == "R":
                 outer_range, inner_range = 1, 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_R_arg{arg_id}"
-                get_tiles = lambda i, j: ", ".join(
-                    [
-                        f"%tile_comp_{kernel_name}_{ki}_{kj}"
-                        for ki in range(mapping[0])
-                        for kj in range(mapping[1])
-                    ]
-                )
+                get_tiles = lambda i, j: [ki for ki in range(mapping[0])]
             elif placement == "SR":
                 outer_range, inner_range = mapping[0], 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_R_arg{arg_id}"
-                get_tiles = lambda i, j: ", ".join(
-                    [f"%tile_comp_{kernel_name}_{i}_{k}" for k in range(mapping[1])]
-                )
+                get_tiles = lambda i, j: [(i, k) for k in range(mapping[1])]
             elif placement == "RS":
                 outer_range, inner_range = 1, mapping[1]
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_R_{j}_arg{arg_id}"
-                get_tiles = lambda i, j: ", ".join(
-                    [f"%tile_comp_{kernel_name}_{k}_{j}" for k in range(mapping[0])]
-                )
+                get_tiles = lambda i, j: [(k, j) for k in range(mapping[0])]
             elif placement == "SS":
                 outer_range, inner_range = mapping[0], mapping[1]
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_{j}_arg{arg_id}"
-                get_tiles = lambda i, j: f"%tile_comp_{kernel_name}_{i}_{j}"
+                get_tiles = lambda i, j: [(i, j)]
             else:  # RR
                 outer_range, inner_range = 1, 1
-                format_name = lambda i, j: f"in_{kernel_name}_R_R_arg{arg_id}"
-                get_tiles = lambda i, j: ", ".join(
-                    [
-                        f"%tile_comp_{kernel_name}_{ki}_{kj}"
-                        for ki in range(mapping[0])
-                        for kj in range(mapping[1])
-                    ]
-                )
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_R_R_arg{arg_id}"
+                get_tiles = lambda i, j: [
+                    (ki, kj) for ki in range(mapping[0]) for kj in range(mapping[1])
+                ]
 
             # Generate code for object FIFOs with a uniform approach
             for i in range(outer_range):
                 for j in range(inner_range):
                     name = format_name(i, j)
-                    tile_comp = get_tiles(i, j)
+                    tiles = get_tiles(i, j)
+                    for tile in tiles:
+                        tile2fifo[tile].append(name)
                     fifos.append(name)
+                    tile_str = ", ".join(
+                        [f"%tile_comp_{kernel_name}_{ki}_{kj}" for ki, kj in tiles]
+                    )
                     if prefix == "in":
                         code += format_str(
-                            f"aie.objectfifo @{name}(%tile_mem{arg_id}, {{{tile_comp}}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
+                            f"aie.objectfifo @{name}(%tile_mem{arg_id}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
                         )
                     else:
                         code += format_str(
-                            f"aie.objectfifo @{name}({{{tile_comp}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
+                            f"aie.objectfifo @{name}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
                         )
                     prev_stride = mem_stride[-1] if mem_stride else 0
                     mem_stride.append(prev_stride + np.prod(dtensors[i][2]))
@@ -834,14 +817,17 @@ def codegen_aie_mlir(
             mem_stride = mem_stride[:-1]  # remove the last stride
             mem_str = ", ".join([f"@{name}" for name in fifos])
             # (src_offsets, dst_offsets)
-            code += format_str(
-                f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{mem_str}]([] {mem_stride})"
-            )
+            if prefix == "in":
+                code += format_str(
+                    f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{mem_str}]([] {mem_stride})"
+                )
+            else:
+                code += format_str(
+                    f"aie.objectfifo.link [{mem_str}] -> [@out_sh_{kernel_name}]({mem_stride} [])"
+                )
 
     create_io_object_fifos(inputs, "in")
     create_io_object_fifos(outputs, "out")
-    print(code)
-    sys.exit()
     # create other object fifos from top_func
     stream_in_out = get_stream_in_out(stream_info)
     stream_ele_types = {}
@@ -866,6 +852,7 @@ def codegen_aie_mlir(
     for func_id, func in enumerate(funcs):
         func_str = func_strs[func_id]
         func_name = func.attributes["sym_name"].value
+        fid_tuple = (int(func_name.split("_")[-2]), int(func_name.split("_")[-1]))
         streams = stream_info[func_name]
         code += format_str(
             f"%core_0_{func_id + 2} = aie.core(%tile_comp_{func_name}) {{"
@@ -884,7 +871,7 @@ def codegen_aie_mlir(
                 for arg_id, (global_memref_type, _, dtensors) in enumerate(inputs):
                     dtype = dtensors[func_id][1]
                     code += format_str(
-                        f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name}_arg{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
+                        f"%fifo{arg_id} = aie.objectfifo.acquire @{tile2fifo[fid_tuple][arg_id]}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
                     )
                     code += format_str(
                         f"%local{arg_id} = aie.objectfifo.subview.access %fifo{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
@@ -896,7 +883,7 @@ def codegen_aie_mlir(
                 ):
                     dtype = dtensors[func_id][1]
                     code += format_str(
-                        f"%fifo_out = aie.objectfifo.acquire @out_{func_name}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
+                        f"%fifo_out = aie.objectfifo.acquire @{tile2fifo[fid_tuple][arg_id]}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
                     )
                     code += format_str(
                         f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
@@ -913,12 +900,12 @@ def codegen_aie_mlir(
                 # Release input fifos
                 for arg_id in range(len(inputs)):
                     code += format_str(
-                        f"aie.objectfifo.release @in_{func_name}_arg{arg_id}(Consume, 1)"
+                        f"aie.objectfifo.release @{tile2fifo[fid_tuple][arg_id]}(Consume, 1)"
                     )
                 # Release output fifos
                 for arg_id in range(len(inputs), len(inputs) + len(outputs)):
                     code += format_str(
-                        f"aie.objectfifo.release @out_{func_name}(Produce, 1)"
+                        f"aie.objectfifo.release @{tile2fifo[fid_tuple][arg_id]}(Produce, 1)"
                     )
             code += format_str("}")
             code += format_str("aie.end")
@@ -1321,8 +1308,8 @@ class AIEModule:
             external_kernels,
             self.stream_info,
         )
-        # with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
-        #     f.write(code)
+        with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
+            f.write(code)
         # compile external kernels
         kernel_code, generated_kernels = codegen_external_kernels(external_kernels)
         if len(generated_kernels) > 0:
