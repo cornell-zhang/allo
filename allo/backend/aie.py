@@ -624,7 +624,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
         elif partition == "RR":
             # Both dimensions replicated
             total_devices = a * b
-            size = [1, total_devices, m, n]
+            size = [1, 1, m, n]
             stride = [0, 0, n, 1]
 
         return size, stride
@@ -685,6 +685,11 @@ def codegen_aie_mlir(
     top_func, funcs = get_public_funcs(mod)
     buf_name_dicts = []
     # create compute tiles and buffers
+    if len(mapping) == 1:
+        map_1d = True
+        mapping = (mapping[0], 1)
+    else:
+        map_1d = False
     for i, j in np.ndindex(tuple(mapping)):
         code += format_str(
             f"%tile_comp_{kernel_func.name}_{i}_{j} = aie.tile({i}, {j + 2})"
@@ -692,7 +697,10 @@ def codegen_aie_mlir(
     func_names = []
     for _, func in enumerate(funcs):
         func_name = func.attributes["sym_name"].value
-        tile_name = f"%tile_comp_{func_name}"
+        if map_1d:
+            tile_name = f"%tile_comp_{func_name}_0"
+        else:
+            tile_name = f"%tile_comp_{func_name}"
         func_names.append(func_name)
         buf_dict = kernel_buf_dicts[func_name]
         buf_name_dict = {}
@@ -858,10 +866,15 @@ def codegen_aie_mlir(
     for func_id, func in enumerate(funcs):
         func_str = func_strs[func_id]
         func_name = func.attributes["sym_name"].value
-        fid_tuple = (int(func_name.split("_")[-2]), int(func_name.split("_")[-1]))
+        if map_1d:
+            fid_tuple = (int(func_name.split("_")[-1]), 0)
+            core_name = f"%tile_comp_{func_name}_0"
+        else:
+            fid_tuple = (int(func_name.split("_")[-2]), int(func_name.split("_")[-1]))
+            core_name = f"%tile_comp_{func_name}"
         streams = stream_info[func_name]
         code += format_str(
-            f"%core_0_{func_id + 2} = aie.core(%tile_comp_{func_name}) {{"
+            f"%core_0_{func_id + 2} = aie.core({core_name}) {{"
         )
         with format_code(indent=6):
             code += format_str("%global_c0 = arith.constant 0 : index")
@@ -936,7 +949,7 @@ def codegen_aie_mlir(
             # issue_token: MM2S-false, S2MM-true
             dtensor = kernel_func.dtensors[0][arg_id]
             size, stride = calculate_tensor_access(
-                global_shape, dtensor.placement, dtensor.mapping
+                global_shape, dtensor.placement, mapping
             )
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size}{stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_arg{arg_id}}} : {global_memref_type}"
@@ -946,7 +959,7 @@ def codegen_aie_mlir(
         ):
             dtensor = kernel_func.dtensors[0][arg_id]
             size, stride = calculate_tensor_access(
-                global_shape, dtensor.placement, dtensor.mapping
+                global_shape, dtensor.placement, mapping
             )
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size}{stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {global_memref_type}"
