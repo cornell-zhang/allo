@@ -688,12 +688,16 @@ def codegen_aie_mlir(
     if len(mapping) == 1:
         map_1d = True
         mapping = (mapping[0], 1)
+        for j, i in np.ndindex(tuple(mapping)):
+            code += format_str(
+                f"%tile_comp_{kernel_func.name}_{j}_{i} = aie.tile({i}, {j + 2})"
+            )
     else:
         map_1d = False
-    for i, j in np.ndindex(tuple(mapping)):
-        code += format_str(
-            f"%tile_comp_{kernel_func.name}_{i}_{j} = aie.tile({i}, {j + 2})"
-        )
+        for i, j in np.ndindex(tuple(mapping)):
+            code += format_str(
+                f"%tile_comp_{kernel_func.name}_{i}_{j} = aie.tile({i}, {j + 2})"
+            )
     func_names = []
     for _, func in enumerate(funcs):
         func_name = func.attributes["sym_name"].value
@@ -782,11 +786,11 @@ def codegen_aie_mlir(
             if placement == "S":
                 outer_range, inner_range = mapping[0], 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_arg{arg_id}"
-                get_tiles = lambda i, j: [i]
+                get_tiles = lambda i, j: [(i, 0)]
             elif placement == "R":
                 outer_range, inner_range = 1, 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_R_arg{arg_id}"
-                get_tiles = lambda i, j: [ki for ki in range(mapping[0])]
+                get_tiles = lambda i, j: [(ki, 0) for ki in range(mapping[0])]
             elif placement == "SR":
                 outer_range, inner_range = mapping[0], 1
                 format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_R_arg{arg_id}"
