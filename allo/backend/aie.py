@@ -39,9 +39,9 @@ class DTensor:
     A class to represent a distributed tensor.
     """
 
-    def __init__(self, rank, comm_size, shape, dtype):
+    def __init__(self, rank, mapping, shape, dtype):
         self.rank = rank
-        self.comm_size = comm_size
+        self.mapping = mapping
         # global shape
         self.shape = shape
         self.dtype = dtype
@@ -382,6 +382,7 @@ def inject_aie_kernels(mod):
             external_kernels[func.attributes["sym_name"].value] = []
             for block in func.regions[0].blocks:
                 for op in block.operations:
+                    continue
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
@@ -748,56 +749,99 @@ def codegen_aie_mlir(
             pattern = pattern_boundary.format(old=escaped_name)
             func_str = re.sub(pattern, new_name, func_str)
         func_strs[func_id] = func_str
-    # create input object fifos
-    # connect each argument to a separate mem tile
-    for arg_id, (global_memref_type, _, dtensors) in enumerate(inputs):
-        # depth=2 means double buffer
-        # shim tile to mem tile (preserve the original size)
-        code += format_str(
-            f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-        )
-        # mem tile to compute tile (partition the tensor)
-        in_mem_stride = []
-        for func_name, local_memref, local_shape in dtensors:
+
+    # create input/output object fifos
+    def create_io_object_fifos(args, prefix):
+        nonlocal code
+        start_id = 0 if prefix == "in" else len(inputs)
+        for arg_id, (global_memref_type, _, dtensors) in enumerate(
+            args, start=start_id
+        ):
+            # depth=2 means double buffer
+            # shim tile to mem tile (preserve the original size)
+            if prefix == "in":
+                code += format_str(
+                    f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                )
+            else:
+                code += format_str(
+                    f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                )
+            # mem tile to compute tile (partition the tensor)
+            mem_stride = []
+            placement = kernel_func.dtensors[0][arg_id].placement
+            mapping = kernel_func.mapping
+            fifos = []
+            # Define iteration ranges based on placement pattern
+            if placement == "S":
+                outer_range, inner_range = mapping[0], 1
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_arg{arg_id}"
+                get_tiles = lambda i, j: f"%tile_comp_{kernel_name}_{i}"
+            elif placement == "R":
+                outer_range, inner_range = 1, 1
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_R_arg{arg_id}"
+                get_tiles = lambda i, j: ", ".join(
+                    [
+                        f"%tile_comp_{kernel_name}_{ki}_{kj}"
+                        for ki in range(mapping[0])
+                        for kj in range(mapping[1])
+                    ]
+                )
+            elif placement == "SR":
+                outer_range, inner_range = mapping[0], 1
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_R_arg{arg_id}"
+                get_tiles = lambda i, j: ", ".join(
+                    [f"%tile_comp_{kernel_name}_{i}_{k}" for k in range(mapping[1])]
+                )
+            elif placement == "RS":
+                outer_range, inner_range = 1, mapping[1]
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_R_{j}_arg{arg_id}"
+                get_tiles = lambda i, j: ", ".join(
+                    [f"%tile_comp_{kernel_name}_{k}_{j}" for k in range(mapping[0])]
+                )
+            elif placement == "SS":
+                outer_range, inner_range = mapping[0], mapping[1]
+                format_name = lambda i, j: f"{prefix}_{kernel_name}_{i}_{j}_arg{arg_id}"
+                get_tiles = lambda i, j: f"%tile_comp_{kernel_name}_{i}_{j}"
+            else:  # RR
+                outer_range, inner_range = 1, 1
+                format_name = lambda i, j: f"in_{kernel_name}_R_R_arg{arg_id}"
+                get_tiles = lambda i, j: ", ".join(
+                    [
+                        f"%tile_comp_{kernel_name}_{ki}_{kj}"
+                        for ki in range(mapping[0])
+                        for kj in range(mapping[1])
+                    ]
+                )
+
+            # Generate code for object FIFOs with a uniform approach
+            for i in range(outer_range):
+                for j in range(inner_range):
+                    name = format_name(i, j)
+                    tile_comp = get_tiles(i, j)
+                    fifos.append(name)
+                    if prefix == "in":
+                        code += format_str(
+                            f"aie.objectfifo @{name}(%tile_mem{arg_id}, {{{tile_comp}}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
+                        )
+                    else:
+                        code += format_str(
+                            f"aie.objectfifo @{name}({{{tile_comp}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
+                        )
+                    prev_stride = mem_stride[-1] if mem_stride else 0
+                    mem_stride.append(prev_stride + np.prod(dtensors[i][2]))
+            mem_stride.insert(0, 0)
+            mem_stride = mem_stride[:-1]  # remove the last stride
+            mem_str = ", ".join([f"@{name}" for name in fifos])
+            # (src_offsets, dst_offsets)
             code += format_str(
-                f"aie.objectfifo @in_{func_name}_arg{arg_id}(%tile_mem{arg_id}, {{%tile_comp_{func_name}}}, 2 : i32) : !aie.objectfifo<{local_memref}>"
+                f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{mem_str}]([] {mem_stride})"
             )
-            in_mem_stride.append(
-                (in_mem_stride[-1] if len(in_mem_stride) > 0 else 0)
-                + np.prod(local_shape)
-            )
-        in_mem_stride.insert(0, 0)
-        in_mem_stride = in_mem_stride[:-1]  # remove the last stride
-        in_mem_str = ", ".join(
-            [f"@in_{func.attributes["sym_name"].value}_arg{arg_id}" for func in funcs]
-        )
-        # (src_offsets, dst_offsets)
-        code += format_str(
-            f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
-        )
-    # create output object fifos
-    for _, (global_memref_type, _, dtensors) in enumerate(outputs):
-        # output uses tile_mem0
-        out_mem_stride = []
-        for func_name, local_memref, local_shape in dtensors:
-            code += format_str(
-                f"aie.objectfifo @out_{func_name}(%tile_comp_{func_name}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref}>"
-            )
-            out_mem_stride.append(
-                (out_mem_stride[-1] if len(out_mem_stride) > 0 else 0)
-                + np.prod(local_shape)
-            )
-        out_mem_stride.insert(0, 0)
-        out_mem_stride = out_mem_stride[:-1]  # remove the last stride
-        code += format_str(
-            f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-        )
-        out_mem_str = ", ".join(
-            [f"@out_{func.attributes["sym_name"].value}" for func in funcs]
-        )
-        code += format_str(
-            f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh_{kernel_name}]({out_mem_stride} [])"
-        )
+
+    create_io_object_fifos(inputs, "in")
+    create_io_object_fifos(outputs, "out")
+    print(code)
+    sys.exit()
     # create other object fifos from top_func
     stream_in_out = get_stream_in_out(stream_info)
     stream_ele_types = {}
@@ -899,7 +943,7 @@ def codegen_aie_mlir(
             # issue_token: MM2S-false, S2MM-true
             dtensor = kernel_func.dtensors[0][arg_id]
             size, stride = calculate_tensor_access(
-                global_shape, dtensor.placement, dtensor.comm_size
+                global_shape, dtensor.placement, dtensor.mapping
             )
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size}{stride}) {{id = {arg_id + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_arg{arg_id}}} : {global_memref_type}"
@@ -909,7 +953,7 @@ def codegen_aie_mlir(
         ):
             dtensor = kernel_func.dtensors[0][arg_id]
             size, stride = calculate_tensor_access(
-                global_shape, dtensor.placement, dtensor.comm_size
+                global_shape, dtensor.placement, dtensor.mapping
             )
             code += format_str(
                 f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_id}[0, 0, 0, 0]{size}{stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {global_memref_type}"
@@ -1102,9 +1146,6 @@ def create_dtensors_from_kernel(kernel_func, func_op):
     """
     # Extract information from the kernel function
     mapping = kernel_func.mapping  # e.g., [2, 2] for a 2x2 grid
-    comm_size = 1
-    for dim in mapping:
-        comm_size *= dim
 
     # Get rank from function name (e.g., "gemm_0_1" -> rank 1)
     func_name = str(func_op.attributes["sym_name"]).strip('"')
@@ -1153,7 +1194,7 @@ def create_dtensors_from_kernel(kernel_func, func_op):
             dtype = last_part[dim_end:]
 
         # Create DTensor object
-        dtensor = DTensor(rank, comm_size, shape, dtype)
+        dtensor = DTensor(rank, mapping, shape, dtype)
         dtensors.append(dtensor)
 
     # Analyze subview operations to determine the actual tensor partitioning
@@ -1253,6 +1294,7 @@ class AIEModule:
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
+        os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         self.kernel_func = parse_mlir_to_kernel_function(self.module)
         for i, func_op in enumerate(self.kernel_func.funcs):
             self.kernel_func.set_dtensors(
@@ -1265,14 +1307,12 @@ class AIEModule:
                 self.kernel_func.dtensors[i],
                 self.enable_tensor,
             )
-        print(self.module)
         external_kernels = inject_aie_kernels(self.module)
         with open(
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.module))
         lower_tensor_to_memref(self.module, self.enable_tensor)
-        print(self.module)
         kernel_buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(
             self.module,
@@ -1281,9 +1321,8 @@ class AIEModule:
             external_kernels,
             self.stream_info,
         )
-        os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
-        with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
-            f.write(code)
+        # with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
+        #     f.write(code)
         # compile external kernels
         kernel_code, generated_kernels = codegen_external_kernels(external_kernels)
         if len(generated_kernels) > 0:
