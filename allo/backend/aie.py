@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=bad-builtin, no-name-in-module
+# pylint: disable=bad-builtin, no-name-in-module, unnecessary-lambda-assignment, cell-var-from-loop, too-many-branches, consider-using-with
 
 import os
 import subprocess
@@ -50,7 +50,7 @@ class DTensor:
         # "R": Replicated
         self.placement = "R" * len(shape)
         self.offset = [0] * len(shape)
-        self.local_shape = [s for s in shape]
+        self.local_shape = list(shape)
 
     def set_placement(self, placement):
         """
@@ -383,7 +383,6 @@ def inject_aie_kernels(mod):
             external_kernels[func.attributes["sym_name"].value] = []
             for block in func.regions[0].blocks:
                 for op in block.operations:
-                    continue
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
@@ -601,7 +600,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
         return size, stride
 
     # Handle 2D tensor case
-    elif len(shape) == 2:
+    if len(shape) == 2:
         m, n = shape
         a, b = device_mesh
 
@@ -628,6 +627,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
             stride = [0, 0, n, 1]
 
         return size, stride
+    raise ValueError(f"Unsupported shape {shape} or partition {partition}.")
 
 
 def codegen_aie_mlir(
@@ -877,9 +877,7 @@ def codegen_aie_mlir(
             fid_tuple = (int(func_name.split("_")[-2]), int(func_name.split("_")[-1]))
             core_name = f"%tile_comp_{func_name}"
         streams = stream_info[func_name]
-        code += format_str(
-            f"%core_0_{func_id + 2} = aie.core({core_name}) {{"
-        )
+        code += format_str(f"%core_0_{func_id + 2} = aie.core({core_name}) {{")
         with format_code(indent=6):
             code += format_str("%global_c0 = arith.constant 0 : index")
             code += format_str("%global_c1 = arith.constant 1 : index")
@@ -1049,11 +1047,13 @@ def parse_mlir_to_kernel_function(module):
     """
     Parse an MLIR module to extract kernel function information
 
-    Args:
-        module: The MLIR module
+    Parameters:
+    -----------
+    module: The MLIR module
 
     Returns:
-        KernelFunction: A KernelFunction object with extracted information
+    --------
+    KernelFunction: A KernelFunction object with extracted information
     """
     # Find the top function and kernel functions
     top_func = None
@@ -1147,11 +1147,13 @@ def create_dtensors_from_kernel(kernel_func, func_op):
     Analyze the MLIR function and create DTensor objects for each argument,
     inferring placement based on subview operations.
 
-    Args:
+    Parameters:
+    -----------
         kernel_func (KernelFunction): The kernel function containing mapping information
         func_op: The MLIR function operation to analyze
 
     Returns:
+    --------
         list: List of DTensor objects for each argument
     """
     # Extract information from the kernel function
@@ -1229,9 +1231,6 @@ def create_dtensors_from_kernel(kernel_func, func_op):
                         offset = []
                         size = []
 
-                        # Extract parameters using regex
-                        import re
-
                         subview_pattern = (
                             r"memref\.subview\s+%[^[]+\[([^\]]+)\]\s+\[([^\]]+)\]"
                         )
@@ -1251,8 +1250,8 @@ def create_dtensors_from_kernel(kernel_func, func_op):
 
             # Recursively process nested regions
             for region in op.regions:
-                for block in region.blocks:
-                    collect_subviews(block)
+                for inner_block in region.blocks:
+                    collect_subviews(inner_block)
 
     # Collect subview information
     for block in func_op.body.blocks:
@@ -1266,7 +1265,7 @@ def create_dtensors_from_kernel(kernel_func, func_op):
 
             # Determine placement based on how the tensor is partitioned
             placement = ""
-            for dim in range(len(dtensor.shape)):
+            for dim, _ in enumerate(dtensor.shape):
                 # If this dimension is fully utilized (size equals global shape), it's Replicated
                 # Otherwise, it's Sharded
                 dim_size = size[dim] if dim < len(size) else dtensor.shape[dim]

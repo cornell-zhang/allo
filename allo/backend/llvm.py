@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, inconsistent-return-statements
+# pylint: disable=no-name-in-module, inconsistent-return-statements, too-many-function-args
 
 import os
 import ctypes

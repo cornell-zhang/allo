@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks, cell-var-from-loop
 
 import os
 import numpy as np
@@ -718,11 +718,13 @@ def analyze_read_write_patterns(mlir_func):
     Analyze the read/write patterns of function arguments to determine which are inputs and outputs.
     Handles subview operations and common linalg operations.
 
-    Args:
-        mlir_func: An MLIR function operation
+    Parameters:
+    -----------
+    mlir_func: An MLIR function operation
 
     Returns:
-        tuple: (input_indices, output_indices) lists of argument indices
+    --------
+    tuple: (input_indices, output_indices) lists of argument indices
     """
     input_indices = set()
     output_indices = set()
@@ -749,8 +751,8 @@ def analyze_read_write_patterns(mlir_func):
 
             # Recursively process nested regions
             for region in op.regions:
-                for block in region.blocks:
-                    collect_subviews(block)
+                for inner_block in region.blocks:
+                    collect_subviews(inner_block)
 
     # Collect all subview mappings first
     for block in mlir_func.body.blocks:
@@ -760,7 +762,7 @@ def analyze_read_write_patterns(mlir_func):
     def resolve_to_arg_index(value):
         if BlockArgument.isinstance(value):
             return BlockArgument(value).arg_number
-        elif value in subview_map:
+        if value in subview_map:
             return subview_map[value]
         return None
 
@@ -794,7 +796,7 @@ def analyze_read_write_patterns(mlir_func):
                 op_name = str(op.operation.name)
 
                 # Handle common memory operations directly
-                if op_name in ["memref.load", "affine.load"]:
+                if op_name in {"memref.load", "affine.load"}:
                     # First operand (or last for affine) is the source memref
                     mem_index = 0 if op_name == "memref.load" else -1
                     if len(op.operands) > abs(mem_index):
@@ -803,7 +805,7 @@ def analyze_read_write_patterns(mlir_func):
                         if mem_arg_index == arg_index:
                             is_input = True
 
-                elif op_name in ["memref.store", "affine.store"]:
+                elif op_name in {"memref.store", "affine.store"}:
                     # Second operand (or last for affine) is the destination memref
                     mem_index = 1 if op_name == "memref.store" else -1
                     if len(op.operands) > abs(mem_index):
@@ -884,7 +886,7 @@ def analyze_read_write_patterns(mlir_func):
                                     is_output = True
 
                     # Special handling for generic operations
-                    elif op_name in ["linalg.generic", "linalg.indexed_generic"]:
+                    elif op_name in {"linalg.generic", "linalg.indexed_generic"}:
                         # These operations have explicit indexing_maps that define inputs and outputs
                         # We need to look at the string representation to determine usage
                         op_str = str(op)
@@ -912,8 +914,8 @@ def analyze_read_write_patterns(mlir_func):
 
                 # Recursively process nested regions if any
                 for region in op.regions:
-                    for block in region.blocks:
-                        walk_operations(block)
+                    for inner_block in region.blocks:
+                        walk_operations(inner_block)
 
         # Start walking from the function's entry block
         for block in mlir_func.body.blocks:
