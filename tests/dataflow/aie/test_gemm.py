@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo.dataflow as df
-from allo.ir.types import int32
+from allo.ir.types import int16, int32
 import numpy as np
 import allo
 
@@ -32,7 +32,7 @@ def _test_gemm_1D():
 
 
 def _test_gemm_2D():
-    Ty = int32
+    TyI, TyO = int32, int32
     M, N, K = 16, 16, 16
     P0, P1 = 2, 2
     Mt, Nt = M // P0, N // P1
@@ -40,7 +40,7 @@ def _test_gemm_2D():
     @df.region()
     def top():
         @df.kernel(mapping=[P0, P1])
-        def gemm(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        def gemm(A: TyI[M, K], B: TyI[K, N], C: TyO[M, N]):
             p0, p1 = df.get_pid()
             C[p0 * Mt : (p0 + 1) * Mt, p1 * Nt : (p1 + 1) * Nt] = allo.matmul(
                 A[p0 * Mt : (p0 + 1) * Mt, :], B[:, p1 * Nt : (p1 + 1) * Nt]
