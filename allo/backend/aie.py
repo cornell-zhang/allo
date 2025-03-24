@@ -843,7 +843,7 @@ def codegen_aie_mlir(
             ]
             tensor_data = (get_memref_type_str(dtype, shape), shape, dtensors)
             result.append(tensor_data)
-            global_list.append((f"{kernel_name}_arg{i}", global_arg_id, tensor_data))
+            global_list.append((f"{kernel_name}_arg{global_arg_id}", global_arg_id, tensor_data))
             global_arg_id += 1
             
         return result
@@ -977,12 +977,12 @@ def codegen_aie_mlir(
                 depth = int(depth_str.strip())
                 
                 # Determine the correct tiles for the stream
-                producer_kernel, producer_func = in_out[0].split('_', 1)
-                consumer_kernel, consumer_func = in_out[1].split('_', 1)
+                producer_kernel, producer_id = in_out[0].split('_', 1)
+                consumer_kernel, consumer_id = in_out[1].split('_', 1)
                 
                 # Create the stream object FIFO between the two kernels
                 code += format_str(
-                    f"aie.objectfifo @{stream_name}(%tile_comp_{in_out[0]}, {{%tile_comp_{in_out[1]}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
+                    f"aie.objectfifo @{stream_name}({get_tile_name(producer_kernel, (0, producer_id), data['map_1d'])}, {{{get_tile_name(consumer_kernel, (0, consumer_id), data["map_1d"])}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
     
@@ -998,17 +998,17 @@ def codegen_aie_mlir(
             # Determine tile coordinates
             if data["map_1d"]:
                 fid_tuple = (int(func_name.split("_")[-1]), 0)
-                core_name = f"%tile_comp_{func_name}_0"
+                core_name = f"tile_comp_{func_name}_0"
             else:
                 parts = func_name.split("_")
                 fid_tuple = (int(parts[-2]), int(parts[-1]))
-                core_name = f"%tile_comp_{func_name}"
+                core_name = f"tile_comp_{func_name}"
             
             # Get streams for this function
             streams = stream_info[func_name]
             
             # Generate core computation
-            code += format_str(f"%core_0_{func_id + 2} = aie.core({core_name}) {{")
+            code += format_str(f"%core_0_{func_id + 2}_{core_name} = aie.core(%{core_name}) {{")
             with format_code(indent=6):
                 code += format_str("%global_c0 = arith.constant 0 : index")
                 code += format_str("%global_c1 = arith.constant 1 : index")
@@ -1173,6 +1173,11 @@ def update_func_op_arg_types(func_op, inputs, outputs, dtensors, enable_tensor):
                 else MemRefType.get(shape, elem_ty)
             )
             new_input_types.append(memref_ty)
+        # Add remaining stream arguments
+        arg_id = len(inputs_outputs)
+        while arg_id < len(func_op.function_type.value.inputs):
+            new_input_types.append(func_op.function_type.value.inputs[arg_id])
+            arg_id += 1
         new_func_type = FunctionType.get(
             new_input_types, func_op.function_type.value.results, func_op.context
         )
@@ -1214,15 +1219,29 @@ def lower_tensor_to_memref(mod, enable_tensor):
 def record_local_buffer(mod):
     kernel_buf_dicts = {}
     _, funcs = get_public_funcs(mod)
-    for func in funcs:
-        func_name = func.attributes["sym_name"].value
-        buf_dict = {}
-        for op in func.regions[0].blocks[0].operations:
+    
+    def traverse_operations(operations, buf_dict):
+        for op in operations:
             if op.operation.name == "memref.alloc":
                 name = op.result.get_name()
                 dtype, shape = get_dtype_and_shape_from_type(op.result.type)
                 buf_dict[name] = (dtype, shape)
+            
+            # Recursively traverse into all regions and blocks of the operation
+            for region in op.regions:
+                for block in region.blocks:
+                    traverse_operations(block.operations, buf_dict)
+    
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        buf_dict = {}
+        
+        # Start traversal from the top-level operations of the function
+        for block in func.regions[0].blocks:
+            traverse_operations(block.operations, buf_dict)
+            
         kernel_buf_dicts[func_name] = buf_dict
+    
     return kernel_buf_dicts
 
 
@@ -1408,6 +1427,9 @@ def create_dtensors_from_kernel(kernel_func, func_op):
 
             # Extract data type
             dtype = last_part[dim_end:]
+
+        elif arg_type_str.startswith("!allo.stream<"):
+            continue
 
         # Create DTensor object
         dtensor = DTensor(rank, mapping, shape, dtype)
