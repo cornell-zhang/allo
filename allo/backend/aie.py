@@ -690,8 +690,9 @@ def codegen_aie_mlir(
 
     # Determine device based on maximum tensor arguments across all kernels
     max_dt_args = max(len(kf.dtensors[0]) for kf in kernel_funcs)
-    mem_tile_size = 2 if max_dt_args > 2 else 1
-    device = "npu1_2col" if max_dt_args > 2 else "npu1_1col"
+    mem_tile_size = max_dt_args // 2 + 1
+    shim_tile_size = max_dt_args // 2 + 1
+    device = f"npu1_{mem_tile_size}col"
 
     code += format_str(f"aie.device({device}) {{", indent=2)
 
@@ -705,9 +706,21 @@ def codegen_aie_mlir(
             code += format_str(str(func), indent=4)
 
     # Create shim and memory tiles
-    code += format_str("%tile_shim = aie.tile(0, 0)")
-    for mid in range(mem_tile_size):
-        code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
+    # mlir-aie/mlir_tutorials/tutorial-4/flow
+    # | Bundle | Channels (In) | Channels (Out) |
+    # |-------|---|---|
+    # | DMA   | 2 | 2 |
+    # | Core  | 2 | 2 |
+    # | West  | 4 | 4 |
+    # | East  | 4 | 4 |
+    # | North | 4 | 6 |
+    # | South | 6 | 4 |
+    # | FIFO  | 2 | 2 |
+    # | Trace | 1 | 0 |
+    for shim_id in range(shim_tile_size):
+        code += format_str(f"%tile_shim{shim_id} = aie.tile({shim_id}, 0)")
+    for mem_id in range(mem_tile_size):
+        code += format_str(f"%tile_mem{mem_id} = aie.tile({mem_id}, 1)")
 
     # Get top function and all other functions
     top_func, all_funcs = get_public_funcs(mod)
@@ -881,11 +894,11 @@ def codegen_aie_mlir(
                 # Create object FIFO from shim to memory tile
                 if prefix == "in":
                     code += format_str(
-                        f"aie.objectfifo @in_sh_{arg_name}(%tile_shim, {{%tile_mem{arg_id % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                        f"aie.objectfifo @in_sh_{arg_name}(%tile_shim{arg_id % shim_tile_size}, {{%tile_mem{arg_id % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
                 else:
                     code += format_str(
-                        f"aie.objectfifo @out_sh_{arg_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                        f"aie.objectfifo @out_sh_{arg_name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
 
                 # Handle distribution to compute tiles based on placement
