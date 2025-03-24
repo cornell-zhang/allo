@@ -785,7 +785,7 @@ def analyze_read_write_patterns(mlir_func):
     }
 
     # Walk through all operations in the function to analyze access patterns
-    for arg_index in range(len(mlir_func.arguments)):
+    for arg_index, _ in enumerate(mlir_func.arguments):
         if not isinstance(mlir_func.arguments[arg_index].type, MemRefType):
             continue
         is_output = False
