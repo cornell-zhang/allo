@@ -465,18 +465,21 @@ def codegen_external_kernels(external_kernels):
     return code, generated_kernels
 
 
-def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_types):
+def process_stream_operations(func_str, streams, start_id, stream_ele_types):
     """
     Process a function string by replacing stream_get and stream_put calls with
     corresponding formatted FIFO code.
 
     Parameters
     ----------
-        func_str (str): The input function string to be processed.
-        streams (list): List of streams (each stream is a tuple/list where the first element is the stream name).
-        inputs (list): List of input identifiers.
-        outputs (list): List of output identifiers.
-        stream_ele_types (dict): Dictionary mapping stream names to their element types.
+        func_str: str
+            The input function string to be processed.
+        streams: List[Tuple]
+            Each stream is a tuple/list where the first element is the stream name.
+        start_id: int
+            The starting ID for the streams, used to map the argument IDs to stream indices.
+        stream_ele_types: Dict
+            Dictionary mapping stream names to their element types.
 
     Returns
     -------
@@ -497,7 +500,7 @@ def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_typ
                     continue
                 # Extract the return variable
                 return_var = line.split("=")[0].strip()
-                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_index = arg_id - start_id
                 stream_name = streams[stream_index][0]
                 current_indent = 6 + (len(line) - len(line.lstrip(" ")))
                 with format_code(indent=current_indent):
@@ -537,7 +540,7 @@ def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_typ
                     put_var = m_put_var.group(1)
                 else:
                     continue
-                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_index = arg_id - start_id
                 stream_name = streams[stream_index][0]
                 ele_type = stream_ele_types[stream_name]
                 current_indent = 6 + (len(line) - len(line.lstrip(" ")))
@@ -1028,10 +1031,20 @@ def codegen_aie_mlir(
                 # Determine the correct tiles for the stream
                 producer_kernel, producer_id = in_out[0].split("_", 1)
                 consumer_kernel, consumer_id = in_out[1].split("_", 1)
+                if "_" in producer_id:
+                    # 2d mapping
+                    producer_map = tuple(map(int, producer_id.split("_")))
+                else:
+                    producer_map = (0, int(producer_id))
+                if "_" in consumer_id:
+                    # 2d mapping
+                    consumer_map = tuple(map(int, consumer_id.split("_")))
+                else:
+                    consumer_map = (0, int(consumer_id))
 
                 # Create the stream object FIFO between the two kernels
                 code += format_str(
-                    f"aie.objectfifo @{stream_name}({get_tile_name(producer_kernel, (0, producer_id), data['map_1d'])}, {{{get_tile_name(consumer_kernel, (0, consumer_id), data["map_1d"])}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
+                    f"aie.objectfifo @{stream_name}({get_tile_name(producer_kernel, producer_map, data['map_1d'])}, {{{get_tile_name(consumer_kernel, consumer_map, data["map_1d"])}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
 
@@ -1124,8 +1137,7 @@ def codegen_aie_mlir(
                     stream_code, func_str = process_stream_operations(
                         func_str,
                         streams,
-                        data["inputs"],
-                        data["outputs"],
+                        len(data["inputs"]) + len(data["outputs"]),
                         stream_ele_types,
                     )
                     code += stream_code
@@ -1191,7 +1203,7 @@ def codegen_aie_mlir(
 
                     # Build DMA attributes - inputs need issue_token, outputs don't
                     if is_input:
-                        dma_attrs = f"id = {global_id + 1} : i64, issue_token = true, metadata = @{prefix}_sh_{name}"
+                        dma_attrs = f"id = {global_id} : i64, issue_token = true, metadata = @{prefix}_sh_{name}"
                     else:
                         dma_attrs = (
                             f"id = {global_id} : i64, metadata = @{prefix}_sh_{name}"
@@ -1606,6 +1618,7 @@ class AIEModule:
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         self.kernel_funcs = parse_mlir_to_kernel_function(self.module)
+        print(self.module)
         for kernel_func in self.kernel_funcs:
             for i, func_op in enumerate(kernel_func.funcs):
                 kernel_func.set_dtensors(
