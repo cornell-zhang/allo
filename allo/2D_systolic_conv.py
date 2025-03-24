@@ -1,4 +1,6 @@
-import allo
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from allo.ir.types import float32, int32
 import allo.dataflow as df
 import allo.backend.hls as hls
@@ -8,7 +10,7 @@ import numpy as np
 IR, IC = 5, 5 # input column and row
 FR, FC = 3, 3 # filter column and row
 OR, OC = 3, 3 # output column and row
-P0, P1 = OR*OC + 2, 3 # we need a PE per element in the output matrix, we aso need two layers of PE to add up results
+P0, P1 = (OR*OC + 2,3) # we need a PE per element in the output matrix, we aso need two layers of PE to add up results
 
 
 ### Base convolution kernel (Truth that we compare against) ###
@@ -29,7 +31,7 @@ def conv2D_lb(A: float32[IR, IC], B: float32[FR, FC]) -> float32[OR, OC]:
 def top():
     fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
     fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
-
+    
     @df.kernel(mapping = [P0, P1])
 
     # let A be the input matrix, B be the filter matrix 
