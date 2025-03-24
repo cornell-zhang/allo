@@ -765,7 +765,7 @@ def codegen_aie_mlir(
                 )
 
         # Update y_offset for next kernel (use max value + spacing)
-        y_offset += max(normalized_mapping) + 1
+        y_offset += max(normalized_mapping)
 
     # Create buffers and process function strings for each kernel
     for kernel_name, data in kernel_data.items():
@@ -993,8 +993,8 @@ def codegen_aie_mlir(
         kernel_func = next(kf for kf in kernel_funcs if kf.name == kernel_name)
         create_io_object_fifos(
             [
-                (f"{kernel_name}_arg{i}", global_id, input_data)
-                for i, (_, global_id, input_data) in enumerate(
+                (f"{kernel_name}_arg{global_id}", global_id, input_data)
+                for _, (_, global_id, input_data) in enumerate(
                     [inp for inp in all_inputs if inp[0].startswith(kernel_name)]
                 )
             ],
@@ -1003,8 +1003,8 @@ def codegen_aie_mlir(
         )
         create_io_object_fifos(
             [
-                (f"{kernel_name}_arg{i + len(all_inputs)}", global_id, output_data)
-                for i, (_, global_id, output_data) in enumerate(
+                (f"{kernel_name}_arg{global_id}", global_id, output_data)
+                for _, (_, global_id, output_data) in enumerate(
                     [out for out in all_outputs if out[0].startswith(kernel_name)]
                 )
             ],
