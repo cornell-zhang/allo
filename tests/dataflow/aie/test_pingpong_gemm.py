@@ -8,7 +8,7 @@ import numpy as np
 
 Ty = int32
 M, N, K = 16, 16, 16
-P0, P1 = 2, 2
+P0, P1 = 1, 1
 Mt, Nt = M // P0, N // P1
 
 
@@ -43,7 +43,7 @@ def test_cooperative_gemm():
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
-    mod(A, B, C)
+    mod(A, B, A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 

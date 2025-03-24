@@ -1682,9 +1682,13 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        host_code = codegen_host(
-            self.kernel_funcs[0].inputs, self.kernel_funcs[-1].outputs
-        )
+        all_inputs = []
+        for i, kernel_func in enumerate(self.kernel_funcs):
+            all_inputs.extend(kernel_func.inputs)
+        all_outputs = []
+        for i, kernel_func in enumerate(self.kernel_funcs):
+            all_outputs.extend(kernel_func.outputs)
+        host_code = codegen_host(all_inputs, all_outputs)
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
