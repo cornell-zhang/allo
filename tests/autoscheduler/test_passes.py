@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import numpy as np
 import pytest
 from allo.ir.types import float32
@@ -7,7 +10,9 @@ from tests.autoscheduler.polybench import get_polybench
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_three_mm(debug_point):
-    schedule, inputs, expected = get_polybench("three_mm", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "three_mm", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
 
@@ -18,7 +23,9 @@ def test_three_mm(debug_point):
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_two_mm(debug_point):
-    schedule, inputs, expected = get_polybench("two_mm", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "two_mm", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
 
@@ -29,28 +36,32 @@ def test_two_mm(debug_point):
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_atax(debug_point):
-    schedule, inputs, expected = get_polybench("atax", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "atax", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
-    
+
     A, x, y = inputs
     y_out = np.zeros_like(y)
     mod(A, x, y_out)
-    
+
     np.testing.assert_allclose(y_out, expected)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_bicg(debug_point):
-    schedule, inputs, expected = get_polybench("bicg", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "bicg", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
-    
+
     A, s, q, p, r = inputs
     q_out = np.zeros_like(q)
     s_out = np.zeros_like(s)
     mod(A, p, r, q_out, s_out)
-    
+
     expected_q, expected_s = expected
     np.testing.assert_allclose(q_out, expected_q)
     np.testing.assert_allclose(s_out, expected_s)
@@ -58,47 +69,51 @@ def test_bicg(debug_point):
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_gemm(debug_point):
-    schedule, inputs, expected = get_polybench("gemm", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "gemm", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
-    
+
     A, B, C = inputs
     output = np.zeros_like(expected)
     mod(A, B, C, output)
-    
+
     np.testing.assert_allclose(output, expected)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_gesummv(debug_point):
-    schedule, inputs, expected = get_polybench("gesummv", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "gesummv", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
-    
+
     A, B, x = inputs
     y = np.zeros_like(expected)
     mod(A, B, x, y)
-    
+
     np.testing.assert_allclose(y, expected)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 def test_mvt(debug_point):
-    schedule, inputs, expected = get_polybench("mvt", size="small", concrete_type=float32)
+    schedule, inputs, expected = get_polybench(
+        "mvt", size="small", concrete_type=float32
+    )
     optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
     mod = optimized_schedule.build()
-    
+
     A, x1, x2, y1, y2 = inputs
     expected_x1, expected_x2 = expected
     out_x1 = np.zeros_like(x1)
     out_x2 = np.zeros_like(x2)
     mod(A, y1, y2, x1, x2, out_x1, out_x2)
-    
+
     np.testing.assert_allclose(out_x1, expected_x1)
     np.testing.assert_allclose(out_x2, expected_x2)
 
 
 if __name__ == "__main__":
     pytest.main([__file__])
-
-

@@ -5,12 +5,11 @@ import math
 import pytest
 import allo
 from allo.ir.types import int32, float32
-import numpy as np
 
 from allo.autoscheduler.dfg import DFG, DFGNodeType, Node
-from allo.autoscheduler.passes import dataflow_optimization_pass, outline_loops_pass
+from allo.autoscheduler.passes import dataflow_optimization_pass
 from allo.autoscheduler.util import compose_affine_maps
-from allo._mlir.ir import WalkResult, AffineMap
+from allo._mlir.ir import AffineMap
 
 
 def check_edges(dfg: DFG):
@@ -59,12 +58,14 @@ def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
                 C[i, j] = C[i, j] + A[i, k] * B[k, j]
     return C
 
+
 def three_mm(
-        A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
-    ) -> int32[8, 8]:
-        E: int32[8, 8] = matrix_multiply(A, B)
-        F: int32[8, 8] = matrix_multiply(C, D)
-        return matrix_multiply(E, F)
+    A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
+) -> int32[8, 8]:
+    E: int32[8, 8] = matrix_multiply(A, B)
+    F: int32[8, 8] = matrix_multiply(C, D)
+    return matrix_multiply(E, F)
+
 
 def test_3mm():
     s = allo.customize(three_mm)
@@ -74,6 +75,7 @@ def test_3mm():
     dfg = DFG.from_module(module)
     check_edges(dfg)
     check_node_info(dfg)
+
 
 def func() -> int32[10, 10, 10]:
     A: int32[10, 10, 10]

@@ -8,6 +8,7 @@ from allo.ir.types import int32
 from allo.autoscheduler.passes import dataflow_optimization_pass
 from allo.autoscheduler.util import check_preprocess_ok
 
+
 def test_single_producer_single_consumer():
     def producer() -> int32[10]:
         A: int32[10]
@@ -248,12 +249,14 @@ def test_nested_fn_inlining():
     np.testing.assert_array_equal(res, expected)
     assert check_preprocess_ok(s)
 
+
 def three_mm(
-        A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
-    ) -> int32[8, 8]:
-        E: int32[8, 8] = matrix_multiply(A, B)
-        F: int32[8, 8] = matrix_multiply(C, D)
-        return matrix_multiply(E, F)
+    A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
+) -> int32[8, 8]:
+    E: int32[8, 8] = matrix_multiply(A, B)
+    F: int32[8, 8] = matrix_multiply(C, D)
+    return matrix_multiply(E, F)
+
 
 def test_3mm():
     s = allo.customize(three_mm)
@@ -269,7 +272,6 @@ def test_3mm():
     expected = np.dot(np.dot(A, B), np.dot(C, D))
     np.testing.assert_array_equal(res, expected)
     assert check_preprocess_ok(s)
-
 
 
 if __name__ == "__main__":

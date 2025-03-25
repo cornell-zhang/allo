@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from allo.ir.types import int32, float32
 import allo.ir.types as T
 import allo
@@ -10,19 +13,22 @@ from typing import Dict, Any, Callable, Tuple, List
 
 polybench_registry: dict[str, tuple[Callable, Callable, Callable]] = {}
 
+
 def add_benchmark(name: str, sch_fn: Callable, np_fn: Callable, gen_fn: Callable):
     """Add a benchmark to the registry"""
     polybench_registry[name] = (sch_fn, np_fn, gen_fn)
 
 
-def get_polybench(test_name: str, size: str = "small", concrete_type=float32) -> Tuple[Schedule, Tuple[np.ndarray, ...], np.ndarray]:
+def get_polybench(
+    test_name: str, size: str = "small", concrete_type=float32
+) -> Tuple[Schedule, Tuple[np.ndarray, ...], np.ndarray]:
     """Get a polybench test case with inputs and reference output
-    
+
     Args:
         test_name: Name of the polybench test (e.g. 'three_mm', 'gemm', etc)
-        size: Problem size ('mini', 'small', 'medium') 
+        size: Problem size ('mini', 'small', 'medium')
         dtype: Data type to use
-        
+
     Returns:
         Tuple of:
         - Schedule object
@@ -31,33 +37,37 @@ def get_polybench(test_name: str, size: str = "small", concrete_type=float32) ->
     """
     if test_name not in polybench_registry:
         raise ValueError(f"Unknown benchmark {test_name}")
-        
+
     # Load problem sizes from json
-    setting_path = os.path.join(os.path.dirname(__file__), "../../examples/polybench/psize.json")
+    setting_path = os.path.join(
+        os.path.dirname(__file__), "../../examples/polybench/psize.json"
+    )
     with open(setting_path, "r") as fp:
         psize = json.load(fp)
-        
+
     if test_name not in psize:
         raise ValueError(f"No problem size defined for {test_name}")
     if size not in psize[test_name]:
         valid_sizes = list(psize[test_name].keys())
-        raise ValueError(f"Size {size} not defined for {test_name}. Valid sizes are: {valid_sizes}")
-        
+        raise ValueError(
+            f"Size {size} not defined for {test_name}. Valid sizes are: {valid_sizes}"
+        )
+
     # Get the size parameters
     params = psize[test_name][size]
     param_values = list(params.values())
-    
+
     # Get the schedule, numpy, and generator implementations
     sch_fn, np_fn, gen_fn = polybench_registry[test_name]
     # Create schedule
     sch = sch_fn(concrete_type, *param_values)
-    
+
     # Generate inputs using the provided generator function
     inputs = gen_fn(concrete_type, *param_values)
-    
+
     # Get reference output
     ref_out = np_fn(*[np.copy(input) for input in inputs])
-    
+
     return sch, inputs, ref_out
 
 
@@ -111,7 +121,6 @@ def three_mm(concrete_type, p, r, q, t, s):
     sch.compose(sch0)
     sch.compose(sch1)
     sch.compose(sch2)
-
 
     return sch
 
@@ -209,6 +218,7 @@ def bicg_np(A, s, q, p, r):
     q[:] = np.dot(A, p)
     s[:] = np.dot(A.T, r)
     return q, s
+
 
 def bicg(concrete_type, m, n):
     def vec_mul[
@@ -325,7 +335,15 @@ def mvt(concrete_type, n):
 
     def kernel_mvt[
         T: (float32, int32), N: int32
-    ](A: "T[N, N]", y1: "T[N]", y2: "T[N]", x1: "T[N]", x2: "T[N]", out_x1: "T[N]", out_x2: "T[N]"):
+    ](
+        A: "T[N, N]",
+        y1: "T[N]",
+        y2: "T[N]",
+        x1: "T[N]",
+        x2: "T[N]",
+        out_x1: "T[N]",
+        out_x2: "T[N]",
+    ):
         vec_dot1[T, N](A, y1, x1, out_x1)
         vec_dot2[T, N](A, y2, x2, out_x2)
 
@@ -339,144 +357,150 @@ def mvt(concrete_type, n):
 
 def gen_three_mm_inputs(concrete_type, p, r, q, t, s):
     """Generate input matrices for three_mm benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         p, r, q, t, s: Matrix dimensions
-        
+
     Returns:
         Tuple of input matrices (A, B, C, D)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (p, q)).astype(np_dtype)
     B = np.random.randint(-10, 10, (q, r)).astype(np_dtype)
     C = np.random.randint(-10, 10, (r, s)).astype(np_dtype)
     D = np.random.randint(-10, 10, (s, t)).astype(np_dtype)
-    
+
     return A, B, C, D
+
 
 def gen_two_mm_inputs(concrete_type, p, r, q, s, alpha=0.1, beta=0.5):
     """Generate input matrices for two_mm benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         p, r, q, s: Matrix dimensions
         alpha, beta: Scaling factors
-        
+
     Returns:
         Tuple of input matrices (A, B, C, D)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (p, q)).astype(np_dtype)
     B = np.random.randint(-10, 10, (q, r)).astype(np_dtype)
     C = np.random.randint(-10, 10, (r, s)).astype(np_dtype)
     D = np.random.randint(-10, 10, (p, s)).astype(np_dtype)
-    
+
     return A, B, C, D
+
 
 def gen_atax_inputs(concrete_type, m, n):
     """Generate input matrices for atax benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         m, n: Matrix dimensions
-        
+
     Returns:
         Tuple of input matrices (A, x, y)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (m, n)).astype(np_dtype)
     x = np.random.randint(-10, 10, n).astype(np_dtype)
     y = np.zeros(n, dtype=np_dtype)
-    
+
     return A, x, y
+
 
 def gen_bicg_inputs(concrete_type, m, n):
     """Generate input matrices for bicg benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         m, n: Matrix dimensions
-        
+
     Returns:
         Tuple of input vectors (A, s, q, p, r)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (m, n)).astype(np_dtype)
     s = np.zeros(n, dtype=np_dtype)
     q = np.zeros(m, dtype=np_dtype)
     p = np.random.randint(-10, 10, n).astype(np_dtype)
     r = np.random.randint(-10, 10, m).astype(np_dtype)
-    
+
     return A, s, q, p, r
+
 
 def gen_gemm_inputs(concrete_type, p, r, q, beta=0.1):
     """Generate input matrices for gemm benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         p, r, q: Matrix dimensions
         beta: Scaling factor
-        
+
     Returns:
         Tuple of input matrices (A, B, C)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (p, q)).astype(np_dtype)
     B = np.random.randint(-10, 10, (q, r)).astype(np_dtype)
     C = np.random.randint(-10, 10, (p, r)).astype(np_dtype)
-    
+
     return A, B, C
+
 
 def gen_gesummv_inputs(concrete_type, n, alpha=1.0, beta=1.0):
     """Generate input matrices for gesummv benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         n: Matrix dimension
         alpha, beta: Scaling factors
-        
+
     Returns:
         Tuple of input matrices (A, B, x)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (n, n)).astype(np_dtype)
     B = np.random.randint(-10, 10, (n, n)).astype(np_dtype)
     x = np.random.randint(-10, 10, n).astype(np_dtype)
-    
+
     return A, B, x
+
 
 def gen_mvt_inputs(concrete_type, n):
     """Generate input matrices for mvt benchmark
-    
+
     Args:
         concrete_type: Data type (float32 or int32)
         n: Matrix dimension
-        
+
     Returns:
         Tuple of input vectors (A, x1, x2, y1, y2)
     """
     np_dtype = np.float32 if concrete_type == float32 else np.int32
-    
+
     # Create random matrices with appropriate shapes
     A = np.random.randint(-10, 10, (n, n)).astype(np_dtype)
     x1 = np.random.randint(-10, 10, n).astype(np_dtype)
     x2 = np.random.randint(-10, 10, n).astype(np_dtype)
     y1 = np.random.randint(-10, 10, n).astype(np_dtype)
     y2 = np.random.randint(-10, 10, n).astype(np_dtype)
-    
+
     return A, x1, x2, y1, y2
 
 
