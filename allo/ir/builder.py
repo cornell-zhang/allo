@@ -1942,6 +1942,7 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
+        # pylint: disable=too-many-nested-blocks
         if (
             obj.__module__.startswith("allo")
             and not obj.__module__.startswith("allo.library")
@@ -2021,11 +2022,14 @@ class ASTTransformer(ASTBuilder):
             arg_types = []
             if isinstance(new_args[0].result, OpResultList):
                 for arg in new_args:
-                    for result in arg.result:
-                        arg_types.append(result.type)
+                    if hasattr(arg, "result"):
+                        for result in arg.result:
+                            if hasattr(result, "type"):
+                                arg_types.append(result.type)
             else:
                 for arg in new_args:
-                    arg_types.append(arg.result.type)
+                    if hasattr(arg, "result"):
+                        arg_types.append(arg.result.type)
             if all(
                 isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
             ):
