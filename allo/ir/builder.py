@@ -2018,18 +2018,21 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(stream.dtype, UInt):
                     stream_op.attributes["unsigned"] = UnitAttr.get()
                 return stream_op
+            arg_types = []
             if isinstance(new_args[0].result, OpResultList):
-                arg_type = new_args[0].result[0].type
+                for arg in new_args:
+                    for result in arg.result:
+                        arg_types.append(result.type)
             else:
-                arg_type = new_args[0].result.type
-            if isinstance(arg_type, (F32Type, IntegerType)):
+                for arg in new_args:
+                    arg_types.append(arg.result.type)
+            if all(isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types):
                 opcls = {
                     "exp": math_d.ExpOp,
                     "log": math_d.LogOp,
                     "log2": math_d.Log2Op,
                     "log10": math_d.Log10Op,
                     "sqrt": math_d.SqrtOp,
-                    "sin": math_d.SinOp,
                     "cos": math_d.CosOp,
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
@@ -2037,7 +2040,7 @@ class ASTTransformer(ASTBuilder):
                     "abs": math_d.AbsIOp,
                 }.get(fn_name)
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
-            if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {
+            if any(isinstance(arg_type, (MemRefType, RankedTensorType)) for arg_type in arg_types) and fn_name in {
                 "matmul",
                 "bmm",
                 "softmax",

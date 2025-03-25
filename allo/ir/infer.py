@@ -858,11 +858,12 @@ class TypeInferer(ASTVisitor):
                     node.shape = None
                     node.dtype = None
                 return node
-            if len(new_args[0].shape) == 0:
+            if all(len(arg.shape) == 0 for arg in new_args):
                 # element-wise operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
                 return node
+            # return node
             return TypeInferer.visit_library_op(
                 ctx, node=node, op_name=fn_name, new_args=new_args
             )
