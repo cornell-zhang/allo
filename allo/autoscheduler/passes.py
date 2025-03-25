@@ -5,6 +5,11 @@ from allo._mlir.ir import (
     InsertionPoint,
     IntegerSetAttr,
     Block,
+    Module,
+    StringAttr,
+    UnitAttr,
+    IntegerAttr,
+    IntegerType
 )
 from allo._mlir.dialects import (
     func as func_d,
@@ -21,8 +26,13 @@ from .util import (
     check_all_functions_inlined,
 )
 
+from .dfg import DFG, DFGNodeType
+import os
 
-def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
+DEBUG_POINTS = ["mlir_preprocess", "dataflow_canonicalization", "outline_loops"]
+
+def dataflow_optimization_pass(schedule: Schedule, debugPoint=None, kind=None) -> Schedule:
+    assert debugPoint is None or debugPoint in DEBUG_POINTS, f"Invalid debug point: {debugPoint}"
     assert check_call_graph_acyclic(schedule.module), "Call graph is not acyclic"
     top_fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, top_fn_name)
@@ -43,20 +53,33 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None) -> Schedule:
     ), "Input kernel is not a perfect affine kernel"
 
     # Dataflow canonicalization pass
-    mod = _dataflow_canonicalization_pass(mod)
+    mod_dcp = _dataflow_canonicalization_pass(mod)
     if debugPoint == "dataflow_canonicalization":
         return Schedule(
-            mod,
-            find_func_in_module(mod, top_fn_name),
+            mod_dcp,
+            find_func_in_module(mod_dcp, top_fn_name),
             schedule.func_args,
             schedule.ip,
             schedule.ext_libs,
             schedule.inst_list,
         )
 
-    # other passes (not implemented)
-    # dfg = build_dataflow_graph(mod)
-    # build_performance_model(mod, dfg)
+    dfg = DFG.from_module(mod_dcp)
+    # if kind == "graph":
+    #     res, fifo_memrefs = dfg.createGraphParallelismPerformanceModel()
+    #     pass
+    
+    mod_outlined = outline_loops_pass(mod_dcp, dfg)
+    if debugPoint == "outline_loops":
+        return Schedule(
+            mod_outlined,
+            find_func_in_module(mod_outlined, top_fn_name),
+            schedule.func_args,
+            schedule.ip,
+            schedule.ext_libs,
+            schedule.inst_list,
+        )
+    
     return Schedule(
         mod,
         find_func_in_module(mod, top_fn_name),
@@ -108,7 +131,6 @@ def canonicalize_fn(op: func_d.FuncOp):
 def canonicalize_alloc(alloc_op):
     loads = []  # (op, idx)
     stores = []  # ops
-    returns = []  # ops
     for use in alloc_op.result.uses:
         user = use.owner
         if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
@@ -117,8 +139,6 @@ def canonicalize_alloc(alloc_op):
                     loads.append((user, idx))
         elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
             stores.append(user)
-        elif isinstance(user, func_d.ReturnOp):
-            returns.append(user)
 
     memref_type = alloc_op.result.type
     shape = memref_type.shape
@@ -141,9 +161,8 @@ def canonicalize_alloc(alloc_op):
         return
 
     # store-load-store-load loop redunction pattern
-    if len(stores) == 2 and len(loads) + len(returns) == 2:
+    if len(stores) == 2 and len(loads) == 2:
         l_ops = [l[0] for l in loads]
-        l_ops.extend(returns)
         if store_load_store_load_pattern(alloc_op, l_ops, stores):
             return
 
@@ -226,7 +245,7 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
     loop_load.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
     loop_store.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
 
-    inner_loop_upper_map = loop_nest[-1].upperBoundMap.value
+    inner_loop_upper_map = loop_nest[0].upperBoundMap.value
 
     # check upper bound is a constant
     if not (
@@ -235,7 +254,6 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
         return False
 
     loop_upper_bound = inner_loop_upper_map.results[0]
-
     last_iter_set = affine_d.IntegerSet.get(
         1, 0, [affine_d.AffineExpr.get_dim(0) - loop_upper_bound + 1], [True]
     )
@@ -265,6 +283,39 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
 
     return True
 
+def outline_loops_pass(module: Module, dfg: DFG=None) -> Module:
+    with module.context:
+        for func in module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            for op in func.body.blocks[0]:
+                if isinstance(op, affine_d.AffineForOp):
+                    op.attributes["top_level"] = UnitAttr.get()
+        if dfg:
+            for node_id in dfg.nodes:
+                node = dfg.nodes[node_id]
+                if node.type == DFGNodeType.AFFINE:
+                    node.op.attributes["node_id"] = IntegerAttr.get(IntegerType.get_unsigned(32), node_id)                
+
+    module_content = module.operation.get_asm()
+    
+    with open(os.path.join(os.path.dirname(__file__), "outline_loops.mlir"), "r") as f:
+        transform_content = f.read()
+
+    combined_content = f"{module_content}\n{transform_content}"
+    
+    with module.context as ctx:
+        ctx.allow_unregistered_dialects = True
+        try:
+            combined_module = Module.parse(combined_content, ctx)
+            pipeline = "builtin.module(transform-interpreter{entry-point=outline_affine_loops},canonicalize)"
+            mlir_pass_manager.parse(pipeline).run(combined_module.operation)
+            return Module.parse(combined_module.operation.regions[0].blocks[0].operations[0].get_asm(), ctx)
+            
+        except Exception as e:
+            print("Error: failed to run MLIR passes, printing module...")
+            print(combined_content)
+            raise e
 
 # def build_dataflow_graph(module: Module):
 #     pass
