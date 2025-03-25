@@ -2022,13 +2022,13 @@ class ASTTransformer(ASTBuilder):
             arg_types = []
             if isinstance(new_args[0].result, OpResultList):
                 for arg in new_args:
-                    if hasattr(arg, "result"):
+                    if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
                         for result in arg.result:
                             if hasattr(result, "type"):
                                 arg_types.append(result.type)
             else:
                 for arg in new_args:
-                    if hasattr(arg, "result"):
+                    if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
                 isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
