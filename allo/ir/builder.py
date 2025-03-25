@@ -2026,7 +2026,9 @@ class ASTTransformer(ASTBuilder):
             else:
                 for arg in new_args:
                     arg_types.append(arg.result.type)
-            if all(isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types):
+            if all(
+                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+            ):
                 opcls = {
                     "exp": math_d.ExpOp,
                     "log": math_d.LogOp,
@@ -2040,7 +2042,10 @@ class ASTTransformer(ASTBuilder):
                     "abs": math_d.AbsIOp,
                 }.get(fn_name)
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
-            if any(isinstance(arg_type, (MemRefType, RankedTensorType)) for arg_type in arg_types) and fn_name in {
+            if any(
+                isinstance(arg_type, (MemRefType, RankedTensorType))
+                for arg_type in arg_types
+            ) and fn_name in {
                 "matmul",
                 "bmm",
                 "softmax",
@@ -2098,7 +2103,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return call_op
-            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
+            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_types}")
 
         # User-defined subfunction
         func = ctx.global_vars[obj_name]
