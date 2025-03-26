@@ -17,18 +17,20 @@ def trisolv_np(L, x, b):
         for j in range(i):
             x[i] -= L[i, j] * x[j]
         x[i] /= L[i, i]
+    return x
+
+
+def kernel_trisolv[
+    T: (float32, int32), N: int32
+](L: float32[N, N], b: float32[N], x: float32[N]):
+    for i in range(N):
+        x[i] = b[i]
+        for j in range(i):
+            x[i] -= L[i, j] * x[j]
+        x[i] /= L[i, i]
 
 
 def trisolv(concrete_type, n):
-    def kernel_trisolv[
-        T: (float32, int32), N: int32
-    ](L: float32[N, N], b: float32[N], x: float32[N]):
-        for i in range(N):
-            x[i] = b[i]
-            for j in range(i):
-                x[i] -= L[i, j] * x[j]
-            x[i] /= L[i, i]
-
     s0 = allo.customize(kernel_trisolv, instantiate=[concrete_type, n])
     return s0.build()
 
@@ -48,7 +50,7 @@ def test_trisolv():
 
     # run reference
     x_ref = np.zeros_like(b)
-    trisolv_np(L, x_ref, b)
+    x_ref = trisolv_np(L, x_ref, b)
 
     # run allo
     x = np.zeros_like(b)
