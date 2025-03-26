@@ -13,7 +13,7 @@ def test_three_mm(debug_point):
     schedule, inputs, expected = get_polybench(
         "three_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     actual = mod(*inputs)
@@ -26,7 +26,7 @@ def test_two_mm(debug_point):
     schedule, inputs, expected = get_polybench(
         "two_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     actual = mod(*inputs)
@@ -39,7 +39,7 @@ def test_atax(debug_point):
     schedule, inputs, expected = get_polybench(
         "atax", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     A, x, y = inputs
@@ -54,7 +54,7 @@ def test_bicg(debug_point):
     schedule, inputs, expected = get_polybench(
         "bicg", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     A, s, q, p, r = inputs
@@ -72,7 +72,7 @@ def test_gemm(debug_point):
     schedule, inputs, expected = get_polybench(
         "gemm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     A, B, C = inputs
@@ -87,7 +87,7 @@ def test_gesummv(debug_point):
     schedule, inputs, expected = get_polybench(
         "gesummv", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     A, B, x = inputs
@@ -102,7 +102,7 @@ def test_mvt(debug_point):
     schedule, inputs, expected = get_polybench(
         "mvt", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debugPoint=debug_point)
+    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
     A, x1, x2, y1, y2 = inputs
