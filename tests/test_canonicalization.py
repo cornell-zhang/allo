@@ -250,5 +250,28 @@ def test_nested_fn_inlining():
     assert check_preprocess_ok(s)
 
 
+def test_3mm():
+    def three_mm(
+        A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
+    ) -> int32[8, 8]:
+        E: int32[8, 8] = matrix_multiply(A, B)
+        F: int32[8, 8] = matrix_multiply(C, D)
+        return matrix_multiply(E, F)
+
+    s = allo.customize(three_mm)
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    mod = s.build()
+
+    A = np.random.randint(0, 10, (8, 8), dtype=np.int32)
+    B = np.random.randint(0, 10, (8, 8), dtype=np.int32)
+    C = np.random.randint(0, 10, (8, 8), dtype=np.int32)
+    D = np.random.randint(0, 10, (8, 8), dtype=np.int32)
+
+    res = mod(A, B, C, D)
+    expected = np.dot(np.dot(A, B), np.dot(C, D))
+    np.testing.assert_array_equal(res, expected)
+    assert check_preprocess_ok(s)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
