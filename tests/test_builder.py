@@ -777,80 +777,23 @@ def test_line_trace():
     assert 'loc("' in mlir_string
 
 
-def test_dsl_broadcast_add():
+def test_dsl_broadcast_binary_ops():
     def kernel1(A: int32[10]) -> int32[10]:
-        return allo.add(A, 1)
+        return allo.div(allo.mul(allo.sub(allo.add(A, 3), 1), 2), 2)
 
     def kernel2(A: int32[10]) -> int32[10]:
-        return allo.add(1, A)
+        return allo.sub(50, allo.mul(2, allo.add(3, allo.div(10, A))))
 
     s1 = allo.customize(kernel1)
     s2 = allo.customize(kernel2)
     mod1 = s1.build()
     mod2 = s2.build()
-    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
+    np_A = np.random.randint(1, 10, size=(10,)).astype(np.int32)
     np_B_1 = mod1(np_A)
     np_B_2 = mod2(np_A)
-    np.testing.assert_allclose(np_B_1, np_A + 1)
-    np.testing.assert_allclose(np_B_2, np_A + 1)
-
-
-def test_dsl_broadcast_sub():
-    def kernel1(A: int32[10]) -> int32[10]:
-        return allo.sub(A, 1)
-
-    def kernel2(A: int32[10]) -> int32[10]:
-        return allo.sub(1, A)
-
-    s1 = allo.customize(kernel1)
-    s2 = allo.customize(kernel2)
-    mod1 = s1.build()
-    mod2 = s2.build()
-    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
-    np_B_1 = mod1(np_A)
-    np_B_2 = mod2(np_A)
-    np.testing.assert_allclose(np_B_1, np_A - 1)
-    np.testing.assert_allclose(np_B_2, 1 - np_A)
-
-
-def test_dsl_broadcast_mul():
-    def kernel1(A: int32[10]) -> int32[10]:
-        return allo.mul(A, 2)
-
-    def kernel2(A: int32[10]) -> int32[10]:
-        return allo.mul(2, A)
-
-    s1 = allo.customize(kernel1)
-    s2 = allo.customize(kernel2)
-    mod1 = s1.build()
-    mod2 = s2.build()
-    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
-    np_B_1 = mod1(np_A)
-    np_B_2 = mod2(np_A)
-    np.testing.assert_allclose(np_B_1, np_A * 2)
-    np.testing.assert_allclose(np_B_2, np_A * 2)
-
-
-def test_dsl_broadcast_div():
-    def kernel1(A: int32[10]) -> int32[10]:
-        return allo.div(A, 2)
-
-    def kernel2(A: int32[10]) -> int32[10]:
-        return allo.div(2, A)
-
-    s1 = allo.customize(kernel1)
-    s2 = allo.customize(kernel2)
-    print(s1.module)
-    mod1 = s1.build()
-    mod2 = s2.build()
-    np_A_1 = np.random.randint(0, 10, size=(10,)).astype(np.int32)
-    np_A_2 = np.random.randint(1, 10, size=(10,)).astype(np.int32)
-    np_B_1 = mod1(np_A_1)
-    np_B_2 = mod2(np_A_2)
-    np.testing.assert_allclose(np_B_1, np_A_1 // 2)
-    np.testing.assert_allclose(np_B_2, 2 // np_A_2)
+    np.testing.assert_allclose(np_B_1, ((np_A + 3) - 1) * 2 // 2)
+    np.testing.assert_allclose(np_B_2, 50 - 2 * (3 + 10 // np_A))
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_dsl_broadcast_div()
+    pytest.main([__file__])
