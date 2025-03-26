@@ -15,7 +15,7 @@ def test_atax():
 
 
 def test_bicg():
-    from . import bicg
+    import bicg
 
     bicg.test_bicg()
 
