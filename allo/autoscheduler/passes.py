@@ -1,5 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+import os
+
 from allo._mlir.ir import (
     Location,
     InsertionPoint,
@@ -9,14 +11,13 @@ from allo._mlir.ir import (
     StringAttr,
     UnitAttr,
     IntegerAttr,
-    IntegerType
+    IntegerType,
 )
 from allo._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
 )
-from allo._mlir.ir import StringAttr
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
@@ -27,12 +28,20 @@ from .util import (
 )
 
 from .dfg import DFG, DFGNodeType
-import os
 
 DEBUG_POINTS = ["mlir_preprocess", "dataflow_canonicalization", "outline_loops"]
 
-def dataflow_optimization_pass(schedule: Schedule, debugPoint=None, kind=None) -> Schedule:
-    assert debugPoint is None or debugPoint in DEBUG_POINTS, f"Invalid debug point: {debugPoint}"
+
+# pylint: disable=unused-argument
+def dataflow_optimization_pass(
+    schedule: Schedule, debugPoint=None, kind=None
+) -> Schedule:
+    """
+    Applies autoscheduler optimization passes to the schedule.
+    """
+    assert (
+        debugPoint is None or debugPoint in DEBUG_POINTS
+    ), f"Invalid debug point: {debugPoint}"
     assert check_call_graph_acyclic(schedule.module), "Call graph is not acyclic"
     top_fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, top_fn_name)
@@ -68,7 +77,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None, kind=None) -
     # if kind == "graph":
     #     res, fifo_memrefs = dfg.createGraphParallelismPerformanceModel()
     #     pass
-    
+
     mod_outlined = outline_loops_pass(mod_dcp, dfg)
     if debugPoint == "outline_loops":
         return Schedule(
@@ -79,7 +88,7 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None, kind=None) -
             schedule.ext_libs,
             schedule.inst_list,
         )
-    
+
     return Schedule(
         mod,
         find_func_in_module(mod, top_fn_name),
@@ -88,6 +97,9 @@ def dataflow_optimization_pass(schedule: Schedule, debugPoint=None, kind=None) -
         schedule.ext_libs,
         schedule.inst_list,
     )
+
+
+# pylint: enable=unused-argument
 
 
 def _mlir_preprocess(module, top_func_name):
@@ -283,7 +295,8 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
 
     return True
 
-def outline_loops_pass(module: Module, dfg: DFG=None) -> Module:
+
+def outline_loops_pass(module: Module, dfg: DFG = None) -> Module:
     with module.context:
         for func in module.body.operations:
             if not isinstance(func, func_d.FuncOp):
@@ -295,27 +308,37 @@ def outline_loops_pass(module: Module, dfg: DFG=None) -> Module:
             for node_id in dfg.nodes:
                 node = dfg.nodes[node_id]
                 if node.type == DFGNodeType.AFFINE:
-                    node.op.attributes["node_id"] = IntegerAttr.get(IntegerType.get_unsigned(32), node_id)                
+                    node.op.attributes["node_id"] = IntegerAttr.get(
+                        IntegerType.get_unsigned(32), node_id
+                    )
 
     module_content = module.operation.get_asm()
-    
-    with open(os.path.join(os.path.dirname(__file__), "outline_loops.mlir"), "r") as f:
+
+    with open(
+        os.path.join(os.path.dirname(__file__), "outline_loops.mlir"),
+        "r",
+        encoding="utf-8",
+    ) as f:
         transform_content = f.read()
 
     combined_content = f"{module_content}\n{transform_content}"
-    
+
     with module.context as ctx:
         ctx.allow_unregistered_dialects = True
         try:
             combined_module = Module.parse(combined_content, ctx)
             pipeline = "builtin.module(transform-interpreter{entry-point=outline_affine_loops},canonicalize)"
             mlir_pass_manager.parse(pipeline).run(combined_module.operation)
-            return Module.parse(combined_module.operation.regions[0].blocks[0].operations[0].get_asm(), ctx)
-            
+            return Module.parse(
+                combined_module.operation.regions[0].blocks[0].operations[0].get_asm(),
+                ctx,
+            )
+
         except Exception as e:
             print("Error: failed to run MLIR passes, printing module...")
             print(combined_content)
             raise e
+
 
 # def build_dataflow_graph(module: Module):
 #     pass
