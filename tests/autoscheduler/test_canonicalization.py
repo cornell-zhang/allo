@@ -31,7 +31,7 @@ def test_single_producer_single_consumer():
 
     s = allo.customize(top)
     s.compose([p, c])
-    s = dataflow_optimization_pass(s, "dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, "dataflow_canonicalization")
     print(s.module)
     mod = s.build()
     res = mod()
@@ -74,7 +74,7 @@ def test_single_producer_multiple_consumers():
     s = allo.customize(top)
     print(s.module)
     s.compose([p, c1, c2])
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
     mod = s.build()
     res = mod()
@@ -96,7 +96,7 @@ def test_single_kernel():
         return B, C
 
     s = allo.customize(producer)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
     mod = s.build()
     res1, res2 = mod()
@@ -128,7 +128,7 @@ def test_nd_array():
     s.compose([p, c])
     print(s.module)
 
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
     mod = s.build()
     res = mod()
@@ -159,7 +159,7 @@ def test_matmul_addition_condition1():
 
     s = allo.customize(matmul_addition)
     print(s.module)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
 
     mod = s.build()
@@ -208,7 +208,7 @@ def test_matmul_addition_nested_condition1():
     s.compose([mm, ma])
 
     print(s.module)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
 
     mod = s.build()
@@ -240,7 +240,7 @@ def test_nested_fn_inlining():
     s.compose([ma, ac])
 
     print(s.module)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     print(s.module)
 
     mod = s.build()
@@ -260,7 +260,7 @@ def three_mm(
 
 def test_3mm():
     s = allo.customize(three_mm)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     mod = s.build()
 
     A = np.random.randint(0, 10, (8, 8), dtype=np.int32)

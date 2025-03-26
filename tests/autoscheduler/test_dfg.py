@@ -69,7 +69,7 @@ def three_mm(
 
 def test_3mm():
     s = allo.customize(three_mm)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     module = s.module
     print(module)
     dfg = DFG.from_module(module)
@@ -103,7 +103,7 @@ def test_loop_info():
 
 def test_node_info():
     s = allo.customize(func)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -156,7 +156,7 @@ def test_DSP():
         return A
 
     s = allo.customize(dsp_test)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     module = s.module
     dfg = DFG.from_module(module)
     affine_nodes = [
@@ -174,7 +174,7 @@ def test_II():
         return A
 
     s = allo.customize(loop_with_dependency)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -199,7 +199,7 @@ def test_reduction():
         return sum
 
     s = allo.customize(reduction)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     module = s.module
     print(s.module)
     dfg = DFG.from_module(module)
@@ -215,7 +215,7 @@ def test_reduction():
         return B
 
     s = allo.customize(not_reduction)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicalization")
     module = s.module
 
     dfg = DFG.from_module(module)

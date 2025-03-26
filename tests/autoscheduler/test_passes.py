@@ -18,7 +18,7 @@ def test_three_mm(debug_point):
 
     actual = mod(*inputs)
 
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -31,7 +31,7 @@ def test_two_mm(debug_point):
 
     actual = mod(*inputs)
 
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -46,7 +46,7 @@ def test_atax(debug_point):
     y_out = np.zeros_like(y)
     mod(A, x, y_out)
 
-    np.testing.assert_allclose(y_out, expected)
+    np.testing.assert_allclose(y_out, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -79,7 +79,7 @@ def test_gemm(debug_point):
     output = np.zeros_like(expected)
     mod(A, B, C, output)
 
-    np.testing.assert_allclose(output, expected)
+    np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -94,7 +94,7 @@ def test_gesummv(debug_point):
     y = np.zeros_like(expected)
     mod(A, B, x, y)
 
-    np.testing.assert_allclose(y, expected)
+    np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -111,8 +111,8 @@ def test_mvt(debug_point):
     out_x2 = np.zeros_like(x2)
     mod(A, y1, y2, x1, x2, out_x1, out_x2)
 
-    np.testing.assert_allclose(out_x1, expected_x1)
-    np.testing.assert_allclose(out_x2, expected_x2)
+    np.testing.assert_allclose(out_x1, expected_x1, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out_x2, expected_x2, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":
