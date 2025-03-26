@@ -296,7 +296,7 @@ def gesummv(concrete_type, n, alpha=1.0, beta=1.0):
     def kernel_gesummv[
         T: (float32, int32), N: int32
     ](A: "T[N, N]", B: "T[N, N]", x: "T[N]", y: "T[N]"):
-        tmp: T[N]
+        tmp: T[N] = 0
         for i, j in allo.grid(N, N):
             tmp[i] += A[i, j] * x[j]
             y[i] += B[i, j] * x[j]
