@@ -36,43 +36,45 @@ def nussinov_np(seq, table):
 
             for k in range(i + 1, j):
                 table[i][j] = max(table[i][j], table[i][k] + table[k + 1][j])
+    return table
+
+
+def kernel_nussinov[T: (float32, int32), N: int32](seq: "T[N]", table: "T[N, N]"):
+    for i_inv in range(N):
+        i: index = N - 1 - i_inv
+        for j in range(i + 1, N):
+            if j - 1 >= 0:
+                if table[i, j] < table[i, j - 1]:
+                    table[i, j] = table[i, j - 1]
+
+            if i + 1 < N:
+                if table[i, j] < table[i + 1, j]:
+                    table[i, j] = table[i + 1, j]
+
+            if j - 1 >= 0 and i + 1 < N:
+                if i < j - 1:
+                    w: float32 = seq[i] + seq[j]
+
+                    match: float32 = 0.0
+                    if w == 3:
+                        match = 1.0
+
+                    s2: float32 = 0.0
+                    s2 = table[i + 1, j - 1] + match
+
+                    if table[i, j] < s2:
+                        table[i, j] = s2
+                else:
+                    if table[i, j] < table[i + 1, j - 1]:
+                        table[i, j] = table[i + 1, j - 1]
+
+            for k in range(i + 1, j):
+                s3: float32 = table[i, k] + table[k + 1, j]
+                if table[i, j] < s3:
+                    table[i, j] = s3
 
 
 def nussinov(concrete_type, n):
-    def kernel_nussinov[T: (float32, int32), N: int32](seq: "T[N]", table: "T[N, N]"):
-        for i_inv in range(N):
-            i: index = N - 1 - i_inv
-            for j in range(i + 1, N):
-                if j - 1 >= 0:
-                    if table[i, j] < table[i, j - 1]:
-                        table[i, j] = table[i, j - 1]
-
-                if i + 1 < N:
-                    if table[i, j] < table[i + 1, j]:
-                        table[i, j] = table[i + 1, j]
-
-                if j - 1 >= 0 and i + 1 < N:
-                    if i < j - 1:
-                        w: float32 = seq[i] + seq[j]
-
-                        match: float32 = 0.0
-                        if w == 3:
-                            match = 1.0
-
-                        s2: float32 = 0.0
-                        s2 = table[i + 1, j - 1] + match
-
-                        if table[i, j] < s2:
-                            table[i, j] = s2
-                    else:
-                        if table[i, j] < table[i + 1, j - 1]:
-                            table[i, j] = table[i + 1, j - 1]
-
-                for k in range(i + 1, j):
-                    s3: float32 = table[i, k] + table[k + 1, j]
-                    if table[i, j] < s3:
-                        table[i, j] = s3
-
     s = allo.customize(kernel_nussinov, instantiate=[concrete_type, n])
     return s.build()
 
@@ -91,7 +93,7 @@ def test_nussinov():
     seq = np.random.randint(0, 4, size=N).astype(np.float32)
     table = np.zeros((N, N), dtype=np.float32)
     table_ref = table.copy()
-    nussinov_np(seq, table_ref)
+    table_ref = nussinov_np(seq, table_ref)
     mod(seq, table)
     np.testing.assert_allclose(table, table_ref, rtol=1e-5)
 

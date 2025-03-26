@@ -26,25 +26,27 @@ def seidel_2d_np(A, TSTEPS):
                     + A[i + 1, j]
                     + A[i + 1, j + 1]
                 ) / 9.0
+    return A
+
+
+def kernel_seidel_2d[T: (int32, float32), TSTEPS: int32, N: int32](A: "T[N, N]"):
+    for t in range(TSTEPS):
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                A[i, j] = (
+                    A[i - 1, j - 1]
+                    + A[i - 1, j]
+                    + A[i - 1, j + 1]
+                    + A[i, j - 1]
+                    + A[i, j]
+                    + A[i, j + 1]
+                    + A[i + 1, j - 1]
+                    + A[i + 1, j]
+                    + A[i + 1, j + 1]
+                ) / 9
 
 
 def seidel_2d(concrete_type, TSTEPS, N):
-    def kernel_seidel_2d[T: (int32, float32), TSTEPS: int32, N: int32](A: "T[N, N]"):
-        for t in range(TSTEPS):
-            for i in range(1, N - 1):
-                for j in range(1, N - 1):
-                    A[i, j] = (
-                        A[i - 1, j - 1]
-                        + A[i - 1, j]
-                        + A[i - 1, j + 1]
-                        + A[i, j - 1]
-                        + A[i, j]
-                        + A[i, j + 1]
-                        + A[i + 1, j - 1]
-                        + A[i + 1, j]
-                        + A[i + 1, j + 1]
-                    ) / 9
-
     s = allo.customize(kernel_seidel_2d, instantiate=[concrete_type, TSTEPS, N])
     return s.build()
 
@@ -64,7 +66,7 @@ def test_seidel_2d():
     A = np.random.randint(10, size=(N, N)).astype(np.float32)
     A_ref = A.copy()
     mod(A)
-    seidel_2d_np(A_ref, TSTEPS)
+    A_ref = seidel_2d_np(A_ref, TSTEPS)
     np.testing.assert_allclose(A, A_ref, rtol=1e-5, atol=1e-5)
 
 

@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-
+import pytest
 def test_adi():
     import adi
 
@@ -180,3 +180,7 @@ def test_two_mm():
     import two_mm
 
     two_mm.test_two_mm()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])

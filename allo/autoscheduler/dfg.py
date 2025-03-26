@@ -8,8 +8,9 @@ from allo._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
+    transform as transform_d,
 )
-from allo._mlir.ir import WalkResult, Operation, AffineMap
+from allo._mlir.ir import WalkResult, Operation, AffineMap, Block
 from allo.ir.types import MemRefType
 from .util import (
     LoopInfo,
@@ -18,6 +19,9 @@ from .util import (
     get_minimal_access_pattern,
     compute_loop_II,
 )
+
+import gurobipy as gp
+from gurobipy import GRB
 
 
 class DFGNodeType(enum.Enum):
@@ -365,15 +369,15 @@ class DFG:
                             dst_op=load_op,
                         )
 
-            for alloc_node_id, alloc_op in memref_allocs[memref]:
-                for store_node_id, store_op in stores_node_list:
-                    self.add_edge(
-                        alloc_node_id,
-                        store_node_id,
-                        value=memref,
-                        src_op=store_op,
-                        dst_op=alloc_op,
-                    )
+            # for alloc_node_id, alloc_op in memref_allocs[memref]:
+            #     for store_node_id, store_op in stores_node_list:
+            #         self.add_edge(
+            #             alloc_node_id,
+            #             store_node_id,
+            #             value=memref,
+            #             src_op=store_op,
+            #             dst_op=alloc_op,
+            #         )
 
         # Third pass: populate node information for each loop permutation
         for node in self.nodes.values():
@@ -533,9 +537,261 @@ class DFG:
 
             f.write("}\n")
 
-    # Optimization methods
     def createGraphParallelismPerformanceModel(self):
-        pass
+        model = gp.Model("graph_parallelism_performance_model")
+
+        topo_order = self.topological_sort()
+        if not topo_order:
+            print("Error: Cycle detected in graph")
+            return False
+
+        sink_nodes = [
+            node_id
+            for node_id in self.nodes
+            if self.get_node(node_id).type == DFGNodeType.RET
+        ]
+        print(sink_nodes)
+        assert len(sink_nodes) == 1, "Expected a single sink node"
+        sink_node_id = sink_nodes[0]
+
+        # permutation indicator variables
+        b_vars = {}
+        for node_id, node in self.nodes.items():
+            if node.type == DFGNodeType.AFFINE:
+                for perm_idx, node_info in enumerate(node.node_info):
+                    b_vars[(node_id, perm_idx)] = model.addVar(
+                        vtype=GRB.BINARY, name=f"b{node_id}_{perm_idx}"
+                    )
+        # permutation constraints
+        for node_id, node in self.nodes.items():
+            if node.type == DFGNodeType.AFFINE and node.node_info:
+                perm_vars = [
+                    b_vars[(node_id, perm_idx)]
+                    for perm_idx in range(len(node.node_info))
+                ]
+                model.addConstr(
+                    gp.quicksum(perm_vars) == 1,
+                    name=f"permutation_constraint_{node_id}",
+                )
+
+        # timing variables
+        st_vars = {}
+        fw_vars = {}
+        lw_vars = {}
+
+        for node_id in self.nodes:
+            st_vars[node_id] = model.addVar(
+                vtype=GRB.INTEGER, lb=0, name=f"st{node_id}"
+            )
+            fw_vars[node_id] = model.addVar(
+                vtype=GRB.INTEGER, lb=0, name=f"fw{node_id}"
+            )
+            lw_vars[node_id] = model.addVar(
+                vtype=GRB.INTEGER, lb=0, name=f"lw{node_id}"
+            )
+
+        # start time equations
+        for node_id in topo_order:
+            in_edges = self.in_edges.get(node_id, [])
+            # check root node
+            if not in_edges:
+                model.addConstr(st_vars[node_id] == 0, name=f"st_root_{node_id}")
+                model.addConstr(fw_vars[node_id] == 0, name=f"fw_root_{node_id}")
+                model.addConstr(lw_vars[node_id] == 0, name=f"lw_root_{node_id}")
+                continue
+
+            arrives_terms = []
+
+            for edge in in_edges:
+                src_id = edge.id
+                dst_node = self.get_node(node_id)
+                src_node = self.get_node(src_id)
+
+                if (
+                    src_node.type != DFGNodeType.AFFINE
+                    or dst_node.type != DFGNodeType.AFFINE
+                ):
+                    continue
+
+                for dst_perm_idx, dst_info in enumerate(dst_node.node_info):
+                    for src_perm_idx, src_info in enumerate(src_node.node_info):
+                        dst_op = edge.dst_op
+                        src_op = edge.src_op
+                        if (
+                            dst_op in dst_info.loads_map
+                            and src_op in src_info.stores_map
+                        ):
+                            dst_access = dst_info.loads_map[dst_op].accessMap
+                            src_access = src_info.stores_map[src_op].accessMap
+
+                            # TODO: need to check trip counts?
+                            # fifo case
+                            if dst_access == src_access:
+                                term = model.addVar(
+                                    vtype=GRB.INTEGER,
+                                    name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
+                                )
+                                model.addConstr(
+                                    term
+                                    == b_vars[(src_id, src_perm_idx)]
+                                    * b_vars[(node_id, dst_perm_idx)]
+                                    * fw_vars[src_id]
+                                )
+
+                                arrives_terms.append(term)
+
+                            else:
+                                term = model.addVar(
+                                    vtype=GRB.INTEGER,
+                                    name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
+                                )
+                                model.addConstr(
+                                    term
+                                    == b_vars[(src_id, src_perm_idx)]
+                                    * b_vars[(node_id, dst_perm_idx)]
+                                    * (lw_vars[src_id])
+                                )
+                                arrives_terms.append(term)
+
+            if arrives_terms:
+                model.addConstr(
+                    st_vars[node_id] == gp.max_(arrives_terms),
+                    name=f"st_constr_{node_id}",
+                )
+
+        # first write time equations
+        for node_id in topo_order:
+            node = self.get_node(node_id)
+            if node.type != DFGNodeType.AFFINE or not self.out_edges.get(node_id, []):
+                continue
+
+            # fw(n) = st(n) + sum(b \in B_n) FW_n * II_n * b
+            fw_terms = [st_vars[node_id]]
+            for perm_idx, node_info in enumerate(node.node_info):
+                for out_edge in self.out_edges[node_id]:
+                    src_op = out_edge.src_op
+                    if src_op in node_info.stores_map:
+                        edge_info: EdgeInfo = node_info.stores_map[src_op]
+                        first_time = edge_info.first_element_time
+                        ii = node_info.II
+
+                        term = model.addVar(
+                            vtype=GRB.INTEGER, name=f"fw_term_{node_id}_{perm_idx}"
+                        )
+
+                        model.addConstr(
+                            term == ii * b_vars[(node_id, perm_idx)] * first_time,
+                            name=f"fw_term_{node_id}_{perm_idx}",
+                        )
+
+                        fw_terms.append(term)
+
+            model.addConstr(
+                fw_vars[node_id] == gp.quicksum(fw_terms), name=f"fw_constr_{node_id}"
+            )
+
+        # LW(n) CONSTRAINTS
+        for node_id in topo_order:
+            in_edges = self.in_edges.get(node_id, [])
+            if not in_edges:
+                continue
+
+            lw_terms = []
+
+            # relative last reads
+            for edge in in_edges:
+                src_id = edge.id
+                # construct \sum LR_n^{n'} * b terms
+                rlr_terms = []
+                dst_node = self.get_node(node_id)
+
+                if dst_node.type == DFGNodeType.AFFINE:
+                    rlr_terms.append(st_vars[node_id])
+
+                    for perm_idx, node_info in enumerate(dst_node.node_info):
+                        dst_op = edge.dst_op
+                        if dst_op in node_info.loads_map:
+                            lr_time = node_info.loads_map[dst_op].last_element_time
+                            ii = node_info.II
+
+                            term = model.addVar(
+                                vtype=GRB.INTEGER,
+                                lb=0,
+                                name=f"rlr_term_{src_id}_{node_id}_{perm_idx}",
+                            )
+
+                            model.addConstr(
+                                term == lr_time * ii * b_vars[(node_id, perm_idx)]
+                            )
+
+                            rlr_terms.append(term)
+
+                # depend(n, n')
+                depend_term = model.addVar(
+                    vtype=GRB.INTEGER, name=f"depend_{src_id}_{node_id}"
+                )
+
+                st_plus_lr = model.addVar(
+                    vtype=GRB.INTEGER, lb=0, name=f"st_plus_lr_{src_id}_{node_id}"
+                )
+                model.addConstr(
+                    st_plus_lr == st_vars[node_id] + gp.quicksum(rlr_terms),
+                    name=f"st_plus_lr_constr_{src_id}_{node_id}",
+                )
+
+                model.addConstr(
+                    depend_term == gp.max_(st_plus_lr, lw_vars[src_id]),
+                    name=f"depend_{src_id}_{node_id}",
+                )
+
+                # epilogue(n, n') = \sum (lw_n - lr_n^{n'}) * b
+                epilogue_term = model.addVar(
+                    vtype=GRB.INTEGER, name=f"epilogue_{src_id}_{node_id}"
+                )
+
+                epi_terms = []
+                if dst_node.type == DFGNodeType.AFFINE:
+                    for dst_perm_idx, dst_info in enumerate(dst_node.node_info):
+                        # (lw_n - lr_n^{n'}) * b
+                        term = model.addVar(
+                            vtype=GRB.INTEGER,
+                            name=f"epi_term_{src_id}_{node_id}_{dst_perm_idx}",
+                        )
+
+                        model.addConstr(
+                            term
+                            == (depend_term - lw_vars[src_id])
+                            * b_vars[(node_id, dst_perm_idx)]
+                        )
+                        epi_terms.append(term)
+
+                model.addConstr(
+                    epilogue_term == gp.quicksum(epi_terms),
+                    name=f"epilogue_{src_id}_{node_id}",
+                )
+
+                lw_term = model.addVar(
+                    vtype=GRB.INTEGER, name=f"lw_term_{src_id}_{node_id}"
+                )
+
+                model.addConstr(
+                    lw_term == depend_term + epilogue_term,
+                    name=f"lw_term_{src_id}_{node_id}",
+                )
+                lw_terms.append(lw_term)
+
+            if lw_terms:
+                model.addGenConstrMax(
+                    lw_vars[node_id], lw_terms, name=f"lw_constr_{node_id}"
+                )
+
+        # objective function
+        obj = lw_vars[sink_node_id]
+        model.setObjective(obj, GRB.MINIMIZE)
+        model.optimize()
+
+        # returns [node_id, perm_idx] pairs
+        return [k for k, b_var in b_vars.items() if b_var.x > 0.5]
 
     @classmethod
     def from_module(cls, module, dsp_factors=None, mem_r_ports=None, mem_w_ports=None):
@@ -552,3 +808,6 @@ class DFG:
         dfg.init()
 
         return dfg
+
+    def flatten(self):
+        transform_d.ApplyToLLVMConversionPatternsOp
