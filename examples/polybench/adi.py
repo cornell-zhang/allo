@@ -69,6 +69,7 @@ d = 0.0
 e = 0.0
 f = 0.0
 
+
 def kernel_adi[
     T: (float32, int32), TSTEPS: int32, N: int32
 ](u: "T[N, N]", v: "T[N, N]", p: "T[N, N]", q: "T[N, N]"):
@@ -111,7 +112,7 @@ def kernel_adi[
 def adi(ttype, TSTEPS, N):
     # Declare global to update the constants
     global a, b, c, d, e, f
-    
+
     DX = 1.0 / N
     DY = 1.0 / N
     DT = 1.0 / TSTEPS

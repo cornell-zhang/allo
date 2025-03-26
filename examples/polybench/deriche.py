@@ -74,6 +74,7 @@ def deriche_np(imgIn, imgOut, y1, y2, a1, a2, a3, a4, a5, a6, a7, a8, b1, b2, c1
 # Global constants for kernel functions
 a1 = a2 = a3 = a4 = a5 = a6 = a7 = a8 = b1 = b2 = c1 = c2 = 0.0
 
+
 def kernel_deriche[
     T: (float32, int32), W: int32, H: int32
 ](imgIn: "T[W, H]", imgOut: "T[W, H]", y1: "T[W, H]", y2: "T[W, H]"):
@@ -132,7 +133,24 @@ def kernel_deriche[
         for j in range(H):
             imgOut[i, j] = c2 * (y1[i, j] + y2[i, j])
 
-def deriche(concrete_type, w, h, a1_val, a2_val, a3_val, a4_val, a5_val, a6_val, a7_val, a8_val, b1_val, b2_val, c1_val, c2_val):
+
+def deriche(
+    concrete_type,
+    w,
+    h,
+    a1_val,
+    a2_val,
+    a3_val,
+    a4_val,
+    a5_val,
+    a6_val,
+    a7_val,
+    a8_val,
+    b1_val,
+    b2_val,
+    c1_val,
+    c2_val,
+):
     global a1, a2, a3, a4, a5, a6, a7, a8, b1, b2, c1, c2
     a1, a2, a3, a4 = a1_val, a2_val, a3_val, a4_val
     a5, a6, a7, a8 = a5_val, a6_val, a7_val, a8_val

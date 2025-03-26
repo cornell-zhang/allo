@@ -23,6 +23,7 @@ def stage_M[
         for r in allo.reduction(N):
             out_Ax[m] += A[m, r] * x[r]
 
+
 def stage_N[
     T: (float32, int32), M: int32, N: int32
 ](A: "T[M, N]", out_Ax: "T[M]", y: "T[N]"):
@@ -30,12 +31,14 @@ def stage_N[
         for k in allo.reduction(M):
             y[n] += A[k, n] * out_Ax[k]
 
+
 def kernel_atax[
     T: (float32, int32), M: int32, N: int32
 ](A: "T[M, N]", x: "T[N]", y: "T[N]"):
     out_Ax: T[M] = 0
     stage_M[T, M, N](A, x, out_Ax)
     stage_N[T, M, N](A, out_Ax, y)
+
 
 def atax(concrete_type, m, n):
     sch0 = allo.customize(stage_M, instantiate=[concrete_type, m, n])

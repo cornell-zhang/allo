@@ -52,6 +52,7 @@ def kernel_fdtd_2d[
                     ex[i, j + 1] - ex[i, j] + ey[i + 1, j] - ey[i, j]
                 )
 
+
 def top_fdtd_2d(concrete_type, Nx, Ny, Tmax):
     s = allo.customize(kernel_fdtd_2d, instantiate=[concrete_type, Nx, Ny, Tmax])
     return s.build()
@@ -78,7 +79,9 @@ def test_fdtd_2d():
     ey_golden = ey.copy()
     hz_golden = hz.copy()
     fict_golden = fict.copy()
-    ex_golden, ey_golden, hz_golden, fict_golden = fdtd_2d_np(ex_golden, ey_golden, hz_golden, fict_golden)
+    ex_golden, ey_golden, hz_golden, fict_golden = fdtd_2d_np(
+        ex_golden, ey_golden, hz_golden, fict_golden
+    )
     mod(ex, ey, hz, fict)
     np.testing.assert_allclose(ex, ex_golden, rtol=1e-3, atol=1e-3)
     np.testing.assert_allclose(ey, ey_golden, rtol=1e-3, atol=1e-3)

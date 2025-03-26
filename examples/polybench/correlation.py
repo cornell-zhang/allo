@@ -56,6 +56,7 @@ def compute_mean[
             total += data[k, x]
         mean[x] = total / N
 
+
 def compute_stddev[
     T: (float32, int32), M: int32, N: int32
 ](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"):
@@ -69,6 +70,7 @@ def compute_stddev[
         if stddev[x] <= epsilon:
             stddev[x] = 1.0
 
+
 def center_reduce[
     T: (float32, int32), M: int32, N: int32
 ](data: "T[N, M]", data_out: "T[N, M]", mean: "T[M]", stddev: "T[M]"):
@@ -78,6 +80,7 @@ def center_reduce[
             d -= mean[y]
             d /= allo.sqrt(N_float) * stddev[y]
             data_out[x, y] = d
+
 
 def compute_corr[
     T: (float32, int32), M: int32, N: int32
@@ -93,6 +96,7 @@ def compute_corr[
                 corr[i, j] = corr_v
 
     corr[M - 1, M - 1] = 1.0
+
 
 def kernel_correlation[
     T: (float32, int32), M: int32, N: int32
@@ -111,15 +115,17 @@ def kernel_correlation[
     center_reduce(data_for_center, data_centered, mean_passed_on, stddev)
     compute_corr(data_centered, corr)
 
+
 # Global constants for kernel functions
 N_float = 0.0
 epsilon = 0.0
+
 
 def correlation(concrete_type, M, N, N_float_val, epsilon_val):
     global N_float, epsilon
     N_float = N_float_val
     epsilon = epsilon_val
-    
+
     s0 = allo.customize(compute_mean, instantiate=[concrete_type, M, N])
     s0.pipeline("x")
     s0.partition(s0.data, dim=1)
@@ -166,7 +172,9 @@ def test_correlation():
     stddev = np.zeros((M,), dtype=np.float32)
     corr = np.zeros((M, M), dtype=np.float32)
     corr_ref = np.zeros((M, M), dtype=np.float32)
-    data_ref, mean_ref, stddev_ref, corr_ref = correlation_np(data.copy(), mean.copy(), stddev.copy(), corr_ref, M, N, N_float, epsilon)
+    data_ref, mean_ref, stddev_ref, corr_ref = correlation_np(
+        data.copy(), mean.copy(), stddev.copy(), corr_ref, M, N, N_float, epsilon
+    )
     mod = sch.build()
     mod(data.copy(), data.copy(), data.copy(), corr)
     np.testing.assert_allclose(corr, corr_ref, rtol=1e-5, atol=1e-5)

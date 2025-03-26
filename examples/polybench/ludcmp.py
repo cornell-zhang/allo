@@ -71,6 +71,7 @@ def kernel_ludcmp[
             alpha -= A[i, j] * x[j]
         x[i] = alpha / A[i, i]
 
+
 def ludcmp(concrete_type, n):
     s0 = allo.customize(kernel_ludcmp, instantiate=[concrete_type, n])
     return s0.build()

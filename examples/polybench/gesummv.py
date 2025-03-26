@@ -36,11 +36,11 @@ def compute_tmp[
         tmp[i1] = tt[i1]
         y_out[i1] = yy[i1]
 
-def compute_y[
-    T: (float32, int32), N: int32
-](y_in: "T[N]", y_out: "T[N]", tmp: "T[N]"):
+
+def compute_y[T: (float32, int32), N: int32](y_in: "T[N]", y_out: "T[N]", tmp: "T[N]"):
     for i0 in allo.grid(N, name="load"):
         y_out[i0] = alpha * tmp[i0] + beta * y_in[i0]
+
 
 def kernel_gesummv[
     T: (float32, int32), N: int32
@@ -50,6 +50,7 @@ def kernel_gesummv[
     tmp: T[N] = 0.0
     compute_tmp(y_init, y_fifo, A, B, x, tmp)
     compute_y(y_fifo, y, tmp)
+
 
 def gesummv(concrete_type, N, alpha=0.1, beta=0.1):
     sch0 = allo.customize(compute_tmp, instantiate=[concrete_type, N])

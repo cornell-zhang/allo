@@ -55,6 +55,7 @@ def kernel_durbin[T: (float32, int32), N: int32](r: "T[N]", y: "T[N]"):
 
         y[k] = alpha
 
+
 def durbin(concrete_type, n):
     s = allo.customize(kernel_durbin, instantiate=[concrete_type, n])
     return s.build()

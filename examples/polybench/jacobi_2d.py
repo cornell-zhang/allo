@@ -35,6 +35,7 @@ def compute_A[T: (float32, int32), N: int32](A0: "T[N, N]", B0: "T[N, N]"):
             + A0[i0 + 2, j0 + 1]
         )
 
+
 def compute_B[T: (float32, int32), N: int32](B1: "T[N, N]", A1: "T[N, N]"):
     for i1, j1 in allo.grid(N - 2, N - 2, name="B"):
         A1[i1 + 1, j1 + 1] = 0.2 * (
@@ -45,10 +46,12 @@ def compute_B[T: (float32, int32), N: int32](B1: "T[N, N]", A1: "T[N, N]"):
             + B1[i1 + 2, j1 + 1]
         )
 
+
 def kernel_jacobi_2d[T: (float32, int32), N: int32](A: "T[N, N]", B: "T[N, N]"):
     for m in range(TSTEPS):
         compute_A(A, B)
         compute_B(B, A)
+
 
 def jacobi_2d(concrete_type, TSTEPS, N):
     sch0 = allo.customize(compute_A, instantiate=[concrete_type, N])

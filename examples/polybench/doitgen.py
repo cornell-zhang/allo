@@ -34,6 +34,7 @@ def kernel_doitgen[
         for p1 in allo.grid(P):
             A[r, q, p1] = sum_[p1]
 
+
 def doitgen(concrete_type, qq, rr, pp, ss):
     s0 = allo.customize(kernel_doitgen, instantiate=[concrete_type, rr, qq, pp, ss])
     return s0.build()

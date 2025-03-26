@@ -30,6 +30,7 @@ def kernel_jacobi_1d[
         for i1 in range(1, N - 1):
             A[i1] = 0.33333 * (B[i1 - 1] + B[i1] + B[i1 + 1])
 
+
 def jacobi_1d(concrete_type, tsteps, nn):
     s = allo.customize(kernel_jacobi_1d, instantiate=[concrete_type, tsteps, nn])
     return s.build()

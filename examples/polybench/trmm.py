@@ -25,13 +25,16 @@ def S0[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
             if k1 > i1:
                 B[i1, j1] += A[k1, i1] * B[k1, j1]
 
+
 def S1[T: (float32, int32), M, N](B: "T[M, N]"):
     for i0, j0 in allo.grid(M, N, name="mul"):
         B[i0, j0] = B[i0, j0] * alpha
 
+
 def kernel_trmm[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
     S0[T, M, N](A, B)
     S1[T, M, N](B)
+
 
 def top_trmm(concrete_type, m, n, alpha=1.5):
     factor = 20

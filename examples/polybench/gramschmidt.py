@@ -54,6 +54,7 @@ def kernel_gramschmidt[
             for i in range(M):
                 A[i, j] -= Q[i, k] * R[k, j]
 
+
 def gramschmidt(concrete_type, m, n):
     s0 = allo.customize(kernel_gramschmidt, instantiate=[concrete_type, m, n])
     return s0.build()

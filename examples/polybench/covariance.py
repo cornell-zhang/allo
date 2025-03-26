@@ -47,6 +47,7 @@ def kernel_covariance[
             covariance += (data[p, i] - mean[i]) * (data[p, j] - mean[j])
         cov[i, j] = covariance / (N - 1)
 
+
 def covariance(type, m, n):
     s = allo.customize(kernel_covariance, instantiate=[type, m, n])
     mod = s.build()

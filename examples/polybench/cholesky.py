@@ -37,6 +37,7 @@ def kernel_cholesky[T: (int32, float32), N: int32](A: "T[N, N]"):
             A[i, i] = A[i, i] - A[i, k] * A[i, k]
         A[i, i] = allo.sqrt(A[i, i] * 1.0)
 
+
 def cholesky(concrete_type, n):
     s = allo.customize(kernel_cholesky, instantiate=[concrete_type, n])
     return s.build()

@@ -35,6 +35,7 @@ def kernel_lu[T: (float32, int32), N: int32](A: "T[N, N]"):
             for k in range(i):
                 A[i, j] -= A[i, k] * A[k, j]
 
+
 def lu(concrete_type, n):
     s0 = allo.customize(kernel_lu, instantiate=[concrete_type, n])
     return s0.build()

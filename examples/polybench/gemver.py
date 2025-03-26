@@ -54,6 +54,7 @@ def kernel_gemver[
     for i, j in allo.grid(N, N):
         w[i] = w[i] + alpha * A[i, j] * x[j]
 
+
 def gemver(concrete_type, n, alpha=0.1, beta=0.1):
     s0 = allo.customize(kernel_gemver, instantiate=[concrete_type, n])
     return s0.build()
@@ -87,7 +88,9 @@ def test_gemver():
     x_golden = x.copy()
     w_golden = w.copy()
 
-    A_golden, x_golden, y_golden, w_golden = gemver_np(A_golden, u1, u2, v1, v2, x_golden, y_golden, w_golden, z, alpha, beta)
+    A_golden, x_golden, y_golden, w_golden = gemver_np(
+        A_golden, u1, u2, v1, v2, x_golden, y_golden, w_golden, z, alpha, beta
+    )
     mod(A, u1, u2, v1, v2, x, y, w, z)
 
     np.testing.assert_allclose(A, A_golden, rtol=1e-3, atol=1e-3)

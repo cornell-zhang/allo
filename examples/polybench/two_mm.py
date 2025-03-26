@@ -24,6 +24,7 @@ def mm1[
         for k0 in allo.reduction(Q):
             out_AB[i0, j0] += A[i0, k0] * B[k0, j0]
 
+
 def mm2[
     T: (float32, int32), P: int32, R: int32, S: int32
 ](out_AB: "T[P, R]", C: "T[R, S]", out_ABC: "T[P, S]"):
@@ -31,11 +32,13 @@ def mm2[
         for k1 in allo.reduction(R):
             out_ABC[i1, j1] += out_AB[i1, k1] * C[k1, j1]
 
+
 def ele_add[
     T: (float32, int32), P: int32, S: int32
 ](out_ABC: "T[P, S]", D: "T[P, S]", output: "T[P, S]"):
     for i2, j2 in allo.grid(P, S):
         output[i2, j2] = out_ABC[i2, j2] * beta + D[i2, j2] * alpha
+
 
 def kernel_2mm[
     T: (float32, int32), P: int32, R: int32, Q: int32, S: int32
@@ -47,6 +50,7 @@ def kernel_2mm[
     mm2[T, P, R, S](out_AB, C, out_ABC)
     ele_add[T, P, S](out_ABC, D, output)
     return output
+
 
 def two_mm(concrete_type, p, r, q, s):
     alpha = 0.1

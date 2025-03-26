@@ -27,6 +27,7 @@ def update_C[T: (float32, int32), N: int32](Cin: "T[N, N]", Cout: "T[N, N]"):
         else:
             Cout[i0, j0] = Cin[i0, j0]
 
+
 def compute_sum[
     T: (float32, int32), N: int32, M: int32
 ](A: "T[N, M]", A_copy: "T[N, M]", Cin: "T[N, N]", Cout: "T[N, N]"):
@@ -39,12 +40,14 @@ def compute_sum[
     for i2, j2 in allo.grid(N, N, name="store"):
         Cout[i2, j2] = buffer[i2, j2]
 
+
 def kernel_syr2k[
     T: (float32, int32), N: int32, M: int32
 ](A: "T[N, M]", A_copy: "T[N, M]", Cin: "T[N, N]", Cout: "T[N, N]"):
     C: T[N, N] = 0
     update_C[T, N](Cin, C)
     compute_sum[T, N, M](A, A_copy, C, Cout)
+
 
 def syrk(concrete_type, M, N, alpha=1.5, beta=1.2):
     sch0 = allo.customize(update_C, instantiate=[concrete_type, N])

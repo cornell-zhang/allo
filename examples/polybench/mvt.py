@@ -28,6 +28,7 @@ def stageA[
             x += A[i0, j0] * y1[j0]
         x1_out[i0] = x
 
+
 def stageB[
     T: (float32, int32), N: int32
 ](x2_in: "T[N]", x2_out: "T[N]", A: "T[N, N]", y2: "T[N]"):
@@ -36,6 +37,7 @@ def stageB[
         for j1 in allo.reduction(N):
             x += A[j1, i1] * y2[j1]
         x2_out[i1] = x
+
 
 def kernel_mvt[
     T: (float32, int32), N: int32
@@ -51,6 +53,7 @@ def kernel_mvt[
 ):
     stageA[T, N](x1, x1_out, A, y1)
     stageB[T, N](x2, x2_out, A_copy, y2)
+
 
 def mvt(concrete_type, N):
     sch0 = allo.customize(stageA, instantiate=[concrete_type, N])

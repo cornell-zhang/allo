@@ -25,6 +25,7 @@ def kernel_floyd_warshall[T: (float32, int32), N: int32](path: "T[N, N]"):
         if path[i, j] >= path_:
             path[i, j] = path_
 
+
 def floyd_warshall(concrete_type, N):
     s0 = allo.customize(kernel_floyd_warshall, instantiate=[concrete_type, N])
     return s0.build()
