@@ -30,22 +30,26 @@ from .util import (
 from .dfg import DFG, DFGNodeType
 
 DEBUG_POINTS = ["mlir_preprocess", "dataflow_canonicalization", "outline_loops"]
+PARALLELISM_MODELS = ["graph", "node", "combined"]
 
 
-# pylint: disable=unused-argument
 def dataflow_optimization_pass(
-    schedule: Schedule, debugPoint=None, kind=None
+    schedule: Schedule, debug_point=None, kind=None
 ) -> Schedule:
     """
     Applies autoscheduler optimization passes to the schedule.
     """
     assert (
-        debugPoint is None or debugPoint in DEBUG_POINTS
-    ), f"Invalid debug point: {debugPoint}"
+        debug_point is None or debug_point in DEBUG_POINTS
+    ), f"Invalid debug point: {debug_point}"
+    assert (
+        kind is None or kind in PARALLELISM_MODELS
+    ), f"Invalid parallelism model: {kind}"
+
     assert check_call_graph_acyclic(schedule.module), "Call graph is not acyclic"
     top_fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, top_fn_name)
-    if debugPoint == "mlir_preprocess":
+    if debug_point == "mlir_preprocess":
         return Schedule(
             mod,
             find_func_in_module(mod, top_fn_name),
@@ -63,7 +67,7 @@ def dataflow_optimization_pass(
 
     # Dataflow canonicalization pass
     mod_dcp = _dataflow_canonicalization_pass(mod)
-    if debugPoint == "dataflow_canonicalization":
+    if debug_point == "dataflow_canonicalization":
         return Schedule(
             mod_dcp,
             find_func_in_module(mod_dcp, top_fn_name),
@@ -74,12 +78,9 @@ def dataflow_optimization_pass(
         )
 
     dfg = DFG.from_module(mod_dcp)
-    # if kind == "graph":
-    #     res, fifo_memrefs = dfg.createGraphParallelismPerformanceModel()
-    #     pass
 
     mod_outlined = outline_loops_pass(mod_dcp, dfg)
-    if debugPoint == "outline_loops":
+    if debug_point == "outline_loops":
         return Schedule(
             mod_outlined,
             find_func_in_module(mod_outlined, top_fn_name),
@@ -88,6 +89,16 @@ def dataflow_optimization_pass(
             schedule.ext_libs,
             schedule.inst_list,
         )
+
+    if kind == "graph":
+        # TODO: implement graph parallelism performance model
+        pass
+    elif kind == "node":
+        # TODO: implement node parallelism performance model
+        pass
+    elif kind == "combined":
+        # TODO: implement combined parallelism performance model
+        pass
 
     return Schedule(
         mod,
