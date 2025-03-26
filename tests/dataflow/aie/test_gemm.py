@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import allo.dataflow as df
 from allo.ir.types import int16, int32
 import numpy as np
@@ -22,13 +23,21 @@ def _test_gemm_1D():
                 A[pi * Mt : (pi + 1) * Mt, :], B
             )
 
-    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        C = np.zeros((M, N)).astype(np.int32)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+    sim_mod = df.build(top, target="simulator")
     C = np.zeros((M, N)).astype(np.int32)
-    mod(A, B, C)
+    sim_mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    print("Dataflow Simulator Passed!")
 
 
 def _test_gemm_2D():
@@ -46,13 +55,23 @@ def _test_gemm_2D():
                 A[p0 * Mt : (p0 + 1) * Mt, :], B[:, p1 * Nt : (p1 + 1) * Nt]
             )
 
-    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
+
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        C = np.zeros((M, N)).astype(np.int32)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+    sim_mod = df.build(top, target="simulator")
     C = np.zeros((M, N)).astype(np.int32)
-    mod(A, B, C)
+    sim_mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    print("Dataflow Simulator Passed!")
 
 
 if __name__ == "__main__":
