@@ -29,7 +29,6 @@ def stageA[
             x1_out[i0] += A[i0, j0] * y1[j0]
 
 
-
 def stageB[
     T: (float32, int32), N: int32
 ](x2_in: "T[N]", x2_out: "T[N]", A: "T[N, N]", y2: "T[N]"):
@@ -38,7 +37,6 @@ def stageB[
     for i1 in allo.grid(N, name="B"):
         for j1 in allo.reduction(N):
             x2_out[i1] += A[j1, i1] * y2[j1]
-        
 
 
 def kernel_mvt[
