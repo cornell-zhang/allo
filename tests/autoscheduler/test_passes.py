@@ -57,10 +57,10 @@ def test_bicg(debug_point):
     optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
-    A, s, q, p, r = inputs
+    A, A_copy, s, q, p, r = inputs
     q_out = np.zeros_like(q)
     s_out = np.zeros_like(s)
-    mod(A, p, r, q_out, s_out)
+    mod(A, A_copy, p, r, q_out, s_out)
 
     expected_q, expected_s = expected
     np.testing.assert_allclose(q_out, expected_q)
@@ -105,11 +105,11 @@ def test_mvt(debug_point):
     optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
     mod = optimized_schedule.build()
 
-    A, x1, x2, y1, y2 = inputs
+    A, A_copy, y1, y2, x1, x2, x1_out, x2_out = inputs
     expected_x1, expected_x2 = expected
     out_x1 = np.zeros_like(x1)
     out_x2 = np.zeros_like(x2)
-    mod(A, y1, y2, x1, x2, out_x1, out_x2)
+    mod(A, A_copy, y1, y2, x1, x2, out_x1, out_x2)
 
     np.testing.assert_allclose(out_x1, expected_x1, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(out_x2, expected_x2, rtol=1e-5, atol=1e-5)
