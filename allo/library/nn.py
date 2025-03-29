@@ -239,4 +239,3 @@ def schedule_modulate_fused(s):
     lj = s.get_loops(s.top_func_name)["m_fused"]["j"]
     s.pipeline(lj)
     return s
-
