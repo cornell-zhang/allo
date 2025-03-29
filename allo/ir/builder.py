@@ -1942,6 +1942,7 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
+        # pylint: disable=too-many-nested-blocks
         if (
             obj.__module__.startswith("allo")
             and not obj.__module__.startswith("allo.library")
@@ -2018,18 +2019,26 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(stream.dtype, UInt):
                     stream_op.attributes["unsigned"] = UnitAttr.get()
                 return stream_op
+            arg_types = []
             if isinstance(new_args[0].result, OpResultList):
-                arg_type = new_args[0].result[0].type
+                for arg in new_args:
+                    if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
+                        for result in arg.result:
+                            if hasattr(result, "type"):
+                                arg_types.append(result.type)
             else:
-                arg_type = new_args[0].result.type
-            if isinstance(arg_type, (F32Type, IntegerType)):
+                for arg in new_args:
+                    if hasattr(arg, "result") and hasattr(arg.result, "type"):
+                        arg_types.append(arg.result.type)
+            if all(
+                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+            ):
                 opcls = {
                     "exp": math_d.ExpOp,
                     "log": math_d.LogOp,
                     "log2": math_d.Log2Op,
                     "log10": math_d.Log10Op,
                     "sqrt": math_d.SqrtOp,
-                    "sin": math_d.SinOp,
                     "cos": math_d.CosOp,
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
@@ -2037,7 +2046,10 @@ class ASTTransformer(ASTBuilder):
                     "abs": math_d.AbsIOp,
                 }.get(fn_name)
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
-            if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {
+            if any(
+                isinstance(arg_type, (MemRefType, RankedTensorType))
+                for arg_type in arg_types
+            ) and fn_name in {
                 "matmul",
                 "bmm",
                 "softmax",
@@ -2095,7 +2107,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 return call_op
-            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
+            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_types}")
 
         # User-defined subfunction
         func = ctx.global_vars[obj_name]

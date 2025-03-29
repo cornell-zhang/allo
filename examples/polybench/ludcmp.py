@@ -35,42 +35,44 @@ def ludcmp_np(A, b, x, y):
         for j in range(i + 1, N):
             w -= A[i, j] * x[j]
         x[i] = w / A[i, i]
+    return A, b, x, y
+
+
+def kernel_ludcmp[
+    T: (float32, int32), N: int32
+](A: "T[N, N]", b: "T[N]", x: "T[N]", y: "T[N]"):
+    # LU decomposition of A
+    for i in range(N):
+        for j in range(i):
+            w: T = A[i, j]
+            for k in range(j):
+                w -= A[i, k] * A[k, j]
+            A[i, j] = w / A[j, j]
+
+        for j in range(i, N):
+            w: T = A[i, j]
+            for k in range(i):
+                w -= A[i, k] * A[k, j]
+            A[i, j] = w
+
+    # Finding solution for LY = b
+    for i in range(N):
+        alpha: T = b[i]
+        for j in range(i):
+            alpha -= A[i, j] * y[j]
+        y[i] = alpha
+
+    # Finding solution for Ux = y
+    # for i in range(N - 1, cst_neg_1, cst_neg_1):
+    for i_inv in range(N):
+        i: index = N - 1 - i_inv
+        alpha: float32 = y[i]
+        for j in range(i + 1, N):
+            alpha -= A[i, j] * x[j]
+        x[i] = alpha / A[i, i]
 
 
 def ludcmp(concrete_type, n):
-    def kernel_ludcmp[
-        T: (float32, int32), N: int32
-    ](A: "T[N, N]", b: "T[N]", x: "T[N]", y: "T[N]"):
-        # LU decomposition of A
-        for i in range(N):
-            for j in range(i):
-                w: T = A[i, j]
-                for k in range(j):
-                    w -= A[i, k] * A[k, j]
-                A[i, j] = w / A[j, j]
-
-            for j in range(i, N):
-                w: T = A[i, j]
-                for k in range(i):
-                    w -= A[i, k] * A[k, j]
-                A[i, j] = w
-
-        # Finding solution for LY = b
-        for i in range(N):
-            alpha: T = b[i]
-            for j in range(i):
-                alpha -= A[i, j] * y[j]
-            y[i] = alpha
-
-        # Finding solution for Ux = y
-        # for i in range(N - 1, cst_neg_1, cst_neg_1):
-        for i_inv in range(N):
-            i: index = N - 1 - i_inv
-            alpha: float32 = y[i]
-            for j in range(i + 1, N):
-                alpha -= A[i, j] * x[j]
-            x[i] = alpha / A[i, i]
-
     s0 = allo.customize(kernel_ludcmp, instantiate=[concrete_type, n])
     return s0.build()
 
@@ -95,7 +97,7 @@ def test_ludcmp():
     b_ref = b.copy()
     x_ref = x.copy()
     y_ref = y.copy()
-    ludcmp_np(A_ref, b_ref, x_ref, y_ref)
+    A_ref, b_ref, x_ref, y_ref = ludcmp_np(A_ref, b_ref, x_ref, y_ref)
 
     # run allo
     A_opt = A.copy()
