@@ -205,6 +205,7 @@ def RoPE[
     Ty, H, L, D
 ](X: "Ty[L, D]", cos: "Ty[L, D // H // 2]", sin: "Ty[L, D // H // 2]") -> "Ty[L, D]":
     # Rotary Position Embedding
+    # Reference: https://arxiv.org/abs/2104.09864
     X_rotary: Ty[L, D]
     for h in range(H):
         X_1_h: Ty[L, D // H // 2]
