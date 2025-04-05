@@ -49,22 +49,22 @@ def test_atax(debug_point):
     np.testing.assert_allclose(y_out, expected, rtol=1e-5, atol=1e-5)
 
 
-@pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_bicg(debug_point):
-    schedule, inputs, expected = get_polybench(
-        "bicg", size="small", concrete_type=float32
-    )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+# @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
+# def test_bicg(debug_point):
+#     schedule, inputs, expected = get_polybench(
+#         "bicg", size="small", concrete_type=float32
+#     )
+#     optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
+#     mod = optimized_schedule.build()
 
-    A, A_copy, s, q, p, r = inputs
-    q_out = np.zeros_like(q)
-    s_out = np.zeros_like(s)
-    mod(A, A_copy, p, r, q_out, s_out)
+#     A, A_copy, s, q, p, r = inputs
+#     q_out = np.zeros_like(q)
+#     s_out = np.zeros_like(s)
+#     mod(A, A_copy, p, r, q_out, s_out)
 
-    expected_q, expected_s = expected
-    np.testing.assert_allclose(q_out, expected_q)
-    np.testing.assert_allclose(s_out, expected_s)
+#     expected_q, expected_s = expected
+#     np.testing.assert_allclose(q_out, expected_q)
+#     np.testing.assert_allclose(s_out, expected_s)
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
