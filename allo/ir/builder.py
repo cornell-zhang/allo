@@ -868,7 +868,7 @@ class ASTTransformer(ASTBuilder):
             if hasattr(node, "target"):
                 name = node.target.id
             else:
-                name = f"const_{hash(str(node) + str(np_values))}"
+                name = f"const_{abs(hash(str(node) + str(np_values)))}"
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(shape, dtype.build())
@@ -2095,14 +2095,14 @@ class ASTTransformer(ASTBuilder):
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
                 func_op = func_d.FuncOp(
-                    name=f"{fn_name}_{hash(node)}",
+                    name=f"{fn_name}_{abs(hash(node))}",
                     type=FunctionType.get(input_types, output_types),
                     ip=InsertionPoint(ctx.top_func),
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 call_op = func_d.CallOp(
                     [arg_results[0].type],
-                    FlatSymbolRefAttr.get(f"{fn_name}_{hash(node)}"),
+                    FlatSymbolRefAttr.get(f"{fn_name}_{abs(hash(node))}"),
                     arg_results,
                     ip=ctx.get_ip(),
                 )
