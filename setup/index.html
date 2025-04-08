@@ -264,6 +264,14 @@ ninja
 </div>
 <p>If you see no error messages, then the installation is successful. Otherwise, please contact us for help.</p>
 </section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"><span>¶</span></a></h2>
+<p>If you encounter the following issue when building Allo, it is mostly because you source the Vitis environment at the same time, which may cause some library conflicts. Please disable it and try again.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">running build_ext</span>
+<span class="go">  cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory</span>
+</pre></div>
+</div>
+</section>
 </section>
 
 
@@ -285,6 +293,7 @@ ninja
 <li><a class="reference internal" href="#install-from-source">Install from Source</a></li>
 <li><a class="reference internal" href="#testing">Testing</a></li>
 <li><a class="reference internal" href="#internal-installation-cornell">Internal Installation (Cornell)</a></li>
+<li><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
 </ul>
 </li>
 </ul>
