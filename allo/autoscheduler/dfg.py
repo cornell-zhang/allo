@@ -587,7 +587,7 @@ class DFG:
         b_vars = {}
         for node_id, node in self.nodes.items():
             if node.type == DFGNodeType.AFFINE:
-                for perm_idx, node_info in enumerate(node.node_info):
+                for perm_idx, _ in enumerate(node.node_info):
                     b_vars[(node_id, perm_idx)] = model.addVar(
                         vtype=GRB.BINARY, name=f"b{node_id}_{perm_idx}"
                     )
@@ -628,7 +628,7 @@ class DFG:
     def _add_start_time_constraints(
         self, model, b_vars, st_vars, fw_vars, lw_vars, topo_order
     ):
-        """st(n) = max_{n' \in ins(n)} [\sum_{b \in B_n} \sum_{b' \in B_n'} Arrives(n, n') * b * b']"""
+        r"""st(n) = max_{n' \in ins(n)} [\sum_{b \in B_n} \sum_{b' \in B_n'} Arrives(n, n') * b * b']"""
         for node_id in topo_order:
             in_edges = self.in_edges.get(node_id, [])
             # Handle root nodes (no incoming edges)
@@ -707,7 +707,7 @@ class DFG:
     def _add_first_write_time_constraints(
         self, model, b_vars, st_vars, fw_vars, topo_order
     ):
-        """fw(n) = st(n) + \sum_{b \in B_n} [FW_n * II_n * b]"""
+        r"""fw(n) = st(n) + \sum_{b \in B_n} [FW_n * II_n * b]"""
         for node_id in topo_order:
             node = self.get_node(node_id)
             if node.type != DFGNodeType.AFFINE or not self.out_edges.get(node_id, []):
@@ -740,7 +740,7 @@ class DFG:
     def _add_last_write_time_constraints(
         self, model, b_vars, st_vars, lw_vars, topo_order
     ):
-        """lw(n) = max_{n' \in ins(n)} [Depend(n, n') + Epilogue(n, n')]"""
+        r"""lw(n) = max_{n' \in ins(n)} [Depend(n, n') + Epilogue(n, n')]"""
         for node_id in topo_order:
             in_edges = self.in_edges.get(node_id, [])
             if not in_edges:
@@ -759,7 +759,7 @@ class DFG:
                 )
 
                 # Compute dependency term
-                depend_term, st_plus_lr = self._compute_depend_term(
+                depend_term = self._compute_depend_term(
                     model, src_id, node_id, rlr_terms, st_vars, lw_vars
                 )
 
@@ -813,7 +813,7 @@ class DFG:
         return rlr_terms
 
     def _compute_depend_term(self, model, src_id, node_id, rlr_terms, st_vars, lw_vars):
-        """Depend(n, n') = max(st(n) + sum(b \in B_n) [LR_n^n'], lw(n'))"""
+        r"""Depend(n, n') = max(st(n) + sum(b \in B_n) [LR_n^n'], lw(n'))"""
         depend_term = model.addVar(vtype=GRB.INTEGER, name=f"depend_{src_id}_{node_id}")
 
         st_plus_lr = model.addVar(
@@ -829,19 +829,19 @@ class DFG:
             name=f"depend_{src_id}_{node_id}",
         )
 
-        return depend_term, st_plus_lr
+        return depend_term
 
     def _compute_epilogue_term(
         self, model, src_id, node_id, dst_node, depend_term, lw_vars, b_vars
     ):
-        """Epilogue(n, n') = sum(b \in B_n) [(lw_n - LR_n^{n'}) * b]"""
+        r"""Epilogue(n, n') = sum(b \in B_n) [(lw_n - LR_n^{n'}) * b]"""
         epilogue_term = model.addVar(
             vtype=GRB.INTEGER, name=f"epilogue_{src_id}_{node_id}"
         )
 
         epi_terms = []
         if dst_node.type == DFGNodeType.AFFINE:
-            for dst_perm_idx, dst_info in enumerate(dst_node.node_info):
+            for dst_perm_idx, _ in enumerate(dst_node.node_info):
                 # (lw_n - lr_n^{n'}) * b
                 term = model.addVar(
                     vtype=GRB.INTEGER,
