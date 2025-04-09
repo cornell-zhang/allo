@@ -26,7 +26,7 @@ def compute_tmp[
     T: (float32, int32), N: int32
 ](y_in: "T[N]", y_out: "T[N]", A: "T[N, N]", B: "T[N, N]", x: "T[N]", tmp: "T[N]"):
     tt: T[N] = 0.0
-    yy: T[N]
+    yy: T[N] = 0.0
     for i0 in allo.grid(N, name="load"):
         yy[i0] = y_in[i0]
     for i, j in allo.grid(N, N, name="tmp"):
