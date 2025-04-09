@@ -22,21 +22,21 @@ def mvt_np(A, x1, x2, y1, y2):
 def stageA[
     T: (float32, int32), N: int32
 ](x1_in: "T[N]", x1_out: "T[N]", A: "T[N, N]", y1: "T[N]"):
-    for i0_0 in allo.grid(N, name="A_0"):
-        x1_out[i0_0] = x1_in[i0_0]
     for i0 in allo.grid(N, name="A"):
+        x: T = x1_in[i0]
         for j0 in allo.reduction(N):
-            x1_out[i0] += A[i0, j0] * y1[j0]
+            x += A[i0, j0] * y1[j0]
+        x1_out[i0] = x
 
 
 def stageB[
     T: (float32, int32), N: int32
 ](x2_in: "T[N]", x2_out: "T[N]", A: "T[N, N]", y2: "T[N]"):
-    for i1_0 in allo.grid(N, name="B_0"):
-        x2_out[i1_0] = x2_in[i1_0]
     for i1 in allo.grid(N, name="B"):
+        x: T = x2_in[i1]
         for j1 in allo.reduction(N):
-            x2_out[i1] += A[j1, i1] * y2[j1]
+            x += A[j1, i1] * y2[j1]
+        x2_out[i1] = x
 
 
 def kernel_mvt[
@@ -58,13 +58,11 @@ def kernel_mvt[
 def mvt(concrete_type, N):
     sch0 = allo.customize(stageA, instantiate=[concrete_type, N])
     sch0.pipeline("i0")
-    sch0.pipeline("i0_0")
     sch0.partition(sch0.A, dim=2)
     sch0.partition(sch0.y1, dim=1)
 
     sch1 = allo.customize(stageB, instantiate=[concrete_type, N])
     sch1.pipeline("i1")
-    sch1.pipeline("i1_0")
     sch1.partition(sch1.A, dim=1)
     sch1.partition(sch1.y2, dim=1)
 
