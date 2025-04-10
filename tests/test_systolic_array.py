@@ -202,7 +202,7 @@ def test_cascade_systolic():
     print(code)
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
-            target="vitis_hls", mode="hw_emu", project=f"sa_{M0}x{M1}.prj"
+            target="vitis_hls", mode="csyn", project=f"sa_{M0}x{M1}.prj"
         )
         hls_mod()
 
@@ -262,7 +262,7 @@ def test_cascade_specialized_systolic():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw_emu",
+            mode="csyn",
             project=f"sa_{MM}x{NN}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
@@ -309,7 +309,7 @@ def test_ffn():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw_emu",
+            mode="csyn",
             project=f"FFN_{L}x{D}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
@@ -366,7 +366,7 @@ def test_int8_packed_gemm():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
+            mode="csyn",
             project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
@@ -414,7 +414,7 @@ def test_int8_gemm_dsp_packing():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
+            mode="csyn",
             project=f"DSP_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
