@@ -367,16 +367,6 @@ class DFG:
                             dst_op=load_op,
                         )
 
-            # for alloc_node_id, alloc_op in memref_allocs[memref]:
-            #     for store_node_id, store_op in stores_node_list:
-            #         self.add_edge(
-            #             alloc_node_id,
-            #             store_node_id,
-            #             value=memref,
-            #             src_op=store_op,
-            #             dst_op=alloc_op,
-            #         )
-
         # Third pass: populate node information for each loop permutation
         for node in self.nodes.values():
             self._populate_node_info(node.id)
@@ -535,7 +525,7 @@ class DFG:
 
             f.write("}\n")
 
-    def createGraphParallelismPerformanceModel(self, debug_output=None):
+    def create_graph_parallelism_performance_model(self, debug_output=None):
         model = gp.Model("graph_parallelism_performance_model")
 
         # Get topological order and verify no cycles

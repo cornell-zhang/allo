@@ -29,7 +29,7 @@ def test_simple():
     s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     dfg = DFG.from_module(s.module)
 
-    permutations = dfg.createGraphParallelismPerformanceModel(debug_output="simple")
+    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
     assert permutations[0][1] != permutations[1][1]
 
 
@@ -56,7 +56,7 @@ def test_3mm():
 
     dfg = DFG.from_module(module)
     try:
-        dfg.createGraphParallelismPerformanceModel(debug_output="3mm")
+        dfg.create_graph_parallelism_performance_model(debug_output="3mm")
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
             pytest.skip(
