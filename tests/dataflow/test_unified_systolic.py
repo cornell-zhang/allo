@@ -3,7 +3,6 @@
 
 import allo
 from allo.ir.types import int16, int32, bool
-from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -388,9 +387,9 @@ def unified_gemm_tiling():
 
 
 def schedule_unified_systolic(s):
-    s.partition(MockBuffer(s.top_func_name, "A"), dim=0)
-    s.partition(MockBuffer(s.top_func_name, "B"), dim=0)
-    s.partition(MockBuffer(s.top_func_name, "C"), dim=0)
+    s.partition(f"{s.top_func_name}:A", dim=0)
+    s.partition(f"{s.top_func_name}:B", dim=0)
+    s.partition(f"{s.top_func_name}:C", dim=0)
     return s
 
 

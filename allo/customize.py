@@ -265,7 +265,7 @@ class Schedule:
 
         Parameters
         ----------
-        target: allo.ir.utils.MockBuffer
+        target: allo.ir.utils.MockBuffer | str
             The array to partition.
 
         partition_type: allo.customize.Partition
@@ -293,6 +293,8 @@ class Schedule:
                 partition_type = 2
             case _:
                 raise AlloValueError("Not supported partition type")
+        if isinstance(target, str):
+            target = MockBuffer(target.split(":")[0], target.split(":")[1])
         # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
