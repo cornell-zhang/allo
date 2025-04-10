@@ -379,9 +379,12 @@ class HLSModule:
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
                 if shell:
-                    subprocess.Popen(cmd, shell=True).wait()
+                    process = subprocess.Popen(cmd, shell=True)
                 else:
-                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
                 if self.mode != "custom":
                     out = parse_xml(
                         self.project,
@@ -410,9 +413,12 @@ class HLSModule:
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                 )
                 if shell:
-                    subprocess.Popen(cmd, shell=True).wait()
+                    process = subprocess.Popen(cmd, shell=True)
                 else:
-                    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
                 return
             # Use Makefile (sw_emu, hw_emu, hw)
             assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
