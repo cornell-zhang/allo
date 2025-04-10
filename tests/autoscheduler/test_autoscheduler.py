@@ -11,16 +11,6 @@ from allo.autoscheduler.dfg import DFG
 from allo.autoscheduler.passes import dataflow_optimization_pass
 
 
-def check_gurobi_license():
-    """Check if Gurobi license is valid for large tests."""
-    try:
-        env = gp.Env(empty=True)
-        env.start()
-    except GurobiError as e:
-        return False
-    return True
-
-
 def test_simple():
     def simple() -> int32[10, 10]:
         A: int32[10, 10]
@@ -39,7 +29,7 @@ def test_simple():
     s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     dfg = DFG.from_module(s.module)
 
-    permutations = dfg.createGraphParallelismPerformanceModel()
+    permutations = dfg.createGraphParallelismPerformanceModel(debug_output="simple")
     assert permutations[0][1] != permutations[1][1]
 
 
@@ -53,10 +43,6 @@ def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
 
 
 def test_3mm():
-    if not check_gurobi_license():
-        print("❌ Gurobi license error: skipping test_3mm")
-        return
-
     def three_mm(
         A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
     ) -> int32[8, 8]:
@@ -69,7 +55,15 @@ def test_3mm():
     module = s.module
 
     dfg = DFG.from_module(module)
-    dfg.createGraphParallelismPerformanceModel()
+    try:
+        dfg.createGraphParallelismPerformanceModel(debug_output="3mm")
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
 
 if __name__ == "__main__":

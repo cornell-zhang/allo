@@ -535,7 +535,7 @@ class DFG:
 
             f.write("}\n")
 
-    def createGraphParallelismPerformanceModel(self):
+    def createGraphParallelismPerformanceModel(self, debug_output=None):
         model = gp.Model("graph_parallelism_performance_model")
 
         # Get topological order and verify no cycles
@@ -567,7 +567,8 @@ class DFG:
         obj = lw_vars[sink_node_id]
         model.setObjective(obj, GRB.MINIMIZE)
         model.optimize()
-
+        if debug_output:
+            model.write(f"{debug_output}.lp")
         # Return optimal permutation assignments
         return [k for k, b_var in b_vars.items() if b_var.x > 0.5]
 
