@@ -384,9 +384,7 @@ def inject_aie_kernels(mod):
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ):
-                        # TODO: Fix matmul
-                        # or op.operation.name == "linalg.matmul":
+                    ) or op.operation.name == "linalg.matmul":
                         op_name = op.operation.name.split(".")[1]
                         # Inject AIE kernel
                         func_type = func_d.FunctionType.get(
@@ -397,8 +395,26 @@ def inject_aie_kernels(mod):
                         shape = MemRefType(op.inputs[0].type).shape
                         if op.operation.name in {"linalg.add", "linalg.mul"}:
                             kernel_name = f"{op_name}_{dtype}_vector"
+                            external_kernels[func.attributes["sym_name"].value].append(
+                                (op_name, dtype, shape)
+                            )
                         else:  # linalg.matmul
-                            kernel_name = f"matmul_{dtype}_i16"
+                            M, K = MemRefType(op.inputs[0].type).shape
+                            _, N = MemRefType(op.inputs[1].type).shape
+                            out_dtype = str(op.outputs[0].type.element_type)
+                            if not (dtype, out_dtype) in [
+                                ("i8", "i8"),
+                                ("i16", "i16"),
+                                ("i16", "i32"),
+                                ("bf16", "bf16"),
+                                ("bf16", "f32"),
+                            ]:
+                                # f"Unsupported in_dtype {dtype} and out_dtype {out_dtype} pair"
+                                continue
+                            kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                            external_kernels[func.attributes["sym_name"].value].append(
+                                (op_name, dtype, out_dtype, M, N, K)
+                            )
                         func_d.CallOp(
                             [],
                             FlatSymbolRefAttr.get(kernel_name),
@@ -406,9 +422,7 @@ def inject_aie_kernels(mod):
                             ip=InsertionPoint(op),
                         )
                         op.erase()
-                        external_kernels[func.attributes["sym_name"].value].append(
-                            (op_name, dtype, shape)
-                        )
+
                         if kernel_name in injected_kernels:
                             continue
                         injected_kernels.add(kernel_name)
@@ -429,10 +443,11 @@ def codegen_external_kernels(external_kernels):
     code += "#include <stdlib.h>\n"
     code += "#include <type_traits>\n"
     code += "#include <aie_api/aie.hpp>\n\n"
-    generated_kernels = set()
+    generated_kernels = {}
     kernel_code = ""
     for _, kernel_lst in external_kernels.items():
-        for kernel, dtype, shape in kernel_lst:
+        for items in kernel_lst:
+            kernel, dtype = items[0], items[1]
             if kernel in generated_kernels:
                 continue
             ctype = ctype_map[dtype]
@@ -441,23 +456,25 @@ def codegen_external_kernels(external_kernels):
             if kernel == "matmul":
                 pass
             else:
+                kernel, dtype, shape = items
                 kernel_code += f"void {kernel}_{dtype}_vector"
                 kernel_code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
                 kernel_code += " {\n"
                 kernel_code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
                 kernel_code += "}\n\n"
-            generated_kernels.add(kernel)
-    for kernel in generated_kernels:
+            generated_kernels[kernel] = items
+    for kernel, items in generated_kernels.items():
         match kernel:
             case "add":
                 code += '#include "add.cc"\n'
             case "mul":
                 code += '#include "mul.cc"\n'
             case "matmul":
-                # code += f"#define DIM_M {8}\n"
-                # code += f"#define DIM_N {8}\n"
-                # code += f"#define DIM_K {16}\n"
-                # code += f"#define i16_i16_ONLY\n"
+                _, dtype, out_dtype, M, N, K = items
+                code += f"#define DIM_M {M}\n"
+                code += f"#define DIM_N {N}\n"
+                code += f"#define DIM_K {K}\n"
+                code += f"#define {dtype}_{out_dtype}_ONLY\n"
                 code += '#include "mm.cc"\n'
     code += '\nextern "C" {\n\n'
     code += kernel_code
@@ -1604,6 +1621,7 @@ def create_dtensors_from_kernel(kernel_func, func_op):
 
             dtensor.set_placement(placement)
 
+    print(dtensors[0], dtensors[1])
     return dtensors
 
 

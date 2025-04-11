@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int32, float32
+from allo.ir.types import int16, int32, float32
 import allo.dataflow as df
 import numpy as np
 
@@ -72,7 +72,7 @@ def _test_matrix_matrix_add():
 
 
 def _test_gemm_1D():
-    Ty = int32
+    Ty = int16
     M, N, K = 16, 16, 16
     P0 = 2
     Mt = M // P0
@@ -87,16 +87,16 @@ def _test_gemm_1D():
             )
 
     mod = df.build(top, target="aie")
-    A = np.random.randint(0, 64, (M, K)).astype(np.int32)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int32)
-    C = np.zeros((M, N)).astype(np.int32)
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int16)
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
 
 def _test_gemm_2D():
-    TyI, TyO = int32, int32
+    TyI, TyO = int16, int32
     M, N, K = 16, 16, 16
     P0, P1 = 2, 2
     Mt, Nt = M // P0, N // P1
@@ -111,8 +111,8 @@ def _test_gemm_2D():
             )
 
     mod = df.build(top, target="aie")
-    A = np.random.randint(0, 64, (M, K)).astype(np.int32)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int32)
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int32)
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
