@@ -123,13 +123,13 @@ def dataflow_optimization_pass(
         )
     
     schedule_primitives = []
-
+    fifo_primitives = []
     # build performance model
     match kind:
         case "graph":
             permutations = dfg.create_graph_parallelism_performance_model()
             schedule_primitives.extend(extract_reorder_and_pipeline(permutations, dfg, node_to_fn, schedule))
-            schedule_primitives.extend(extract_buffer_to_fifo(permutations, dfg, node_to_fn, schedule))
+            fifo_primitives.extend(extract_buffer_to_fifo(permutations, dfg, node_to_fn, schedule))
         case "node":
             # TODO: implement node parallelism performance model
             pass
@@ -144,7 +144,10 @@ def dataflow_optimization_pass(
     
     if verify:
         verifier = allo.verify(schedule, original_schedule)
-        assert verifier, "Schedule is not equivalent to original schedule"
+        assert verifier, "Failed verification: Schedule is not equivalent to original schedule"
+    
+    for primitive in fifo_primitives:
+        primitive.applyTo(schedule)
         
     return schedule
 
