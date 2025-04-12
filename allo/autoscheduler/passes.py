@@ -228,7 +228,6 @@ def canonicalize_alloc(alloc_op):
     # store-load-store-load loop redution pattern
     if len(stores) == 2 and (len(loads) == 2 or len(loads) == 1 and len(ret) == 1):
         l_ops = [l[0] for l in loads]
-        print("ok")
         if store_load_store_load_pattern(alloc_op, l_ops, stores, ret):
             return
     
@@ -257,7 +256,6 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
         if loop_load:
             break
     
-    print(loop_load, loop_store)
     if not loop_load or not loop_store:
         return False
 
@@ -511,9 +509,6 @@ def extract_buffer_to_fifo(permutations, dfg: DFG, node_to_fn: dict[int, str], s
             assert memref in dst_node_info.loads_map
             assert memref in src_node_info.stores_map
             if dst_node_info.loads_map[memref].access_map == src_node_info.stores_map[memref].access_map:
-                if memref.owner.attributes["name"].value == "output":
-                    print("dst", dst_node_info.loads_map[memref].op)
-                    print("src", src_node_info.stores_map[memref].op)
                 if "name" not in memref.owner.attributes:
                     with schedule.module.context:
                         memref.owner.attributes["name"] = StringAttr.get(f"fifo_buffer_{unnamed_ct}")
