@@ -21,20 +21,23 @@ from allo._mlir.dialects import (
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
+from allo.ir.utils import MockBuffer
 from .util import (
     check_perfect_affine_kernel,
     check_call_graph_acyclic,
     check_all_functions_inlined,
 )
 
-from .dfg import DFG, DFGNodeType
+from .dfg import DFG, DFGNodeType, NodeInfo
+from .primitives import BufferToFifo, SchedulePrimitive, Reorder, Pipeline
+import allo
 
-DEBUG_POINTS = ["mlir_preprocess", "dataflow_canonicalization", "outline_loops"]
+DEBUG_POINTS = ["mlir_preprocess", "dataflow_canonicalization", "outline_loops", None]
 PARALLELISM_MODELS = ["graph", "node", "combined"]
 
 
 def dataflow_optimization_pass(
-    schedule: Schedule, debug_point=None, kind=None
+    schedule: Schedule, debug_point=None, kind=None, verify=True
 ) -> Schedule:
     """
     Applies autoscheduler optimization passes to the schedule.
@@ -79,35 +82,46 @@ def dataflow_optimization_pass(
 
     dfg = DFG.from_module(mod_dcp)
 
-    mod_outlined = outline_loops_pass(mod_dcp, dfg)
-    if debug_point == "outline_loops":
-        return Schedule(
-            mod_outlined,
-            find_func_in_module(mod_outlined, top_fn_name),
-            schedule.func_args,
-            schedule.ip,
-            schedule.ext_libs,
-            schedule.inst_list,
-        )
-
-    if kind == "graph":
-        # TODO: implement graph parallelism performance model
-        pass
-    elif kind == "node":
-        # TODO: implement node parallelism performance model
-        pass
-    elif kind == "combined":
-        # TODO: implement combined parallelism performance model
-        pass
-
-    return Schedule(
-        mod,
-        find_func_in_module(mod, top_fn_name),
+    mod_outlined, node_to_fn = outline_loops_pass(mod_dcp, dfg)
+    optimized_schedule = Schedule(
+        mod_outlined,
+        find_func_in_module(mod_outlined, top_fn_name),
         schedule.func_args,
         schedule.ip,
         schedule.ext_libs,
         schedule.inst_list,
     )
+
+    if debug_point == "outline_loops":
+        return optimized_schedule
+    
+    schedule_primitives = []
+
+    # build performance model
+    match kind:
+        case "graph":
+            permutations = dfg.create_graph_parallelism_performance_model()
+            schedule_primitives.extend(extract_reorder_and_pipeline(permutations, dfg, node_to_fn, optimized_schedule))
+            schedule_primitives.extend(extract_buffer_to_fifo(permutations, dfg, optimized_schedule.top_func_name, node_to_fn))
+        case "node":
+            # TODO: implement node parallelism performance model
+            pass
+        case "combined":
+            # TODO: implement combined parallelism performance model
+            pass
+        case _:
+            raise ValueError(f"Invalid parallelism model: {kind}")
+    
+    # apply schedule primitives
+    for primitive in schedule_primitives:
+        print(primitive)
+        primitive.applyTo(optimized_schedule)
+
+    if verify:
+        verifier = allo.verify(optimized_schedule, schedule)
+        assert verifier, "Schedule is not equivalent to original schedule"
+        
+    return optimized_schedule
 
 
 # pylint: enable=unused-argument
@@ -177,9 +191,11 @@ def canonicalize_alloc(alloc_op):
         store = stores[0]
         for i, (load, idx) in enumerate(loads[1:]):
             new_alloc = alloc_op.operation.clone(ip=InsertionPoint(alloc_op))
-            new_alloc.attributes["name"] = StringAttr.get(f"{orig_name}_split_{i}")
+            name = f"{orig_name}_split_{i}"
+            new_alloc.attributes["name"] = StringAttr.get(name)
             store_dup = store.clone(ip=InsertionPoint(store))
             store_dup.operation.replace_uses_of_with(alloc_op.result, new_alloc.result)
+            store_dup.attributes["from"] = StringAttr.get(name)
             load.operation.operands[idx] = new_alloc.result
         return
 
@@ -307,7 +323,7 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
     return True
 
 
-def outline_loops_pass(module: Module, dfg: DFG = None) -> Module:
+def outline_loops_pass(module: Module, dfg: DFG = None) -> tuple[Module, dict[int, str]]:
     with module.context:
         for func in module.body.operations:
             if not isinstance(func, func_d.FuncOp):
@@ -340,16 +356,123 @@ def outline_loops_pass(module: Module, dfg: DFG = None) -> Module:
             combined_module = Module.parse(combined_content, ctx)
             pipeline = "builtin.module(transform-interpreter{entry-point=outline_affine_loops},canonicalize)"
             mlir_pass_manager.parse(pipeline).run(combined_module.operation)
-            return Module.parse(
+            processed_module, node_to_fn_map = post_process_module(Module.parse(
                 combined_module.operation.regions[0].blocks[0].operations[0].get_asm(),
                 ctx,
-            )
+            ))
+            return processed_module, node_to_fn_map
 
         except Exception as e:
             print("Error: failed to run MLIR passes, printing module...")
             print(combined_content)
             raise e
+        
+def post_process_module(module: Module) -> tuple[Module, dict[int, str]]:
+    """
+    Post-processes a module by adding loop names and operation names
+    and builds a mapping from node IDs to function names.
+    
+    Args:
+        module: The MLIR module to process.
+        
+    Returns:
+        the processed module and a dictionary mapping node IDs to function names.
+    """
+    loop_counter = 0
+    node_to_fn = {}
+    
+    def process_op(op, func_name):
+        nonlocal loop_counter
+        
+        if isinstance(op, affine_d.AffineForOp):
+            if "loop_name" not in op.attributes:
+                op.attributes["loop_name"] = StringAttr.get(f"L_{loop_counter}")
+                loop_counter += 1
+            
+            if "top_level" in op.attributes:
+                assert "node_id" in op.attributes
+                node_id = int(op.attributes["node_id"].value)
+                
+                node_to_fn[node_id] = func_name
+            
+                if "op_name" not in op.attributes:
+                    op.attributes["op_name"] = StringAttr.get(f"kernel_{node_id}")
 
+                del op.attributes["top_level"]
+                del op.attributes["node_id"]
+            
+            for nested_op in op.body.operations:
+                process_op(nested_op, func_name)
+        elif hasattr(op, "regions"):
+            for region in op.regions:
+                for block in region.blocks:
+                    for nested_op in block.operations:
+                        process_op(nested_op, func_name)
+    
+    with module.context:
+        for func in module.body.operations:
+            if not isinstance(func, func_d.FuncOp):
+                continue
+            
+            func_name = func.name.value
+            
+            for op in func.body.blocks[0]:
+                process_op(op, func_name)
+                
+    return module, node_to_fn
+
+            
+def extract_reorder_and_pipeline(permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule) -> list[SchedulePrimitive]:
+    schedule_primitives = []
+    for node_id, perm_idx in permutations:
+        loop_band_collection = list(v for _, v in schedule.get_loops(node_to_fn[node_id]).__iter__())
+        # support only perfect affine kernels
+        assert len(loop_band_collection) == 1, "Only perfect affine kernels are supported"
+        loop_band = list(loop_band_collection[0].loops.values())
+
+        node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
+        print(perm_idx)
+        if perm_idx == 0:
+            schedule_primitives.append(
+                Pipeline(loop_band[-1], ii=node_info.II)
+            )
+        else: 
+            perm = node_info.permutation
+            new_loop_order = [loop_band[i] for i in perm]
+            schedule_primitives.append(
+                Reorder(new_loop_order)
+            )
+            schedule_primitives.append(
+                Pipeline(new_loop_order[-1], ii=node_info.II)
+            )
+    
+    return schedule_primitives
+
+def extract_buffer_to_fifo(permutations, dfg: DFG, top_level_fn_name: str, node_to_fn: dict[int, str]):
+    permutations = {node_idx: perm_idx for node_idx, perm_idx in permutations}
+    schedule_primitives = []
+    for node_idx, node in dfg.nodes.items():
+        if node.type != DFGNodeType.AFFINE:
+            continue
+        dst_node_info = node.node_info[permutations[node_idx]]
+        for edge in dfg.in_edges[node_idx]:
+            src_node = dfg.nodes[edge.id]
+            if src_node.type != DFGNodeType.AFFINE:
+                continue 
+            src_node_info = src_node.node_info[permutations[edge.id]]
+            memref = edge.value 
+            assert memref in dst_node_info.loads_map
+            assert memref in src_node_info.stores_map
+            if dst_node_info.loads_map[memref].access_map == src_node_info.stores_map[memref].access_map:
+                print(memref.owner)
+                buffer = MockBuffer(top_level_fn_name, memref.owner.attributes["name"].value)
+                fn_name = node_to_fn[node_idx]
+                schedule_primitives.append(
+                    BufferToFifo(buffer, fn_name)
+                )
+            
+    return schedule_primitives
+            
 
 # def build_dataflow_graph(module: Module):
 #     pass

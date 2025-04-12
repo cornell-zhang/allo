@@ -6,7 +6,7 @@ module attributes {transform.with_named_sequence} {
              attributes{top_level} in %func 
              : (!transform.any_op) -> !transform.any_op
     
-    %outlined_funcs, %calls = transform.loop.outline %loops {func_name = "outlined_loop"} 
+    %outlined_funcs, %calls = transform.loop.outline %loops {func_name = "affine_kernel"} 
                              : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
     transform.yield
   }

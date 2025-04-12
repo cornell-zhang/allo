@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 from collections import defaultdict
-from typing import NamedTuple
+from typing import NamedTuple, Any
+
 from allo._mlir.ir import (
     Location,
     Module,
@@ -499,3 +500,4 @@ def estimate_critical_path(load_op, store_op, latencies):
             break
 
     return max(path_latency, min_latency)
+
