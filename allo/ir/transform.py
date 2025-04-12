@@ -57,10 +57,12 @@ class LoopBand:
             case LoopWrapper():
                 return outer.loop
             case LoopBand():
-                raise ValueError("get_outer_most() is not supported for top-level LoopBand collection, use __iter__() instead")
+                raise ValueError(
+                    "get_outer_most() is not supported for top-level LoopBand collection, use __iter__() instead"
+                )
             case _:
                 raise ValueError(f"Unexpected type: {type(outer)}")
-    
+
     def __repr__(self):
         return f"LoopBand({list(self.loops.keys())})"
 

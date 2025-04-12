@@ -500,4 +500,3 @@ def estimate_critical_path(load_op, store_op, latencies):
             break
 
     return max(path_latency, min_latency)
-

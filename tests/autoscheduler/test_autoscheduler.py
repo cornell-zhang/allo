@@ -32,6 +32,7 @@ def test_simple():
     permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
     assert permutations[0][1] != permutations[1][1]
 
+
 def test_simple2():
     def simple() -> int32[10, 10]:
         A: int32[10, 10]
@@ -50,7 +51,9 @@ def test_simple2():
     s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     dfg = DFG.from_module(s.module)
     dfg.print_as_dot("simple2.dot")
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple2")
+    permutations = dfg.create_graph_parallelism_performance_model(
+        debug_output="simple2"
+    )
     assert permutations[0][1] == permutations[1][1]
 
 

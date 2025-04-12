@@ -633,7 +633,7 @@ class DFG:
             arrives_terms = self._compute_arrival_terms(
                 model, node_id, in_edges, b_vars, fw_vars, lw_vars
             )
-            
+
             if arrives_terms:
                 model.addConstr(
                     st_vars[node_id] == gp.max_(arrives_terms),

@@ -16,7 +16,8 @@ kinds = [
     # "combined"
 ]
 
-@pytest.mark.parametrize("debug_point", DEBUG_POINTS)   
+
+@pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
 def test_simple(debug_point, kind):
     def simple() -> int32[10, 10]:
@@ -39,18 +40,24 @@ def test_simple(debug_point, kind):
         return B
 
     s = allo.customize(simple)
-    optimized_schedule = dataflow_optimization_pass(s, debug_point=debug_point, kind=kind)
-    
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
+    optimized_schedule = dataflow_optimization_pass(
+        s, debug_point=debug_point, kind=kind
+    )
 
-    
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
+
     expected = np.zeros((10, 10))
     for i in range(10):
         for j in range(10):
             expected[i, j] = i + j + 1
-    
-    if debug_point is not None or is_available("vitis_hls"):   
+
+    if debug_point is not None or is_available("vitis_hls"):
         np.testing.assert_allclose(mod(), expected)
+
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
@@ -58,9 +65,14 @@ def test_three_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "three_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point, kind=kind)
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
-
+    optimized_schedule = dataflow_optimization_pass(
+        schedule, debug_point=debug_point, kind=kind
+    )
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
 
     if debug_point is not None or is_available("vitis_hls"):
         actual = mod(*inputs)
@@ -69,16 +81,23 @@ def test_three_mm(debug_point, kind):
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
-def test_two_mm(debug_point, kind): 
+def test_two_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "two_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point, kind=kind)
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
+    optimized_schedule = dataflow_optimization_pass(
+        schedule, debug_point=debug_point, kind=kind
+    )
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
 
     if debug_point is not None or is_available("vitis_hls"):
         actual = mod(*inputs)
         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
@@ -86,9 +105,14 @@ def test_atax(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "atax", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point, kind=kind)
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
-
+    optimized_schedule = dataflow_optimization_pass(
+        schedule, debug_point=debug_point, kind=kind
+    )
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
 
     if debug_point is not None or is_available("vitis_hls"):
         A, x, y = inputs
@@ -121,8 +145,14 @@ def test_gemm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gemm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point, kind=kind)
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
+    optimized_schedule = dataflow_optimization_pass(
+        schedule, debug_point=debug_point, kind=kind
+    )
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
 
     if debug_point is not None or is_available("vitis_hls"):
         A, B, C = inputs
@@ -137,10 +167,15 @@ def test_gesummv(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gesummv", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point, kind=kind)
+    optimized_schedule = dataflow_optimization_pass(
+        schedule, debug_point=debug_point, kind=kind
+    )
 
-
-    mod = optimized_schedule.build() if debug_point is not None else optimized_schedule.build(target="vitis_hls")
+    mod = (
+        optimized_schedule.build()
+        if debug_point is not None
+        else optimized_schedule.build(target="vitis_hls")
+    )
 
     if debug_point is not None or is_available("vitis_hls"):
         A, B, x = inputs
