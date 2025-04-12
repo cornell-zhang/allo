@@ -586,14 +586,10 @@ class TypeInferer(ASTVisitor):
                                 new_ctx = old_ctx.copy()
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                if len(dim) == 1:
-                                    new_ctx.global_vars.update({"df.p0": dim[0]})
-                                    node.name = orig_name + f"_{dim[0]}"
-                                else:
-                                    new_ctx.global_vars.update(
-                                        {"df.p0": dim[0], "df.p1": dim[1]}
-                                    )
-                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                for axis in range(len(dim)):
+                                    new_ctx.global_vars.update({"df.p" + str(axis): dim[axis]})
+                                concated_name = "_".join(map(str, dim))
+                                node.name = orig_name + f"_{concated_name}"
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
                                 node.name = orig_name
                             return node
@@ -852,8 +848,8 @@ class TypeInferer(ASTVisitor):
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":
-                    node.shape = (tuple(), tuple())
-                    node.dtype = (Index(), Index())
+                    node.shape = (tuple(), tuple(), tuple())
+                    node.dtype = (Index(), Index(), Index())
                 else:
                     node.shape = None
                     node.dtype = None

@@ -8,34 +8,34 @@ import numpy as np
 
 Ty = int32
 M, N, K = 16, 16, 16
-P0, P1 = 1, 1
-Mt, Nt = M // P0, N // P1
+Pm, Pn, Pk = 1, 1, 2
+Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
 
 @df.region()
 def top():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(P0, P1))
+    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk-1, Pm, Pn))
 
-    @df.kernel(mapping=[P0, P1])
-    def gemm0(A: Ty[M, K], B: Ty[K, N]):
-        p0, p1 = df.get_pid()
+    @df.kernel(mapping=[Pk, Pm, Pn])
+    def gemm(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
+        pk, pm, pn = df.get_pid()
+        with allo.meta_if(pk > 0):
+            C_in: Ty[Mt, Nt] = pipe[pk-1, pm, pn].get()
+        with allo.meta_else():
+            C_in: Ty[Mt, Nt] = 0
         C_out: Ty[Mt, Nt] = 0
-        C_out[:, :] = allo.matmul(
-            A[p0 * Mt : (p0 + 1) * Mt, : K // 2], B[: K // 2, p1 * Nt : (p1 + 1) * Nt]
-        )
-        pipe[p0, p1].put(C_out)
-
-    @df.kernel(mapping=[P0, P1])
-    def gemm1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
-        p0, p1 = df.get_pid()
-        C_out: Ty[Mt, Nt] = pipe[p0, p1].get()
-        C[p0 * Mt : (p0 + 1) * Mt, p1 * Nt : (p1 + 1) * Nt] = (
+        # S1S0 x S0S2 -> S1S2
+        C_out[:, :] = (
             allo.matmul(
-                A[p0 * Mt : (p0 + 1) * Mt, K // 2 :],
-                B[K // 2 :, p1 * Nt : (p1 + 1) * Nt],
+                A[pm * Mt : (pm + 1) * Mt, pk * Kt : (pk + 1) * Kt],
+                B[pk * Kt : (pk + 1) * Kt, pn * Nt : (pn + 1) * Nt],
             )
-            + C_out
+            + C_in
         )
+        with allo.meta_if(pk < Pk - 1):
+            pipe[pk, pm, pn].put(C_out)
+        with allo.meta_elif(pk == Pk - 1):
+            C[pm * Mt : (pm + 1) * Mt, pn * Nt : (pn + 1) * Nt] = C_out
 
 
 def test_cooperative_gemm():
