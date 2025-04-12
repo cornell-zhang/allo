@@ -573,7 +573,6 @@ class DFG:
             for node_id in self.nodes
             if self.get_node(node_id).type == DFGNodeType.RET
         ]
-        print(sink_nodes)
         assert len(sink_nodes) == 1, "Expected a single sink node"
         return sink_nodes[0]
 
@@ -634,8 +633,7 @@ class DFG:
             arrives_terms = self._compute_arrival_terms(
                 model, node_id, in_edges, b_vars, fw_vars, lw_vars
             )
-            if node_id == 4:
-                print("node", node_id, arrives_terms, in_edges)
+            
             if arrives_terms:
                 model.addConstr(
                     st_vars[node_id] == gp.max_(arrives_terms),
@@ -669,9 +667,6 @@ class DFG:
                     # TODO: need to check trip counts?
                     # fifo case
                     if dst_access == src_access:
-                        print("access match", dst_access, src_access)
-                        print(dst_perm_idx, src_perm_idx)
-                        print(src_id, node_id)
                         term = model.addVar(
                             vtype=GRB.INTEGER,
                             name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",

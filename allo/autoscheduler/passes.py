@@ -12,6 +12,7 @@ from allo._mlir.ir import (
     UnitAttr,
     IntegerAttr,
     IntegerType,
+    WalkResult,
 )
 from allo._mlir.dialects import (
     func as func_d,
@@ -69,7 +70,12 @@ def dataflow_optimization_pass(
     ), "Input kernel is not a perfect affine kernel"
 
     # Dataflow canonicalization pass
-    mod_dcp = _dataflow_canonicalization_pass(mod)
+    try:
+        mod_dcp = _dataflow_canonicalization_pass(mod)
+    except Exception as e:
+        print("Error: failed to run dataflow canonicalization pass, printing module...")
+        print(mod)
+        raise e
     if debug_point == "dataflow_canonicalization":
         return Schedule(
             mod_dcp,
@@ -82,8 +88,12 @@ def dataflow_optimization_pass(
 
     dfg = DFG.from_module(mod_dcp)
 
+    # name all unnamed buffers
+    mod_dcp = name_buffers_pass(mod_dcp)
+
     mod_outlined, node_to_fn = outline_loops_pass(mod_dcp, dfg)
-    optimized_schedule = Schedule(
+    
+    schedule = Schedule(
         mod_outlined,
         find_func_in_module(mod_outlined, top_fn_name),
         schedule.func_args,
@@ -93,7 +103,23 @@ def dataflow_optimization_pass(
     )
 
     if debug_point == "outline_loops":
-        return optimized_schedule
+        return schedule
+    
+    try:
+        import past 
+    except ImportError:
+        verify = False
+
+    if verify:
+        mod_outlined_clone = Module.parse(mod_outlined.operation.get_asm(), mod_outlined.context)
+        original_schedule = Schedule(
+            mod_outlined_clone,
+            find_func_in_module(mod_outlined_clone, top_fn_name),
+            schedule.func_args,
+            schedule.ip,
+            schedule.ext_libs,
+            schedule.inst_list,
+        )
     
     schedule_primitives = []
 
@@ -101,8 +127,8 @@ def dataflow_optimization_pass(
     match kind:
         case "graph":
             permutations = dfg.create_graph_parallelism_performance_model()
-            schedule_primitives.extend(extract_reorder_and_pipeline(permutations, dfg, node_to_fn, optimized_schedule))
-            schedule_primitives.extend(extract_buffer_to_fifo(permutations, dfg, optimized_schedule.top_func_name, node_to_fn))
+            schedule_primitives.extend(extract_reorder_and_pipeline(permutations, dfg, node_to_fn, schedule))
+            schedule_primitives.extend(extract_buffer_to_fifo(permutations, dfg, node_to_fn, schedule))
         case "node":
             # TODO: implement node parallelism performance model
             pass
@@ -113,15 +139,19 @@ def dataflow_optimization_pass(
             raise ValueError(f"Invalid parallelism model: {kind}")
     
     # apply schedule primitives
+    print(schedule.module)
+
     for primitive in schedule_primitives:
         print(primitive)
-        primitive.applyTo(optimized_schedule)
+        primitive.applyTo(schedule)
 
+    print("+"*100)
+    
     if verify:
-        verifier = allo.verify(optimized_schedule, schedule)
+        verifier = allo.verify(schedule, original_schedule)
         assert verifier, "Schedule is not equivalent to original schedule"
         
-    return optimized_schedule
+    return schedule
 
 
 # pylint: enable=unused-argument
@@ -142,7 +172,6 @@ def _mlir_preprocess(module, top_func_name):
         print("Error: failed to run MLIR passes, printing module...")
         print(module)
         raise e
-
 
 def _dataflow_canonicalization_pass(module):
     """
@@ -168,6 +197,7 @@ def canonicalize_fn(op: func_d.FuncOp):
 def canonicalize_alloc(alloc_op):
     loads = []  # (op, idx)
     stores = []  # ops
+    ret = []
     for use in alloc_op.result.uses:
         user = use.owner
         if isinstance(user, (memref_d.LoadOp, affine_d.AffineLoadOp, func_d.CallOp)):
@@ -176,7 +206,8 @@ def canonicalize_alloc(alloc_op):
                     loads.append((user, idx))
         elif isinstance(user, (memref_d.StoreOp, affine_d.AffineStoreOp)):
             stores.append(user)
-
+        elif isinstance(user, func_d.ReturnOp):
+            ret.append(user)
     memref_type = alloc_op.result.type
     shape = memref_type.shape
     orig_name = (
@@ -199,24 +230,25 @@ def canonicalize_alloc(alloc_op):
             load.operation.operands[idx] = new_alloc.result
         return
 
-    # store-load-store-load loop redunction pattern
-    if len(stores) == 2 and len(loads) == 2:
+    # store-load-store-load loop redution pattern
+    if len(stores) == 2 and (len(loads) == 2 or len(loads) == 1 and len(ret) == 1):
         l_ops = [l[0] for l in loads]
-        if store_load_store_load_pattern(alloc_op, l_ops, stores):
+        print("ok")
+        if store_load_store_load_pattern(alloc_op, l_ops, stores, ret):
             return
-
+    
     # multiple loads and multiple stores
-    if len(stores) >= 2 and len(loads) >= 2:
+    if len(stores) >= 2 and len(loads) >= 1:
         raise NotImplementedError(
             f"Complex pattern detected in alloc op {alloc_op}; additional canonicalization not implemented yet."
         )
+    
 
-
-def store_load_store_load_pattern(alloc_op, loads, stores):
+def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     """
     Transforms reduction loops to satisfy the condition that the number of writes to a shared buffer equals the number of reads.
     """
-    assert len(loads) == 2 and len(stores) == 2
+    assert len(loads) + len(ret) == 2 and len(stores) == 2
 
     loop_load, loop_store = None, None
 
@@ -229,12 +261,14 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
                 break
         if loop_load:
             break
-
+    
+    print(loop_load, loop_store)
     if not loop_load or not loop_store:
         return False
 
     store_op = [s for s in stores if s != loop_store][0]
-    load_op = [l for l in loads if l != loop_load][0]
+    
+    load_op = [l for l in loads if l != loop_load][0] if len(ret) == 0 else ret[0]
 
     # check for unsupported store_op in an if block
     parent = store_op.parent
@@ -317,12 +351,29 @@ def store_load_store_load_pattern(alloc_op, loads, stores):
             final_loop_load.result, new_alloc2.result, loop_load.indices, loop_load.map
         )
         affine_d.AffineYieldOp([])
-
+    
     load_op.operation.replace_uses_of_with(alloc_op.result, new_alloc2.result)
 
     return True
 
-
+def name_buffers_pass(module: Module):
+    unnamed_ct = 0
+    def name_buffer_helper(op):
+        nonlocal unnamed_ct
+        if isinstance(op.opview, memref_d.AllocOp):
+            if "name" not in op.attributes:
+                op.attributes["name"] = StringAttr.get(f"_buffer_{unnamed_ct}")
+                for use in op.result.uses:
+                    if isinstance(use.owner, memref_d.LoadOp):
+                        use.owner.attributes["from"] = StringAttr.get(f"_buffer_{unnamed_ct}")
+                    elif isinstance(use.owner, memref_d.StoreOp):
+                        use.owner.attributes["to"] = StringAttr.get(f"_buffer_{unnamed_ct}")
+                unnamed_ct += 1
+        return WalkResult(0)
+    with module.context:
+        module.operation.walk(name_buffer_helper)
+        return module
+        
 def outline_loops_pass(module: Module, dfg: DFG = None) -> tuple[Module, dict[int, str]]:
     with module.context:
         for func in module.body.operations:
@@ -418,7 +469,7 @@ def post_process_module(module: Module) -> tuple[Module, dict[int, str]]:
             
             for op in func.body.blocks[0]:
                 process_op(op, func_name)
-                
+
     return module, node_to_fn
 
             
@@ -431,7 +482,6 @@ def extract_reorder_and_pipeline(permutations, dfg: DFG, node_to_fn: dict[int, s
         loop_band = list(loop_band_collection[0].loops.values())
 
         node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
-        print(perm_idx)
         if perm_idx == 0:
             schedule_primitives.append(
                 Pipeline(loop_band[-1], ii=node_info.II)
@@ -448,7 +498,9 @@ def extract_reorder_and_pipeline(permutations, dfg: DFG, node_to_fn: dict[int, s
     
     return schedule_primitives
 
-def extract_buffer_to_fifo(permutations, dfg: DFG, top_level_fn_name: str, node_to_fn: dict[int, str]):
+def extract_buffer_to_fifo(permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule):
+    unnamed_ct = 0
+    top_level_fn_name = schedule.top_func_name
     permutations = {node_idx: perm_idx for node_idx, perm_idx in permutations}
     schedule_primitives = []
     for node_idx, node in dfg.nodes.items():
@@ -464,7 +516,15 @@ def extract_buffer_to_fifo(permutations, dfg: DFG, top_level_fn_name: str, node_
             assert memref in dst_node_info.loads_map
             assert memref in src_node_info.stores_map
             if dst_node_info.loads_map[memref].access_map == src_node_info.stores_map[memref].access_map:
-                print(memref.owner)
+                if memref.owner.attributes["name"].value == "output":
+                    print("dst", dst_node_info.loads_map[memref].op)
+                    print("src", src_node_info.stores_map[memref].op)
+                if "name" not in memref.owner.attributes:
+                    with schedule.module.context:
+                        memref.owner.attributes["name"] = StringAttr.get(f"fifo_buffer_{unnamed_ct}")
+                        dst_node_info.loads_map[memref].op.attributes["from"] = StringAttr.get(f"fifo_buffer_{unnamed_ct}")
+                        src_node_info.stores_map[memref].op.attributes["to"] = StringAttr.get(f"fifo_buffer_{unnamed_ct}")
+                    unnamed_ct += 1
                 buffer = MockBuffer(top_level_fn_name, memref.owner.attributes["name"].value)
                 fn_name = node_to_fn[node_idx]
                 schedule_primitives.append(
