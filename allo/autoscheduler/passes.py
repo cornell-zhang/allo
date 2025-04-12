@@ -111,6 +111,7 @@ def dataflow_optimization_pass(
         verify = False
 
     if verify:
+        # hacky clone
         mod_outlined_clone = Module.parse(mod_outlined.operation.get_asm(), mod_outlined.context)
         original_schedule = Schedule(
             mod_outlined_clone,
@@ -138,14 +139,8 @@ def dataflow_optimization_pass(
         case _:
             raise ValueError(f"Invalid parallelism model: {kind}")
     
-    # apply schedule primitives
-    print(schedule.module)
-
     for primitive in schedule_primitives:
-        print(primitive)
         primitive.applyTo(schedule)
-
-    print("+"*100)
     
     if verify:
         verifier = allo.verify(schedule, original_schedule)
@@ -533,10 +528,3 @@ def extract_buffer_to_fifo(permutations, dfg: DFG, node_to_fn: dict[int, str], s
             
     return schedule_primitives
             
-
-# def build_dataflow_graph(module: Module):
-#     pass
-
-
-# def build_performance_model(module: Module, dfg):
-#     pass
