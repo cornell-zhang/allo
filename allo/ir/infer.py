@@ -37,6 +37,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from ..memory import DTensor
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
@@ -84,14 +85,14 @@ class TypeInferer(ASTVisitor):
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
-            return dtype, shape
+            return dtype, shape, None
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type `{node.id}`"
-            return dtype, tuple()
+            return dtype, tuple(), None
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
-            return dtype, tuple()
+            return dtype, tuple(), None
         if isinstance(node, ast.Constant):
             assert isinstance(node.value, str), "Only support string type annotation"
             tree = ast.parse(node.value)
@@ -99,7 +100,13 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Attribute):
             # e.g., allo.ir.types.float32
             dtype = ASTResolver.resolve(node, ctx.global_vars)
-            return dtype, tuple()
+            return dtype, tuple(), None
+        if isinstance(node, ast.BinOp):
+            # memory refinement
+            # e.g., A: Ty[M] @ LayoutSpec("S0")
+            dtype, shape, _ = TypeInferer.visit_type_hint(ctx, node.left)
+            spec = ASTResolver.resolve(node.right, ctx.global_vars)
+            return dtype, shape, spec
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -524,7 +531,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
+        target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
+            ctx, node.annotation
+        )
         if isinstance(node.value, ast.List):
             values = compile(ast.Expression(node.value), "", "eval")
             # pylint: disable=eval-used
@@ -581,13 +590,17 @@ class TypeInferer(ASTVisitor):
                                 ast.unparse(decorator.keywords[0].value),
                                 ctx.global_vars,
                             )
+                            old_ctx.mapping = mapping
                             orig_name = node.name
                             for dim in np.ndindex(*mapping):
                                 new_ctx = old_ctx.copy()
+                                new_ctx.rank = dim
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
                                 for axis in range(len(dim)):
-                                    new_ctx.global_vars.update({"df.p" + str(axis): dim[axis]})
+                                    new_ctx.global_vars.update(
+                                        {"df.p" + str(axis): dim[axis]}
+                                    )
                                 concated_name = "_".join(map(str, dim))
                                 node.name = orig_name + f"_{concated_name}"
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
@@ -609,7 +622,12 @@ class TypeInferer(ASTVisitor):
 
         # Input types
         for arg in node.args.args:
-            arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
+            arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
+                ctx, arg.annotation
+            )
+            arg.dtensor = DTensor(ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg)
+            # update shape
+            arg.shape = arg.dtensor.get_local_shape()
             ctx.buffers[arg.arg] = arg
 
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
@@ -622,14 +640,18 @@ class TypeInferer(ASTVisitor):
                 # Multiple return values
                 node.returns.shape = []
                 node.returns.dtype = []
+                node.returns.spec = []
                 for elt in node.returns.elts:
-                    elt.dtype, elt.shape = TypeInferer.visit_type_hint(ctx, elt)
+                    elt.dtype, elt.shape, elt.spec = TypeInferer.visit_type_hint(
+                        ctx, elt
+                    )
                     node.returns.dtype += [elt.dtype]
                     node.returns.shape += [elt.shape]
+                    node.returns.spec += [elt.spec]
             else:
                 # Single return value
-                node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
-                    ctx, node.returns
+                node.returns.dtype, node.returns.shape, node.returns.spec = (
+                    TypeInferer.visit_type_hint(ctx, node.returns)
                 )
             ctx.buffers[func_name] = node
 

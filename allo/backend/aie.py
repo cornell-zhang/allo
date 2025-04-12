@@ -35,66 +35,6 @@ from .vitis import ctype_map
 from ..passes import analyze_read_write_patterns
 
 
-class DTensor:
-    """
-    A class to represent a distributed tensor.
-    """
-
-    def __init__(self, rank, mapping, shape, dtype):
-        self.rank = rank
-        self.mapping = mapping
-        # global shape
-        self.shape = shape
-        self.dtype = dtype
-        # "S": Sharded
-        # "R": Replicated
-        self.placement = "R" * len(shape)
-        self.offset = [0] * len(shape)
-        self.local_shape = list(shape)
-
-    def set_placement(self, placement):
-        """
-        Set placement strategy for each dimension.
-
-        Args:
-            placement (str): String of 'S' and 'R' characters, one per dimension
-        """
-        if len(placement) != len(self.shape):
-            raise ValueError(
-                f"Placement length {len(placement)} doesn't match shape dimensions {len(self.shape)}"
-            )
-        self.placement = placement
-        return self
-
-    def set_subview(self, offset, local_shape):
-        """
-        Set the local subview parameters.
-
-        Args:
-            offset (list): Starting offsets for each dimension
-            local_shape (list): Sizes for each dimension
-        """
-        if len(offset) != len(self.shape) or len(local_shape) != len(self.shape):
-            raise ValueError(
-                "Offset and local_shape must have same dimensions as shape"
-            )
-        self.offset = offset
-        self.local_shape = local_shape
-        return self
-
-    def __str__(self):
-        placement_desc = ", ".join(
-            [
-                f"{dim}: {'Sharded' if p == 'S' else 'Replicated'}"
-                for dim, p in enumerate(self.placement)
-            ]
-        )
-        return (
-            f"DTensor(shape={self.shape}, dtype={self.dtype}, placement=[{placement_desc}], "
-            f"offset={self.offset}, local_shape={self.local_shape})"
-        )
-
-
 class KernelFunction:
     """
     A class to represent a kernel function in the MLIR module.

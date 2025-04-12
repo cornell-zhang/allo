@@ -1493,7 +1493,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.global_vars[name] = call_val
 
         # Build input types
-        arg_names = []
+        dtensors = []
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
@@ -1516,7 +1516,7 @@ class ASTTransformer(ASTBuilder):
                 )
             )
             input_typehints.append(get_extra_type_hints(arg.dtype))
-            arg_names.append(arg.arg)
+            dtensors.append(arg.dtensor)
 
         # Build return type
         output_types = []
@@ -1552,9 +1552,10 @@ class ASTTransformer(ASTBuilder):
         # set context
         ctx.top_func = func_op
         ctx.top_func_tree = node
-        for i, (name, arg) in enumerate(zip(arg_names, func_op.arguments)):
+        for i, (dtensor, arg) in enumerate(zip(dtensors, func_op.arguments)):
+            name = dtensor.name
             ctx.buffers[name] = MockArg(arg, idx=i)
-        ctx.func_args[func_name] = arg_names
+        ctx.func_args[func_name] = dtensors
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         # node.returns is the function definition, not the actual return operation
@@ -2006,7 +2007,9 @@ class ASTTransformer(ASTBuilder):
                 for i in range(3):
                     if f"df.p{i}" in ctx.global_vars:
                         res.append(
-                            MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
+                            MockConstant(
+                                ctx.global_vars[f"df.p{i}"], ctx, dtype=Index()
+                            )
                         )
                 return tuple(res)
             if fn_name == "pipe":
