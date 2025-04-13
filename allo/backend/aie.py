@@ -585,7 +585,9 @@ def extract_numbers(input_string):
 
 def codegen_aie_mlir(
     mod,
-    func_args,
+    func_groups,
+    inputs,
+    outputs,
     kernel_buf_dicts,
     external_kernels,
     stream_info,
@@ -604,8 +606,14 @@ def codegen_aie_mlir(
     mod: allo._mlir.ir.Module
         The MLIR module built by allo.
 
-    func_args: Dict[str, List[DTensor]]
-        A dictionary mapping function names to lists of DTensor objects as arguments.
+    func_groups: Dict[str, List[FuncOp]]
+        A dictionary mapping function names to lists of FuncOp objects.
+
+    inputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as inputs.
+
+    outputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as outputs.
 
     kernel_buf_dicts: Dict[str, Dict[str, Tuple[str, List[int]]]]
         The kernel buffer dictionaries for each function in the module.
@@ -623,7 +631,10 @@ def codegen_aie_mlir(
     code = format_str("module {", indent=0)
 
     # Determine device based on maximum tensor arguments across all kernels
-    max_num_args = len(func_args["top"])
+    max_num_args = 0
+    for lst in [inputs, outputs]:
+        for args in lst.values():
+            max_num_args += len(args)
     mem_tile_size = max_num_args // 2 + 1
     shim_tile_size = max_num_args // 2 + 1
     device = f"npu1_{mem_tile_size}col"
@@ -662,16 +673,18 @@ def codegen_aie_mlir(
     y_offset = 2
 
     # Create compute tiles and store kernel info
-    core_func = all_funcs[0].attributes["sym_name"].value
-    core_func = re.match(r'^(.*?)_\d', core_func).group(1)
-    for func in all_funcs:
-        func_name = func.attributes["sym_name"].value
-        ids = extract_numbers(func_name)
-        if len(ids) == 1:
-            ids = (0, ids[0])
-        code += format_str(
-            f"%tile_comp_{func_name} = aie.tile({ids[0]}, {ids[1] + y_offset})"
-        )
+    max_ids = (0, y_offset)
+    for funcs in func_groups.values():
+        for func in funcs:
+            func_name = func.attributes["sym_name"].value
+            ids = extract_numbers(func_name)
+            if len(ids) == 1:
+                ids = (0, ids[0])
+            ids = (max_ids[0] + ids[0], max_ids[1] + ids[1])
+            # TODO: Multi-function mapping scheme
+            code += format_str(f"%tile_comp_{func_name} = aie.tile({ids[0]}, {ids[1]})")
+            tmp_ids = (0, max(ids[1] + 1, max_ids[1]))
+        max_ids = tmp_ids
 
     # Create buffers and process function strings for each kernel
     func_strs = []
@@ -702,67 +715,64 @@ def codegen_aie_mlir(
 
         func_strs.append(func_str)
 
-    # Check input and output arguments
-    in_idx, out_idx = analyze_read_write_patterns(all_funcs[0])
-    inputs = [func_args["top"][idx] for idx in in_idx]
-    outputs = [func_args["top"][idx] for idx in out_idx]
-
     # Create object FIFOs for each kernel
     tile2fifo = {}
-    for io, indices in [("in", in_idx), ("out", out_idx)]:
-        for idx in indices:
-            dtensor = func_args["top"][idx]
-            mapping = dtensor.mapping
-            spec = dtensor.layout
-            placement = spec.get_placement(mapping)
-            global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
-            # shim to mem tile
-            if io == "in":
-                code += format_str(
-                    f"aie.objectfifo @in_shim_{dtensor.name}(%tile_shim{idx % shim_tile_size}, {{%tile_mem{idx % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-                )
-            else:
-                code += format_str(
-                    f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-                )
-            # mem to comp tile
-            mem_str = []
-            mem_stride = [0]
-            for tensor_tile, target_pe_tiles in placement.items():
-                arg_name = dtensor.name + "_" + tensor_tile
-                tile_str = []
-                mem_str.append(f"@{io}_mem_{arg_name}")
-                for tile in target_pe_tiles:
-                    idx_str = "_".join(map(str, tile))
-                    core_name = f"%tile_comp_{core_func}_{idx_str}"
-                    if core_name not in tile2fifo:
-                        tile2fifo[core_name] = [mem_str[-1]]
-                    else:
-                        tile2fifo[core_name].append(mem_str[-1])
-                    tile_str.append(core_name)
-                tile_str = ", ".join(tile_str)
-                local_memref_type = get_memref_type_str(
-                    dtensor.dtype, dtensor.get_local_shape()
-                )
-                mem_stride.append(mem_stride[-1] + np.prod(dtensor.get_local_shape()))
+    for io, arg_lst in [("in", inputs), ("out", outputs)]:
+        for func_name, dtensors in arg_lst.items():
+            for idx, dtensor in enumerate(dtensors):
+                mapping = dtensor.mapping
+                spec = dtensor.layout
+                placement = spec.get_placement(mapping)
+                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+                # shim to mem tile
                 if io == "in":
                     code += format_str(
-                        f"aie.objectfifo {mem_str[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        f"aie.objectfifo @in_shim_{dtensor.name}(%tile_shim{idx % shim_tile_size}, {{%tile_mem{idx % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
                 else:
                     code += format_str(
-                        f"aie.objectfifo {mem_str[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
-            mem_str = ", ".join(mem_str)
-            mem_stride = mem_stride[:-1]
-            if io == "in":
-                code += format_str(
-                    f"aie.objectfifo.link [@in_shim_{dtensor.name}] -> [{mem_str}]([] {mem_stride})"
-                )
-            else:
-                code += format_str(
-                    f"aie.objectfifo.link [{mem_str}] -> [@out_shim_{dtensor.name}]({mem_stride} [])"
-                )
+                # mem to comp tile
+                mem_str = []
+                mem_stride = [0]
+                for tensor_tile, target_pe_tiles in placement.items():
+                    arg_name = dtensor.name + "_" + tensor_tile
+                    tile_str = []
+                    mem_str.append(f"@{io}_mem_{arg_name}")
+                    for tile in target_pe_tiles:
+                        idx_str = "_".join(map(str, tile))
+                        core_name = f"%tile_comp_{func_name}_{idx_str}"
+                        if core_name not in tile2fifo:
+                            tile2fifo[core_name] = [mem_str[-1]]
+                        else:
+                            tile2fifo[core_name].append(mem_str[-1])
+                        tile_str.append(core_name)
+                    tile_str = ", ".join(tile_str)
+                    local_memref_type = get_memref_type_str(
+                        dtensor.dtype, dtensor.get_local_shape()
+                    )
+                    mem_stride.append(
+                        mem_stride[-1] + np.prod(dtensor.get_local_shape())
+                    )
+                    if io == "in":
+                        code += format_str(
+                            f"aie.objectfifo {mem_str[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        )
+                    else:
+                        code += format_str(
+                            f"aie.objectfifo {mem_str[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        )
+                mem_str = ", ".join(mem_str)
+                mem_stride = mem_stride[:-1]
+                if io == "in":
+                    code += format_str(
+                        f"aie.objectfifo.link [@in_shim_{dtensor.name}] -> [{mem_str}]([] {mem_stride})"
+                    )
+                else:
+                    code += format_str(
+                        f"aie.objectfifo.link [{mem_str}] -> [@out_shim_{dtensor.name}]({mem_stride} [])"
+                    )
 
     # Create stream object FIFOs from top_func
     stream_ele_types = {}
@@ -780,32 +790,18 @@ def codegen_aie_mlir(
                 if not type_str.startswith("memref"):
                     type_str = f"memref<{type_str}>"
                 depth = int(depth_str.strip())
-
-                # Determine the correct tiles for the stream
-                producer_kernel, producer_id = in_out[0].split("_", 1)
-                consumer_kernel, consumer_id = in_out[1].split("_", 1)
-                if "_" in producer_id:
-                    # 2d mapping
-                    producer_map = tuple(map(int, producer_id.split("_")))
-                else:
-                    producer_map = (0, int(producer_id))
-                if "_" in consumer_id:
-                    # 2d mapping
-                    consumer_map = tuple(map(int, consumer_id.split("_")))
-                else:
-                    consumer_map = (0, int(consumer_id))
-
                 # Create the stream object FIFO between the two kernels
                 code += format_str(
-                    f"aie.objectfifo @{stream_name}({producer_kernel}, {{{consumer_kernel}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
+                    f"aie.objectfifo @{stream_name}(%tile_comp_{in_out[0]}, {{%tile_comp_{in_out[1]}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
 
     # Create core computation for each kernel function
     for func_id, (func, func_str) in enumerate(zip(all_funcs, func_strs)):
-        func_name = func.attributes["sym_name"].value
-        core_name = f"tile_comp_{func_name}"
-        streams = stream_info[func_name]
+        func_name_w_id = func.attributes["sym_name"].value
+        func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+        core_name = f"tile_comp_{func_name_w_id}"
+        streams = stream_info[func_name_w_id]
 
         # Generate core computation
         code += format_str(
@@ -824,13 +820,15 @@ def codegen_aie_mlir(
                 # Helper function to process FIFOs (acquire or release)
                 def process_fifos(is_input, is_acquire):
                     nonlocal code, func_str
-                    tensors = inputs if is_input else outputs
+                    tensors = inputs[func_name] if is_input else outputs[func_name]
                     operation = "Consume" if is_input else "Produce"
-                    arg_offset = 0 if is_input else len(inputs)
+                    arg_offset = 0 if is_input else len(inputs[func_name])
 
                     for arg_id, tensor in enumerate(tensors):
                         # Calculate fifo index and get fifo name
-                        fifo_idx = arg_id if is_input else arg_id + len(inputs)
+                        fifo_idx = (
+                            arg_id if is_input else arg_id + len(inputs[func_name])
+                        )
                         fifo_name = tile2fifo[f"%{core_name}"][fifo_idx]
 
                         if is_acquire:
@@ -870,7 +868,7 @@ def codegen_aie_mlir(
                 stream_code, func_str = process_stream_operations(
                     func_str,
                     streams,
-                    len(inputs) + len(outputs),
+                    len(inputs[func_name]) + len(outputs[func_name]),
                     stream_ele_types,
                 )
                 code += stream_code
@@ -884,7 +882,7 @@ def codegen_aie_mlir(
 
         # Add linking information if needed
         code += "    }"
-        if len(external_kernels.get(func_name, [])) > 0:
+        if len(external_kernels.get(func_name_w_id, [])) > 0:
             code += ' {link_with = "external.o"}\n'
         else:
             code += "\n"
@@ -892,12 +890,16 @@ def codegen_aie_mlir(
     # Create runtime sequence with all inputs and outputs
     in_args = []
     out_args = []
-    for i, dtensor in enumerate(inputs):
-        global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
-        in_args.append(f"%arg{i}: {global_memref_type}")
-    for i, dtensor in enumerate(outputs, start=len(inputs)):
-        global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
-        out_args.append(f"%arg{i}: {global_memref_type}")
+    global_idx = 0
+    for dtensors in inputs.values():
+        for i, dtensor in enumerate(dtensors):
+            global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+            in_args.append(f"%arg{i}: {global_memref_type}")
+            global_idx += 1
+    for dtensors in outputs.values():
+        for i, dtensor in enumerate(dtensors, start=global_idx):
+            global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+            out_args.append(f"%arg{i}: {global_memref_type}")
 
     # Create dma transfer from off-chip mem to shim tile
     code += format_str(
@@ -906,20 +908,17 @@ def codegen_aie_mlir(
 
     with format_code(indent=6):
         # Helper function to process DMA operations for inputs and outputs
-        def process_dma_operations(is_input):
+        def process_dma_operations(tensor_lst, is_input):
             nonlocal code
-            tensor_list = inputs if is_input else outputs
             prefix = "in" if is_input else "out"
-            start_idx = 0 if is_input else len(inputs)
+            start_idx = 0 if is_input else global_idx
             # Calculate access pattern
-            for idx, dtensor in enumerate(tensor_list, start=start_idx):
+            for idx, dtensor in enumerate(tensor_lst, start=start_idx):
                 name = dtensor.name
                 size, stride = calculate_tensor_access(
                     dtensor.shape, dtensor.layout.placement, dtensor.mapping
                 )
-                global_memref_type = get_memref_type_str(
-                    dtensor.dtype, dtensor.shape
-                )
+                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
                 # Build DMA attributes - inputs need issue_token, outputs don't
                 if is_input:
                     dma_attrs = f"id = {idx} : i64, issue_token = true, metadata = @{prefix}_shim_{name}"
@@ -931,63 +930,30 @@ def codegen_aie_mlir(
                 )
 
         # Process DMA operations for inputs and outputs
-        process_dma_operations(is_input=True)
-        process_dma_operations(is_input=False)
+        for dtensors in inputs.values():
+            process_dma_operations(dtensors, is_input=True)
+        for dtensors in outputs.values():
+            process_dma_operations(dtensors, is_input=False)
 
         # Helper function for DMA wait operations
-        def process_dma_wait(is_input):
+        def process_dma_wait(tensor_lst, is_input):
             nonlocal code
-            tensor_list = inputs if is_input else outputs
             prefix = "in" if is_input else "out"
-            for dtensor in tensor_list:
+            for dtensor in tensor_lst:
                 code += format_str(
                     f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}}}"
                 )
 
         # Wait for all DMAs to complete
-        process_dma_wait(is_input=True)
-        process_dma_wait(is_input=False)
+        for dtensors in inputs.values():
+            process_dma_wait(dtensors, is_input=True)
+        for dtensors in outputs.values():
+            process_dma_wait(dtensors, is_input=False)
 
     code += format_str("}")
     code += format_str("}", indent=2)
     code += "}"
     return code
-
-
-def update_func_op_arg_types(func_op, inputs, outputs, dtensors, enable_tensor):
-    inputs_outputs = inputs + outputs
-    new_input_types = []
-    with func_op.context, Location.unknown():
-        for arg_id, (_, dtensor) in enumerate(zip(inputs_outputs, dtensors)):
-            elem_ty = get_element_type_from_str(dtensor.dtype, func_op.context)
-            shape = dtensor.local_shape
-            memref_ty = (
-                RankedTensorType.get(shape, elem_ty)
-                if enable_tensor
-                else MemRefType.get(shape, elem_ty)
-            )
-            new_input_types.append(memref_ty)
-        # Add remaining stream arguments
-        arg_id = len(inputs_outputs)
-        while arg_id < len(func_op.function_type.value.inputs):
-            new_input_types.append(func_op.function_type.value.inputs[arg_id])
-            arg_id += 1
-        new_func_type = FunctionType.get(
-            new_input_types, func_op.function_type.value.results, func_op.context
-        )
-        new_type = TypeAttr.get(new_func_type, func_op.context)
-        func_op.operation.attributes["function_type"] = new_type
-        entry_block = func_op.entry_block
-        for arg_id, block_arg in enumerate(entry_block.arguments):
-            if arg_id < len(new_input_types):
-                block_arg.set_type(new_input_types[arg_id])
-        op_to_remove = []
-        for op in func_op.regions[0].blocks[0].operations:
-            if op.operation.name == "memref.subview":
-                op.result.replace_all_uses_with(op.operands[0])
-                op_to_remove.append(op)
-        for op in op_to_remove:
-            op.erase()
 
 
 def lower_tensor_to_memref(mod, enable_tensor):
@@ -1061,15 +1027,6 @@ class AIEModule:
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
-        # for kernel_func in self.kernel_funcs:
-        #     for i, func_op in enumerate(kernel_func.funcs):
-        #         update_func_op_arg_types(
-        #             func_op,
-        #             kernel_func.inputs,
-        #             kernel_func.outputs,
-        #             kernel_func.dtensors[i],
-        #             self.enable_tensor,
-        #         )
         external_kernels = inject_aie_kernels(self.module)
         with open(
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
@@ -1077,9 +1034,30 @@ class AIEModule:
             f.write(str(self.module))
         lower_tensor_to_memref(self.module, self.enable_tensor)
         kernel_buf_dicts = record_local_buffer(self.module)
+        _, all_funcs = get_public_funcs(self.module)
+        # Create a dictionary to store the kernel functions
+        func_groups = {}
+        for func in all_funcs:
+            func_name_w_id = func.attributes["sym_name"].value
+            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+            if func_name not in func_groups:
+                func_groups[func_name] = []
+            func_groups[func_name].append(func)
+        inputs = {}
+        outputs = {}
+        for funcs in func_groups.values():
+            func_name_w_id = funcs[0].attributes["sym_name"].value
+            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+            in_idx, out_idx = analyze_read_write_patterns(funcs[0])
+            inputs[func_name] = [self.func_args[func_name_w_id][idx] for idx in in_idx]
+            outputs[func_name] = [
+                self.func_args[func_name_w_id][idx] for idx in out_idx
+            ]
         code = codegen_aie_mlir(
             self.module,
-            self.func_args,
+            func_groups,
+            inputs,
+            outputs,
             kernel_buf_dicts,
             external_kernels,
             self.stream_info,
@@ -1108,11 +1086,13 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        _, all_funcs = get_public_funcs(self.module)
-        in_idx, out_idx = analyze_read_write_patterns(all_funcs[0])
-        self.inputs = [self.func_args["top"][idx] for idx in in_idx]
-        self.outputs = [self.func_args["top"][idx] for idx in out_idx]
-        host_code = codegen_host(self.inputs, self.outputs)
+        self.all_inputs = []
+        for dtensors in inputs.values():
+            self.all_inputs.extend(dtensors)
+        self.all_outputs = []
+        for dtensors in outputs.values():
+            self.all_outputs.extend(dtensors)
+        host_code = codegen_host(self.all_inputs, self.all_outputs)
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
@@ -1136,7 +1116,7 @@ class AIEModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            self.outputs[-1].dtype,
+            self.all_outputs[-1].dtype,
             args[-1].shape,
             f"{self.project}/output.data",
         )
