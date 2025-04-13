@@ -545,9 +545,9 @@ def calculate_tensor_access(shape, partition, device_mesh):
             a, b = 1, device_mesh[0]
         elif len(device_mesh) == 2:
             if partition[0][0] == "S":
-                partition[1] = (partition[1][0], 1-partition[0][1])
+                partition[1] = (partition[1][0], 1 - partition[0][1])
             elif partition[1][0] == "S":  # partition[0][0] == "R"
-                partition[0] = (partition[0][0], 1-partition[1][1])
+                partition[0] = (partition[0][0], 1 - partition[1][1])
             else:
                 partition[0] = (partition[0], 1)
                 partition[1] = (partition[1], 0)
