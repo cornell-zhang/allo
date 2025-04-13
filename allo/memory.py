@@ -42,8 +42,9 @@ class LayoutSpec:
             for _, (op, dim) in enumerate(self.placement):
                 if op == "S":
                     # For sharding, use the coordinate at the specified dimension
+                    # start from right to left
                     mesh_dim = int(dim)
-                    tensor_id_parts.append(str(pe_coord[mesh_dim]))
+                    tensor_id_parts.append(str(pe_coord[-mesh_dim - 1]))
                 elif op == "R":
                     # For replication, use 'R'
                     tensor_id_parts.append("R")

@@ -10,7 +10,7 @@ from allo.memory import LayoutSpec
 
 SpA = LayoutSpec("S0R")
 SpB = LayoutSpec("RS1")
-SpC = LayoutSpec("S1S0")
+SpC = LayoutSpec("S0S1")
 
 
 def _test_matrix_scalar_add():

@@ -544,7 +544,14 @@ def calculate_tensor_access(shape, partition, device_mesh):
         if len(device_mesh) == 1:
             a, b = 1, device_mesh[0]
         elif len(device_mesh) == 2:
-            a, b = device_mesh[0], device_mesh[1]
+            if partition[0][0] == "S":
+                partition[1] = (partition[1][0], 1-partition[0][1])
+            elif partition[1][0] == "S":  # partition[0][0] == "R"
+                partition[0] = (partition[0][0], 1-partition[1][1])
+            else:
+                partition[0] = (partition[0], 1)
+                partition[1] = (partition[1], 0)
+            a, b = device_mesh[partition[0][1]], device_mesh[partition[1][1]]
         else:
             a, b = device_mesh[partition[0][1]], device_mesh[partition[1][1]]
 
@@ -765,7 +772,9 @@ def codegen_aie_mlir(
                         code += format_str(
                             f"aie.objectfifo {mem_strs[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
                         )
-                mem_str = ", ".join(mem_strs)
+                # important to sort to guarantee result correctness
+                # output should have spec of SN SN-1 ... S1 S0
+                mem_str = ", ".join(sorted(mem_strs))
                 mem_stride = mem_stride[:-1]
                 if io == "in":
                     code += format_str(
