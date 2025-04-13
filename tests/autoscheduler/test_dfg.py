@@ -127,18 +127,33 @@ def test_node_info():
 
         # check access pattern
         permuted_access_map = compose_affine_maps(inverse_loop_map, original_access_map)
-        assert permuted_access_map == info.stores_map[affine_node.stores[0]].accessMap
-        assert permuted_access_map == info.loads_map[affine_node.loads[0]].accessMap
+        assert (
+            permuted_access_map
+            == info.stores_map[affine_node.stores[0].opview.memref].access_map
+        )
+        assert (
+            permuted_access_map
+            == info.loads_map[affine_node.loads[0].opview.memref].access_map
+        )
 
         # check II is 1 for all permutations
         assert info.II == 1
 
         # check first and last access times
-        assert info.stores_map[affine_node.stores[0]].first_element_time == 0
-        assert info.loads_map[affine_node.loads[0]].first_element_time == 0
+        assert (
+            info.stores_map[affine_node.stores[0].opview.memref].first_element_time == 0
+        )
+        assert (
+            info.loads_map[affine_node.loads[0].opview.memref].first_element_time == 0
+        )
 
-        assert info.stores_map[affine_node.stores[0]].last_element_time == 499
-        assert info.loads_map[affine_node.loads[0]].last_element_time == 499
+        assert (
+            info.stores_map[affine_node.stores[0].opview.memref].last_element_time
+            == 499
+        )
+        assert (
+            info.loads_map[affine_node.loads[0].opview.memref].last_element_time == 499
+        )
 
 
 def test_DSP():
