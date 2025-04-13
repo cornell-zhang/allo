@@ -50,12 +50,11 @@ def test_simple(debug_point, kind):
         else optimized_schedule.build(target="vitis_hls")
     )
 
-    expected = np.zeros((10, 10))
-    for i in range(10):
-        for j in range(10):
-            expected[i, j] = i + j + 1
-
     if debug_point is not None or is_available("vitis_hls"):
+        expected = np.zeros((10, 10))
+        for i in range(10):
+            for j in range(10):
+                expected[i, j] = i + j + 1
         np.testing.assert_allclose(mod(), expected)
 
 

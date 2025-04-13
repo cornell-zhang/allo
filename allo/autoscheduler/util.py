@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 from collections import defaultdict
-from typing import NamedTuple, Any
+from typing import NamedTuple
 
 from allo._mlir.ir import (
     Location,
