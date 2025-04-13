@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used, bad-builtin
 
 import gc
 import ast
@@ -1470,9 +1470,9 @@ class ASTTransformer(ASTBuilder):
                                 new_ctx.top_func_tree = node
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis in range(len(dim)):
+                                for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): dim[axis]}
+                                        {"df.p" + str(axis): val}
                                     )
                                 concated_name = "_".join(map(str, dim))
                                 node.name = orig_name + f"_{concated_name}"

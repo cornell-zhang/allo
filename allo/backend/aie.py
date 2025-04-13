@@ -1,17 +1,15 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=bad-builtin, no-name-in-module, unnecessary-lambda-assignment, cell-var-from-loop, too-many-branches, consider-using-with
+# pylint: disable=bad-builtin, no-name-in-module, too-many-branches, too-many-nested-blocks, consider-using-with
+
 
 import os
 import subprocess
 import re
 import numpy as np
 from .._mlir.ir import (
-    RankedTensorType,
     MemRefType,
-    FunctionType,
-    TypeAttr,
     Location,
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -24,10 +22,7 @@ from .._mlir.dialects import (
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
 from .vitis import read_tensor_from_file
-from ..utils import (
-    get_dtype_and_shape_from_type,
-    get_element_type_from_str,
-)
+from ..utils import get_dtype_and_shape_from_type
 from .utils import format_str, format_code
 from .vitis import ctype_map
 from ..passes import analyze_read_write_patterns
@@ -313,7 +308,7 @@ def inject_aie_kernels(mod):
                             M, K = MemRefType(op.inputs[0].type).shape
                             _, N = MemRefType(op.inputs[1].type).shape
                             out_dtype = str(op.outputs[0].type.element_type)
-                            if not (dtype, out_dtype) in [
+                            if (dtype, out_dtype) not in [
                                 ("i8", "i8"),
                                 ("i16", "i16"),
                                 ("i16", "i32"),
@@ -538,6 +533,9 @@ def calculate_tensor_access(shape, partition, device_mesh):
             total_devices = device_mesh[0]
             size = [1, total_devices, 1, shape[0]]
             stride = [0, 0, 0, 1]
+        else:
+            raise ValueError(f"Unsupported partition {partition_str} for 1D tensor.")
+
         return size, stride
 
     # Handle 2D tensor case
@@ -569,6 +567,8 @@ def calculate_tensor_access(shape, partition, device_mesh):
             total_devices = a * b
             size = [1, 1, m, n]
             stride = [0, 0, n, 1]
+        else:
+            raise ValueError(f"Unsupported partition {partition_str} for 2D tensor.")
 
         return size, stride
     raise ValueError(f"Unsupported shape {shape} or partition {partition}.")
@@ -632,7 +632,7 @@ def codegen_aie_mlir(
 
     # Determine device based on maximum tensor arguments across all kernels
     max_num_args = 0
-    for lst in [inputs, outputs]:
+    for lst in (inputs, outputs):
         for args in lst.values():
             max_num_args += len(args)
     mem_tile_size = max_num_args // 2 + 1
@@ -717,7 +717,7 @@ def codegen_aie_mlir(
 
     # Create object FIFOs for each kernel
     tile2fifo = {}
-    for io, arg_lst in [("in", inputs), ("out", outputs)]:
+    for io, arg_lst in (("in", inputs), ("out", outputs)):
         for func_name, dtensors in arg_lst.items():
             for idx, dtensor in enumerate(dtensors):
                 mapping = dtensor.mapping
@@ -734,21 +734,21 @@ def codegen_aie_mlir(
                         f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
                 # mem to comp tile
-                mem_str = []
+                mem_strs = []
                 mem_stride = [0]
                 for tensor_tile, target_pe_tiles in placement.items():
                     arg_name = dtensor.name + "_" + tensor_tile
-                    tile_str = []
-                    mem_str.append(f"@{io}_mem_{arg_name}")
+                    tile_strs = []
+                    mem_strs.append(f"@{io}_mem_{arg_name}")
                     for tile in target_pe_tiles:
                         idx_str = "_".join(map(str, tile))
                         core_name = f"%tile_comp_{func_name}_{idx_str}"
                         if core_name not in tile2fifo:
-                            tile2fifo[core_name] = [mem_str[-1]]
+                            tile2fifo[core_name] = [mem_strs[-1]]
                         else:
-                            tile2fifo[core_name].append(mem_str[-1])
-                        tile_str.append(core_name)
-                    tile_str = ", ".join(tile_str)
+                            tile2fifo[core_name].append(mem_strs[-1])
+                        tile_strs.append(core_name)
+                    tile_str = ", ".join(tile_strs)
                     local_memref_type = get_memref_type_str(
                         dtensor.dtype, dtensor.get_local_shape()
                     )
@@ -757,13 +757,13 @@ def codegen_aie_mlir(
                     )
                     if io == "in":
                         code += format_str(
-                            f"aie.objectfifo {mem_str[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                            f"aie.objectfifo {mem_strs[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
                         )
                     else:
                         code += format_str(
-                            f"aie.objectfifo {mem_str[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                            f"aie.objectfifo {mem_strs[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
                         )
-                mem_str = ", ".join(mem_str)
+                mem_str = ", ".join(mem_strs)
                 mem_stride = mem_stride[:-1]
                 if io == "in":
                     code += format_str(

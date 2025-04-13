@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
 
 import ast
 import sys
@@ -597,9 +597,9 @@ class TypeInferer(ASTVisitor):
                                 new_ctx.rank = dim
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis in range(len(dim)):
+                                for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
-                                        {"df.p" + str(axis): dim[axis]}
+                                        {"df.p" + str(axis): val}
                                     )
                                 concated_name = "_".join(map(str, dim))
                                 node.name = orig_name + f"_{concated_name}"

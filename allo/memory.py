@@ -24,7 +24,6 @@ class LayoutSpec:
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
 
         Args:
-            placement_str (str): Placement string (e.g., "S0", "RS0", "S1S0", etc.)
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
 
         Returns:
@@ -40,7 +39,7 @@ class LayoutSpec:
         for pe_coord in pe_coords:
             tensor_id_parts = []
 
-            for i, (op, dim) in enumerate(self.placement):
+            for _, (op, dim) in enumerate(self.placement):
                 if op == "S":
                     # For sharding, use the coordinate at the specified dimension
                     mesh_dim = int(dim)
@@ -93,11 +92,11 @@ class DTensor:
         if self.layout is None:
             return self.shape
         local_shape = []
-        for i in range(len(self.shape)):
+        for i, s in enumerate(self.shape):
             if self.layout.placement[i][0] == "R":
-                local_shape.append(self.shape[i])
+                local_shape.append(s)
             else:
-                local_shape.append(self.shape[i] // self.mapping[i])
+                local_shape.append(s // self.mapping[i])
         return tuple(local_shape)
 
     def __str__(self):
