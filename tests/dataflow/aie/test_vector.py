@@ -6,9 +6,9 @@ import allo
 from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
-from allo.memory import LayoutSpec
+from allo.memory import Layout
 
-Sp = LayoutSpec("S0")
+Sp = Layout("S0")
 
 
 def _test_vector_scalar_add():

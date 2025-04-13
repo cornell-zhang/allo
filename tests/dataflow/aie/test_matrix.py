@@ -6,11 +6,11 @@ import allo
 from allo.ir.types import int16, int32, float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import LayoutSpec
+from allo.memory import Layout
 
-SpA = LayoutSpec("S0R")
-SpB = LayoutSpec("RS1")
-SpC = LayoutSpec("S0S1")
+SpA = Layout("S0R")
+SpB = Layout("RS1")
+SpC = Layout("S0S1")
 
 
 def _test_matrix_scalar_add():

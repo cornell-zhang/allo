@@ -37,7 +37,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
-from ..memory import DTensor, LayoutSpec
+from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
@@ -85,7 +85,7 @@ class TypeInferer(ASTVisitor):
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
-            return dtype, shape, LayoutSpec("R" * len(shape))  # default layout
+            return dtype, shape, Layout("R" * len(shape))  # default layout
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type `{node.id}`"
@@ -103,7 +103,7 @@ class TypeInferer(ASTVisitor):
             return dtype, tuple(), None
         if isinstance(node, ast.BinOp):
             # memory refinement
-            # e.g., A: Ty[M] @ LayoutSpec("S0")
+            # e.g., A: Ty[M] @ Layout("S0")
             dtype, shape, _ = TypeInferer.visit_type_hint(ctx, node.left)
             spec = ASTResolver.resolve(node.right, ctx.global_vars)
             return dtype, shape, spec

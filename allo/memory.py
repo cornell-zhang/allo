@@ -5,7 +5,7 @@ import re
 from itertools import product
 
 
-class LayoutSpec:
+class Layout:
     def __init__(self, placement):
         # R: replicated, S: shared
         # e.g., S0S1R, S0R, RS0
@@ -70,7 +70,7 @@ class LayoutSpec:
             result += letter
             if number is not None:
                 result += str(number)
-        return f"LayoutSpec({result})"
+        return f"Layout({result})"
 
 
 class DTensor:

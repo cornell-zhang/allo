@@ -5,16 +5,16 @@ import allo
 from allo.ir.types import int16, int32, float32
 import allo.dataflow as df
 import numpy as np
-from allo.memory import LayoutSpec
+from allo.memory import Layout
 
 Ty = int16
 M, N, K = 16, 16, 16
 Pm, Pn, Pk = 1, 1, 2
 Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-SpA = LayoutSpec("S1S2")
-SpB = LayoutSpec("S2S0")
-SpC = LayoutSpec("S1S0")
+SpA = Layout("S1S2")
+SpB = Layout("S2S0")
+SpC = Layout("S1S0")
 
 
 @df.region()
