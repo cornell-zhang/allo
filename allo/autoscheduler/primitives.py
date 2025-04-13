@@ -4,38 +4,38 @@ from typing import Any
 from allo.customize import Schedule
 from allo.ir.utils import MockBuffer
 
+KINDS = ["reorder", "pipeline", "to"]
+
 
 class SchedulePrimitive:
-    def __init__(self, args: list[Any] = None, kwargs: dict[str, Any] = None):
+    def __init__(
+        self, kind: str, args: list[Any] = None, kwargs: dict[str, Any] = None
+    ):
+        assert kind in KINDS
+        self.kind = kind
         self.args = args or []
         self.kwargs = kwargs or {}
 
     def __repr__(self):
-        return f"{self.__class__.__name__}: {self.args}"
-
-    def applyTo(self, _schedule: Schedule):
-        pass
-
-
-class Reorder(SchedulePrimitive):
-    def __init__(self, order: list[str]):
-        super().__init__(order)
+        match self.kind:
+            case "reorder":
+                return f"Reorder(order={self.args[0]})"
+            case "pipeline":
+                return f"Pipeline(axis={self.args[0]}, ii={self.kwargs['initiation_interval']})"
+            case "to":
+                return f"BufferToFifo(target={self.args[0]}, dst={self.args[1]})"
 
     def applyTo(self, schedule: Schedule):
-        schedule.reorder(*self.args)
+        getattr(schedule, self.kind)(*self.args, **self.kwargs)
 
+    @staticmethod
+    def reorder(order: list[str]):
+        return SchedulePrimitive("reorder", order)
 
-class Pipeline(SchedulePrimitive):
-    def __init__(self, axis: str, ii: int):
-        super().__init__([axis], {"initiation_interval": ii})
+    @staticmethod
+    def pipeline(axis: str, ii: int):
+        return SchedulePrimitive("pipeline", [axis], {"initiation_interval": ii})
 
-    def applyTo(self, schedule: Schedule):
-        schedule.pipeline(*self.args, **self.kwargs)
-
-
-class BufferToFifo(SchedulePrimitive):
-    def __init__(self, target: MockBuffer, dst: str):
-        super().__init__([target, dst])
-
-    def applyTo(self, schedule: Schedule):
-        schedule.to(*self.args)
+    @staticmethod
+    def buffer_to_fifo(target: MockBuffer, dst: str):
+        return SchedulePrimitive("to", [target, dst])

@@ -67,7 +67,7 @@ def test_three_mm(debug_point, kind):
     )
     try:
         optimized_schedule = dataflow_optimization_pass(
-            schedule, debug_point=debug_point, kind=kind
+            schedule, debug_point=debug_point, kind=kind, verbose=True
         )
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):

@@ -528,8 +528,12 @@ class DFG:
 
             f.write("}\n")
 
-    def create_graph_parallelism_performance_model(self, debug_output=None):
+    def create_graph_parallelism_performance_model(
+        self, debug_output=None, verbose=False
+    ):
         model = gp.Model("graph_parallelism_performance_model")
+
+        model.setParam("OutputFlag", 1 if verbose else 0)
 
         # Get topological order and verify no cycles
         topo_order = self.topological_sort()

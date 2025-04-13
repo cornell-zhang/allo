@@ -32,7 +32,7 @@ from .util import (
 )
 
 from .dfg import DFG, DFGNodeType, NodeInfo
-from .primitives import BufferToFifo, SchedulePrimitive, Reorder, Pipeline
+from .primitives import SchedulePrimitive
 
 DEBUG_POINTS = [
     "mlir_preprocess",
@@ -45,7 +45,7 @@ PARALLELISM_MODELS = ["graph", "node", "combined"]
 
 
 def dataflow_optimization_pass(
-    schedule: Schedule, debug_point=None, kind=None, verify=False
+    schedule: Schedule, debug_point=None, kind=None, verify=False, verbose=False
 ) -> Schedule:
     """
     Applies autoscheduler optimization passes to the schedule.
@@ -136,7 +136,9 @@ def dataflow_optimization_pass(
     # build performance model
     match kind:
         case "graph":
-            permutations = dfg.create_graph_parallelism_performance_model()
+            permutations = dfg.create_graph_parallelism_performance_model(
+                verbose=verbose
+            )
             loop_opts.extend(
                 extract_reorder_and_pipeline(permutations, dfg, node_to_fn, schedule)
             )
@@ -151,6 +153,14 @@ def dataflow_optimization_pass(
             pass
         case _:
             raise ValueError(f"Invalid parallelism model: {kind}")
+
+    if verbose:
+        print("Loop opts:")
+        for primitive in loop_opts:
+            print(f"\t{primitive}")
+        print("FIFOs:")
+        for primitive in fifos:
+            print(f"\t{primitive}")
 
     for primitive in loop_opts:
         primitive.applyTo(schedule)
@@ -517,12 +527,16 @@ def extract_reorder_and_pipeline(
 
         node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
         if perm_idx == 0:
-            schedule_primitives.append(Pipeline(loop_band[-1], ii=node_info.II))
+            schedule_primitives.append(
+                SchedulePrimitive.pipeline(loop_band[-1], node_info.II)
+            )
         else:
             perm = node_info.permutation
             new_loop_order = [loop_band[i] for i in perm]
-            schedule_primitives.append(Reorder(new_loop_order))
-            schedule_primitives.append(Pipeline(new_loop_order[-1], ii=node_info.II))
+            schedule_primitives.append(SchedulePrimitive.reorder(new_loop_order))
+            schedule_primitives.append(
+                SchedulePrimitive.pipeline(new_loop_order[-1], node_info.II)
+            )
 
     return schedule_primitives
 
@@ -566,6 +580,8 @@ def extract_buffer_to_fifo(
                     top_level_fn_name, memref.owner.attributes["name"].value
                 )
                 fn_name = node_to_fn[node_idx]
-                schedule_primitives.append(BufferToFifo(buffer, fn_name))
+                schedule_primitives.append(
+                    SchedulePrimitive.buffer_to_fifo(buffer, fn_name)
+                )
 
     return schedule_primitives
