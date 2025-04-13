@@ -551,9 +551,9 @@ def calculate_tensor_access(shape, partition, device_mesh):
             else:
                 partition[0] = (partition[0], 1)
                 partition[1] = (partition[1], 0)
-            a, b = device_mesh[partition[0][1]], device_mesh[partition[1][1]]
+            a, b = device_mesh[-partition[0][1] - 1], device_mesh[-partition[1][1] - 1]
         else:
-            a, b = device_mesh[partition[0][1]], device_mesh[partition[1][1]]
+            a, b = device_mesh[-partition[0][1] - 1], device_mesh[-partition[1][1] - 1]
 
         if partition_str == "SS":
             # Both dimensions sharded
@@ -967,21 +967,12 @@ def codegen_aie_mlir(
     return code
 
 
-def lower_tensor_to_memref(mod, enable_tensor):
-    passes = (
-        [
-            # "linalg-generalize-named-ops",
-            # "linalg-fuse-elementwise-ops",
-            "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
-            "func.func(convert-linalg-to-affine-loops),lower-affine",
-        ]
-        if enable_tensor
-        else [
-            # "linalg-generalize-named-ops",
-            # "linalg-fuse-elementwise-ops",
-            "func.func(convert-linalg-to-affine-loops),lower-affine",
-        ]
-    )
+def lower_tensor_to_memref(mod):
+    passes = [
+        # "linalg-generalize-named-ops",
+        # "linalg-fuse-elementwise-ops",
+        "func.func(convert-linalg-to-affine-loops),lower-affine",
+    ]
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
@@ -1024,14 +1015,12 @@ class AIEModule:
         func_args,
         project,
         stream_info,
-        enable_tensor=False,
     ):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
         self.module = module
         self.func_args = func_args
-        self.enable_tensor = enable_tensor
         self.stream_info = stream_info
 
     def build(self):
@@ -1043,7 +1032,7 @@ class AIEModule:
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.module))
-        lower_tensor_to_memref(self.module, self.enable_tensor)
+        lower_tensor_to_memref(self.module)
         kernel_buf_dicts = record_local_buffer(self.module)
         _, all_funcs = get_public_funcs(self.module)
         # Create a dictionary to store the kernel functions
