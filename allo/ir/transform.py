@@ -93,7 +93,9 @@ def find_buffer(module, target, func_args):
     for idx, (dtensor, op) in enumerate(
         zip(func_args[func_name], target_func.arguments)
     ):
-        if dtensor.name == target_name:
+        if (
+            hasattr(dtensor, "name") and dtensor.name == target_name
+        ) or dtensor == target_name:
             return target_func, idx, MockArg(op)
     # Find inner intermediate buffers
     for op in target_func.entry_block.operations:

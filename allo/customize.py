@@ -323,7 +323,10 @@ class Schedule:
             visited_target_names.append(name)
             _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
-            arg_names = [dtensor.name for dtensor in self.func_args[inner_target.func]]
+            arg_names = [
+                dtensor.name if hasattr(dtensor, "name") else dtensor
+                for dtensor in self.func_args[inner_target.func]
+            ]
             if inner_target.name in arg_names:
                 # is a function argument
                 idx = arg_names.index(inner_target.name)
@@ -332,7 +335,10 @@ class Schedule:
                 path, buf_name = buf_name.split(":")
                 if buf_name.isdigit():
                     # function argument
-                    buf_name = self.func_args[path][int(buf_name)].name
+                    if hasattr(self.func_args[path][int(buf_name)], "name"):
+                        buf_name = self.func_args[path][int(buf_name)].name
+                    else:
+                        buf_name = self.func_args[path][int(buf_name)]
                 recursive_partition(MockBuffer(path, buf_name))
             # calling the same function
             if isinstance(mlir_target, func_d.CallOp):
