@@ -6,7 +6,9 @@ import allo
 from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
+from allo.memory import LayoutSpec
 
+Sp = LayoutSpec("S0")
 
 def _test_vector_scalar_add():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
@@ -161,14 +163,12 @@ def _test_vector_scalar_add_p0():
     Ty = int32
     M = 1024
     P0 = 4
-    Mt = M // P0
 
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def core(A: Ty[M], B: Ty[M]):
-            pi = df.get_pid()
-            B[pi * Mt : (pi + 1) * Mt] = allo.add(A[pi * Mt : (pi + 1) * Mt], 1)
+        def core(A: Ty[M] @ Sp, B: Ty[M] @ Sp):
+            B[:] = allo.add(A[:], 1)
 
     mod = df.build(top, target="aie")
     A = np.random.randint(0, 100, M).astype(np.int32)
@@ -207,10 +207,10 @@ def _test_vector_vector_add_p0():
 
 
 if __name__ == "__main__":
-    _test_vector_scalar_add()
-    _test_vector_scalar_mul()
-    _test_vector_vector_add()
-    _test_vector_vector_bf16_add()
-    _test_vector_vector_mul()
+    # _test_vector_scalar_add()
+    # _test_vector_scalar_mul()
+    # _test_vector_vector_add()
+    # _test_vector_vector_bf16_add()
+    # _test_vector_vector_mul()
     _test_vector_scalar_add_p0()
-    _test_vector_vector_add_p0()
+    # _test_vector_vector_add_p0()

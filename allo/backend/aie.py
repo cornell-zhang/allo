@@ -6,7 +6,6 @@
 import os
 import subprocess
 import re
-from collections import defaultdict
 import numpy as np
 from .._mlir.ir import (
     RankedTensorType,
@@ -17,7 +16,6 @@ from .._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
     StringAttr,
-    BlockArgument,
 )
 from .._mlir.dialects import (
     allo as allo_d,
@@ -33,36 +31,6 @@ from ..utils import (
 from .utils import format_str, format_code
 from .vitis import ctype_map
 from ..passes import analyze_read_write_patterns
-
-
-class KernelFunction:
-    """
-    A class to represent a kernel function in the MLIR module.
-    """
-
-    def __init__(self, name, mapping, inputs, outputs):
-        self.name = name
-        self.mapping = mapping
-        self.inputs = inputs  # List of tuples (dtype, shape)
-        self.outputs = outputs  # List of tuples (dtype, shape)
-        self.funcs = [None] * np.prod(
-            mapping
-        )  # List of MLIR functions for each mapping
-        self.dtensors = [None] * np.prod(mapping)  # List of DTensors for each mapping
-
-    def set_mlir_funcs(self, funcs):
-        if len(funcs) != np.prod(self.mapping):
-            raise ValueError("Number of MLIR functions must match the mapping size")
-        self.funcs = funcs
-
-    def set_dtensors(self, dtensors, idx):
-        # Each function is associated with a list of dtensors
-        if idx < 0 or idx >= np.prod(self.mapping):
-            raise IndexError("Index out of range for the mapping size")
-        self.dtensors[idx] = dtensors
-
-    def __repr__(self):
-        return f"KernelFunction(name={self.name}, mapping={self.mapping}, inputs={self.inputs}, outputs={self.outputs})"
 
 
 host_header = """
@@ -181,8 +149,9 @@ def codegen_host(inputs, outputs):
     code = host_header
     with format_code(indent=2):
         # write input data
-        for i, (dtype, shape) in enumerate(inputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(inputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             code += format_str(f'std::ifstream ifile{i}("input{i}.data");')
             code += format_str(f"if (!ifile{i}.is_open()) {{")
             code += format_str(
@@ -209,8 +178,9 @@ def codegen_host(inputs, outputs):
             code += format_str(
                 f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));"
             )
-        for i, (dtype, shape) in enumerate(outputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(outputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             out_size = np.prod(shape)
             code += format_str(
                 f"\nauto bo_out{i} = xrt::bo(device, {out_size} * sizeof({dtype}),",
@@ -251,8 +221,9 @@ def codegen_host(inputs, outputs):
             'std::cout << "NPU execution time: " << npu_time << "us\\n";'
         )
         # get results
-        for i, (dtype, shape) in enumerate(outputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(outputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             out_size = np.prod(shape)
             code += format_str(
                 f"\nbo_out{i}.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False
@@ -541,7 +512,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
     -----------
     shape : tuple
         The shape of the tensor (1D or 2D)
-    partition : str
+    partition : tuple(str, int)
         The partition method for each dimension:
         - 'S': Sharded (distributed across devices)
         - 'R': Replicated (copied to each device)
@@ -554,14 +525,15 @@ def calculate_tensor_access(shape, partition, device_mesh):
         A tuple containing two lists: (size, stride)
     """
     # Handle 1D tensor case
+    partition_str = "".join([p[0] for p in partition])
     if len(shape) == 1:
-        if partition == "S":
+        if partition_str == "S":
             # For 1D tensor with "S", shard across all devices
             total_devices = device_mesh[0]
             shard_size = shape[0] // total_devices
             size = [1, 1, total_devices, shard_size]
             stride = [0, 0, shard_size, 1]
-        elif partition == "R":
+        elif partition_str == "R":
             # For 1D tensor with "R", replicate across all devices
             total_devices = device_mesh[0]
             size = [1, total_devices, 1, shape[0]]
@@ -573,23 +545,23 @@ def calculate_tensor_access(shape, partition, device_mesh):
         m, n = shape
         a, b = device_mesh
 
-        if partition == "SS":
+        if partition_str == "SS":
             # Both dimensions sharded
             size = [a, b, m // a, n // b]
             stride = [(m // a) * n, n // b, n, 1]
 
-        elif partition == "SR":
+        elif partition_str == "SR":
             # First dim sharded across all devices, second replicated
             total_devices = a * b
             size = [1, total_devices, m // total_devices, n]
             stride = [0, (m // total_devices) * n, n, 1]
 
-        elif partition == "RS":
+        elif partition_str == "RS":
             # First dim replicated, second sharded across second dim of mesh
             size = [1, b, m, n // b]
             stride = [(m * n) // (a * b), n // b, n, 1]
 
-        elif partition == "RR":
+        elif partition_str == "RR":
             # Both dimensions replicated
             total_devices = a * b
             size = [1, 1, m, n]
@@ -599,9 +571,18 @@ def calculate_tensor_access(shape, partition, device_mesh):
     raise ValueError(f"Unsupported shape {shape} or partition {partition}.")
 
 
+def extract_numbers(input_string):
+    parts = input_string.split("_")
+    numbers = []
+    for part in parts:
+        if part.isdigit():
+            numbers.append(int(part))
+    return tuple(numbers)
+
+
 def codegen_aie_mlir(
     mod,
-    kernel_funcs,  # Changed from kernel_func to list of kernel functions
+    func_args,
     kernel_buf_dicts,
     external_kernels,
     stream_info,
@@ -609,13 +590,19 @@ def codegen_aie_mlir(
     """
     Generates MLIR-AIE code with MLIR module and extra information for multiple kernel functions
 
+    offchip to shim: copy the whole data but reorder
+    shim to mem: copy the whole data
+    mem to comp: shard the data
+    R: same line in object fifo (broadcast)
+    S: multiple lines for object fifo, and link with offset
+
     Parameters
     ----------
     mod: allo._mlir.ir.Module
         The MLIR module built by allo.
 
-    kernel_funcs: List[KernelFunction]
-        A list of kernel function objects, each containing mapping, inputs, and outputs.
+    func_args: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as arguments.
 
     kernel_buf_dicts: Dict[str, Dict[str, Tuple[str, List[int]]]]
         The kernel buffer dictionaries for each function in the module.
@@ -630,27 +617,13 @@ def codegen_aie_mlir(
         The key is the name of the kernel, and the value is a list of tuples.
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
     """
-
-    # Helper function to create tile names for a kernel
-    def get_tile_name(kernel_name, indices, map_1d):
-        i, j = indices
-        if map_1d:
-            return f"%tile_comp_{kernel_name}_{j}_{i}"
-        return f"%tile_comp_{kernel_name}_{i}_{j}"
-
-    # Get normalized mapping for a kernel (ensure it's a 2D tuple)
-    def get_normalized_mapping(mapping):
-        return (mapping[0], 1) if len(mapping) == 1 else tuple(mapping)
-
-    # Initialize code generation
     code = format_str("module {", indent=0)
 
     # Determine device based on maximum tensor arguments across all kernels
-    max_dt_args = max(len(kf.dtensors[0]) for kf in kernel_funcs)
-    mem_tile_size = max_dt_args // 2 + 1
-    shim_tile_size = max_dt_args // 2 + 1
+    max_num_args = len(func_args["top"])
+    mem_tile_size = max_num_args // 2 + 1
+    shim_tile_size = max_num_args // 2 + 1
     device = f"npu1_{mem_tile_size}col"
-
     code += format_str(f"aie.device({device}) {{", indent=2)
 
     # Add external functions
@@ -682,307 +655,113 @@ def codegen_aie_mlir(
     # Get top function and all other functions
     top_func, all_funcs = get_public_funcs(mod)
 
-    # Group functions by their kernel base names
-    kernel_to_funcs = {}
-    for func in all_funcs:
-        func_name = func.attributes["sym_name"].value
-        for kernel_func in kernel_funcs:
-            if func_name.startswith(kernel_func.name):
-                if kernel_func.name not in kernel_to_funcs:
-                    kernel_to_funcs[kernel_func.name] = []
-                kernel_to_funcs[kernel_func.name].append(func)
-                break
-
     # Track vertical position for tile placement
     y_offset = 2
 
-    # Storage for all kernel-specific data
-    kernel_data = {}
-    all_inputs = []
-    all_outputs = []
-    global_arg_id = 0  # For tracking inputs/outputs across all kernels
-
     # Create compute tiles and store kernel info
-    for kernel_func in kernel_funcs:
-        kernel_name = kernel_func.name
-        mapping = kernel_func.mapping
-        normalized_mapping = get_normalized_mapping(mapping)
-        map_1d = len(mapping) == 1
-
-        # Store kernel-specific data
-        kernel_data[kernel_name] = {
-            "y_offset": y_offset,
-            "mapping": normalized_mapping,
-            "map_1d": map_1d,
-            "buf_name_dicts": [],
-            "tile2fifo": defaultdict(list),
-            "inputs": [],
-            "outputs": [],
-            "funcs": kernel_to_funcs.get(kernel_name, []),
-            "func_strs": [],
-        }
-
-        # Create compute tiles for this kernel
-        if map_1d:
-            for j, i in np.ndindex((normalized_mapping[0], 1)):
-                code += format_str(
-                    f"%tile_comp_{kernel_name}_{j}_{i} = aie.tile({i}, {j + y_offset})"
-                )
-        else:
-            for i, j in np.ndindex(normalized_mapping):
-                code += format_str(
-                    f"%tile_comp_{kernel_name}_{i}_{j} = aie.tile({i}, {j + y_offset})"
-                )
-
-        # Update y_offset for next kernel (use max value + spacing)
-        y_offset += max(normalized_mapping)
+    core_func = all_funcs[0].attributes["sym_name"].value.rsplit("_", 1)[0]
+    for func in all_funcs:
+        func_name = func.attributes["sym_name"].value
+        ids = extract_numbers(func_name)
+        if len(ids) == 1:
+            ids = (0, ids[0])
+        code += format_str(
+            f"%tile_comp_{func_name} = aie.tile({ids[0]}, {ids[1] + y_offset})"
+        )
 
     # Create buffers and process function strings for each kernel
-    for kernel_name, data in kernel_data.items():
-        funcs = data["funcs"]
-        buf_name_dicts = []
+    func_strs = []
+    for func in all_funcs:
+        func_name = func.attributes["sym_name"].value
+        tile_name = f"%tile_comp_{func_name}"
+        buf_dict = kernel_buf_dicts[func_name]
+        buf_name_dict = {}
+        for i, name in enumerate(buf_dict.keys()):
+            new_name = f"{tile_name}_buf{i}"
+            buf_name_dict[name] = new_name
+            ele_type, shape = buf_dict[name]
+            str_list = list(map(str, shape))
+            str_list.append(ele_type)
+            buf_type = f"memref<{'x'.join(str_list)}>"
+            code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
 
-        for func in funcs:
-            func_name = func.attributes["sym_name"].value
+        # Remove memref.alloc
+        pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
+        func_str = re.sub(pattern_alloc, "", str(func))
 
-            if data["map_1d"]:
-                # For 1D mapping, extract index from function name
-                # Assuming format like "kernel_0"
-                idx = int(func_name.split("_")[-1])
-                tile_name = get_tile_name(kernel_name, (0, idx), True)
-            else:
-                # For 2D mapping, extract indices from function name
-                # Assuming format like "kernel_0_1"
-                parts = func_name.split("_")
-                if len(parts) >= 3:  # At least kernel_i_j
-                    i, j = int(parts[-2]), int(parts[-1])
-                    tile_name = get_tile_name(kernel_name, (i, j), False)
-                else:
-                    # Fallback if naming convention doesn't match
-                    tile_name = f"%tile_comp_{func_name}"
+        # Replace new buffer name
+        pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
+        for name, new_name in buf_name_dict.items():
+            escaped_name = re.escape(name)
+            pattern = pattern_boundary.format(old=escaped_name)
+            func_str = re.sub(pattern, new_name, func_str)
 
-            # Create buffers for this function
-            buf_dict = kernel_buf_dicts[func_name]
-            buf_name_dict = {}
+        func_strs.append(func_str)
 
-            for i, name in enumerate(buf_dict.keys()):
-                new_name = f"{tile_name}_buf{i}"
-                buf_name_dict[name] = new_name
-                ele_type, shape = buf_dict[name]
-                str_list = list(map(str, shape))
-                str_list.append(ele_type)
-                buf_type = f"memref<{'x'.join(str_list)}>"
-                code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
-
-            buf_name_dicts.append(buf_name_dict)
-
-        data["buf_name_dicts"] = buf_name_dicts
-
-        # Update function strings
-        func_strs = list(map(str, funcs))
-        for func_id, func_str in enumerate(func_strs):
-            buf_name_dict = buf_name_dicts[func_id]
-
-            # Remove memref.alloc
-            pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
-            func_str = re.sub(pattern_alloc, "", func_str)
-
-            # Replace new buffer name
-            pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
-            for name, new_name in buf_name_dict.items():
-                escaped_name = re.escape(name)
-                pattern = pattern_boundary.format(old=escaped_name)
-                func_str = re.sub(pattern, new_name, func_str)
-
-            data["func_strs"].append(func_str)
-
-    # Helper function to process tensors (inputs or outputs)
-    def process_tensors(kernel_func, kernel_name, data, tensor_list, is_input):
-        func_names = [func.attributes["sym_name"].value for func in data["funcs"]]
-        result = []
-        nonlocal global_arg_id
-
-        offset = 0 if is_input else len(kernel_func.inputs)
-        global_list = all_inputs if is_input else all_outputs
-
-        for i, (dtype, shape) in enumerate(tensor_list, start=offset):
-            dtensors = [
-                (
-                    func_name,
-                    get_memref_type_str(dt[i].dtype, dt[i].local_shape),
-                    dt[i].local_shape,
-                )
-                for func_name, dt in zip(func_names, kernel_func.dtensors)
-            ]
-            tensor_data = (get_memref_type_str(dtype, shape), shape, dtensors)
-            result.append(tensor_data)
-            global_list.append(
-                (f"{kernel_name}_arg{global_arg_id}", global_arg_id, tensor_data)
-            )
-            global_arg_id += 1
-
-        return result
-
-    # Process inputs and outputs for each kernel
-    for kernel_func in kernel_funcs:
-        kernel_name = kernel_func.name
-        data = kernel_data[kernel_name]
-
-        # Process inputs and outputs
-        data["inputs"] = process_tensors(
-            kernel_func, kernel_name, data, kernel_func.inputs, True
-        )
-        data["outputs"] = process_tensors(
-            kernel_func, kernel_name, data, kernel_func.outputs, False
-        )
+    # Check input and output arguments
+    in_idx, out_idx = analyze_read_write_patterns(all_funcs[0])
+    inputs = [func_args["top"][idx] for idx in in_idx]
+    outputs = [func_args["top"][idx] for idx in out_idx]
 
     # Create object FIFOs for each kernel
-    stream_ele_types = {}
-
-    for kernel_name, data in kernel_data.items():
-        # Helper function to create input/output object FIFOs for a kernel
-        def create_io_object_fifos(args, prefix, kernel_name):
-            nonlocal code
-            for arg_id, (
-                arg_name,
-                _,
-                (global_memref_type, _, dtensors),
-            ) in enumerate(args):
-                # Create object FIFO from shim to memory tile
-                if prefix == "in":
+    tile2fifo = {}
+    for io, indices in [("in", in_idx), ("out", out_idx)]:
+        for idx in indices:
+            dtensor = func_args["top"][idx]
+            mapping = dtensor.mapping
+            spec = dtensor.layout
+            placement = spec.get_placement(mapping)
+            global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+            # shim to mem tile
+            if io == "in":
+                code += format_str(
+                    f"aie.objectfifo @in_shim_{dtensor.name}(%tile_shim{idx % shim_tile_size}, {{%tile_mem{idx % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                )
+            else:
+                code += format_str(
+                    f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                )
+            # mem to comp tile
+            mem_str = []
+            mem_stride = [0]
+            for tensor_tile, target_pe_tiles in placement.items():
+                arg_name = dtensor.name + "_" + tensor_tile
+                tile_str = []
+                mem_str.append(f"@{io}_mem_{arg_name}")
+                for tile in target_pe_tiles:
+                    idx_str = "_".join(map(str, tile))
+                    core_name = f"%tile_comp_{core_func}_{idx_str}"
+                    if core_name not in tile2fifo:
+                        tile2fifo[core_name] = [mem_str[-1]]
+                    else:
+                        tile2fifo[core_name].append(mem_str[-1])
+                    tile_str.append(core_name)
+                tile_str = ", ".join(tile_str)
+                local_memref_type = get_memref_type_str(
+                    dtensor.dtype, dtensor.get_local_shape()
+                )
+                mem_stride.append(mem_stride[-1] + np.prod(dtensor.get_local_shape()))
+                if io == "in":
                     code += format_str(
-                        f"aie.objectfifo @in_sh_{arg_name}(%tile_shim{arg_id % shim_tile_size}, {{%tile_mem{arg_id % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                        f"aie.objectfifo {mem_str[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
                     )
                 else:
                     code += format_str(
-                        f"aie.objectfifo @out_sh_{arg_name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
+                        f"aie.objectfifo {mem_str[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
                     )
-
-                # Handle distribution to compute tiles based on placement
-                mem_stride = []
-                placement = kernel_func.dtensors[0][
-                    arg_id if prefix == "in" else arg_id + len(data["inputs"])
-                ].placement
-                fifos = []
-
-                # Define iteration ranges based on placement pattern
-                normalized_mapping = data["mapping"]
-
-                if placement == "S":
-                    outer_range, inner_range = normalized_mapping[0], 1
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_{i}"
-                    get_tiles = lambda i, j: [(i, 0)]
-                elif placement == "R":
-                    outer_range, inner_range = 1, 1
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_R"
-                    get_tiles = lambda i, j: [
-                        (ki, 0) for ki in range(normalized_mapping[0])
-                    ]
-                elif placement == "SR":
-                    outer_range, inner_range = normalized_mapping[0], 1
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_{i}_R"
-                    get_tiles = lambda i, j: [
-                        (i, k) for k in range(normalized_mapping[1])
-                    ]
-                elif placement == "RS":
-                    outer_range, inner_range = 1, normalized_mapping[1]
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_R_{j}"
-                    get_tiles = lambda i, j: [
-                        (k, j) for k in range(normalized_mapping[0])
-                    ]
-                elif placement == "SS":
-                    outer_range, inner_range = (
-                        normalized_mapping[0],
-                        normalized_mapping[1],
-                    )
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_{i}_{j}"
-                    get_tiles = lambda i, j: [(i, j)]
-                else:  # RR
-                    outer_range, inner_range = 1, 1
-                    format_name = lambda i, j: f"{prefix}_{arg_name}_R_R"
-                    get_tiles = lambda i, j: [
-                        (ki, kj)
-                        for ki in range(normalized_mapping[0])
-                        for kj in range(normalized_mapping[1])
-                    ]
-
-                # Generate code for object FIFOs
-                for i in range(outer_range):
-                    for j in range(inner_range):
-                        name = format_name(i, j)
-                        tiles = get_tiles(i, j)
-
-                        for tile in tiles:
-                            data["tile2fifo"][tile].append(name)
-
-                        fifos.append(name)
-                        if map_1d:
-                            tile_str = ", ".join(
-                                [
-                                    # pylint: disable=undefined-loop-variable
-                                    get_tile_name(kernel_name, (kj, ki), data["map_1d"])
-                                    for ki, kj in tiles
-                                ]
-                            )
-                        else:
-                            tile_str = ", ".join(
-                                [
-                                    # pylint: disable=undefined-loop-variable
-                                    get_tile_name(kernel_name, (ki, kj), data["map_1d"])
-                                    for ki, kj in tiles
-                                ]
-                            )
-
-                        if prefix == "in":
-                            code += format_str(
-                                f"aie.objectfifo @{name}(%tile_mem{arg_id % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
-                            )
-                        else:
-                            code += format_str(
-                                f"aie.objectfifo @{name}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{dtensors[i][1]}>"
-                            )
-
-                        prev_stride = mem_stride[-1] if mem_stride else 0
-                        mem_stride.append(prev_stride + np.prod(dtensors[i][2]))
-
-                mem_stride.insert(0, 0)
-                mem_stride = mem_stride[:-1]  # remove the last stride
-                mem_str = ", ".join([f"@{name}" for name in fifos])
-
-                # Link object FIFOs
-                if prefix == "in":
-                    code += format_str(
-                        f"aie.objectfifo.link [@in_sh_{arg_name}] -> [{mem_str}]([] {mem_stride})"
-                    )
-                else:
-                    code += format_str(
-                        f"aie.objectfifo.link [{mem_str}] -> [@out_sh_{arg_name}]({mem_stride} [])"
-                    )
-
-        # Create input/output object FIFOs for this kernel
-        kernel_func = next(kf for kf in kernel_funcs if kf.name == kernel_name)
-        create_io_object_fifos(
-            [
-                (f"{kernel_name}_arg{global_id}", global_id, input_data)
-                for _, (_, global_id, input_data) in enumerate(
-                    [inp for inp in all_inputs if inp[0].startswith(kernel_name)]
+            mem_str = ", ".join(mem_str)
+            mem_stride = mem_stride[:-1]
+            if io == "in":
+                code += format_str(
+                    f"aie.objectfifo.link [@in_shim_{dtensor.name}] -> [{mem_str}]([] {mem_stride})"
                 )
-            ],
-            "in",
-            kernel_name,
-        )
-        create_io_object_fifos(
-            [
-                (f"{kernel_name}_arg{global_id}", global_id, output_data)
-                for _, (_, global_id, output_data) in enumerate(
-                    [out for out in all_outputs if out[0].startswith(kernel_name)]
+            else:
+                code += format_str(
+                    f"aie.objectfifo.link [{mem_str}] -> [@out_shim_{dtensor.name}]({mem_stride} [])"
                 )
-            ],
-            "out",
-            kernel_name,
-        )
 
     # Create stream object FIFOs from top_func
+    stream_ele_types = {}
     stream_in_out = get_stream_in_out(stream_info)
     for op in top_func.entry_block.operations:
         if isinstance(op, allo_d.StreamConstructOp):
@@ -1014,127 +793,108 @@ def codegen_aie_mlir(
 
                 # Create the stream object FIFO between the two kernels
                 code += format_str(
-                    f"aie.objectfifo @{stream_name}({get_tile_name(producer_kernel, producer_map, data['map_1d'])}, {{{get_tile_name(consumer_kernel, consumer_map, data["map_1d"])}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
+                    f"aie.objectfifo @{stream_name}({producer_kernel}, {{{consumer_kernel}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
 
     # Create core computation for each kernel function
-    for kernel_name, data in kernel_data.items():
-        funcs = data["funcs"]
-        func_strs = data["func_strs"]
+    for func_id, (func, func_str) in enumerate(zip(all_funcs, func_strs)):
+        func_name = func.attributes["sym_name"].value
+        dtensors = func_args[func_name]
+        core_name = f"tile_comp_{func_name}"
+        streams = stream_info[func_name]
 
-        for func_id, func in enumerate(funcs):
-            func_str = func_strs[func_id]
-            func_name = func.attributes["sym_name"].value
-
-            # Determine tile coordinates
-            if data["map_1d"]:
-                fid_tuple = (int(func_name.split("_")[-1]), 0)
-                core_name = f"tile_comp_{func_name}_0"
-            else:
-                parts = func_name.split("_")
-                fid_tuple = (int(parts[-2]), int(parts[-1]))
-                core_name = f"tile_comp_{func_name}"
-
-            # Get streams for this function
-            streams = stream_info[func_name]
-
-            # Generate core computation
+        # Generate core computation
+        code += format_str(
+            f"%core_0_{func_id + 2}_{core_name} = aie.core(%{core_name}) {{"
+        )
+        with format_code(indent=6):
+            code += format_str("%global_c0 = arith.constant 0 : index")
+            code += format_str("%global_c1 = arith.constant 1 : index")
             code += format_str(
-                f"%core_0_{func_id + 2}_{core_name} = aie.core(%{core_name}) {{"
+                "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
             )
-            with format_code(indent=6):
-                code += format_str("%global_c0 = arith.constant 0 : index")
-                code += format_str("%global_c1 = arith.constant 1 : index")
-                code += format_str(
-                    "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
-                )
-                code += format_str(
-                    "scf.for %arg0 = %global_c0 to %c9223372036854775807 step %global_c1 {"
-                )
-                with format_code(indent=8):
-                    # Get the specific kernel function
-                    kernel_func = next(
-                        kf for kf in kernel_funcs if kf.name == kernel_name
-                    )
+            code += format_str(
+                "scf.for %arg0 = %global_c0 to %c9223372036854775807 step %global_c1 {"
+            )
+            with format_code(indent=8):
+                # Helper function to process FIFOs (acquire or release)
+                def process_fifos(is_input, is_acquire):
+                    nonlocal code, func_str
+                    tensors = inputs if is_input else outputs
+                    operation = "Consume" if is_input else "Produce"
+                    arg_offset = 0 if is_input else len(inputs)
 
-                    # Helper function to process FIFOs (acquire or release)
-                    def process_fifos(is_input, is_acquire):
-                        nonlocal code, func_str
-                        tensors = data["inputs"] if is_input else data["outputs"]
-                        operation = "Consume" if is_input else "Produce"
-                        arg_offset = 0 if is_input else len(data["inputs"])
+                    for arg_id, tensor in enumerate(tensors):
+                        # Calculate fifo index and get fifo name
+                        fifo_idx = arg_id if is_input else arg_id + len(inputs)
+                        fifo_name = tile2fifo[f"%{core_name}"][fifo_idx]
 
-                        for arg_id, _ in enumerate(tensors):
-                            # Calculate fifo index and get fifo name
-                            fifo_idx = (
-                                arg_id if is_input else arg_id + len(data["inputs"])
+                        if is_acquire:
+                            # Acquire FIFO and access subview
+                            dtype = get_memref_type_str(
+                                tensor.dtype, tensor.get_local_shape()
                             )
-                            fifo_name = data["tile2fifo"][fid_tuple][fifo_idx]
+                            var_prefix = "fifo" if is_input else "fifo_out"
+                            local_prefix = "local" if is_input else "local_out"
 
-                            if is_acquire:
-                                # Acquire FIFO and access subview
-                                dtype = tensors[arg_id][2][func_id][1]
-                                var_prefix = "fifo" if is_input else "fifo_out"
-                                local_prefix = "local" if is_input else "local_out"
+                            code += format_str(
+                                f"%{var_prefix}{arg_id} = aie.objectfifo.acquire {fifo_name}({operation}, 1) : !aie.objectfifosubview<{dtype}>"
+                            )
+                            code += format_str(
+                                f"%{local_prefix}{arg_id} = aie.objectfifo.subview.access %{var_prefix}{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
+                            )
 
-                                code += format_str(
-                                    f"%{var_prefix}{arg_id} = aie.objectfifo.acquire @{fifo_name}({operation}, 1) : !aie.objectfifosubview<{dtype}>"
-                                )
-                                code += format_str(
-                                    f"%{local_prefix}{arg_id} = aie.objectfifo.subview.access %{var_prefix}{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
-                                )
+                            # Replace argument in function string
+                            arg_name = f"%arg{arg_id + arg_offset}"
+                            local_name = f"%{local_prefix}{arg_id}"
+                            func_str = func_str.replace(arg_name, local_name)
+                        else:
+                            # Release FIFO
+                            code += format_str(
+                                f"aie.objectfifo.release {fifo_name}({operation}, 1)"
+                            )
 
-                                # Replace argument in function string
-                                arg_name = f"%arg{arg_id + arg_offset}"
-                                local_name = f"%{local_prefix}{arg_id}"
-                                func_str = func_str.replace(arg_name, local_name)
-                            else:
-                                # Release FIFO
-                                code += format_str(
-                                    f"aie.objectfifo.release @{fifo_name}({operation}, 1)"
-                                )
+                # Acquire input and output FIFOs
+                process_fifos(is_input=True, is_acquire=True)
+                process_fifos(is_input=False, is_acquire=True)
 
-                    # Acquire input and output FIFOs
-                    process_fifos(is_input=True, is_acquire=True)
-                    process_fifos(is_input=False, is_acquire=True)
+                # Fix call operations
+                while " call @" in func_str:
+                    func_str = func_str.replace(" call @", " func.call @")
 
-                    # Fix call operations
-                    while " call @" in func_str:
-                        func_str = func_str.replace(" call @", " func.call @")
+                # Process stream operations
+                stream_code, func_str = process_stream_operations(
+                    func_str,
+                    streams,
+                    len(inputs) + len(outputs),
+                    stream_ele_types,
+                )
+                code += stream_code
 
-                    # Process stream operations
-                    stream_code, func_str = process_stream_operations(
-                        func_str,
-                        streams,
-                        len(data["inputs"]) + len(data["outputs"]),
-                        stream_ele_types,
-                    )
-                    code += stream_code
+                # Release input and output FIFOs
+                process_fifos(is_input=True, is_acquire=False)
+                process_fifos(is_input=False, is_acquire=False)
 
-                    # Release input and output FIFOs
-                    process_fifos(is_input=True, is_acquire=False)
-                    process_fifos(is_input=False, is_acquire=False)
+            code += format_str("}")
+            code += format_str("aie.end")
 
-                code += format_str("}")
-                code += format_str("aie.end")
-
-            # Add linking information if needed
-            code += "    }"
-            if len(external_kernels.get(func_name, [])) > 0:
-                code += ' {link_with = "external.o"}\n'
-            else:
-                code += "\n"
+        # Add linking information if needed
+        code += "    }"
+        if len(external_kernels.get(func_name, [])) > 0:
+            code += ' {link_with = "external.o"}\n'
+        else:
+            code += "\n"
 
     # Create runtime sequence with all inputs and outputs
     in_args = []
     out_args = []
-
-    for i, (name, global_id, (global_memref_type, _, _)) in enumerate(all_inputs):
-        in_args.append(f"%arg{global_id}: {global_memref_type}")
-
-    for i, (name, global_id, (global_memref_type, _, _)) in enumerate(all_outputs):
-        out_args.append(f"%arg{global_id}: {global_memref_type}")
+    for i, dtensor in enumerate(inputs):
+        global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+        in_args.append(f"%arg{i}: {global_memref_type}")
+    for i, dtensor in enumerate(outputs, start=len(inputs)):
+        global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+        out_args.append(f"%arg{i}: {global_memref_type}")
 
     # Create dma transfer from off-chip mem to shim tile
     code += format_str(
@@ -1145,44 +905,24 @@ def codegen_aie_mlir(
         # Helper function to process DMA operations for inputs and outputs
         def process_dma_operations(is_input):
             nonlocal code
-            tensor_list = all_inputs if is_input else all_outputs
+            tensor_list = inputs if is_input else outputs
             prefix = "in" if is_input else "out"
-
-            # Process each kernel's tensors for DMA transfers
-            for kernel_name, data in kernel_data.items():
-                kernel_func = next(kf for kf in kernel_funcs if kf.name == kernel_name)
-
-                # Filter tensors belonging to this kernel
-                filtered_tensors = [
-                    t for t in tensor_list if t[0].startswith(kernel_name)
-                ]
-
-                for arg_id, (
-                    name,
-                    global_id,
-                    (global_memref_type, global_shape, _),
-                ) in enumerate(filtered_tensors):
-                    # Calculate tensor index in dtensors - for inputs it's arg_id, for outputs it's offset by inputs length
-                    tensor_idx = arg_id if is_input else arg_id + len(data["inputs"])
-                    dtensor = kernel_func.dtensors[0][tensor_idx]
-
-                    # Calculate access pattern
-                    size, stride = calculate_tensor_access(
-                        global_shape, dtensor.placement, data["mapping"]
-                    )
-
-                    # Build DMA attributes - inputs need issue_token, outputs don't
-                    if is_input:
-                        dma_attrs = f"id = {global_id} : i64, issue_token = true, metadata = @{prefix}_sh_{name}"
-                    else:
-                        dma_attrs = (
-                            f"id = {global_id} : i64, metadata = @{prefix}_sh_{name}"
-                        )
-
-                    # Create DMA operation
-                    code += format_str(
-                        f"aiex.npu.dma_memcpy_nd(0, 0, %arg{global_id}[0, 0, 0, 0]{size}{stride}) {{{dma_attrs}}} : {global_memref_type}"
-                    )
+            start_idx = 0 if is_input else len(inputs)
+            # Calculate access pattern
+            for idx, dtensor in enumerate(tensor_list, start=start_idx):
+                name = dtensor.name
+                size, stride = calculate_tensor_access(
+                    dtensor.shape, dtensor.layout.placement, dtensor.mapping
+                )
+                # Build DMA attributes - inputs need issue_token, outputs don't
+                if is_input:
+                    dma_attrs = f"id = {idx} : i64, issue_token = true, metadata = @{prefix}_shim_{name}"
+                else:
+                    dma_attrs = f"id = {idx} : i64, metadata = @{prefix}_shim_{name}"
+                # Create DMA operation
+                code += format_str(
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{idx}[0, 0, 0, 0]{size}{stride}) {{{dma_attrs}}} : {global_memref_type}"
+                )
 
         # Process DMA operations for inputs and outputs
         process_dma_operations(is_input=True)
@@ -1191,12 +931,11 @@ def codegen_aie_mlir(
         # Helper function for DMA wait operations
         def process_dma_wait(is_input):
             nonlocal code
-            tensor_list = all_inputs if is_input else all_outputs
+            tensor_list = inputs if is_input else outputs
             prefix = "in" if is_input else "out"
-
-            for name, _, _ in tensor_list:
+            for dtensor in tensor_list:
                 code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @{prefix}_sh_{name}}}"
+                    f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}}}"
                 )
 
         # Wait for all DMAs to complete
@@ -1206,7 +945,6 @@ def codegen_aie_mlir(
     code += format_str("}")
     code += format_str("}", indent=2)
     code += "}"
-
     return code
 
 
@@ -1295,313 +1033,37 @@ def record_local_buffer(mod):
     return kernel_buf_dicts
 
 
-def parse_mlir_to_kernel_function(module):
-    """
-    Parse an MLIR module to extract kernel function information.
-    Returns multiple kernel functions if the module contains different types.
-
-    Parameters:
-    -----------
-    module: The MLIR module
-
-    Returns:
-    --------
-    list[KernelFunction]: A list of KernelFunction objects with extracted information
-    """
-    # Find the top function and kernel functions
-    top_func = None
-    kernel_funcs = []
-
-    for op in module.body.operations:
-        if isinstance(op, func_d.FuncOp):
-            func_name = op.name.value
-
-            if func_name == "top":
-                top_func = op
-            elif "_" in func_name:
-                kernel_funcs.append(op)
-
-    if not top_func:
-        raise ValueError("No top function found in the MLIR module")
-
-    if not kernel_funcs:
-        raise ValueError("No kernel functions found in the MLIR module")
-
-    # Group kernel functions by their base names (e.g., "producer", "consumer")
-    kernel_groups = {}
-    for kernel in kernel_funcs:
-        func_name = kernel.name.value
-        base_name = func_name.split("_")[0]
-
-        if base_name not in kernel_groups:
-            kernel_groups[base_name] = []
-
-        kernel_groups[base_name].append(kernel)
-
-    # Process each group to create KernelFunction objects
-    kernel_function_objects = []
-
-    # pylint: disable=too-many-nested-blocks
-    for base_name, group_kernels in kernel_groups.items():
-        # Find maximum indices for each dimension
-        mapping_indices = []
-        for op in group_kernels:
-            func_name = op.name.value
-            if func_name.startswith(base_name):
-                # Extract indices after the base_name and underscore
-                suffix = func_name[len(base_name) + 1 :]
-                if suffix:  # Check if there's a suffix
-                    parts = suffix.split("_")
-                    try:
-                        indices = [
-                            int(idx) for idx in parts if idx
-                        ]  # Filter out empty parts
-
-                        # Expand mapping_indices if needed
-                        while len(mapping_indices) < len(indices):
-                            mapping_indices.append(-1)
-
-                        # Update maximum values
-                        for i, idx in enumerate(indices):
-                            mapping_indices[i] = max(mapping_indices[i], idx)
-                    except ValueError:
-                        # Skip if parts aren't all integers
-                        continue
-
-        # Calculate dimensions (max index + 1 in each dimension)
-        mapping = (
-            [idx + 1 for idx in mapping_indices] if mapping_indices else [1]
-        )  # Default to [1] if no indices
-
-        # Use a representative kernel function to analyze access patterns
-        representative_kernel = group_kernels[0]
-        input_indices, output_indices = analyze_read_write_patterns(
-            representative_kernel
-        )
-
-        # Parse input and output types based on the access patterns
-        inputs = []
-        outputs = []
-
-        # Get the top function arguments
-        for i, arg in enumerate(top_func.arguments):
-            # Get the type of the argument
-            arg_type = arg.type
-
-            # Check if it's a memref type
-            if MemRefType.isinstance(arg_type):
-                memref_type = MemRefType(arg_type)
-
-                # Get shape and element type
-                shape = memref_type.shape
-                element_type = memref_type.element_type
-
-                # Extract dtype (e.g., i32)
-                dtype = str(element_type)
-
-                # Determine if this is an input or output based on access patterns
-                # Using proportional mapping from kernel args to top function args
-                kernel_arg_count = len(representative_kernel.arguments)
-
-                # Simple proportional mapping - may need refinement for complex cases
-                kernel_arg_index = min(i, kernel_arg_count - 1)
-
-                if kernel_arg_index in input_indices:
-                    inputs.append((dtype, list(shape)))
-                if kernel_arg_index in output_indices:
-                    outputs.append((dtype, list(shape)))
-
-        # Create and append the KernelFunction
-        kernel_func = KernelFunction(base_name, mapping, inputs, outputs)
-
-        # Set the MLIR functions
-        kernel_func.set_mlir_funcs(group_kernels)
-
-        kernel_function_objects.append(kernel_func)
-
-    return kernel_function_objects
-
-
-def create_dtensors_from_kernel(kernel_func, func_op):
-    """
-    Analyze the MLIR function and create DTensor objects for each argument,
-    inferring placement based on subview operations.
-
-    Parameters:
-    -----------
-        kernel_func (KernelFunction): The kernel function containing mapping information
-        func_op: The MLIR function operation to analyze
-
-    Returns:
-    --------
-        list: List of DTensor objects for each argument
-    """
-    # Extract information from the kernel function
-    mapping = kernel_func.mapping  # e.g., [2, 2] for a 2x2 grid
-
-    # Get rank from function name (e.g., "gemm_0_1" -> rank 1)
-    func_name = str(func_op.attributes["sym_name"]).strip('"')
-    coords = func_name.split("_")[1:]  # Extract coordinates, e.g., ["0", "1"]
-    rank = 0
-    for i, coord in enumerate(coords):
-        rank += int(coord) * (mapping[i + 1 :] + [1]).pop(0)
-
-    # Calculate rank coordinates
-    rank_coords = []
-    rank_copy = rank
-    for dim_size in reversed(mapping):
-        rank_coords.insert(0, rank_copy % dim_size)
-        rank_copy //= dim_size
-
-    # Create DTensor objects for each argument
-    dtensors = []
-    for i, arg in enumerate(func_op.arguments):
-        # Get memref shape and type from argument
-        arg_type = arg.type
-        shape = []
-        dtype = None
-
-        # Extract the shape and type from the argument
-        arg_type_str = str(arg_type)
-        if arg_type_str.startswith("memref<"):
-            # Extract the part between memref< and >
-            inner_type = arg_type_str[len("memref<") : -1]
-            # Parse shape and data type
-            parts = inner_type.split("x")
-
-            # Extract dimensions from each part
-            for j in range(len(parts) - 1):
-                shape.append(int(parts[j]))
-
-            # Last part contains dimension and data type
-            last_part = parts[-1]
-            dim_end = 0
-            while dim_end < len(last_part) and last_part[dim_end].isdigit():
-                dim_end += 1
-
-            if dim_end > 0:
-                shape.append(int(last_part[:dim_end]))
-
-            # Extract data type
-            dtype = last_part[dim_end:]
-
-        elif arg_type_str.startswith("!allo.stream<"):
-            continue
-
-        # Create DTensor object
-        dtensor = DTensor(rank, mapping, shape, dtype)
-        dtensors.append(dtensor)
-
-    # Analyze subview operations to determine the actual tensor partitioning
-    subviews = {}  # Maps arg index to (offset, size) tuples
-
-    # Find all subview operations in the function
-    def collect_subviews(block):
-        for op in block.operations:
-            op_name = str(op.operation.name)
-            if op_name == "memref.subview":
-                if len(op.operands) >= 1:
-                    source = op.operands[0]
-
-                    # If source is a block argument, record its subview information
-                    if BlockArgument.isinstance(source):
-                        arg_num = BlockArgument(source).arg_number
-
-                        # Extract offset and size from operation string
-                        op_str = str(op)
-
-                        # Parse offset and size parameters from the subview operation
-                        offset = []
-                        size = []
-
-                        subview_pattern = (
-                            r"memref\.subview\s+%[^[]+\[([^\]]+)\]\s+\[([^\]]+)\]"
-                        )
-                        match = re.search(subview_pattern, op_str)
-
-                        if match:
-                            # Extract offset
-                            offset_str = match.group(1)
-                            offset = [int(o.strip()) for o in offset_str.split(",")]
-
-                            # Extract size
-                            size_str = match.group(2)
-                            size = [int(s.strip()) for s in size_str.split(",")]
-
-                            # Store the subview information
-                            subviews[arg_num] = (offset, size)
-
-            # Recursively process nested regions
-            for region in op.regions:
-                for inner_block in region.blocks:
-                    collect_subviews(inner_block)
-
-    # Collect subview information
-    for block in func_op.body.blocks:
-        collect_subviews(block)
-
-    # Infer placement based on subview analysis and rank coordinates
-    for i, dtensor in enumerate(dtensors):
-        if i in subviews:
-            offset, size = subviews[i]
-            dtensor.set_subview(offset, size)
-
-            # Determine placement based on how the tensor is partitioned
-            placement = ""
-            for dim, _ in enumerate(dtensor.shape):
-                # If this dimension is fully utilized (size equals global shape), it's Replicated
-                # Otherwise, it's Sharded
-                dim_size = size[dim] if dim < len(size) else dtensor.shape[dim]
-                global_dim_size = dtensor.shape[dim]
-
-                if dim_size == global_dim_size:
-                    placement += "R"  # Replicated dimension
-                else:
-                    placement += "S"  # Sharded dimension
-
-            dtensor.set_placement(placement)
-
-    print(dtensors[0], dtensors[1])
-    return dtensors
-
-
 class AIEModule:
     def __init__(
         self,
         module,
         top_func_name,
+        func_args,
         project,
-        kernel_mappings,
-        enable_tensor,
         stream_info,
+        enable_tensor=False,
     ):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
         self.module = module
-        self.kernel_mappings = kernel_mappings
+        self.func_args = func_args
         self.enable_tensor = enable_tensor
         self.stream_info = stream_info
-        self.kernel_funcs = []
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
-        self.kernel_funcs = parse_mlir_to_kernel_function(self.module)
-        print(self.module)
-        for kernel_func in self.kernel_funcs:
-            for i, func_op in enumerate(kernel_func.funcs):
-                kernel_func.set_dtensors(
-                    create_dtensors_from_kernel(kernel_func, func_op), i
-                )
-                update_func_op_arg_types(
-                    func_op,
-                    kernel_func.inputs,
-                    kernel_func.outputs,
-                    kernel_func.dtensors[i],
-                    self.enable_tensor,
-                )
+        # for kernel_func in self.kernel_funcs:
+        #     for i, func_op in enumerate(kernel_func.funcs):
+        #         update_func_op_arg_types(
+        #             func_op,
+        #             kernel_func.inputs,
+        #             kernel_func.outputs,
+        #             kernel_func.dtensors[i],
+        #             self.enable_tensor,
+        #         )
         external_kernels = inject_aie_kernels(self.module)
         with open(
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
@@ -1611,7 +1073,7 @@ class AIEModule:
         kernel_buf_dicts = record_local_buffer(self.module)
         code = codegen_aie_mlir(
             self.module,
-            self.kernel_funcs,
+            self.func_args,
             kernel_buf_dicts,
             external_kernels,
             self.stream_info,
@@ -1640,13 +1102,11 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        all_inputs = []
-        for i, kernel_func in enumerate(self.kernel_funcs):
-            all_inputs.extend(kernel_func.inputs)
-        all_outputs = []
-        for i, kernel_func in enumerate(self.kernel_funcs):
-            all_outputs.extend(kernel_func.outputs)
-        host_code = codegen_host(all_inputs, all_outputs)
+        _, all_funcs = get_public_funcs(self.module)
+        in_idx, out_idx = analyze_read_write_patterns(all_funcs[0])
+        self.inputs = [self.func_args["top"][idx] for idx in in_idx]
+        self.outputs = [self.func_args["top"][idx] for idx in out_idx]
+        host_code = codegen_host(self.inputs, self.outputs)
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
@@ -1670,7 +1130,7 @@ class AIEModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            list(self.kernel_funcs[-1].outputs)[-1][0],
+            self.outputs[-1].dtype,
             args[-1].shape,
             f"{self.project}/output.data",
         )
