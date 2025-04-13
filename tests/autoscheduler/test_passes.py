@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from gurobipy import GurobiError
 from allo.ir.utils import MockBuffer
 import numpy as np
 import pytest
@@ -64,9 +65,18 @@ def test_three_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "three_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(
-        schedule, debug_point=debug_point, kind=kind
-    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
+
     mod = (
         optimized_schedule.build()
         if debug_point is not None
@@ -84,9 +94,15 @@ def test_two_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "two_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(
-        schedule, debug_point=debug_point, kind=kind
-    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
     mod = (
         optimized_schedule.build()
         if debug_point is not None
@@ -104,9 +120,18 @@ def test_atax(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "atax", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(
-        schedule, debug_point=debug_point, kind=kind
-    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
+
     mod = (
         optimized_schedule.build()
         if debug_point is not None
@@ -144,9 +169,18 @@ def test_gemm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gemm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(
-        schedule, debug_point=debug_point, kind=kind
-    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
+
     mod = (
         optimized_schedule.build()
         if debug_point is not None
@@ -166,9 +200,17 @@ def test_gesummv(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gesummv", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(
-        schedule, debug_point=debug_point, kind=kind
-    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
     mod = (
         optimized_schedule.build()
