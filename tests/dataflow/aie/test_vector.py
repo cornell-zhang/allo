@@ -6,6 +6,9 @@ import allo
 from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
+from allo.memory import Layout
+
+Sp = Layout("S0")
 
 
 def _test_vector_scalar_add():
@@ -153,9 +156,58 @@ def _test_vector_vector_mul():
     print("Dataflow Simulator Passed!")
 
 
+def _test_vector_scalar_add_p0():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
+    #                |--------------------------------------------|
+    #                v   v-------------------------v              v
+    # shim tile <-> mem tile <-> comp tile0    comp tile1    comp tile2
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Sp, B: Ty[M] @ Sp):
+            B[:] = allo.add(A[:], 1)
+
+    mod = df.build(top, target="aie")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.zeros(M).astype(np.int32)
+    mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+
+def _test_vector_vector_add_p0():
+    #                  |--------------------------------------------|
+    #                  v   v--------------------------v             v
+    # shim tile <-> A mem tile 0 <-> comp tile0    comp tile1    comp tile2
+    #       ^-----> B mem tile 1 <-------^------------^-------------^
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Sp, B: Ty[M] @ Sp, C: Ty[M] @ Sp):
+            C[:] = allo.add(A, B)
+
+    mod = df.build(top, target="aie")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.random.randint(0, 100, M).astype(np.int32)
+    C = np.zeros(M).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A + B)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_vector_scalar_mul()
     _test_vector_vector_add()
     _test_vector_vector_bf16_add()
     _test_vector_vector_mul()
+    _test_vector_scalar_add_p0()
+    _test_vector_vector_add_p0()

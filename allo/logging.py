@@ -17,7 +17,8 @@ def print_error_message(error, stmt, tree):
     target_idx = strip_lines.index(source_stmt.splitlines()[0].strip())
     line_number = stmt.lineno
     start_offset = min(target_idx, 5)
-    code_lines = source_code.splitlines()[target_idx - 5 : target_idx + 5]
+    start_idx = max(0, target_idx - 5)
+    code_lines = source_code.splitlines()[start_idx : target_idx + 5]
     highlighted_code = []
     for idx, line in enumerate(code_lines, start=line_number - start_offset):
         line = line.replace("[", r"\[")

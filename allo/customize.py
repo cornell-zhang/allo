@@ -119,7 +119,8 @@ class Schedule:
         self.module = module
         self.top_func = top_func
         self.top_func_name = top_func.name.value
-        self.func_args = func_args  # only store names here
+        # func_args are dtensors
+        self.func_args = func_args
         self.ip = ip
         self.primitive_sequences = []
         if ext_libs is None:
@@ -322,15 +323,22 @@ class Schedule:
             visited_target_names.append(name)
             _, _, mlir_target = find_buffer(self.module, inner_target, self.func_args)
             # equivalent users
-            if inner_target.name in self.func_args[inner_target.func]:
+            arg_names = [
+                dtensor.name if hasattr(dtensor, "name") else dtensor
+                for dtensor in self.func_args[inner_target.func]
+            ]
+            if inner_target.name in arg_names:
                 # is a function argument
-                idx = self.func_args[inner_target.func].index(inner_target.name)
+                idx = arg_names.index(inner_target.name)
                 name = f"{inner_target.func}:{idx}"
             for buf_name in self.get_equivalent_variables(name):
                 path, buf_name = buf_name.split(":")
                 if buf_name.isdigit():
                     # function argument
-                    buf_name = self.func_args[path][int(buf_name)]
+                    if hasattr(self.func_args[path][int(buf_name)], "name"):
+                        buf_name = self.func_args[path][int(buf_name)].name
+                    else:
+                        buf_name = self.func_args[path][int(buf_name)]
                 recursive_partition(MockBuffer(path, buf_name))
             # calling the same function
             if isinstance(mlir_target, func_d.CallOp):

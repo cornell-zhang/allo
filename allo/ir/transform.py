@@ -90,8 +90,12 @@ def find_buffer(module, target, func_args):
     if target_func is None:
         raise RuntimeError(f"Target function {func_name} not found")
     # Find arguments
-    for idx, (name, op) in enumerate(zip(func_args[func_name], target_func.arguments)):
-        if name == target_name:
+    for idx, (dtensor, op) in enumerate(
+        zip(func_args[func_name], target_func.arguments)
+    ):
+        if (
+            hasattr(dtensor, "name") and dtensor.name == target_name
+        ) or dtensor == target_name:
             return target_func, idx, MockArg(op)
     # Find inner intermediate buffers
     for op in target_func.entry_block.operations:

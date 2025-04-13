@@ -11,6 +11,7 @@ from ._mlir.ir import (
     UnitAttr,
     StringAttr,
     FunctionType,
+    MemRefType,
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
@@ -54,7 +55,7 @@ def move_stream_to_interface(s):
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
-        new_arg_names = new_func_args[func_name].copy()
+        new_args = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_ops.append(op)
@@ -71,10 +72,10 @@ def move_stream_to_interface(s):
                         raise ValueError("Stream is not used correctly.")
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
-                new_arg_names.append(stream_name)
+                new_args.append(stream_name)
         # create new func to update arguments
         in_types += stream_types
-        new_func_args[func_name] = new_arg_names
+        new_func_args[func_name] = new_args
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
             new_func = func_d.FuncOp(
@@ -131,7 +132,7 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
+def _build_top(s, stream_info, enable_tensor=False, target="vitis_hls"):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
@@ -160,13 +161,14 @@ def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
         arg_mapping[func_name] = []
         for i, arg in enumerate(func.arguments):
             if "!allo.stream" not in str(arg.type):
-                arg_name = s.func_args[func_name][i]
+                arg_name = s.func_args[func_name][i].name
                 if arg_name not in used_args:
                     used_args[arg_name] = len(input_types)
-                    input_types.append(arg.type)
+                    dtensor = s.func_args[func_name][i]
+                    input_types.append((dtensor.shape, dtensor.dtype))
                     if "itypes" in func.attributes:
                         input_signed += func.attributes["itypes"].value[i]
-                    s.func_args[s.top_func_name].append(arg_name)
+                    s.func_args[s.top_func_name].append(s.func_args[func_name][i])
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
@@ -180,7 +182,9 @@ def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
     assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
-        func_type = FunctionType.get(input_types, [])
+        func_type = FunctionType.get(
+            [MemRefType.get(shape, dtype.build()) for shape, dtype in input_types], []
+        )
         new_top = func_d.FuncOp(
             name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
         )
@@ -302,10 +306,10 @@ def build(
         mod = AIEModule(
             s.module,
             s.top_func_name,
+            s.func_args,
             project,
-            func.mappings,
-            enable_tensor,
             stream_info,
+            enable_tensor,
         )
         mod.build()
         return mod

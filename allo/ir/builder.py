@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used, bad-builtin
 
 import gc
 import ast
@@ -1470,14 +1470,12 @@ class ASTTransformer(ASTBuilder):
                                 new_ctx.top_func_tree = node
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                if len(dim) == 1:
-                                    new_ctx.global_vars.update({"df.p0": dim[0]})
-                                    node.name = orig_name + f"_{dim[0]}"
-                                else:
+                                for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
-                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                        {"df.p" + str(axis): val}
                                     )
-                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                concated_name = "_".join(map(str, dim))
+                                node.name = orig_name + f"_{concated_name}"
                                 ASTTransformer.build_FunctionDef(new_ctx, node)
                             return
         else:
@@ -1495,7 +1493,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.global_vars[name] = call_val
 
         # Build input types
-        arg_names = []
+        dtensors = []
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
@@ -1518,7 +1516,7 @@ class ASTTransformer(ASTBuilder):
                 )
             )
             input_typehints.append(get_extra_type_hints(arg.dtype))
-            arg_names.append(arg.arg)
+            dtensors.append(arg.dtensor)
 
         # Build return type
         output_types = []
@@ -1554,9 +1552,10 @@ class ASTTransformer(ASTBuilder):
         # set context
         ctx.top_func = func_op
         ctx.top_func_tree = node
-        for i, (name, arg) in enumerate(zip(arg_names, func_op.arguments)):
+        for i, (dtensor, arg) in enumerate(zip(dtensors, func_op.arguments)):
+            name = dtensor.name
             ctx.buffers[name] = MockArg(arg, idx=i)
-        ctx.func_args[func_name] = arg_names
+        ctx.func_args[func_name] = dtensors
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         # node.returns is the function definition, not the actual return operation
@@ -2004,14 +2003,15 @@ class ASTTransformer(ASTBuilder):
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
-                # 1D mesh
-                if "df.p1" not in ctx.global_vars:
-                    return (MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),)
-                # 2D mesh
-                return (
-                    MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),
-                    MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
-                )
+                res = []
+                for i in range(3):
+                    if f"df.p{i}" in ctx.global_vars:
+                        res.append(
+                            MockConstant(
+                                ctx.global_vars[f"df.p{i}"], ctx, dtype=Index()
+                            )
+                        )
+                return tuple(res)
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
