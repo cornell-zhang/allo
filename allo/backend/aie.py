@@ -543,7 +543,10 @@ def calculate_tensor_access(shape, partition, device_mesh):
     # Handle 2D tensor case
     if len(shape) == 2:
         m, n = shape
-        a, b = device_mesh
+        if len(device_mesh) == 1:
+            a, b = 1, device_mesh[0]
+        else:
+            a, b = device_mesh
 
         if partition_str == "SS":
             # Both dimensions sharded
@@ -659,7 +662,8 @@ def codegen_aie_mlir(
     y_offset = 2
 
     # Create compute tiles and store kernel info
-    core_func = all_funcs[0].attributes["sym_name"].value.rsplit("_", 1)[0]
+    core_func = all_funcs[0].attributes["sym_name"].value
+    core_func = re.match(r'^(.*?)_\d', core_func).group(1)
     for func in all_funcs:
         func_name = func.attributes["sym_name"].value
         ids = extract_numbers(func_name)
@@ -800,7 +804,6 @@ def codegen_aie_mlir(
     # Create core computation for each kernel function
     for func_id, (func, func_str) in enumerate(zip(all_funcs, func_strs)):
         func_name = func.attributes["sym_name"].value
-        dtensors = func_args[func_name]
         core_name = f"tile_comp_{func_name}"
         streams = stream_info[func_name]
 
@@ -913,6 +916,9 @@ def codegen_aie_mlir(
                 name = dtensor.name
                 size, stride = calculate_tensor_access(
                     dtensor.shape, dtensor.layout.placement, dtensor.mapping
+                )
+                global_memref_type = get_memref_type_str(
+                    dtensor.dtype, dtensor.shape
                 )
                 # Build DMA attributes - inputs need issue_token, outputs don't
                 if is_input:
