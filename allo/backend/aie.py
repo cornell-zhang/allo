@@ -1050,7 +1050,13 @@ class AIEModule:
         for funcs in func_groups.values():
             func_name_w_id = funcs[0].attributes["sym_name"].value
             func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-            in_idx, out_idx = analyze_read_write_patterns(funcs[0])
+            in_idx, out_idx = [], []
+            for func in funcs:
+                inp, outp = analyze_read_write_patterns(func)
+                in_idx.extend(inp)
+                out_idx.extend(outp)
+            in_idx = list(set(in_idx))
+            out_idx = list(set(out_idx))
             inputs[func_name] = [self.func_args[func_name_w_id][idx] for idx in in_idx]
             outputs[func_name] = [
                 self.func_args[func_name_w_id][idx] for idx in out_idx
