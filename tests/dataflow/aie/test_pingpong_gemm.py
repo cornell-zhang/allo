@@ -12,9 +12,9 @@ M, N, K = 16, 16, 16
 Pm, Pn, Pk = 1, 1, 2
 Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-SpA = LayoutSpec("S1S0")
-SpB = LayoutSpec("S0S2")
-SpC = LayoutSpec("S1S2")
+SpA = LayoutSpec("S0S2")
+SpB = LayoutSpec("S2S1")
+SpC = LayoutSpec("S0S1")
 
 
 @df.region()
@@ -29,12 +29,11 @@ def top():
             C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
             C_in: Ty[Mt, Nt] = 0
-        # S1S0 x S0S2 -> S1S2
         C_out: Ty[Mt, Nt] = allo.matmul(A, B) + C_in
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
         with allo.meta_elif(pk == Pk - 1):
-            C[:] = C_out
+            C[:, :] = C_out
 
 
 def test_cooperative_gemm():

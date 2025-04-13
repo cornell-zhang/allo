@@ -963,7 +963,7 @@ class TypeInferer(ASTVisitor):
             elif op_name == "matmul":
                 assert (
                     argAshape[-1] == argBshape[-2]
-                ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
+                ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 node.shape = tuple(argAshape[:-1] + argBshape[-1:])
             elif op_name == "bmm":
                 assert (
@@ -971,10 +971,10 @@ class TypeInferer(ASTVisitor):
                 ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
                 assert (
                     argAshape[2] == argBshape[1]
-                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape[2]} and {argBshape[1]}"
+                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 assert (
                     argAshape[0] == argBshape[0]
-                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
+                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
             elif op_name == "linear":
                 # The weight parameter (i.e., `new_args[1]`) should be 2D, see:

@@ -543,8 +543,10 @@ def calculate_tensor_access(shape, partition, device_mesh):
         m, n = shape
         if len(device_mesh) == 1:
             a, b = 1, device_mesh[0]
+        elif len(device_mesh) == 2:
+            a, b = device_mesh[0], device_mesh[1]
         else:
-            a, b = device_mesh
+            a, b = device_mesh[partition[0][1]], device_mesh[partition[1][1]]
 
         if partition_str == "SS":
             # Both dimensions sharded
@@ -868,7 +870,7 @@ def codegen_aie_mlir(
                 stream_code, func_str = process_stream_operations(
                     func_str,
                     streams,
-                    len(inputs[func_name]) + len(outputs[func_name]),
+                    len(inputs[func_name]) + len(outputs[func_name]) + 1,
                     stream_ele_types,
                 )
                 code += stream_code

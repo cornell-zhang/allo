@@ -93,10 +93,12 @@ class DTensor:
             return self.shape
         local_shape = []
         for i, s in enumerate(self.shape):
-            if self.layout.placement[i][0] == "R":
+            shard, dim = self.layout.placement[i]
+            if shard == "R":
                 local_shape.append(s)
             else:
-                local_shape.append(s // self.mapping[i])
+                # count from right to left
+                local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
     def __str__(self):
