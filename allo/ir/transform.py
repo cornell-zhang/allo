@@ -52,7 +52,16 @@ class LoopBand:
         setattr(self, name, loop)
 
     def get_outer_most(self):
-        return next(self.loops.values().__iter__()).loop
+        outer = next(self.loops.values().__iter__())
+        match outer:
+            case LoopWrapper():
+                return outer.loop
+            case LoopBand():
+                raise ValueError(
+                    "get_outer_most() is not supported for top-level LoopBand collection, use __iter__() instead"
+                )
+            case _:
+                raise ValueError(f"Unexpected type: {type(outer)}")
 
     def __repr__(self):
         return f"LoopBand({list(self.loops.keys())})"

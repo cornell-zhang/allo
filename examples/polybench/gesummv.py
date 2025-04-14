@@ -45,9 +45,9 @@ def compute_y[T: (float32, int32), N: int32](y_in: "T[N]", y_out: "T[N]", tmp: "
 def kernel_gesummv[
     T: (float32, int32), N: int32
 ](A: "T[N, N]", B: "T[N, N]", x: "T[N]", y: "T[N]"):
-    y_init: T[N] = 0.0
-    y_fifo: T[N] = 0.0
-    tmp: T[N] = 0.0
+    y_init: T[N] = 0
+    y_fifo: T[N]
+    tmp: T[N]
     compute_tmp(y_init, y_fifo, A, B, x, tmp)
     compute_y(y_fifo, y, tmp)
 

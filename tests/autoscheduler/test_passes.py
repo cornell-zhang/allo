@@ -1,52 +1,178 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from gurobipy import GurobiError
+from allo.ir.utils import MockBuffer
 import numpy as np
 import pytest
-from allo.ir.types import float32
+from allo.ir.types import float32, int32
 from allo.autoscheduler.passes import dataflow_optimization_pass, DEBUG_POINTS
 from tests.autoscheduler.polybench import get_polybench
+import allo
+from allo.backend.hls import is_available
+
+kinds = [
+    "graph",
+    # "node",
+    # "combined"
+]
+
+# def build_and_execute(schedule, debug_point, inputs, expected, prj_name):
+#     if debug_point is not None:
+#         mod = schedule.build()
+#         actual = mod(*inputs)
+#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+#     elif is_available("vitis_hls"):
+#         mod = schedule.build(target="vitis_hls", mode="hw_emu", project=prj_name)
+#         actual = mod(*inputs)
+#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+#     else:
+#         pytest.skip("Skipping test: vitis_hls not available")
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_three_mm(debug_point):
+@pytest.mark.parametrize("kind", kinds)
+def test_simple(debug_point, kind):
+    def simple() -> int32[10, 10]:
+        def stageA() -> int32[10, 10]:
+            A: int32[10, 10]
+            for j in range(10):
+                for i in range(10):
+                    A[i, j] = i + j
+            return A
+
+        def stageB(A: int32[10, 10]) -> int32[10, 10]:
+            B: int32[10, 10]
+            for i in range(10):
+                for j in range(10):
+                    B[i, j] = A[i, j] + 1
+            return B
+
+        A = stageA()
+        B = stageB(A)
+        return B
+
+    s = allo.customize(simple)
+    optimized_schedule = dataflow_optimization_pass(
+        s, debug_point=debug_point, kind=kind
+    )
+
+    expected = np.zeros((10, 10))
+    for i in range(10):
+        for j in range(10):
+            expected[i, j] = i + j + 1
+
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        np.testing.assert_allclose(mod(), expected)
+
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_simple"
+        )
+        output = np.zeros((10, 10))
+        mod(output)
+        np.testing.assert_allclose(output, expected)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
+
+
+@pytest.mark.parametrize("debug_point", DEBUG_POINTS)
+@pytest.mark.parametrize("kind", kinds)
+def test_three_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "three_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind, verbose=True
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
-    actual = mod(*inputs)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        np.testing.assert_allclose(mod(*inputs), expected, rtol=1e-5, atol=1e-5)
 
-    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_three_mm"
+        )
+        output = np.zeros_like(expected)
+        mod(*inputs, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_two_mm(debug_point):
+@pytest.mark.parametrize("kind", kinds)
+def test_two_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "two_mm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
 
-    actual = mod(*inputs)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        np.testing.assert_allclose(mod(*inputs), expected, rtol=1e-5, atol=1e-5)
 
-    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_two_mm"
+        )
+        output = np.zeros_like(expected)
+        mod(*inputs, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_atax(debug_point):
+@pytest.mark.parametrize("kind", kinds)
+def test_atax(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "atax", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
     A, x, y = inputs
-    y_out = np.zeros_like(y)
-    mod(A, x, y_out)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        mod(A, x, y)
+        np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
 
-    np.testing.assert_allclose(y_out, expected, rtol=1e-5, atol=1e-5)
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_atax"
+        )
+        mod(A, x, y)
+        np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 # @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
@@ -68,33 +194,74 @@ def test_atax(debug_point):
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_gemm(debug_point):
+@pytest.mark.parametrize("kind", kinds)
+def test_gemm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gemm", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
     A, B, C = inputs
-    output = np.zeros_like(expected)
-    mod(A, B, C, output)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        output = np.zeros_like(expected)
+        mod(A, B, C, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
 
-    np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_gemm"
+        )
+        output = np.zeros_like(expected)
+        mod(A, B, C, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-def test_gesummv(debug_point):
+@pytest.mark.parametrize("kind", kinds)
+def test_gesummv(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gesummv", size="small", concrete_type=float32
     )
-    optimized_schedule = dataflow_optimization_pass(schedule, debug_point=debug_point)
-    mod = optimized_schedule.build()
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
     A, B, x = inputs
-    y = np.zeros_like(expected)
-    mod(A, B, x, y)
-
-    np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        y = np.zeros_like(expected)
+        mod(A, B, x, y)
+        np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode="hw_emu", project="test_gesummv"
+        )
+        y = np.zeros_like(expected)
+        mod(A, B, x, y)
+        np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 # @pytest.mark.parametrize("debug_point", DEBUG_POINTS)

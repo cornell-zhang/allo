@@ -43,13 +43,14 @@ class Edge:
 
 
 class EdgeInfo:
-    def __init__(self, accessMap: AffineMap):
-        self.accessMap = accessMap
+    def __init__(self, access_map: AffineMap, op=None):
+        self.access_map = access_map
         self.first_element_time = 0
         self.last_element_time = 0
+        self.op = op
 
     def __repr__(self):
-        return f"EdgeInfo(accessMap={self.accessMap}"
+        return f"EdgeInfo(access_map={self.access_map}, op={self.op})"
 
 
 class NodeInfo:
@@ -273,22 +274,24 @@ class DFG:
             node.node_info.append(node_info)
             permuted_loops = [node.loop_info[i] for i in perm]
             for load in node.loads:
+                memref = self._get_memref(load)
                 access_map = get_minimal_access_pattern(load, permuted_loops)
-                node_info.loads_map[load] = EdgeInfo(access_map)
+                node_info.loads_map[memref] = EdgeInfo(access_map, load)
                 first_element_time, last_element_time = (
                     self._compute_first_and_last_element_time(load, permuted_loops)
                 )
-                node_info.loads_map[load].first_element_time = first_element_time
-                node_info.loads_map[load].last_element_time = last_element_time
+                node_info.loads_map[memref].first_element_time = first_element_time
+                node_info.loads_map[memref].last_element_time = last_element_time
 
             for store in node.stores:
+                memref = self._get_memref(store)
                 access_map = get_minimal_access_pattern(store, permuted_loops)
-                node_info.stores_map[store] = EdgeInfo(access_map)
+                node_info.stores_map[memref] = EdgeInfo(access_map, store)
                 first_element_time, last_element_time = (
                     self._compute_first_and_last_element_time(store, permuted_loops)
                 )
-                node_info.stores_map[store].first_element_time = first_element_time
-                node_info.stores_map[store].last_element_time = last_element_time
+                node_info.stores_map[memref].first_element_time = first_element_time
+                node_info.stores_map[memref].last_element_time = last_element_time
 
             # Compute II
             node_info.II = compute_loop_II(top_level_for, permuted_loops)
@@ -525,8 +528,12 @@ class DFG:
 
             f.write("}\n")
 
-    def create_graph_parallelism_performance_model(self, debug_output=None):
+    def create_graph_parallelism_performance_model(
+        self, debug_output=None, verbose=False
+    ):
         model = gp.Model("graph_parallelism_performance_model")
+
+        model.setParam("OutputFlag", 1 if verbose else 0)
 
         # Get topological order and verify no cycles
         topo_order = self.topological_sort()
@@ -560,6 +567,7 @@ class DFG:
         if debug_output:
             model.write(f"{debug_output}.lp")
         # Return optimal permutation assignments
+        # format is list of (node_id, perm_idx)
         return [k for k, b_var in b_vars.items() if b_var.x > 0.5]
 
     def _find_sink_node(self):
@@ -569,7 +577,6 @@ class DFG:
             for node_id in self.nodes
             if self.get_node(node_id).type == DFGNodeType.RET
         ]
-        print(sink_nodes)
         assert len(sink_nodes) == 1, "Expected a single sink node"
         return sink_nodes[0]
 
@@ -625,8 +632,6 @@ class DFG:
             # Handle root nodes (no incoming edges)
             if not in_edges:
                 model.addConstr(st_vars[node_id] == 0, name=f"st_root_{node_id}")
-                model.addConstr(fw_vars[node_id] == 0, name=f"fw_root_{node_id}")
-                model.addConstr(lw_vars[node_id] == 0, name=f"lw_root_{node_id}")
                 continue
 
             arrives_terms = self._compute_arrival_terms(
@@ -658,40 +663,39 @@ class DFG:
 
             for dst_perm_idx, dst_info in enumerate(dst_node.node_info):
                 for src_perm_idx, src_info in enumerate(src_node.node_info):
-                    dst_op = edge.dst_op
-                    src_op = edge.src_op
-                    if dst_op in dst_info.loads_map and src_op in src_info.stores_map:
-                        dst_access = dst_info.loads_map[dst_op].accessMap
-                        src_access = src_info.stores_map[src_op].accessMap
+                    val = edge.value
+                    assert val in dst_info.loads_map and val in src_info.stores_map
+                    dst_access = dst_info.loads_map[val].access_map
+                    src_access = src_info.stores_map[val].access_map
 
-                        # TODO: need to check trip counts?
-                        # fifo case
-                        if dst_access == src_access:
-                            term = model.addVar(
-                                vtype=GRB.INTEGER,
-                                name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
-                            )
-                            model.addConstr(
-                                term
-                                == b_vars[(src_id, src_perm_idx)]
-                                * b_vars[(node_id, dst_perm_idx)]
-                                * fw_vars[src_id]
-                            )
+                    # TODO: need to check trip counts?
+                    # fifo case
+                    if dst_access == src_access:
+                        term = model.addVar(
+                            vtype=GRB.INTEGER,
+                            name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
+                        )
+                        model.addConstr(
+                            term
+                            == b_vars[(src_id, src_perm_idx)]
+                            * b_vars[(node_id, dst_perm_idx)]
+                            * fw_vars[src_id]
+                        )
 
-                            arrives_terms.append(term)
+                        arrives_terms.append(term)
 
-                        else:
-                            term = model.addVar(
-                                vtype=GRB.INTEGER,
-                                name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
-                            )
-                            model.addConstr(
-                                term
-                                == b_vars[(src_id, src_perm_idx)]
-                                * b_vars[(node_id, dst_perm_idx)]
-                                * (lw_vars[src_id])
-                            )
-                            arrives_terms.append(term)
+                    else:
+                        term = model.addVar(
+                            vtype=GRB.INTEGER,
+                            name=f"arrive_{src_id}_{node_id}_{src_perm_idx}_{dst_perm_idx}",
+                        )
+                        model.addConstr(
+                            term
+                            == b_vars[(src_id, src_perm_idx)]
+                            * b_vars[(node_id, dst_perm_idx)]
+                            * (lw_vars[src_id])
+                        )
+                        arrives_terms.append(term)
 
         return arrives_terms
 

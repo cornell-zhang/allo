@@ -33,6 +33,30 @@ def test_simple():
     assert permutations[0][1] != permutations[1][1]
 
 
+def test_simple2():
+    def simple() -> int32[10, 10]:
+        A: int32[10, 10]
+        B: int32[10, 10]
+        for i in range(10):
+            for j in range(10):
+                A[i, j] = i + j
+
+        for i in range(10):
+            for j in range(10):
+                B[i, j] = A[i, j] + 1
+
+        return B
+
+    s = allo.customize(simple)
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    dfg = DFG.from_module(s.module)
+    dfg.print_as_dot("simple2.dot")
+    permutations = dfg.create_graph_parallelism_performance_model(
+        debug_output="simple2"
+    )
+    assert permutations[0][1] == permutations[1][1]
+
+
 def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
     C: int32[8, 8] = 0
     for i in range(8):
