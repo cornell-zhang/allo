@@ -17,28 +17,15 @@ kinds = [
     # "combined"
 ]
 
-# def build_and_execute(schedule, debug_point, inputs, expected, prj_name):
-#     if debug_point is not None:
-#         mod = schedule.build()
-#         actual = mod(*inputs)
-#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
-#     elif is_available("vitis_hls"):
-#         mod = schedule.build(target="vitis_hls", mode="hw_emu", project=prj_name)
-#         actual = mod(*inputs)
-#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
-#     else:
-#         pytest.skip("Skipping test: vitis_hls not available")
-
-
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
 def test_simple(debug_point, kind):
-    def simple() -> int32[10, 10]:
-        def stageA() -> int32[10, 10]:
+    def simple(v: int32) -> int32[10, 10]:
+        def stageA(v: int32) -> int32[10, 10]:
             A: int32[10, 10]
             for j in range(10):
                 for i in range(10):
-                    A[i, j] = i + j
+                    A[i, j] = i + j + v
             return A
 
         def stageB(A: int32[10, 10]) -> int32[10, 10]:
@@ -48,7 +35,7 @@ def test_simple(debug_point, kind):
                     B[i, j] = A[i, j] + 1
             return B
 
-        A = stageA()
+        A = stageA(v)
         B = stageB(A)
         return B
 
@@ -60,18 +47,18 @@ def test_simple(debug_point, kind):
     expected = np.zeros((10, 10))
     for i in range(10):
         for j in range(10):
-            expected[i, j] = i + j + 1
+            expected[i, j] = i + j + 2
 
     if debug_point is not None:
         mod = optimized_schedule.build()
-        np.testing.assert_allclose(mod(), expected)
+        np.testing.assert_allclose(mod(1), expected)
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_simple"
+            target="vitis_hls", mode="hw_emu", project="test_simple.prj"
         )
         output = np.zeros((10, 10))
-        mod(output)
+        mod(1, output)
         np.testing.assert_allclose(output, expected)
     else:
         pytest.skip("Skipping test: vitis_hls not available")
@@ -101,7 +88,7 @@ def test_three_mm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_three_mm"
+            target="vitis_hls", mode="hw_emu", project="test_three_mm.prj"
         )
         output = np.zeros_like(expected)
         mod(*inputs, output)
@@ -132,7 +119,7 @@ def test_two_mm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_two_mm"
+            target="vitis_hls", mode="hw_emu", project="test_two_mm.prj"
         )
         output = np.zeros_like(expected)
         mod(*inputs, output)
@@ -167,7 +154,7 @@ def test_atax(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_atax"
+            target="vitis_hls", mode="hw_emu", project="test_atax.prj", wrap_io=False
         )
         mod(A, x, y)
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
@@ -220,7 +207,7 @@ def test_gemm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_gemm"
+            target="vitis_hls", mode="hw_emu", project="test_gemm.prj"
         )
         output = np.zeros_like(expected)
         mod(A, B, C, output)
@@ -255,7 +242,7 @@ def test_gesummv(debug_point, kind):
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_gesummv"
+            target="vitis_hls", mode="hw_emu", project="test_gesummv.prj"
         )
         y = np.zeros_like(expected)
         mod(A, B, x, y)
