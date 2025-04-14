@@ -646,7 +646,7 @@ def codegen_aie_mlir(
     mem_tile_size = max_num_args // 2 + 1
     shim_tile_size = max_num_args // 2 + 1
     mapping = inputs["_global"][0].mapping
-    device = f"npu1_{4}col"
+    device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
 
     # Add external functions
