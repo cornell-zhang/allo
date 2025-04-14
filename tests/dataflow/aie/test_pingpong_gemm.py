@@ -8,8 +8,10 @@ import numpy as np
 from allo.memory import Layout
 
 Ty = int16
+# M, N, K = 16, 16, 32
+# Pm, Pn, Pk = 1, 1, 4
 M, N, K = 16, 16, 16
-Pm, Pn, Pk = 1, 1, 2
+Pm, Pn, Pk = 1, 2, 2
 Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
 LyA = Layout("S1S2")

@@ -645,7 +645,8 @@ def codegen_aie_mlir(
         max_num_args += len(lst["_global"])
     mem_tile_size = max_num_args // 2 + 1
     shim_tile_size = max_num_args // 2 + 1
-    device = f"npu1_{mem_tile_size}col"
+    mapping = inputs["_global"][0].mapping
+    device = f"npu1_{4}col"
     code += format_str(f"aie.device({device}) {{", indent=2)
 
     # Add external functions
@@ -686,11 +687,13 @@ def codegen_aie_mlir(
         for func in funcs:
             func_name = func.attributes["sym_name"].value
             ids = extract_numbers(func_name)
+            # TODO: Multi-function mapping scheme
             if len(ids) == 1:
                 ids = (0, ids[0])
-            ids = (max_ids[0] + ids[0], max_ids[1] + ids[1])
-            # TODO: Multi-function mapping scheme
-            code += format_str(f"%tile_comp_{func_name} = aie.tile({ids[0]}, {ids[1]})")
+            elif len(ids) == 3:
+                ids = (ids[0] * mapping[-2] + ids[1], ids[2])
+            ids = (max_ids[0] + ids[-2], max_ids[1] + ids[-1])
+            code += format_str(f"%tile_comp_{func_name} = aie.tile({ids[-2]}, {ids[-1]})")
             tmp_ids = (0, max(ids[1] + 1, max_ids[1]))
         max_ids = tmp_ids
 
