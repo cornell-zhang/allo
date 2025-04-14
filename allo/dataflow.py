@@ -132,22 +132,21 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, enable_tensor=False, target="vitis_hls"):
+def _build_top(s, stream_info, target="vitis_hls"):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
     """
     # remove unused kernel
-    if not enable_tensor:
-        passes = ["canonicalize"]
-        pipeline = f'builtin.module(func.func({",".join(passes)}))'
-        try:
-            with s.module.context:
-                mlir_pass_manager.parse(pipeline).run(s.module.operation)
-        except Exception as e:
-            print("Error: failed to run MLIR lower pipeline, printing module...")
-            print(s.module)
-            raise e
+    passes = ["canonicalize"]
+    pipeline = f'builtin.module(func.func({",".join(passes)}))'
+    try:
+        with s.module.context:
+            mlir_pass_manager.parse(pipeline).run(s.module.operation)
+    except Exception as e:
+        print("Error: failed to run MLIR lower pipeline, printing module...")
+        print(s.module)
+        raise e
     remove_unused_func_ops(s, stream_info.keys())
 
     # create argument mapping
@@ -300,16 +299,15 @@ def build(
 ):
     if target == "aie":
         global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
+        s = _customize(func, global_vars=global_vars, enable_tensor=False)
         stream_info = move_stream_to_interface(s)
-        s = _build_top(s, stream_info, enable_tensor=enable_tensor, target=target)
+        s = _build_top(s, stream_info, target=target)
         mod = AIEModule(
             s.module,
             s.top_func_name,
             s.func_args,
             project,
             stream_info,
-            enable_tensor,
         )
         mod.build()
         return mod

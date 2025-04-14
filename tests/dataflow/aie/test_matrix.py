@@ -8,9 +8,9 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-SpA = Layout("S0R")
-SpB = Layout("RS1")
-SpC = Layout("S0S1")
+LyA = Layout("S0R")
+LyB = Layout("RS1")
+LyC = Layout("S0S1")
 
 
 def _test_matrix_scalar_add():
@@ -21,7 +21,7 @@ def _test_matrix_scalar_add():
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def core(A: Ty[M, N] @ SpA, B: Ty[M, N] @ SpA):
+        def core(A: Ty[M, N] @ LyA, B: Ty[M, N] @ LyA):
             B[:, :] = allo.add(A, 1)
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
@@ -50,7 +50,7 @@ def _test_matrix_matrix_add():
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def core(A: Ty[M, N] @ SpA, B: Ty[M, N] @ SpA, C: Ty[M, N] @ SpA):
+        def core(A: Ty[M, N] @ LyA, B: Ty[M, N] @ LyA, C: Ty[M, N] @ LyA):
             C[:, :] = allo.add(A, B)
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
@@ -78,7 +78,7 @@ def _test_gemm_1D():
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def gemm(A: Ty[M, K] @ SpA, B: Ty[K, N], C: Ty[M, N] @ SpA):
+        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
     mod = df.build(top, target="aie")
@@ -98,7 +98,7 @@ def _test_gemm_2D():
     @df.region()
     def top():
         @df.kernel(mapping=[P0, P1])
-        def gemm(A: TyI[M, K] @ SpA, B: TyI[K, N] @ SpB, C: TyO[M, N] @ SpC):
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
     mod = df.build(top, target="aie")

@@ -8,7 +8,7 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
-Sp = Layout("S0")
+Ly = Layout("S0")
 
 
 def _test_vector_scalar_add():
@@ -168,7 +168,7 @@ def _test_vector_scalar_add_p0():
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def core(A: Ty[M] @ Sp, B: Ty[M] @ Sp):
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
             B[:] = allo.add(A[:], 1)
 
     mod = df.build(top, target="aie")
@@ -191,7 +191,7 @@ def _test_vector_vector_add_p0():
     @df.region()
     def top():
         @df.kernel(mapping=[P0])
-        def core(A: Ty[M] @ Sp, B: Ty[M] @ Sp, C: Ty[M] @ Sp):
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
             C[:] = allo.add(A, B)
 
     mod = df.build(top, target="aie")

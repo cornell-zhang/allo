@@ -8,13 +8,15 @@ import numpy as np
 from allo.memory import Layout
 
 Ty = int16
+# M, N, K = 16, 16, 32
+# Pm, Pn, Pk = 1, 1, 4
 M, N, K = 16, 16, 16
-Pm, Pn, Pk = 1, 1, 2
+Pm, Pn, Pk = 1, 2, 2
 Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
-SpA = Layout("S1S2")
-SpB = Layout("S2S0")
-SpC = Layout("S1S0")
+LyA = Layout("S1S2")
+LyB = Layout("S2S0")
+LyC = Layout("S1S0")
 
 
 @df.region()
@@ -23,7 +25,7 @@ def top():
     # Stream(Ty[Mt, Nt], 2)[Pk - 1, Pm, Pn]
 
     @df.kernel(mapping=[Pk, Pm, Pn])
-    def gemm(A: Ty[M, K] @ SpA, B: Ty[K, N] @ SpB, C: Ty[M, N] @ SpC):
+    def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
         pk, pm, pn = df.get_pid()
         with allo.meta_if(pk > 0):
             C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
