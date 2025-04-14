@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=bad-builtin, no-name-in-module, too-many-branches, too-many-nested-blocks, consider-using-with
+# pylint: disable=bad-builtin, no-name-in-module, too-many-branches, too-many-nested-blocks, consider-using-with, cell-var-from-loop
 
 
 import os
@@ -693,7 +693,9 @@ def codegen_aie_mlir(
             elif len(ids) == 3:
                 ids = (ids[0] * mapping[-2] + ids[1], ids[2])
             ids = (max_ids[0] + ids[-2], max_ids[1] + ids[-1])
-            code += format_str(f"%tile_comp_{func_name} = aie.tile({ids[-2]}, {ids[-1]})")
+            code += format_str(
+                f"%tile_comp_{func_name} = aie.tile({ids[-2]}, {ids[-1]})"
+            )
             tmp_ids = (0, max(ids[1] + 1, max_ids[1]))
         max_ids = tmp_ids
 
