@@ -534,7 +534,7 @@ class DFG:
             print("Error: Cycle detected in graph")
             return False
 
-        # Find sink node (return node)
+        # Find sink nodes
         sink_node_ids = self._find_sink_nodes()
 
         # Create variables for the optimization model
@@ -570,8 +570,7 @@ class DFG:
         sink_nodes = [
             node_id
             for node_id in self.nodes
-            if len(self.out_edges.get(node_id, [])) == 0 
-            
+            if len(self.out_edges.get(node_id, [])) == 0
         ]
         assert len(sink_nodes) > 0, "Expected at least one sink node"
         return sink_nodes
@@ -736,11 +735,13 @@ class DFG:
             in_edges = self.in_edges.get(node_id, [])
             if not in_edges:
                 continue
-            
+
             if self.get_node(node_id).type == DFGNodeType.RET:
                 # if it is a return, consider all incoming edges and let the last write time be the maximum of the last write times of the incoming edges
                 lw_terms = [lw_vars[edge.id] for edge in in_edges]
-                model.addConstr(lw_vars[node_id] == gp.max_(lw_terms), name=f"lw_constr_{node_id}")
+                model.addConstr(
+                    lw_vars[node_id] == gp.max_(lw_terms), name=f"lw_constr_{node_id}"
+                )
                 continue
 
             lw_terms = []
