@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # Reference: taichi/python/taichi/lang/ast/transform.py
-# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used
+# pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used, bad-builtin
 
 import gc
 import ast
@@ -868,7 +868,7 @@ class ASTTransformer(ASTBuilder):
             if hasattr(node, "target"):
                 name = node.target.id
             else:
-                name = f"const_{hash(str(node) + str(np_values))}"
+                name = f"const_{abs(hash(str(node) + str(np_values)))}"
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(shape, dtype.build())
@@ -1470,14 +1470,12 @@ class ASTTransformer(ASTBuilder):
                                 new_ctx.top_func_tree = node
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                if len(dim) == 1:
-                                    new_ctx.global_vars.update({"df.p0": dim[0]})
-                                    node.name = orig_name + f"_{dim[0]}"
-                                else:
+                                for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
-                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                        {"df.p" + str(axis): val}
                                     )
-                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                concated_name = "_".join(map(str, dim))
+                                node.name = orig_name + f"_{concated_name}"
                                 ASTTransformer.build_FunctionDef(new_ctx, node)
                             return
         else:
@@ -1495,7 +1493,7 @@ class ASTTransformer(ASTBuilder):
                 ctx.global_vars[name] = call_val
 
         # Build input types
-        arg_names = []
+        dtensors = []
         input_types = []
         input_typehints = []
         for i, arg in enumerate(node.args.args):
@@ -1518,7 +1516,7 @@ class ASTTransformer(ASTBuilder):
                 )
             )
             input_typehints.append(get_extra_type_hints(arg.dtype))
-            arg_names.append(arg.arg)
+            dtensors.append(arg.dtensor)
 
         # Build return type
         output_types = []
@@ -1554,9 +1552,10 @@ class ASTTransformer(ASTBuilder):
         # set context
         ctx.top_func = func_op
         ctx.top_func_tree = node
-        for i, (name, arg) in enumerate(zip(arg_names, func_op.arguments)):
+        for i, (dtensor, arg) in enumerate(zip(dtensors, func_op.arguments)):
+            name = dtensor.name
             ctx.buffers[name] = MockArg(arg, idx=i)
-        ctx.func_args[func_name] = arg_names
+        ctx.func_args[func_name] = dtensors
         ctx.set_ip(func_op.entry_block)
         stmts = build_stmts(ctx, node.body)
         # node.returns is the function definition, not the actual return operation
@@ -1942,6 +1941,7 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
+        # pylint: disable=too-many-nested-blocks
         if (
             obj.__module__.startswith("allo")
             and not obj.__module__.startswith("allo.library")
@@ -2003,14 +2003,15 @@ class ASTTransformer(ASTBuilder):
                     op = linalg_d.fill(op.result, outs=[alloc_op.result])
                     return op.owner if ctx.enable_tensor else alloc_op
             if fn_name == "get_pid":
-                # 1D mesh
-                if "df.p1" not in ctx.global_vars:
-                    return (MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),)
-                # 2D mesh
-                return (
-                    MockConstant(ctx.global_vars["df.p0"], ctx, dtype=Index()),
-                    MockConstant(ctx.global_vars["df.p1"], ctx, dtype=Index()),
-                )
+                res = []
+                for i in range(3):
+                    if f"df.p{i}" in ctx.global_vars:
+                        res.append(
+                            MockConstant(
+                                ctx.global_vars[f"df.p{i}"], ctx, dtype=Index()
+                            )
+                        )
+                return tuple(res)
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
@@ -2018,18 +2019,26 @@ class ASTTransformer(ASTBuilder):
                 if isinstance(stream.dtype, UInt):
                     stream_op.attributes["unsigned"] = UnitAttr.get()
                 return stream_op
+            arg_types = []
             if isinstance(new_args[0].result, OpResultList):
-                arg_type = new_args[0].result[0].type
+                for arg in new_args:
+                    if hasattr(arg, "result") and isinstance(arg.result, OpResultList):
+                        for result in arg.result:
+                            if hasattr(result, "type"):
+                                arg_types.append(result.type)
             else:
-                arg_type = new_args[0].result.type
-            if isinstance(arg_type, (F32Type, IntegerType)):
+                for arg in new_args:
+                    if hasattr(arg, "result") and hasattr(arg.result, "type"):
+                        arg_types.append(arg.result.type)
+            if all(
+                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+            ):
                 opcls = {
                     "exp": math_d.ExpOp,
                     "log": math_d.LogOp,
                     "log2": math_d.Log2Op,
                     "log10": math_d.Log10Op,
                     "sqrt": math_d.SqrtOp,
-                    "sin": math_d.SinOp,
                     "cos": math_d.CosOp,
                     "tan": math_d.TanOp,
                     "tanh": math_d.TanhOp,
@@ -2037,7 +2046,10 @@ class ASTTransformer(ASTBuilder):
                     "abs": math_d.AbsIOp,
                 }.get(fn_name)
                 return opcls(*[x.result for x in new_args], ip=ctx.get_ip())
-            if isinstance(arg_type, (MemRefType, RankedTensorType)) and fn_name in {
+            if any(
+                isinstance(arg_type, (MemRefType, RankedTensorType))
+                for arg_type in arg_types
+            ) and fn_name in {
                 "matmul",
                 "bmm",
                 "softmax",
@@ -2083,19 +2095,19 @@ class ASTTransformer(ASTBuilder):
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
                 func_op = func_d.FuncOp(
-                    name=f"{fn_name}_{hash(node)}",
+                    name=f"{fn_name}_{abs(hash(node))}",
                     type=FunctionType.get(input_types, output_types),
                     ip=InsertionPoint(ctx.top_func),
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
                 call_op = func_d.CallOp(
                     [arg_results[0].type],
-                    FlatSymbolRefAttr.get(f"{fn_name}_{hash(node)}"),
+                    FlatSymbolRefAttr.get(f"{fn_name}_{abs(hash(node))}"),
                     arg_results,
                     ip=ctx.get_ip(),
                 )
                 return call_op
-            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_type}")
+            raise RuntimeError(f"Unsupported function {fn_name} with type {arg_types}")
 
         # User-defined subfunction
         func = ctx.global_vars[obj_name]

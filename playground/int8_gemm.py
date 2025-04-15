@@ -14,10 +14,10 @@ def test_cascaded_int8_gemm():
 
     # (seq, hidden) x (hidden, 4*hidden) = (seq, 4*hidden)
     # (seq, 4*hidden) x (4*hidden, hidden) = (seq, hidden)
-    L, D = 512, 768
-    M0, M1 = 16, 16
-    # L, D = 4, 4
-    # M0, M1 = 2, 2
+    # L, D = 512, 768
+    # M0, M1 = 16, 16
+    L, D = 4, 4
+    M0, M1 = 2, 2
     W_A_cst = np.random.randint(-4, 4, size=(D, 4 * D)).astype(np.int8)
     W_B_cst = np.random.randint(-4, 4, size=(4 * D, D)).astype(np.int8)
 
@@ -52,7 +52,7 @@ def test_cascaded_int8_gemm():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
+            mode="csyn",
             project=f"FFN_{L}x{D}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
@@ -66,7 +66,7 @@ def test_int8_gemm():
     L, D = 512, 768
     M0, M1 = 16, 16
     PP = 16
-    L, D = 16, 16
+    L, D = 8, 8
     M0, M1 = 4, 4
     PP = 2
     if PP == 2:
@@ -134,25 +134,25 @@ def test_int8_gemm():
             target="vitis_hls",
             mode="csim",
             project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}_csim.prj",
-            configs={
-                "mappings": [
-                    (
-                        (L // M0, D, M0 // PP),
-                        f"(d0 * {M0 // PP} + d2) * {D} + d1",
-                        f"d0 * {M0 // PP} + d2, d1",
-                    ),
-                    (
-                        (L // M0, 4 * D // M1, D, M1 // PP),
-                        f"d2 * {4 * D // PP} + d1 * {M1 // PP} + d3",
-                        f"d2, d1 * {M1 // PP} + d3",  # does not matter a lot in FIFO
-                    ),
-                    (
-                        (L // M0, 4 * D // M1, M1, M0 // PP),
-                        f"d0 * {M0 // PP} + d3, d1 * {M1} + d2",  # does not matter a lot in FIFO
-                        f"(d0 * {M0 // PP} + d3) * {4 * D} + d1 * {M1} + d2",
-                    ),
-                ]
-            },
+            # configs={
+            #     "mappings": [
+            #         (
+            #             (L // M0, D, M0 // PP),
+            #             f"(d0 * {M0 // PP} + d2) * {D} + d1",
+            #             f"d0 * {M0 // PP} + d2, d1",
+            #         ),
+            #         (
+            #             (L // M0, 4 * D // M1, D, M1 // PP),
+            #             f"d2 * {4 * D // PP} + d1 * {M1 // PP} + d3",
+            #             f"d2, d1 * {M1 // PP} + d3",  # does not matter a lot in FIFO
+            #         ),
+            #         (
+            #             (L // M0, 4 * D // M1, M1, M0 // PP),
+            #             f"d0 * {M0 // PP} + d3, d1 * {M1} + d2",  # does not matter a lot in FIFO
+            #             f"(d0 * {M0 // PP} + d3) * {4 * D} + d1 * {M1} + d2",
+            #         ),
+            #     ]
+            # },
         )
         # Be careful about the NumPy type
         csim_C = np.zeros((L // PP, 4 * D), dtype=np_type)
@@ -206,12 +206,13 @@ def test_int8_gemm_dsp_packing():
     if hls.is_available("vitis_hls"):
         hls_mod = s_top.build(
             target="vitis_hls",
-            mode="hw",
+            mode="csyn",
             project=f"DSP_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
         )
         hls_mod()
 
 
 if __name__ == "__main__":
-    # test_int8_gemm_dsp_packing()
+    test_cascaded_int8_gemm()
     test_int8_gemm()
+    test_int8_gemm_dsp_packing()

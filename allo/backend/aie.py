@@ -1,42 +1,31 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # mlir-aie commit: 8329b6
-# pylint: disable=consider-using-with, bad-builtin, no-name-in-module, too-many-branches, too-many-nested-blocks
+# pylint: disable=bad-builtin, no-name-in-module, too-many-branches, too-many-nested-blocks, consider-using-with, cell-var-from-loop
+
 
 import os
 import subprocess
 import re
-import copy
 import numpy as np
 from .._mlir.ir import (
-    IntegerAttr,
-    IntegerType,
-    DenseI64ArrayAttr,
-    RankedTensorType,
     MemRefType,
-    FunctionType,
-    TypeAttr,
     Location,
-    StridedLayoutAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
     StringAttr,
 )
 from .._mlir.dialects import (
-    memref as memref_d,
     allo as allo_d,
     func as func_d,
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
 from .vitis import read_tensor_from_file
-from ..utils import (
-    get_func_inputs_outputs,
-    get_dtype_and_shape_from_type,
-    get_element_type_from_str,
-)
+from ..utils import get_dtype_and_shape_from_type
 from .utils import format_str, format_code
 from .vitis import ctype_map
+from ..passes import analyze_read_write_patterns
 
 
 host_header = """
@@ -151,14 +140,13 @@ file_close_str = """  ofile.close();
 """
 
 
-def codegen_host(kernel_inputs, kernel_outputs):
+def codegen_host(inputs, outputs):
     code = host_header
-    inputs = [input for sublist in kernel_inputs.values() for input in sublist]
-    outputs = [output for sublist in kernel_outputs.values() for output in sublist]
     with format_code(indent=2):
         # write input data
-        for i, (dtype, shape) in enumerate(inputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(inputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             code += format_str(f'std::ifstream ifile{i}("input{i}.data");')
             code += format_str(f"if (!ifile{i}.is_open()) {{")
             code += format_str(
@@ -185,8 +173,9 @@ def codegen_host(kernel_inputs, kernel_outputs):
             code += format_str(
                 f"memcpy(bufIn{i}, srcVec{i}.data(), (srcVec{i}.size() * sizeof({dtype})));"
             )
-        for i, (dtype, shape) in enumerate(outputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(outputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             out_size = np.prod(shape)
             code += format_str(
                 f"\nauto bo_out{i} = xrt::bo(device, {out_size} * sizeof({dtype}),",
@@ -227,8 +216,9 @@ def codegen_host(kernel_inputs, kernel_outputs):
             'std::cout << "NPU execution time: " << npu_time << "us\\n";'
         )
         # get results
-        for i, (dtype, shape) in enumerate(outputs):
-            dtype = ctype_map[dtype]
+        for i, dtensor in enumerate(outputs):
+            shape = dtensor.shape
+            dtype = ctype_map[str(dtensor.dtype)]
             out_size = np.prod(shape)
             code += format_str(
                 f"\nbo_out{i}.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False
@@ -300,7 +290,7 @@ def inject_aie_kernels(mod):
                     if (
                         op.operation.name in {"linalg.add", "linalg.mul"}
                         and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ):
+                    ) or op.operation.name == "linalg.matmul":
                         op_name = op.operation.name.split(".")[1]
                         # Inject AIE kernel
                         func_type = func_d.FunctionType.get(
@@ -309,21 +299,41 @@ def inject_aie_kernels(mod):
                         )
                         dtype = str(op.inputs[0].type.element_type)
                         shape = MemRefType(op.inputs[0].type).shape
+                        if op.operation.name in {"linalg.add", "linalg.mul"}:
+                            kernel_name = f"{op_name}_{dtype}_vector"
+                            external_kernels[func.attributes["sym_name"].value].append(
+                                (op_name, dtype, shape)
+                            )
+                        else:  # linalg.matmul
+                            M, K = MemRefType(op.inputs[0].type).shape
+                            _, N = MemRefType(op.inputs[1].type).shape
+                            out_dtype = str(op.outputs[0].type.element_type)
+                            if (dtype, out_dtype) not in [
+                                ("i8", "i8"),
+                                ("i16", "i16"),
+                                ("i16", "i32"),
+                                ("bf16", "bf16"),
+                                ("bf16", "f32"),
+                            ]:
+                                # f"Unsupported in_dtype {dtype} and out_dtype {out_dtype} pair"
+                                continue
+                            kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                            external_kernels[func.attributes["sym_name"].value].append(
+                                (op_name, dtype, out_dtype, M, N, K)
+                            )
                         func_d.CallOp(
                             [],
-                            FlatSymbolRefAttr.get(f"eltwise_{op_name}_{dtype}_vector"),
+                            FlatSymbolRefAttr.get(kernel_name),
                             [op.inputs[0], op.inputs[1], op.outputs[0]],
                             ip=InsertionPoint(op),
                         )
                         op.erase()
-                        external_kernels[func.attributes["sym_name"].value].append(
-                            (op_name, dtype, shape)
-                        )
-                        if f"eltwise_{op_name}_{dtype}_vector" in injected_kernels:
+
+                        if kernel_name in injected_kernels:
                             continue
-                        injected_kernels.add(f"eltwise_{op_name}_{dtype}_vector")
+                        injected_kernels.add(kernel_name)
                         kernel = func_d.FuncOp(
-                            f"eltwise_{op_name}_{dtype}_vector",
+                            kernel_name,
                             func_type,
                             ip=InsertionPoint(func),
                         )
@@ -339,39 +349,60 @@ def codegen_external_kernels(external_kernels):
     code += "#include <stdlib.h>\n"
     code += "#include <type_traits>\n"
     code += "#include <aie_api/aie.hpp>\n\n"
-    code += '#include "add.h"\n'
-    code += '#include "mul.h"\n\n'
-    code += 'extern "C" {\n\n'
-    generated_kernels = set()
+    generated_kernels = {}
+    kernel_code = ""
     for _, kernel_lst in external_kernels.items():
-        for kernel, dtype, shape in kernel_lst:
+        for items in kernel_lst:
+            kernel, dtype = items[0], items[1]
             if kernel in generated_kernels:
                 continue
             ctype = ctype_map[dtype]
             if "bfloat" in ctype:
                 ctype = "bfloat16"
-            code += f"void eltwise_{kernel}_{dtype}_vector"
-            code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-            code += " {\n"
-            code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
-            code += "}\n\n"
-            generated_kernels.add(kernel)
+            if kernel == "matmul":
+                pass
+            else:
+                kernel, dtype, shape = items
+                kernel_code += f"void {kernel}_{dtype}_vector"
+                kernel_code += f"({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                kernel_code += " {\n"
+                kernel_code += f"  eltwise_v{kernel}<{ctype}, {ctype}, {np.prod(shape)}>(A_in, B_in, C_out);\n"
+                kernel_code += "}\n\n"
+            generated_kernels[kernel] = items
+    for kernel, items in generated_kernels.items():
+        match kernel:
+            case "add":
+                code += '#include "add.cc"\n'
+            case "mul":
+                code += '#include "mul.cc"\n'
+            case "matmul":
+                _, dtype, out_dtype, M, N, K = items
+                code += f"#define DIM_M {M}\n"
+                code += f"#define DIM_N {N}\n"
+                code += f"#define DIM_K {K}\n"
+                code += f"#define {dtype}_{out_dtype}_ONLY\n"
+                code += '#include "mm.cc"\n'
+    code += '\nextern "C" {\n\n'
+    code += kernel_code
     code += '} // extern "C"\n'
     return code, generated_kernels
 
 
-def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_types):
+def process_stream_operations(func_str, streams, start_id, stream_ele_types):
     """
     Process a function string by replacing stream_get and stream_put calls with
     corresponding formatted FIFO code.
 
     Parameters
     ----------
-        func_str (str): The input function string to be processed.
-        streams (list): List of streams (each stream is a tuple/list where the first element is the stream name).
-        inputs (list): List of input identifiers.
-        outputs (list): List of output identifiers.
-        stream_ele_types (dict): Dictionary mapping stream names to their element types.
+        func_str: str
+            The input function string to be processed.
+        streams: List[Tuple]
+            Each stream is a tuple/list where the first element is the stream name.
+        start_id: int
+            The starting ID for the streams, used to map the argument IDs to stream indices.
+        stream_ele_types: Dict
+            Dictionary mapping stream names to their element types.
 
     Returns
     -------
@@ -392,7 +423,7 @@ def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_typ
                     continue
                 # Extract the return variable
                 return_var = line.split("=")[0].strip()
-                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_index = arg_id - start_id
                 stream_name = streams[stream_index][0]
                 current_indent = 6 + (len(line) - len(line.lstrip(" ")))
                 with format_code(indent=current_indent):
@@ -432,7 +463,7 @@ def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_typ
                     put_var = m_put_var.group(1)
                 else:
                     continue
-                stream_index = arg_id - len(inputs) - len(outputs)
+                stream_index = arg_id - start_id
                 stream_name = streams[stream_index][0]
                 ele_type = stream_ele_types[stream_name]
                 current_indent = 6 + (len(line) - len(line.lstrip(" ")))
@@ -462,59 +493,140 @@ def process_stream_operations(func_str, streams, inputs, outputs, stream_ele_typ
     return code, func_str
 
 
+def get_memref_type_str(ele_type, shape):
+    return f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
+
+
+def calculate_tensor_access(shape, partition, device_mesh):
+    """
+    Calculate the size and stride for tensor access based on shape and partition method.
+    Layout visualization tool:
+    https://andreroesti.com/data-layout-viz/data_layout.html
+
+    Parameters:
+    -----------
+    shape : tuple
+        The shape of the tensor (1D or 2D)
+    partition : tuple(str, int)
+        The partition method for each dimension:
+        - 'S': Sharded (distributed across devices)
+        - 'R': Replicated (copied to each device)
+    device_mesh : tuple, optional
+        The mesh of devices (default: (2, 2))
+
+    Returns:
+    --------
+    tuple
+        A tuple containing two lists: (size, stride)
+    """
+    # Handle 1D tensor case
+    partition_str = "".join([p[0] for p in partition])
+    if len(shape) == 1:
+        if partition_str == "S":
+            # For 1D tensor with "S", shard across all devices
+            total_devices = device_mesh[0]
+            shard_size = shape[0] // total_devices
+            size = [1, 1, total_devices, shard_size]
+            stride = [0, 0, shard_size, 1]
+        elif partition_str == "R":
+            # For 1D tensor with "R", replicate across all devices
+            total_devices = device_mesh[0]
+            size = [1, total_devices, 1, shape[0]]
+            stride = [0, 0, 0, 1]
+        else:
+            raise ValueError(f"Unsupported partition {partition_str} for 1D tensor.")
+
+        return size, stride
+
+    # Handle 2D tensor case
+    if len(shape) == 2:
+        m, n = shape
+        if len(device_mesh) == 1:
+            a, b = 1, device_mesh[0]
+        elif len(device_mesh) == 2:
+            if partition[0][0] == "S":
+                partition[1] = (partition[1][0], 1 - partition[0][1])
+            elif partition[1][0] == "S":  # partition[0][0] == "R"
+                partition[0] = (partition[0][0], 1 - partition[1][1])
+            else:
+                partition[0] = (partition[0], 1)
+                partition[1] = (partition[1], 0)
+            a, b = device_mesh[-partition[0][1] - 1], device_mesh[-partition[1][1] - 1]
+        else:
+            a, b = device_mesh[-partition[0][1] - 1], device_mesh[-partition[1][1] - 1]
+
+        if partition_str == "SS":
+            # Both dimensions sharded
+            size = [a, b, m // a, n // b]
+            stride = [(m // a) * n, n // b, n, 1]
+
+        elif partition_str == "SR":
+            # First dim sharded across all devices, second replicated
+            total_devices = a * b
+            size = [1, total_devices, m // total_devices, n]
+            stride = [0, (m // total_devices) * n, n, 1]
+
+        elif partition_str == "RS":
+            # First dim replicated, second sharded across second dim of mesh
+            size = [1, b, m, n // b]
+            stride = [(m * n) // (a * b), n // b, n, 1]
+
+        elif partition_str == "RR":
+            # Both dimensions replicated
+            total_devices = a * b
+            size = [1, 1, m, n]
+            stride = [0, 0, n, 1]
+        else:
+            raise ValueError(f"Unsupported partition {partition_str} for 2D tensor.")
+
+        return size, stride
+    raise ValueError(f"Unsupported shape {shape} or partition {partition}.")
+
+
+def extract_numbers(input_string):
+    parts = input_string.split("_")
+    numbers = []
+    for part in parts:
+        if part.isdigit():
+            numbers.append(int(part))
+    return tuple(numbers)
+
+
 def codegen_aie_mlir(
     mod,
-    kernel_mappings,
-    kernel_index_ranges,
-    orig_kernel_inputs,
-    orig_kernel_outputs,
-    kernel_func_arg_sizes,
-    kernel_func_buf_dicts,
-    kernel_dist_allocs,
+    func_groups,
+    inputs,
+    outputs,
+    kernel_buf_dicts,
     external_kernels,
     stream_info,
 ):
     """
-    Generates MLIR-AIE code with MLIR module and extra information
+    Generates MLIR-AIE code with MLIR module and extra information for multiple kernel functions
+
+    offchip to shim: copy the whole data but reorder
+    shim to mem: copy the whole data
+    mem to comp: shard the data
+    R: same line in object fifo (broadcast)
+    S: multiple lines for object fifo, and link with offset
 
     Parameters
     ----------
     mod: allo._mlir.ir.Module
         The MLIR module built by allo.
 
-    kernel_mappings: Dict[str, List[int]]
-        The mapping of each kernel in the module.
-        The key is the name of the kernel, and the value is a list of integers representing the mapping of the kernel.
+    func_groups: Dict[str, List[FuncOp]]
+        A dictionary mapping function names to lists of FuncOp objects.
 
-    kernel_index_ranges: Dict[str, Tuple[int, int]]
-        The index range of each kernel in the module.
-        The key is the name of the kernel, and the value is a tuple of integers representing the start and end index of the kernel.
+    inputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as inputs.
 
-    orig_kernel_inputs: Dict[str, List[Tuple[str, List[int]]]]
-        The original types of the input argument of the kernels.
-        The key is the name of the kernel, and the value is a list of tuples.
-        Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
-        For current version, we assume all function in the module have the same input arguments.
+    outputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as outputs.
 
-    orig_kernel_outputs: Dict[str, List[Tuple[str, List[int]]]]
-        The original types of the output argument of the kernels.
-        The key is the name of the kernel, and the value is a list of tuples.
-        Each tuple in the list stands for the type of each argument. e.g. ('i32', [16, 16]).
-        For current version, we assume all function in the module have the same output arguments.
-
-    kernel_func_arg_sizes: Dict[str, List[List[List[int]]]]
-        The actual size of each argument that each function in each kernel will be using.
-        The key is the name of the kernel, and the value is a list of lists.
-        The first dim in each list stands for each function, the second dim stands for each argument, the last dim stands for shape.
-
-    kernel_func_buf_dicts: Dict[str, List[Dict[str, Tuple[str, List[int]]]]]
-        The local buffer each function creates.
-        Each function in the list is a dictionary, where the key is the name of the buffer, and the value is the type of
-        the element. e.g. ('i32', [16, 16]).
-
-    kernel_dist_allocs: Dict[str, List[bool]]
-        The allocation strategy for each argument in each kernel.
-        More info can be find in function check_usage_intersection.
+    kernel_buf_dicts: Dict[str, Dict[str, Tuple[str, List[int]]]]
+        The kernel buffer dictionaries for each function in the module.
+        The key is the function name, and the value is a dictionary mapping buffer names to their types and shapes.
 
     external_kernels: Dict[str, List[str]]
         The external kernels that will be injected into the module.
@@ -525,17 +637,19 @@ def codegen_aie_mlir(
         The key is the name of the kernel, and the value is a list of tuples.
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
     """
-    kernel_inputs = copy.deepcopy(orig_kernel_inputs)
-    kernel_outputs = copy.deepcopy(orig_kernel_outputs)
     code = format_str("module {", indent=0)
-    kernel_inputs_outputs_val = list(kernel_inputs.values()) + list(
-        kernel_outputs.values()
-    )
-    num_tensors = sum(len(v) for v in kernel_inputs_outputs_val)
-    mem_tile_size = 2 if num_tensors > 2 else 1
-    device = "npu1_2col" if num_tensors > 2 else "npu1_1col"
+
+    # Determine device based on maximum tensor arguments across all kernels
+    max_num_args = 0
+    for lst in (inputs, outputs):
+        max_num_args += len(lst["_global"])
+    mem_tile_size = max_num_args // 2 + 1
+    shim_tile_size = max_num_args // 2 + 1
+    mapping = inputs["_global"][0].mapping
+    device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
-    # external functions
+
+    # Add external functions
     for func in mod.body.operations:
         if (
             isinstance(func, func_d.FuncOp)
@@ -543,167 +657,146 @@ def codegen_aie_mlir(
             and func.attributes["sym_visibility"].value == "private"
         ):
             code += format_str(str(func), indent=4)
-    # create tiles
-    code += format_str("%tile_shim = aie.tile(0, 0)")
-    for mid in range(mem_tile_size):
-        code += format_str(f"%tile_mem{mid} = aie.tile({mid}, 1)")
-    # number of function declaration except top
-    top_func, funcs = get_public_funcs(mod)
-    buf_name_dicts = []
-    # create compute tiles and buffers
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        mapping = kernel_mappings[kernel_name]
-        func_buf_dicts = kernel_func_buf_dicts[kernel_name]
-        for fid in range(start, end):
-            func_name = funcs[fid].attributes["sym_name"].value
-            tile_name = f"%tile_comp_{func_name}"
-            code += format_str(f"{tile_name} = aie.tile(0, {fid + 2})")
-            buf_dict = func_buf_dicts[fid - start]
-            buf_name_dict = {}
-            for i, name in enumerate(buf_dict.keys()):
-                new_name = f"{tile_name}_buf{i}"
-                buf_name_dict[name] = new_name
-                ele_type, shape = buf_dict[name]
-                str_list = list(map(str, shape))
-                str_list.append(ele_type)
-                buf_type = f"memref<{'x'.join(map(str, str_list))}>"
-                code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
-            buf_name_dicts.append(buf_name_dict)
-    # update module and args
-    for kernel_name in kernel_index_ranges.keys():
-        inputs = kernel_inputs[kernel_name]
-        outputs = kernel_outputs[kernel_name]
-        func_arg_sizes = kernel_func_arg_sizes[kernel_name]
-        for arg_id, (ele_type, orig_shape) in enumerate(inputs):
-            orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
-            # assume all functions of the same kernel have the same input args
-            shape = func_arg_sizes[0][arg_id]
-            ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
-            inputs[arg_id] = (ele_type, orig_ele_type, shape, orig_shape)
-        for i, (ele_type, orig_shape) in enumerate(outputs):
-            arg_id = len(inputs) + i
-            orig_ele_type = f"memref<{'x'.join(map(str, orig_shape))}x{ele_type}>"
-            # assume all functions of the same kernel have the same input args
-            shape = func_arg_sizes[0][arg_id]
-            ele_type = f"memref<{'x'.join(map(str, shape))}x{ele_type}>"
-            outputs[i] = (ele_type, orig_ele_type, shape, orig_shape)
-        kernel_inputs[kernel_name] = inputs
-        kernel_outputs[kernel_name] = outputs
-    func_strs = list(map(str, funcs))
-    # update buffers
-    for fid, func_str in enumerate(func_strs):
-        buf_name_dict = buf_name_dicts[fid]
-        # remove memref.alloc
+
+    # Create shim and memory tiles
+    # mlir-aie/mlir_tutorials/tutorial-4/flow
+    # | Bundle | Channels (In) | Channels (Out) |
+    # |-------|---|---|
+    # | DMA   | 2 | 2 |
+    # | Core  | 2 | 2 |
+    # | West  | 4 | 4 |
+    # | East  | 4 | 4 |
+    # | North | 4 | 6 |
+    # | South | 6 | 4 |
+    # | FIFO  | 2 | 2 |
+    # | Trace | 1 | 0 |
+    for shim_id in range(shim_tile_size):
+        code += format_str(f"%tile_shim{shim_id} = aie.tile({shim_id}, 0)")
+    for mem_id in range(mem_tile_size):
+        code += format_str(f"%tile_mem{mem_id} = aie.tile({mem_id}, 1)")
+
+    # Get top function and all other functions
+    top_func, all_funcs = get_public_funcs(mod)
+
+    # Track vertical position for tile placement
+    y_offset = 2
+
+    # Create compute tiles and store kernel info
+    max_ids = (0, y_offset)
+    for funcs in func_groups.values():
+        for func in funcs:
+            func_name = func.attributes["sym_name"].value
+            ids = extract_numbers(func_name)
+            # TODO: Multi-function mapping scheme
+            if len(ids) == 1:
+                ids = (0, ids[0])
+            elif len(ids) == 3:
+                ids = (ids[0] * mapping[-2] + ids[1], ids[2])
+            ids = (max_ids[0] + ids[-2], max_ids[1] + ids[-1])
+            code += format_str(
+                f"%tile_comp_{func_name} = aie.tile({ids[-2]}, {ids[-1]})"
+            )
+            tmp_ids = (0, max(ids[1] + 1, max_ids[1]))
+        max_ids = tmp_ids
+
+    # Create buffers and process function strings for each kernel
+    func_strs = []
+    for func in all_funcs:
+        func_name = func.attributes["sym_name"].value
+        tile_name = f"%tile_comp_{func_name}"
+        buf_dict = kernel_buf_dicts[func_name]
+        buf_name_dict = {}
+        for i, name in enumerate(buf_dict.keys()):
+            new_name = f"{tile_name}_buf{i}"
+            buf_name_dict[name] = new_name
+            ele_type, shape = buf_dict[name]
+            str_list = list(map(str, shape))
+            str_list.append(ele_type)
+            buf_type = f"memref<{'x'.join(str_list)}>"
+            code += format_str(f"{new_name} = aie.buffer({tile_name}) : {buf_type}")
+
+        # Remove memref.alloc
         pattern_alloc = re.compile(r"^.*memref\.alloc.*\n?", re.MULTILINE)
-        func_str = re.sub(pattern_alloc, "", func_str)
-        # replace new buffer name
+        func_str = re.sub(pattern_alloc, "", str(func))
+
+        # Replace new buffer name
         pattern_boundary = r"(?<![\w.]){old}(?![\w.])"
         for name, new_name in buf_name_dict.items():
             escaped_name = re.escape(name)
             pattern = pattern_boundary.format(old=escaped_name)
             func_str = re.sub(pattern, new_name, func_str)
-        func_strs[fid] = func_str
-    # create input object fifos
-    # connect each argument to a separate mem tile
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        inputs = kernel_inputs[kernel_name]
-        outputs = kernel_outputs[kernel_name]
-        func_arg_sizes = kernel_func_arg_sizes[kernel_name]
-        mapping = kernel_mappings[kernel_name]
-        dist_allocs = kernel_dist_allocs[kernel_name]
-        for arg_id, (in_type, orig_in_type, shape, orig_shape) in enumerate(inputs):
-            if dist_allocs[arg_id]:
-                # depth=2 means double buffer
-                code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
-                )
-                for fid in range(start, end):
-                    func_name = funcs[fid].attributes["sym_name"].value
+
+        func_strs.append(func_str)
+
+    # Create object FIFOs for each kernel
+    tile2fifo = {}
+    for io, arg_lst in (("in", inputs), ("out", outputs)):
+        for func_name, sub_func_lst in arg_lst.items():
+            if func_name == "_global":
+                continue
+            for idx, dtensor in enumerate(sub_func_lst["_global"]):
+                mapping = dtensor.mapping
+                spec = dtensor.layout
+                placement = spec.get_placement(mapping)
+                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+                # shim to mem tile
+                if io == "in":
                     code += format_str(
-                        f"aie.objectfifo @in_{func_name}_arg{arg_id}(%tile_mem{arg_id}, {{%tile_comp_{func_name}}}, 2 : i32) : !aie.objectfifo<{in_type}>"
+                        f"aie.objectfifo @in_shim_{dtensor.name}(%tile_shim{idx % shim_tile_size}, {{%tile_mem{idx % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
-                in_mem_str = ", ".join(
-                    [
-                        f"@in_{funcs[fid].attributes["sym_name"].value}_arg{arg_id}"
-                        for fid in range(start, end)
-                    ]
-                )
-                pe_size = end - start
-                shape_prod = np.prod(shape)
-                in_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
-                # (src_offsets, dst_offsets)
-                code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [{in_mem_str}]([] {in_mem_stride})"
-                )
-            else:
-                code += format_str(
-                    f"aie.objectfifo @in_sh_{kernel_name}_arg{arg_id}(%tile_shim, {{%tile_mem{arg_id}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
-                )
-                in_tile_str = ", ".join(
-                    [
-                        f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
-                        for fid in range(start, end)
-                    ]
-                )
-                code += format_str(
-                    f"aie.objectfifo @in_{kernel_name}_arg{arg_id}(%tile_mem{arg_id}, {{{in_tile_str}}}, 2 : i32) : !aie.objectfifo<{orig_in_type}>"
-                )
-                code += format_str(
-                    f"aie.objectfifo.link [@in_sh_{kernel_name}_arg{arg_id}] -> [@in_{kernel_name}_arg{arg_id}]([] [])"
-                )
-        kernel_dist_allocs[kernel_name] = dist_allocs
-    # create output object fifos
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        dist_allocs = kernel_dist_allocs[kernel_name]
-        inputs = kernel_inputs[kernel_name]
-        outputs = kernel_outputs[kernel_name]
-        mapping = kernel_mappings[kernel_name]
-        for i, (out_type, orig_out_type, out_shape, orig_out_shape) in enumerate(
-            outputs
-        ):
-            arg_id = len(inputs) + i
-            if dist_allocs[arg_id]:
-                # output uses tile_mem0
-                for fid in range(start, end):
-                    func_name = funcs[fid].attributes["sym_name"].value
+                else:
                     code += format_str(
-                        f"aie.objectfifo @out_{func_name}(%tile_comp_{func_name}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{out_type}>"
+                        f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
                     )
-                code += format_str(
-                    f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-                )
-                out_mem_str = ", ".join(
-                    [
-                        f"@out_{funcs[fid].attributes["sym_name"].value}"
-                        for fid in range(start, end)
-                    ]
-                )
-                pe_size = end - start
-                shape_prod = np.prod(out_shape)
-                out_mem_stride = list(range(0, shape_prod * pe_size, shape_prod))
-                code += format_str(
-                    f"aie.objectfifo.link [{out_mem_str}] -> [@out_sh_{kernel_name}]({out_mem_stride} [])"
-                )
-            else:
-                out_tile_str = ", ".join(
-                    [
-                        f"%tile_comp_{funcs[fid].attributes["sym_name"].value}"
-                        for fid in range(start, end)
-                    ]
-                )
-                code += format_str(
-                    f"aie.objectfifo @out_sh_{kernel_name}(%tile_mem0, {{%tile_shim}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-                )
-                # TODO: can't specify multi-input of a fifo
-                code += format_str(
-                    f"aie.objectfifo @out_{kernel_name}({{{out_tile_str}}}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{orig_out_type}>"
-                )
-                code += format_str(
-                    f"aie.objectfifo.link [@out_{kernel_name}] -> [@out_sh_{kernel_name}]([] [])"
-                )
-    # create other object fifos from top_func
-    stream_in_out = get_stream_in_out(stream_info)
+                # mem to comp tile
+                mem_strs = []
+                mem_stride = [0]
+                for tensor_tile, target_pe_tiles in placement.items():
+                    arg_name = dtensor.name + "_" + tensor_tile
+                    tile_strs = []
+                    mem_strs.append(f"@{io}_mem_{arg_name}")
+                    for tile in target_pe_tiles:
+                        if dtensor not in sub_func_lst[tile]:
+                            # this arg is not used in this kernel
+                            continue
+                        idx_str = "_".join(map(str, tile))
+                        core_name = f"%tile_comp_{func_name}_{idx_str}"
+                        if core_name not in tile2fifo:
+                            tile2fifo[core_name] = [mem_strs[-1]]
+                        else:
+                            tile2fifo[core_name].append(mem_strs[-1])
+                        tile_strs.append(core_name)
+                    tile_str = ", ".join(tile_strs)
+                    local_memref_type = get_memref_type_str(
+                        dtensor.dtype, dtensor.get_local_shape()
+                    )
+                    mem_stride.append(
+                        mem_stride[-1] + np.prod(dtensor.get_local_shape())
+                    )
+                    if io == "in":
+                        code += format_str(
+                            f"aie.objectfifo {mem_strs[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        )
+                    else:
+                        code += format_str(
+                            f"aie.objectfifo {mem_strs[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                        )
+                # important to sort to guarantee result correctness
+                # output should have spec of SN SN-1 ... S1 S0
+                mem_str = ", ".join(sorted(mem_strs))
+                mem_stride = mem_stride[:-1]
+                if io == "in":
+                    code += format_str(
+                        f"aie.objectfifo.link [@in_shim_{dtensor.name}] -> [{mem_str}]([] {mem_stride})"
+                    )
+                else:
+                    code += format_str(
+                        f"aie.objectfifo.link [{mem_str}] -> [@out_shim_{dtensor.name}]({mem_stride} [])"
+                    )
+
+    # Create stream object FIFOs from top_func
     stream_ele_types = {}
+    stream_in_out = get_stream_in_out(stream_info)
     for op in top_func.entry_block.operations:
         if isinstance(op, allo_d.StreamConstructOp):
             stream_name = op.attributes["name"].value
@@ -717,477 +810,214 @@ def codegen_aie_mlir(
                 if not type_str.startswith("memref"):
                     type_str = f"memref<{type_str}>"
                 depth = int(depth_str.strip())
+                # Create the stream object FIFO between the two kernels
                 code += format_str(
                     f"aie.objectfifo @{stream_name}(%tile_comp_{in_out[0]}, {{%tile_comp_{in_out[1]}}}, {depth} : i32) : !aie.objectfifo<{type_str}>"
                 )
                 stream_ele_types[stream_name] = type_str
-    # create core computation
+
+    # Create core computation for each kernel function
+    for func_gid, (func, func_str) in enumerate(zip(all_funcs, func_strs)):
+        func_name_w_id = func.attributes["sym_name"].value
+        func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+        func_id = tuple(map(int, func_name_w_id.split(func_name + "_")[-1].split("_")))
+        core_name = f"tile_comp_{func_name_w_id}"
+        streams = stream_info[func_name_w_id]
+
+        # Generate core computation
+        code += format_str(
+            f"%core_0_{func_gid + 2}_{core_name} = aie.core(%{core_name}) {{"
+        )
+        with format_code(indent=6):
+            code += format_str("%global_c0 = arith.constant 0 : index")
+            code += format_str("%global_c1 = arith.constant 1 : index")
+            code += format_str(
+                "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
+            )
+            code += format_str(
+                "scf.for %arg0 = %global_c0 to %c9223372036854775807 step %global_c1 {"
+            )
+            with format_code(indent=8):
+                # Helper function to process FIFOs (acquire or release)
+                def process_fifos(is_input, is_acquire):
+                    nonlocal code, func_str
+                    tensors = (
+                        inputs[func_name][func_id]
+                        if is_input
+                        else outputs[func_name][func_id]
+                    )
+                    operation = "Consume" if is_input else "Produce"
+                    arg_offset = 0 if is_input else len(inputs[func_name][func_id])
+
+                    for arg_id, tensor in enumerate(tensors):
+                        # Calculate fifo index and get fifo name
+                        fifo_idx = (
+                            arg_id
+                            if is_input
+                            else arg_id + len(inputs[func_name][func_id])
+                        )
+                        fifo_name = tile2fifo[f"%{core_name}"][fifo_idx]
+
+                        if is_acquire:
+                            # Acquire FIFO and access subview
+                            dtype = get_memref_type_str(
+                                tensor.dtype, tensor.get_local_shape()
+                            )
+                            var_prefix = "fifo" if is_input else "fifo_out"
+                            local_prefix = "local" if is_input else "local_out"
+
+                            code += format_str(
+                                f"%{var_prefix}{arg_id} = aie.objectfifo.acquire {fifo_name}({operation}, 1) : !aie.objectfifosubview<{dtype}>"
+                            )
+                            code += format_str(
+                                f"%{local_prefix}{arg_id} = aie.objectfifo.subview.access %{var_prefix}{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
+                            )
+
+                            # Replace argument in function string
+                            arg_name = f"%arg{arg_id + arg_offset}"
+                            local_name = f"%{local_prefix}{arg_id}"
+                            func_str = func_str.replace(arg_name, local_name)
+                        else:
+                            # Release FIFO
+                            code += format_str(
+                                f"aie.objectfifo.release {fifo_name}({operation}, 1)"
+                            )
+
+                # Acquire input and output FIFOs
+                process_fifos(is_input=True, is_acquire=True)
+                process_fifos(is_input=False, is_acquire=True)
+
+                # Fix call operations
+                while " call @" in func_str:
+                    func_str = func_str.replace(" call @", " func.call @")
+
+                # Process stream operations
+                stream_code, func_str = process_stream_operations(
+                    func_str,
+                    streams,
+                    len(inputs[func_name][func_id])
+                    + len(outputs[func_name][func_id])
+                    + 1,
+                    stream_ele_types,
+                )
+                code += stream_code
+
+                # Release input and output FIFOs
+                process_fifos(is_input=True, is_acquire=False)
+                process_fifos(is_input=False, is_acquire=False)
+
+            code += format_str("}")
+            code += format_str("aie.end")
+
+        # Add linking information if needed
+        code += "    }"
+        if len(external_kernels.get(func_name_w_id, [])) > 0:
+            code += ' {link_with = "external.o"}\n'
+        else:
+            code += "\n"
+
+    # Create runtime sequence with all inputs and outputs
     in_args = []
     out_args = []
-    arg_index = 0
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        mapping = kernel_mappings[kernel_name]
-        inputs = kernel_inputs[kernel_name]
-        outputs = kernel_outputs[kernel_name]
-        dist_allocs = kernel_dist_allocs[kernel_name]
-        for fid in range(start, end):
-            func_str = func_strs[fid]
-            func_name = funcs[fid].attributes["sym_name"].value
-            streams = stream_info[func_name]
-            code += format_str(
-                f"%core_0_{fid + 2} = aie.core(%tile_comp_{func_name}) {{"
-            )
-            with format_code(indent=6):
-                code += format_str("%global_c0 = arith.constant 0 : index")
-                code += format_str("%global_c1 = arith.constant 1 : index")
-                code += format_str(
-                    "%c9223372036854775807 = arith.constant 9223372036854775807 : index"
-                )
-                code += format_str(
-                    "scf.for %arg0 = %global_c0 to %c9223372036854775807 step %global_c1 {"
-                )
-                with format_code(indent=8):
-                    # Acquire input fifos
-                    for arg_id, (in_type, orig_in_type, _, _) in enumerate(inputs):
-                        dtype = in_type if dist_allocs[arg_id] else orig_in_type
-                        code += format_str(
-                            f"%fifo{arg_id} = aie.objectfifo.acquire @in_{func_name if dist_allocs[arg_id] else kernel_name}_arg{arg_id}(Consume, 1) : !aie.objectfifosubview<{dtype}>"
-                        )
-                        code += format_str(
-                            f"%local{arg_id} = aie.objectfifo.subview.access %fifo{arg_id}[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
-                        )
-                        func_str = func_str.replace(f"%arg{arg_id}", f"%local{arg_id}")
-                    # Acquire output fifos
-                    for i, (out_type, orig_out_type, _, _) in enumerate(outputs):
-                        arg_id = len(inputs) + i
-                        dtype = out_type if dist_allocs[arg_id] else orig_out_type
-                        code += format_str(
-                            f"%fifo_out = aie.objectfifo.acquire @out_{func_name if dist_allocs[arg_id] else kernel_name}(Produce, 1) : !aie.objectfifosubview<{dtype}>"
-                        )
-                        code += format_str(
-                            f"%local_out = aie.objectfifo.subview.access %fifo_out[0] : !aie.objectfifosubview<{dtype}> -> {dtype}"
-                        )
-                        func_str = func_str.replace(f"%arg{arg_id}", "%local_out")
-                    while " call @" in func_str:
-                        func_str = func_str.replace(" call @", " func.call @")
-                    # Main computation
-                    stream_code, func_str = process_stream_operations(
-                        func_str, streams, inputs, outputs, stream_ele_types
-                    )
-                    code += stream_code
-                    # Release input fifos
-                    for arg_id in range(len(inputs)):
-                        code += format_str(
-                            f"aie.objectfifo.release @in_{func_name if dist_allocs[arg_id] else kernel_name}_arg{arg_id}(Consume, 1)"
-                        )
-                    # Release output fifos
-                    for i in range(len(outputs)):
-                        arg_id = len(inputs) + i
-                        code += format_str(
-                            f"aie.objectfifo.release @out_{func_name if dist_allocs[arg_id] else kernel_name}(Produce, 1)"
-                        )
-                code += format_str("}")
-                code += format_str("aie.end")
-            code += "    }"
-            if len(external_kernels[f"{func_name}"]) > 0:
-                code += ' {link_with = "external.o"}\n'
-            else:
-                code += "\n"
-        for _, orig_in_type, _, _ in inputs:
-            in_args.append(f"%arg{arg_index}: {orig_in_type}")
-            arg_index += 1
-        for _, orig_out_type, _, _ in outputs:
-            out_args.append(f"%arg{arg_index}: {orig_out_type}")
-            arg_index += 1
+    global_idx = 0
+    for io_lst, io_args, io in ((inputs, in_args, "in"), (outputs, out_args, "out")):
+        for i, dtensor in enumerate(
+            io_lst["_global"], start=global_idx if io == "out" else 0
+        ):
+            global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+            io_args.append(f"%arg{i}: {global_memref_type}")
+            if io == "in":
+                global_idx += 1
+
+    # Create dma transfer from off-chip mem to shim tile
     code += format_str(
-        f"aiex.runtime_sequence({",".join(in_args)}, {",".join(out_args)}) {{"
+        f"aiex.runtime_sequence({', '.join(in_args)}, {', '.join(out_args)}) {{"
     )
+
     with format_code(indent=6):
-        arg_index = 0
-        for kernel_name, (start, end) in kernel_index_ranges.items():
-            inputs = kernel_inputs[kernel_name]
-            outputs = kernel_outputs[kernel_name]
-            dist_allocs = kernel_dist_allocs[kernel_name]
-            mapping = kernel_mappings[kernel_name]
-            for arg_id, (_, orig_in_type, _, orig_shape) in enumerate(inputs):
-                # (x, y, memref[offset][size][stride])
-                # issue_token: MM2S-false, S2MM-true
-                if len(orig_shape) == 1:
-                    size_n_stride = f"[1, 1, 1, {orig_shape[0]}][0, 0, 0, 1]"
-                elif len(mapping) == 2 and len(orig_shape) == 2 and dist_allocs[arg_id]:
-                    # now only support 2D mapping and 2D tensor
-                    size_n_stride = f"[{mapping[0]}, {mapping[1]}, {orig_shape[0] // mapping[0]}, {orig_shape[1] // mapping[1]}][{orig_shape[0] // mapping[0] * orig_shape[1]}, {orig_shape[1] // mapping[1]}, {orig_shape[1]}, 1]"
+        # Helper function to process DMA operations for inputs and outputs
+        def process_dma_operations(tensor_lst, is_input):
+            nonlocal code
+            prefix = "in" if is_input else "out"
+            start_idx = 0 if is_input else global_idx
+            # Calculate access pattern
+            for idx, dtensor in enumerate(tensor_lst, start=start_idx):
+                name = dtensor.name
+                size, stride = calculate_tensor_access(
+                    dtensor.shape, dtensor.layout.placement, dtensor.mapping
+                )
+                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
+                # Build DMA attributes - inputs need issue_token, outputs don't
+                if is_input:
+                    dma_attrs = f"id = {idx} : i64, issue_token = true, metadata = @{prefix}_shim_{name}"
                 else:
-                    size_n_stride = f"[1, 1, {orig_shape[0]}, {orig_shape[1]}][0, 0, {orig_shape[1]}, 1]"
+                    dma_attrs = f"id = {idx} : i64, metadata = @{prefix}_shim_{name}"
+                # Create DMA operation
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{size_n_stride}) {{id = {arg_index + 1} : i64, issue_token = true, metadata = @in_sh_{kernel_name}_arg{arg_id}}} : {orig_in_type}"
+                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{idx}[0, 0, 0, 0]{size}{stride}) {{{dma_attrs}}} : {global_memref_type}"
                 )
-                arg_index += 1
-            for i, (_, orig_out_type, _, orig_out_shape) in enumerate(outputs):
-                arg_id = len(inputs) + i
-                if len(orig_out_shape) == 1:
-                    out_size_n_stride = f"[1, 1, 1, {orig_out_shape[0]}][0, 0, 0, 1]"
-                elif (
-                    len(mapping) == 2
-                    and len(orig_out_shape) == 2
-                    and dist_allocs[arg_id]
-                ):
-                    # now only support 2D mapping and 2D tensor
-                    out_size_n_stride = f"[{mapping[0]}, {mapping[1]}, {orig_out_shape[0] // mapping[0]}, {orig_out_shape[1] // mapping[1]}][{orig_out_shape[0] // mapping[0] * orig_out_shape[1]}, {orig_out_shape[1] // mapping[1]}, {orig_out_shape[1]}, 1]"
-                else:
-                    out_size_n_stride = f"[1, 1, {orig_out_shape[0]}, {orig_out_shape[1]}][0, 0, {orig_out_shape[1]}, 1]"
+
+        # Process DMA operations for inputs and outputs
+        process_dma_operations(inputs["_global"], is_input=True)
+        process_dma_operations(outputs["_global"], is_input=False)
+
+        # Helper function for DMA wait operations
+        def process_dma_wait(tensor_lst, is_input):
+            nonlocal code
+            prefix = "in" if is_input else "out"
+            for dtensor in tensor_lst:
                 code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{arg_index}[0, 0, 0, 0]{out_size_n_stride}) {{id = 0 : i64, metadata = @out_sh_{kernel_name}}} : {orig_out_type}"
+                    f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}}}"
                 )
-                arg_index += 1
-            for arg_id in range(len(inputs)):
-                code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @in_sh_{kernel_name}_arg{arg_id}}}"
-                )
-            for i in range(len(outputs)):
-                arg_id = len(inputs) + i
-                code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @out_sh_{kernel_name}}}"
-                )
+
+        # Wait for all DMAs to complete
+        process_dma_wait(inputs["_global"], is_input=True)
+        process_dma_wait(outputs["_global"], is_input=False)
+
     code += format_str("}")
     code += format_str("}", indent=2)
     code += "}"
     return code
 
 
-def get_kernel_index_ranges(mod, kernel_mappings):
-    """
-    Get the index range of each kernel in the module
-
-    Parameters
-    ----------
-    mod: allo._mlir.ir.Module
-        The MLIR module built by allo.
-
-    kernel_mappings: Dict[str, List[int]]
-        The mapping of each kernel in the module.
-        The key is the name of the kernel, and the value is a list of integers representing the mapping of the kernel.
-
-    Returns:
-    -------
-    kernel_index_ranges: Dict[str, Tuple[int, int]]
-        The index range of each kernel in the module.
-        The key is the name of the kernel, and the value is a tuple of integers representing the start and end index of the kernel.
-    """
-    kernel_names = list(kernel_mappings.keys())
-    kernel_index_ranges = {}
-    start = end = 0
-    k_id = 0
-    _, funcs = get_public_funcs(mod)
-    for func in funcs:
-        if isinstance(func, func_d.FuncOp):
-            while not func.attributes["sym_name"].value.startswith(kernel_names[k_id]):
-                kernel_index_ranges[kernel_names[k_id]] = (start, end)
-                k_id += 1
-                start = end
-            end += 1
-    if k_id < len(kernel_names):
-        kernel_index_ranges[kernel_names[k_id]] = (start, end)
-        k_id += 1
-    while k_id < len(kernel_names):
-        kernel_index_ranges[kernel_names[k_id]] = (end, end)
-        k_id += 1
-    return kernel_index_ranges
-
-
-def check_usage_intersection(func_arg_sizes, func_arg_lower_bounds, orig_shapes):
-    """
-    Check if there is a non-empty intersection among all functions' usage regions for each parameter.
-
-    Parameters:
-    ----------
-    func_arg_sizes: list
-        Each element represents a function's usage sizes for all arguments.
-        For example, [[8, 16], [16, 8], [8, 8]] means the function has three parameters,
-        each being a 2D tensor with usage sizes 8x16, 16x8, and 8x8 respectively.
-    func_arg_lower_bounds: list
-        Has the same structure as func_arg_sizes, representing the lower bounds
-        of the usage regions for each parameter for each function.
-    orig_shapes: list
-        Each element represents the original shape of the corresponding parameter,
-        e.g., [[16, 16], [16, 16], [16, 16]]. It is assumed that all provided usage regions
-        are within the bounds of the original shape.
-
-    Returns:
-    -------
-    dist_allocs: list
-        dist_allocs define the allocation strategy for each argument. Currently, there are only two options: True or False.
-        - If True: The memory tile divides the memory of the argument and distributes it among all compute tiles using
-        `aie.objectfifo.link`. This is only feasible if the total memory consumed by all compute tiles does not exceed
-        the original memory allocated to the argument.
-        Example: If there are 3 compute tiles, each consuming 1/3 of matrix A, this strategy can be applied.
-        - If False: The memory tile assigns the entire memory of the argument to each compute tile.
-    """
-    num_funcs = len(func_arg_sizes)
-    num_params = len(orig_shapes)
-    dist_allocs = []
-    for param in range(num_params):
-        boxes = []
-        has_intersection = False
-        dims = len(orig_shapes[param])
-        for f in range(num_funcs):
-            box = []
-            for d in range(dims):
-                lower = func_arg_lower_bounds[f][param][d]
-                upper = lower + func_arg_sizes[f][param][d]
-                box.append((lower, upper))
-            for b in boxes:
-                if all(
-                    max(b[d][0], box[d][0]) < min(b[d][1], box[d][1])
-                    for d in range(dims)
-                ):
-                    has_intersection = True
-                    break
-            if has_intersection:
-                break
-            boxes.append(box)
-        dist_allocs.append(not has_intersection)
-    return dist_allocs
-
-
-def reindex_tensor_access(mod, kernel_index_ranges, kernel_inputs, kernel_outputs):
-    ctx = mod.context
-    _, funcs = get_public_funcs(mod)
-    # kernel->func -> arg -> dim
-    kernel_func_arg_lower_bounds = {}
-    kernel_func_arg_sizes = {}
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        func_arg_lower_bounds = []
-        func_arg_sizes = []
-        for fid in range(start, end):
-            func = funcs[fid]
-            entry_block = func.regions[0].blocks[0]
-            args = entry_block.arguments
-            arg_types = args.types
-            # TODO: might need some specialization for scalar input arg
-            lower_bounds = [
-                [float("inf") for _ in range(len(arg_type.shape))]
-                for arg_type in arg_types
-                if "!allo.stream" not in str(arg_type)
-            ]
-            sizes = [
-                [0 for _ in range(len(arg_type.shape))]
-                for arg_type in arg_types
-                if "!allo.stream" not in str(arg_type)
-            ]
-            # Support nested block traversal
-            ops_stack = []
-            for block in func.regions[0].blocks:
-                ops_stack.extend(block.operations)
-            while ops_stack:
-                op = ops_stack.pop()
-                if op.operation.name in {
-                    "tensor.extract_slice",
-                    "tensor.insert_slice",
-                    "memref.subview",
-                }:
-                    operand_idx = 1 if op.operation.name == "tensor.insert_slice" else 0
-                    if op.operands[operand_idx] not in args:
-                        continue
-                    arg_id = list(args).index(op.operands[operand_idx])
-                    static_offsets = op.attributes["static_offsets"]
-                    static_sizes = op.attributes["static_sizes"]
-                    for i, (offset, size) in enumerate(
-                        zip(static_offsets, static_sizes)
-                    ):
-                        lower_bounds[arg_id][i] = min(lower_bounds[arg_id][i], offset)
-                        sizes[arg_id][i] = max(sizes[arg_id][i], size)
-                    for region in op.regions:
-                        for block in region.blocks:
-                            ops_stack.extend(block.operations)
-            for i, lower_bound in enumerate(lower_bounds):
-                # Arguments never used with slice
-                if lower_bound[0] == float("inf"):
-                    # If ever used, assume using entire tensor
-                    if len(list(args[i].uses)) > 0:
-                        lower_bounds[i] = [0] * len(lower_bound)
-                        sizes[i] = args[i].type.shape
-                    else:
-                        lower_bounds[i] = [0] * len(lower_bound)
-                        sizes[i] = [0] * len(lower_bound)
-
-            func_arg_lower_bounds.append(lower_bounds)
-            func_arg_sizes.append(sizes)
-        kernel_func_arg_lower_bounds[kernel_name] = func_arg_lower_bounds
-        kernel_func_arg_sizes[kernel_name] = func_arg_sizes
-
-    kernel_dist_allocs = {}
-    for kernel_name in kernel_index_ranges.keys():
-        inputs_outputs = kernel_inputs[kernel_name] + kernel_outputs[kernel_name]
-        orig_shapes = [arg[-1] for arg in inputs_outputs]
-        kernel_dist_allocs[kernel_name] = check_usage_intersection(
-            func_arg_sizes, func_arg_lower_bounds, orig_shapes
-        )
-
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        func_arg_lower_bounds = kernel_func_arg_lower_bounds[kernel_name]
-        func_arg_sizes = kernel_func_arg_sizes[kernel_name]
-        dist_allocs = kernel_dist_allocs[kernel_name]
-        for fid in range(start, end):
-            func = funcs[fid]
-            entry_block = func.regions[0].blocks[0]
-            args = entry_block.arguments
-            lower_bounds = func_arg_lower_bounds[fid - start]
-            sizes = func_arg_sizes[fid - start]
-            # Support nested block traversal
-            ops_stack = []
-            for block in func.regions[0].blocks:
-                ops_stack.extend(block.operations)
-            while ops_stack:
-                op = ops_stack.pop()
-                if op.operation.name in {
-                    "tensor.extract_slice",
-                    "tensor.insert_slice",
-                    "memref.subview",
-                }:
-                    operand_idx = 1 if op.operation.name == "tensor.insert_slice" else 0
-                    if op.operands[operand_idx] not in args:
-                        continue
-                    arg_id = list(args).index(op.operands[operand_idx])
-                    static_offsets = op.attributes["static_offsets"]
-                    new_offsets = []
-                    for i, offset in enumerate(static_offsets):
-                        new_offset = (
-                            offset - lower_bounds[arg_id][i]
-                            if dist_allocs[arg_id]
-                            else offset
-                        )
-                        new_offset_attr = IntegerAttr.get(
-                            IntegerType.get_signless(64, ctx), new_offset
-                        )
-                        new_offsets.append(new_offset_attr)
-                    op.attributes["static_offsets"] = DenseI64ArrayAttr.get(
-                        new_offsets, ctx
-                    )
-                    for region in op.regions:
-                        for block in region.blocks:
-                            ops_stack.extend(block.operations)
-    return kernel_func_arg_lower_bounds, kernel_func_arg_sizes, kernel_dist_allocs
-
-
-def update_func_op_arg_types(
-    func_op, inputs, outputs, new_shapes, context, dist_allocs, enable_tensor
-):
-    old_func_type = func_op.function_type
-    old_result_types = old_func_type.value.results
-    new_input_types = []
-    inputs_outputs = inputs + outputs
-    for arg_id, ((ele_type_str, _), shape) in enumerate(
-        zip(inputs_outputs, new_shapes)
-    ):
-        elem_ty = get_element_type_from_str(ele_type_str, context)
-        old_ty = old_func_type.value.inputs[arg_id]
-        memref_ty = (
-            RankedTensorType.get(shape, elem_ty)
-            if enable_tensor
-            else MemRefType.get(shape, elem_ty)
-        )
-        new_input_types.append(memref_ty if dist_allocs[arg_id] else old_ty)
-        # Update subview results memory layout
-        if not enable_tensor and dist_allocs[arg_id]:
-            entry_block = func_op.regions[0].blocks[0]
-            args = entry_block.arguments
-            ops_stack = []
-            for block in func_op.regions[0].blocks:
-                ops_stack.extend(block.operations)
-            while ops_stack:
-                op = ops_stack.pop()
-                if (
-                    op.operation.name == "memref.subview"
-                    and op.operands[0] == args[arg_id]
-                ):
-                    old_result_type = op.results.types[0]
-                    strides = []
-                    times = 1
-                    for size in reversed(shape):
-                        strides.append(times)
-                        times *= size
-                    strides = list(reversed(strides))
-                    layout = StridedLayoutAttr.get(0, strides)
-                    result = MemRefType.get(
-                        old_result_type.shape,
-                        old_result_type.element_type,
-                        layout=layout,
-                    )
-                    subview = memref_d.SubViewOp(
-                        source=op.source,
-                        result=result,
-                        static_offsets=op.static_offsets,
-                        static_sizes=op.static_sizes,
-                        static_strides=op.static_strides,
-                        offsets=[],
-                        sizes=[],
-                        strides=[],
-                        ip=InsertionPoint(op),
-                    )
-                    op.result.replace_all_uses_with(subview.result)
-                    op.erase()
-                else:
-                    for region in op.regions:
-                        for block in region.blocks:
-                            ops_stack.extend(block.operations)
-    # Add remaining stream arguments
-    arg_id = len(inputs_outputs)
-    while arg_id < len(old_func_type.value.inputs):
-        new_input_types.append(old_func_type.value.inputs[arg_id])
-        arg_id += 1
-    new_func_type = FunctionType.get(new_input_types, old_result_types, context)
-    new_type = TypeAttr.get(new_func_type, context)
-    func_op.operation.attributes["function_type"] = new_type
-    entry_block = func_op.entry_block
-    for arg_id, block_arg in enumerate(entry_block.arguments):
-        if arg_id < len(new_input_types):
-            block_arg.set_type(new_input_types[arg_id])
-
-
-def lower_tensor_to_memref(mod, enable_tensor):
-    passes = (
-        [
-            # "linalg-generalize-named-ops",
-            # "linalg-fuse-elementwise-ops",
-            "one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map}",
-            "func.func(convert-linalg-to-affine-loops),lower-affine",
-        ]
-        if enable_tensor
-        else [
-            # "linalg-generalize-named-ops",
-            # "linalg-fuse-elementwise-ops",
-            "func.func(convert-linalg-to-affine-loops),lower-affine",
-        ]
-    )
+def lower_tensor_to_memref(mod):
+    passes = [
+        # "linalg-generalize-named-ops",
+        # "linalg-fuse-elementwise-ops",
+        "func.func(convert-linalg-to-affine-loops),lower-affine",
+    ]
     pipeline = f'builtin.module({",".join(passes)})'
     with mod.context:
         mlir_pass_manager.parse(pipeline).run(mod.operation)
 
 
-def record_local_buffer(mod, kernel_index_ranges):
-    kernel_func_buf_dicts = {}
+def record_local_buffer(mod):
+    kernel_buf_dicts = {}
     _, funcs = get_public_funcs(mod)
-    for kernel_name, (start, end) in kernel_index_ranges.items():
-        func_buf_dicts = []
-        for fid in range(start, end):
-            func = funcs[fid]
-            buf_dict = {}
-            ops_stack = []
-            for block in func.regions[0].blocks:
-                ops_stack.extend(block.operations)
-            while ops_stack:
-                op = ops_stack.pop()
-                if op.operation.name == "memref.alloc":
-                    name = op.result.get_name()
-                    dtype, shape = get_dtype_and_shape_from_type(op.result.type)
-                    buf_dict[name] = (dtype, shape)
-                for region in op.regions:
-                    for block in region.blocks:
-                        ops_stack.extend(block.operations)
-            func_buf_dicts.append(buf_dict)
-        kernel_func_buf_dicts[kernel_name] = func_buf_dicts
-    return kernel_func_buf_dicts
+
+    def traverse_operations(operations, buf_dict):
+        for op in operations:
+            if op.operation.name == "memref.alloc":
+                name = op.result.get_name()
+                dtype, shape = get_dtype_and_shape_from_type(op.result.type)
+                buf_dict[name] = (dtype, shape)
+
+            # Recursively traverse into all regions and blocks of the operation
+            for region in op.regions:
+                for block in region.blocks:
+                    traverse_operations(block.operations, buf_dict)
+
+    for func in funcs:
+        func_name = func.attributes["sym_name"].value
+        buf_dict = {}
+
+        # Start traversal from the top-level operations of the function
+        for block in func.regions[0].blocks:
+            traverse_operations(block.operations, buf_dict)
+
+        kernel_buf_dicts[func_name] = buf_dict
+
+    return kernel_buf_dicts
 
 
 class AIEModule:
@@ -1195,80 +1025,77 @@ class AIEModule:
         self,
         module,
         top_func_name,
+        func_args,
         project,
-        kernel_mappings,
-        enable_tensor,
         stream_info,
     ):
         self.module = module
         self.top_func_name = top_func_name
         self.project = project
         self.module = module
-        self.kernel_mappings = kernel_mappings
-        self.enable_tensor = enable_tensor
+        self.func_args = func_args
         self.stream_info = stream_info
-        self.kernel_funcs = {}
-        self.kernel_inputs = {}
-        self.kernel_outputs = {}
 
     def build(self):
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
-        self.kernel_index_ranges = get_kernel_index_ranges(
-            self.module, self.kernel_mappings
-        )
-        for i, (kernel_name, (start, _)) in enumerate(self.kernel_index_ranges.items()):
-            kernel_func = self.module.body.operations[start]
-            self.kernel_funcs[kernel_name] = kernel_func
-            # Assume the last arguent of all kernels is the output
-            inputs, _ = get_func_inputs_outputs(kernel_func)
-            if i < len(self.kernel_index_ranges) - 1:
-                self.kernel_inputs[kernel_name] = inputs
-                self.kernel_outputs[kernel_name] = []
-            else:
-                self.kernel_inputs[kernel_name] = inputs[:-1]
-                self.kernel_outputs[kernel_name] = [inputs[-1]]
-        # Assume all functions of the same kernel have the same input and output arguments
-        _, kernel_func_arg_sizes, kernel_dist_allocs = reindex_tensor_access(
-            self.module,
-            self.kernel_index_ranges,
-            self.kernel_inputs,
-            self.kernel_outputs,
-        )
-        with self.module.context as ctx, Location.unknown():
-            for kernel_name, (start, end) in self.kernel_index_ranges.items():
-                func_arg_sizes = kernel_func_arg_sizes[kernel_name]
-                for fid in range(start, end):
-                    func = self.module.body.operations[fid]
-                    dist_allocs = kernel_dist_allocs[kernel_name]
-                    shapes = func_arg_sizes[fid - start]
-                    update_func_op_arg_types(
-                        func,
-                        self.kernel_inputs[kernel_name],
-                        self.kernel_outputs[kernel_name],
-                        shapes,
-                        ctx,
-                        dist_allocs,
-                        enable_tensor=self.enable_tensor,
-                    )
+        os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         external_kernels = inject_aie_kernels(self.module)
-        lower_tensor_to_memref(self.module, self.enable_tensor)
-        kernel_func_buf_dicts = record_local_buffer(
-            self.module, self.kernel_index_ranges
-        )
+        with open(
+            os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.module))
+        lower_tensor_to_memref(self.module)
+        kernel_buf_dicts = record_local_buffer(self.module)
+        _, all_funcs = get_public_funcs(self.module)
+        # Create a dictionary to store the kernel functions
+        func_groups = {}
+        for func in all_funcs:
+            func_name_w_id = func.attributes["sym_name"].value
+            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+            if func_name not in func_groups:
+                func_groups[func_name] = []
+            func_groups[func_name].append(func)
+        inputs = {}
+        outputs = {}
+        for func_name, funcs in func_groups.items():
+            inputs[func_name] = {}
+            outputs[func_name] = {}
+            inputs[func_name]["_global"] = []
+            outputs[func_name]["_global"] = []
+            for func in funcs:
+                # Even for functions inside the same group, the in/out arguments may be different
+                func_name_w_id = func.attributes["sym_name"].value
+                func_id = tuple(
+                    map(int, func_name_w_id.split(func_name + "_")[-1].split("_"))
+                )
+                in_idx, out_idx = analyze_read_write_patterns(func)
+                for io_lst, io_idx in ((inputs, in_idx), (outputs, out_idx)):
+                    io_lst[func_name][func_id] = []
+                    for idx in io_idx:
+                        dtensor = self.func_args[func_name_w_id][idx]
+                        if dtensor not in io_lst[func_name]["_global"]:
+                            io_lst[func_name]["_global"].append(dtensor)
+                        io_lst[func_name][func_id].append(dtensor)
+        for io_lst in (inputs, outputs):
+            io_lst["_global"] = []
+            for func_name, sub_func_lst in io_lst.items():
+                if func_name == "_global":
+                    continue
+                for tensor in sub_func_lst["_global"]:
+                    if tensor not in io_lst["_global"]:
+                        io_lst["_global"].append(tensor)
+        self.inputs = inputs
+        self.outputs = outputs
         code = codegen_aie_mlir(
             self.module,
-            self.kernel_mappings,
-            self.kernel_index_ranges,
-            self.kernel_inputs,
-            self.kernel_outputs,
-            kernel_func_arg_sizes,
-            kernel_func_buf_dicts,
-            kernel_dist_allocs,
+            func_groups,
+            inputs,
+            outputs,
+            kernel_buf_dicts,
             external_kernels,
             self.stream_info,
         )
-        os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
         # compile external kernels
@@ -1279,9 +1106,11 @@ class AIEModule:
             ) as f:
                 f.write(kernel_code)
             path = os.path.join(os.path.dirname(__file__), "aie_kernels")
-            cmd = f"cd {self.project} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $(dirname $(which aie-opt))/../include -I {path} -c external.cc -o external.o"
+            cmd = f"cd {self.project} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $(dirname $(which aie-opt))/../include -I $MLIR_AIE_INSTALL_DIR/../aie_kernels/aie2 -c external.cc -o external.o"
             process = subprocess.Popen(cmd, shell=True)
             process.wait()
+            if process.returncode != 0:
+                raise RuntimeError("Failed to compile external kernels.")
         # build mlir-aie
         cmd = f"cd {self.project} && PYTHONPATH=$MLIR_AIE_INSTALL_DIR/python aiecc.py --aie-generate-cdo --aie-generate-npu --no-compile-host --no-xchesscc --no-xbridge --xclbin-name=build/final.xclbin --npu-insts-name=insts.txt top.mlir"
         process = subprocess.Popen(cmd, shell=True)
@@ -1291,7 +1120,7 @@ class AIEModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../harness/aie")
         os.system(f"cp -r {path}/* {self.project}")
-        host_code = codegen_host(self.kernel_inputs, self.kernel_outputs)
+        host_code = codegen_host(inputs["_global"], outputs["_global"])
         with open(os.path.join(self.project, "test.cpp"), "w", encoding="utf-8") as f:
             f.write(host_code)
         cmd = f"cd {self.project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
@@ -1315,7 +1144,7 @@ class AIEModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            list(self.kernel_outputs.values())[-1][0][0],
+            self.outputs["_global"][-1].dtype,
             args[-1].shape,
             f"{self.project}/output.data",
         )

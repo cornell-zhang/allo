@@ -425,6 +425,7 @@ def write_tensor_to_file(tensor, shape, file_path):
 
 
 def read_tensor_from_file(dtype, shape, file_path):
+    dtype = str(dtype)
     if dtype == "bf16":
         # numpy does not support bf16
         dtype = "f32"

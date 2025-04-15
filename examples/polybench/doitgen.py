@@ -20,20 +20,22 @@ def doitgen_np(A, x, sum):
                     sum[p] = sum[p] + A[r, q, s] * x[s, p]
             for p in range(NP):
                 A[r, q, p] = sum[p]
+    return A, x, sum
+
+
+def kernel_doitgen[
+    T: (float32, int32), R: int32, Q: int32, P: int32, S: int32
+](A: "T[R, Q, S]", x: "T[P, S]", sum_: "T[P]"):
+    for r, q in allo.grid(R, Q):
+        for p in allo.grid(P):
+            sum_[p] = 0
+            for s in allo.grid(P):
+                sum_[p] = sum_[p] + A[r, q, s] * x[s, p]
+        for p1 in allo.grid(P):
+            A[r, q, p1] = sum_[p1]
 
 
 def doitgen(concrete_type, qq, rr, pp, ss):
-    def kernel_doitgen[
-        T: (float32, int32), R: int32, Q: int32, P: int32, S: int32
-    ](A: "T[R, Q, S]", x: "T[P, S]", sum_: "T[P]"):
-        for r, q in allo.grid(R, Q):
-            for p in allo.grid(P):
-                sum_[p] = 0
-                for s in allo.grid(P):
-                    sum_[p] = sum_[p] + A[r, q, s] * x[s, p]
-            for p1 in allo.grid(P):
-                A[r, q, p1] = sum_[p1]
-
     s0 = allo.customize(kernel_doitgen, instantiate=[concrete_type, rr, qq, pp, ss])
     return s0.build()
 
@@ -59,7 +61,7 @@ def test_doitgen():
     # run reference
     A_ref = A.copy()
     x_ref = x.copy()
-    doitgen_np(A_ref, x_ref, sum_ref)
+    A_ref, x_ref, sum_ref = doitgen_np(A_ref, x_ref, sum_ref)
 
     # run allo
     A_opt = A.copy()

@@ -52,7 +52,16 @@ class LoopBand:
         setattr(self, name, loop)
 
     def get_outer_most(self):
-        return next(self.loops.values().__iter__()).loop
+        outer = next(self.loops.values().__iter__())
+        match outer:
+            case LoopWrapper():
+                return outer.loop
+            case LoopBand():
+                raise ValueError(
+                    "get_outer_most() is not supported for top-level LoopBand collection, use __iter__() instead"
+                )
+            case _:
+                raise ValueError(f"Unexpected type: {type(outer)}")
 
     def __repr__(self):
         return f"LoopBand({list(self.loops.keys())})"
@@ -90,8 +99,12 @@ def find_buffer(module, target, func_args):
     if target_func is None:
         raise RuntimeError(f"Target function {func_name} not found")
     # Find arguments
-    for idx, (name, op) in enumerate(zip(func_args[func_name], target_func.arguments)):
-        if name == target_name:
+    for idx, (dtensor, op) in enumerate(
+        zip(func_args[func_name], target_func.arguments)
+    ):
+        if (
+            hasattr(dtensor, "name") and dtensor.name == target_name
+        ) or dtensor == target_name:
             return target_func, idx, MockArg(op)
     # Find inner intermediate buffers
     for op in target_func.entry_block.operations:

@@ -16,27 +16,30 @@ def gemm_np(A, B, C, beta):
     return out_ABC
 
 
+def mm1[
+    T: (float32, int32), P: int32, Q: int32, R: int32
+](A: "T[P, Q]", B: "T[Q, R]", out_AB: "T[P, R]"):
+    for i0, j0 in allo.grid(P, R, name="mm1"):
+        for k0 in allo.reduction(Q):
+            out_AB[i0, j0] += A[i0, k0] * B[k0, j0]
+
+
+def ele_add[
+    T: (float32, int32), P: int32, R: int32
+](out_AB: "T[P, R]", C: "T[P, R]", output: "T[P, R]"):
+    for i2, j2 in allo.grid(P, R):
+        output[i2, j2] = beta * C[i2, j2] + out_AB[i2, j2]
+
+
+def kernel_gemm[
+    T: (float32, int32), P: int32, Q: int32, R: int32
+](A: "T[P, Q]", B: "T[Q, R]", C: "T[P, R]", output: "T[P, R]"):
+    out_AB: T[P, R] = 0
+    mm1[T, P, Q, R](A, B, out_AB)
+    ele_add[T, P, R](out_AB, C, output)
+
+
 def gemm(concrete_type, p, r, q, beta=0.1):
-    def mm1[
-        T: (float32, int32), P: int32, Q: int32, R: int32
-    ](A: "T[P, Q]", B: "T[Q, R]", out_AB: "T[P, R]"):
-        for i0, j0 in allo.grid(P, R, name="mm1"):
-            for k0 in allo.reduction(Q):
-                out_AB[i0, j0] += A[i0, k0] * B[k0, j0]
-
-    def ele_add[
-        T: (float32, int32), P: int32, R: int32
-    ](out_AB: "T[P, R]", C: "T[P, R]", output: "T[P, R]"):
-        for i2, j2 in allo.grid(P, R):
-            output[i2, j2] = beta * C[i2, j2] + out_AB[i2, j2]
-
-    def kernel_gemm[
-        T: (float32, int32), P: int32, Q: int32, R: int32
-    ](A: "T[P, Q]", B: "T[Q, R]", C: "T[P, R]", output: "T[P, R]"):
-        out_AB: T[P, R]
-        mm1[T, P, Q, R](A, B, out_AB)
-        ele_add[T, P, R](out_AB, C, output)
-
     sch0 = allo.customize(mm1, instantiate=[concrete_type, p, q, r])
     sch0.reorder("k0", "j0")
     sch0.buffer_at(sch0.out_AB, axis="i0")

@@ -777,5 +777,23 @@ def test_line_trace():
     assert 'loc("' in mlir_string
 
 
+def test_dsl_broadcast_binary_ops():
+    def kernel1(A: int32[10]) -> int32[10]:
+        return allo.div(allo.mul(allo.sub(allo.add(A, 3), 1), 2), 2)
+
+    def kernel2(A: int32[10]) -> int32[10]:
+        return allo.sub(50, allo.mul(2, allo.add(3, allo.div(10, A))))
+
+    s1 = allo.customize(kernel1)
+    s2 = allo.customize(kernel2)
+    mod1 = s1.build()
+    mod2 = s2.build()
+    np_A = np.random.randint(1, 10, size=(10,)).astype(np.int32)
+    np_B_1 = mod1(np_A)
+    np_B_2 = mod2(np_A)
+    np.testing.assert_allclose(np_B_1, ((np_A + 3) - 1) * 2 // 2)
+    np.testing.assert_allclose(np_B_2, 50 - 2 * (3 + 10 // np_A))
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

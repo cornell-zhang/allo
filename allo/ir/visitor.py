@@ -76,6 +76,9 @@ class ASTContext:
         self.with_scope_level = 0
         self.meta_if_stack = []
         self.has_return = False
+        # used for tensor mapping
+        self.rank = 0
+        self.mapping = None
 
     def copy(self):
         ctx = ASTContext(
@@ -92,6 +95,8 @@ class ASTContext:
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose
         ctx.ext_libs = self.ext_libs
+        ctx.rank = self.rank
+        ctx.mapping = self.mapping
         return ctx
 
     def set_ip(self, ip):
