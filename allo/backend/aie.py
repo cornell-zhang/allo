@@ -1025,7 +1025,8 @@ def codegen_aie_mlir(
                 stream_code, func_str = process_stream_operations(
                     func_str,
                     streams,
-                    len(inputs[func_name][func_id]) + len(outputs[func_name][func_id]),
+                    len(inputs[func_name]["_global"])
+                    + len(outputs[func_name]["_global"]),
                     stream_ele_types,
                 )
                 code += stream_code
