@@ -1848,9 +1848,17 @@ class ASTTransformer(ASTBuilder):
                     else:
                         slice = tuple()
                         new_name = vid
-                    stream = ctx.buffers[new_name].clone(
-                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    # insert after the last stream construct op to preserve ordering
+                    op = None
+                    for op in ctx.top_func.entry_block.operations:
+                        if not isinstance(op, allo_d.StreamConstructOp):
+                            break
+                    ip = (
+                        InsertionPoint(op)
+                        if op is not None
+                        else InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
+                    stream = ctx.buffers[new_name].clone(ip=ip)
                     put_op = allo_d.StreamPutOp(
                         stream.result,
                         [],
@@ -1882,9 +1890,17 @@ class ASTTransformer(ASTBuilder):
                     else:
                         slice = tuple()
                         new_name = vid
-                    stream = ctx.buffers[new_name].clone(
-                        ip=InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+                    # insert after the last stream construct op to preserve ordering
+                    op = None
+                    for op in ctx.top_func.entry_block.operations:
+                        if not isinstance(op, allo_d.StreamConstructOp):
+                            break
+                    ip = (
+                        InsertionPoint(op)
+                        if op is not None
+                        else InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
+                    stream = ctx.buffers[new_name].clone(ip=ip)
                     get_op = allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,

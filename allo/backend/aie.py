@@ -430,10 +430,10 @@ def process_stream_operations(func_str, streams, start_id, stream_ele_types):
                     # Acquire the FIFO
                     ele_type = stream_ele_types[stream_name]
                     code += format_str(
-                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
+                        f"%fifo_{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
                     )
                     code += format_str(
-                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %fifo_{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                     )
                     # Load the value into a local variable if the element type is scalar
                     if "x" not in ele_type:
@@ -470,10 +470,10 @@ def process_stream_operations(func_str, streams, start_id, stream_ele_types):
                 with format_code(indent=current_indent):
                     # Acquire the FIFO
                     code += format_str(
-                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
+                        f"%fifo_{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
                     )
                     code += format_str(
-                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %fifo_{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                     )
                     # Depending on the element type, either perform a memref.copy or a memref.store
                     if "x" in ele_type:
@@ -592,6 +592,140 @@ def extract_numbers(input_string):
     return tuple(numbers)
 
 
+def map_kernels_to_device_mesh(kernel_shapes, device_shape):
+    """
+    Maps multiple kernels to a device mesh without overlapping.
+
+    Args:
+        kernel_shapes (dict): A dictionary mapping kernel names to their shapes.
+                             For 3D kernels: [dim1, dim2, dim3]
+                             For 2D kernels: [rows, cols]
+                             For 1D kernels: [length]
+        device_shape (list): The shape of the device mesh [rows, cols].
+
+    Returns:
+        dict: A dictionary mapping kernel names to their occupied device indices.
+    """
+    # Initialize the device mesh with 0s (unoccupied)
+    rows, cols = device_shape
+    device_mesh = [[0 for _ in range(cols)] for _ in range(rows)]
+
+    # Dictionary to store the mapping of kernels to device indices
+    kernel_to_indices = {}
+
+    # Process each kernel
+    for kernel_name, kernel_shape in kernel_shapes.items():
+        # If kernel shape is 3D (e.g., [2, 2, 2])
+        if len(kernel_shape) == 3:
+            # Try both flattening options (e.g., 2x2x2 -> 4x2 or 2x4)
+            option1 = [
+                kernel_shape[0] * kernel_shape[1],
+                kernel_shape[2],
+            ]  # (dim1*dim2) x dim3
+            option2 = [
+                kernel_shape[0],
+                kernel_shape[1] * kernel_shape[2],
+            ]  # dim1 x (dim2*dim3)
+
+            flattening_options = [option1, option2]
+
+            # Try each flattening option
+            placed = False
+            for flat_kernel in flattening_options:
+                kernel_rows, kernel_cols = flat_kernel
+
+                # Skip if kernel doesn't fit in the mesh with this flattening
+                if kernel_rows > rows or kernel_cols > cols:
+                    continue
+
+                # Try to place the flattened kernel
+                for i in range(rows - kernel_rows + 1):
+                    for j in range(cols - kernel_cols + 1):
+                        # Check if the region is available
+                        available = True
+                        for di in range(kernel_rows):
+                            for dj in range(kernel_cols):
+                                if device_mesh[i + di][j + dj] == 1:
+                                    available = False
+                                    break
+                            if not available:
+                                break
+
+                        if available:
+                            # Place the kernel
+                            indices = []
+                            for di in range(kernel_rows):
+                                for dj in range(kernel_cols):
+                                    device_mesh[i + di][j + dj] = 1  # Mark as occupied
+                                    indices.append((i + di, j + dj))
+                            kernel_to_indices[kernel_name] = indices
+                            placed = True
+                            break
+                    if placed:
+                        break
+
+                if placed:
+                    break
+
+        # If kernel shape is 1D (e.g., [4])
+        elif len(kernel_shape) == 1:
+            kernel_length = kernel_shape[0]
+
+            # Skip if kernel doesn't fit in the mesh
+            if kernel_length > rows:
+                continue
+
+            # Try to place it as a column
+            placed = False
+            for j in range(cols):
+                if all(device_mesh[i][j] == 0 for i in range(kernel_length)):
+                    # Place kernel as a column
+                    indices = []
+                    for i in range(kernel_length):
+                        device_mesh[i][j] = 1  # Mark as occupied
+                        indices.append((i, j))
+                    kernel_to_indices[kernel_name] = indices
+                    placed = True
+                    break
+
+        # If kernel shape is 2D (e.g., [2, 2])
+        elif len(kernel_shape) == 2:
+            kernel_rows, kernel_cols = kernel_shape
+
+            # Skip if kernel doesn't fit in the mesh
+            if kernel_rows > rows or kernel_cols > cols:
+                continue
+
+            # Try to place the kernel
+            placed = False
+            for i in range(rows - kernel_rows + 1):
+                for j in range(cols - kernel_cols + 1):
+                    # Check if the region is available
+                    available = True
+                    for di in range(kernel_rows):
+                        for dj in range(kernel_cols):
+                            if device_mesh[i + di][j + dj] == 1:
+                                available = False
+                                break
+                        if not available:
+                            break
+
+                    if available:
+                        # Place the kernel
+                        indices = []
+                        for di in range(kernel_rows):
+                            for dj in range(kernel_cols):
+                                device_mesh[i + di][j + dj] = 1  # Mark as occupied
+                                indices.append((i + di, j + dj))
+                        kernel_to_indices[kernel_name] = indices
+                        placed = True
+                        break
+                if placed:
+                    break
+
+    return kernel_to_indices
+
+
 def codegen_aie_mlir(
     mod,
     func_groups,
@@ -645,7 +779,6 @@ def codegen_aie_mlir(
         max_num_args += len(lst["_global"])
     mem_tile_size = max_num_args // 2 + 1
     shim_tile_size = max_num_args // 2 + 1
-    mapping = inputs["_global"][0].mapping
     device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
 
@@ -679,25 +812,22 @@ def codegen_aie_mlir(
     top_func, all_funcs = get_public_funcs(mod)
 
     # Track vertical position for tile placement
+    aie_mesh = (5, 4)
     y_offset = 2
 
     # Create compute tiles and store kernel info
-    max_ids = (0, y_offset)
-    for funcs in func_groups.values():
-        for func in funcs:
-            func_name = func.attributes["sym_name"].value
-            ids = extract_numbers(func_name)
-            # TODO: Multi-function mapping scheme
-            if len(ids) == 1:
-                ids = (0, ids[0])
-            elif len(ids) == 3:
-                ids = (ids[0] * mapping[-2] + ids[1], ids[2])
-            ids = (max_ids[0] + ids[-2], max_ids[1] + ids[-1])
+    mappings = {}
+    for func_name in func_groups:
+        if len(inputs[func_name]["_global"]) > 0:
+            mappings[func_name] = inputs[func_name]["_global"][0].mapping
+        else:
+            mappings[func_name] = outputs[func_name]["_global"][0].mapping
+    for func_name, tile_ids in map_kernels_to_device_mesh(mappings, aie_mesh).items():
+        for idx, func in zip(tile_ids, func_groups[func_name]):
+            func_full_name = func.attributes["sym_name"].value
             code += format_str(
-                f"%tile_comp_{func_name} = aie.tile({ids[-2]}, {ids[-1]})"
+                f"%tile_comp_{func_full_name} = aie.tile({idx[0]}, {idx[1] + y_offset})"
             )
-            tmp_ids = (0, max(ids[1] + 1, max_ids[1]))
-        max_ids = tmp_ids
 
     # Create buffers and process function strings for each kernel
     func_strs = []
@@ -895,9 +1025,8 @@ def codegen_aie_mlir(
                 stream_code, func_str = process_stream_operations(
                     func_str,
                     streams,
-                    len(inputs[func_name][func_id])
-                    + len(outputs[func_name][func_id])
-                    + 1,
+                    len(inputs[func_name]["_global"])
+                    + len(outputs[func_name]["_global"]),
                     stream_ele_types,
                 )
                 code += stream_code
