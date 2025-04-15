@@ -1,11 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import allo
 import allo.dataflow as df
 from allo.ir.types import int32
-import numpy as np
-import allo
 from allo.memory import Layout
+import numpy as np
 
 # RRxRS->RS
 # RSxSR->RR
@@ -49,7 +49,7 @@ def _test_tensor_parallelism():
     np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
     print("PASSED!")
 
-    # AIE broken right now
+    # simulator broken right now
     # sim_mod = df.build(top, target="simulator")
     # Z = np.zeros((M, L)).astype(np.int32)
     # sim_mod(X, W1, W2, Z)
