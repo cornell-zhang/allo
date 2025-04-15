@@ -14,7 +14,7 @@ Mt, Nt = M // P0, N // P1
 
 @df.region()
 def top():
-    pipe = df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2)
+    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
     def gemm0(A: Ty[M, K], B: Ty[K, N]):
@@ -26,12 +26,12 @@ def top():
                 for k in range(K // 2):
                     c += A[i, k] * B[k, j]
                 C_out[i - pi * Mt, j - pj * Nt] = c
-        pipe.put(C_out)
+        pipe[pi, pj].put(C_out)
 
     @df.kernel(mapping=[P0, P1])
     def gemm1(A: Ty[M, K], B: Ty[K, N], C: Ty[M, N]):
         pi, pj = df.get_pid()
-        C_out: Ty[Mt, Nt] = pipe.get()
+        C_out: Ty[Mt, Nt] = pipe[pi, pj].get()
         for i in range(pi * Mt, (pi + 1) * Mt):
             for j in range(pj * Nt, (pj + 1) * Nt):
                 c: Ty = 0

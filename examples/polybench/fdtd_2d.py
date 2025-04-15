@@ -28,30 +28,32 @@ def fdtd_2d_np(ex, ey, hz, fict):
                 hz[i, j] = hz[i, j] - 0.7 * (
                     ex[i, j + 1] - ex[i, j] + ey[i + 1, j] - ey[i, j]
                 )
+    return ex, ey, hz, fict
+
+
+def kernel_fdtd_2d[
+    T: (float32, int32), Nx: int32, Ny: int32, Tmax: int32
+](ex: "T[Nx, Ny]", ey: "T[Nx, Ny]", hz: "T[Nx, Ny]", fict: "T[Tmax]",):
+    for m in allo.grid(Tmax):
+        for j in allo.grid(Ny):
+            ey[0, j] = fict[m]
+
+        for i in range(1, Nx):
+            for j in allo.grid(Ny):
+                ey[i, j] = ey[i, j] - 0.5 * (hz[i, j] - hz[i - 1, j])
+
+        for i in range(Nx):
+            for j in range(1, Ny):
+                ex[i, j] = ex[i, j] - 0.5 * (hz[i, j] - hz[i, j - 1])
+
+        for i in allo.grid(Nx - 1):
+            for j in allo.grid(Ny - 1):
+                hz[i, j] = hz[i, j] - 0.7 * (
+                    ex[i, j + 1] - ex[i, j] + ey[i + 1, j] - ey[i, j]
+                )
 
 
 def top_fdtd_2d(concrete_type, Nx, Ny, Tmax):
-    def kernel_fdtd_2d[
-        T: (float32, int32), Nx: int32, Ny: int32, Tmax: int32
-    ](ex: "T[Nx, Ny]", ey: "T[Nx, Ny]", hz: "T[Nx, Ny]", fict: "T[Tmax]",):
-        for m in allo.grid(Tmax):
-            for j in allo.grid(Ny):
-                ey[0, j] = fict[m]
-
-            for i in range(1, Nx):
-                for j in allo.grid(Ny):
-                    ey[i, j] = ey[i, j] - 0.5 * (hz[i, j] - hz[i - 1, j])
-
-            for i in range(Nx):
-                for j in range(1, Ny):
-                    ex[i, j] = ex[i, j] - 0.5 * (hz[i, j] - hz[i, j - 1])
-
-            for i in allo.grid(Nx - 1):
-                for j in allo.grid(Ny - 1):
-                    hz[i, j] = hz[i, j] - 0.7 * (
-                        ex[i, j + 1] - ex[i, j] + ey[i + 1, j] - ey[i, j]
-                    )
-
     s = allo.customize(kernel_fdtd_2d, instantiate=[concrete_type, Nx, Ny, Tmax])
     return s.build()
 
@@ -77,7 +79,9 @@ def test_fdtd_2d():
     ey_golden = ey.copy()
     hz_golden = hz.copy()
     fict_golden = fict.copy()
-    fdtd_2d_np(ex_golden, ey_golden, hz_golden, fict_golden)
+    ex_golden, ey_golden, hz_golden, fict_golden = fdtd_2d_np(
+        ex_golden, ey_golden, hz_golden, fict_golden
+    )
     mod(ex, ey, hz, fict)
     np.testing.assert_allclose(ex, ex_golden, rtol=1e-3, atol=1e-3)
     np.testing.assert_allclose(ey, ey_golden, rtol=1e-3, atol=1e-3)

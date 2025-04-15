@@ -515,7 +515,16 @@ class LLVMOMPModule(LLVMModule):
             func.attributes["top"] = UnitAttr.get()
 
             # Start lowering
-            # Lower StructType first
+            # Lower linalg for AIE
+            pm = PassManager.parse(
+                "builtin.module("
+                "one-shot-bufferize,"
+                "expand-strided-metadata,"
+                "func.func(convert-linalg-to-affine-loops)"
+                ")"
+            )
+            pm.run(self.module.operation)
+            # Lower StructType
             allo_d.lower_composite_type(self.module)
             # Reference: https://discourse.llvm.org/t/help-lowering-affine-loop-to-openmp/72441/9
             pm = PassManager.parse(
