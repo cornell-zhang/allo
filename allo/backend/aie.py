@@ -619,13 +619,13 @@ def map_kernels_to_device_mesh(kernel_shapes, device_shape):
         if len(kernel_shape) == 3:
             # Try both flattening options (e.g., 2x2x2 -> 4x2 or 2x4)
             option1 = [
-                kernel_shape[0] * kernel_shape[1],
-                kernel_shape[2],
-            ]  # (dim1*dim2) x dim3
-            option2 = [
                 kernel_shape[0],
                 kernel_shape[1] * kernel_shape[2],
             ]  # dim1 x (dim2*dim3)
+            option2 = [
+                kernel_shape[0] * kernel_shape[1],
+                kernel_shape[2],
+            ]  # (dim1*dim2) x dim3
 
             flattening_options = [option1, option2]
 
