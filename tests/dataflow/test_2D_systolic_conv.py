@@ -118,5 +118,6 @@ def test_convolution():
         np.testing.assert_allclose(C_sys, test_C, atol=1e-5)
         print("Passed!")
 
+
 if __name__ == "__main__":
     test_convolution()
