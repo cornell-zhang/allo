@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo.dataflow as df
-from allo.ir.types import int16
+from allo.ir.types import int32
 import numpy as np
 import allo
 from allo.memory import Layout
@@ -14,9 +14,9 @@ LyW2 = Layout("S0R")
 
 
 def _test_tensor_parallelism():
-    Ty = int16
-    M, K, N, L = 32, 32, 32, 32
-    P0 = 1
+    Ty = int32
+    M, K, N, L = 8, 8, 8, 8
+    P0 = 2
     Nt = N // P0
 
     @df.region()
@@ -26,29 +26,31 @@ def _test_tensor_parallelism():
 
         @df.kernel(mapping=[P0])
         def gemm0(X: Ty[M, K], W1: Ty[K, N] @ LyW1):
-            Y[0].put(allo.matmul(X, W1))
+            pn = df.get_pid()
+            Y[pn].put(allo.matmul(X, W1))
 
         @df.kernel(mapping=[P0])
         def gemm1(W2: Ty[N, L] @ LyW2):
-            part_Z[0].put(allo.matmul(Y[0].get(), W2))
+            pn = df.get_pid()
+            part_Z[pn].put(allo.matmul(Y[pn].get(), W2))
 
-        @df.kernel(mapping=[P0])
+        @df.kernel(mapping=[1])
         def acc(Z: Ty[M, L]):
-            Z[:, :] = part_Z[0].get()
+            Z[:, :] = allo.add(part_Z[0].get(), part_Z[1].get())
 
-    X = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    W1 = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    W2 = np.random.randint(0, 64, (N, L)).astype(np.int16)
+    X = np.random.randint(0, 64, (M, K)).astype(np.int32)
+    W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
+    W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
 
     mod = df.build(top, target="aie")
-    Z = np.zeros((M, L)).astype(np.int16)
+    Z = np.zeros((M, L)).astype(np.int32)
     mod(X, W1, W2, Z)
     np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
     print("PASSED!")
 
     # AIE broken right now
     # sim_mod = df.build(top, target="simulator")
-    # Z = np.zeros((M, L)).astype(np.int16)
+    # Z = np.zeros((M, L)).astype(np.int32)
     # sim_mod(X, W1, W2, Z)
     # np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
     # print("Dataflow Simulator Passed!")

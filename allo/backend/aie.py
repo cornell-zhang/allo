@@ -430,10 +430,10 @@ def process_stream_operations(func_str, streams, start_id, stream_ele_types):
                     # Acquire the FIFO
                     ele_type = stream_ele_types[stream_name]
                     code += format_str(
-                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
+                        f"%fifo_{stream_name} = aie.objectfifo.acquire @{stream_name}(Consume, 1) : !aie.objectfifosubview<{ele_type}>"
                     )
                     code += format_str(
-                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %fifo_{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                     )
                     # Load the value into a local variable if the element type is scalar
                     if "x" not in ele_type:
@@ -470,10 +470,10 @@ def process_stream_operations(func_str, streams, start_id, stream_ele_types):
                 with format_code(indent=current_indent):
                     # Acquire the FIFO
                     code += format_str(
-                        f"%{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
+                        f"%fifo_{stream_name} = aie.objectfifo.acquire @{stream_name}(Produce, 1) : !aie.objectfifosubview<{ele_type}>"
                     )
                     code += format_str(
-                        f"%local_{stream_name} = aie.objectfifo.subview.access %{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
+                        f"%local_{stream_name} = aie.objectfifo.subview.access %fifo_{stream_name}[0] : !aie.objectfifosubview<{ele_type}> -> {ele_type}"
                     )
                     # Depending on the element type, either perform a memref.copy or a memref.store
                     if "x" in ele_type:
