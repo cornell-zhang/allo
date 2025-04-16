@@ -36,8 +36,10 @@ def _test_tensor_parallelism():
 
         @df.kernel(mapping=[1])
         def acc(Z: Ty[M, L]):
-            # TODO: Use dynamic index to scale
-            Z[:, :] = allo.add(part_Z[0].get(), part_Z[1].get())
+            Z_out: Ty[M, L] = 0
+            with allo.meta_for(P0) as i:
+                Z_out[:, :] += part_Z[i].get()
+            Z[:, :] = Z_out
 
     X = np.random.randint(0, 64, (M, K)).astype(np.int32)
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
