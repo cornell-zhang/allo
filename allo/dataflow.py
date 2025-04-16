@@ -16,7 +16,7 @@ from ._mlir.ir import (
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
-from .ir.utils import get_global_vars, get_all_funcs_except_top
+from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.aie import AIEModule
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
@@ -43,7 +43,7 @@ def array(element, shape):
 
 def move_stream_to_interface(s):
     stream_info = {}
-    funcs = get_all_funcs_except_top(s)
+    funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
 
     for func in funcs:
@@ -84,7 +84,7 @@ def move_stream_to_interface(s):
                 ip=InsertionPoint(func),
             )
             new_func.add_entry_block()
-            return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            final_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
             # copy old attributes
             if "itypes" in func.attributes:
                 new_func.attributes["itypes"] = StringAttr.get(
@@ -94,11 +94,11 @@ def move_stream_to_interface(s):
                 new_func.attributes["otypes"] = func.attributes["otypes"]
             # tag stream types
             new_func.attributes["stypes"] = StringAttr.get(s_type_str)
+            if "df.kernel" in func.attributes:
+                new_func.attributes["df.kernel"] = UnitAttr.get()
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:
-                if isinstance(op, func_d.ReturnOp):
-                    break
                 if op in stream_ops:
                     op.result.replace_all_uses_with(
                         new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
@@ -106,7 +106,8 @@ def move_stream_to_interface(s):
                     cnt_stream += 1
                     op.operation.erase()
                     continue
-                op.operation.move_before(return_op)
+                op.operation.move_before(final_op)
+            final_op.erase()
             # update original arguments
             for i, arg in enumerate(func.arguments):
                 arg.replace_all_uses_with(new_func.arguments[i])
@@ -150,7 +151,7 @@ def _build_top(s, stream_info, target="vitis_hls"):
     remove_unused_func_ops(s, stream_info.keys())
 
     # create argument mapping
-    funcs = get_all_funcs_except_top(s)
+    funcs = get_all_df_kernels(s)
     input_types = []
     input_signed = ""
     arg_mapping = {}
