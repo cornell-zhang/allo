@@ -1476,7 +1476,9 @@ class ASTTransformer(ASTBuilder):
                                     )
                                 concated_name = "_".join(map(str, dim))
                                 node.name = orig_name + f"_{concated_name}"
-                                func_op = ASTTransformer.build_FunctionDef(new_ctx, node)
+                                func_op = ASTTransformer.build_FunctionDef(
+                                    new_ctx, node
+                                )
                                 func_op.attributes["df.kernel"] = UnitAttr.get()
                             return
         else:
