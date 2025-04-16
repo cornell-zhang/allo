@@ -2557,6 +2557,31 @@ class ASTTransformer(ASTBuilder):
             ), "Unmatched allo.meta_else()"
             final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
             ctx.meta_if_stack[ctx.with_scope_level].pop()
+        elif node.items[0].context_expr.func.attr == "meta_for":
+            assert (
+                len(node.items[0].context_expr.args) <= 3
+            ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            rargs = [
+                ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            ]
+            if len(node.items[0].context_expr.args) > 1:
+                rargs.append(
+                    ASTResolver.resolve_constant(
+                        node.items[0].context_expr.args[1], ctx
+                    )
+                )
+            if len(node.items[0].context_expr.args) > 2:
+                rargs.append(
+                    ASTResolver.resolve_constant(
+                        node.items[0].context_expr.args[2], ctx
+                    )
+                )
+            var = node.items[0].optional_vars.id
+            for i in range(*rargs):
+                ctx.global_vars[var] = i
+                build_stmts(ctx, node.body)
+                ctx.global_vars.pop(var)
+            return
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
