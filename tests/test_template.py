@@ -7,9 +7,9 @@ import allo
 from allo.ir.types import int8, int32, float32
 
 
-def kernel[TyA, TyB, TyC, M: int32, K: int32, N: int32](
-    A: "TyA[M, K]", B: "TyB[K, N]"
-) -> "TyC[M, N]":
+def kernel[
+    TyA, TyB, TyC, M: int32, K: int32, N: int32
+](A: "TyA[M, K]", B: "TyB[K, N]") -> "TyC[M, N]":
     C: TyC[M, N]
     for i in range(M):
         for j in range(N):
