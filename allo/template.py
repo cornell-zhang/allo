@@ -18,3 +18,8 @@ def meta_elif(cond):
 @contextmanager
 def meta_else():
     pass
+
+
+@contextmanager
+def meta_for(lb, ub, step=1):
+    pass

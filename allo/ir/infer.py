@@ -1069,9 +1069,6 @@ class TypeInferer(ASTVisitor):
         assert isinstance(
             node.items[0].context_expr.func, ast.Attribute
         ), "Only support `with allo.meta_if/elif/else()`"
-        assert (
-            len(node.items[0].context_expr.args) <= 1
-        ), "Only support one argument for `allo.meta_if/elif/else()`"
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
@@ -1101,6 +1098,18 @@ class TypeInferer(ASTVisitor):
             ), "Unmatched allo.meta_else()"
             final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
             ctx.meta_if_stack[ctx.with_scope_level].pop()
+        elif node.items[0].context_expr.func.attr == "meta_for":
+            assert (
+                len(node.items[0].context_expr.args) <= 3
+            ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            lb = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            var = node.items[0].optional_vars.id
+            ctx.global_vars[var] = lb
+            visit_stmts(ctx, node.body)
+            ctx.global_vars.pop(var)
+            node.dtype = None
+            node.shape = None
+            return node
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
