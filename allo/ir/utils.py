@@ -106,13 +106,10 @@ def get_func_id_from_param_types(param_types):
     return None
 
 
-def get_all_funcs_except_top(s):
+def get_all_df_kernels(s):
     funcs = []
     for func in s.module.body.operations:
-        if (
-            isinstance(func, func_d.FuncOp)
-            and func.attributes["sym_name"].value != s.top_func_name
-        ):
+        if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
             funcs.append(func)
     return funcs
 
