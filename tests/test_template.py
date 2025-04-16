@@ -160,12 +160,21 @@ def test_meta_for():
     def top(A: int32[N]):
         with allo.meta_for(0, N) as i:
             A[i] = A[i] + 1
+        with allo.meta_for(N) as i:
+            A[i] = A[i] - 1
+        with allo.meta_for(N - 1, N, 2) as i:
+            with allo.meta_if(i == N - 1):
+                A[i] = A[i] + 3
+        with allo.meta_for(N + 1, N, 1) as i:
+            # will not be executed
+            A[i] = A[i] * 2
 
     s = allo.customize(top)
     print(s.module)
     mod = s.build()
-    np_A = np.random.randn(N).astype(np.int32)
-    np_golden = np_A.copy() + 1
+    np_A = np.random.randint(0, 10, N).astype(np.int32)
+    np_golden = np_A.copy()
+    np_golden[-1] += 3
     mod(np_A)
     np.testing.assert_allclose(np_A, np_golden, rtol=1e-4, atol=1e-4)
 

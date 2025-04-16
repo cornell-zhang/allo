@@ -21,5 +21,5 @@ def meta_else():
 
 
 @contextmanager
-def meta_for(lb, ub):
+def meta_for(lb, ub, step=1):
     pass

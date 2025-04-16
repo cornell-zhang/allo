@@ -1099,11 +1099,12 @@ class TypeInferer(ASTVisitor):
             final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
             ctx.meta_if_stack[ctx.with_scope_level].pop()
         elif node.items[0].context_expr.func.attr == "meta_for":
-            assert len(node.items[0].context_expr.args) == 2, "Only support two arguments (lower and upper bound) for `allo.meta_for()`"
-            _ = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            ub = ASTResolver.resolve_constant(node.items[0].context_expr.args[1], ctx)
+            assert (
+                len(node.items[0].context_expr.args) <= 3
+            ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            lb = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             var = node.items[0].optional_vars.id
-            ctx.global_vars[var] = ub
+            ctx.global_vars[var] = lb
             visit_stmts(ctx, node.body)
             ctx.global_vars.pop(var)
             node.dtype = None
