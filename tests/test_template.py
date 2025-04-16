@@ -7,9 +7,9 @@ import allo
 from allo.ir.types import int8, int32, float32
 
 
-def kernel[
-    TyA, TyB, TyC, M: int32, K: int32, N: int32
-](A: "TyA[M, K]", B: "TyB[K, N]") -> "TyC[M, N]":
+def kernel[TyA, TyB, TyC, M: int32, K: int32, N: int32](
+    A: "TyA[M, K]", B: "TyB[K, N]"
+) -> "TyC[M, N]":
     C: TyC[M, N]
     for i in range(M):
         for j in range(N):
@@ -150,6 +150,22 @@ def test_double_meta_if():
     mod = s.build()
     np_A = np.random.randn(M).astype(np.int32)
     np_golden = np_A.copy()
+    mod(np_A)
+    np.testing.assert_allclose(np_A, np_golden, rtol=1e-4, atol=1e-4)
+
+
+def test_meta_for():
+    N = 8
+
+    def top(A: int32[N]):
+        with allo.meta_for(0, N) as i:
+            A[i] = A[i] + 1
+
+    s = allo.customize(top)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randn(N).astype(np.int32)
+    np_golden = np_A.copy() + 1
     mod(np_A)
     np.testing.assert_allclose(np_A, np_golden, rtol=1e-4, atol=1e-4)
 
