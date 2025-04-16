@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks, cell-var-from-loop
 
 import os
+import re
 import numpy as np
 
 from ._mlir.ir import (
@@ -802,19 +803,29 @@ def analyze_read_write_patterns(mlir_func):
                     # First operand (or last for affine) is the source memref
                     mem_index = 0 if op_name == "memref.load" else -1
                     if len(op.operands) > abs(mem_index):
-                        mem_operand = op.operands[mem_index]
-                        mem_arg_index = resolve_to_arg_index(mem_operand)
-                        if mem_arg_index == arg_index:
-                            is_input = True
+                        # not sure why for all args their values are all
+                        # Value(<block argument> of type 'index' at index: 0)
+                        pattern = r"%\d+\s*=\s*(affine|memref)\.load\s*%arg(\d+)"
+                        match = re.search(pattern, str(op))
+                        if match:
+                            mem_arg_index = int(match.group(2))
+                            if mem_arg_index == arg_index:
+                                is_input = True
 
                 elif op_name in {"memref.store", "affine.store"}:
                     # Second operand (or last for affine) is the destination memref
                     mem_index = 1 if op_name == "memref.store" else -1
                     if len(op.operands) > abs(mem_index):
-                        mem_operand = op.operands[mem_index]
-                        mem_arg_index = resolve_to_arg_index(mem_operand)
-                        if mem_arg_index == arg_index:
-                            is_output = True
+                        # not sure why for all args their values are all
+                        # Value(<block argument> of type 'index' at index: 0)
+                        pattern = (
+                            r"(affine|memref)\.store\s+%\w+,\s*%arg(\d+)(?:\[.*?\])?"
+                        )
+                        match = re.search(pattern, str(op))
+                        if match:
+                            mem_arg_index = int(match.group(2))
+                            if mem_arg_index == arg_index:
+                                is_output = True
 
                 elif op_name == "memref.copy":
                     # First operand is source, second is destination

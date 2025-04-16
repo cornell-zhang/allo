@@ -104,7 +104,8 @@ def test_vitis_io_stream():
         hls_mod = s.build(target="vitis_hls", mode="sw_emu", project="test_io.prj")
         print(s.module)
         np_A = np.random.randint(0, 10, size=(32, 32)).astype(np.int32)
-        hls_mod(np_A)
+        np_B = np.zeros((32, 32), dtype=np.int32)
+        hls_mod(np_A, np_B)
 
 
 def test_csim_write_back():

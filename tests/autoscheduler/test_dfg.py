@@ -9,7 +9,7 @@ from allo.ir.types import int32, float32
 from allo.autoscheduler.dfg import DFG, DFGNodeType, Node
 from allo.autoscheduler.passes import dataflow_optimization_pass
 from allo.autoscheduler.util import compose_affine_maps
-from allo._mlir.ir import WalkResult, AffineMap
+from allo._mlir.ir import AffineMap
 
 
 def check_edges(dfg: DFG):
@@ -59,20 +59,20 @@ def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
     return C
 
 
+def three_mm(
+    A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
+) -> int32[8, 8]:
+    E: int32[8, 8] = matrix_multiply(A, B)
+    F: int32[8, 8] = matrix_multiply(C, D)
+    return matrix_multiply(E, F)
+
+
 def test_3mm():
-    def three_mm(
-        A: int32[8, 8], B: int32[8, 8], C: int32[8, 8], D: int32[8, 8]
-    ) -> int32[8, 8]:
-        E: int32[8, 8] = matrix_multiply(A, B)
-        F: int32[8, 8] = matrix_multiply(C, D)
-        return matrix_multiply(E, F)
-
     s = allo.customize(three_mm)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     module = s.module
-
+    print(module)
     dfg = DFG.from_module(module)
-
     check_edges(dfg)
     check_node_info(dfg)
 
@@ -103,7 +103,7 @@ def test_loop_info():
 
 def test_node_info():
     s = allo.customize(func)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -127,18 +127,33 @@ def test_node_info():
 
         # check access pattern
         permuted_access_map = compose_affine_maps(inverse_loop_map, original_access_map)
-        assert permuted_access_map == info.stores_map[affine_node.stores[0]].accessMap
-        assert permuted_access_map == info.loads_map[affine_node.loads[0]].accessMap
+        assert (
+            permuted_access_map
+            == info.stores_map[affine_node.stores[0].opview.memref].access_map
+        )
+        assert (
+            permuted_access_map
+            == info.loads_map[affine_node.loads[0].opview.memref].access_map
+        )
 
         # check II is 1 for all permutations
         assert info.II == 1
 
         # check first and last access times
-        assert info.stores_map[affine_node.stores[0]].first_element_time == 0
-        assert info.loads_map[affine_node.loads[0]].first_element_time == 0
+        assert (
+            info.stores_map[affine_node.stores[0].opview.memref].first_element_time == 0
+        )
+        assert (
+            info.loads_map[affine_node.loads[0].opview.memref].first_element_time == 0
+        )
 
-        assert info.stores_map[affine_node.stores[0]].last_element_time == 499
-        assert info.loads_map[affine_node.loads[0]].last_element_time == 499
+        assert (
+            info.stores_map[affine_node.stores[0].opview.memref].last_element_time
+            == 499
+        )
+        assert (
+            info.loads_map[affine_node.loads[0].opview.memref].last_element_time == 499
+        )
 
 
 def test_DSP():
@@ -156,7 +171,7 @@ def test_DSP():
         return A
 
     s = allo.customize(dsp_test)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     module = s.module
     dfg = DFG.from_module(module)
     affine_nodes = [
@@ -174,7 +189,7 @@ def test_II():
         return A
 
     s = allo.customize(loop_with_dependency)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -199,7 +214,7 @@ def test_reduction():
         return sum
 
     s = allo.customize(reduction)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     module = s.module
     print(s.module)
     dfg = DFG.from_module(module)
@@ -215,7 +230,7 @@ def test_reduction():
         return B
 
     s = allo.customize(not_reduction)
-    s = dataflow_optimization_pass(s, debugPoint="dataflow_canonicaliation")
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
     module = s.module
 
     dfg = DFG.from_module(module)
@@ -225,6 +240,5 @@ def test_reduction():
     assert affine_node.is_reduction == False
 
 
-#     assert False
 if __name__ == "__main__":
     pytest.main([__file__])

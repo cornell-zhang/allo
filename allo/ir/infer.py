@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
 
 import ast
 import sys
@@ -37,6 +37,7 @@ from ..utils import (
     make_anywidth_numpy_array,
     np_supported_types,
 )
+from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 
@@ -84,14 +85,14 @@ class TypeInferer(ASTVisitor):
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
             shape = tuple(ASTResolver.resolve_constant(x, ctx) for x in elts)
-            return dtype, shape
+            return dtype, shape, Layout("R" * len(shape))  # default layout
         if isinstance(node, ast.Name):
             dtype = ASTResolver.resolve(node, ctx.global_vars)
             assert dtype is not None, f"Unsupported type `{node.id}`"
-            return dtype, tuple()
+            return dtype, tuple(), None
         if isinstance(node, ast.Call):
             dtype = TypeInferer.visit_call_type(ctx, node)
-            return dtype, tuple()
+            return dtype, tuple(), None
         if isinstance(node, ast.Constant):
             assert isinstance(node.value, str), "Only support string type annotation"
             tree = ast.parse(node.value)
@@ -99,7 +100,13 @@ class TypeInferer(ASTVisitor):
         if isinstance(node, ast.Attribute):
             # e.g., allo.ir.types.float32
             dtype = ASTResolver.resolve(node, ctx.global_vars)
-            return dtype, tuple()
+            return dtype, tuple(), None
+        if isinstance(node, ast.BinOp):
+            # memory refinement
+            # e.g., A: Ty[M] @ Layout("S0")
+            dtype, shape, _ = TypeInferer.visit_type_hint(ctx, node.left)
+            spec = ASTResolver.resolve(node.right, ctx.global_vars)
+            return dtype, shape, spec
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
@@ -524,7 +531,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx, node):
-        target_dtype, target_shape = TypeInferer.visit_type_hint(ctx, node.annotation)
+        target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
+            ctx, node.annotation
+        )
         if isinstance(node.value, ast.List):
             values = compile(ast.Expression(node.value), "", "eval")
             # pylint: disable=eval-used
@@ -581,19 +590,19 @@ class TypeInferer(ASTVisitor):
                                 ast.unparse(decorator.keywords[0].value),
                                 ctx.global_vars,
                             )
+                            old_ctx.mapping = mapping
                             orig_name = node.name
                             for dim in np.ndindex(*mapping):
                                 new_ctx = old_ctx.copy()
+                                new_ctx.rank = dim
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                if len(dim) == 1:
-                                    new_ctx.global_vars.update({"df.p0": dim[0]})
-                                    node.name = orig_name + f"_{dim[0]}"
-                                else:
+                                for axis, val in enumerate(dim):
                                     new_ctx.global_vars.update(
-                                        {"df.p0": dim[0], "df.p1": dim[1]}
+                                        {"df.p" + str(axis): val}
                                     )
-                                    node.name = orig_name + f"_{dim[0]}_{dim[1]}"
+                                concated_name = "_".join(map(str, dim))
+                                node.name = orig_name + f"_{concated_name}"
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
                                 node.name = orig_name
                             return node
@@ -613,7 +622,14 @@ class TypeInferer(ASTVisitor):
 
         # Input types
         for arg in node.args.args:
-            arg.dtype, arg.shape = TypeInferer.visit_type_hint(ctx, arg.annotation)
+            arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
+                ctx, arg.annotation
+            )
+            arg.dtensor = DTensor(
+                ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
+            )
+            # update shape
+            arg.shape = arg.dtensor.get_local_shape()
             ctx.buffers[arg.arg] = arg
 
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
@@ -626,14 +642,18 @@ class TypeInferer(ASTVisitor):
                 # Multiple return values
                 node.returns.shape = []
                 node.returns.dtype = []
+                node.returns.spec = []
                 for elt in node.returns.elts:
-                    elt.dtype, elt.shape = TypeInferer.visit_type_hint(ctx, elt)
+                    elt.dtype, elt.shape, elt.spec = TypeInferer.visit_type_hint(
+                        ctx, elt
+                    )
                     node.returns.dtype += [elt.dtype]
                     node.returns.shape += [elt.shape]
+                    node.returns.spec += [elt.spec]
             else:
                 # Single return value
-                node.returns.dtype, node.returns.shape = TypeInferer.visit_type_hint(
-                    ctx, node.returns
+                node.returns.dtype, node.returns.shape, node.returns.spec = (
+                    TypeInferer.visit_type_hint(ctx, node.returns)
                 )
             ctx.buffers[func_name] = node
 
@@ -852,8 +872,8 @@ class TypeInferer(ASTVisitor):
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":
-                    node.shape = (tuple(), tuple())
-                    node.dtype = (Index(), Index())
+                    node.shape = (tuple(), tuple(), tuple())
+                    node.dtype = (Index(), Index(), Index())
                 else:
                     node.shape = None
                     node.dtype = None
@@ -943,7 +963,7 @@ class TypeInferer(ASTVisitor):
             elif op_name == "matmul":
                 assert (
                     argAshape[-1] == argBshape[-2]
-                ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape[1]} and {argBshape[0]}"
+                ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 node.shape = tuple(argAshape[:-1] + argBshape[-1:])
             elif op_name == "bmm":
                 assert (
@@ -951,10 +971,10 @@ class TypeInferer(ASTVisitor):
                 ), f"Only support batch matrix multiplication of two 3D inputs, got {len(argAshape)} and {len(argBshape)}"
                 assert (
                     argAshape[2] == argBshape[1]
-                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape[2]} and {argBshape[1]}"
+                ), f"The third dimension of the first input and the second dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 assert (
                     argAshape[0] == argBshape[0]
-                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape[0]} and {argBshape[0]}"
+                ), f"The first dimension of the first input and the first dimension of the second input must be the same, got {argAshape} and {argBshape}"
                 node.shape = (argAshape[0], argAshape[1], argBshape[2])
             elif op_name == "linear":
                 # The weight parameter (i.e., `new_args[1]`) should be 2D, see:
