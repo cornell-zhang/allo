@@ -23,7 +23,7 @@ def top():
     fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
-    def semm(A: (int32, float32)[M, max_nzz], B: float32[K, N], C: float32[M, N]):
+    def semm(A: (float32)[M], Ain: (int32)[max_nzz], B: float32[K, N], C: float32[M, N]):
         i, j = df.get_pid()
         # periperals kernels
         with allo.meta_if(i in {0, M + 1} and j in {0, N + 1}):
@@ -48,26 +48,24 @@ def top():
         # main body
         with allo.meta_else():
             c: float32 = 0
-            while True:
-                try:
-                    a_idx = fifo_Ain[i, j].get()
-                    a_val = fifo_A[i, j].get()
-                    
-                    # Get corresponding B values
-                    b_vals = [0.0] * K
-                    for k in range(K):
-                        b_vals[k] = fifo_B[i, j].get()
-                    
-                    # Compute product for matching index
-                    c += a_val * b_vals[a_idx]
-                    
-                    # Forward values
-                    fifo_Ain[i, j+1].put(a_idx)
-                    fifo_A[i, j+1].put(a_val)
-                    for k in range(K):
-                        fifo_B[i+1, j].put(b_vals[k])
-                except allo.meta_fifo_empty:
-                    break
+            
+            a_idx = fifo_Ain[i, j].get()
+            a_val = fifo_A[i, j].get()
+            
+            # Get corresponding B values
+            b_vals = [0.0] * K
+            for k in range(K):
+                b_vals[k] = fifo_B[i, j].get()
+            
+            # Compute product for matching index
+            c += a_val * b_vals[a_idx]
+            
+            # Forward values
+            fifo_Ain[i, j+1].put(a_idx)
+            fifo_A[i, j+1].put(a_val)
+            for k in range(K):
+                fifo_B[i+1, j].put(b_vals[k])
+                
             C[i - 1, j - 1] = c
 
 
