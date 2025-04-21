@@ -314,6 +314,8 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
 
     loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+    print(dir(loop_ivs[0]))
+    print("loop ivs:", [iv.get_name() for iv in loop_ivs])
 
     with InsertionPoint.at_block_begin(loop_nest[0].body):
         first_iter_set = affine_d.IntegerSet.get(
@@ -540,6 +542,8 @@ def extract_reorder_and_pipeline(
 
     return schedule_primitives
 
+def insert_fifo_guard(schedule: Schedule, List[SchedulePrimitive]):
+    pass
 
 def extract_buffer_to_fifo(
     permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule
@@ -562,8 +566,8 @@ def extract_buffer_to_fifo(
             assert memref in src_node_info.stores_map
             if (
                 dst_node_info.loads_map[memref].access_map
-                == src_node_info.stores_map[memref].access_map
-            ):
+                == src_node_info.stores_map[memref].access_map 
+            ) and not isinstance(memref.owner, Block):
                 if "name" not in memref.owner.attributes:
                     with schedule.module.context:
                         memref.owner.attributes["name"] = StringAttr.get(
@@ -580,6 +584,7 @@ def extract_buffer_to_fifo(
                     top_level_fn_name, memref.owner.attributes["name"].value
                 )
                 fn_name = node_to_fn[node_idx]
+                print(buffer, fn_name)
                 schedule_primitives.append(
                     SchedulePrimitive.buffer_to_fifo(buffer, fn_name)
                 )

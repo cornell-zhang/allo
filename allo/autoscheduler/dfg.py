@@ -584,6 +584,8 @@ class DFG:
                     b_vars[(node_id, perm_idx)] = model.addVar(
                         vtype=GRB.BINARY, name=f"b{node_id}_{perm_idx}"
                     )
+            if node.is_reduction:
+                model.addConstr(b_vars[(node_id, 0)] == 1)
         return b_vars
 
     def _create_timing_variables(self, model):
