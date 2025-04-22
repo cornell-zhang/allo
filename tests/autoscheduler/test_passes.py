@@ -57,7 +57,7 @@ kinds = [
 #     elif is_available("vitis_hls"):
 #         mod = optimized_schedule.build(
 #             target="vitis_hls", mode="sw_emu", project="test_simple.prj", wrap_io=True
-#         )        
+#         )
 #         input = np.zeros((10, 10), dtype=np.int32)
 
 #         output = np.zeros((10, 10))
@@ -155,11 +155,12 @@ def test_atax(debug_point, kind):
         mod(A, x, y)
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
 
-    elif is_available("vitis_hls"):
+    elif is_available("vitis_hls") or True:
         print(optimized_schedule.module)
         mod = optimized_schedule.build(
             target="vitis_hls", mode="sw_emu", project="test_atax.prj"
         )
+        print(mod.hls_code)
         mod(A, x, y)
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
     else:
