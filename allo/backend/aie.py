@@ -8,6 +8,7 @@ import os
 import subprocess
 import re
 import numpy as np
+from collections import defaultdict, namedtuple
 from .._mlir.ir import (
     MemRefType,
     Location,
@@ -517,7 +518,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
     Returns:
     --------
     tuple
-        A tuple containing two lists: (size, stride)
+        A tuple containing two lists: (device_dims, size, stride)
     """
     # Handle 1D tensor case
     partition_str = "".join([p[0] for p in partition])
@@ -526,17 +527,19 @@ def calculate_tensor_access(shape, partition, device_mesh):
             # For 1D tensor with "S", shard across all devices
             total_devices = device_mesh[0]
             shard_size = shape[0] // total_devices
+            device_dims = [2]
             size = [1, 1, total_devices, shard_size]
             stride = [0, 0, shard_size, 1]
         elif partition_str == "R":
             # For 1D tensor with "R", replicate across all devices
             total_devices = device_mesh[0]
+            device_dims = []
             size = [1, total_devices, 1, shape[0]]
             stride = [0, 0, 0, 1]
         else:
             raise ValueError(f"Unsupported partition {partition_str} for 1D tensor.")
 
-        return size, stride
+        return device_dims, size, stride
 
     # Handle 2D tensor case
     if len(shape) == 2:
@@ -557,29 +560,33 @@ def calculate_tensor_access(shape, partition, device_mesh):
 
         if partition_str == "SS":
             # Both dimensions sharded
+            device_dims = [0, 1]
             size = [a, b, m // a, n // b]
             stride = [(m // a) * n, n // b, n, 1]
 
         elif partition_str == "SR":
             # First dim sharded across all devices, second replicated
             total_devices = a * b
+            device_dims = [1]
             size = [1, total_devices, m // total_devices, n]
             stride = [0, (m // total_devices) * n, n, 1]
 
         elif partition_str == "RS":
             # First dim replicated, second sharded across second dim of mesh
+            device_dims = [1]
             size = [1, b, m, n // b]
             stride = [(m * n) // (a * b), n // b, n, 1]
 
         elif partition_str == "RR":
             # Both dimensions replicated
             total_devices = a * b
+            device_dims = []
             size = [1, 1, m, n]
             stride = [0, 0, n, 1]
         else:
             raise ValueError(f"Unsupported partition {partition_str} for 2D tensor.")
 
-        return size, stride
+        return device_dims, size, stride
     raise ValueError(f"Unsupported shape {shape} or partition {partition}.")
 
 
@@ -726,6 +733,152 @@ def map_kernels_to_device_mesh(kernel_shapes, device_shape):
     return kernel_to_indices
 
 
+def allocate_mem_tiles_with_dtensors(inputs, outputs):
+    """
+    Allocate (shim-tile, mem-tile) pairs for every DTensor that crosses the
+    NPU boundary, while respecting the per-mem-tile ObjectFIFO limits.
+
+    The algorithm tries to pack as much traffic as possible into the fewest
+    number of memory tiles, only falling back to splitting (called "parts")
+    when the requested number of FIFOs would exceed the quota per memory tile.
+
+    Parameters
+    ----------
+    inputs : Dictionary mapping function names to details
+        The structure maps each function name to a dictionary produced by the front-end.
+        For each user function, it contains a special key named "_global" whose
+        value is the list of input DTensor objects appearing anywhere in that
+        function group.
+
+    outputs : Dictionary mapping function names to details
+        The structure is the same as the inputs parameter, but for output DTensor objects.
+
+    Returns
+    -------
+    Tuple of two elements:
+        - tile_map:
+            A dictionary mapping tensor names to a list of Part objects.
+            Every DTensor may be split into several Part instances when necessary.
+            Each Part records which memory tile it resides on and which 8-by-8 tensor tiles it contains.
+        
+        - num_pairs:
+            The total number of distinct (shim, memory) tile pairs that are allocated.
+            This value determines how many off-chip DMA channels will be generated.
+    """
+    MAX_MEM_TILES = 4      # Maximum number of memory tiles allowed
+    MAX_SEND = 6           # Maximum number of producer FIFOs per memory tile
+    MAX_RECV = 6           # Maximum number of consumer FIFOs per memory tile
+
+    # Running FIFO usage counters for every allocated memory tile
+    mem_send_cnt = []
+    mem_recv_cnt = []
+
+    Part = namedtuple("Part", "part_id shim_id mem_id tensor_tiles offset size stride")
+
+    # ------------------------------------------------------------------
+    # Internal helper: choose an existing or new memory tile that satisfies
+    #                  the requested number of SEND and RECV FIFOs.
+    # ------------------------------------------------------------------
+    def alloc_mem_tile(send_need, recv_need):
+        # 1. Attempt to allocate a new memory tile
+        if (len(mem_send_cnt) < MAX_MEM_TILES and
+            send_need <= MAX_SEND and recv_need <= MAX_RECV):
+            mem_send_cnt.append(send_need)
+            mem_recv_cnt.append(recv_need)
+            return True, len(mem_send_cnt) - 1   # Index of the newly added tile
+
+        # 2. Otherwise, try to pack into an existing tile
+        for i in range(len(mem_send_cnt)):
+            if (mem_send_cnt[i] + send_need <= MAX_SEND and
+                mem_recv_cnt[i] + recv_need <= MAX_RECV):
+                mem_send_cnt[i] += send_need
+                mem_recv_cnt[i] += recv_need
+                return True, i    # Reuse tile at index i
+
+        # 3. If no tile fits, raise an error
+        return False, -1
+
+    # ------------------------------------------------------------------
+    # Internal helper: split a DTensor into Part instances so each Part fits
+    #                  on some memory tile with respect to FIFO limits.
+    # ------------------------------------------------------------------
+    def make_parts_for_dtensor(dtensor, is_input):
+        placement = dtensor.layout.get_placement(dtensor.mapping)
+        tensor_tiles = list(placement.keys())
+        device_dims, size, stride = calculate_tensor_access(dtensor.shape, dtensor.layout.placement, dtensor.mapping)
+        base_offset = [0, 0, 0, 0]
+        if len(device_dims) <= 1:
+            factor = 1
+        else:
+            factor = size[device_dims[0]]
+
+        # Attempt to place the entire tensor in one go
+        send_need = len(tensor_tiles) if is_input else 1
+        recv_need = 1 if is_input else len(tensor_tiles)
+        success, mem_id = alloc_mem_tile(send_need, recv_need)
+        if success:
+            return [Part(0, mem_id, mem_id, tensor_tiles, base_offset, size, stride)]
+        # Must split if single allocation fails
+        # Greedy splitting strategy
+        parts = []
+        part_id = 0
+        remaining = tensor_tiles[:]
+        start_idx = 0
+        while remaining:
+            offset = base_offset[:]
+            chunk = remaining  # Take as many as capacity allows
+            # Shrink the chunk until it fits in FIFO limits
+            while chunk:
+                send_need = len(chunk) if is_input else 1
+                recv_need = 1 if is_input else len(chunk)
+                success, mem_id = alloc_mem_tile(send_need, recv_need)
+                if success:
+                    break
+                else:
+                    chunk = chunk[:(len(chunk) - factor)]  # Reduce size and retry
+            if not chunk:
+                raise RuntimeError(
+                    "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
+                    "exceeded or no more available tiles."
+                )
+            if len(device_dims) == 1:
+                offset[device_dims[0]] = start_idx
+                size[device_dims[0]] = len(chunk)
+            else:
+                offset[device_dims[1]] = start_idx // factor
+                size[device_dims[1]] = len(chunk) // factor
+            parts.append(Part(part_id, mem_id, mem_id, chunk, offset, size, stride))
+            part_id += 1
+            remaining = remaining[len(chunk):]
+            start_idx += len(chunk)
+        return parts
+
+    # ------------------------------------------------------------------
+    # Build the final mapping from tensor name to a list of Part instances
+    # ------------------------------------------------------------------
+    tile_map = defaultdict(list)
+
+    # Inputs use SEND quotas since memory tiles act as producers
+    for f_name, sub in inputs.items():
+        if f_name == "_global":
+            continue
+        for dtensor in sub["_global"]:
+            tile_map[dtensor.name].extend(
+                make_parts_for_dtensor(dtensor, is_input=True)
+            )
+
+    # Outputs use RECV quotas since memory tiles act as consumers
+    for f_name, sub in outputs.items():
+        if f_name == "_global":
+            continue
+        for dtensor in sub["_global"]:
+            tile_map[dtensor.name].extend(
+                make_parts_for_dtensor(dtensor, is_input=False)
+            )
+
+    return tile_map, len(mem_send_cnt)
+
+
 def codegen_aie_mlir(
     mod,
     func_groups,
@@ -772,13 +925,16 @@ def codegen_aie_mlir(
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
     """
     code = format_str("module {", indent=0)
+    
+    tile_map, mem_tile_size = allocate_mem_tiles_with_dtensors(inputs, outputs)
+    shim_tile_size = mem_tile_size
 
     # Determine device based on maximum tensor arguments across all kernels
-    max_num_args = 0
-    for lst in (inputs, outputs):
-        max_num_args += len(lst["_global"])
-    mem_tile_size = max_num_args // 2 + 1
-    shim_tile_size = max_num_args // 2 + 1
+    # max_num_args = 0
+    # for lst in (inputs, outputs):
+    #     max_num_args += len(lst["_global"])
+    # mem_tile_size = max_num_args // 2 + 1
+    # shim_tile_size = max_num_args // 2 + 1
     device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
 
@@ -870,59 +1026,71 @@ def codegen_aie_mlir(
                 placement = spec.get_placement(mapping)
                 global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
                 # shim to mem tile
-                if io == "in":
-                    code += format_str(
-                        f"aie.objectfifo @in_shim_{dtensor.name}(%tile_shim{idx % shim_tile_size}, {{%tile_mem{idx % mem_tile_size}}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-                    )
-                else:
-                    code += format_str(
-                        f"aie.objectfifo @out_shim_{dtensor.name}(%tile_mem0, {{%tile_shim0}}, 2 : i32) : !aie.objectfifo<{global_memref_type}>"
-                    )
-                # mem to comp tile
-                mem_strs = []
-                mem_stride = [0]
-                for tensor_tile, target_pe_tiles in placement.items():
-                    arg_name = dtensor.name + "_" + tensor_tile
-                    tile_strs = []
-                    mem_strs.append(f"@{io}_mem_{arg_name}")
-                    for tile in target_pe_tiles:
-                        if dtensor not in sub_func_lst[tile]:
-                            # this arg is not used in this kernel
-                            continue
-                        idx_str = "_".join(map(str, tile))
-                        core_name = f"%tile_comp_{func_name}_{idx_str}"
-                        if core_name not in tile2fifo:
-                            tile2fifo[core_name] = [mem_strs[-1]]
-                        else:
-                            tile2fifo[core_name].append(mem_strs[-1])
-                        tile_strs.append(core_name)
-                    tile_str = ", ".join(tile_strs)
-                    local_memref_type = get_memref_type_str(
-                        dtensor.dtype, dtensor.get_local_shape()
-                    )
-                    mem_stride.append(
-                        mem_stride[-1] + np.prod(dtensor.get_local_shape())
-                    )
+                for part in tile_map[dtensor.name]:
+                    memref_type = get_memref_type_str(dtensor.dtype, part.size)
+                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
                     if io == "in":
                         code += format_str(
-                            f"aie.objectfifo {mem_strs[-1]}(%tile_mem{idx % mem_tile_size}, {{{tile_str}}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                            f"aie.objectfifo @in_shim_{dtensor.name}{suffix}"
+                            f"(%tile_shim{part.shim_id}, {{%tile_mem{part.mem_id}}}, 2 : i32)"
+                            f" : !aie.objectfifo<{memref_type}>"
                         )
                     else:
                         code += format_str(
-                            f"aie.objectfifo {mem_strs[-1]}({tile_str}, {{%tile_mem0}}, 2 : i32) : !aie.objectfifo<{local_memref_type}>"
+                            f"aie.objectfifo @out_shim_{dtensor.name}{suffix}"
+                            f"(%tile_mem{part.mem_id}, {{%tile_shim{part.shim_id}}}, 2 : i32)"
+                            f" : !aie.objectfifo<{memref_type}>"
                         )
-                # important to sort to guarantee result correctness
-                # output should have spec of SN SN-1 ... S1 S0
-                mem_str = ", ".join(sorted(mem_strs))
-                mem_stride = mem_stride[:-1]
-                if io == "in":
-                    code += format_str(
-                        f"aie.objectfifo.link [@in_shim_{dtensor.name}] -> [{mem_str}]([] {mem_stride})"
-                    )
-                else:
-                    code += format_str(
-                        f"aie.objectfifo.link [{mem_str}] -> [@out_shim_{dtensor.name}]({mem_stride} [])"
-                    )
+                # mem to comp tile
+                for part in tile_map[dtensor.name]:
+                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    mem_strs = []
+                    mem_stride = [0]
+                    for tensor_tile in part.tensor_tiles:
+                        arg_name = f"{dtensor.name}_{tensor_tile}"
+                        mem_strs.append(f"@{io}_mem_{arg_name}")
+                        target_pe_tiles = placement[tensor_tile]
+                        tile_strs = []
+                        for tile in target_pe_tiles:
+                            if dtensor not in sub_func_lst[tile]:
+                                continue
+                            idx_str   = "_".join(map(str, tile))
+                            core_name = f"%tile_comp_{func_name}_{idx_str}"
+                            tile2fifo.setdefault(core_name, []).append(mem_strs[-1])
+                            tile_strs.append(core_name)
+                        tile_str = ", ".join(tile_strs)
+
+                        local_mtype = get_memref_type_str(dtensor.dtype,
+                                                        dtensor.get_local_shape())
+
+                        if io == "in":   # mem -> comp
+                            code += format_str(
+                                f"aie.objectfifo {mem_strs[-1]}"
+                                f"(%tile_mem{part.mem_id}, {{{tile_str}}}, 2 : i32)"
+                                f" : !aie.objectfifo<{local_mtype}>"
+                            )
+                        else:            # comp -> mem
+                            code += format_str(
+                                f"aie.objectfifo {mem_strs[-1]}"
+                                f"({tile_str}, {{%tile_mem{part.mem_id}}}, 2 : i32)"
+                                f" : !aie.objectfifo<{local_mtype}>"
+                            )
+                        mem_stride.append(mem_stride[-1] + np.prod(dtensor.get_local_shape()))
+
+                    # important to sort to guarantee result correctness
+                    # output should have spec of SN SN-1 ... S1 S0
+                    mem_str = ", ".join(sorted(mem_strs))
+                    mem_stride = mem_stride[:-1]
+                    if io == "in":
+                        code += format_str(
+                            f"aie.objectfifo.link "
+                            f"[@in_shim_{dtensor.name}{suffix}] -> [{mem_str}]([] {mem_stride})"
+                        )
+                    else:
+                        code += format_str(
+                            f"aie.objectfifo.link "
+                            f"[{mem_str}] -> [@out_shim_{dtensor.name}{suffix}]({mem_stride} [])"
+                        )
 
     # Create stream object FIFOs from top_func
     stream_ele_types = {}
@@ -981,12 +1149,11 @@ def codegen_aie_mlir(
 
                     for arg_id, tensor in enumerate(tensors):
                         # Calculate fifo index and get fifo name
-                        fifo_idx = (
-                            arg_id
-                            if is_input
-                            else arg_id + len(inputs[func_name][func_id])
-                        )
-                        fifo_name = tile2fifo[f"%{core_name}"][fifo_idx]
+                        if is_input:
+                            fifo_name = tile2fifo[f"%{core_name}"][arg_id]
+                        else:
+                            n_inputs  = len(inputs[func_name][func_id])
+                            fifo_name = tile2fifo[f"%{core_name}"][n_inputs + arg_id]
 
                         if is_acquire:
                             # Acquire FIFO and access subview
@@ -1064,44 +1231,41 @@ def codegen_aie_mlir(
     )
 
     with format_code(indent=6):
-        # Helper function to process DMA operations for inputs and outputs
-        def process_dma_operations(tensor_lst, is_input):
+        def process_dma_operations(tensor_lst, is_input, global_idx):
             nonlocal code
-            prefix = "in" if is_input else "out"
-            start_idx = 0 if is_input else global_idx
-            # Calculate access pattern
-            for idx, dtensor in enumerate(tensor_lst, start=start_idx):
-                name = dtensor.name
-                size, stride = calculate_tensor_access(
-                    dtensor.shape, dtensor.layout.placement, dtensor.mapping
-                )
-                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
-                # Build DMA attributes - inputs need issue_token, outputs don't
-                if is_input:
-                    dma_attrs = f"id = {idx} : i64, issue_token = true, metadata = @{prefix}_shim_{name}"
-                else:
-                    dma_attrs = f"id = {idx} : i64, metadata = @{prefix}_shim_{name}"
-                # Create DMA operation
-                code += format_str(
-                    f"aiex.npu.dma_memcpy_nd(0, 0, %arg{idx}[0, 0, 0, 0]{size}{stride}) {{{dma_attrs}}} : {global_memref_type}"
-                )
+            prefix   = "in" if is_input else "out"
+            cur_idx  = 0 if is_input else global_idx
+            for dtensor in tensor_lst:
+                for part in tile_map[dtensor.name]:
+                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    gtype = get_memref_type_str(dtensor.dtype, dtensor.shape)
+                    dma_attr = (
+                        f"id = {cur_idx} : i64, "
+                        f"{'issue_token = true, ' if is_input else ''}"
+                        f"metadata = @{prefix}_shim_{dtensor.name}{suffix}"
+                    )
+                    code += format_str(
+                        f"aiex.npu.dma_memcpy_nd(0, 0, %arg{cur_idx}{part.offset}{part.size}{part.stride})"
+                        f" {{{dma_attr}}} : {gtype}"
+                    )
+                cur_idx += 1
+            return cur_idx
 
-        # Process DMA operations for inputs and outputs
-        process_dma_operations(inputs["_global"], is_input=True)
-        process_dma_operations(outputs["_global"], is_input=False)
+        global_idx = process_dma_operations(inputs["_global"], True, 0)
+        process_dma_operations(outputs["_global"], False, global_idx)
 
-        # Helper function for DMA wait operations
         def process_dma_wait(tensor_lst, is_input):
             nonlocal code
             prefix = "in" if is_input else "out"
             for dtensor in tensor_lst:
-                code += format_str(
-                    f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}}}"
-                )
+                for part in tile_map[dtensor.name]:
+                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    code += format_str(
+                        f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}{suffix}}}"
+                    )
 
-        # Wait for all DMAs to complete
-        process_dma_wait(inputs["_global"], is_input=True)
-        process_dma_wait(outputs["_global"], is_input=False)
+        process_dma_wait(inputs["_global"],  True)
+        process_dma_wait(outputs["_global"], False)
 
     code += format_str("}")
     code += format_str("}", indent=2)
