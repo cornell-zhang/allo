@@ -534,7 +534,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
             # For 1D tensor with "R", replicate across all devices
             total_devices = device_mesh[0]
             device_dims = []
-            size = [1, total_devices, 1, shape[0]]
+            size = [1, 1, 1, shape[0]]
             stride = [0, 0, 0, 1]
         else:
             raise ValueError(f"Unsupported partition {partition_str} for 1D tensor.")
