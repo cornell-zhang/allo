@@ -760,19 +760,18 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
             A dictionary mapping tensor names to a list of Part objects.
             Every DTensor may be split into several Part instances when necessary.
             Each Part records which memory tile it resides on and which 8-by-8 tensor tiles it contains.
-        
+
         - num_pairs:
             The total number of distinct (shim, memory) tile pairs that are allocated.
             This value determines how many off-chip DMA channels will be generated.
     """
-    MAX_MEM_TILES = 4      # Maximum number of memory tiles allowed
-    MAX_SEND = 6           # Maximum number of producer FIFOs per memory tile
-    MAX_RECV = 6           # Maximum number of consumer FIFOs per memory tile
+    MAX_MEM_TILES = 4  # Maximum number of memory tiles allowed
+    MAX_SEND = 6  # Maximum number of producer FIFOs per memory tile (DMA limits)
+    MAX_RECV = 6  # Maximum number of consumer FIFOs per memory tile (DMA limits)
 
     # Running FIFO usage counters for every allocated memory tile
     mem_send_cnt = []
     mem_recv_cnt = []
-
     Part = namedtuple("Part", "part_id shim_id mem_id tensor_tiles offset size stride")
 
     # ------------------------------------------------------------------
@@ -781,19 +780,24 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
     # ------------------------------------------------------------------
     def alloc_mem_tile(send_need, recv_need):
         # 1. Attempt to allocate a new memory tile
-        if (len(mem_send_cnt) < MAX_MEM_TILES and
-            send_need <= MAX_SEND and recv_need <= MAX_RECV):
+        if (
+            len(mem_send_cnt) < MAX_MEM_TILES
+            and send_need <= MAX_SEND
+            and recv_need <= MAX_RECV
+        ):
             mem_send_cnt.append(send_need)
             mem_recv_cnt.append(recv_need)
-            return True, len(mem_send_cnt) - 1   # Index of the newly added tile
+            return True, len(mem_send_cnt) - 1  # Index of the newly added tile
 
         # 2. Otherwise, try to pack into an existing tile
         for i in range(len(mem_send_cnt)):
-            if (mem_send_cnt[i] + send_need <= MAX_SEND and
-                mem_recv_cnt[i] + recv_need <= MAX_RECV):
+            if (
+                mem_send_cnt[i] + send_need <= MAX_SEND
+                and mem_recv_cnt[i] + recv_need <= MAX_RECV
+            ):
                 mem_send_cnt[i] += send_need
                 mem_recv_cnt[i] += recv_need
-                return True, i    # Reuse tile at index i
+                return True, i  # Reuse tile at index i
 
         # 3. If no tile fits, raise an error
         return False, -1
@@ -805,7 +809,9 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
     def make_parts_for_dtensor(dtensor, is_input):
         placement = dtensor.layout.get_placement(dtensor.mapping)
         tensor_tiles = list(placement.keys())
-        device_dims, size, stride = calculate_tensor_access(dtensor.shape, dtensor.layout.placement, dtensor.mapping)
+        device_dims, size, stride = calculate_tensor_access(
+            dtensor.shape, dtensor.layout.placement, dtensor.mapping
+        )
         base_offset = [0, 0, 0, 0]
         if len(device_dims) <= 1:
             factor = 1
@@ -835,7 +841,7 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
                 if success:
                     break
                 else:
-                    chunk = chunk[:(len(chunk) - factor)]  # Reduce size and retry
+                    chunk = chunk[: (len(chunk) - factor)]  # Reduce size and retry
             if not chunk:
                 raise RuntimeError(
                     "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
@@ -849,7 +855,7 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
                 size[device_dims[1]] = len(chunk) // factor
             parts.append(Part(part_id, mem_id, mem_id, chunk, offset, size, stride))
             part_id += 1
-            remaining = remaining[len(chunk):]
+            remaining = remaining[len(chunk) :]
             start_idx += len(chunk)
         return parts
 
@@ -925,16 +931,9 @@ def codegen_aie_mlir(
         The first element in the tuple is the name of the stream, the second element is either 'in' or 'out'.
     """
     code = format_str("module {", indent=0)
-    
     tile_map, mem_tile_size = allocate_mem_tiles_with_dtensors(inputs, outputs)
+    # TODO: make use of the fifth mem tile
     shim_tile_size = mem_tile_size
-
-    # Determine device based on maximum tensor arguments across all kernels
-    # max_num_args = 0
-    # for lst in (inputs, outputs):
-    #     max_num_args += len(lst["_global"])
-    # mem_tile_size = max_num_args // 2 + 1
-    # shim_tile_size = max_num_args // 2 + 1
     device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
 
@@ -1024,11 +1023,12 @@ def codegen_aie_mlir(
                 mapping = dtensor.mapping
                 spec = dtensor.layout
                 placement = spec.get_placement(mapping)
-                global_memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
                 # shim to mem tile
                 for part in tile_map[dtensor.name]:
                     memref_type = get_memref_type_str(dtensor.dtype, part.size)
-                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    suffix = (
+                        f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    )
                     if io == "in":
                         code += format_str(
                             f"aie.objectfifo @in_shim_{dtensor.name}{suffix}"
@@ -1043,7 +1043,9 @@ def codegen_aie_mlir(
                         )
                 # mem to comp tile
                 for part in tile_map[dtensor.name]:
-                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    suffix = (
+                        f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    )
                     mem_strs = []
                     mem_stride = [0]
                     for tensor_tile in part.tensor_tiles:
@@ -1054,28 +1056,29 @@ def codegen_aie_mlir(
                         for tile in target_pe_tiles:
                             if dtensor not in sub_func_lst[tile]:
                                 continue
-                            idx_str   = "_".join(map(str, tile))
+                            idx_str = "_".join(map(str, tile))
                             core_name = f"%tile_comp_{func_name}_{idx_str}"
                             tile2fifo.setdefault(core_name, []).append(mem_strs[-1])
                             tile_strs.append(core_name)
                         tile_str = ", ".join(tile_strs)
-
-                        local_mtype = get_memref_type_str(dtensor.dtype,
-                                                        dtensor.get_local_shape())
-
-                        if io == "in":   # mem -> comp
+                        local_mtype = get_memref_type_str(
+                            dtensor.dtype, dtensor.get_local_shape()
+                        )
+                        if io == "in":  # mem -> comp
                             code += format_str(
                                 f"aie.objectfifo {mem_strs[-1]}"
                                 f"(%tile_mem{part.mem_id}, {{{tile_str}}}, 2 : i32)"
                                 f" : !aie.objectfifo<{local_mtype}>"
                             )
-                        else:            # comp -> mem
+                        else:  # comp -> mem
                             code += format_str(
                                 f"aie.objectfifo {mem_strs[-1]}"
                                 f"({tile_str}, {{%tile_mem{part.mem_id}}}, 2 : i32)"
                                 f" : !aie.objectfifo<{local_mtype}>"
                             )
-                        mem_stride.append(mem_stride[-1] + np.prod(dtensor.get_local_shape()))
+                        mem_stride.append(
+                            mem_stride[-1] + np.prod(dtensor.get_local_shape())
+                        )
 
                     # important to sort to guarantee result correctness
                     # output should have spec of SN SN-1 ... S1 S0
@@ -1152,7 +1155,7 @@ def codegen_aie_mlir(
                         if is_input:
                             fifo_name = tile2fifo[f"%{core_name}"][arg_id]
                         else:
-                            n_inputs  = len(inputs[func_name][func_id])
+                            n_inputs = len(inputs[func_name][func_id])
                             fifo_name = tile2fifo[f"%{core_name}"][n_inputs + arg_id]
 
                         if is_acquire:
@@ -1231,14 +1234,17 @@ def codegen_aie_mlir(
     )
 
     with format_code(indent=6):
+
         def process_dma_operations(tensor_lst, is_input, global_idx):
             nonlocal code
-            prefix   = "in" if is_input else "out"
-            cur_idx  = 0 if is_input else global_idx
+            prefix = "in" if is_input else "out"
+            cur_idx = 0 if is_input else global_idx
             for dtensor in tensor_lst:
                 for part in tile_map[dtensor.name]:
-                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
-                    gtype = get_memref_type_str(dtensor.dtype, dtensor.shape)
+                    suffix = (
+                        f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    )
+                    memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
                     dma_attr = (
                         f"id = {cur_idx} : i64, "
                         f"{'issue_token = true, ' if is_input else ''}"
@@ -1246,7 +1252,7 @@ def codegen_aie_mlir(
                     )
                     code += format_str(
                         f"aiex.npu.dma_memcpy_nd(0, 0, %arg{cur_idx}{part.offset}{part.size}{part.stride})"
-                        f" {{{dma_attr}}} : {gtype}"
+                        f" {{{dma_attr}}} : {memref_type}"
                     )
                 cur_idx += 1
             return cur_idx
@@ -1259,12 +1265,14 @@ def codegen_aie_mlir(
             prefix = "in" if is_input else "out"
             for dtensor in tensor_lst:
                 for part in tile_map[dtensor.name]:
-                    suffix = f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    suffix = (
+                        f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
+                    )
                     code += format_str(
                         f"aiex.npu.dma_wait {{symbol = @{prefix}_shim_{dtensor.name}{suffix}}}"
                     )
 
-        process_dma_wait(inputs["_global"],  True)
+        process_dma_wait(inputs["_global"], True)
         process_dma_wait(outputs["_global"], False)
 
     code += format_str("}")
