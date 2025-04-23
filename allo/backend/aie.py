@@ -519,6 +519,8 @@ def calculate_tensor_access(shape, partition, device_mesh):
     --------
     tuple
         A tuple containing three lists: (device_dims, size, stride)
+        device_dims stands for the device dimension in the size list.
+        For example, in the 2x2 GEMM case, the device_dims for 2x2x4x4 will be [0, 1].
     """
     # Handle 1D tensor case
     partition_str = "".join([p[0] for p in partition])
@@ -736,6 +738,8 @@ def map_kernels_to_device_mesh(kernel_shapes, device_shape):
 def allocate_mem_tiles_with_dtensors(inputs, outputs):
     """
     TODO: make use of the fifth mem tile
+    TODO: The current mapping scheme requires the matrices to be completely
+    partitioned without remaining elements (shape should be divided by tile num).
 
     Allocate (shim-tile, mem-tile) pairs for every DTensor that crosses the
     NPU boundary, while respecting the per-mem-tile ObjectFIFO limits.
