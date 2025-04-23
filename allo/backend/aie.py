@@ -518,7 +518,7 @@ def calculate_tensor_access(shape, partition, device_mesh):
     Returns:
     --------
     tuple
-        A tuple containing two lists: (device_dims, size, stride)
+        A tuple containing three lists: (device_dims, size, stride)
     """
     # Handle 1D tensor case
     partition_str = "".join([p[0] for p in partition])
@@ -735,6 +735,8 @@ def map_kernels_to_device_mesh(kernel_shapes, device_shape):
 
 def allocate_mem_tiles_with_dtensors(inputs, outputs):
     """
+    TODO: make use of the fifth mem tile
+
     Allocate (shim-tile, mem-tile) pairs for every DTensor that crosses the
     NPU boundary, while respecting the per-mem-tile ObjectFIFO limits.
 
@@ -928,7 +930,6 @@ def codegen_aie_mlir(
     """
     code = format_str("module {", indent=0)
     tile_map, mem_tile_size = allocate_mem_tiles_with_dtensors(inputs, outputs)
-    # TODO: make use of the fifth mem tile
     shim_tile_size = mem_tile_size
     device = "npu1_4col"
     code += format_str(f"aie.device({device}) {{", indent=2)
@@ -1231,30 +1232,28 @@ def codegen_aie_mlir(
 
     with format_code(indent=6):
 
-        def process_dma_operations(tensor_lst, is_input, global_idx):
+        def process_dma_operations(tensor_lst, is_input):
             nonlocal code
             prefix = "in" if is_input else "out"
-            cur_idx = 0 if is_input else global_idx
-            for dtensor in tensor_lst:
+            start_idx = 0 if is_input else global_idx
+            for idx, dtensor in enumerate(tensor_lst, start=start_idx):
                 for part in tile_map[dtensor.name]:
                     suffix = (
                         f"_{part.part_id}" if len(tile_map[dtensor.name]) > 1 else ""
                     )
                     memref_type = get_memref_type_str(dtensor.dtype, dtensor.shape)
                     dma_attr = (
-                        f"id = {cur_idx} : i64, "
+                        f"id = {idx} : i64, "
                         f"{'issue_token = true, ' if is_input else ''}"
                         f"metadata = @{prefix}_shim_{dtensor.name}{suffix}"
                     )
                     code += format_str(
-                        f"aiex.npu.dma_memcpy_nd(0, 0, %arg{cur_idx}{part.offset}{part.size}{part.stride})"
+                        f"aiex.npu.dma_memcpy_nd(0, 0, %arg{idx}{part.offset}{part.size}{part.stride})"
                         f" {{{dma_attr}}} : {memref_type}"
                     )
-                cur_idx += 1
-            return cur_idx
 
-        global_idx = process_dma_operations(inputs["_global"], True, 0)
-        process_dma_operations(outputs["_global"], False, global_idx)
+        process_dma_operations(inputs["_global"], True)
+        process_dma_operations(outputs["_global"], False)
 
         def process_dma_wait(tensor_lst, is_input):
             nonlocal code
