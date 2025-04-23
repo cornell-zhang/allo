@@ -7,8 +7,8 @@
 import os
 import subprocess
 import re
-import numpy as np
 from collections import defaultdict, namedtuple
+import numpy as np
 from .._mlir.ir import (
     MemRefType,
     Location,
@@ -744,14 +744,11 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
 
     Parameters
     ----------
-    inputs : Dictionary mapping function names to details
-        The structure maps each function name to a dictionary produced by the front-end.
-        For each user function, it contains a special key named "_global" whose
-        value is the list of input DTensor objects appearing anywhere in that
-        function group.
+    inputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as inputs.
 
-    outputs : Dictionary mapping function names to details
-        The structure is the same as the inputs parameter, but for output DTensor objects.
+    outputs: Dict[str, List[DTensor]]
+        A dictionary mapping function names to lists of DTensor objects as outputs.
 
     Returns
     -------
@@ -840,8 +837,7 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
                 success, mem_id = alloc_mem_tile(send_need, recv_need)
                 if success:
                     break
-                else:
-                    chunk = chunk[: (len(chunk) - factor)]  # Reduce size and retry
+                chunk = chunk[: (len(chunk) - factor)]  # Reduce size and retry
             if not chunk:
                 raise RuntimeError(
                     "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
