@@ -312,12 +312,6 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             exprs=[AffineExpr.get_dim(i) for i in range(rank)],
                             context=module.context,
                         )
-                        fifo_dim_map = AffineMap.get(
-                            dim_count=rank + 1,
-                            symbol_count=0,
-                            exprs=[AffineExpr.get_dim(i) for i in range(rank + 1)],
-                            context=module.context,
-                        )
                         element_load_op = affine_d.AffineLoadOp(
                             result=element_type,
                             memref=data.owner,
