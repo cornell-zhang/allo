@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, super-init-not-called, too-many-nested-blocks, too-many-branches
-# pylint: disable=consider-using-enumerate, no-value-for-parameter, too-many-function-args
+# pylint: disable=consider-using-enumerate, no-value-for-parameter, too-many-function-args, redefined-variable-type
 
 import os
 from ..backend.llvm import LLVMModule
