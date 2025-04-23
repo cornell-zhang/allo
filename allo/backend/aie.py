@@ -787,7 +787,7 @@ def allocate_mem_tiles_with_dtensors(inputs, outputs):
             return True, len(mem_send_cnt) - 1  # Index of the newly added tile
 
         # 2. Otherwise, try to pack into an existing tile
-        for i in range(len(mem_send_cnt)):
+        for i, _ in enumerate(mem_send_cnt):
             if (
                 mem_send_cnt[i] + send_need <= MAX_SEND
                 and mem_recv_cnt[i] + recv_need <= MAX_RECV
