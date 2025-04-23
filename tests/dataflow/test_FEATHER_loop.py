@@ -49,7 +49,7 @@ def top():
                     for k in range(AH): # Iterations of a reduction
                         last_res: float32 = 0.0 if k == 0 else local_result[j]
                         iAct: float32 = iActs[j, k + h * AH]
-                        weight: float32 = weights[K // 2 + k, i - 1] if j < AW // 2 else weights[k, i - 1]
+                        weight: float32 = weights[K // 2 + k, i] if j < AW // 2 else weights[k, i]
                         result: float32 = last_res + iAct * weight
                         local_result[j] = result
                 nest_out.put(local_result)
@@ -61,9 +61,10 @@ def top():
     
     @df.kernel(mapping=[1])
     def bus():
-        array: float32[AW] = nest_out.get()
-        with allo.meta_for(AW) as i:
-            connection[0, i].put(array[i])
+        for _ in range(M // (AW // 2) * AH):
+            array: float32[AW] = nest_out.get()
+            with allo.meta_for(AW) as i:
+                connection[0, i].put(array[i])
     
 
     @df.kernel(mapping=[P0, P1])
@@ -173,35 +174,41 @@ def test_FEATHER_GEMM():
     iActs = iAct_make_layout(iActs_no_layout)
     weights = np.random.rand(K, N).astype(np.float32)
 
-    sim_mod = df.build(top, target="simulator", enable_tensor=False)
+    sim_mod = df.build(top, target="simulator")
     oActs = np.zeros((AW, OD), dtype=np.float32)
     sim_mod(iActs, weights, inst_6x4, oActs)
     # sim_mod(iActs, weights, inst_3x2, oActs)
     oActs_no_layout = np.dot(iActs_no_layout, weights)
     ref = oAct_make_layout(oActs_no_layout)
 
-    print(ref[3], oActs[1])
-    print(ref[2], oActs[2])
-    print(ref[1], oActs[5])
-    print(ref[0], oActs[6])
-    # np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
-    # np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
-    # np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
-    # np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
+    # np.set_printoptions(linewidth=100)
+    # print(ref[3], oActs[1], sep="\n")
+    # print(ref[2], oActs[2], sep="\n")
+    # print(ref[1], oActs[5], sep="\n")
+    # print(ref[0], oActs[6], sep="\n")
+    np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
+    np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
+    np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
+    np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
     # print(ref[0], oActs[2])
     # print(ref[1], oActs[0])
     # np.testing.assert_allclose(ref[0], oActs[2], atol=1e-5)
     # np.testing.assert_allclose(ref[1], oActs[0], atol=1e-5)
-    # print("Dataflow Simulator Passed!")
+    print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
-        mod_csym = df.build(top)
+        mod_csim = df.build(top)
         oActs = np.zeros((AW, OD), dtype=np.float32)
-        mod_csym(iActs, weights, inst_6x4, oActs)
-        print(ref[3], oActs[1])
-        print(ref[2], oActs[2])
-        print(ref[1], oActs[5])
-        print(ref[0], oActs[6])
+        mod_csim(iActs, weights, inst_6x4, oActs)
+        # print(ref[3], oActs[1], sep="\n")
+        # print(ref[2], oActs[2], sep="\n")
+        # print(ref[1], oActs[5], sep="\n")
+        # print(ref[0], oActs[6], sep="\n")
+        np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
+        np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
+        np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
+        np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
+        print("Passed!")
 
 if __name__ == "__main__":
     test_FEATHER_GEMM()
