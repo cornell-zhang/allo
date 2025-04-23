@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=no-name-in-module, super-init-not-called, too-many-nested-blocks, too-many-branches
-# pylint: disable=consider-using-enumerate, no-value-for-parameter, too-many-function-args
+# pylint: disable=consider-using-enumerate, no-value-for-parameter, too-many-function-args, redefined-variable-type
 
 import os
 from ..backend.llvm import LLVMModule
@@ -312,12 +312,6 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             exprs=[AffineExpr.get_dim(i) for i in range(rank)],
                             context=module.context,
                         )
-                        fifo_dim_map = AffineMap.get(
-                            dim_count=rank + 1,
-                            symbol_count=0,
-                            exprs=[AffineExpr.get_dim(i) for i in range(rank + 1)],
-                            context=module.context,
-                        )
                         element_load_op = affine_d.AffineLoadOp(
                             result=element_type,
                             memref=data.owner,
@@ -325,11 +319,10 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             map=AffineMapAttr.get(element_dim_map),
                             ip=for_ip,
                         )  # Fetch the element
-                        affine_d.AffineStoreOp(
+                        memref_d.StoreOp(
                             value=element_load_op,
                             memref=fifo_ptr,
                             indices=[tail_index_op] + for_induction_vars,
-                            map=AffineMapAttr.get(fifo_dim_map),
                             ip=for_ip,
                         )  # Put the element to the stream
                         for ip in for_ips:
@@ -397,17 +390,9 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             exprs=[AffineExpr.get_dim(i) for i in range(rank)],
                             context=module.context,
                         )
-                        fifo_dim_map = AffineMap.get(
-                            dim_count=rank + 1,
-                            symbol_count=0,
-                            exprs=[AffineExpr.get_dim(i) for i in range(rank + 1)],
-                            context=module.context,
-                        )
-                        element_load_op = affine_d.AffineLoadOp(
-                            result=element_type,
+                        element_load_op = memref_d.LoadOp(
                             memref=fifo_ptr,
                             indices=[head_index_op] + for_induction_vars,
-                            map=AffineMapAttr.get(fifo_dim_map),
                             ip=for_ip,  # The innermost Loop body
                         )
                         affine_d.AffineStoreOp(
