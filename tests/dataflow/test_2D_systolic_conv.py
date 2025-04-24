@@ -7,12 +7,15 @@ from allo.ir.types import float32, int32
 import allo.dataflow as df
 from allo.backend import hls
 
-IR, IC = 5, 5  # Input rows and columns
+IR, IC = 6, 6  # Input rows and columns
 FR, FC = 3, 3  # Filter rows and columns
-OR, OC = 3, 3  # Output rows and columns
+OR, OC = IR - FR + 1, IC - FC + 1  # Output rows and columns
+Tile_OR, Tile_OC = OR, OC
+Tile_IR, Tile_IC = 12 , 12
+
 P0, P1 = (
     OR * OC + 2,
-    3,
+    FR,
 )  # We need a PE per element in the output matrix, and two layers of PE to add up results
 
 
@@ -30,8 +33,8 @@ def conv2D_lb(A: float32[IR, IC], B: float32[FR, FC]) -> float32[OR, OC]:
 # Convolution kernel with systolic array (basic)
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=FR*FC), shape=(P0, P1))
+    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=FR*FC), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
     def conv_kernel(A: float32[IR, IC], B: float32[FR, FC], C: float32[OR, OC]):
@@ -111,7 +114,7 @@ def test_convolution():
 
     print("Simulation passed!")
 
-    mod = df.build(top)
+    mod = df.build(top, target="vitis_hls", mode="hw_emu")
     if hls.is_available("vitis_hls"):
         C_sys = np.zeros((OR, OC), dtype=np.float32)
         mod(A, B, C_sys)
