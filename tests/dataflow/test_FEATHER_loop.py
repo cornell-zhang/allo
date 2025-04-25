@@ -1,7 +1,7 @@
 from math import log2
 
 import allo
-from allo.ir.types import float32, int8, int32
+from allo.ir.types import float32, int8, UInt
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -42,34 +42,43 @@ def top():
 
     @df.kernel(mapping=[1])
     def NEST(iActs: float32[AW, ID], weights: float32[K, N]):
-        for h in range(M // (AW // 2)): # Count of local reductions
-            for i in range(AH): # Rows, need to be auto pipelined
+        for h in range(M // (AW // 2)):  # Count of local reductions
+            for i in range(AH):  # Rows, need to be auto pipelined
                 local_result: float32[AW] = 0
-                for j in range(AW): # Cols, can be fully parallelized
-                    for k in range(AH): # Iterations of a reduction
+                for j in range(AW):  # Cols, can be fully parallelized
+                    for k in range(AH):  # Iterations of a reduction
                         last_res: float32 = 0.0 if k == 0 else local_result[j]
                         iAct: float32 = iActs[j, k + h * AH]
-                        weight: float32 = weights[K // 2 + k, i] if j < AW // 2 else weights[k, i]
+                        weight: float32 = (
+                            weights[K // 2 + k, i] if j < AW // 2 else weights[k, i]
+                        )
                         result: float32 = last_res + iAct * weight
                         local_result[j] = result
                 nest_out.put(local_result)
-    
-                    
+
     connection = df.array(
-        df.pipe(dtype=float32, shape=(), depth=1), shape=(P0, P1 * 2)
+        df.pipe(dtype=float32, shape=(), depth=1), shape=(P0 + 1, P1 * 2)
     )
-    
+
     @df.kernel(mapping=[1])
     def bus():
         for _ in range(M // (AW // 2) * AH):
             array: float32[AW] = nest_out.get()
             with allo.meta_for(AW) as i:
                 connection[0, i].put(array[i])
-    
+
+    inst_input = df.array(df.pipe(dtype=int8, shape=(), depth=1), shape=(P0, P1))
+
+    @df.kernel(mapping=[1])
+    def inst_rw(inst: int8[P0, P1]):
+        with allo.meta_for(P0) as i:
+            with allo.meta_for(P1) as j:
+                inst_input[i, j].put(inst[i, j])
 
     @df.kernel(mapping=[P0, P1])
-    def BIRRD(inst: int8[P0, P1], oActs: float32[AW, OD]):
+    def BIRRD():
         i, j = df.get_pid()
+        inst = inst_input[i, j].get()
         for k in range(OD):
             # The first stage
             with allo.meta_if(i == 0):
@@ -77,41 +86,37 @@ def top():
                 in_right: float32 = connection[0, 2 * j + 1].get()
                 out_left: float32 = 0.0
                 out_right: float32 = 0.0
-                if inst[i, j] == 0:  # Pass
+                if inst == 0:  # Pass
                     out_left = in_left
                     out_right = in_right
-                elif inst[i, j] == 1:  # Add Right
+                elif inst == 1:  # Add Right
                     out_left = in_left
                     out_right = in_left + in_right
-                elif inst[i, j] == 2:  # Add Left
+                elif inst == 2:  # Add Left
                     out_left = in_left + in_right
                     out_right = in_right
                 else:  # Swap
                     out_left = in_right
                     out_right = in_left
-                connection[
-                    i + 1, reverse_bits(2 * j, 2)
-                ].put(out_left)
-                connection[
-                    i + 1, reverse_bits(2 * j + 1, 2)
-                ].put(out_right)
+                connection[i + 1, reverse_bits(2 * j, 2)].put(out_left)
+                connection[i + 1, reverse_bits(2 * j + 1, 2)].put(out_right)
 
             # The last stage
             with allo.meta_elif(i == P0 - 1):
                 in_left: float32 = connection[P0 - 1, 2 * j].get()
                 in_right: float32 = connection[P0 - 1, 2 * j + 1].get()
-                if inst[i, j] == 0:  # Pass
-                    oActs[2 * j, k] = in_left
-                    oActs[2 * j + 1, k] = in_right
-                elif inst[i, j] == 1:  # Add Right
-                    oActs[2 * j, k] = in_left
-                    oActs[2 * j + 1, k] = in_left + in_right
-                elif inst[i, j] == 2:  # Add Left
-                    oActs[2 * j, k] = in_left + in_right
-                    oActs[2 * j + 1, k] = in_right
+                if inst == 0:  # Pass
+                    connection[P0, 2 * j].put(in_left)
+                    connection[P0, 2 * j + 1].put(in_right)
+                elif inst == 1:  # Add Right
+                    connection[P0, 2 * j].put(in_left)
+                    connection[P0, 2 * j + 1].put(in_left + in_right)
+                elif inst == 2:  # Add Left
+                    connection[P0, 2 * j].put(in_left + in_right)
+                    connection[P0, 2 * j + 1].put(in_right)
                 else:  # Swap
-                    oActs[2 * j, k] = in_right
-                    oActs[2 * j + 1, k] = in_left
+                    connection[P0, 2 * j].put(in_right)
+                    connection[P0, 2 * j + 1].put(in_left)
 
             # Stages in the middle
             with allo.meta_else():
@@ -119,13 +124,13 @@ def top():
                 in_right: float32 = connection[i, 2 * j + 1].get()
                 out_left: float32 = 0.0
                 out_right: float32 = 0.0
-                if inst[i, j] == 0:  # Pass
+                if inst == 0:  # Pass
                     out_left = in_left
                     out_right = in_right
-                elif inst[i, j] == 1:  # Add Right
+                elif inst == 1:  # Add Right
                     out_left = in_left
                     out_right = in_left + in_right
-                elif inst[i, j] == 2:  # Add Left
+                elif inst == 2:  # Add Left
                     out_left = in_left + in_right
                     out_right = in_right
                 else:  # Swap
@@ -137,6 +142,12 @@ def top():
                 connection[
                     i + 1, reverse_bits(2 * j + 1, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
                 ].put(out_right)
+
+    @df.kernel(mapping=[1])
+    def output(oActs: float32[AW, OD]):
+        for k in range(M // (AW // 2) * AH):
+            with allo.meta_for(AW) as i:
+                oActs[i, k] = connection[P0, i].get()
 
 
 def iAct_make_layout(iActs: np.ndarray):
@@ -209,6 +220,10 @@ def test_FEATHER_GEMM():
         np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
         np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
         print("Passed!")
+
+        mod_csyn = df.build(top, mode="csyn")
+        mod_csyn()
+
 
 if __name__ == "__main__":
     test_FEATHER_GEMM()
