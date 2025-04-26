@@ -966,15 +966,8 @@ class Schedule:
                         args[0] = get_name(args[0])
                 with self.module.context, Location.unknown():
                     primitive_func = getattr(self, primitive[0])
-                    # Access the original function that was decorated
-                    original_func = (
-                        primitive_func.__wrapped__
-                        if hasattr(primitive_func, "__wrapped__")
-                        else primitive_func
-                    )
-                    # Apply the original function directly
-                    original_func(self, *args, **kwargs)
-                    self.primitive_sequences.append((primitive[0], args, kwargs))
+                    # directly apply primitives to new functions
+                    primitive_func(*args, **kwargs)
 
     def get_equivalent_variables(self, name):
         use_def = analyze_use_def(self.module)
