@@ -473,10 +473,15 @@ def test_nested_compose():
     s_const_5 = schedule_const(add_const, 5)
     s_const_7 = schedule_const(add_const, 7)
     s = allo.customize(top)
-    s.compose(s_const_5, id="const5")
-    s.compose(s_const_7, id="const7")
-    mod = s.build(target="vitis_hls")
-    print(mod)
+    # only apply to one of the add_const
+    s.compose(s_const_5, id="const7")
+    mod = s.build(target="vitis_hls").hls_code
+    assert "add_const5" in mod and "add_const_const5" in mod
+    assert "add_const7" in mod and "add_const_const7" in mod
+    # Count number of pipeline pragmas in the module
+    # including the load/store rewind
+    pipeline_count = str(mod).count("#pragma HLS pipeline II=1")
+    assert pipeline_count == 2
 
 
 if __name__ == "__main__":
