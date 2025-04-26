@@ -439,5 +439,45 @@ def test_dependent_primitives():
     s.compose(s0)
 
 
+def test_nested_compose():
+    M, K = 8, 8
+
+    def add(A: "float32[M, K]", B: "float32[M, K]", C: "float32[M, K]"):
+        for i, j in allo.grid(M, K, name="add"):
+            C[i, j] = A[i, j] + B[i, j]
+
+    def add_const[N](A: "float32[M, K]", B: "float32[M, K]", C: "float32[M, K]"):
+        add(A, B, C)
+        for i, j in allo.grid(M, K):
+            C[i, j] = C[i, j] + N
+
+    def top() -> "float32[M, K]":
+        A: float32[M, K] = 1
+        B: float32[M, K] = 2
+        C: float32[M, K] = 3
+        add_const[5, "const5"](A, B, C)
+        add_const[7, "const7"](A, B, C)
+        return C
+
+    def schedule_add(add):
+        s = allo.customize(add)
+        s.pipeline("j")
+        return s
+
+    def schedule_const(add_const, N):
+        add_s = schedule_add(add)
+        s = allo.customize(add_const, instantiate=[N])
+        s.compose(add_s)
+        return s
+
+    s_const_5 = schedule_const(add_const, 5)
+    s_const_7 = schedule_const(add_const, 7)
+    s = allo.customize(top)
+    s.compose(s_const_5, id="const5")
+    s.compose(s_const_7, id="const7")
+    mod = s.build(target="vitis_hls")
+    print(mod)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
