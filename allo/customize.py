@@ -93,7 +93,8 @@ def wrapped_apply(fn):
         # Update insertion point
         sch.ip = InsertionPoint.at_block_terminator(sch.top_func.entry_block)
         # Record primitive sequences
-        sch.primitive_sequences.append((fn.__name__, list(args[1:]), kwargs))
+        if fn.__name__ != "compose":
+            sch.primitive_sequences.append((fn.__name__, list(args[1:]), kwargs))
         return res
 
     return wrapper
@@ -967,7 +968,6 @@ class Schedule:
                     primitive_func = getattr(self, primitive[0])
                     # directly apply primitives to new functions
                     primitive_func(*args, **kwargs)
-                    self.primitive_sequences.append((primitive[0], args, kwargs))
 
     def get_equivalent_variables(self, name):
         use_def = analyze_use_def(self.module)
