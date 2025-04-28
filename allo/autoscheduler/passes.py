@@ -529,14 +529,14 @@ def extract_reorder_and_pipeline(
         node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
         if perm_idx == 0:
             schedule_primitives.append(
-                SchedulePrimitive.pipeline(loop_band[-1], node_info.II)
+                SchedulePrimitive.pipeline(loop_band[-1], 1)
             )
         else:
             perm = node_info.permutation
             new_loop_order = [loop_band[i] for i in perm]
             schedule_primitives.append(SchedulePrimitive.reorder(new_loop_order))
             schedule_primitives.append(
-                SchedulePrimitive.pipeline(new_loop_order[-1], node_info.II)
+                SchedulePrimitive.pipeline(new_loop_order[-1], 1)
             )
 
     return schedule_primitives

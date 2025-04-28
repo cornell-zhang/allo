@@ -56,7 +56,7 @@ def test_simple(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="sw_emu", project="test_simple.prj", wrap_io=True
+            target="vitis_hls", mode="hw_emu", project="test_simple.prj", wrap_io=True
         )
         input = np.zeros((10, 10), dtype=np.int32)
 
@@ -91,7 +91,7 @@ def test_simple(debug_point, kind):
 
 #     elif is_available("vitis_hls"):
 #         mod = optimized_schedule.build(
-#             target="vitis_hls", mode="sw_emu", project="test_three_mm.prj", wrap_io=False
+#             target="vitis_hls", mode="hw_emu", project="test_three_mm.prj", wrap_io=False
 #         )
 #         output = np.zeros_like(expected)
 #         mod(*inputs, output)
@@ -104,11 +104,11 @@ def test_simple(debug_point, kind):
 @pytest.mark.parametrize("kind", kinds)
 def test_two_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
-        "two_mm", size="small", concrete_type=float32
+        "two_mm", size="medium", concrete_type=float32
     )
     try:
         optimized_schedule = dataflow_optimization_pass(
-            schedule, debug_point=debug_point, kind=kind
+            schedule, debug_point=debug_point, kind=kind, verbose=True
         )
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -122,7 +122,7 @@ def test_two_mm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="sw_emu", project="test_two_mm.prj"
+            target="vitis_hls", mode="hw_emu", project="test_two_mm.prj"
         )
         output = np.zeros_like(expected)
         mod(*inputs, output)
@@ -158,7 +158,7 @@ def test_atax(debug_point, kind):
     elif is_available("vitis_hls"):
         print(optimized_schedule.module)
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="sw_emu", project="test_atax.prj"
+            target="vitis_hls", mode="hw_emu", project="test_atax.prj", wrap_io=False
         )
         print(mod.hls_code)
         mod(A, x, y)
@@ -212,7 +212,7 @@ def test_gemm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="sw_emu", project="test_gemm.prj"
+            target="vitis_hls", mode="hw_emu", project="test_gemm.prj"
         )
         output = np.zeros_like(expected)
         mod(A, B, C, output)
@@ -247,7 +247,7 @@ def test_gesummv(debug_point, kind):
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="sw_emu", project="test_gesummv.prj"
+            target="vitis_hls", mode="hw_emu", project="test_gesummv.prj"
         )
         y = np.zeros_like(expected)
         mod(A, B, x, y)
