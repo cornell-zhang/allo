@@ -93,7 +93,7 @@ def _test_gemm_1D():
 def _test_gemm_2D():
     TyI, TyO = int16, int32
     M, N, K = 16, 16, 16
-    P0, P1 = 2, 2
+    P0, P1 = 4, 4
 
     @df.region()
     def top():
