@@ -314,15 +314,22 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     new_alloc1 = memref_d.AllocOp(memref_type, [], [], ip=ip)
     new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
 
-    loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+    #loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+    irrelevant_loops = [
+        loop for loop in loop_nest if loop.induction_variable not in loop_load.indices
+    ]
+    irrelevant_ivs = [loop.induction_variable for loop in irrelevant_loops]
+
+    if len(irrelevant_ivs) == 0:
+        return False
 
     with InsertionPoint.at_block_begin(loop_nest[0].body):
         first_iter_set = affine_d.IntegerSet.get(
-            1, 0, [affine_d.AffineExpr.get_dim(0)], [True]
+            1, 0, [affine_d.AffineExpr.get_dim(i) for i in range(len(irrelevant_ivs))], [True] * len(irrelevant_ivs)
         )
 
         first_iter_if = affine_d.AffineIfOp(
-            results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown()
+            results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown()
         )
 
         first_iter_if.attributes["condition"] = IntegerSetAttr.get(first_iter_set)
@@ -341,21 +348,29 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     loop_load.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
     loop_store.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
 
-    inner_loop_upper_map = loop_nest[0].upperBoundMap.value
+    # inner_loop_upper_map = loop_nest[0].upperBoundMap.value
 
-    # check upper bound is a constant
-    if not (
-        inner_loop_upper_map.n_dims == 0 and len(inner_loop_upper_map.results) == 1
-    ):
-        return False
+    # # check upper bound is a constant
+    # if not (
+    #     inner_loop_upper_map.n_dims == 0 and len(inner_loop_upper_map.results) == 1
+    # ):
+    #     return False
 
-    loop_upper_bound = inner_loop_upper_map.results[0]
+    # loop_upper_bound = inner_loop_upper_map.results[0]
+
+    upper_bounds = [loop.upperBoundMap.value.results[0] for loop in irrelevant_loops]
     last_iter_set = affine_d.IntegerSet.get(
-        1, 0, [affine_d.AffineExpr.get_dim(0) - loop_upper_bound + 1], [True]
-    )
+                    len(irrelevant_ivs),
+                    0,
+                    [
+                        affine_d.AffineExpr.get_dim(i) - upper_bound + 1
+                        for i, upper_bound in enumerate(upper_bounds)
+                    ],
+                    [True] * len(irrelevant_ivs),
+                )
 
     last_iter_if = affine_d.AffineIfOp(
-        results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown(), ip=ip
+        results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown(), ip=ip
     )
 
     last_iter_if.move_after(loop_store)
