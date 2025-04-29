@@ -26,3 +26,20 @@ def format_code(indent=4):
         yield
     finally:
         INDENT = old_indent
+
+def dfs_print(op, indent=0):
+    op_name = str(op.name)
+    if '.' in op_name:
+        dialect = op_name.split('.')[0]
+    else:
+        dialect = "(x)"
+    
+    print('  ' * indent + f"Operation: {op_name},\tDialect: {dialect}")
+
+    for region in op.regions:
+        for block in region.blocks:
+            for child_op in block.operations:
+                dfs_print(child_op, indent + 1)
+
+def print_module(module):
+    dfs_print(module.operation)
