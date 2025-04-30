@@ -199,3 +199,46 @@ def scaled_dot_product_attention[
             Z[i, h * (D // H) + j] = C_h[i, j]
 
     return Z
+
+
+def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Pd0, Pd1](
+    inp: "Ty[B, Cin, H, W]", filter: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
+) -> "Ty[B, Cout, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    Z: Ty[B, Cout, Oh, Ow]
+
+    # Support Padding via if statements seem not supported by Allo
+    # Padding is done by creating a new tensor
+    padded_inp: Ty[B, Cin, H + 2 * Pd0, W + 2 * Pd1] = 0.0
+
+    for b in range(B):
+        for c in range(Cin):
+            for h in range(H):
+                for w in range(W):
+                    padded_inp[b, c, h + Pd0, w + Pd1] = inp[b, c, h, w]
+
+    # Current implementation is does not support dilation and stride other than 1
+    for batch in range(B):
+        for cout in range(Cout):
+            for oh in range(Oh):
+                for ow in range(Ow):
+                    sum: Ty = 0
+
+                    for cin in range(Cin):
+                        for kh in range(Kh):
+                            for kw in range(Kw):
+                                h_pad: Ty = oh + kh
+                                w_pad: Ty = ow + kw
+                                sum += (
+                                    padded_inp[batch, cin, h_pad, w_pad]
+                                    * filter[cout, cin, kh, kw]
+                                )
+
+                    Z[batch, cout, oh, ow] = sum + bias[cout]
+    return Z
+
+
+def schedule_conv2d(s):
+    s.pipeline("conv2d:cout")
+    s.pipeline("conv2d:ow")
+    return s

@@ -30,6 +30,8 @@ from .nn import (
     schedule_layernorm,
     GeLU,
     schedule_gelu,
+    conv2d,
+    schedule_conv2d,
 )
 
 KERNEL2SCHEDULE = {}
@@ -53,5 +55,6 @@ KERNEL2SCHEDULE.update(
         softmax: schedule_softmax,
         layer_norm: schedule_layernorm,
         GeLU: schedule_gelu,
+        conv2d: schedule_conv2d,
     }
 )
