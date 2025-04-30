@@ -760,9 +760,12 @@ def analyze_read_write_patterns(mlir_func):
         collect_subviews(block)
 
     # Helper to resolve a value to its original argument index if it's a subview
-    def resolve_to_arg_index(value):
-        if BlockArgument.isinstance(value):
-            return BlockArgument(value).arg_number
+    def resolve_to_func_arg_index(value):
+        while BlockArgument.isinstance(value):
+            arg = BlockArgument(value)
+            if isinstance(arg.owner.owner, func_d.FuncOp):
+                return arg.arg_number
+            value = arg.owner.owner.operands[arg.arg_number]
         if value in subview_map:
             return subview_map[value]
         return None
@@ -830,8 +833,8 @@ def analyze_read_write_patterns(mlir_func):
                 elif op_name == "memref.copy":
                     # First operand is source, second is destination
                     if len(op.operands) >= 2:
-                        src_arg_index = resolve_to_arg_index(op.operands[0])
-                        dst_arg_index = resolve_to_arg_index(op.operands[1])
+                        src_arg_index = resolve_to_func_arg_index(op.operands[0])
+                        dst_arg_index = resolve_to_func_arg_index(op.operands[1])
                         if src_arg_index == arg_index:
                             is_input = True
                         if dst_arg_index == arg_index:
@@ -868,7 +871,7 @@ def analyze_read_write_patterns(mlir_func):
                             # Check if our argument is used in any of these positions
                             for idx in ins_indices:
                                 if idx < total_operands:
-                                    operand_arg_index = resolve_to_arg_index(
+                                    operand_arg_index = resolve_to_func_arg_index(
                                         op.operands[idx]
                                     )
                                     if operand_arg_index == arg_index:
@@ -876,7 +879,7 @@ def analyze_read_write_patterns(mlir_func):
 
                             for idx in outs_indices:
                                 if idx < total_operands:
-                                    operand_arg_index = resolve_to_arg_index(
+                                    operand_arg_index = resolve_to_func_arg_index(
                                         op.operands[idx]
                                     )
                                     if operand_arg_index == arg_index:
@@ -886,7 +889,7 @@ def analyze_read_write_patterns(mlir_func):
                         if not explicit_ins_outs:
                             # First num_ins operands are inputs
                             for i in range(min(num_ins, total_operands)):
-                                operand_arg_index = resolve_to_arg_index(op.operands[i])
+                                operand_arg_index = resolve_to_func_arg_index(op.operands[i])
                                 if operand_arg_index == arg_index:
                                     is_input = True
 
@@ -894,7 +897,7 @@ def analyze_read_write_patterns(mlir_func):
                             for i in range(
                                 max(0, total_operands - num_outs), total_operands
                             ):
-                                operand_arg_index = resolve_to_arg_index(op.operands[i])
+                                operand_arg_index = resolve_to_func_arg_index(op.operands[i])
                                 if operand_arg_index == arg_index:
                                     is_output = True
 
@@ -920,7 +923,7 @@ def analyze_read_write_patterns(mlir_func):
                 # Fallback: Check if any argument is directly used in any other operation
                 else:
                     for operand in op.operands:
-                        operand_arg_index = resolve_to_arg_index(operand)
+                        operand_arg_index = resolve_to_func_arg_index(operand)
                         if operand_arg_index == arg_index:
                             # By default, assume it's an input
                             is_input = True
