@@ -799,43 +799,77 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Assign(ctx, node):
-        # Compute RHS
-        rhs = build_stmt(ctx, node.value)
+        # Remove redundant array building
         if (
-            isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-        ) and not isinstance(node.targets[0], ast.Subscript):
-            targets = []
-            if isinstance(node.targets[0], ast.Tuple):
-                targets = node.targets[0].elts
-            else:
-                targets = [node.targets[0]]
-            for idx, target in enumerate(targets):
-                if isinstance(target, ast.Name):
-                    if isinstance(rhs, list):
-                        # array of FIFOs
-                        for ele in rhs:
-                            new_name = target.id + "_" + ele.attributes["id"].value
-                            ele.attributes["name"] = StringAttr.get(new_name)
-                            ctx.buffers[new_name] = ele
-                        return rhs
-                    if hasattr(rhs, "attributes"):
-                        rhs.attributes["name"] = StringAttr.get(target.id)
-                    if target.id in ctx.buffers:
-                        raise RuntimeError(
-                            f"Variable `{target.id}` has already been defined, please use a different name"
-                        )
-                    ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
-                    if (
-                        isinstance(node.value, ast.Call)
-                        and isinstance(node.value.func, ast.Attribute)
-                        and node.value.func.attr == "get_pid"
-                    ):
-                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
-                            f"df.p{idx}"
-                        ]
-                else:
-                    store_op = build_stmt(ctx, target, val=rhs, idx=idx)
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.targets[0], ast.Subscript)
+            and isinstance(node.targets[0].value, ast.Name)
+            and node.targets[0].value.id in ctx.buffers
+            and node.value.func.attr in {
+                "matmul",
+                "bmm",
+                "softmax",
+                "exp",
+                "abs",
+                "log",
+                "add",
+                "sub",
+                "mul",
+                "div",
+                "relu",
+                "conv2d",
+                "maxpool",
+                "sumpool",
+                "copy",
+                "transpose",
+                "linear",
+                "view",
+                "concat",
+            }
+        ):
+            lhs_name = node.targets[0].value.id
+            out_buffer = ctx.buffers[lhs_name]
+            rhs = ASTTransformer.build_Call(ctx, node.value, out_buffer)
             return rhs
+        # Compute RHS
+        else:
+            rhs = build_stmt(ctx, node.value)
+            if (
+                isinstance(node.value, ast.Call) or len(node.value.shape) > 0
+            ) and not isinstance(node.targets[0], ast.Subscript):
+                targets = []
+                if isinstance(node.targets[0], ast.Tuple):
+                    targets = node.targets[0].elts
+                else:
+                    targets = [node.targets[0]]
+                for idx, target in enumerate(targets):
+                    if isinstance(target, ast.Name):
+                        if isinstance(rhs, list):
+                            # array of FIFOs
+                            for ele in rhs:
+                                new_name = target.id + "_" + ele.attributes["id"].value
+                                ele.attributes["name"] = StringAttr.get(new_name)
+                                ctx.buffers[new_name] = ele
+                            return rhs
+                        if hasattr(rhs, "attributes"):
+                            rhs.attributes["name"] = StringAttr.get(target.id)
+                        if target.id in ctx.buffers:
+                            raise RuntimeError(
+                                f"Variable `{target.id}` has already been defined, please use a different name"
+                            )
+                        ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
+                        if (
+                            isinstance(node.value, ast.Call)
+                            and isinstance(node.value.func, ast.Attribute)
+                            and node.value.func.attr == "get_pid"
+                        ):
+                            ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                                f"df.p{idx}"
+                            ]
+                    else:
+                        store_op = build_stmt(ctx, target, val=rhs, idx=idx)
+                return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(
             ctx, rhs, node.value.dtype, node.dtype, node.value.shape
@@ -1786,7 +1820,7 @@ class ASTTransformer(ASTBuilder):
 
     # pylint: disable=too-many-return-statements
     @staticmethod
-    def build_Call(ctx, node):
+    def build_Call(ctx, node, out_buffer=None):
         original_func_id = ctx.func_id
         if isinstance(node.func, ast.Name):
             obj = ASTResolver.resolve(node.func, ctx.global_vars)
@@ -2107,7 +2141,7 @@ class ASTTransformer(ASTBuilder):
                         node.dims[1],
                     )
                 return ASTTransformer.build_library_op(
-                    ctx, node=node, attr=fn_name, new_args=new_args
+                    ctx, node=node, attr=fn_name, new_args=new_args, out_buffer=out_buffer
                 )
             if fn_name in {"layernorm", "gelu", "tril"}:
                 arg_results = [arg.result for arg in new_args]
@@ -2168,13 +2202,14 @@ class ASTTransformer(ASTBuilder):
         return call_op
 
     @staticmethod
-    def build_library_op(ctx, node, attr, new_args, dtype=None, shape=None):
+    def build_library_op(ctx, node, attr, new_args, dtype=None, shape=None, out_buffer=None):
         assert attr is not None and attr != ""
         ip = ctx.get_ip()
         dtype = dtype if dtype is not None else node.dtype
         shape = shape if shape is not None else node.shape
+        reuse = out_buffer is not None
+        buf_op = out_buffer if reuse else ASTTransformer.build_array(ctx, dtype, shape)
         with ip:
-            alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
             if attr == "concat":
                 axis = node.keywords[0].value.value
                 strides = [1] * len(shape)
@@ -2184,7 +2219,7 @@ class ASTTransformer(ASTBuilder):
                 if ctx.enable_tensor:
                     insert_op = tensor_d.InsertSliceOp(
                         source=new_args[0].result,
-                        dest=alloc_op.result,
+                        dest=buf_op.result,
                         static_offsets=offsets,
                         static_sizes=list(node.args[0].shape),
                         static_strides=strides,
@@ -2227,7 +2262,7 @@ class ASTTransformer(ASTBuilder):
                     ),
                 ]
                 op_ = memref_d.SubViewOp(
-                    source=alloc_op,
+                    source=buf_op,
                     result=result[0],
                     static_offsets=offsets,
                     static_sizes=list(node.args[0].shape),
@@ -2243,7 +2278,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 view_op = memref_d.SubViewOp(
-                    source=alloc_op,
+                    source=buf_op,
                     result=result[1],
                     static_offsets=new_offsets,
                     static_sizes=list(node.args[1].shape),
@@ -2258,7 +2293,7 @@ class ASTTransformer(ASTBuilder):
                     view_op,
                     ip=ctx.get_ip(),
                 )
-                return alloc_op
+                return buf_op
             if attr in {
                 "matmul",
                 "bmm",
@@ -2270,8 +2305,8 @@ class ASTTransformer(ASTBuilder):
                 # init zero
                 zero = MockConstant(0, ctx)
                 zero = ASTTransformer.build_cast_op(ctx, zero, Int(32), node.dtype)
-                linalg_fill = linalg_d.fill(zero.result, outs=[alloc_op.result])
-                result_tensor = linalg_fill if ctx.enable_tensor else alloc_op
+                linalg_fill = linalg_d.fill(zero.result, outs=[buf_op.result])
+                result_tensor = linalg_fill if ctx.enable_tensor else buf_op
                 ASTTransformer.attach_op_name(
                     ctx,
                     node,
@@ -2280,7 +2315,7 @@ class ASTTransformer(ASTBuilder):
                     postfix="init_zero",
                 )
             else:
-                result_tensor = alloc_op
+                result_tensor = buf_op
             # build linalg op
             if attr in {
                 "matmul",
@@ -2336,7 +2371,7 @@ class ASTTransformer(ASTBuilder):
                     "maxpool": linalg_d.pooling_nchw_max,
                     "sumpool": linalg_d.pooling_nchw_sum,
                 }.get(attr)(
-                    new_args[0].result, new_args[1].result, outs=[result_tensor]
+                    new_args[0].result, new_args[1].result, outs=[result_tensor.result if hasattr(result_tensor, "result") else result_tensor]
                 )
                 op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:
@@ -2345,7 +2380,7 @@ class ASTTransformer(ASTBuilder):
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                     "copy": linalg_d.copy,
-                }.get(attr)(new_args[0].result, outs=[result_tensor])
+                }.get(attr)(new_args[0].result, outs=[result_tensor.result if hasattr(result_tensor, "result") else result_tensor])
                 op = op.owner
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
@@ -2452,7 +2487,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
-        return op if ctx.enable_tensor else result_tensor
+        return op if (ctx.enable_tensor or reuse) else result_tensor
 
     @staticmethod
     def build_flattened_shapes(node, new_args):
