@@ -1340,13 +1340,10 @@ class AIEModule:
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
-        external_kernels = inject_aie_kernels(self.module)
         with open(
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.module))
-        lower_tensor_to_memref(self.module)
-        kernel_buf_dicts = record_local_buffer(self.module)
         _, all_funcs = get_public_funcs(self.module)
         # Create a dictionary to store the kernel functions
         func_groups = {}
@@ -1387,6 +1384,18 @@ class AIEModule:
                         io_lst["_global"].append(tensor)
         self.inputs = inputs
         self.outputs = outputs
+        external_kernels = inject_aie_kernels(self.module)
+        lower_tensor_to_memref(self.module)
+        kernel_buf_dicts = record_local_buffer(self.module)
+        _, all_funcs = get_public_funcs(self.module)
+        # update the function groups
+        func_groups = {}
+        for func in all_funcs:
+            func_name_w_id = func.attributes["sym_name"].value
+            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+            if func_name not in func_groups:
+                func_groups[func_name] = []
+            func_groups[func_name].append(func)
         code = codegen_aie_mlir(
             self.module,
             func_groups,
