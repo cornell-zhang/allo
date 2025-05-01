@@ -105,26 +105,30 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
 
 def classify_aie_functions(
     module: allo_ir.ir.Module
-) -> Tuple[func_d.FuncOp, Dict[str, List[func_d.FuncOp]]]:
+) -> Tuple[func_d.FuncOp, Dict[str, List[func_d.FuncOp]], List[func_d.FuncOp]]:
     # top function
     top_func:func_d.FuncOp = None
     # core functions
     core_func_groups:Dict[str, List[func_d.FuncOp]] = {}
+    # external functions
+    external_funcs:List[func_d.FuncOp] = []
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
-            if isinstance(func, func_d.FuncOp) and (
-                "sym_visibility" not in func.attributes
-                or func.attributes["sym_visibility"].value != "private"
-            ):
-                if func.attributes["sym_name"].value == "top":
-                    top_func = func
+            if isinstance(func, func_d.FuncOp):
+                if ("sym_visibility" in func.attributes
+                    and func.attributes["sym_visibility"].value == "private"
+                ):
+                    external_funcs.append(func)
                 else:
-                    func_name_w_id = func.attributes["sym_name"].value
-                    func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-                    if func_name not in core_func_groups:
-                        core_func_groups[func_name] = []
-                    core_func_groups[func_name].append(func)
-    return top_func, core_func_groups
+                    if func.attributes["sym_name"].value == "top":
+                        top_func = func
+                    else:
+                        func_name_w_id = func.attributes["sym_name"].value
+                        func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+                        if func_name not in core_func_groups:
+                            core_func_groups[func_name] = []
+                        core_func_groups[func_name].append(func)
+    return top_func, core_func_groups, external_funcs
 
 def map_global_io(inputs, outputs) -> Tuple[Dict, int, int]:
     """
@@ -348,28 +352,58 @@ def build_compute_core(
 def aie_codegen(
     device_type:str,
     core_func_groups:Dict[str, List[func_d.FuncOp]],
+    external_funcs:List[func_d.FuncOp],
     inputs, outputs,
 ) -> aie_ir.Module:
     
     io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
-    print(io_mapping)
-    print(mem_tile_num)
+
     wrapper_code = f"""
         module {{
             aie.device({device_type}) {{
-            }}
-        }}
+    """
+
+    # fixme: maybe better to resolve this using IR constructor
+    for func in external_funcs:
+        wrapper_code += format_str(str(func), indent=4)
+        
+    wrapper_code += """
+            }
+        }
     """
     with aie_ir.Context() as ctx, aie_ir.Location.unknown():
         # module wrapper
         module = aie_ir.Module.parse(wrapper_code, ctx)
-        # external funtions
-        # TODO
-        # aie_func_d.FuncOp(
-        # )
-        # shim tiles
-
-        # mem tiles
+        # find device op: aie.device(device_type)
+        device_op = None
+        for op in module.body.operations:
+            if isinstance(op, aie_d.DeviceOp):
+                device_op = op
+                break
+        assert device_op is not None, "aie.device not found"
+        device_body = device_op.regions[0].blocks[0]
+        # insert operations in the device body, before `aie.end``
+        end_op = None
+        for op in device_body.operations:
+            if isinstance(op, aie_d.EndOp):
+                end_op = op
+                break
+        assert not end_op is None
+        tile_map:Dict[str,aie_d.TileOp] = {}
+        with aie_ir.InsertionPoint(end_op):
+            # shim tile
+            for shim_id in range(shim_tile_num):
+                tile_map[f"shim_{shim_id}"] = aie_d.TileOp(
+                    col=shim_id, row=0,
+                    # allocation_scheme="shim",
+                )
+            # mem tiles
+            for mem_id in range(mem_tile_num):
+                tile_map[f"mem_{mem_id}"] = aie_d.TileOp(
+                    col=mem_id, row=1,
+                    # allocation_scheme="mem", 
+                )
+        print(module)
 
         transformer = ContextTransformer(ctx, module)
         # TODO
@@ -446,10 +480,10 @@ class AIE_MLIRModule:
         print_module(self.allo_module)
         print()
         print(self.allo_module)
-        top_func, core_func_groups = classify_aie_functions(self.allo_module)
+        top_func, core_func_groups, external_funcs = classify_aie_functions(self.allo_module)
         inputs, outputs = self.collect_io(core_func_groups)
         self.aie_module = aie_codegen(
-            device_type, core_func_groups,
+            device_type, core_func_groups, external_funcs,
             inputs, outputs,
         )
         pass

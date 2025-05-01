@@ -3,7 +3,7 @@
 
 import re
 from itertools import product
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 
 class Layout:
     def __init__(self, placement):
@@ -102,7 +102,7 @@ class DTensor:
                 local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
-    def get_access_pattern(self) -> Tuple[List,List,List]:
+    def get_access_pattern(self) -> Tuple[Dict,List,List,List]:
         """
         Specify how to access the dtensor (local tensor) from the global tensor
             (tensor has at most 4 dimensions: DMA support 4-dimension address generation)
