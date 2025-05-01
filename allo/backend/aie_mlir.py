@@ -1,5 +1,7 @@
 import os
-from typing import Dict, List, Tuple
+import re
+from typing import Dict, List, Tuple, Set
+from collections import defaultdict
 
 from .utils import format_str, format_code, print_module
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -16,22 +18,33 @@ from .._mlir.ir import (
 )
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
+from ..passes import analyze_read_write_patterns
+from ..memory import Layout, DTensor
+from dataclasses import dataclass
+
 # =======================
 import aie.dialects.aie as aie_d
 import aie.dialects.aiex as aiex_d
 import aie.dialects.aievec as aievec_d
+import aie.dialects.func as aie_func_d
 
 import aie.ir as aie_ir
 # =======================
 
-def process_aie_functions(
-    module: allo_ir.ir.Module
-) -> Tuple[func_d.FuncOp, List[func_d.FuncOp], Dict]:
-    # top function
-    top_func:func_d.FuncOp = None
-    # core functions
-    core_funcs:List[func_d.FuncOp] = []
-    # external kernel functions
+# ------------------------------------------------------------------
+@dataclass(frozen=True)
+class DMATensorTile:
+    dtensot_tile_id: int # dTensor may need to be further partitioned
+    shim_id: int
+    mem_id: int
+    tensor_tile_labels: List
+    offset: List
+    size: List
+    stride: List
+
+# ------------------------------------------------------------------
+
+def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
     external_kernels = {}
     injected_kernels = set()
     with module.context, allo_ir.ir.Location.unknown():
@@ -40,10 +53,7 @@ def process_aie_functions(
                 "sym_visibility" not in func.attributes
                 or func.attributes["sym_visibility"].value != "private"
             ):
-                if func.attributes["sym_name"].value == "top":
-                    top_func = func
-                else:
-                    core_funcs.append(func)
+                if func.attributes["sym_name"].value != "top":
                     func_name: str = func.attributes["sym_name"].value
                     external_kernels[func_name] = []
                     for block in func.regions[0].blocks:
@@ -91,57 +101,234 @@ def process_aie_functions(
                             )
                             kernel.attributes["sym_visibility"] = StringAttr.get("private")
 
-    return top_func, core_funcs, external_kernels
+    return external_kernels
+
+def classify_aie_functions(
+    module: allo_ir.ir.Module
+) -> Tuple[func_d.FuncOp, Dict[str, List[func_d.FuncOp]]]:
+    # top function
+    top_func:func_d.FuncOp = None
+    # core functions
+    core_func_groups:Dict[str, List[func_d.FuncOp]] = {}
+    with module.context, allo_ir.ir.Location.unknown():
+        for func in module.body.operations:
+            if isinstance(func, func_d.FuncOp) and (
+                "sym_visibility" not in func.attributes
+                or func.attributes["sym_visibility"].value != "private"
+            ):
+                if func.attributes["sym_name"].value == "top":
+                    top_func = func
+                else:
+                    func_name_w_id = func.attributes["sym_name"].value
+                    func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+                    if func_name not in core_func_groups:
+                        core_func_groups[func_name] = []
+                    core_func_groups[func_name].append(func)
+    return top_func, core_func_groups
+
+def map_global_io(inputs, outputs) -> Tuple[Dict, int, int]:
+    """
+    Current constrians:
+        - use 4 mem-shim tile pairs for io
+        - each port is assigned to one dtensor tile
+    """
+    MAX_MEM_TILES = 4  # Maximum number of memory tiles allowed
+    # https://riallto.ai/notebooks/3_2_Ryzenai_capabilities.html#memory-tile-properties
+    MAX_SEND = 6  # Maximum number of producer FIFOs per memory tile (DMA limits)
+    MAX_RECV = 6  # Maximum number of consumer FIFOs per memory tile (DMA limits)
+
+    @dataclass
+    class Tile:
+        send_number: int
+        recv_number: int
+    
+    used_tiles:List[Tile] = []
+
+    def assign_tile(send_need, recv_need) -> int: 
+        """
+            Try to assign a memory tile satisfying the requirement.
+            Return the tile index.
+                -1 indicates no tile avaliable.
+        """
+        # 1. Attempt to use a new memory tile
+        if (len(used_tiles) < MAX_MEM_TILES and send_need <= MAX_SEND and recv_need <= MAX_RECV):
+            used_tiles.append(Tile(send_need, recv_need))
+            return len(used_tiles) - 1  
+        # 2. Otherwise, try to pack into an existing tile
+        for i, _ in enumerate(used_tiles):
+            if (used_tiles[i].send_number + send_need <= MAX_SEND and used_tiles[i].recv_number + recv_need <= MAX_RECV):
+                used_tiles[i].send_number += send_need
+                used_tiles[i].recv_number += recv_need
+                return i 
+        # 3. No tile fits
+        return -1
+
+    def map_dtensor_to_tile(dtensor:DTensor, is_input:bool):
+        """
+            Currently, we focus on dtensor io using memory tiles. 
+            Shim tiles are assigned using a one-to-one mapping from memory tiles.
+
+            DTensors are sent to or from compute cores. 
+            Since memory tile is used for transfer, we assume that `receive` implies one `send` and `send` implies one `receive`.
+        """
+        placement, device_dims, size, stride = dtensor.get_access_pattern()
+        tensor_tiles = list(placement.keys()) # 'R' can use one port yet multilple destinations
+
+        send_need = len(tensor_tiles) if is_input else 1
+        recv_need = 1 if is_input else len(tensor_tiles)
+        mem_tile_id = assign_tile(send_need, recv_need)
+        if mem_tile_id >= 0:
+            return [DMATensorTile(
+                0, mem_tile_id, mem_tile_id, 
+                tensor_tiles, [0, 0, 0, 0], size, stride)]
+        # We failed to transfer the whole tensor with one memory tile. Try using more.
+        dma_tensor_tiles:List[DMATensorTile] = []
+        # fixme: incomplete
+        #   Currently, we may allow tensor tiles on a sharding demension to be sent using different memory tiles
+        lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]] 
+        remaining = tensor_tiles[:]
+        start_idx = 0
+        while remaining:
+            offset = [0,0,0,0]
+            chunk = remaining  
+            while chunk:
+                send_need = len(chunk) if is_input else 1
+                recv_need = 1 if is_input else len(chunk)
+                mem_tile_id = assign_tile(send_need, recv_need)
+                if mem_tile_id >= 0:
+                    break
+                chunk = chunk[: (len(chunk) - lose_factor)]  # Reduce size and retry
+            if not chunk:
+                raise RuntimeError(
+                    "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
+                    "exceeded or no more available tiles."
+                )
+            if len(device_dims) == 1:
+                offset[device_dims[0]] = start_idx
+                size[device_dims[0]] = len(chunk)
+            else:
+                offset[device_dims[1]] = start_idx // lose_factor
+                size[device_dims[1]] = len(chunk) // lose_factor
+            dma_tensor_tiles.append(
+                DMATensorTile(len(dma_tensor_tiles), mem_tile_id, mem_tile_id, chunk, offset, size, stride)
+            )
+            remaining = remaining[len(chunk) :]
+            start_idx += len(chunk)
+        return dma_tensor_tiles
+
+    tile_map:Dict[str,List[DMATensorTile]] = defaultdict(list)
+
+    for io_lst, is_input in ((inputs, True), (outputs, False)):
+        for _, sub in io_lst.items():
+            for dtensor in sub["_global"]:
+                tile_map[dtensor.name].extend(map_dtensor_to_tile(dtensor, is_input=is_input))
+
+    return tile_map, len(used_tiles), len(used_tiles)
 
 class ContextTransformer:
-    def __init__(self):
-        self.new_ctx = aie_ir.Context()
+    def __init__(self, target_ctx, module):
+        self.new_ctx = target_ctx
+        self.aie_module = module
         self.variable_map = {}
         pass
 
-    def transform(self):
-        pass
+    def get_ctx(self):
+        return self.new_ctx
+    
+    def copy_op(self, allo_op:allo_ir.ir.Operation):
+        new_attrs = None
+        if allo_op.attributes:
+            new_attrs = {}
+            for i in range(len(allo_op.attributes)):
+                named_attr = allo_op.attributes[i]
+                new_attrs[named_attr.name] = named_attr.attr
+        new_operands = None
+        if allo_op.operands:
+            new_operands = []
+            for i in range(len(allo_op.operands)):
+                new_operands.append(self.variable_map[allo_op.operands[i]])
+        result_type = None
+        if allo_op.results:
+            result_type:List[aie_ir.Type] = []
+            for i in range(len(allo_op.results)):
+                print(allo_op.results[i].type)
+                result_type.append(allo_op.results[i].type)
+                print(allo_op.results[i].type, type(allo_op.results[i].type))
+        print(allo_op)
+        print(allo_op.name)
+        print(new_operands)
+        print(new_attrs)
+        print(result_type)
+        loc = aie_ir.Location.unknown()
+        # 结果类型是 index
+        idx_type = aie_ir.IndexType.get()
+        # 创建属性：DenseElementsAttr 或 IntegerAttr 取决于 op 需要
+        value_attr = aie_ir.IntegerAttr.get(idx_type, 0)
+        # arith.constant 需要一个 attribute "value"
+        attributes = {"value": value_attr}
+        # 没有 operands
+        operands = []
+        # 一个结果，类型是 index
+        results = [idx_type]
+        print(results)
+        print(attributes)
+        op = aie_ir.Operation.create(
+            name="arith.constant",
+            results=results,
+            operands=operands,
+            attributes=attributes,
+            loc=loc,
+        )
+        new_op = aie_ir.Operation.create(
+            name="arith.constant",
+            operands=[],
+            attributes=attributes,
+            results=results,
+            loc = aie_ir.Location.unknown()
+        )
+        
+        return new_op
+    
+    def transform(self, allo_module:allo_ir.ir.Operation):
+        def dfs_transform(op, indent=0):
+            for region in op.regions:
+                for block in region.blocks:
+                    for child_op in block.operations:
+                        dfs_transform(child_op, indent + 1)
+                        return
+            new_op = self.copy_op(op)
 
-    def traverse(self):
-        pass
-    
-def clone_operation(op: allo_ir.ir.Operation, mapping, ip):
-    if len(op.regions)==0:
-        return aie_ir.Operation.parse(op.to_asm(), context=aie_ir.Context())
-    
-    # Clone the operation into insertion point ip
-    new_operands = [mapping[o] for o in op.operands]
-    new_op = aie_ir.Operation.create(
-        op.name,
-        operands=new_operands,
-        attributes=dict(op.attributes),
-        results=op.results.type if len(op.results) > 0 else None,
-        regions=[]
-    )
-    ip.insert(new_op)
-    
-    # Map results
-    for old, new in zip(op.results, new_op.results):
-        mapping[old] = new
+            for old_result, new_result in zip(op.results, new_op.results):
+                self.variable_map[old_result] = new_result
+            print(new_op)
+            
+        dfs_transform(allo_module)
 
-    # Clone regions recursively
-    for old_region, new_region in zip(op.regions, new_op.regions):
-        for old_block in old_region.blocks:
-            new_block = aie_ir.Block.create_at_start(new_region, old_block.argument_types)
-            for old_op in old_block.operations:
-                clone_operation(old_op, mapping, InsertionPoint.at_block_end(new_block))
-    
-    return new_op
+    def traverse(self, allo_module:allo_ir.ir.Operation):
+        def dfs_traverse(op, indent=0):
+            op_name = str(op.name)
+            if '.' in op_name:
+                dialect = op_name.split('.')[0]
+            else:
+                dialect = "(x)"
+            
+            print('  ' * indent + f"Operation: {op_name},\tDialect: {dialect}")
+            for i in range(len(op.results)):
+                print('  ' * indent + f"o:\t{op.results[i]}")
+
+            for i in range(len(op.operands)):
+                print('  ' * indent + f"i:\t{op.operands[i]}")
+
+            for region in op.regions:
+                for block in region.blocks:
+                    for child_op in block.operations:
+                        dfs_traverse(child_op, indent + 1)
+        dfs_traverse(allo_module)
 
 def build_compute_core(
     core_function: func_d.FuncOp
 ) -> aie_d.CoreOp:
     
-
-    # compute_core = aie_d.CoreOp(
-    #     result = 
-    #     tile =
-    # )
     op_str = """
     module {
         aie.device(npu1_1col) {
@@ -156,12 +343,17 @@ def build_compute_core(
     print(sample)
     # TODO
     pass
-    # return compute_core
+   
 
 def aie_codegen(
     device_type:str,
-    core_funcs:List[func_d.FuncOp],
+    core_func_groups:Dict[str, List[func_d.FuncOp]],
+    inputs, outputs,
 ) -> aie_ir.Module:
+    
+    io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
+    print(io_mapping)
+    print(mem_tile_num)
     wrapper_code = f"""
         module {{
             aie.device({device_type}) {{
@@ -171,12 +363,19 @@ def aie_codegen(
     with aie_ir.Context() as ctx, aie_ir.Location.unknown():
         # module wrapper
         module = aie_ir.Module.parse(wrapper_code, ctx)
-        print(module)
+        # external funtions
         # TODO
-        # build mlir code for each core
-        for core_func in core_funcs:
-            compute_core_op = build_compute_core(core_func)
-            print(compute_core_op)
+        # aie_func_d.FuncOp(
+        # )
+        # shim tiles
+
+        # mem tiles
+
+        transformer = ContextTransformer(ctx, module)
+        # TODO
+        # # build mlir code for each core
+        # for func_name, funcs in core_func_groups.items():
+        #     transformer.transform(funcs)
 
     return module
 
@@ -195,9 +394,41 @@ class AIE_MLIRModule:
         self.stream_info:dict = stream_info
         self.project_dir:str = project_dir
 
+        self.global_inputs:Set = set()
+        self.global_outputs:Set = set()
+
         self.aie_module:aie_ir.Module = None
         print(module)
     
+    def collect_io(
+        self,
+        func_groups:Dict[str, List[func_d.FuncOp]],
+    )-> Tuple[Dict,Dict]:
+        inputs = {}
+        outputs = {}
+        for func_name, funcs in func_groups.items():
+            inputs[func_name] = {}
+            outputs[func_name] = {}
+            inputs[func_name]["_global"] = []
+            outputs[func_name]["_global"] = []
+            for func in funcs:
+                func_name_w_id = func.attributes["sym_name"].value
+                func_id = tuple(map(int, func_name_w_id.split(func_name + "_")[-1].split("_")))
+                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+                in_idx, out_idx = analyze_read_write_patterns(func)
+                for io_lst, io_idx, io in ((inputs, in_idx, "in"), (outputs, out_idx, "out")):
+                    io_lst[func_name][func_id] = []
+                    for idx in io_idx:
+                        dtensor = self.func_args[func_name_w_id][idx]
+                        if dtensor not in io_lst[func_name]["_global"]:
+                            io_lst[func_name]["_global"].append(dtensor)
+                            if io == "in":
+                                self.global_inputs.add(dtensor)
+                            else:
+                                self.global_outputs.add(dtensor) 
+                        io_lst[func_name][func_id].append(dtensor)
+        return inputs, outputs
+        
     def build(self, device_type = "npu1_4col"):
         os.makedirs(os.path.join(self.project_dir, "build"), exist_ok=True)
         # record original allo mlir
@@ -205,8 +436,8 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-        # - extract external kernels, classify functions
-        top_func, core_funcs, external_kernels = process_aie_functions(self.allo_module)
+        # - extract external kernels
+        external_kernels = inject_external_kernels(self.allo_module)
         # - lower tensor to memref with registered pass
         passes = ["func.func(convert-linalg-to-affine-loops),lower-affine",]
         pipeline = f'builtin.module({",".join(passes)})'
@@ -215,8 +446,11 @@ class AIE_MLIRModule:
         print_module(self.allo_module)
         print()
         print(self.allo_module)
+        top_func, core_func_groups = classify_aie_functions(self.allo_module)
+        inputs, outputs = self.collect_io(core_func_groups)
         self.aie_module = aie_codegen(
-            device_type, core_funcs
+            device_type, core_func_groups,
+            inputs, outputs,
         )
         pass
         # TODO

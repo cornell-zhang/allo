@@ -1396,6 +1396,7 @@ class AIEModule:
             external_kernels,
             self.stream_info,
         )
+        return
         with open(os.path.join(self.project, "top.mlir"), "w", encoding="utf-8") as f:
             f.write(code)
         # compile external kernels
