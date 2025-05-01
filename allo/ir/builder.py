@@ -1689,7 +1689,10 @@ class ASTTransformer(ASTBuilder):
             ast.And: arith_d.AndIOp,
             ast.Or: arith_d.OrIOp,
         }.get(type(node.op))
-        return opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
+        result = opcls(stmts[0].result, stmts[1].result, ip=ctx.get_ip())
+        for i in range(2, len(stmts)):
+            result = opcls(result.result, stmts[i].result, ip=ctx.get_ip())
+        return result
 
     @staticmethod
     def build_IfExp(ctx, node):
