@@ -807,6 +807,20 @@ class ASTTransformer(ASTBuilder):
             and isinstance(node.targets[0], ast.Subscript)
             and isinstance(node.targets[0].value, ast.Name)
             and node.targets[0].value.id in ctx.buffers
+            and (
+                (
+                    isinstance(node.targets[0].slice, ast.Tuple)
+                    and all(
+                        isinstance(x, ast.Slice) and x.lower is None and x.upper is None
+                        for x in node.targets[0].slice.elts
+                    )
+                )
+                or (
+                    isinstance(node.targets[0].slice, ast.Slice)
+                    and node.targets[0].slice.lower is None
+                    and node.targets[0].slice.upper is None
+                )
+            )
             and node.value.func.attr
             in {
                 "matmul",
