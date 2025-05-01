@@ -92,7 +92,7 @@ def _test_gemm_1D():
 
 def _test_gemm_2D():
     TyI, TyO = int16, int32
-    M, N, K = 16, 16, 16
+    M, N, K = 32, 32, 32
     P0, P1 = 4, 4
 
     @df.region()
@@ -106,7 +106,8 @@ def _test_gemm_2D():
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int32)
     mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    np_C = A.astype(np.int32) @ B.astype(np.int32)
+    np.testing.assert_allclose(C, np_C, atol=1e-5)
     print("PASSED!")
 
 
