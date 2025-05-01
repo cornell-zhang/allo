@@ -314,7 +314,7 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     new_alloc1 = memref_d.AllocOp(memref_type, [], [], ip=ip)
     new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
 
-    #loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+    # loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
     irrelevant_loops = [
         loop for loop in loop_nest if loop.induction_variable not in loop_load.indices
     ]
@@ -325,7 +325,10 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
 
     with InsertionPoint.at_block_begin(loop_nest[0].body):
         first_iter_set = affine_d.IntegerSet.get(
-            1, 0, [affine_d.AffineExpr.get_dim(i) for i in range(len(irrelevant_ivs))], [True] * len(irrelevant_ivs)
+            1,
+            0,
+            [affine_d.AffineExpr.get_dim(i) for i in range(len(irrelevant_ivs))],
+            [True] * len(irrelevant_ivs),
         )
 
         first_iter_if = affine_d.AffineIfOp(
@@ -360,14 +363,14 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
 
     upper_bounds = [loop.upperBoundMap.value.results[0] for loop in irrelevant_loops]
     last_iter_set = affine_d.IntegerSet.get(
-                    len(irrelevant_ivs),
-                    0,
-                    [
-                        affine_d.AffineExpr.get_dim(i) - upper_bound + 1
-                        for i, upper_bound in enumerate(upper_bounds)
-                    ],
-                    [True] * len(irrelevant_ivs),
-                )
+        len(irrelevant_ivs),
+        0,
+        [
+            affine_d.AffineExpr.get_dim(i) - upper_bound + 1
+            for i, upper_bound in enumerate(upper_bounds)
+        ],
+        [True] * len(irrelevant_ivs),
+    )
 
     last_iter_if = affine_d.AffineIfOp(
         results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown(), ip=ip
@@ -543,9 +546,7 @@ def extract_reorder_and_pipeline(
 
         node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
         if perm_idx == 0:
-            schedule_primitives.append(
-                SchedulePrimitive.pipeline(loop_band[-1], 1)
-            )
+            schedule_primitives.append(SchedulePrimitive.pipeline(loop_band[-1], 1))
         else:
             perm = node_info.permutation
             new_loop_order = [loop_band[i] for i in perm]
