@@ -32,7 +32,7 @@ from .util import (
     check_all_functions_inlined,
 )
 
-from .dfg import DFG, DFGNodeType, NodeInfo, Node
+from .dfg import DFG, DFGNodeType, NodeInfo
 from .primitives import SchedulePrimitive
 
 DEBUG_POINTS = [

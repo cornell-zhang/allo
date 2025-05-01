@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from gurobipy import GurobiError
-from allo.ir.utils import MockBuffer
 import numpy as np
 import pytest
 from allo.ir.types import float32, int32
