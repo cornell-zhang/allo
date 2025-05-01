@@ -19,6 +19,7 @@ kinds = [
 
 MODE = "sw_emu"
 
+
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
 def test_simple(debug_point, kind):
