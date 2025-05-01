@@ -1361,6 +1361,18 @@ def record_local_buffer(mod):
     return kernel_buf_dicts
 
 
+def get_func_groups(module):
+    _, all_funcs = get_public_funcs(module)
+    func_groups = {}
+    for func in all_funcs:
+        func_name_w_id = func.attributes["sym_name"].value
+        func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+        if func_name not in func_groups:
+            func_groups[func_name] = []
+        func_groups[func_name].append(func)
+    return func_groups
+
+
 class AIEModule:
     def __init__(
         self,
@@ -1385,15 +1397,8 @@ class AIEModule:
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.module))
-        _, all_funcs = get_public_funcs(self.module)
         # Create a dictionary to store the kernel functions
-        func_groups = {}
-        for func in all_funcs:
-            func_name_w_id = func.attributes["sym_name"].value
-            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-            if func_name not in func_groups:
-                func_groups[func_name] = []
-            func_groups[func_name].append(func)
+        func_groups = get_func_groups(self.module)
         inputs = {}
         outputs = {}
         for func_name, funcs in func_groups.items():
@@ -1428,15 +1433,8 @@ class AIEModule:
         external_kernels = inject_aie_kernels(self.module)
         lower_tensor_to_memref(self.module)
         kernel_buf_dicts = record_local_buffer(self.module)
-        _, all_funcs = get_public_funcs(self.module)
         # update the function groups
-        func_groups = {}
-        for func in all_funcs:
-            func_name_w_id = func.attributes["sym_name"].value
-            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-            if func_name not in func_groups:
-                func_groups[func_name] = []
-            func_groups[func_name].append(func)
+        func_groups = get_func_groups(self.module)
         code = codegen_aie_mlir(
             self.module,
             func_groups,
