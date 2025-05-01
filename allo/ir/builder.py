@@ -800,6 +800,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Assign(ctx, node):
         # Remove redundant array building
+        # TODO: overload standard binop (e.g. +/-/*) to avoid redundant array building
         # pylint: disable=too-many-boolean-expressions
         if (
             isinstance(node.value, ast.Call)
@@ -2228,8 +2229,11 @@ class ASTTransformer(ASTBuilder):
         ip = ctx.get_ip()
         dtype = dtype if dtype is not None else node.dtype
         shape = shape if shape is not None else node.shape
-        reuse = out_buffer is not None
-        buf_op = out_buffer if reuse else ASTTransformer.build_array(ctx, dtype, shape)
+        buf_op = (
+            out_buffer
+            if out_buffer is not None
+            else ASTTransformer.build_array(ctx, dtype, shape)
+        )
         with ip:
             if attr == "concat":
                 axis = node.keywords[0].value.value
@@ -2525,7 +2529,7 @@ class ASTTransformer(ASTBuilder):
             else:
                 raise RuntimeError("Unsupported operation")
             ASTTransformer.attach_op_name(ctx, node, op, attr)
-        return op if (ctx.enable_tensor or reuse) else result_tensor
+        return op if (ctx.enable_tensor or out_buffer is not None) else result_tensor
 
     @staticmethod
     def build_flattened_shapes(node, new_args):
