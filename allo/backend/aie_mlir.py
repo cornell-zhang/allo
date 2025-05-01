@@ -19,6 +19,7 @@ from .._mlir.ir import (
 from .._mlir.passmanager import PassManager as mlir_pass_manager
 
 from ..passes import analyze_read_write_patterns
+from .aie import map_kernels_to_device_mesh
 from ..memory import Layout, DTensor
 from dataclasses import dataclass
 
@@ -26,7 +27,9 @@ from dataclasses import dataclass
 import aie.dialects.aie as aie_d
 import aie.dialects.aiex as aiex_d
 import aie.dialects.aievec as aievec_d
+import aie.dialects.arith as aie_arith_d
 import aie.dialects.func as aie_func_d
+import aie.dialects.scf as aie_scf_d
 
 import aie.ir as aie_ir
 # =======================
@@ -44,8 +47,8 @@ class DMATensorTile:
 
 # ------------------------------------------------------------------
 
-def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
-    external_kernels = {}
+def inject_external_kernels(module: allo_ir.ir.Module) -> Dict[str,bool]:
+    use_external_kernels = {}
     injected_kernels = set()
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
@@ -55,7 +58,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
             ):
                 if func.attributes["sym_name"].value != "top":
                     func_name: str = func.attributes["sym_name"].value
-                    external_kernels[func_name] = []
+                    use_external_kernels[func_name] = False
                     for block in func.regions[0].blocks:
                         for op in block.operations:
                             # vec add/mul
@@ -64,7 +67,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
                                 dtype = str(op.inputs[0].type.element_type)
                                 shape = MemRefType(op.inputs[0].type).shape
                                 kernel_name = f"{op_name}_{dtype}_vector"
-                                external_kernels[func_name].append((op_name, dtype, shape))
+                                use_external_kernels[func_name] = True
                             # matmul
                             elif op.operation.name == "linalg.matmul":
                                 M, K = MemRefType(op.inputs[0].type).shape
@@ -77,7 +80,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
                                 ]:
                                     continue
                                 kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                                external_kernels[func_name].append(("matmul", dtype, out_dtype, M, N, K))
+                                use_external_kernels[func_name] = True
                             else:
                                 continue  
                             
@@ -101,7 +104,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict:
                             )
                             kernel.attributes["sym_visibility"] = StringAttr.get("private")
 
-    return external_kernels
+    return use_external_kernels
 
 def classify_aie_functions(
     module: allo_ir.ir.Module
@@ -258,21 +261,11 @@ class ContextTransformer:
                 print(allo_op.results[i].type)
                 result_type.append(allo_op.results[i].type)
                 print(allo_op.results[i].type, type(allo_op.results[i].type))
-        print(allo_op)
-        print(allo_op.name)
-        print(new_operands)
-        print(new_attrs)
-        print(result_type)
         loc = aie_ir.Location.unknown()
-        # 结果类型是 index
         idx_type = aie_ir.IndexType.get()
-        # 创建属性：DenseElementsAttr 或 IntegerAttr 取决于 op 需要
         value_attr = aie_ir.IntegerAttr.get(idx_type, 0)
-        # arith.constant 需要一个 attribute "value"
         attributes = {"value": value_attr}
-        # 没有 operands
         operands = []
-        # 一个结果，类型是 index
         results = [idx_type]
         print(results)
         print(attributes)
@@ -329,89 +322,119 @@ class ContextTransformer:
                         dfs_traverse(child_op, indent + 1)
         dfs_traverse(allo_module)
 
-def build_compute_core(
-    core_function: func_d.FuncOp
-) -> aie_d.CoreOp:
+class CodeGenerator:
+    def __init__(
+        self, device_type:str,
+    ):
+        self.device_type = device_type
+        self.tile_map:Dict[str,aie_d.TileOp] = {}
     
-    op_str = """
-    module {
-        aie.device(npu1_1col) {
-            %tile_0_2 = aie.tile(0, 2)
-            %core_0_2 = aie.core(%tile_0_2) {
-                aie.end
-            }
-        }
-    }
-    """
-    sample = aie_ir.Operation.parse(op_str, context=aie_ir.Context())
-    print(sample)
-    # TODO
-    pass
-   
+    def build_core_function(
+        self,
+        func_core: aie_d.Core,
+        original_func: func_d.FuncOp
+    ):
+        func_body = func_core.regions[0]
+        entry_block = aie_ir.Block.create_at_start(func_body)
+        with aie_ir.InsertionPoint(entry_block):
+            index_type = aie_ir.IndexType.get()
+            # compute core wrapper: fake while(1)
+            c0 = aie_arith_d.ConstantOp(value=0, result=index_type)
+            c1 = aie_arith_d.ConstantOp(value=1, result=index_type)
+            cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
+            # scf.for %arg0 = %c0 to %cmax step %c1
+            loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
+            with aie_ir.InsertionPoint(loop.body):
+                # TODO: core function logic
+                pass
+        print(func_core, "\n")
 
-def aie_codegen(
-    device_type:str,
-    core_func_groups:Dict[str, List[func_d.FuncOp]],
-    external_funcs:List[func_d.FuncOp],
-    inputs, outputs,
-) -> aie_ir.Module:
-    
-    io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
-
-    wrapper_code = f"""
-        module {{
-            aie.device({device_type}) {{
-    """
-
-    # fixme: maybe better to resolve this using IR constructor
-    for func in external_funcs:
-        wrapper_code += format_str(str(func), indent=4)
+    def aie_codegen(
+        self,
+        core_func_groups:Dict[str, List[func_d.FuncOp]],
+        external_funcs:List[func_d.FuncOp],
+        inputs, outputs,
+        use_external_kernels:Dict[str,bool]
+    )-> aie_ir.Module:
         
-    wrapper_code += """
+        io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
+
+        wrapper_code = f"""
+            module {{
+                aie.device({self.device_type}) {{
+        """
+
+        # fixme: maybe better to resolve this using IR constructor
+        for func in external_funcs:
+            wrapper_code += format_str(str(func), indent=4)
+            
+        wrapper_code += """
+                }
             }
-        }
-    """
-    with aie_ir.Context() as ctx, aie_ir.Location.unknown():
-        # module wrapper
-        module = aie_ir.Module.parse(wrapper_code, ctx)
-        # find device op: aie.device(device_type)
-        device_op = None
-        for op in module.body.operations:
-            if isinstance(op, aie_d.DeviceOp):
-                device_op = op
-                break
-        assert device_op is not None, "aie.device not found"
-        device_body = device_op.regions[0].blocks[0]
-        # insert operations in the device body, before `aie.end``
-        end_op = None
-        for op in device_body.operations:
-            if isinstance(op, aie_d.EndOp):
-                end_op = op
-                break
-        assert not end_op is None
-        tile_map:Dict[str,aie_d.TileOp] = {}
-        with aie_ir.InsertionPoint(end_op):
-            # shim tile
-            for shim_id in range(shim_tile_num):
-                tile_map[f"shim_{shim_id}"] = aie_d.TileOp(
-                    col=shim_id, row=0,
-                    # allocation_scheme="shim",
-                )
-            # mem tiles
-            for mem_id in range(mem_tile_num):
-                tile_map[f"mem_{mem_id}"] = aie_d.TileOp(
-                    col=mem_id, row=1,
-                    # allocation_scheme="mem", 
-                )
-        print(module)
+        """
+        with aie_ir.Context() as ctx, aie_ir.Location.unknown():
+            # module wrapper
+            module = aie_ir.Module.parse(wrapper_code, ctx)
+            # find device op: aie.device(device_type)
+            device_op = None
+            for op in module.body.operations:
+                if isinstance(op, aie_d.DeviceOp):
+                    device_op = op
+                    break
+            assert device_op is not None, "aie.device not found"
+            device_body = device_op.regions[0].blocks[0]
+            # insert operations in the device body, before `aie.end``
+            end_op = None
+            for op in device_body.operations:
+                if isinstance(op, aie_d.EndOp):
+                    end_op = op
+                    break
+            assert not end_op is None
 
-        transformer = ContextTransformer(ctx, module)
-        # TODO
-        # # build mlir code for each core
-        # for func_name, funcs in core_func_groups.items():
-        #     transformer.transform(funcs)
+            with aie_ir.InsertionPoint(end_op):
+                # shim tile
+                for shim_id in range(shim_tile_num):
+                    self.tile_map[f"shim_{shim_id}"] = aie_d.TileOp(
+                        col=shim_id, row=0,
+                        allocation_scheme="shim",
+                    )
+                # mem tiles
+                for mem_id in range(mem_tile_num):
+                    self.tile_map[f"mem_{mem_id}"] = aie_d.TileOp(
+                        col=mem_id, row=1,
+                        allocation_scheme="mem", 
+                    )
+                # compute tiles
+                mappings = {}
+                for func_name in core_func_groups:
+                    if len(inputs[func_name]["_global"]) > 0:
+                        mappings[func_name] = inputs[func_name]["_global"][0].mapping
+                    else:
+                        mappings[func_name] = outputs[func_name]["_global"][0].mapping
+                aie_mesh = (5, 4)
+                for func_name, tile_ids in map_kernels_to_device_mesh(mappings, aie_mesh).items():
+                    for idx, func in zip(tile_ids, core_func_groups[func_name]):
+                        self.tile_map[f"compute_{func.attributes["sym_name"].value}"] = aie_d.TileOp(
+                            col=idx[0], row=idx[1]+2,
+                        )
+                # TODO: buffer
 
-    return module
+                # TODO: fifo
+
+                # TODO: core
+                for func_name in core_func_groups:
+                    for func in core_func_groups[func_name]:
+                        func_name_w_id = func.attributes["sym_name"].value
+                        func_core = aie_d.Core(
+                            tile = self.tile_map[f"compute_{func_name_w_id}"],
+                            link_with = "external.o" if use_external_kernels[func_name_w_id] else None
+                        )
+                        self.build_core_function(func_core,func)
+                    
+            print(module)
+
+        
+        return module
 
 class AIE_MLIRModule:
     def __init__(
@@ -471,7 +494,7 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
         # - extract external kernels
-        external_kernels = inject_external_kernels(self.allo_module)
+        use_external_kernels = inject_external_kernels(self.allo_module)
         # - lower tensor to memref with registered pass
         passes = ["func.func(convert-linalg-to-affine-loops),lower-affine",]
         pipeline = f'builtin.module({",".join(passes)})'
@@ -482,11 +505,13 @@ class AIE_MLIRModule:
         print(self.allo_module)
         top_func, core_func_groups, external_funcs = classify_aie_functions(self.allo_module)
         inputs, outputs = self.collect_io(core_func_groups)
-        self.aie_module = aie_codegen(
-            device_type, core_func_groups, external_funcs,
+
+        code_generator = CodeGenerator(device_type)
+        self.aie_module = code_generator.aie_codegen(
+            core_func_groups, external_funcs,
             inputs, outputs,
+            use_external_kernels
         )
-        pass
         # TODO
 
     def __call__(self, *args):
