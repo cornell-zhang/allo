@@ -800,13 +800,15 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Assign(ctx, node):
         # Remove redundant array building
+        # pylint: disable=too-many-boolean-expressions
         if (
             isinstance(node.value, ast.Call)
             and isinstance(node.value.func, ast.Attribute)
             and isinstance(node.targets[0], ast.Subscript)
             and isinstance(node.targets[0].value, ast.Name)
             and node.targets[0].value.id in ctx.buffers
-            and node.value.func.attr in {
+            and node.value.func.attr
+            in {
                 "matmul",
                 "bmm",
                 "softmax",
@@ -833,43 +835,42 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_Call(ctx, node.value, out_buffer)
             return rhs
         # Compute RHS
-        else:
-            rhs = build_stmt(ctx, node.value)
-            if (
-                isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-            ) and not isinstance(node.targets[0], ast.Subscript):
-                targets = []
-                if isinstance(node.targets[0], ast.Tuple):
-                    targets = node.targets[0].elts
+        rhs = build_stmt(ctx, node.value)
+        if (
+            isinstance(node.value, ast.Call) or len(node.value.shape) > 0
+        ) and not isinstance(node.targets[0], ast.Subscript):
+            targets = []
+            if isinstance(node.targets[0], ast.Tuple):
+                targets = node.targets[0].elts
+            else:
+                targets = [node.targets[0]]
+            for idx, target in enumerate(targets):
+                if isinstance(target, ast.Name):
+                    if isinstance(rhs, list):
+                        # array of FIFOs
+                        for ele in rhs:
+                            new_name = target.id + "_" + ele.attributes["id"].value
+                            ele.attributes["name"] = StringAttr.get(new_name)
+                            ctx.buffers[new_name] = ele
+                        return rhs
+                    if hasattr(rhs, "attributes"):
+                        rhs.attributes["name"] = StringAttr.get(target.id)
+                    if target.id in ctx.buffers:
+                        raise RuntimeError(
+                            f"Variable `{target.id}` has already been defined, please use a different name"
+                        )
+                    ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
+                    if (
+                        isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and node.value.func.attr == "get_pid"
+                    ):
+                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                            f"df.p{idx}"
+                        ]
                 else:
-                    targets = [node.targets[0]]
-                for idx, target in enumerate(targets):
-                    if isinstance(target, ast.Name):
-                        if isinstance(rhs, list):
-                            # array of FIFOs
-                            for ele in rhs:
-                                new_name = target.id + "_" + ele.attributes["id"].value
-                                ele.attributes["name"] = StringAttr.get(new_name)
-                                ctx.buffers[new_name] = ele
-                            return rhs
-                        if hasattr(rhs, "attributes"):
-                            rhs.attributes["name"] = StringAttr.get(target.id)
-                        if target.id in ctx.buffers:
-                            raise RuntimeError(
-                                f"Variable `{target.id}` has already been defined, please use a different name"
-                            )
-                        ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
-                        if (
-                            isinstance(node.value, ast.Call)
-                            and isinstance(node.value.func, ast.Attribute)
-                            and node.value.func.attr == "get_pid"
-                        ):
-                            ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
-                                f"df.p{idx}"
-                            ]
-                    else:
-                        store_op = build_stmt(ctx, target, val=rhs, idx=idx)
-                return rhs
+                    store_op = build_stmt(ctx, target, val=rhs, idx=idx)
+            return rhs
         # Store LHS
         rhs = ASTTransformer.build_cast_op(
             ctx, rhs, node.value.dtype, node.dtype, node.value.shape
@@ -2141,7 +2142,11 @@ class ASTTransformer(ASTBuilder):
                         node.dims[1],
                     )
                 return ASTTransformer.build_library_op(
-                    ctx, node=node, attr=fn_name, new_args=new_args, out_buffer=out_buffer
+                    ctx,
+                    node=node,
+                    attr=fn_name,
+                    new_args=new_args,
+                    out_buffer=out_buffer,
                 )
             if fn_name in {"layernorm", "gelu", "tril"}:
                 arg_results = [arg.result for arg in new_args]
@@ -2202,7 +2207,9 @@ class ASTTransformer(ASTBuilder):
         return call_op
 
     @staticmethod
-    def build_library_op(ctx, node, attr, new_args, dtype=None, shape=None, out_buffer=None):
+    def build_library_op(
+        ctx, node, attr, new_args, dtype=None, shape=None, out_buffer=None
+    ):
         assert attr is not None and attr != ""
         ip = ctx.get_ip()
         dtype = dtype if dtype is not None else node.dtype
@@ -2371,7 +2378,15 @@ class ASTTransformer(ASTBuilder):
                     "maxpool": linalg_d.pooling_nchw_max,
                     "sumpool": linalg_d.pooling_nchw_sum,
                 }.get(attr)(
-                    new_args[0].result, new_args[1].result, outs=[result_tensor.result if hasattr(result_tensor, "result") else result_tensor]
+                    new_args[0].result,
+                    new_args[1].result,
+                    outs=[
+                        (
+                            result_tensor.result
+                            if hasattr(result_tensor, "result")
+                            else result_tensor
+                        )
+                    ],
                 )
                 op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:
@@ -2380,7 +2395,16 @@ class ASTTransformer(ASTBuilder):
                     "log": linalg_d.log,
                     "abs": linalg_d.abs,
                     "copy": linalg_d.copy,
-                }.get(attr)(new_args[0].result, outs=[result_tensor.result if hasattr(result_tensor, "result") else result_tensor])
+                }.get(attr)(
+                    new_args[0].result,
+                    outs=[
+                        (
+                            result_tensor.result
+                            if hasattr(result_tensor, "result")
+                            else result_tensor
+                        )
+                    ],
+                )
                 op = op.owner
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422

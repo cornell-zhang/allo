@@ -288,28 +288,39 @@ def inject_aie_kernels(mod):
             external_kernels[func.attributes["sym_name"].value] = []
             for block in func.regions[0].blocks:
                 for op in block.operations:
-                    if ((
-                        op.operation.name in {"linalg.add", "linalg.mul"}
-                        and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ) or op.operation.name == "linalg.matmul" 
-                    or (
-                        "op_name" in op.attributes
-                        and "init_zero" in op.attributes["op_name"].value
-                    )):
-                        if op.operation.name in {"linalg.add", "linalg.mul", "linalg.matmul"}:
+                    if (
+                        (
+                            op.operation.name in {"linalg.add", "linalg.mul"}
+                            and len(MemRefType(op.inputs[0].type).shape) == 1
+                        )
+                        or op.operation.name == "linalg.matmul"
+                        or (
+                            "op_name" in op.attributes
+                            and "init_zero" in op.attributes["op_name"].value
+                        )
+                    ):
+                        if op.operation.name in {
+                            "linalg.add",
+                            "linalg.mul",
+                            "linalg.matmul",
+                        }:
                             op_name = op.operation.name.split(".")[1]
                             # Inject AIE kernel
                             func_type = func_d.FunctionType.get(
-                                [op.inputs[0].type, op.inputs[1].type, op.outputs[0].type],
+                                [
+                                    op.inputs[0].type,
+                                    op.inputs[1].type,
+                                    op.outputs[0].type,
+                                ],
                                 [],
                             )
                             dtype = str(op.inputs[0].type.element_type)
                             shape = MemRefType(op.inputs[0].type).shape
                             if op.operation.name in {"linalg.add", "linalg.mul"}:
                                 kernel_name = f"{op_name}_{dtype}_vector"
-                                external_kernels[func.attributes["sym_name"].value].append(
-                                    (op_name, dtype, shape)
-                                )
+                                external_kernels[
+                                    func.attributes["sym_name"].value
+                                ].append((op_name, dtype, shape))
                             else:  # linalg.matmul
                                 M, K = MemRefType(op.inputs[0].type).shape
                                 _, N = MemRefType(op.inputs[1].type).shape
@@ -324,9 +335,9 @@ def inject_aie_kernels(mod):
                                     # f"Unsupported in_dtype {dtype} and out_dtype {out_dtype} pair"
                                     continue
                                 kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                                external_kernels[func.attributes["sym_name"].value].append(
-                                    (op_name, dtype, out_dtype, M, N, K)
-                                )
+                                external_kernels[
+                                    func.attributes["sym_name"].value
+                                ].append((op_name, dtype, out_dtype, M, N, K))
                             func_d.CallOp(
                                 [],
                                 FlatSymbolRefAttr.get(kernel_name),
@@ -335,7 +346,9 @@ def inject_aie_kernels(mod):
                             )
                         else:  # linalg.fill init_zero
                             op_name = "zero"
-                            func_type = func_d.FunctionType.get([op.outputs[0].type], [])
+                            func_type = func_d.FunctionType.get(
+                                [op.outputs[0].type], []
+                            )
                             dtype = str(op.outputs[0].type.element_type)
                             shape = MemRefType(op.outputs[0].type).shape
                             kernel_name = f"zero_{dtype}_vector"

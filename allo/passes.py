@@ -889,7 +889,9 @@ def analyze_read_write_patterns(mlir_func):
                         if not explicit_ins_outs:
                             # First num_ins operands are inputs
                             for i in range(min(num_ins, total_operands)):
-                                operand_arg_index = resolve_to_func_arg_index(op.operands[i])
+                                operand_arg_index = resolve_to_func_arg_index(
+                                    op.operands[i]
+                                )
                                 if operand_arg_index == arg_index:
                                     is_input = True
 
@@ -897,7 +899,9 @@ def analyze_read_write_patterns(mlir_func):
                             for i in range(
                                 max(0, total_operands - num_outs), total_operands
                             ):
-                                operand_arg_index = resolve_to_func_arg_index(op.operands[i])
+                                operand_arg_index = resolve_to_func_arg_index(
+                                    op.operands[i]
+                                )
                                 if operand_arg_index == arg_index:
                                     is_output = True
 
