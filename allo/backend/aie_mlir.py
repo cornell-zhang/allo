@@ -328,12 +328,63 @@ class CodeGenerator:
     ):
         self.device_type = device_type
         self.tile_map:Dict[str,aie_d.TileOp] = {}
+        self.external_functions:str = ""
+        self.aie_module = None
+    
+    def preporocess_dumped_core_func(self, original_func: func_d.FuncOp) -> str:
+        # declare external kernel function before use
+        func_str = self.external_functions + "\n" + str(original_func)
+        # TODO: resolve `allo` (unregistered dialect)
+        func_str = '''
+func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {df.kernel, itypes = "ss", otypes = "", stypes = "__"} {
+    %c1_i32 = arith.constant 1 : i32
+    %alloc = memref.alloc() : memref<i32>
+    memref.store %c1_i32, %alloc[] : memref<i32>
+    %alloc_0 = memref.alloc() : memref<1024xi32>
+    %c0 = arith.constant 0 : index
+    %c1024 = arith.constant 1024 : index
+    %c1 = arith.constant 1 : index
+    scf.for %arg2 = %c0 to %c1024 step %c1 {
+      %0 = memref.load %alloc[] : memref<i32>
+      memref.store %0, %alloc_0[%arg2] : memref<1024xi32>
+    }
+    %alloc_1 = memref.alloc() : memref<1024xi32>
+    memref.copy %alloc_1, %alloc_0 {to = "B"} : memref<1024xi32> to memref<1024xi32>
+    return
+  }'''
+        return func_str
     
     def build_core_function(
         self,
         func_core: aie_d.Core,
         original_func: func_d.FuncOp
     ):
+        original_module = aie_ir.Module.parse(self.preporocess_dumped_core_func(original_func))
+        parsed_function:aie_func_d.FuncOp = None
+        for func in original_module.body.operations:
+            if isinstance(func, aie_func_d.FuncOp):
+                if not ("sym_visibility" in func.attributes
+                    and func.attributes["sym_visibility"].value == "private"
+                ):
+                    if parsed_function is None:
+                        parsed_function = func
+                    else:
+                        raise ValueError("Too many core functions. Fail to resolve.")
+        assert not parsed_function is None
+        print("parsed_function\n", parsed_function)
+
+        def clone_recursive(op):
+            new_op = op.clone()
+            for old, new in zip(op.results, new_op.results):
+                old.replace_all_uses_with(new)
+            # for old_region, new_region in zip(op.regions, new_op.regions):
+            #     for old_block in old_region.blocks:
+            #         new_block = aie_ir.Block.create_at_start(new_region, [])
+            #         for inner_op in old_block.operations:
+            #             new_inner_op = clone_recursive(inner_op)
+            #             new_block.append(new_inner_op)
+            return new_op
+        
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
         with aie_ir.InsertionPoint(entry_block):
@@ -344,10 +395,18 @@ class CodeGenerator:
             cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
-            with aie_ir.InsertionPoint(loop.body):
-                # TODO: core function logic
-                pass
-        print(func_core, "\n")
+            # insert operations to get 'function parameter'
+            
+            for parsed_func_block in parsed_function.body:
+                with aie_ir.InsertionPoint(loop.body):
+                    for op in parsed_func_block.operations:
+                        if op.name == "func.return":
+                            continue
+                        clone_recursive(op)
+                    # TODO: core function logic
+            print(self.aie_module)
+            
+        # print(func_core, "\n")
 
     def aie_codegen(
         self,
@@ -366,18 +425,19 @@ class CodeGenerator:
 
         # fixme: maybe better to resolve this using IR constructor
         for func in external_funcs:
-            wrapper_code += format_str(str(func), indent=4)
-            
+            self.external_functions += format_str(str(func), indent=4)
+        
+        wrapper_code += self.external_functions
         wrapper_code += """
                 }
             }
         """
         with aie_ir.Context() as ctx, aie_ir.Location.unknown():
             # module wrapper
-            module = aie_ir.Module.parse(wrapper_code, ctx)
+            self.aie_module = aie_ir.Module.parse(wrapper_code, ctx)
             # find device op: aie.device(device_type)
             device_op = None
-            for op in module.body.operations:
+            for op in self.aie_module.body.operations:
                 if isinstance(op, aie_d.DeviceOp):
                     device_op = op
                     break
@@ -431,10 +491,7 @@ class CodeGenerator:
                         )
                         self.build_core_function(func_core,func)
                     
-            print(module)
-
-        
-        return module
+        return self.aie_module
 
 class AIE_MLIRModule:
     def __init__(
