@@ -75,6 +75,12 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Dict[str,bool]:
 def classify_aie_functions(
     module: allo_ir.ir.Module
 ) -> Tuple[allo_func_d.FuncOp, Dict[str, List[allo_func_d.FuncOp]], List[allo_func_d.FuncOp]]:
+    '''
+    Classify the functions in allo module as
+        - top
+        - compute core functions
+        - external kernel functions
+    '''
     # top function
     top_func:allo_func_d.FuncOp = None
     # core functions

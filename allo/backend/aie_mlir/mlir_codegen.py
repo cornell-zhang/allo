@@ -1,10 +1,11 @@
+import numpy as np
 from typing import Dict, List, Tuple, Set
 from collections import defaultdict
 
 from ..utils import format_str
-import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
 from ...memory import DTensor
+from ...passes import analyze_read_write_patterns
 
 from .utils import get_element_type
 from ..aie import map_kernels_to_device_mesh
@@ -134,7 +135,6 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str,List[DMATensorTile]] , int,
                 tile_map[dtensor.name].extend(map_dtensor_to_tile(dtensor, is_input=is_input))
 
     return tile_map, len(used_tiles), len(used_tiles)
-
 
 class CodeGenerator:
     def __init__(
@@ -270,6 +270,7 @@ class CodeGenerator:
                         allocation_scheme="mem", 
                     )
                 # compute tiles
+                # 'logical' mapping for different function groups.
                 mappings = {}
                 for func_name in core_func_groups:
                     if len(inputs[func_name]["_global"]) > 0:
@@ -285,12 +286,11 @@ class CodeGenerator:
                         )
 
                 print(self.tile_map)
-                # TODO: fifo
+                # TODO: fifo 
                 for io, arg_lst in (("in", inputs), ("out", outputs)):
                     for func_name, sub_func_lst in arg_lst.items():
                         for idx, dtensor in enumerate(sub_func_lst["_global"]):
-                            mapping = dtensor.mapping
-                            placement = dtensor.layout.get_placement(mapping)
+                            placement = dtensor.global_placement
                             # shim <-> mem (one to one)
                             for dma_tile in io_mapping[dtensor.name]:
                                 print(dma_tile)
@@ -299,19 +299,43 @@ class CodeGenerator:
                                 producer = self.tile_map[f"shim_{dma_tile.shim_id}"] if io == 'in' else self.tile_map[f"mem_{dma_tile.mem_id}"]
                                 consumer = [self.tile_map[f"mem_{dma_tile.mem_id}"]] if io == 'in' else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 memref_type = aie_ir.MemRefType.get(dma_tile.size, get_element_type(str(dtensor.dtype)))
-                                self.fifo_map[name]  = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
+                                fifo_shim = self.fifo_map[name] = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
+
                                 # mem <-> compute (one to ?)
-                                print(mapping)
+                                fifo_mem = []
+                                mem_stride = [0]
+                                mem_tile = self.tile_map[f"mem_{dma_tile.mem_id}"]
                                 for tensor_tile in dma_tile.tensor_tile_labels:
                                     print("placement[tensor_tile]", tensor_tile, placement[tensor_tile])
-                                    # diatribute to placement[tensor_tile]
+                                    # distribute to placement[tensor_tile]
+                                    compute_tiles = []
                                     for tile in placement[tensor_tile]:
-                                        for dt in sub_func_lst[tile]:
-                                            print(dt)
-                                        print()
-                                    
+                                        idx_str = "_".join(map(str, tile))
+                                        # seems confusing. "sym_name" is parsed in this way
+                                        compute_tiles.append(self.tile_map[f"compute_{func_name}_{idx_str}"])
+                                    print("compute_cores", compute_tiles)
+                                    name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
+                                    if io == 'in':
+                                        producer = mem_tile
+                                    else:
+                                        # fixme: only one valid producer
+                                        # assert len(compute_tiles)==1
+                                        producer = compute_tiles[0]
+                                    consumer = compute_tiles if io == 'in' else [mem_tile]
+                                    fifo = self.fifo_map[name] = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
+                                    fifo_mem.append(fifo)
+                                    mem_stride.append(
+                                        mem_stride[-1] + np.prod(dtensor.get_local_shape())
+                                    )
+                                aie_d.object_fifo_link(
+                                    fifo_shim if io == "in" else fifo_mem,
+                                    fifo_mem if io == "in" else fifo_shim,
+                                    [] if io == "in" else mem_stride[:-1],
+                                    mem_stride[:-1] if io == "in" else []
+                                )
+                             # link   
 
-                # shim to mem tile
+
                 # TODO: buffer
                 
                 for func_name in core_func_groups:

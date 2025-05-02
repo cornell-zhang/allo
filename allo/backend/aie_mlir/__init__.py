@@ -78,13 +78,10 @@ class AIE_MLIRModule:
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        print()
-        print(self.allo_module)
         top_func, core_func_groups, external_funcs = classify_aie_functions(self.allo_module)
+        # TODO: maybe use other ways to capture the relationship between DTensor, function group
         inputs, outputs = self.collect_io(core_func_groups)
 
-        print(inputs)
-        print(outputs)
         code_generator = CodeGenerator(device_type)
         self.aie_module = code_generator.aie_codegen(
             core_func_groups, external_funcs,
