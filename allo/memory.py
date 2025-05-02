@@ -19,7 +19,7 @@ class Layout:
                 result.append((letter, None))
         self.placement = result
 
-    def get_placement(self, mesh_dims):
+    def get_placement(self, mesh_dims) -> Dict[str,tuple]:
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
 
@@ -57,7 +57,7 @@ class Layout:
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result = {}
+        result:Dict[str,tuple] = {}
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
@@ -78,13 +78,14 @@ class DTensor:
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, layout, name=None):
-        self.rank = rank
-        self.mapping = mapping
+    def __init__(self, rank, mapping, shape, dtype, layout:Layout, name=None):
+        self.rank = rank    # dtensor idx
+        self.mapping = mapping  # global mapping
         self.shape = shape  # global shape
         self.dtype = dtype
         self.layout:Layout = layout
         self.name = name
+        self.global_placement:Dict[str,tuple] = layout.get_placement(mapping)
 
     def get_local_shape(self):
         """
@@ -102,13 +103,12 @@ class DTensor:
                 local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
-    def get_access_pattern(self) -> Tuple[Dict,List,List,List]:
+    def get_access_pattern(self) -> Tuple[List,List,List]:
         """
         Specify how to access the dtensor (local tensor) from the global tensor
             (tensor has at most 4 dimensions: DMA support 4-dimension address generation)
 
         Returns:
-            - placement: tensor mapping result
             - device_dims: make partition at which dimensions
             - size: local tensor size
             - stride: access stride in global tensor
@@ -168,7 +168,7 @@ class DTensor:
         else:
             raise ValueError("Unsupported access pattern.")
 
-        return self.layout.get_placement(self.mapping), device_dims, size, stride
+        return device_dims, size, stride
 
     def __str__(self):
         return f"DTensor(name={self.name}, shape={self.shape}, dtype={self.dtype}, layout={self.layout}, mapping={self.mapping}, rank={self.rank}, local_shape={self.get_local_shape()})"
