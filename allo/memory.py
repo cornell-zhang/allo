@@ -86,6 +86,7 @@ class DTensor:
         self.layout:Layout = layout
         self.name = name
         self.global_placement:Dict[str,tuple] = layout.get_placement(mapping)
+        self.type_as_param:List = None
 
     def get_local_shape(self):
         """

@@ -57,6 +57,7 @@ class AIE_MLIRModule:
                     io_lst[func_name][func_id] = []
                     for idx in io_idx:
                         dtensor = self.func_args[func_name_w_id][idx]
+                        dtensor.type_as_param = func.arguments[idx].type.shape
                         self.core_func_args[func_name_w_id].append((dtensor, io == "in"))
                         if dtensor not in io_lst[func_name]["_global"]:
                             io_lst[func_name]["_global"].append(dtensor)

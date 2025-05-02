@@ -17,6 +17,8 @@ import aie.dialects.arith as aie_arith_d
 import aie.dialects.func as aie_func_d
 import aie.dialects.scf as aie_scf_d
 
+import aie.dialects._memref_ops_gen as aie_memref_d
+
 import aie.ir as aie_ir
 # =======================
 from dataclasses import dataclass
@@ -190,13 +192,14 @@ class CodeGenerator:
                 io_map =self.compute_core_io[parsed_function.name.value]
                 for i in range(len(parsed_function.arguments)):
                     arg_info:Tuple[DTensor,bool] = func_args[i]
+                    acquired = self.fifo_map[io_map[arg_info[0]]].acquire(1 if arg_info[1] else 0,1)
                     # [NOTE]: modified from object_fifo.acquire
-                    subview_t = aie_d.ObjectFifoSubviewType.get(self.fifo_map[io_map[arg_info[0]]].datatype)
-                    acq = aie_d.ObjectFifoAcquireOp(
-                        subview_t, 1 if arg_info[1] else 0, self.fifo_map[io_map[arg_info[0]]].sym_name.value, 1)
-                    acquired = aie_d.ObjectFifoSubviewAccessOp(
-                        parsed_function.arguments[i].type, acq.subview, acq.size.value - 1
-                    ).result
+                    # subview_t = aie_d.ObjectFifoSubviewType.get(self.fifo_map[io_map[arg_info[0]]].datatype)
+                    # acq = aie_d.ObjectFifoAcquireOp(
+                    #     subview_t, 1 if arg_info[1] else 0, self.fifo_map[io_map[arg_info[0]]].sym_name.value, 1)
+                    # acquired = aie_d.ObjectFifoSubviewAccessOp(
+                    #     parsed_function.arguments[i].type, acq.subview, acq.size.value - 1
+                    # ).result
                     parsed_function.arguments[i].replace_all_uses_with(acquired)
                  
                 # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
@@ -310,7 +313,14 @@ class CodeGenerator:
                                 name = f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
                                 producer = self.tile_map[f"shim_{dma_tile.shim_id}"] if io == 'in' else self.tile_map[f"mem_{dma_tile.mem_id}"]
                                 consumer = [self.tile_map[f"mem_{dma_tile.mem_id}"]] if io == 'in' else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
-                                memref_type = aie_ir.MemRefType.get(dma_tile.size, get_element_type(str(dtensor.dtype)))
+                                # [NOTE]: this should be compatible to function parameter type
+                                tile_size, arg_size = 1, 1
+                                for dim in dma_tile.size:
+                                    tile_size *= dim
+                                for dim in dtensor.type_as_param:
+                                    arg_size *= dim
+                                assert tile_size == arg_size, f"Incompatible: tile_size={tile_size} != arg_size={arg_size}"
+                                memref_type = aie_ir.MemRefType.get(dtensor.type_as_param, get_element_type(str(dtensor.dtype)))
                                 fifo_shim = self.fifo_map[name] = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
 
                                 # mem <-> compute (one to ?)
