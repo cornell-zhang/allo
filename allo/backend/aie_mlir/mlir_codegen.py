@@ -5,7 +5,6 @@ from collections import defaultdict
 from ..utils import format_str
 from ..._mlir.dialects import func as allo_func_d
 from ...memory import DTensor
-from ...passes import analyze_read_write_patterns
 
 from .utils import get_element_type
 from ..aie import map_kernels_to_device_mesh
@@ -143,7 +142,10 @@ class CodeGenerator:
         self.device_type = device_type
         self.tile_map:Dict[str,aie_d.TileOp] = {}
         self.fifo_map:Dict[str,aie_d.object_fifo] = {}
+        # function name (with id) -> a map from DTensor to fifo name
+        self.compute_core_io:Dict[str:Dict[DTensor,str]] = {}
         self.external_functions:str = ""
+
         self.aie_module = None
         self.global_ip: aie_ir.InsertionPoint = None # mark the inserting point for buffers
     
@@ -151,30 +153,13 @@ class CodeGenerator:
         # declare external kernel function before use
         func_str = self.external_functions + "\n" + str(original_func)
         # TODO: resolve `allo` (unregistered dialect)
-        func_str = '''
-            func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {df.kernel, itypes = "ss", otypes = "", stypes = "__"} {
-                %c1_i32 = arith.constant 1 : i32
-                %alloc = memref.alloc() : memref<i32>
-                memref.store %c1_i32, %alloc[] : memref<i32>
-                %alloc_0 = memref.alloc() : memref<1024xi32>
-                %c0 = arith.constant 0 : index
-                %c1024 = arith.constant 1024 : index
-                %c1 = arith.constant 1 : index
-                scf.for %arg2 = %c0 to %c1024 step %c1 {
-                %0 = memref.load %alloc[] : memref<i32>
-                memref.store %0, %alloc_0[%arg2] : memref<1024xi32>
-                }
-                %alloc_1 = memref.alloc() : memref<1024xi32>
-                memref.copy %alloc_1, %alloc_0 {to = "B"} : memref<1024xi32> to memref<1024xi32>
-                return
-            }
-        '''
         return func_str
     
     def build_core_function(
         self,
         func_core: aie_d.Core,
-        original_func: allo_func_d.FuncOp
+        original_func: allo_func_d.FuncOp,
+        func_args:List[Tuple[DTensor,bool]]
     ):
         original_module = aie_ir.Module.parse(self.preporocess_dumped_core_func(original_func))
         parsed_function:aie_func_d.FuncOp = None
@@ -200,25 +185,52 @@ class CodeGenerator:
             cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
-            # insert operations to get 'function parameter'
-
-            # TODO: replace alloc with buffer
-            for parsed_func_block in parsed_function.body:
-                with aie_ir.InsertionPoint(loop.body):
+            in_port, out_port = 0, 0
+            with aie_ir.InsertionPoint(loop.body):
+                # insert operations to get 'function parameter', acquire and subview
+                io_map =self.compute_core_io[parsed_function.name.value]
+                port_num = []
+                for i in range(len(parsed_function.arguments)):
+                    arg_info:Tuple[DTensor,bool] = func_args[i]
+                    port = in_port if arg_info[1] else out_port
+                    port_num.append(port)
+                    # acquire & subview
+                    acquired = self.fifo_map[io_map[arg_info[0]]].acquire(port,1)
+                    # replace use
+                    parsed_function.arguments[i].replace_all_uses_with(acquired)
+                    if arg_info[1]:
+                        in_port += 1
+                    else:
+                        out_port += 1
+                  
+                # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
+                for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
                         if op.name == "func.return":
                             continue
+                        if op.name == "memref.alloc":
+                            print(op)
                         new_op = op.clone()
                         for old, new in zip(op.results, new_op.results):
                             old.replace_all_uses_with(new)
+                
+                # release
+                for i in range(len(parsed_function.arguments)):
+                    arg_info:Tuple[DTensor,bool] = func_args[i]
+                    self.fifo_map[io_map[arg_info[0]]].release(port_num[i],1)
+                
             print(self.aie_module)
+
+            # TODO: replace alloc with buffer
             
     def aie_codegen(
         self,
         core_func_groups:Dict[str, List[allo_func_d.FuncOp]],
         external_funcs:List[allo_func_d.FuncOp],
         inputs, outputs,
-        use_external_kernels:Dict[str,bool]
+        use_external_kernels:Dict[str,bool],
+        stream_info:Dict,
+        core_func_args:Dict[str,Tuple[DTensor,bool]]
     )-> aie_ir.Module:
         
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
@@ -270,7 +282,7 @@ class CodeGenerator:
                         allocation_scheme="mem", 
                     )
                 # compute tiles
-                # 'logical' mapping for different function groups.
+                # 'logic' mapping for different function groups.
                 mappings = {}
                 for func_name in core_func_groups:
                     if len(inputs[func_name]["_global"]) > 0:
@@ -278,7 +290,6 @@ class CodeGenerator:
                     else:
                         mappings[func_name] = outputs[func_name]["_global"][0].mapping
                 aie_mesh = (5, 4)
-                print("mapping",mappings)
                 for func_name, tile_ids in map_kernels_to_device_mesh(mappings, aie_mesh).items():
                     for idx, func in zip(tile_ids, core_func_groups[func_name]):
                         self.tile_map[f"compute_{func.attributes["sym_name"].value}"] = aie_d.TileOp(
@@ -286,7 +297,6 @@ class CodeGenerator:
                         )
 
                 print(self.tile_map)
-                # TODO: fifo 
                 for io, arg_lst in (("in", inputs), ("out", outputs)):
                     for func_name, sub_func_lst in arg_lst.items():
                         for idx, dtensor in enumerate(sub_func_lst["_global"]):
@@ -309,12 +319,13 @@ class CodeGenerator:
                                     print("placement[tensor_tile]", tensor_tile, placement[tensor_tile])
                                     # distribute to placement[tensor_tile]
                                     compute_tiles = []
+                                    name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
                                     for tile in placement[tensor_tile]:
                                         idx_str = "_".join(map(str, tile))
                                         # seems confusing. "sym_name" is parsed in this way
                                         compute_tiles.append(self.tile_map[f"compute_{func_name}_{idx_str}"])
+                                        self.compute_core_io.setdefault(f'{func_name}_{idx_str}', {})[dtensor]=name
                                     print("compute_cores", compute_tiles)
-                                    name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
                                     if io == 'in':
                                         producer = mem_tile
                                     else:
@@ -333,10 +344,8 @@ class CodeGenerator:
                                     [] if io == "in" else mem_stride[:-1],
                                     mem_stride[:-1] if io == "in" else []
                                 )
-                             # link   
-
-
-                # TODO: buffer
+                # compute <-> compute
+                # TODO: allo stream
                 
                 for func_name in core_func_groups:
                     for func in core_func_groups[func_name]:
@@ -347,6 +356,6 @@ class CodeGenerator:
                         )
                         if self.global_ip == None:
                             self.global_ip = aie_ir.InsertionPoint(func_core)
-                        self.build_core_function(func_core,func)
+                        self.build_core_function(func_core,func,core_func_args[func_name_w_id])
                     
         return self.aie_module

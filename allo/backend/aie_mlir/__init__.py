@@ -9,7 +9,7 @@ import aie.ir as aie_ir
 
 from ...passes import analyze_read_write_patterns
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
-
+from ...memory import DTensor
 from .mlir_codegen import CodeGenerator
 from .utils import inject_external_kernels, classify_aie_functions
 
@@ -30,6 +30,7 @@ class AIE_MLIRModule:
 
         self.global_inputs:Set = set()
         self.global_outputs:Set = set()
+        self.core_func_args:Dict[str,Tuple[DTensor,bool]] = {} # core func name -> a list of (dtensors, is_in)
 
         self.aie_module:aie_ir.Module = None
         print(module)
@@ -47,6 +48,7 @@ class AIE_MLIRModule:
             outputs[func_name]["_global"] = []
             for func in funcs:
                 func_name_w_id = func.attributes["sym_name"].value
+                self.core_func_args[func_name_w_id] = []
                 # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
                 func_id = tuple(map(int, func_name_w_id.split(func_name + "_")[-1].split("_")))
                 # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
@@ -55,6 +57,7 @@ class AIE_MLIRModule:
                     io_lst[func_name][func_id] = []
                     for idx in io_idx:
                         dtensor = self.func_args[func_name_w_id][idx]
+                        self.core_func_args[func_name_w_id].append((dtensor, io == "in"))
                         if dtensor not in io_lst[func_name]["_global"]:
                             io_lst[func_name]["_global"].append(dtensor)
                             if io == "in":
@@ -86,7 +89,9 @@ class AIE_MLIRModule:
         self.aie_module = code_generator.aie_codegen(
             core_func_groups, external_funcs,
             inputs, outputs,
-            use_external_kernels
+            use_external_kernels,
+            self.stream_info,
+            self.core_func_args
         )
         # TODO
 
