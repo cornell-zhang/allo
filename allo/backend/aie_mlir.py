@@ -133,11 +133,16 @@ def classify_aie_functions(
                         core_func_groups[func_name].append(func)
     return top_func, core_func_groups, external_funcs
 
-def map_global_io(inputs, outputs) -> Tuple[Dict, int, int]:
+def map_global_io(inputs, outputs) -> Tuple[Dict[str,List[DMATensorTile]] , int, int]:
     """
     Current constrians:
         - use 4 mem-shim tile pairs for io
         - each port is assigned to one dtensor tile
+
+    Return:
+        - tile_map: dtensor name -> a list of dma tiles
+        - mem_tile_num
+        - shim_tile_num
     """
     MAX_MEM_TILES = 4  # Maximum number of memory tiles allowed
     # https://riallto.ai/notebooks/3_2_Ryzenai_capabilities.html#memory-tile-properties
@@ -232,126 +237,53 @@ def map_global_io(inputs, outputs) -> Tuple[Dict, int, int]:
 
     return tile_map, len(used_tiles), len(used_tiles)
 
-class ContextTransformer:
-    def __init__(self, target_ctx, module):
-        self.new_ctx = target_ctx
-        self.aie_module = module
-        self.variable_map = {}
-        pass
-
-    def get_ctx(self):
-        return self.new_ctx
-    
-    def copy_op(self, allo_op:allo_ir.ir.Operation):
-        new_attrs = None
-        if allo_op.attributes:
-            new_attrs = {}
-            for i in range(len(allo_op.attributes)):
-                named_attr = allo_op.attributes[i]
-                new_attrs[named_attr.name] = named_attr.attr
-        new_operands = None
-        if allo_op.operands:
-            new_operands = []
-            for i in range(len(allo_op.operands)):
-                new_operands.append(self.variable_map[allo_op.operands[i]])
-        result_type = None
-        if allo_op.results:
-            result_type:List[aie_ir.Type] = []
-            for i in range(len(allo_op.results)):
-                print(allo_op.results[i].type)
-                result_type.append(allo_op.results[i].type)
-                print(allo_op.results[i].type, type(allo_op.results[i].type))
-        loc = aie_ir.Location.unknown()
-        idx_type = aie_ir.IndexType.get()
-        value_attr = aie_ir.IntegerAttr.get(idx_type, 0)
-        attributes = {"value": value_attr}
-        operands = []
-        results = [idx_type]
-        print(results)
-        print(attributes)
-        op = aie_ir.Operation.create(
-            name="arith.constant",
-            results=results,
-            operands=operands,
-            attributes=attributes,
-            loc=loc,
-        )
-        new_op = aie_ir.Operation.create(
-            name="arith.constant",
-            operands=[],
-            attributes=attributes,
-            results=results,
-            loc = aie_ir.Location.unknown()
-        )
+def get_element_type(dtype_str: str):
+        if dtype_str == "i32":
+            return aie_ir.IntegerType.get_signless(32)
+        elif dtype_str == "i16":
+            return aie_ir.IntegerType.get_signless(16)
+        elif dtype_str == "i8":
+            return aie_ir.IntegerType.get_signless(8)
+        elif dtype_str == "f32":
+            return aie_ir.F32Type.get()
+        elif dtype_str == "f16":
+            return aie_ir.F16Type.get()
+        else:
+            raise ValueError(f"Unsupported dtype: {dtype_str}")
         
-        return new_op
-    
-    def transform(self, allo_module:allo_ir.ir.Operation):
-        def dfs_transform(op, indent=0):
-            for region in op.regions:
-                for block in region.blocks:
-                    for child_op in block.operations:
-                        dfs_transform(child_op, indent + 1)
-                        return
-            new_op = self.copy_op(op)
-
-            for old_result, new_result in zip(op.results, new_op.results):
-                self.variable_map[old_result] = new_result
-            print(new_op)
-            
-        dfs_transform(allo_module)
-
-    def traverse(self, allo_module:allo_ir.ir.Operation):
-        def dfs_traverse(op, indent=0):
-            op_name = str(op.name)
-            if '.' in op_name:
-                dialect = op_name.split('.')[0]
-            else:
-                dialect = "(x)"
-            
-            print('  ' * indent + f"Operation: {op_name},\tDialect: {dialect}")
-            for i in range(len(op.results)):
-                print('  ' * indent + f"o:\t{op.results[i]}")
-
-            for i in range(len(op.operands)):
-                print('  ' * indent + f"i:\t{op.operands[i]}")
-
-            for region in op.regions:
-                for block in region.blocks:
-                    for child_op in block.operations:
-                        dfs_traverse(child_op, indent + 1)
-        dfs_traverse(allo_module)
-
 class CodeGenerator:
     def __init__(
         self, device_type:str,
     ):
         self.device_type = device_type
         self.tile_map:Dict[str,aie_d.TileOp] = {}
+        self.fifo_map:Dict[str,aie_d.object_fifo] = {}
         self.external_functions:str = ""
         self.aie_module = None
+        self.global_ip: aie_ir.InsertionPoint = None # mark the inserting point for buffers
     
     def preporocess_dumped_core_func(self, original_func: func_d.FuncOp) -> str:
         # declare external kernel function before use
         func_str = self.external_functions + "\n" + str(original_func)
         # TODO: resolve `allo` (unregistered dialect)
         func_str = '''
-func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {df.kernel, itypes = "ss", otypes = "", stypes = "__"} {
-    %c1_i32 = arith.constant 1 : i32
-    %alloc = memref.alloc() : memref<i32>
-    memref.store %c1_i32, %alloc[] : memref<i32>
-    %alloc_0 = memref.alloc() : memref<1024xi32>
-    %c0 = arith.constant 0 : index
-    %c1024 = arith.constant 1024 : index
-    %c1 = arith.constant 1 : index
-    scf.for %arg2 = %c0 to %c1024 step %c1 {
-      %0 = memref.load %alloc[] : memref<i32>
-      memref.store %0, %alloc_0[%arg2] : memref<1024xi32>
-    }
-    %alloc_1 = memref.alloc() : memref<1024xi32>
-    memref.copy %alloc_1, %alloc_0 {to = "B"} : memref<1024xi32> to memref<1024xi32>
-    return
-  }'''
+            func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {df.kernel, itypes = "ss", otypes = "", stypes = "__"} {
+                %c1_i32 = arith.constant 1 : i32
+                %alloc = memref.alloc() : memref<i32>
+                memref.store %c1_i32, %alloc[] : memref<i32>
+                %alloc_0 = memref.alloc() : memref<1024xi32>
+                %c0 = arith.constant 0 : index
+                %c1024 = arith.constant 1024 : index
+                %c1 = arith.constant 1 : index
+                scf.for %arg2 = %c0 to %c1024 step %c1 {
+                %0 = memref.load %alloc[] : memref<i32>
+                memref.store %0, %alloc_0[%arg2] : memref<1024xi32>
+                }
+                %alloc_1 = memref.alloc() : memref<1024xi32>
+                memref.copy %alloc_1, %alloc_0 {to = "B"} : memref<1024xi32> to memref<1024xi32>
+                return
+            }
+        '''
         return func_str
     
     def build_core_function(
@@ -372,18 +304,6 @@ func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {
                         raise ValueError("Too many core functions. Fail to resolve.")
         assert not parsed_function is None
         print("parsed_function\n", parsed_function)
-
-        def clone_recursive(op):
-            new_op = op.clone()
-            for old, new in zip(op.results, new_op.results):
-                old.replace_all_uses_with(new)
-            # for old_region, new_region in zip(op.regions, new_op.regions):
-            #     for old_block in old_region.blocks:
-            #         new_block = aie_ir.Block.create_at_start(new_region, [])
-            #         for inner_op in old_block.operations:
-            #             new_inner_op = clone_recursive(inner_op)
-            #             new_block.append(new_inner_op)
-            return new_op
         
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
@@ -396,18 +316,18 @@ func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
             # insert operations to get 'function parameter'
-            
+
+            # TODO: replace alloc with buffer
             for parsed_func_block in parsed_function.body:
                 with aie_ir.InsertionPoint(loop.body):
                     for op in parsed_func_block.operations:
                         if op.name == "func.return":
                             continue
-                        clone_recursive(op)
-                    # TODO: core function logic
+                        new_op = op.clone()
+                        for old, new in zip(op.results, new_op.results):
+                            old.replace_all_uses_with(new)
             print(self.aie_module)
             
-        # print(func_core, "\n")
-
     def aie_codegen(
         self,
         core_func_groups:Dict[str, List[func_d.FuncOp]],
@@ -472,16 +392,43 @@ func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {
                     else:
                         mappings[func_name] = outputs[func_name]["_global"][0].mapping
                 aie_mesh = (5, 4)
+                print("mapping",mappings)
                 for func_name, tile_ids in map_kernels_to_device_mesh(mappings, aie_mesh).items():
                     for idx, func in zip(tile_ids, core_func_groups[func_name]):
                         self.tile_map[f"compute_{func.attributes["sym_name"].value}"] = aie_d.TileOp(
                             col=idx[0], row=idx[1]+2,
                         )
-                # TODO: buffer
 
+                print(self.tile_map)
                 # TODO: fifo
+                for io, arg_lst in (("in", inputs), ("out", outputs)):
+                    for func_name, sub_func_lst in arg_lst.items():
+                        for idx, dtensor in enumerate(sub_func_lst["_global"]):
+                            mapping = dtensor.mapping
+                            placement = dtensor.layout.get_placement(mapping)
+                            # shim <-> mem (one to one)
+                            for dma_tile in io_mapping[dtensor.name]:
+                                print(dma_tile)
+                                # define objectfifo
+                                name = f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
+                                producer = self.tile_map[f"shim_{dma_tile.shim_id}"] if io == 'in' else self.tile_map[f"mem_{dma_tile.mem_id}"]
+                                consumer = [self.tile_map[f"mem_{dma_tile.mem_id}"]] if io == 'in' else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
+                                memref_type = aie_ir.MemRefType.get(dma_tile.size, get_element_type(str(dtensor.dtype)))
+                                self.fifo_map[name]  = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
+                                # mem <-> compute (one to ?)
+                                print(mapping)
+                                for tensor_tile in dma_tile.tensor_tile_labels:
+                                    print("placement[tensor_tile]", tensor_tile, placement[tensor_tile])
+                                    # diatribute to placement[tensor_tile]
+                                    for tile in placement[tensor_tile]:
+                                        for dt in sub_func_lst[tile]:
+                                            print(dt)
+                                        print()
+                                    
 
-                # TODO: core
+                # shim to mem tile
+                # TODO: buffer
+                
                 for func_name in core_func_groups:
                     for func in core_func_groups[func_name]:
                         func_name_w_id = func.attributes["sym_name"].value
@@ -489,6 +436,8 @@ func.func @core_0(%arg0: memref<1024xi32>, %arg1: memref<1024xi32>) attributes {
                             tile = self.tile_map[f"compute_{func_name_w_id}"],
                             link_with = "external.o" if use_external_kernels[func_name_w_id] else None
                         )
+                        if self.global_ip == None:
+                            self.global_ip = aie_ir.InsertionPoint(func_core)
                         self.build_core_function(func_core,func)
                     
         return self.aie_module
