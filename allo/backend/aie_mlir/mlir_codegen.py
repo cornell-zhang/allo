@@ -185,31 +185,34 @@ class CodeGenerator:
             cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
-            in_port, out_port = 0, 0
             with aie_ir.InsertionPoint(loop.body):
                 # insert operations to get 'function parameter', acquire and subview
                 io_map =self.compute_core_io[parsed_function.name.value]
-                port_num = []
                 for i in range(len(parsed_function.arguments)):
                     arg_info:Tuple[DTensor,bool] = func_args[i]
-                    port = in_port if arg_info[1] else out_port
-                    port_num.append(port)
-                    # acquire & subview
-                    acquired = self.fifo_map[io_map[arg_info[0]]].acquire(port,1)
-                    # replace use
+                    # [NOTE]: modified from object_fifo.acquire
+                    subview_t = aie_d.ObjectFifoSubviewType.get(self.fifo_map[io_map[arg_info[0]]].datatype)
+                    acq = aie_d.ObjectFifoAcquireOp(
+                        subview_t, 1 if arg_info[1] else 0, self.fifo_map[io_map[arg_info[0]]].sym_name.value, 1)
+                    acquired = aie_d.ObjectFifoSubviewAccessOp(
+                        parsed_function.arguments[i].type, acq.subview, acq.size.value - 1
+                    ).result
                     parsed_function.arguments[i].replace_all_uses_with(acquired)
-                    if arg_info[1]:
-                        in_port += 1
-                    else:
-                        out_port += 1
-                  
+                 
                 # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
                         if op.name == "func.return":
                             continue
                         if op.name == "memref.alloc":
-                            print(op)
+                            buffer_op = aie_d.BufferOp(
+                                buffer=op.results[0].type, 
+                                tile=self.tile_map[f"compute_{parsed_function.name.value}"], 
+                                ip = self.global_ip
+                            )
+                            for old, new in zip(op.results, buffer_op.results):
+                                old.replace_all_uses_with(new)
+                            continue
                         new_op = op.clone()
                         for old, new in zip(op.results, new_op.results):
                             old.replace_all_uses_with(new)
@@ -217,12 +220,11 @@ class CodeGenerator:
                 # release
                 for i in range(len(parsed_function.arguments)):
                     arg_info:Tuple[DTensor,bool] = func_args[i]
-                    self.fifo_map[io_map[arg_info[0]]].release(port_num[i],1)
+                    self.fifo_map[io_map[arg_info[0]]].release(1 if arg_info[1] else 0,1)
                 
-            print(self.aie_module)
-
-            # TODO: replace alloc with buffer
-            
+                aie_scf_d.YieldOp([])
+            aie_d.EndOp()
+                
     def aie_codegen(
         self,
         core_func_groups:Dict[str, List[allo_func_d.FuncOp]],
@@ -357,5 +359,6 @@ class CodeGenerator:
                         if self.global_ip == None:
                             self.global_ip = aie_ir.InsertionPoint(func_core)
                         self.build_core_function(func_core,func,core_func_args[func_name_w_id])
-                    
+        print("\n")
+        print(self.aie_module)
         return self.aie_module
