@@ -2353,7 +2353,6 @@ class ASTTransformer(ASTBuilder):
                 "mul",
                 "div",
                 "conv2d",
-                "maxpool",
                 "sumpool",
             }:
                 # Since MLIR does not natively support matrix multiplication for matrices with more than 2 dimensions,
@@ -2396,7 +2395,6 @@ class ASTTransformer(ASTBuilder):
                     "mul": linalg_d.mul,
                     "div": linalg_d.div,
                     "conv2d": linalg_d.conv_2d_nchw_fchw,
-                    "maxpool": linalg_d.pooling_nchw_max,
                     "sumpool": linalg_d.pooling_nchw_sum,
                 }.get(attr)(
                     new_args[0].result,
@@ -2408,6 +2406,16 @@ class ASTTransformer(ASTBuilder):
                             else result_tensor
                         )
                     ],
+                )
+                op = op.owner
+            elif attr in {"maxpool"}:
+                filter_shape = [int(x.val) for x in new_args[1]]
+                memref_type = MemRefType.get(filter_shape, Int(64).build())
+                filter_memref = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                op = linalg_d.pooling_nchw_max(
+                    new_args[0].result,
+                    filter_memref,
+                    outs=[result_tensor],
                 )
                 op = op.owner
             elif attr in {"exp", "log", "abs", "copy"}:

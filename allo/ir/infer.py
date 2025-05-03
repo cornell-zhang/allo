@@ -953,7 +953,8 @@ class TypeInferer(ASTVisitor):
                     argAshape[2] - argBshape[2] + 1,
                     argAshape[3] - argBshape[3] + 1,
                 )
-            elif op_name in {"maxpool", "sumpool"}:
+            elif op_name in {"maxpool"}:
+                argBshape = ASTResolver.resolve_constant(new_args[1], ctx)
                 node.shape = (
                     argAshape[0],
                     argAshape[1],
