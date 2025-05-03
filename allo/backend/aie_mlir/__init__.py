@@ -3,7 +3,6 @@ import subprocess
 from typing import Dict, List, Tuple, Set
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-
 from ..._mlir.dialects import func as allo_func_d
 
 import aie.ir as aie_ir
@@ -13,7 +12,13 @@ from ...passes import analyze_read_write_patterns
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from ...memory import DTensor
 from .mlir_codegen import CodeGenerator
-from .utils import inject_external_kernels, classify_aie_functions, codegen_external_kernels
+from .utils import (
+    inject_external_kernels, 
+    classify_aie_functions, 
+    codegen_external_kernels, 
+    read_tensor_from_file
+)
+from ..aie import codegen_host
 
 class AIE_MLIRModule:
     def __init__(
@@ -108,14 +113,43 @@ class AIE_MLIRModule:
             if process.returncode != 0:
                 raise RuntimeError("Failed to compile external kernels.")
         # TODO
-        # # build mlir-aie
-        # cmd = f"cd {self.project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
-        # process = subprocess.Popen(cmd, shell=True)
-        # process.wait()
-        # if process.returncode != 0:
-        #     raise RuntimeError("Failed to compile the MLIR-AIE code")
-        # TODO
-
+        # build mlir-aie
+        cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+        process = subprocess.Popen(cmd, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to compile the MLIR-AIE code")
+        # generate host code
+        path = os.path.dirname(__file__)
+        path = os.path.join(path, "../../harness/aie")
+        os.system(f"cp -r {path}/* {self.project_dir}")
+        host_code = codegen_host(self.global_inputs, self.global_outputs)
+        with open(os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8") as f:
+            f.write(host_code)
+        # fixme: lib path
+        cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$MLIR_AIE_INSTALL_DIR/.. && cmake --build . --config Release"
+        process = subprocess.Popen(cmd, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to build AIE project.")
+        return self
+    
     def __call__(self, *args):
-        pass
-        # TODO
+        for i in range(len(self.global_inputs)):
+            with open(
+                os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
+            ) as f:
+                f.write("\n".join([str(i) for i in args[i].flatten()]))
+        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE"
+        process = subprocess.Popen(cmd, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to execute AIE code.")
+        # TODO: need to complete multiple outputs rules
+        result = read_tensor_from_file(
+            self.outputs["_global"][-1].dtype,
+            args[-1].shape,
+            f"{self.project_dir}/output.data",
+        )
+        # suppose the last argument is output
+        args[-1][:] = result

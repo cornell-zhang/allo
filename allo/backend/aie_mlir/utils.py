@@ -38,6 +38,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
     '''
     use_external_kernels = {}
     injected_kernels:Dict = {}
+    
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and (
@@ -47,6 +48,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
                 if func.attributes["sym_name"].value != "top":
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
+                    continue
                     for block in func.regions[0].blocks:
                         for op in block.operations:
                             kernel_code, kernel_header = "", ""
@@ -170,6 +172,26 @@ def codegen_external_kernels(injected_kernels:Dict) -> str:
     code += kernel_code
     code += '} // extern "C"\n'
     return code
+
+np_supported_types = {
+    "bf16": np.float32, # numpy does not support bf16
+    "f16": np.float16,
+    "f32": np.float32,
+    "f64": np.float64,
+    "i8": np.int8,
+    "i16": np.int16,
+    "i32": np.int32,
+    "i64": np.int64,
+    "ui1": np.bool_,
+    "ui8": np.uint8,
+    "ui16": np.uint16,
+    "ui32": np.uint32,
+    "ui64": np.uint64,
+}
+
+def read_tensor_from_file(dtype, shape, file_path):
+    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[str(dtype)])
+    return arr.reshape(shape)
 
 def dfs_print(op, indent=0):
     op_name = str(op.name)
