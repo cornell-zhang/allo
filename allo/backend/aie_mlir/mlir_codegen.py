@@ -140,8 +140,14 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str,List[DMATensorTile]] , int,
 class CodeGenerator:
     def __init__(
         self, device_type:str,
+        global_inputs,
+        global_outputs
     ):
         self.device_type = device_type
+
+        self.global_inputs:List[DTensor] = list(global_inputs)
+        self.global_outputs:List[DTensor] = list(global_outputs)
+
         self.tile_map:Dict[str,aie_d.TileOp] = {}
         self.fifo_map:Dict[str,aie_d.object_fifo] = {}
         # function name (with id) -> a map from DTensor to fifo name
@@ -308,7 +314,6 @@ class CodeGenerator:
                             placement = dtensor.global_placement
                             # shim <-> mem (one to one)
                             for dma_tile in io_mapping[dtensor.name]:
-                                print(dma_tile)
                                 # define objectfifo
                                 name = f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
                                 producer = self.tile_map[f"shim_{dma_tile.shim_id}"] if io == 'in' else self.tile_map[f"mem_{dma_tile.mem_id}"]
@@ -369,6 +374,44 @@ class CodeGenerator:
                         if self.global_ip == None:
                             self.global_ip = aie_ir.InsertionPoint(func_core)
                         self.build_core_function(func_core,func,core_func_args[func_name_w_id])
+
+                # runtime sequence
+                runtime_seq = aiex_d.RuntimeSequenceOp()
+                runtime_args = []
+                for input_ in self.global_inputs:
+                    runtime_args.append(aie_ir.MemRefType.get(input_.shape, get_element_type(str(input_.dtype))))
+                for output_ in self.global_outputs:
+                    runtime_args.append(aie_ir.MemRefType.get(output_.shape, get_element_type(str(output_.dtype))))
+                runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
+                with aie_ir.InsertionPoint(runtime_seq_entry_block):
+                    dma_tasks:List = []
+                    cnt = 0
+                    for io, arg_lst in (("in", self.global_inputs), ("out", self.global_outputs)):
+                        for dtensor in arg_lst:
+                            for dma_tile in io_mapping[dtensor.name]:
+                                dma_fifo = self.fifo_map[f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"]
+                                dma_task = aiex_d.dma_configure_task_for(dma_fifo, issue_token = True)
+                                dma_entry_block = aie_ir.Block.create_at_start(dma_task.body)
+                                with aie_ir.InsertionPoint(dma_entry_block):
+                                    tile_length = 1
+                                    for tile_len in dma_tile.size:
+                                        tile_length*=tile_len
+                                    aie_d.DMABDOp(
+                                        buffer = runtime_seq_entry_block.arguments[cnt],
+                                        offset = 0, # fixme
+                                        len=tile_length, 
+                                        dimensions =  aie_d.bd_dim_layout_array_attr_builder(list(zip(dma_tile.size, dma_tile.stride)))
+                                    )
+                                    aie_d.EndOp()
+                                aiex_d.dma_start_task(dma_task)
+                                dma_tasks.append(dma_task)
+                            cnt += 1
+                    # DMA wait
+                    for task_ in dma_tasks:
+                        aiex_d.dma_await_task(task_)
+                        aiex_d.dma_free_task(task_)
+                    aie_d.EndOp()
+
         print("\n")
         print(self.aie_module)
         return self.aie_module

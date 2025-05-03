@@ -47,6 +47,7 @@ class AIE_MLIRModule:
             inputs[func_name]["_global"] = []
             outputs[func_name]["_global"] = []
             for func in funcs:
+                print("Func args:", func.arguments[0].type.shape, type(func.arguments[0].type.shape))
                 func_name_w_id = func.attributes["sym_name"].value
                 self.core_func_args[func_name_w_id] = []
                 # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
@@ -86,7 +87,7 @@ class AIE_MLIRModule:
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
         inputs, outputs = self.collect_io(core_func_groups)
 
-        code_generator = CodeGenerator(device_type)
+        code_generator = CodeGenerator(device_type, self.global_inputs, self.global_outputs)
         self.aie_module = code_generator.aie_codegen(
             core_func_groups, external_funcs,
             inputs, outputs,
