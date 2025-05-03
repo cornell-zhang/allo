@@ -1,4 +1,5 @@
 import os
+import subprocess
 from typing import Dict, List, Tuple, Set
 
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -8,10 +9,11 @@ from ..._mlir.dialects import func as allo_func_d
 import aie.ir as aie_ir
 
 from ...passes import analyze_read_write_patterns
+
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from ...memory import DTensor
 from .mlir_codegen import CodeGenerator
-from .utils import inject_external_kernels, classify_aie_functions
+from .utils import inject_external_kernels, classify_aie_functions, codegen_external_kernels
 
 class AIE_MLIRModule:
     def __init__(
@@ -33,7 +35,6 @@ class AIE_MLIRModule:
         self.core_func_args:Dict[str,Tuple[DTensor,bool]] = {} # core func name -> a list of (dtensors, is_in)
 
         self.aie_module:aie_ir.Module = None
-        print(module)
     
     def collect_io(
         self,
@@ -47,7 +48,6 @@ class AIE_MLIRModule:
             inputs[func_name]["_global"] = []
             outputs[func_name]["_global"] = []
             for func in funcs:
-                print("Func args:", func.arguments[0].type.shape, type(func.arguments[0].type.shape))
                 func_name_w_id = func.attributes["sym_name"].value
                 self.core_func_args[func_name_w_id] = []
                 # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
@@ -77,7 +77,7 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
         # - extract external kernels
-        use_external_kernels = inject_external_kernels(self.allo_module)
+        use_external_kernels, injected_kernels = inject_external_kernels(self.allo_module)
         # - lower tensor to memref with registered pass
         passes = ["func.func(convert-linalg-to-affine-loops),lower-affine",]
         pipeline = f'builtin.module({",".join(passes)})'
@@ -95,6 +95,25 @@ class AIE_MLIRModule:
             self.stream_info,
             self.core_func_args
         )
+        with open(os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8") as f:
+            f.write(str(self.aie_module))
+        if len(injected_kernels) > 0:
+            kernel_code = codegen_external_kernels(injected_kernels)
+            with open(os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8") as f:
+                f.write(kernel_code)
+            # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
+            process = subprocess.Popen(cmd, shell=True)
+            process.wait()
+            if process.returncode != 0:
+                raise RuntimeError("Failed to compile external kernels.")
+        # TODO
+        # # build mlir-aie
+        # cmd = f"cd {self.project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+        # process = subprocess.Popen(cmd, shell=True)
+        # process.wait()
+        # if process.returncode != 0:
+        #     raise RuntimeError("Failed to compile the MLIR-AIE code")
         # TODO
 
     def __call__(self, *args):

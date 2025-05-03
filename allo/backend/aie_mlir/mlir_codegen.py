@@ -181,7 +181,6 @@ class CodeGenerator:
                     else:
                         raise ValueError("Too many core functions. Fail to resolve.")
         assert not parsed_function is None
-        print("parsed_function\n", parsed_function)
         
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
@@ -282,16 +281,10 @@ class CodeGenerator:
             with aie_ir.InsertionPoint(end_op):
                 # shim tile
                 for shim_id in range(shim_tile_num):
-                    self.tile_map[f"shim_{shim_id}"] = aie_d.TileOp(
-                        col=shim_id, row=0,
-                        allocation_scheme="shim",
-                    )
+                    self.tile_map[f"shim_{shim_id}"] = aie_d.TileOp(col=shim_id, row=0)
                 # mem tiles
                 for mem_id in range(mem_tile_num):
-                    self.tile_map[f"mem_{mem_id}"] = aie_d.TileOp(
-                        col=mem_id, row=1,
-                        allocation_scheme="mem", 
-                    )
+                    self.tile_map[f"mem_{mem_id}"] = aie_d.TileOp(col=mem_id, row=1)
                 # compute tiles
                 # 'logic' mapping for different function groups.
                 mappings = {}
@@ -307,7 +300,6 @@ class CodeGenerator:
                             col=idx[0], row=idx[1]+2,
                         )
 
-                print(self.tile_map)
                 for io, arg_lst in (("in", inputs), ("out", outputs)):
                     for func_name, sub_func_lst in arg_lst.items():
                         for idx, dtensor in enumerate(sub_func_lst["_global"]):
@@ -333,7 +325,6 @@ class CodeGenerator:
                                 mem_stride = [0]
                                 mem_tile = self.tile_map[f"mem_{dma_tile.mem_id}"]
                                 for tensor_tile in dma_tile.tensor_tile_labels:
-                                    print("placement[tensor_tile]", tensor_tile, placement[tensor_tile])
                                     # distribute to placement[tensor_tile]
                                     compute_tiles = []
                                     name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
@@ -342,12 +333,11 @@ class CodeGenerator:
                                         # seems confusing. "sym_name" is parsed in this way
                                         compute_tiles.append(self.tile_map[f"compute_{func_name}_{idx_str}"])
                                         self.compute_core_io.setdefault(f'{func_name}_{idx_str}', {})[dtensor]=name
-                                    print("compute_cores", compute_tiles)
                                     if io == 'in':
                                         producer = mem_tile
                                     else:
                                         # fixme: only one valid producer
-                                        # assert len(compute_tiles)==1
+                                        assert len(compute_tiles)==1
                                         producer = compute_tiles[0]
                                     consumer = compute_tiles if io == 'in' else [mem_tile]
                                     fifo = self.fifo_map[name] = aie_d.object_fifo(name, producer, consumer, depth = 2, datatype = memref_type)
@@ -412,6 +402,4 @@ class CodeGenerator:
                         aiex_d.dma_free_task(task_)
                     aie_d.EndOp()
 
-        print("\n")
-        print(self.aie_module)
         return self.aie_module
