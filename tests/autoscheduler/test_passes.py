@@ -69,37 +69,37 @@ def test_simple(debug_point, kind):
         pytest.skip("Skipping test: vitis_hls not available")
 
 
-# @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-# @pytest.mark.parametrize("kind", kinds)
-# def test_three_mm(debug_point, kind):
-#     schedule, inputs, expected = get_polybench(
-#         "three_mm", size="small", concrete_type=float32
-#     )
-#     try:
-#         optimized_schedule = dataflow_optimization_pass(
-#             schedule, debug_point=debug_point, kind=kind, verbose=True
-#         )
-#     except GurobiError as e:
-#         if "Model too large for size-limited license" in str(e):
-#             pytest.skip(
-#                 "Skipping test: model too large for size-limited Gurobi license"
-#             )
-#         else:
-#             raise e
+@pytest.mark.parametrize("debug_point", DEBUG_POINTS)
+@pytest.mark.parametrize("kind", kinds)
+def test_three_mm(debug_point, kind):
+    schedule, inputs, expected = get_polybench(
+        "three_mm", size="small", concrete_type=float32
+    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(
+            schedule, debug_point=debug_point, kind=kind, verbose=True
+        )
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
 
-#     if debug_point is not None:
-#         mod = optimized_schedule.build()
-#         np.testing.assert_allclose(mod(*inputs), expected, rtol=1e-5, atol=1e-5)
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        np.testing.assert_allclose(mod(*inputs), expected, rtol=1e-5, atol=1e-5)
 
-#     elif is_available("vitis_hls"):
-#         mod = optimized_schedule.build(
-#             target="vitis_hls", mode=MODE, project="test_three_mm.prj", wrap_io=False
-#         )
-#         output = np.zeros_like(expected)
-#         mod(*inputs, output)
-#         np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
-#     else:
-#         pytest.skip("Skipping test: vitis_hls not available")
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode=MODE, project="test_three_mm.prj", wrap_io=False
+        )
+        output = np.zeros_like(expected)
+        mod(*inputs, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)

@@ -314,7 +314,6 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     new_alloc1 = memref_d.AllocOp(memref_type, [], [], ip=ip)
     new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
 
-    # loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
     irrelevant_loops = [
         loop for loop in loop_nest if loop.induction_variable not in loop_load.indices
     ]
@@ -350,16 +349,6 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
 
     loop_load.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
     loop_store.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
-
-    # inner_loop_upper_map = loop_nest[0].upperBoundMap.value
-
-    # # check upper bound is a constant
-    # if not (
-    #     inner_loop_upper_map.n_dims == 0 and len(inner_loop_upper_map.results) == 1
-    # ):
-    #     return False
-
-    # loop_upper_bound = inner_loop_upper_map.results[0]
 
     upper_bounds = [loop.upperBoundMap.value.results[0] for loop in irrelevant_loops]
     last_iter_set = affine_d.IntegerSet.get(
