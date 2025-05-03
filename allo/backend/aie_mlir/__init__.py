@@ -16,9 +16,9 @@ from .utils import (
     inject_external_kernels, 
     classify_aie_functions, 
     codegen_external_kernels, 
-    read_tensor_from_file
+    read_tensor_from_file,
+    codegen_host
 )
-from ..aie import codegen_host
 
 class AIE_MLIRModule:
     def __init__(
@@ -47,6 +47,8 @@ class AIE_MLIRModule:
     )-> Tuple[Dict,Dict]:
         inputs = {}
         outputs = {}
+        global_inputs:Set = set()
+        global_outputs:Set = set()
         for func_name, funcs in func_groups.items():
             inputs[func_name] = {}
             outputs[func_name] = {}
@@ -68,10 +70,12 @@ class AIE_MLIRModule:
                         if dtensor not in io_lst[func_name]["_global"]:
                             io_lst[func_name]["_global"].append(dtensor)
                             if io == "in":
-                                self.global_inputs.add(dtensor)
+                                global_inputs.add(dtensor)
                             else:
-                                self.global_outputs.add(dtensor) 
+                                global_outputs.add(dtensor) 
                         io_lst[func_name][func_id].append(dtensor)
+        self.global_inputs=list(global_inputs)
+        self.global_outputs=list(global_outputs)
         return inputs, outputs
         
     def build(self, device_type = "npu1_4col"):
@@ -147,7 +151,7 @@ class AIE_MLIRModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            self.outputs["_global"][-1].dtype,
+            self.global_outputs[-1].dtype,
             args[-1].shape,
             f"{self.project_dir}/output.data",
         )

@@ -140,13 +140,13 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str,List[DMATensorTile]] , int,
 class CodeGenerator:
     def __init__(
         self, device_type:str,
-        global_inputs,
-        global_outputs
+        global_inputs:List[DTensor],
+        global_outputs:List[DTensor],
     ):
         self.device_type = device_type
 
-        self.global_inputs:List[DTensor] = list(global_inputs)
-        self.global_outputs:List[DTensor] = list(global_outputs)
+        self.global_inputs:List[DTensor] = global_inputs
+        self.global_outputs:List[DTensor] = global_outputs
 
         self.tile_map:Dict[str,aie_d.TileOp] = {}
         self.fifo_map:Dict[str,aie_d.object_fifo] = {}
@@ -198,13 +198,6 @@ class CodeGenerator:
                 for i in range(len(parsed_function.arguments)):
                     arg_info:Tuple[DTensor,bool] = func_args[i]
                     acquired = self.fifo_map[io_map[arg_info[0]]].acquire(1 if arg_info[1] else 0,1)
-                    # [NOTE]: modified from object_fifo.acquire
-                    # subview_t = aie_d.ObjectFifoSubviewType.get(self.fifo_map[io_map[arg_info[0]]].datatype)
-                    # acq = aie_d.ObjectFifoAcquireOp(
-                    #     subview_t, 1 if arg_info[1] else 0, self.fifo_map[io_map[arg_info[0]]].sym_name.value, 1)
-                    # acquired = aie_d.ObjectFifoSubviewAccessOp(
-                    #     parsed_function.arguments[i].type, acq.subview, acq.size.value - 1
-                    # ).result
                     parsed_function.arguments[i].replace_all_uses_with(acquired)
                  
                 # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
