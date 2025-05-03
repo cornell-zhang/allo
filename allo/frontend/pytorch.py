@@ -172,6 +172,8 @@ class TorchBuilder:
             torch.nn.Dropout: "identity",
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
+            torch.nn.Conv2d: "conv2d",
+            torch.nn.MaxPool2d: "maxpool",
         }.get(type(module), None)
         if self.leaf_modules:
             for leaf_module in self.leaf_modules:
@@ -441,3 +443,14 @@ class TorchBuilder:
         if src not in self.subfunctions:
             self.subfunctions.append(src)
         return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
+
+    def build_conv2d(self, node):
+        target_name = node.target.replace(".", "_")
+        inp = get_var_name(node.args[0])
+        filter = get_var_name(target_name + "_weight")
+        return f"{node.name} = dsl.conv2d({inp}, {filter})"
+
+    def build_maxpool(self, node):
+        inp = get_var_name(node.args[0])
+        kernel_size = self.gm.get_submodule(node.target).kernel_size
+        return f"{node.name} = dsl.maxpool({inp}, {kernel_size})"
