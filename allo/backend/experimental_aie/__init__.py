@@ -1,13 +1,14 @@
+# pylint: disable=import-error
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import os
 import subprocess
 
+import aie.ir as aie_ir
+
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
-
-import aie.ir as aie_ir
 
 from ...passes import analyze_read_write_patterns
 

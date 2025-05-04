@@ -1,3 +1,4 @@
+# pylint disable=import-error
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -14,12 +15,9 @@ from ..aie import map_kernels_to_device_mesh
 # =======================
 import aie.dialects.aie as aie_d
 import aie.dialects.aiex as aiex_d
-import aie.dialects.aievec as aievec_d
 import aie.dialects.arith as aie_arith_d
 import aie.dialects.func as aie_func_d
 import aie.dialects.scf as aie_scf_d
-
-import aie.dialects._memref_ops_gen as aie_memref_d
 
 import aie.ir as aie_ir
 
