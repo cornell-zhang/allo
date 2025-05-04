@@ -201,13 +201,13 @@ def scaled_dot_product_attention[
     return Z
 
 
-def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Pd0, Pd1](
+def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1](
     inp: "Ty[B, Cin, H, W]", filter: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
 ) -> "Ty[B, Cout, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
     Z: Ty[B, Cout, Oh, Ow]
 
-    # Current implementation is does not support dilation and stride other than 1
+    # Current implementation is does not support dilation other than 1
     for batch in range(B):
         for cout in range(Cout):
             for oh in range(Oh):
@@ -217,8 +217,8 @@ def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Pd0, Pd1](
                     for cin in range(Cin):
                         for kh in range(Kh):
                             for kw in range(Kw):
-                                h_pos: Ty = oh + kh - Pd0
-                                w_pos: Ty = ow + kw - Pd1
+                                h_pos: Ty = oh * Sh + kh - Pd0
+                                w_pos: Ty = ow * Sw + kw - Pd1
                                 if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
                                     sum += (
                                         inp[batch, cin, h_pos, w_pos]

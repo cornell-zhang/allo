@@ -448,6 +448,7 @@ class TorchBuilder:
         target_name = node.target.replace(".", "_")
         inp = get_var_name(node.args[0])
         weight = get_var_name(target_name + "_weight")
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
 
         has_bias = hasattr(module, "bias") and module.bias is not None
         bias = get_var_name(target_name + "_bias") if has_bias else None
@@ -458,24 +459,22 @@ class TorchBuilder:
         out_shape = tuple(node.meta["tensor_meta"].shape)
         weight_shape = tuple(self.named_params[f"{str(node.target)}.weight"].shape)
 
-        if len(out_shape) == 4:
+        if len(input_shape) == 4:
+            B, Cin, H, W = input_shape  # (B, Cin, H, W)
             B, Cout, Oh, Ow = out_shape  # (B, Cout, Oh, Ow)
             _, Cin, Kh, Kw = weight_shape  # (Cout, Cin/groups, Kh, Kw)
-
-            H = Oh - 2 * padding[0] + Kh - 1
-            W = Ow - 2 * padding[1] + Kw - 1
 
             name_id = self.get_unique_id("conv2d")
 
             self.composition.append(
-                ("conv2d", name_id, [float32, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, padding[0], padding[1]],
+                ("conv2d", name_id, [float32, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, stride[0], stride[1], padding[0], padding[1]],
                 )
             )
-            if stride != (1,1) or dilation != (1,1):
-                raise NotImplementedError(f"Unsupported conv2d with stride/dilation: {out_shape}")
+            if dilation != (1,1):
+                raise NotImplementedError(f"Unsupported conv2d with dilation: {dilation}")
 
             if has_bias:
-                return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
+                return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {stride[0]}, {stride[1]}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
             else:
                 raise NotImplementedError(f"Unsupported conv2d without bias")
         else:
