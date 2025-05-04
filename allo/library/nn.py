@@ -251,6 +251,24 @@ def schedule_maxpool2d(s):
     s.pipeline("maxpool2d:ow")
     return s
 
+def avgpool2d[Ty, B, C, H, W, K, Oh, Ow, S, Pd](
+        inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        sum: Ty = 0.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                sum += inp[batch, c, h_pos, w_pos]
+        Z[batch, c, oh, ow] = sum / (K * K)
+    return Z
+
+def schedule_avgpool2d(s):
+    s.pipeline("avgpool2d:c")
+    s.pipeline("avgpool2d:ow")
+    return s
 
 def batchnorm2d[Ty, B, C, H, W](
     X: "Ty[B, C, H, W]", gamma: "Ty[C]", beta: "Ty[C]", eps: "Ty", mean: "Ty[C]", var: "Ty[C]"

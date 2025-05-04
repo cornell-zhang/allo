@@ -187,6 +187,7 @@ class TorchBuilder:
             torch.nn.LayerNorm: "layernorm",
             torch.nn.Conv2d: "conv2d",
             torch.nn.MaxPool2d: "maxpool2d",
+            torch.nn.AvgPool2d: "avgpool2d",
             torch.nn.BatchNorm2d: "batchnorm2d",
         }.get(type(module), None)
         if self.leaf_modules:
@@ -521,6 +522,32 @@ class TorchBuilder:
             return f'{node.name} = nn.maxpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
         else:
             raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
+    
+    def build_avgpool2d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+
+        kernel_size = module.kernel_size
+        stride = module.stride
+        padding = module.padding
+
+        out_shape = tuple(node.meta["tensor_meta"].shape)
+
+        if len(input_shape) == 4:
+            B, C, H, W = input_shape
+            B, C, Oh, Ow = out_shape
+            K = kernel_size
+            name_id = self.get_unique_id("avgpool2d")
+
+            self.composition.append(
+                ("avgpool2d", name_id, [float32, B, C, H, W, K, Oh, Ow, stride, padding],
+                )
+            )
+            
+            return f'{node.name} = nn.avgpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
+        else:
+            raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
     
     def build_batchnorm2d(self, node):
         module = self.get_module(node.target)
