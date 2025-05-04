@@ -447,8 +447,8 @@ class TorchBuilder:
     def build_conv2d(self, node):
         target_name = node.target.replace(".", "_")
         inp = get_var_name(node.args[0])
-        filter = get_var_name(target_name + "_weight")
-        return f"{node.name} = dsl.conv2d({inp}, {filter})"
+        weight = get_var_name(target_name + "_weight")
+        return f"{node.name} = dsl.conv2d({inp}, {weight})"
 
     def build_maxpool(self, node):
         inp = get_var_name(node.args[0])
