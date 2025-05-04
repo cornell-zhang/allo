@@ -3,7 +3,6 @@
 
 import os
 import subprocess
-from typing import Dict, List, Tuple, Set
 
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
@@ -39,9 +38,9 @@ class AIE_MLIRModule:
         self.stream_info: dict = stream_info
         self.project_dir: str = project_dir
 
-        self.global_inputs: Set = set()
-        self.global_outputs: Set = set()
-        self.core_func_args: Dict[str, Tuple[DTensor, bool]] = (
+        self.global_inputs: set = set()
+        self.global_outputs: set = set()
+        self.core_func_args: dict[str, tuple[DTensor, bool]] = (
             {}
         )  # core func name -> a list of (dtensors, is_in)
 
@@ -49,12 +48,12 @@ class AIE_MLIRModule:
 
     def collect_io(
         self,
-        func_groups: Dict[str, List[allo_func_d.FuncOp]],
-    ) -> Tuple[Dict, Dict]:
+        func_groups: dict[str, list[allo_func_d.FuncOp]],
+    ) -> tuple[dict, dict]:
         inputs = {}
         outputs = {}
-        global_inputs: Set = set()
-        global_outputs: Set = set()
+        global_inputs: set = set()
+        global_outputs: set = set()
         for func_name, funcs in func_groups.items():
             inputs[func_name] = {}
             outputs[func_name] = {}

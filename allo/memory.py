@@ -3,7 +3,6 @@
 
 import re
 from itertools import product
-from typing import Tuple, List, Dict
 
 
 class Layout:
@@ -20,7 +19,7 @@ class Layout:
                 result.append((letter, None))
         self.placement = result
 
-    def get_placement(self, mesh_dims) -> Dict[str, tuple]:
+    def get_placement(self, mesh_dims) -> dict[str, tuple]:
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
 
@@ -58,7 +57,7 @@ class Layout:
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result: Dict[str, tuple] = {}
+        result: dict[str, tuple] = {}
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
@@ -86,8 +85,8 @@ class DTensor:
         self.dtype = dtype
         self.layout: Layout = layout
         self.name = name
-        self.global_placement: Dict[str, tuple] = layout.get_placement(mapping)
-        self.type_as_param: List = None
+        self.global_placement: dict[str, tuple] = layout.get_placement(mapping)
+        self.type_as_param: list = None
 
     def get_local_shape(self):
         """
@@ -105,7 +104,7 @@ class DTensor:
                 local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
-    def get_access_pattern(self) -> Tuple[List, List, List]:
+    def get_access_pattern(self) -> tuple[list, list, list]:
         """
         Specify how to access the dtensor (local tensor) from the global tensor
             (tensor has at most 4 dimensions: DMA support 4-dimension address generation)

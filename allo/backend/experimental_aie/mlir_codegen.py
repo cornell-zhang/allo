@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
-from typing import Dict, List, Tuple, Set
 from collections import defaultdict
 
 from ..utils import format_str
@@ -33,13 +32,13 @@ class DMATensorTile:
     dtensot_tile_id: int  # dTensor may need to be further partitioned
     shim_id: int
     mem_id: int
-    tensor_tile_labels: List
-    offset: List
-    size: List
-    stride: List
+    tensor_tile_labels: list
+    offset: list
+    size: list
+    stride: list
 
 
-def map_global_io(inputs, outputs) -> Tuple[Dict[str, List[DMATensorTile]], int, int]:
+def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int, int]:
     """
     Current constrians:
         - use 4 mem-shim tile pairs for io
@@ -60,7 +59,7 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str, List[DMATensorTile]], int,
         send_number: int
         recv_number: int
 
-    used_tiles: List[Tile] = []
+    used_tiles: list[Tile] = []
 
     def assign_tile(send_need, recv_need) -> int:
         """
@@ -117,7 +116,7 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str, List[DMATensorTile]], int,
                 )
             ]
         # We failed to transfer the whole tensor with one memory tile. Try using more.
-        dma_tensor_tiles: List[DMATensorTile] = []
+        dma_tensor_tiles: list[DMATensorTile] = []
         # fixme: incomplete
         #   Currently, we may allow tensor tiles on a sharding demension to be sent using different memory tiles
         lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
@@ -159,7 +158,7 @@ def map_global_io(inputs, outputs) -> Tuple[Dict[str, List[DMATensorTile]], int,
             start_idx += len(chunk)
         return dma_tensor_tiles
 
-    tile_map: Dict[str, List[DMATensorTile]] = defaultdict(list)
+    tile_map: dict[str, list[DMATensorTile]] = defaultdict(list)
 
     for io_lst, is_input in ((inputs, True), (outputs, False)):
         for _, sub in io_lst.items():
@@ -175,18 +174,18 @@ class CodeGenerator:
     def __init__(
         self,
         device_type: str,
-        global_inputs: List[DTensor],
-        global_outputs: List[DTensor],
+        global_inputs: list[DTensor],
+        global_outputs: list[DTensor],
     ):
         self.device_type = device_type
 
-        self.global_inputs: List[DTensor] = global_inputs
-        self.global_outputs: List[DTensor] = global_outputs
+        self.global_inputs: list[DTensor] = global_inputs
+        self.global_outputs: list[DTensor] = global_outputs
 
-        self.tile_map: Dict[str, aie_d.TileOp] = {}
-        self.fifo_map: Dict[str, aie_d.object_fifo] = {}
+        self.tile_map: dict[str, aie_d.TileOp] = {}
+        self.fifo_map: dict[str, aie_d.object_fifo] = {}
         # function name (with id) -> a map from DTensor to fifo name
-        self.compute_core_io: Dict[str : Dict[DTensor, str]] = {}
+        self.compute_core_io: dict[str : dict[DTensor, str]] = {}
         self.external_functions: str = ""
 
         self.aie_module = None
@@ -204,7 +203,7 @@ class CodeGenerator:
         self,
         func_core: aie_d.Core,
         original_func: allo_func_d.FuncOp,
-        func_args: List[Tuple[DTensor, bool]],
+        func_args: list[tuple[DTensor, bool]],
     ):
         original_module = aie_ir.Module.parse(
             self.preporocess_dumped_core_func(original_func)
@@ -236,7 +235,7 @@ class CodeGenerator:
                 # insert operations to get 'function parameter', acquire and subview
                 io_map = self.compute_core_io[parsed_function.name.value]
                 for i in range(len(parsed_function.arguments)):
-                    arg_info: Tuple[DTensor, bool] = func_args[i]
+                    arg_info: tuple[DTensor, bool] = func_args[i]
                     acquired = self.fifo_map[io_map[arg_info[0]]].acquire(
                         1 if arg_info[1] else 0, 1
                     )
@@ -264,7 +263,7 @@ class CodeGenerator:
 
                 # release
                 for i in range(len(parsed_function.arguments)):
-                    arg_info: Tuple[DTensor, bool] = func_args[i]
+                    arg_info: tuple[DTensor, bool] = func_args[i]
                     self.fifo_map[io_map[arg_info[0]]].release(
                         1 if arg_info[1] else 0, 1
                     )
@@ -274,13 +273,13 @@ class CodeGenerator:
 
     def aie_codegen(
         self,
-        core_func_groups: Dict[str, List[allo_func_d.FuncOp]],
-        external_funcs: List[allo_func_d.FuncOp],
+        core_func_groups: dict[str, list[allo_func_d.FuncOp]],
+        external_funcs: list[allo_func_d.FuncOp],
         inputs,
         outputs,
-        use_external_kernels: Dict[str, bool],
-        stream_info: Dict,
-        core_func_args: Dict[str, Tuple[DTensor, bool]],
+        use_external_kernels: dict[str, bool],
+        stream_info: dict,
+        core_func_args: dict[str, tuple[DTensor, bool]],
     ) -> aie_ir.Module:
 
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
@@ -467,7 +466,7 @@ class CodeGenerator:
                     )
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
-                    dma_tasks: List = []
+                    dma_tasks: list = []
                     cnt = 0
                     for io, arg_lst in (
                         ("in", self.global_inputs),

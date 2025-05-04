@@ -319,15 +319,15 @@ def build(
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
         stream_info = move_stream_to_interface(s)
         s: Schedule = _build_top(s, stream_info, target="aie")
-        mod = AIE_MLIRModule(
+        aie_mod = AIE_MLIRModule(
             s.module,
             s.top_func_name,
             s.func_args,
             project,
             stream_info,
         )
-        mod.build()
-        return mod
+        aie_mod.build()
+        return aie_mod
 
     if target == "simulator":
         s = customize(func, opt_default)
