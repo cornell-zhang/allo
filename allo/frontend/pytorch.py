@@ -477,6 +477,6 @@ class TorchBuilder:
             if has_bias:
                 return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
             else:
-                NotImplementedError(f"Unsupported conv2d without bias")
+                raise NotImplementedError(f"Unsupported conv2d without bias")
         else:
             raise NotImplementedError(f"Unsupported shape for conv: {out_shape}")

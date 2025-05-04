@@ -207,34 +207,25 @@ def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Pd0, Pd1](
     # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
     Z: Ty[B, Cout, Oh, Ow]
 
-    # Support Padding via if statements seem not supported by Allo
-    # Padding is done by creating a new tensor
-    padded_inp: Ty[B, Cin, H + 2 * Pd0, W + 2 * Pd1] = 0.0
-
-    for b in range(B):
-        for c in range(Cin):
-            for h in range(H):
-                for w in range(W):
-                    padded_inp[b, c, h + Pd0, w + Pd1] = inp[b, c, h, w]
-
     # Current implementation is does not support dilation and stride other than 1
     for batch in range(B):
         for cout in range(Cout):
             for oh in range(Oh):
                 for ow in range(Ow):
-                    sum: Ty = 0
+                    sum: Ty = bias[cout]
 
                     for cin in range(Cin):
                         for kh in range(Kh):
                             for kw in range(Kw):
-                                h_pad: Ty = oh + kh
-                                w_pad: Ty = ow + kw
-                                sum += (
-                                    padded_inp[batch, cin, h_pad, w_pad]
-                                    * filter[cout, cin, kh, kw]
-                                )
+                                h_pos: Ty = oh + kh - Pd0
+                                w_pos: Ty = ow + kw - Pd1
+                                if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                                    sum += (
+                                        inp[batch, cin, h_pos, w_pos]
+                                        * filter[cout, cin, kh, kw]
+                                    )
 
-                    Z[batch, cout, oh, ow] = sum + bias[cout]
+                    Z[batch, cout, oh, ow] = sum
     return Z
 
 
