@@ -415,16 +415,15 @@ def test_linalg_maxpool_nchw():
     OH = H - FH + 1
     OW = W - FW + 1
     np_0 = np.random.randint(0, 1000, size=(N, C, H, W), dtype="int32")
-    np_1 = np.random.randint(0, 10, size=(FH, FW), dtype="int32")
 
-    def kernel(A: int32[N, C, H, W], B: int32[FH, FW]) -> int32[N, C, OH, OW]:
-        C = allo.maxpool(A, B)
+    def kernel(A: int32[N, C, H, W]) -> int32[N, C, OH, OW]:
+        C = allo.maxpool(A, (FH, FW))
         return C
 
     s = allo.customize(kernel)
     f = s.build()
-    np_outs = kernel(np_0, np_1)
-    outs = f(np_0, np_1)
+    np_outs = kernel(np_0)
+    outs = f(np_0)
     print(np_outs)
     print(outs)
     np.testing.assert_allclose(outs, np_outs, atol=1e-3)
