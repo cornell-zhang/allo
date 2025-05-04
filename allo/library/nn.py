@@ -233,3 +233,25 @@ def schedule_conv2d(s):
     s.pipeline("conv2d:cout")
     s.pipeline("conv2d:ow")
     return s
+
+def maxpool2d[Ty, B, C, H, W, K, Oh, Ow, S, Pd](
+        inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        max_val: Ty = -1000000000000.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                new_max : Ty = max(
+                    max_val, inp[batch, c, h_pos, w_pos]
+                )
+                max_val = new_max
+        Z[batch, c, oh, ow] = max_val
+    return Z
+
+def schedule_maxpool2d(s):
+    s.pipeline("maxpool2d:c")
+    s.pipeline("maxpool2d:ow")
+    return s
