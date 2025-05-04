@@ -219,7 +219,7 @@ class TorchBuilder:
             F.softmax: "softmax",
             F.linear: "linear",
             F.gelu: "gelu",
-            F.relu: "relu",
+            F.relu: "relu", 
             F.dropout: "identity",
             torch.tril: "tril",
             torch.cat: "concat",
