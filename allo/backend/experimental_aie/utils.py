@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import re
 import numpy as np
 
@@ -29,17 +32,18 @@ aie_ctype_map = {
     "ui64": "unsigned long",
 }
 
-def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], Dict]:
-    '''
+
+def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str, bool], Dict]:
+    """
     Inject external kernels for compute cores.
 
     Return:
         - use_external_kernels: func_name -> use external
         - injected_kernels: kernel name -> external code snippet
-    '''
+    """
     use_external_kernels = {}
-    injected_kernels:Dict = {}
-    
+    injected_kernels: Dict = {}
+
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and (
@@ -49,7 +53,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
                 if func.attributes["sym_name"].value != "top":
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
-                    continue # fixme: crash when using external kernels
+                    continue  # fixme: crash when using external kernels
                     for block in func.regions[0].blocks:
                         for op in block.operations:
                             kernel_code, kernel_header = "", ""
@@ -71,8 +75,11 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
                                 dtype = str(op.inputs[0].type.element_type)
                                 out_dtype = str(op.outputs[0].type.element_type)
                                 if (dtype, out_dtype) not in [
-                                    ("i8", "i8"), ("i16", "i16"), ("i16", "i32"),
-                                    ("bf16", "bf16"), ("bf16", "f32"),
+                                    ("i8", "i8"),
+                                    ("i16", "i16"),
+                                    ("i16", "i32"),
+                                    ("bf16", "bf16"),
+                                    ("bf16", "f32"),
                                 ]:
                                     continue
                                 kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
@@ -82,15 +89,21 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
                                 kernel_header += f"#define DIM_K {K}\n"
                                 kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
                             else:
-                                continue  
-                            
+                                continue
+
                             # Inject AIE kernel
                             func_type = allo_func_d.FunctionType.get(
-                                [op.inputs[0].type, op.inputs[1].type, op.outputs[0].type], [],
+                                [
+                                    op.inputs[0].type,
+                                    op.inputs[1].type,
+                                    op.outputs[0].type,
+                                ],
+                                [],
                             )
                             # replace operation
                             allo_func_d.CallOp(
-                                [], FlatSymbolRefAttr.get(kernel_name),
+                                [],
+                                FlatSymbolRefAttr.get(kernel_name),
                                 [op.inputs[0], op.inputs[1], op.outputs[0]],
                                 ip=InsertionPoint(op),
                             )
@@ -100,30 +113,38 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> Tuple[Dict[str,bool], 
                                 continue
                             injected_kernels[kernel_name] = (kernel_code, kernel_header)
                             kernel = allo_func_d.FuncOp(
-                                kernel_name, func_type, ip=InsertionPoint(func),
+                                kernel_name,
+                                func_type,
+                                ip=InsertionPoint(func),
                             )
-                            kernel.attributes["sym_visibility"] = StringAttr.get("private")
+                            kernel.attributes["sym_visibility"] = StringAttr.get(
+                                "private"
+                            )
     return use_external_kernels, injected_kernels
 
+
 def classify_aie_functions(
-    module: allo_ir.ir.Module
-) -> Tuple[allo_func_d.FuncOp, Dict[str, List[allo_func_d.FuncOp]], List[allo_func_d.FuncOp]]:
-    '''
+    module: allo_ir.ir.Module,
+) -> Tuple[
+    allo_func_d.FuncOp, Dict[str, List[allo_func_d.FuncOp]], List[allo_func_d.FuncOp]
+]:
+    """
     Classify the functions in allo module as
         - top
         - compute core functions
         - external kernel functions
-    '''
+    """
     # top function
-    top_func:allo_func_d.FuncOp = None
+    top_func: allo_func_d.FuncOp = None
     # core functions
-    core_func_groups:Dict[str, List[allo_func_d.FuncOp]] = {}
+    core_func_groups: Dict[str, List[allo_func_d.FuncOp]] = {}
     # external functions
-    external_funcs:List[allo_func_d.FuncOp] = []
+    external_funcs: List[allo_func_d.FuncOp] = []
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
             if isinstance(func, allo_func_d.FuncOp):
-                if ("sym_visibility" in func.attributes
+                if (
+                    "sym_visibility" in func.attributes
                     and func.attributes["sym_visibility"].value == "private"
                 ):
                     external_funcs.append(func)
@@ -138,21 +159,23 @@ def classify_aie_functions(
                         core_func_groups[func_name].append(func)
     return top_func, core_func_groups, external_funcs
 
+
 def get_element_type(dtype_str: str) -> aie_ir.Type:
-        if dtype_str == "i32":
-            return aie_ir.IntegerType.get_signless(32)
-        elif dtype_str == "i16":
-            return aie_ir.IntegerType.get_signless(16)
-        elif dtype_str == "i8":
-            return aie_ir.IntegerType.get_signless(8)
-        elif dtype_str == "f32":
-            return aie_ir.F32Type.get()
-        elif dtype_str == "f16":
-            return aie_ir.F16Type.get()
-        else:
-            raise ValueError(f"Unsupported dtype: {dtype_str}")
- 
-def codegen_external_kernels(injected_kernels:Dict) -> str:
+    if dtype_str == "i32":
+        return aie_ir.IntegerType.get_signless(32)
+    elif dtype_str == "i16":
+        return aie_ir.IntegerType.get_signless(16)
+    elif dtype_str == "i8":
+        return aie_ir.IntegerType.get_signless(8)
+    elif dtype_str == "f32":
+        return aie_ir.F32Type.get()
+    elif dtype_str == "f16":
+        return aie_ir.F16Type.get()
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype_str}")
+
+
+def codegen_external_kernels(injected_kernels: Dict) -> str:
     code = """
 // External kernels generated by Allo
 #include <stdint.h>
@@ -174,8 +197,9 @@ def codegen_external_kernels(injected_kernels:Dict) -> str:
     code += '} // extern "C"\n'
     return code
 
+
 np_supported_types = {
-    "bf16": np.float32, # numpy does not support bf16
+    "bf16": np.float32,  # numpy does not support bf16
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -190,11 +214,14 @@ np_supported_types = {
     "ui64": np.uint64,
 }
 
+
 def read_tensor_from_file(dtype, shape, file_path):
     arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[str(dtype)])
     return arr.reshape(shape)
 
+
 # ==================================================================================================
+
 host_header = """
 //=============================================================================
 // Auto generated by Allo
@@ -298,6 +325,7 @@ file_close_str = """  ofile.close();
 }
 """
 
+
 def codegen_host(inputs, outputs):
     code = host_header
     with format_code(indent=2):
@@ -390,19 +418,24 @@ def codegen_host(inputs, outputs):
         code += file_close_str
     return code
 
+
+# ==================================================================================================
+
+
 def dfs_print(op, indent=0):
     op_name = str(op.name)
-    if '.' in op_name:
-        dialect = op_name.split('.')[0]
+    if "." in op_name:
+        dialect = op_name.split(".")[0]
     else:
         dialect = "(x)"
-    
-    print('  ' * indent + f"Operation: {op_name},\tDialect: {dialect}")
+
+    print("  " * indent + f"Operation: {op_name},\tDialect: {dialect}")
 
     for region in op.regions:
         for block in region.blocks:
             for child_op in block.operations:
                 dfs_print(child_op, indent + 1)
+
 
 def print_module(module):
     dfs_print(module.operation)

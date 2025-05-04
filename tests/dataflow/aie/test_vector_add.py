@@ -32,6 +32,7 @@ def _test_vector_scalar_add():
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
+
 def _test_vector_vector_add():
     # # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_vector_add
     Ty = int32
@@ -53,7 +54,34 @@ def _test_vector_vector_add():
         print("PASSED!")
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
-    
+
+
+def _test_vector_scalar_add_p0():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
+    #                |--------------------------------------------|
+    #                v   v-------------------------v              v
+    # shim tile <-> mem tile <-> comp tile0    comp tile1    comp tile2
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            B[:] = allo.add(A[:], 1)
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.zeros(M).astype(np.int32)
+    mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_vector_vector_add()
+
+    # failed
+    # _test_vector_scalar_add_p0()
