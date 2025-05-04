@@ -15,6 +15,7 @@ out_channels = 5
 kernel_size = 3
 
 pool_size = (2, 3)
+stride_size = (1, 1)
 
 out_features = 2
 
@@ -28,11 +29,11 @@ class ImageClassify(nn.Module):
     def __init__(self):
         super(ImageClassify, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size)
-        self.pool = nn.MaxPool2d((2, 3), stride=(1, 1))
+        self.pool = nn.MaxPool2d(pool_size, stride=stride_size)
         self.linear = nn.Linear(
             out_channels
-            * ((H - kernel_size + 1) // pool_size[0])
-            * ((W - kernel_size + 1) // pool_size[1]),
+            * ((H - kernel_size + 1 - pool_size[0]) // stride_size[0] + 1)
+            * ((W - kernel_size + 1 - pool_size[1]) // stride_size[1] + 1),
             out_features,
         )
         self.relu = F.relu
