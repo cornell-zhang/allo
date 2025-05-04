@@ -1,16 +1,10 @@
-# pylint disable=import-error
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import numpy as np
 from collections import defaultdict
-
-from ..utils import format_str
-from ..._mlir.dialects import func as allo_func_d
-from ...memory import DTensor
-
-from .utils import get_element_type
-from ..aie import map_kernels_to_device_mesh
+from dataclasses import dataclass
+import numpy as np
 
 # =======================
 import aie.dialects.aie as aie_d
@@ -22,7 +16,13 @@ import aie.dialects.scf as aie_scf_d
 import aie.ir as aie_ir
 
 # =======================
-from dataclasses import dataclass
+
+from ..utils import format_str
+from ..._mlir.dialects import func as allo_func_d
+from ...memory import DTensor
+
+from .utils import get_element_type
+from ..aie import map_kernels_to_device_mesh
 
 
 @dataclass(frozen=True)

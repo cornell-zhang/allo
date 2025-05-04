@@ -18,7 +18,8 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize, Schedule
 from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.aie import AIEModule
-from .backend.experimental_aie import AIE_MLIRModule
+
+# from .backend.experimental_aie import AIE_MLIRModule
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
@@ -315,19 +316,21 @@ def build(
         return mod
 
     if target == "aie-mlir":
-        global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=False)
-        stream_info = move_stream_to_interface(s)
-        s: Schedule = _build_top(s, stream_info, target="aie")
-        aie_mod = AIE_MLIRModule(
-            s.module,
-            s.top_func_name,
-            s.func_args,
-            project,
-            stream_info,
-        )
-        aie_mod.build()
-        return aie_mod
+        # TODO
+        pass
+        # global_vars = get_global_vars(func)
+        # s = _customize(func, global_vars=global_vars, enable_tensor=False)
+        # stream_info = move_stream_to_interface(s)
+        # s: Schedule = _build_top(s, stream_info, target="aie")
+        # aie_mod = AIE_MLIRModule(
+        #     s.module,
+        #     s.top_func_name,
+        #     s.func_args,
+        #     project,
+        #     stream_info,
+        # )
+        # aie_mod.build()
+        # return aie_mod
 
     if target == "simulator":
         s = customize(func, opt_default)

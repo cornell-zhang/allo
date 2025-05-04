@@ -1,4 +1,4 @@
-# pylint: disable=import-error
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
