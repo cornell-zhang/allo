@@ -208,24 +208,19 @@ def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1](
     Z: Ty[B, Cout, Oh, Ow]
 
     # Current implementation is does not support dilation other than 1
-    for batch in range(B):
-        for cout in range(Cout):
-            for oh in range(Oh):
-                for ow in range(Ow):
-                    sum: Ty = bias[cout]
+    for batch, cout, oh, ow in dsl.grid(B, Cout, Oh, Ow):
+        sum: Ty = bias[cout]
 
-                    for cin in range(Cin):
-                        for kh in range(Kh):
-                            for kw in range(Kw):
-                                h_pos: Ty = oh * Sh + kh - Pd0
-                                w_pos: Ty = ow * Sw + kw - Pd1
-                                if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
-                                    sum += (
-                                        inp[batch, cin, h_pos, w_pos]
-                                        * filter[cout, cin, kh, kw]
-                                    )
+        for cin, kh, kw in dsl.grid(Cin, Kh, Kw):
+            h_pos: Ty = oh * Sh + kh - Pd0
+            w_pos: Ty = ow * Sw + kw - Pd1
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                sum += (
+                    inp[batch, cin, h_pos, w_pos]
+                    * filter[cout, cin, kh, kw]
+                )
 
-                    Z[batch, cout, oh, ow] = sum
+        Z[batch, cout, oh, ow] = sum
     return Z
 
 
