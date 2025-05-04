@@ -340,15 +340,8 @@ class DFG:
                 for memref in memrefs:
                     memref_loads[memref].add((node_id, op))
 
-            elif self._is_alloc_op(op):
-                node_id = self.add_node(op, DFGNodeType.ALLOC)
-                if self._get_memref(op):
-                    memref_allocs[self._get_memref(op)].add((node_id, op))
-                    node = self.get_node(node_id)
-                    node.allocations.append(op)
-
-            elif self._is_constant_op(op):
-                node_id = self.add_node(op, DFGNodeType.CONST)
+            elif self._is_alloc_op(op) or self._is_constant_op(op):
+                continue
 
             else:
                 raise NotImplementedError(
@@ -541,8 +534,8 @@ class DFG:
             print("Error: Cycle detected in graph")
             return False
 
-        # Find sink node (return node)
-        sink_node_id = self._find_sink_node()
+        # Find sink nodes
+        sink_node_ids = self._find_sink_nodes()
 
         # Create variables for the optimization model
         b_vars = self._create_permutation_variables(model)
@@ -560,9 +553,11 @@ class DFG:
             model, b_vars, st_vars, lw_vars, topo_order
         )
 
-        # Set objective function and optimize
-        obj = lw_vars[sink_node_id]
-        model.setObjective(obj, GRB.MINIMIZE)
+        max_lw = model.addVar(name="max_last_write_time")
+        for sink_node_id in sink_node_ids:
+            model.addConstr(max_lw >= lw_vars[sink_node_id])
+
+        model.setObjective(max_lw, GRB.MINIMIZE)
         model.optimize()
         if debug_output:
             model.write(f"{debug_output}.lp")
@@ -570,15 +565,15 @@ class DFG:
         # format is list of (node_id, perm_idx)
         return [k for k, b_var in b_vars.items() if b_var.x > 0.5]
 
-    def _find_sink_node(self):
+    def _find_sink_nodes(self):
         """Find the sink node (return node) in the graph."""
         sink_nodes = [
             node_id
             for node_id in self.nodes
-            if self.get_node(node_id).type == DFGNodeType.RET
+            if len(self.out_edges.get(node_id, [])) == 0
         ]
-        assert len(sink_nodes) == 1, "Expected a single sink node"
-        return sink_nodes[0]
+        assert len(sink_nodes) > 0, "Expected at least one sink node"
+        return sink_nodes
 
     def _create_permutation_variables(self, model):
         """Create binary variables for node permutations."""
@@ -589,6 +584,8 @@ class DFG:
                     b_vars[(node_id, perm_idx)] = model.addVar(
                         vtype=GRB.BINARY, name=f"b{node_id}_{perm_idx}"
                     )
+            # if node.is_reduction:
+            #     model.addConstr(b_vars[(node_id, 0)] == 1)
         return b_vars
 
     def _create_timing_variables(self, model):
@@ -739,6 +736,14 @@ class DFG:
         for node_id in topo_order:
             in_edges = self.in_edges.get(node_id, [])
             if not in_edges:
+                continue
+
+            if self.get_node(node_id).type == DFGNodeType.RET:
+                # if it is a return, consider all incoming edges and let the last write time be the maximum of the last write times of the incoming edges
+                lw_terms = [lw_vars[edge.id] for edge in in_edges]
+                model.addConstr(
+                    lw_vars[node_id] == gp.max_(lw_terms), name=f"lw_constr_{node_id}"
+                )
                 continue
 
             lw_terms = []

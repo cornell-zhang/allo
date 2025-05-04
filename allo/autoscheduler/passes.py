@@ -13,6 +13,7 @@ from allo._mlir.ir import (
     IntegerAttr,
     IntegerType,
     WalkResult,
+    Operation,
 )
 from allo._mlir.dialects import (
     func as func_d,
@@ -313,15 +314,24 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     new_alloc1 = memref_d.AllocOp(memref_type, [], [], ip=ip)
     new_alloc2 = memref_d.AllocOp(memref_type, [], [], ip=ip)
 
-    loop_ivs = [loop.induction_variable for loop in loop_nest]  # innermost IV first
+    irrelevant_loops = [
+        loop for loop in loop_nest if loop.induction_variable not in loop_load.indices
+    ]
+    irrelevant_ivs = [loop.induction_variable for loop in irrelevant_loops]
+
+    if len(irrelevant_ivs) == 0:
+        return False
 
     with InsertionPoint.at_block_begin(loop_nest[0].body):
         first_iter_set = affine_d.IntegerSet.get(
-            1, 0, [affine_d.AffineExpr.get_dim(0)], [True]
+            1,
+            0,
+            [affine_d.AffineExpr.get_dim(i) for i in range(len(irrelevant_ivs))],
+            [True] * len(irrelevant_ivs),
         )
 
         first_iter_if = affine_d.AffineIfOp(
-            results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown()
+            results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown()
         )
 
         first_iter_if.attributes["condition"] = IntegerSetAttr.get(first_iter_set)
@@ -340,21 +350,19 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     loop_load.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
     loop_store.operation.replace_uses_of_with(alloc_op.result, new_alloc1.result)
 
-    inner_loop_upper_map = loop_nest[0].upperBoundMap.value
-
-    # check upper bound is a constant
-    if not (
-        inner_loop_upper_map.n_dims == 0 and len(inner_loop_upper_map.results) == 1
-    ):
-        return False
-
-    loop_upper_bound = inner_loop_upper_map.results[0]
+    upper_bounds = [loop.upperBoundMap.value.results[0] for loop in irrelevant_loops]
     last_iter_set = affine_d.IntegerSet.get(
-        1, 0, [affine_d.AffineExpr.get_dim(0) - loop_upper_bound + 1], [True]
+        len(irrelevant_ivs),
+        0,
+        [
+            affine_d.AffineExpr.get_dim(i) - upper_bound + 1
+            for i, upper_bound in enumerate(upper_bounds)
+        ],
+        [True] * len(irrelevant_ivs),
     )
 
     last_iter_if = affine_d.AffineIfOp(
-        results_=[], _gen_arg_0=[loop_ivs[0]], loc=Location.unknown(), ip=ip
+        results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown(), ip=ip
     )
 
     last_iter_if.move_after(loop_store)
@@ -386,17 +394,17 @@ def name_buffers_pass(module: Module):
         nonlocal unnamed_ct
         if isinstance(op.opview, memref_d.AllocOp):
             if "name" not in op.attributes:
-                op.attributes["name"] = StringAttr.get(f"_buffer_{unnamed_ct}")
-                for use in op.result.uses:
-                    if isinstance(use.owner, memref_d.LoadOp):
-                        use.owner.attributes["from"] = StringAttr.get(
-                            f"_buffer_{unnamed_ct}"
-                        )
-                    elif isinstance(use.owner, memref_d.StoreOp):
-                        use.owner.attributes["to"] = StringAttr.get(
-                            f"_buffer_{unnamed_ct}"
-                        )
+                buffer_name = f"_buffer_{unnamed_ct}"
+                op.attributes["name"] = StringAttr.get(buffer_name)
                 unnamed_ct += 1
+            else:
+                buffer_name = op.attributes["name"].value
+            for use in op.result.uses:
+                if isinstance(use.owner, (memref_d.LoadOp, affine_d.AffineLoadOp)):
+                    use.owner.attributes["from"] = StringAttr.get(buffer_name)
+                elif isinstance(use.owner, (memref_d.StoreOp, affine_d.AffineStoreOp)):
+                    use.owner.attributes["to"] = StringAttr.get(buffer_name)
+
         return WalkResult(0)
 
     with module.context:
@@ -527,15 +535,13 @@ def extract_reorder_and_pipeline(
 
         node_info: NodeInfo = dfg.get_node(node_id).node_info[perm_idx]
         if perm_idx == 0:
-            schedule_primitives.append(
-                SchedulePrimitive.pipeline(loop_band[-1], node_info.II)
-            )
+            schedule_primitives.append(SchedulePrimitive.pipeline(loop_band[-1], 1))
         else:
             perm = node_info.permutation
             new_loop_order = [loop_band[i] for i in perm]
             schedule_primitives.append(SchedulePrimitive.reorder(new_loop_order))
             schedule_primitives.append(
-                SchedulePrimitive.pipeline(new_loop_order[-1], node_info.II)
+                SchedulePrimitive.pipeline(new_loop_order[-1], 1)
             )
 
     return schedule_primitives
@@ -544,7 +550,6 @@ def extract_reorder_and_pipeline(
 def extract_buffer_to_fifo(
     permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule
 ):
-    unnamed_ct = 0
     top_level_fn_name = schedule.top_func_name
     permutations = dict(permutations)
     schedule_primitives = []
@@ -563,25 +568,175 @@ def extract_buffer_to_fifo(
             if (
                 dst_node_info.loads_map[memref].access_map
                 == src_node_info.stores_map[memref].access_map
-            ):
-                if "name" not in memref.owner.attributes:
-                    with schedule.module.context:
-                        memref.owner.attributes["name"] = StringAttr.get(
-                            f"fifo_buffer_{unnamed_ct}"
-                        )
-                        dst_node_info.loads_map[memref].op.attributes["from"] = (
-                            StringAttr.get(f"fifo_buffer_{unnamed_ct}")
-                        )
-                        src_node_info.stores_map[memref].op.attributes["to"] = (
-                            StringAttr.get(f"fifo_buffer_{unnamed_ct}")
-                        )
-                    unnamed_ct += 1
+            ) and not isinstance(memref.owner, Block):
+                assert (
+                    "name" in memref.owner.attributes
+                ), f"Buffer {memref.owner} has no name"
                 buffer = MockBuffer(
                     top_level_fn_name, memref.owner.attributes["name"].value
                 )
+
+                src_fn_name = node_to_fn[edge.id]
                 fn_name = node_to_fn[node_idx]
+
+                # find store_op and load_op in the new module
+                store_op_new = _find_store_load_op(
+                    affine_d.AffineStoreOp,
+                    memref.owner.attributes["name"].value,
+                    schedule.module,
+                    src_fn_name,
+                )
+                load_op_new = _find_store_load_op(
+                    affine_d.AffineLoadOp,
+                    memref.owner.attributes["name"].value,
+                    schedule.module,
+                    fn_name,
+                )
+
+                _insert_guard(store_op_new, schedule.get_loops(src_fn_name))
+                _insert_guard(load_op_new, schedule.get_loops(fn_name))
+
                 schedule_primitives.append(
                     SchedulePrimitive.buffer_to_fifo(buffer, fn_name)
                 )
 
     return schedule_primitives
+
+
+def _get_affine_if_op(op):
+    parent = op.parent
+    while parent is not None and not isinstance(parent.opview, affine_d.AffineIfOp):
+        parent = parent.parent
+    return parent
+
+
+def _insert_guard(op: Operation, loops):
+    op = op.opview
+    assert isinstance(op, (affine_d.AffineLoadOp, affine_d.AffineStoreOp))
+    affine_if_op = _get_affine_if_op(op)
+    if not affine_if_op:
+        # insert guard before the fifo write/read
+
+        loop_band_collection = list(v for _, v in loops)
+        loop_band = list(l.loop for l in loop_band_collection[0].loops.values())
+
+        irrelevant_loops = [
+            loop for loop in loop_band if loop.induction_variable not in op.indices
+        ]
+        if len(irrelevant_loops) == 0:
+            return
+
+        lower_bounds = [
+            int(str(loop.lowerBoundMap.value.results[0])) for loop in irrelevant_loops
+        ]
+        upper_bounds = [
+            int(str(loop.upperBoundMap.value.results[0])) for loop in irrelevant_loops
+        ]
+
+        with op.context:
+            if isinstance(op, affine_d.AffineLoadOp):
+                guard_condition = affine_d.IntegerSet.get(
+                    len(irrelevant_loops),
+                    0,
+                    [
+                        affine_d.AffineExpr.get_dim(i) - lower_bound
+                        for i, lower_bound in enumerate(lower_bounds)
+                    ],
+                    [True] * len(irrelevant_loops),
+                )
+            else:
+                guard_condition = affine_d.IntegerSet.get(
+                    len(irrelevant_loops),
+                    0,
+                    [
+                        affine_d.AffineExpr.get_dim(i) - upper_bound + 1
+                        for i, upper_bound in enumerate(upper_bounds)
+                    ],
+                    [True] * len(irrelevant_loops),
+                )
+
+            with InsertionPoint(op) as ip:
+                guard_if = affine_d.AffineIfOp(
+                    results_=[],
+                    _gen_arg_0=[loop.induction_variable for loop in irrelevant_loops],
+                    loc=Location.unknown(),
+                    ip=ip,
+                )
+
+                guard_if.attributes["condition"] = IntegerSetAttr.get(guard_condition)
+
+                then_block = Block.create_at_start(parent=guard_if.thenRegion)
+                yield_op = affine_d.AffineYieldOp(
+                    [],
+                    ip=InsertionPoint.at_block_begin(then_block),
+                    loc=Location.unknown(),
+                )
+                op.move_before(yield_op)
+            if isinstance(op, affine_d.AffineLoadOp):
+                fn_op = op.parent
+                while not isinstance(fn_op.opview, func_d.FuncOp):
+                    fn_op = fn_op.parent
+                assert isinstance(fn_op.opview, func_d.FuncOp)
+
+                alloc_op = memref_d.AllocOp(
+                    op.memref.type,
+                    [],
+                    [],
+                    ip=InsertionPoint.at_block_begin(fn_op.opview.body.blocks[0]),
+                    loc=Location.unknown(),
+                )
+
+                # memref load and store to this alloc in the if statement
+                with InsertionPoint.at_block_terminator(then_block) as ip:
+                    store_op = affine_d.AffineStoreOp(
+                        op.result,
+                        alloc_op.result,
+                        op.indices,
+                        op.map,
+                        ip=ip,
+                        loc=Location.unknown(),
+                    )
+                    load_op = affine_d.AffineLoadOp(
+                        op.result.type,
+                        alloc_op.result,
+                        op.indices,
+                        op.map,
+                        ip=ip,
+                        loc=Location.unknown(),
+                    )
+                load_op.move_after(guard_if)
+                for use in op.result.uses:
+                    if use.owner.operation != store_op:
+                        use.owner.operation.replace_uses_of_with(
+                            op.result, load_op.result
+                        )
+
+
+def _find_store_load_op(optype, buffer_name, module: Module, func_name: str):
+    target_func = None
+    for op in module.body.operations:
+        if (
+            isinstance(op, func_d.FuncOp)
+            and StringAttr(op.attributes["sym_name"]).value == func_name
+        ):
+            target_func = op
+            break
+    if target_func is None:
+        raise RuntimeError(f"Target function {func_name} not found")
+
+    target_op = None
+
+    def find_op(op):
+        nonlocal target_op
+        if isinstance(op.opview, optype) and buffer_name in [
+            op.attributes["from"].value if "from" in op.attributes else None,
+            op.attributes["to"].value if "to" in op.attributes else None,
+        ]:
+            target_op = op
+        return WalkResult(0)
+
+    target_func.operation.walk(find_op)
+
+    if target_op is None:
+        raise RuntimeError(f"Store/load operation for buffer {buffer_name} not found")
+    return target_op
