@@ -182,6 +182,7 @@ class TorchBuilder:
         op = {
             torch.nn.Linear: "linear",
             torch.nn.Dropout: "identity",
+            torch.nn.ReLU: "relu",
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
             torch.nn.Conv2d: "conv2d",
