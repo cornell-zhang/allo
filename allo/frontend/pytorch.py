@@ -174,6 +174,7 @@ class TorchBuilder:
             torch.nn.LayerNorm: "layernorm",
             torch.nn.Conv2d: "conv2d",
             torch.nn.MaxPool2d: "maxpool2d",
+            torch.nn.BatchNorm2d: "batchnorm2d",
         }.get(type(module), None)
         if self.leaf_modules:
             for leaf_module in self.leaf_modules:
@@ -508,3 +509,28 @@ class TorchBuilder:
         else:
             raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
     
+    def build_batchnorm2d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+        target_name = node.target.replace(".", "_")
+
+        gamma = get_var_name(target_name + "_weight")
+        beta = get_var_name(target_name + "_bias")
+        eps = module.eps
+
+        running_mean = get_var_name(target_name + "_running_mean")
+        running_var = get_var_name(target_name + "_running_var")
+
+        if len(input_shape) == 4:
+            B, C, H, W = input_shape
+
+            name_id = self.get_unique_id("batchnorm2d")
+
+            self.composition.append(
+                ("batchnorm2d", name_id, [float32, B, C, H, W])
+            )
+
+            return f'{node.name} = nn.batchnorm2d[float32, {B}, {C}, {H}, {W}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
+        else:
+            raise NotImplementedError(f"Unsupported shape for batchnorm2d: {input_shape}")

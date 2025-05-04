@@ -255,3 +255,21 @@ def schedule_maxpool2d(s):
     s.pipeline("maxpool2d:c")
     s.pipeline("maxpool2d:ow")
     return s
+
+
+def batchnorm2d[Ty, B, C, H, W](
+    X: "Ty[B, C, H, W]", gamma: "Ty[C]", beta: "Ty[C]", eps: "Ty", mean: "Ty[C]", var: "Ty[C]"
+) -> "Ty[B, C, H, W]":
+    Z: Ty[B, C, H, W]
+    for b, c, h, w in dsl.grid(B, C, H, W):
+        Z[b, c, h, w] = (
+            gamma[c] * (X[b, c, h, w] - mean[c])
+            / dsl.sqrt(var[c] + eps)
+            + beta[c]
+        )
+
+    return Z
+
+def schedule_batchnorm2d(s):
+    s.pipeline("batchnorm2d:w") 
+    return s
