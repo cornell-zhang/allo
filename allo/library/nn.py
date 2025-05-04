@@ -204,22 +204,22 @@ def scaled_dot_product_attention[
 def conv2d[
     Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1
 ](
-    inp: "Ty[B, Cin, H, W]", filter: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
+    inp: "Ty[B, Cin, H, W]", kernel: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
 ) -> "Ty[B, Cout, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
     Z: Ty[B, Cout, Oh, Ow]
 
     # Current implementation is does not support dilation other than 1
     for batch, cout, oh, ow in dsl.grid(B, Cout, Oh, Ow):
-        sum: Ty = bias[cout]
+        temp: Ty = bias[cout]
 
         for cin, kh, kw in dsl.grid(Cin, Kh, Kw):
             h_pos: Ty = oh * Sh + kh - Pd0
             w_pos: Ty = ow * Sw + kw - Pd1
             if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
-                sum += inp[batch, cin, h_pos, w_pos] * filter[cout, cin, kh, kw]
+                temp += inp[batch, cin, h_pos, w_pos] * kernel[cout, cin, kh, kw]
 
-        Z[batch, cout, oh, ow] = sum
+        Z[batch, cout, oh, ow] = temp
     return Z
 
 
@@ -258,13 +258,13 @@ def avgpool2d[
     # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
     Z: Ty[B, C, Oh, Ow]
     for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
-        sum: Ty = 0.0
+        temp: Ty = 0.0
         for kh, kw in dsl.grid(K, K):
             h_pos: Ty = oh * S + kh - Pd
             w_pos: Ty = ow * S + kw - Pd
             if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
-                sum += inp[batch, c, h_pos, w_pos]
-        Z[batch, c, oh, ow] = sum / (K * K)
+                temp += inp[batch, c, h_pos, w_pos]
+        Z[batch, c, oh, ow] = temp / (K * K)
     return Z
 
 

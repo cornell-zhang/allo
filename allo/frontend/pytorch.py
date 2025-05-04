@@ -512,9 +512,8 @@ class TorchBuilder:
 
             if has_bias:
                 return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {stride[0]}, {stride[1]}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
-            raise NotImplementedError(f"Unsupported conv2d without bias")
-        else:
-            raise NotImplementedError(f"Unsupported shape for conv: {input_shape}")
+            raise NotImplementedError("Unsupported conv2d without bias")
+        raise NotImplementedError(f"Unsupported shape for conv: {input_shape}")
 
     def build_maxpool2d(self, node):
         module = self.get_module(node.target)
@@ -542,8 +541,7 @@ class TorchBuilder:
             )
 
             return f'{node.name} = nn.maxpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
-        else:
-            raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
+        raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
 
     def build_avgpool2d(self, node):
         module = self.get_module(node.target)
@@ -571,8 +569,7 @@ class TorchBuilder:
             )
 
             return f'{node.name} = nn.avgpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
-        else:
-            raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
+        raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
 
     def build_batchnorm2d(self, node):
         module = self.get_module(node.target)
@@ -595,7 +592,4 @@ class TorchBuilder:
             self.composition.append(("batchnorm2d", name_id, [float32, B, C, H, W]))
 
             return f'{node.name} = nn.batchnorm2d[float32, {B}, {C}, {H}, {W}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
-        else:
-            raise NotImplementedError(
-                f"Unsupported shape for batchnorm2d: {input_shape}"
-            )
+        raise NotImplementedError(f"Unsupported shape for batchnorm2d: {input_shape}")
