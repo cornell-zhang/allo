@@ -444,6 +444,7 @@ class TorchBuilder:
         return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
 
     def build_conv2d(self, node):
+        # The current implementation only supports conv2d with bias, dialation=1, shape = 4
         module = self.get_module(node.target)
         target_name = node.target.replace(".", "_")
         inp = get_var_name(node.args[0])
