@@ -47,6 +47,8 @@ class EdgeInfo:
         self.access_map = access_map
         self.first_element_time = 0
         self.last_element_time = 0
+        self.first_mask = None
+        self.last_mask = None
         self.op = op
 
     def __repr__(self):
@@ -210,38 +212,57 @@ class DFG:
         raise NotImplementedError(
             "Nested loops with more than 1 inner loop are not supported"
         )
+    
+    @staticmethod
+    def _make_time_eq(mask: list[bool], xs: list[gp.Var]) -> gp.LinExpr:
+        expr, stride = gp.LinExpr(), 1
+        for use, x_d in zip(mask, xs):
+            if use:
+                expr += (x_d - 1) * stride
+            stride *= x_d
+        return expr
 
     def _compute_first_and_last_element_time(
-        self, op: Operation, loop_band: list[LoopInfo]
-    ) -> tuple[int, int]:
-        """Compute the first and last element time for an operation."""
-        op = op.opview
-        if isinstance(op, (affine_d.AffineLoadOp, affine_d.AffineStoreOp)):
+                self, op: Operation, loop_band: list[LoopInfo]
+        ) -> tuple[
+                int, int,                         # numeric first/last
+                list[bool], list[bool]           # first/last masks
+        ]:
+            op = op.opview
+            assert isinstance(
+                op, (affine_d.AffineLoadOp, affine_d.AffineStoreOp)
+            ), "op must be affine load or store"
+
             mapOperands = op.indices
-        else:
-            assert False, "op is not an affine load or store operation"
 
-        # Compute the first and last element time
-        first_element_time = 0
-        last_element_time = 0
-        curr_factor = 1
-        innermost_first = list(reversed(loop_band))
-        for idx, loop in enumerate(innermost_first):
-            prev_trip_count = 1 if idx == 0 else innermost_first[idx - 1].trip_count
-            curr_factor *= prev_trip_count
-            iv = loop.op.opview.induction_variable
-            if iv in mapOperands:
-                first_element_time += 0
-                last_element_time += (loop.trip_count - 1) * curr_factor
+            first_element_time = 0
+            last_element_time  = 0
+            curr_factor        = 1
 
-            # not in loop bound, compute conservative estimate. for loads it is 0, for stores it is trip_count - 1
-            elif isinstance(op, affine_d.AffineLoadOp):
-                first_element_time += 0
-                last_element_time += 0
-            else:
-                first_element_time += (loop.trip_count - 1) * curr_factor
-                last_element_time += (loop.trip_count - 1) * curr_factor
-        return first_element_time, last_element_time
+            innermost_first = list(reversed(loop_band))
+
+            D           = len(innermost_first)
+            first_mask  = [False] * D
+            last_mask   = [False] * D
+
+            for idx, loop in enumerate(innermost_first):
+                prev_trip_count = 1 if idx == 0 else innermost_first[idx - 1].trip_count
+                curr_factor    *= prev_trip_count
+                iv              = loop.op.opview.induction_variable
+
+                if iv in mapOperands:
+                    last_element_time += (loop.trip_count - 1) * curr_factor
+                    last_mask[idx] = True
+
+                elif isinstance(op, affine_d.AffineLoadOp):
+                    pass
+                else:
+                    first_element_time += (loop.trip_count - 1) * curr_factor
+                    last_element_time  += (loop.trip_count - 1) * curr_factor
+                    first_mask[idx]    = True      
+                    last_mask[idx]     = True     
+
+            return first_element_time, last_element_time, first_mask, last_mask
 
     def _populate_node_info(self, node_id: int) -> bool:
         """Populate node information for a specific node."""
@@ -277,21 +298,25 @@ class DFG:
                 memref = self._get_memref(load)
                 access_map = get_minimal_access_pattern(load, permuted_loops)
                 node_info.loads_map[memref] = EdgeInfo(access_map, load)
-                first_element_time, last_element_time = (
+                first_element_time, last_element_time, first_mask, last_mask = (
                     self._compute_first_and_last_element_time(load, permuted_loops)
                 )
                 node_info.loads_map[memref].first_element_time = first_element_time
                 node_info.loads_map[memref].last_element_time = last_element_time
+                node_info.loads_map[memref].first_mask = first_mask
+                node_info.loads_map[memref].last_mask = last_mask
 
             for store in node.stores:
                 memref = self._get_memref(store)
                 access_map = get_minimal_access_pattern(store, permuted_loops)
                 node_info.stores_map[memref] = EdgeInfo(access_map, store)
-                first_element_time, last_element_time = (
+                first_element_time, last_element_time, first_mask, last_mask = (
                     self._compute_first_and_last_element_time(store, permuted_loops)
                 )
                 node_info.stores_map[memref].first_element_time = first_element_time
                 node_info.stores_map[memref].last_element_time = last_element_time
+                node_info.stores_map[memref].first_mask = first_mask
+                node_info.stores_map[memref].last_mask = last_mask
 
             # Compute II
             node_info.II = compute_loop_II(top_level_for, permuted_loops)
@@ -584,8 +609,6 @@ class DFG:
                     b_vars[(node_id, perm_idx)] = model.addVar(
                         vtype=GRB.BINARY, name=f"b{node_id}_{perm_idx}"
                     )
-            # if node.is_reduction:
-            #     model.addConstr(b_vars[(node_id, 0)] == 1)
         return b_vars
 
     def _create_timing_variables(self, model):
@@ -697,7 +720,7 @@ class DFG:
         return arrives_terms
 
     def _add_first_write_time_constraints(
-        self, model, b_vars, st_vars, fw_vars, topo_order
+        self, model, b_vars, st_vars, fw_vars, topo_order, x_vars=None
     ):
         r"""fw(n) = st(n) + \sum_{b \in B_n} [FW_n * II_n * b]"""
         for node_id in topo_order:
@@ -707,23 +730,30 @@ class DFG:
 
             fw_terms = [st_vars[node_id]]
             for perm_idx, node_info in enumerate(node.node_info):
-                for out_edge in self.out_edges[node_id]:
+                per_perm_expr = gp.LinExpr()
+                for out_idx, out_edge in enumerate(self.out_edges[node_id]):
                     src_op = out_edge.src_op
-                    if src_op in node_info.stores_map:
-                        edge_info = node_info.stores_map[src_op]
+                    if src_op not in node_info.stores_map:
+                        continue
+                    edge_info = node_info.stores_map[src_op]
+
+                    if x_vars is None:
                         first_time = edge_info.first_element_time
-                        ii = node_info.II
+                    else:
+                        xs = [x_vars[(node_id, d)]
+                            for d in node_info.permutation]
+                        first_time = self._make_time_eq(edge_info.first_mask, xs)
 
-                        term = model.addVar(
-                            vtype=GRB.INTEGER, name=f"fw_term_{node_id}_{perm_idx}"
-                        )
+                    per_perm_expr += node_info.II * first_time
 
-                        model.addConstr(
-                            term == ii * b_vars[(node_id, perm_idx)] * first_time,
-                            name=f"fw_term_{node_id}_{perm_idx}",
-                        )
-
-                        fw_terms.append(term)
+                term = model.addVar(
+                    vtype=GRB.INTEGER,
+                    name=f"fw_term_{node_id}_{perm_idx}"
+                )
+                model.addConstr(
+                    term == b_vars[(node_id, perm_idx)] * per_perm_expr
+                )
+                fw_terms.append(term)
 
             model.addConstr(
                 fw_vars[node_id] == gp.quicksum(fw_terms), name=f"fw_constr_{node_id}"
@@ -785,7 +815,7 @@ class DFG:
                 )
 
     def _compute_relative_last_read_terms(
-        self, model, edge, node_id, dst_node, b_vars, st_vars
+        self, model, edge, node_id, dst_node, b_vars, st_vars, x_vars=None
     ):
         """Compute relative last read terms for selected permutation [II * lr_time * b]"""
         rlr_terms = []
@@ -797,16 +827,27 @@ class DFG:
             for perm_idx, node_info in enumerate(dst_node.node_info):
                 dst_op = edge.dst_op
                 if dst_op in node_info.loads_map:
-                    lr_time = node_info.loads_map[dst_op].last_element_time
+                    edge_info = node_info.loads_map[dst_op]
+                    if x_vars is None:
+                        lr_expr = edge_info.last_element_time            
+                    else:
+                        mask = edge_info.poly.last_mask                 
+                        xs   = [x_vars[(node_id, d)]
+                                for d in node_info.permutation]
+
+                        lr_expr = self._make_time_eq(mask, xs)          
+
                     ii = node_info.II
 
                     term = model.addVar(
-                        vtype=GRB.INTEGER,
-                        lb=0,
+                        vtype=GRB.INTEGER, lb=0,
                         name=f"rlr_term_{src_id}_{node_id}_{perm_idx}",
                     )
 
-                    model.addConstr(term == lr_time * ii * b_vars[(node_id, perm_idx)])
+                    model.addConstr(
+                        term == ii * lr_expr * b_vars[(node_id, perm_idx)],
+                        name=f"c_rlr_{src_id}_{node_id}_{perm_idx}",
+                    )
 
                     rlr_terms.append(term)
 
