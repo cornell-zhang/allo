@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from gurobipy import GurobiError
-from allo.ir.utils import MockBuffer
 import numpy as np
 import pytest
 from allo.ir.types import float32, int32
@@ -17,28 +16,18 @@ kinds = [
     # "combined"
 ]
 
-# def build_and_execute(schedule, debug_point, inputs, expected, prj_name):
-#     if debug_point is not None:
-#         mod = schedule.build()
-#         actual = mod(*inputs)
-#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
-#     elif is_available("vitis_hls"):
-#         mod = schedule.build(target="vitis_hls", mode="hw_emu", project=prj_name)
-#         actual = mod(*inputs)
-#         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
-#     else:
-#         pytest.skip("Skipping test: vitis_hls not available")
+MODE = "sw_emu"
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
 def test_simple(debug_point, kind):
-    def simple() -> int32[10, 10]:
-        def stageA() -> int32[10, 10]:
+    def simple(v: int32[10, 10]) -> int32[10, 10]:
+        def stageA(v: int32[10, 10]) -> int32[10, 10]:
             A: int32[10, 10]
             for j in range(10):
                 for i in range(10):
-                    A[i, j] = i + j
+                    A[i, j] = i + j + v[i, j]
             return A
 
         def stageB(A: int32[10, 10]) -> int32[10, 10]:
@@ -48,7 +37,7 @@ def test_simple(debug_point, kind):
                     B[i, j] = A[i, j] + 1
             return B
 
-        A = stageA()
+        A = stageA(v)
         B = stageB(A)
         return B
 
@@ -64,14 +53,17 @@ def test_simple(debug_point, kind):
 
     if debug_point is not None:
         mod = optimized_schedule.build()
-        np.testing.assert_allclose(mod(), expected)
+        input = np.zeros((10, 10), dtype=np.int32)
+        np.testing.assert_allclose(mod(input), expected)
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_simple"
+            target="vitis_hls", mode=MODE, project="test_simple.prj", wrap_io=True
         )
+        input = np.zeros((10, 10), dtype=np.int32)
+
         output = np.zeros((10, 10))
-        mod(output)
+        mod(input, output)
         np.testing.assert_allclose(output, expected)
     else:
         pytest.skip("Skipping test: vitis_hls not available")
@@ -101,7 +93,7 @@ def test_three_mm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_three_mm"
+            target="vitis_hls", mode=MODE, project="test_three_mm.prj", wrap_io=False
         )
         output = np.zeros_like(expected)
         mod(*inputs, output)
@@ -114,11 +106,11 @@ def test_three_mm(debug_point, kind):
 @pytest.mark.parametrize("kind", kinds)
 def test_two_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
-        "two_mm", size="small", concrete_type=float32
+        "two_mm", size="medium", concrete_type=float32
     )
     try:
         optimized_schedule = dataflow_optimization_pass(
-            schedule, debug_point=debug_point, kind=kind
+            schedule, debug_point=debug_point, kind=kind, verbose=True
         )
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -132,7 +124,7 @@ def test_two_mm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_two_mm"
+            target="vitis_hls", mode=MODE, project="test_two_mm.prj"
         )
         output = np.zeros_like(expected)
         mod(*inputs, output)
@@ -149,7 +141,7 @@ def test_atax(debug_point, kind):
     )
     try:
         optimized_schedule = dataflow_optimization_pass(
-            schedule, debug_point=debug_point, kind=kind
+            schedule, debug_point=debug_point, kind=kind, verbose=True
         )
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -166,9 +158,11 @@ def test_atax(debug_point, kind):
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
 
     elif is_available("vitis_hls"):
+        print(optimized_schedule.module)
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_atax"
+            target="vitis_hls", mode=MODE, project="test_atax.prj"
         )
+        print(mod.hls_code)
         mod(A, x, y)
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
     else:
@@ -220,7 +214,7 @@ def test_gemm(debug_point, kind):
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_gemm"
+            target="vitis_hls", mode=MODE, project="test_gemm.prj"
         )
         output = np.zeros_like(expected)
         mod(A, B, C, output)
@@ -255,7 +249,7 @@ def test_gesummv(debug_point, kind):
         np.testing.assert_allclose(y, expected, rtol=1e-5, atol=1e-5)
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
-            target="vitis_hls", mode="hw_emu", project="test_gesummv"
+            target="vitis_hls", mode=MODE, project="test_gesummv.prj"
         )
         y = np.zeros_like(expected)
         mod(A, B, x, y)
