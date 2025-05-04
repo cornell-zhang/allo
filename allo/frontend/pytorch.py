@@ -63,6 +63,9 @@ def from_pytorch(
     for name, param in gm.named_parameters():
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
+    for name, buf in gm.named_buffers():
+        new_name = "gb_" + name.replace(".", "_")
+        global_vars.update({new_name: buf.detach().numpy()})
 
     builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
@@ -94,6 +97,7 @@ class TorchBuilder:
         self.leaf_modules = leaf_modules
         self.input_args = []
         self.named_params = dict(gm.named_parameters())
+        self.named_buffers = dict(gm.named_buffers())
         self.subfunctions = []
         self.output = []
         self.composition = []
@@ -137,6 +141,14 @@ class TorchBuilder:
             for name, param in self.named_params.items():
                 new_name = name.replace(".", "_")
                 res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+        if self.named_buffers:
+            for name, buf in self.named_buffers.items():
+                new_name = name.replace(".", "_")
+                if buf.shape:
+                    shape_str = ', '.join([str(s) for s in buf.shape])
+                    res += f"    {new_name}: float32[{shape_str}] = gb_{new_name}\n"
+                else:
+                    res += f"    {new_name}: float32 = gb_{new_name}\n"
         # function body
         for line in self.code:
             res += f"    {line}\n"
