@@ -255,6 +255,7 @@ def schedule_maxpool2d(s):
 def batchnorm2d[Ty, B, C, H, W](
     X: "Ty[B, C, H, W]", gamma: "Ty[C]", beta: "Ty[C]", eps: "Ty", mean: "Ty[C]", var: "Ty[C]"
 ) -> "Ty[B, C, H, W]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
     Z: Ty[B, C, H, W]
     for b, c, h, w in dsl.grid(B, C, H, W):
         Z[b, c, h, w] = (
