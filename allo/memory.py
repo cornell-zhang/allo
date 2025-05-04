@@ -5,6 +5,7 @@ import re
 from itertools import product
 from typing import Tuple, List, Dict
 
+
 class Layout:
     def __init__(self, placement):
         # R: replicated, S: shared
@@ -19,7 +20,7 @@ class Layout:
                 result.append((letter, None))
         self.placement = result
 
-    def get_placement(self, mesh_dims) -> Dict[str,tuple]:
+    def get_placement(self, mesh_dims) -> Dict[str, tuple]:
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
 
@@ -57,7 +58,7 @@ class Layout:
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result:Dict[str,tuple] = {}
+        result: Dict[str, tuple] = {}
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
@@ -78,15 +79,15 @@ class DTensor:
     Distributed tensor.
     """
 
-    def __init__(self, rank, mapping, shape, dtype, layout:Layout, name=None):
-        self.rank = rank    # dtensor idx
+    def __init__(self, rank, mapping, shape, dtype, layout: Layout, name=None):
+        self.rank = rank  # dtensor idx
         self.mapping = mapping  # global mapping
         self.shape = shape  # global shape
         self.dtype = dtype
-        self.layout:Layout = layout
+        self.layout: Layout = layout
         self.name = name
-        self.global_placement:Dict[str,tuple] = layout.get_placement(mapping)
-        self.type_as_param:List = None
+        self.global_placement: Dict[str, tuple] = layout.get_placement(mapping)
+        self.type_as_param: List = None
 
     def get_local_shape(self):
         """
@@ -104,32 +105,32 @@ class DTensor:
                 local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
-    def get_access_pattern(self) -> Tuple[List,List,List]:
+    def get_access_pattern(self) -> Tuple[List, List, List]:
         """
         Specify how to access the dtensor (local tensor) from the global tensor
             (tensor has at most 4 dimensions: DMA support 4-dimension address generation)
 
         Returns:
             - device_dims: make partition at which dimensions
-            - size: local tensor size
+            - size: tensor size
             - stride: access stride in global tensor
         """
         partition_str = "".join([p[0] for p in self.layout.placement])
         if len(self.shape) == 1:
             if partition_str == "S":
-                shard_size = self.shape[0]//self.mapping[0]
-                device_dims = [2] # partition idx = 2
+                shard_size = self.shape[0] // self.mapping[0]
+                device_dims = [2]  # partition idx = 2
                 size = [1, 1, self.mapping[0], shard_size]
                 stride = [0, 0, shard_size, 1]
             elif partition_str == "R":
-                device_dims = [] # no partition
+                device_dims = []  # no partition
                 size = [1, 1, 1, self.shape[0]]
                 stride = [0, 0, 0, 1]
             else:
                 raise ValueError("Unsupported access pattern for 1D tensor.")
         elif len(self.shape) == 2:
-            tensor_m, tensor_n = self.shape # [tensor_m x tensor_n]
-            device_a, device_b = None, None # 2D device to be mapped
+            tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
+            device_a, device_b = None, None  # 2D device to be mapped
             if len(self.mapping) == 1:
                 device_a, device_b = 1, self.mapping[0]
             elif len(self.mapping) == 2:
@@ -141,13 +142,24 @@ class DTensor:
                 else:
                     partition[0] = (partition[0], 1)
                     partition[1] = (partition[1], 0)
-                device_a, device_b = self.mapping[-partition[0][1] - 1], self.mapping[-partition[1][1] - 1]
+                device_a, device_b = (
+                    self.mapping[-partition[0][1] - 1],
+                    self.mapping[-partition[1][1] - 1],
+                )
             else:
-                device_a, device_b = self.mapping[-partition[0][1] - 1], self.mapping[-partition[1][1] - 1]
+                device_a, device_b = (
+                    self.mapping[-partition[0][1] - 1],
+                    self.mapping[-partition[1][1] - 1],
+                )
             if partition_str == "SS":
                 device_dims = [0, 1]
-                size = [device_a, device_b , tensor_m // device_a, tensor_n // device_b]
-                stride = [(tensor_m // device_a) * tensor_n, tensor_n // device_b, tensor_n, 1]
+                size = [device_a, device_b, tensor_m // device_a, tensor_n // device_b]
+                stride = [
+                    (tensor_m // device_a) * tensor_n,
+                    tensor_n // device_b,
+                    tensor_n,
+                    1,
+                ]
             elif partition_str == "SR":
                 # First dim sharded across all devices, second replicated
                 total_devices = device_a * device_b
@@ -158,7 +170,12 @@ class DTensor:
                 # First dim replicated, second sharded across second dim of mesh
                 device_dims = [1]
                 size = [1, device_b, tensor_m, tensor_n // device_b]
-                stride = [(tensor_m * tensor_n) // (device_a * device_b), tensor_n // device_b, tensor_n, 1]
+                stride = [
+                    (tensor_m * tensor_n) // (device_a * device_b),
+                    tensor_n // device_b,
+                    tensor_n,
+                    1,
+                ]
             elif partition_str == "RR":
                 # Both dimensions replicated
                 device_dims = []

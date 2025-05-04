@@ -32,7 +32,6 @@ def _test_vector_scalar_add():
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
-
 def _test_vector_vector_add():
     # # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_vector_add
     Ty = int32
@@ -55,7 +54,6 @@ def _test_vector_vector_add():
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
-
 def _test_vector_scalar_add_p0():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
     #                |--------------------------------------------|
@@ -77,11 +75,8 @@ def _test_vector_scalar_add_p0():
     mod(A, B)
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
-
-
+ 
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_vector_vector_add()
-
-    # failed
-    # _test_vector_scalar_add_p0()
+    _test_vector_scalar_add_p0()

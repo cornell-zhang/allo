@@ -283,7 +283,6 @@ class CodeGenerator:
     ) -> aie_ir.Module:
 
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
-
         wrapper_code = f"""
             module {{
                 aie.device({self.device_type}) {{
@@ -362,17 +361,15 @@ class CodeGenerator:
                                     if io == "in"
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
-                                # [NOTE]: this should be compatible to function parameter type
-                                tile_size, arg_size = 1, 1
-                                for dim in dma_tile.size:
-                                    tile_size *= dim
-                                for dim in dtensor.type_as_param:
-                                    arg_size *= dim
-                                assert (
-                                    tile_size == arg_size
-                                ), f"Incompatible: tile_size={tile_size} {dma_tile.size} != arg_size={arg_size} {dtensor.type_as_param}\n{dtensor}\n{dma_tile.size, dma_tile.offset, dma_tile.stride}"
+                                for idx_ in range(len(dma_tile.size)):
+                                    if dma_tile.size[idx_] != 1:
+                                        break
+                                if idx_ == len(dma_tile.size):
+                                    shape = [1]
+                                else:
+                                    shape = dma_tile.size[idx_:]
                                 memref_type = aie_ir.MemRefType.get(
-                                    dtensor.type_as_param,
+                                    shape,
                                     get_element_type(str(dtensor.dtype)),
                                 )
                                 fifo_shim = self.fifo_map[name] = aie_d.object_fifo(
@@ -387,6 +384,10 @@ class CodeGenerator:
                                 fifo_mem = []
                                 mem_stride = [0]
                                 mem_tile = self.tile_map[f"mem_{dma_tile.mem_id}"]
+                                local_memref_type = aie_ir.MemRefType.get(
+                                    dtensor.type_as_param,
+                                    get_element_type(str(dtensor.dtype)),
+                                )
                                 for tensor_tile in dma_tile.tensor_tile_labels:
                                     # distribute to placement[tensor_tile]
                                     compute_tiles = []
@@ -416,7 +417,7 @@ class CodeGenerator:
                                         producer,
                                         consumer,
                                         depth=2,
-                                        datatype=memref_type,
+                                        datatype=local_memref_type,
                                     )
                                     fifo_mem.append(fifo)
                                     mem_stride.append(
