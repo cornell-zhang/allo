@@ -38,6 +38,7 @@ class DMATensorTile:
     size: List
     stride: List
 
+
 def map_global_io(inputs, outputs) -> Tuple[Dict[str, List[DMATensorTile]], int, int]:
     """
     Current constrians:
@@ -336,9 +337,8 @@ class CodeGenerator:
                     mappings, aie_mesh
                 ).items():
                     for idx, func in zip(tile_ids, core_func_groups[func_name]):
-                        self.tile_map[
-                            f"compute_{func.attributes["sym_name"].value}"
-                        ] = aie_d.TileOp(
+                        func_name = func.attributes["sym_name"].value
+                        self.tile_map[f"compute_{func_name}"] = aie_d.TileOp(
                             col=idx[0],
                             row=idx[1] + 2,
                         )

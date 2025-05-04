@@ -313,7 +313,7 @@ def build(
         )
         mod.build()
         return mod
-    
+
     if target == "aie-mlir":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
