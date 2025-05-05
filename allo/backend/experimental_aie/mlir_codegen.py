@@ -481,18 +481,27 @@ class CodeGenerator:
                                     f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
                                 ]
                                 dma_task = aiex_d.dma_configure_task_for(
-                                    dma_fifo, issue_token=True
+                                    dma_fifo,
+                                    issue_token=True,
+                                    repeat_count=dma_tile.size[
+                                        0
+                                    ],  # the highest dimension size in transfer length is the BD repeat count
                                 )
                                 dma_entry_block = aie_ir.Block.create_at_start(
                                     dma_task.body
                                 )
                                 with aie_ir.InsertionPoint(dma_entry_block):
-                                    tile_length = 1
-                                    for tile_len in dma_tile.size:
+                                    tile_length, tile_offset = 1, 0
+                                    # 'aie.dma_bd' length should match length of transfer expressed by lowest three dimensions of data layout
+                                    for tile_len in dma_tile.size[1:]:
                                         tile_length *= tile_len
+                                    for offset, stride in zip(
+                                        dma_tile.offset, dma_tile.stride
+                                    ):
+                                        tile_offset += offset * stride
                                     aie_d.DMABDOp(
                                         buffer=runtime_seq_entry_block.arguments[cnt],
-                                        offset=0,  # fixme
+                                        offset=tile_offset,
                                         len=tile_length,
                                         dimensions=aie_d.bd_dim_layout_array_attr_builder(
                                             list(zip(dma_tile.size, dma_tile.stride))

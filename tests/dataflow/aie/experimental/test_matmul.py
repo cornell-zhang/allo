@@ -54,5 +54,4 @@ def _test_gemm_2D():
 
 if __name__ == "__main__":
     _test_gemm_1D()
-    # failed
-    # _test_gemm_2D()
+    _test_gemm_2D()
