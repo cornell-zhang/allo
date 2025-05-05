@@ -395,5 +395,27 @@ def test_avgpool2d():
     print("Passed!")
     print(s.build(target="vhls"))
 
+def test_batchnorm2d():
+    from allo.library.nn import batchnorm2d
+
+    N, C, H, W = 1, 3, 16, 16
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+    gamma = np.random.randn(C).astype(np.float32)
+    beta = np.random.randn(C).astype(np.float32)
+
+    # Simulating running mean and variance, which are usually computed during training and different input means and var
+    running_mean = np.random.randn(C).astype(np.float32)
+    running_var = np.abs(np.random.randn(C)).astype(np.float32)
+
+    s = allo.customize(batchnorm2d, instantiate=[float32, N, C, H, W])
+    mod = s.build()
+    allo_out = mod(inp, gamma, beta, 1e-5, running_mean, running_var)
+
+    np_out = (inp - running_mean.reshape(1, C, 1, 1)) / np.sqrt(running_var.reshape(1, C, 1, 1) + 1e-5) * gamma.reshape(1, C, 1, 1) + beta.reshape(1, C, 1, 1)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-04)
+    print("Passed!")
+    print(s.build(target="vhls"))
+    
 if __name__ == "__main__":
     pytest.main([__file__])
