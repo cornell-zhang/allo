@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int16, int32, float32, bfloat16
+from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -79,7 +79,32 @@ def _test_vector_scalar_add_p0():
     print("PASSED!")
 
 
+def _test_vector_vector_add_p0():
+    #                  |--------------------------------------------|
+    #                  v   v--------------------------v             v
+    # shim tile <-> A mem tile 0 <-> comp tile0    comp tile1    comp tile2
+    #       ^-----> B mem tile 1 <-------^------------^-------------^
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
+            C[:] = allo.add(A, B)
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.random.randint(0, 100, M).astype(np.int32)
+    C = np.zeros(M).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A + B)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_vector_vector_add()
     _test_vector_scalar_add_p0()
+    _test_vector_vector_add_p0()
