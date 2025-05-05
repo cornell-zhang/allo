@@ -31,11 +31,11 @@ def test_linear():
 
 def test_builtin_linear():
     M, N, K = 16, 32, 16
-    X = np.random.randn(M, K)
-    W = np.random.randn(N, K)
+    X = np.random.randn(M, K).astype(np.float32)
+    W = np.random.randn(N, K).astype(np.float32)
     b = np.random.randn(
         N,
-    )
+    ).astype(np.float32)
     s = allo.customize(nn.linear2d, instantiate=[float32, M, N, K])
     mod = s.build(target="llvm")
     Z = mod(X, W, b)
@@ -45,15 +45,15 @@ def test_builtin_linear():
 
 def test_cascaded_linear():
     BS, M0, M1, M2 = 16, 32, 16, 10
-    X = np.random.randn(BS, M0)
-    W0 = np.random.randn(M1, M0)
-    W1 = np.random.randn(M2, M1)
+    X = np.random.randn(BS, M0).astype(np.float32)
+    W0 = np.random.randn(M1, M0).astype(np.float32)
+    W1 = np.random.randn(M2, M1).astype(np.float32)
     b0 = np.random.randn(
         M1,
-    )
+    ).astype(np.float32)
     b1 = np.random.randn(
         M2,
-    )
+    ).astype(np.float32)
 
     def cascaded_linear(
         X: float32[BS, M0],
