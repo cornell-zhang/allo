@@ -302,6 +302,7 @@ def test_bert():
     print("Passed!")
     print(s.build(target="vhls"))
 
+
 def np_conv2d(inp, filter, stride=1, padding=0):
     N, C, H, W = inp.shape
     F, _, HH, WW = filter.shape
@@ -314,14 +315,20 @@ def np_conv2d(inp, filter, stride=1, padding=0):
             for h in range(H_out):
                 for w in range(W_out):
                     out[n, f, h, w] = np.sum(
-                        inp_padded[n, :, h * stride : h * stride + HH, w * stride : w * stride + WW]
+                        inp_padded[
+                            n,
+                            :,
+                            h * stride : h * stride + HH,
+                            w * stride : w * stride + WW,
+                        ]
                         * filter[f]
                     )
     return out
 
+
 def test_conv2d():
     from allo.library.nn import conv2d
-    
+
     N, C, H, W = 1, 3, 16, 16
     K, F, S, P = 2, 2, 2, 1
 
@@ -332,7 +339,9 @@ def test_conv2d():
     Oh = (H + 2 * P - K) // S + 1
     Ow = (W + 2 * P - K) // S + 1
 
-    s = allo.customize(conv2d, instantiate=[float32, N, C, F, H, W, K, K, Oh, Ow, S, S, P, P])
+    s = allo.customize(
+        conv2d, instantiate=[float32, N, C, F, H, W, K, K, Oh, Ow, S, S, P, P]
+    )
     mod = s.build()
     allo_out = mod(inp, kernel, bias)
     np_out = np_conv2d(inp, kernel, S, P) + bias.reshape(1, F, 1, 1)
@@ -356,7 +365,9 @@ def test_maxpool2d():
     mod = s.build()
     allo_out = mod(inp)
 
-    inp_padded = np.pad(inp, ((0,), (0,), (P,), (P,)), mode="constant", constant_values=-np.inf)
+    inp_padded = np.pad(
+        inp, ((0,), (0,), (P,), (P,)), mode="constant", constant_values=-np.inf
+    )
     np_out = np.zeros((N, C, Oh, Ow), dtype=np.float32)
     for n, c, h, w in np.ndindex(N, C, Oh, Ow):
         h_start = h * S
@@ -367,6 +378,7 @@ def test_maxpool2d():
     np.testing.assert_allclose(allo_out, np_out)
     print("Passed!")
     print(s.build(target="vhls"))
+
 
 def test_avgpool2d():
     from allo.library.nn import avgpool2d
@@ -395,6 +407,7 @@ def test_avgpool2d():
     print("Passed!")
     print(s.build(target="vhls"))
 
+
 def test_batchnorm2d():
     from allo.library.nn import batchnorm2d
 
@@ -411,11 +424,14 @@ def test_batchnorm2d():
     mod = s.build()
     allo_out = mod(inp, gamma, beta, 1e-5, running_mean, running_var)
 
-    np_out = (inp - running_mean.reshape(1, C, 1, 1)) / np.sqrt(running_var.reshape(1, C, 1, 1) + 1e-5) * gamma.reshape(1, C, 1, 1) + beta.reshape(1, C, 1, 1)
+    np_out = (inp - running_mean.reshape(1, C, 1, 1)) / np.sqrt(
+        running_var.reshape(1, C, 1, 1) + 1e-5
+    ) * gamma.reshape(1, C, 1, 1) + beta.reshape(1, C, 1, 1)
 
     np.testing.assert_allclose(allo_out, np_out, rtol=1e-04)
     print("Passed!")
     print(s.build(target="vhls"))
-    
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
