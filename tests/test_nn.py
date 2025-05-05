@@ -302,6 +302,44 @@ def test_bert():
     print("Passed!")
     print(s.build(target="vhls"))
 
+def np_conv2d(inp, filter, stride=1, padding=0):
+    N, C, H, W = inp.shape
+    F, _, HH, WW = filter.shape
+    H_out = (H + 2 * padding - HH) // stride + 1
+    W_out = (W + 2 * padding - WW) // stride + 1
+    out = np.zeros((N, F, H_out, W_out))
+    inp_padded = np.pad(inp, ((0,), (0,), (padding,), (padding,)), mode="constant")
+    for n in range(N):
+        for f in range(F):
+            for h in range(H_out):
+                for w in range(W_out):
+                    out[n, f, h, w] = np.sum(
+                        inp_padded[n, :, h * stride : h * stride + HH, w * stride : w * stride + WW]
+                        * filter[f]
+                    )
+    return out
+
+def test_conv2d():
+    from allo.library.nn import conv2d
+    
+    N, C, H, W = 1, 3, 16, 16
+    K, F, S, P = 2, 2, 2, 1
+
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+    kernel = np.random.randn(F, C, K, K).astype(np.float32)
+    bias = np.random.randn(F).astype(np.float32)
+
+    Oh = (H + 2 * P - K) // S + 1
+    Ow = (W + 2 * P - K) // S + 1
+
+    s = allo.customize(conv2d, instantiate=[float32, N, C, F, H, W, K, K, Oh, Ow, S, S, P, P])
+    mod = s.build()
+    allo_out = mod(inp, kernel, bias)
+    np_out = np_conv2d(inp, kernel, S, P) + bias.reshape(1, F, 1, 1)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
