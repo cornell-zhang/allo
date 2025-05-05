@@ -674,8 +674,7 @@ class DFG:
 
         # Return optimal tiling factors in the form of (node_id, depth, tiling_factor)
         return [
-            (node_id, depth, int(round(x_vars[(node_id, depth)].X)))
-            for (node_id, depth), _ in x_vars.items()
+            (node_id, depth, int(round(x.X))) for (node_id, depth), x in x_vars.items()
         ]
 
     def _find_sink_nodes(self):
