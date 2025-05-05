@@ -187,7 +187,16 @@ def _mlir_preprocess(module, top_func_name):
     """
     # Configure for maximum inlining - no recursion limit and always inline
     MAX_ITER = INLINE_THRESHOLD = 999999
-    pipeline = f"builtin.module(convert-linalg-to-affine-loops,inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},symbol-privatize{{exclude={top_func_name}}},symbol-dce)"
+    pipeline = (
+        f"builtin.module("
+        f"convert-linalg-to-affine-loops,"
+        f"inline{{max-iterations={MAX_ITER} inlining-threshold={INLINE_THRESHOLD}}},"
+        f"symbol-privatize{{exclude={top_func_name}}},"
+        f"symbol-dce,"
+        f"func.func(affine-scalrep),"
+        f"canonicalize"
+        f")"
+    )
     try:
         with module.context:
             mlir_pass_manager.parse(pipeline).run(module.operation)

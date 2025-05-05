@@ -9,7 +9,7 @@ from allo.ir.types import int32, float32
 from allo.autoscheduler.dfg import DFG, DFGNodeType, Node
 from allo.autoscheduler.passes import dataflow_optimization_pass
 from allo.autoscheduler.util import compose_affine_maps
-from allo._mlir.ir import AffineMap
+from allo._mlir.ir import AffineMap, AffineExpr
 
 
 def check_edges(dfg: DFG):
@@ -115,6 +115,7 @@ def test_node_info():
 
     assert len(affine_node.node_info) == math.factorial(len(affine_node.loop_info))
     original_access_map = AffineMap.get_permutation([2, 0, 1], module.context)
+
     for info in affine_node.node_info:
         # check access map
         perm = info.permutation
@@ -178,7 +179,7 @@ def test_DSP():
         node for node in dfg.nodes.values() if node.type == DFGNodeType.AFFINE
     ]
     for i, affine_node in enumerate(affine_nodes):
-        assert affine_node.DSP_factor == [0, 20][i]
+        assert affine_node.DSP_factor == [0, 21][i]
 
 
 def test_II():
