@@ -310,19 +310,16 @@ def np_conv2d(inp, filter, stride=1, padding=0):
     W_out = (W + 2 * padding - WW) // stride + 1
     out = np.zeros((N, F, H_out, W_out))
     inp_padded = np.pad(inp, ((0,), (0,), (padding,), (padding,)), mode="constant")
-    for n in range(N):
-        for f in range(F):
-            for h in range(H_out):
-                for w in range(W_out):
-                    out[n, f, h, w] = np.sum(
-                        inp_padded[
-                            n,
-                            :,
-                            h * stride : h * stride + HH,
-                            w * stride : w * stride + WW,
-                        ]
-                        * filter[f]
-                    )
+    for n, f, h, w in np.ndindex(N, F, H_out, W_out):
+        out[n, f, h, w] = np.sum(
+            inp_padded[
+                n,
+                :,
+                h * stride : h * stride + HH,
+                w * stride : w * stride + WW,
+            ]
+            * filter[f]
+        )
     return out
 
 
