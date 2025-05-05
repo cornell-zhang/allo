@@ -27,7 +27,7 @@ from ..aie import map_kernels_to_device_mesh
 
 @dataclass(frozen=True)
 class DMATensorTile:
-    dtensot_tile_id: int  # dTensor may need to be further partitioned
+    dtensor_tile_id: int  # dTensor may need to be further partitioned
     shim_id: int
     mem_id: int
     tensor_tile_labels: list
@@ -38,7 +38,7 @@ class DMATensorTile:
 
 def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int, int]:
     """
-    Current constrians:
+    Current constrains:
         - use 4 mem-shim tile pairs for io
         - each port is assigned to one dtensor tile
 
@@ -63,7 +63,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         """
         Try to assign a memory tile satisfying the requirement.
         Return the tile index.
-            -1 indicates no tile avaliable.
+            -1 indicates no tile availability.
         """
         # 1. Attempt to use a new memory tile
         if (
@@ -96,7 +96,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         device_dims, size, stride = dtensor.get_access_pattern()
         tensor_tiles = list(
             dtensor.global_placement.keys()
-        )  # 'R' can use one port yet multilple destinations
+        )  # 'R' can use one port yet multiple destinations
 
         send_need = len(tensor_tiles) if is_input else 1
         recv_need = 1 if is_input else len(tensor_tiles)
@@ -116,7 +116,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         # We failed to transfer the whole tensor with one memory tile. Try using more.
         dma_tensor_tiles: list[DMATensorTile] = []
         # fixme: incomplete
-        #   Currently, we may allow tensor tiles on a sharding demension to be sent using different memory tiles
+        #   Currently, we may allow tensor tiles on a sharding dimension to be sent using different memory tiles
         lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
         remaining = tensor_tiles[:]
         start_idx = 0
@@ -239,25 +239,36 @@ class CodeGenerator:
                     )
                     argument.replace_all_uses_with(acquired)
 
-                # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
                         if op.name == "func.return":
                             continue
-                        if op.name == "memref.alloc":
-                            buffer_op = aie_d.BufferOp(
-                                buffer=op.results[0].type,
-                                tile=self.tile_map[
-                                    f"compute_{parsed_function.name.value}"
-                                ],
-                                ip=self.global_ip,
-                            )
-                            for old, new in zip(op.results, buffer_op.results):
-                                old.replace_all_uses_with(new)
-                            continue
                         new_op = op.clone()
                         for old, new in zip(op.results, new_op.results):
                             old.replace_all_uses_with(new)
+
+                # replace alloc with buffer
+                alloc_ops = []
+
+                def collect_allocs(op):
+                    if op.name == "memref.alloc":
+                        alloc_ops.append(op.operation)
+                        return
+                    for region in op.regions:
+                        for block in region.blocks:
+                            for inner_op in block.operations:
+                                collect_allocs(inner_op)
+
+                collect_allocs(loop)
+                for alloc_op in alloc_ops:
+                    buffer_op = aie_d.BufferOp(
+                        buffer=alloc_op.results[0].type,
+                        tile=self.tile_map[f"compute_{parsed_function.name.value}"],
+                        ip=self.global_ip,
+                    )
+                    for old, new in zip(alloc_op.results, buffer_op.results):
+                        old.replace_all_uses_with(new)
+                    alloc_op.erase()
 
                 # release
                 for i, _ in enumerate(parsed_function.arguments):
@@ -347,7 +358,7 @@ class CodeGenerator:
                             # shim <-> mem (one to one)
                             for dma_tile in io_mapping[dtensor.name]:
                                 # define objectfifo
-                                name = f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
+                                name = f"{io}_shim_{dtensor.name}{dma_tile.dtensor_tile_id}"
                                 producer = (
                                     self.tile_map[f"shim_{dma_tile.shim_id}"]
                                     if io == "in"
@@ -478,7 +489,7 @@ class CodeGenerator:
                         for dtensor in arg_lst:
                             for dma_tile in io_mapping[dtensor.name]:
                                 dma_fifo = self.fifo_map[
-                                    f"{io}_shim_{dtensor.name}{dma_tile.dtensot_tile_id}"
+                                    f"{io}_shim_{dtensor.name}{dma_tile.dtensor_tile_id}"
                                 ]
                                 dma_task = aiex_d.dma_configure_task_for(
                                     dma_fifo,
