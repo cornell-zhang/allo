@@ -358,10 +358,8 @@ class CodeGenerator:
                                     if io == "in"
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
-                                for idx_, size in enumerate(dma_tile.size):
-                                    if size != 1:
-                                        break
-                                if idx_ == len(dma_tile.size):
+                                idx_ = next((i for i, size in enumerate(dma_tile.size) if size != 1), None)
+                                if idx_ is None:
                                     shape = [1]
                                 else:
                                     shape = dma_tile.size[idx_:]
