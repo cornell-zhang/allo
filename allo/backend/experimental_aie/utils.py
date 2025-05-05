@@ -170,8 +170,7 @@ def get_element_type(dtype_str: str) -> aie_ir.Type:
         return aie_ir.F32Type.get()
     if dtype_str == "f16":
         return aie_ir.F16Type.get()
-    else:
-        raise ValueError(f"Unsupported dtype: {dtype_str}")
+    raise ValueError(f"Unsupported dtype: {dtype_str}")
 
 
 def codegen_external_kernels(injected_kernels: dict) -> str:

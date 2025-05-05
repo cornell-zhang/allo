@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 

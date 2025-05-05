@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -358,8 +358,8 @@ class CodeGenerator:
                                     if io == "in"
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
-                                for idx_ in range(len(dma_tile.size)):
-                                    if dma_tile.size[idx_] != 1:
+                                for idx_, size in enumerate(dma_tile.size):
+                                    if size != 1:
                                         break
                                 if idx_ == len(dma_tile.size):
                                     shape = [1]
