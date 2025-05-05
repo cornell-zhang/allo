@@ -65,7 +65,7 @@ class AIE_MLIRModule:
                 self.core_func_args[func_name_w_id] = []
                 # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
                 func_id = tuple(
-                    map(int, func_name_w_id.split(func_name + "_")[-1].split("_"))
+                    int(x) for x in func_name_w_id.split(func_name + "_")[-1].split("_")
                 )
                 # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
                 in_idx, out_idx = analyze_read_write_patterns(func)
@@ -109,9 +109,7 @@ class AIE_MLIRModule:
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        top_func, core_func_groups, external_funcs = classify_aie_functions(
-            self.allo_module
-        )
+        _, core_func_groups, external_funcs = classify_aie_functions(self.allo_module)
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
         inputs, outputs = self.collect_io(core_func_groups)
 
@@ -124,7 +122,7 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
-            self.stream_info,
+            # self.stream_info,
             self.core_func_args,
         )
         with open(
@@ -139,15 +137,15 @@ class AIE_MLIRModule:
                 f.write(kernel_code)
             # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
             cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
-            process = subprocess.Popen(cmd, shell=True)
-            process.wait()
+            with subprocess.Popen(cmd, shell=True) as process:
+                process.wait()
             if process.returncode != 0:
                 raise RuntimeError("Failed to compile external kernels.")
         # TODO
         # build mlir-aie
         cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
-        process = subprocess.Popen(cmd, shell=True)
-        process.wait()
+        with subprocess.Popen(cmd, shell=True) as process:
+            process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to compile the MLIR-AIE code")
         # generate host code
@@ -161,8 +159,8 @@ class AIE_MLIRModule:
             f.write(host_code)
         # fixme: lib path
         cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
-        process = subprocess.Popen(cmd, shell=True)
-        process.wait()
+        with subprocess.Popen(cmd, shell=True) as process:
+            process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to build AIE project.")
         return self
@@ -174,8 +172,8 @@ class AIE_MLIRModule:
             ) as f:
                 f.write("\n".join([str(i) for i in args[i].flatten()]))
         cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE"
-        process = subprocess.Popen(cmd, shell=True)
-        process.wait()
+        with subprocess.Popen(cmd, shell=True) as process:
+            process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules

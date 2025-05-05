@@ -232,12 +232,12 @@ class CodeGenerator:
             with aie_ir.InsertionPoint(loop.body):
                 # insert operations to get 'function parameter', acquire and subview
                 io_map = self.compute_core_io[parsed_function.name.value]
-                for i in range(len(parsed_function.arguments)):
+                for i, argument in enumerate(parsed_function.arguments):
                     arg_info: tuple[DTensor, bool] = func_args[i]
                     acquired = self.fifo_map[io_map[arg_info[0]]].acquire(
                         1 if arg_info[1] else 0, 1
                     )
-                    parsed_function.arguments[i].replace_all_uses_with(acquired)
+                    argument.replace_all_uses_with(acquired)
 
                 # parsed_function.arguments[0].replace_all_uses_with(parsed_function.arguments[1])
                 for parsed_func_block in parsed_function.body:
@@ -260,7 +260,7 @@ class CodeGenerator:
                             old.replace_all_uses_with(new)
 
                 # release
-                for i in range(len(parsed_function.arguments)):
+                for i, _ in enumerate(parsed_function.arguments):
                     arg_info: tuple[DTensor, bool] = func_args[i]
                     self.fifo_map[io_map[arg_info[0]]].release(
                         1 if arg_info[1] else 0, 1
@@ -276,7 +276,7 @@ class CodeGenerator:
         inputs,
         outputs,
         use_external_kernels: dict[str, bool],
-        stream_info: dict,
+        # stream_info: dict,
         core_func_args: dict[str, tuple[DTensor, bool]],
     ) -> aie_ir.Module:
 
@@ -390,7 +390,7 @@ class CodeGenerator:
                                     compute_tiles = []
                                     name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
                                     for tile in placement[tensor_tile]:
-                                        idx_str = "_".join(map(str, tile))
+                                        idx_str = "_".join([str(x) for x in tile])
                                         # seems confusing. "sym_name" is parsed in this way
                                         compute_tiles.append(
                                             self.tile_map[
@@ -441,7 +441,7 @@ class CodeGenerator:
                                 else None
                             ),
                         )
-                        if self.global_ip == None:
+                        if self.global_ip is None:
                             self.global_ip = aie_ir.InsertionPoint(func_core)
                         self.build_core_function(
                             func_core, func, core_func_args[func_name_w_id]

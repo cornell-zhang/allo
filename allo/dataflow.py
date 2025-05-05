@@ -15,7 +15,7 @@ from ._mlir.ir import (
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize as _customize, Schedule
+from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.aie import AIEModule
 
