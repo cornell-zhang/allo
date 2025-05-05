@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int32
+from allo.ir.types import int32, bfloat16
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -103,8 +103,36 @@ def _test_vector_vector_add_p0():
     print("PASSED!")
 
 
+def _test_vector_vector_bf16_add():
+    from ml_dtypes import bfloat16 as np_bfloat16
+
+    Ty = bfloat16
+    M = 1024
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
+            C[:] = allo.add(A, B)
+
+    A = np.random.random(M).astype(np_bfloat16)
+    B = np.random.random(M).astype(np_bfloat16)
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie-mlir")
+        C = np.zeros(M).astype(np_bfloat16)
+        mod(A, B, C)
+        np.testing.assert_allclose(
+            C.astype(np.float32), (A + B).astype(np.float32), rtol=1e-2
+        )
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_vector_vector_add()
     _test_vector_scalar_add_p0()
     _test_vector_vector_add_p0()
+    # failed: unable to legalize instruction: %176:_(<2 x s16>) = G_FADD %172:_, %175:_
+    # _test_vector_vector_bf16_add()

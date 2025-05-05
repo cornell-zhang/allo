@@ -107,7 +107,7 @@ class AIE_MLIRModule:
     def build(self, device_type="npu1_4col"):
         os.makedirs(os.path.join(self.project_dir, "build"), exist_ok=True)
         # - extract external kernels
-        use_external_kernels, injected_kernels = inject_external_kernels(
+        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
             self.allo_module
         )
         # record original allo mlir
@@ -143,7 +143,7 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.aie_module))
         if len(injected_kernels) > 0:
-            kernel_code = codegen_external_kernels(injected_kernels)
+            kernel_code = codegen_external_kernels(injected_kernels, include_src)
             with open(
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
