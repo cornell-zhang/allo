@@ -11,9 +11,9 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
 
 from ...passes import analyze_read_write_patterns
+from .memory import AIE_DTensor
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
-from ...memory import DTensor
 from .mlir_codegen import CodeGenerator
 from .utils import (
     inject_external_kernels,
@@ -35,13 +35,26 @@ class AIE_MLIRModule:
     ):
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.func_args: dict = func_args
+
+        # fixme: this is a dummy fix
+        tmp_map: dict = {}
+        self.func_args: dict[str, list[AIE_DTensor]] = {}
+        for func_name, args in func_args.items():
+            self.func_args[func_name] = []
+            for arg in args:
+                if arg in tmp_map:
+                    self.func_args[func_name].append(tmp_map[arg])
+                else:
+                    new_dtensor = AIE_DTensor(arg)
+                    self.func_args[func_name].append(new_dtensor)
+                    tmp_map[arg] = new_dtensor
+
         self.stream_info: dict = stream_info
         self.project_dir: str = project_dir
 
         self.global_inputs: set = set()
         self.global_outputs: set = set()
-        self.core_func_args: dict[str, tuple[DTensor, bool]] = (
+        self.core_func_args: dict[str, tuple[AIE_DTensor, bool]] = (
             {}
         )  # core func name -> a list of (dtensors, is_in)
 

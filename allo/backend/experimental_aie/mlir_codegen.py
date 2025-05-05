@@ -19,7 +19,7 @@ import aie.ir as aie_ir
 
 from ..utils import format_str
 from ..._mlir.dialects import func as allo_func_d
-from ...memory import DTensor
+from .memory import AIE_DTensor
 
 from .utils import get_element_type
 from ..aie import map_kernels_to_device_mesh
@@ -85,7 +85,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         # 3. No tile fits
         return -1
 
-    def map_dtensor_to_tile(dtensor: DTensor, is_input: bool):
+    def map_dtensor_to_tile(dtensor: AIE_DTensor, is_input: bool):
         """
         Currently, we focus on dtensor io using memory tiles.
         Shim tiles are assigned using a one-to-one mapping from memory tiles.
@@ -172,18 +172,18 @@ class CodeGenerator:
     def __init__(
         self,
         device_type: str,
-        global_inputs: list[DTensor],
-        global_outputs: list[DTensor],
+        global_inputs: list[AIE_DTensor],
+        global_outputs: list[AIE_DTensor],
     ):
         self.device_type = device_type
 
-        self.global_inputs: list[DTensor] = global_inputs
-        self.global_outputs: list[DTensor] = global_outputs
+        self.global_inputs: list[AIE_DTensor] = global_inputs
+        self.global_outputs: list[AIE_DTensor] = global_outputs
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
         self.fifo_map: dict[str, aie_d.object_fifo] = {}
         # function name (with id) -> a map from DTensor to fifo name
-        self.compute_core_io: dict[str : dict[DTensor, str]] = {}
+        self.compute_core_io: dict[str : dict[AIE_DTensor, str]] = {}
         self.external_functions: str = ""
 
         self.aie_module = None
@@ -201,7 +201,7 @@ class CodeGenerator:
         self,
         func_core: aie_d.Core,
         original_func: allo_func_d.FuncOp,
-        func_args: list[tuple[DTensor, bool]],
+        func_args: list[tuple[AIE_DTensor, bool]],
     ):
         original_module = aie_ir.Module.parse(
             self.preporocess_dumped_core_func(original_func)
@@ -233,7 +233,7 @@ class CodeGenerator:
                 # insert operations to get 'function parameter', acquire and subview
                 io_map = self.compute_core_io[parsed_function.name.value]
                 for i, argument in enumerate(parsed_function.arguments):
-                    arg_info: tuple[DTensor, bool] = func_args[i]
+                    arg_info: tuple[AIE_DTensor, bool] = func_args[i]
                     acquired = self.fifo_map[io_map[arg_info[0]]].acquire(
                         1 if arg_info[1] else 0, 1
                     )
@@ -261,7 +261,7 @@ class CodeGenerator:
 
                 # release
                 for i, _ in enumerate(parsed_function.arguments):
-                    arg_info: tuple[DTensor, bool] = func_args[i]
+                    arg_info: tuple[AIE_DTensor, bool] = func_args[i]
                     self.fifo_map[io_map[arg_info[0]]].release(
                         1 if arg_info[1] else 0, 1
                     )
@@ -277,7 +277,7 @@ class CodeGenerator:
         outputs,
         use_external_kernels: dict[str, bool],
         # stream_info: dict,
-        core_func_args: dict[str, tuple[DTensor, bool]],
+        core_func_args: dict[str, tuple[AIE_DTensor, bool]],
     ) -> aie_ir.Module:
 
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
