@@ -368,5 +368,32 @@ def test_maxpool2d():
     print("Passed!")
     print(s.build(target="vhls"))
 
+def test_avgpool2d():
+    from allo.library.nn import avgpool2d
+
+    N, C, H, W = 1, 3, 16, 16
+    K, S, P = 2, 2, 1
+
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+
+    Oh = (H + 2 * P - K) // S + 1
+    Ow = (W + 2 * P - K) // S + 1
+
+    s = allo.customize(avgpool2d, instantiate=[float32, N, C, H, W, K, Oh, Ow, S, P])
+    mod = s.build()
+    allo_out = mod(inp)
+
+    inp_padded = np.pad(inp, ((0,), (0,), (P,), (P,)), mode="constant")
+    np_out = np.zeros((N, C, Oh, Ow), dtype=np.float32)
+    for n, c, h, w in np.ndindex(N, C, Oh, Ow):
+        h_start = h * S
+        w_start = w * S
+        window = inp_padded[n, c, h_start : h_start + K, w_start : w_start + K]
+        np_out[n, c, h, w] = np.mean(window)
+
+    np.testing.assert_allclose(allo_out, np_out)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
 if __name__ == "__main__":
     pytest.main([__file__])
