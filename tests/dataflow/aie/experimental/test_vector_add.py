@@ -134,5 +134,7 @@ if __name__ == "__main__":
     _test_vector_vector_add()
     _test_vector_scalar_add_p0()
     _test_vector_vector_add_p0()
-    # failed: unable to legalize instruction: %176:_(<2 x s16>) = G_FADD %172:_, %175:_
-    # _test_vector_vector_bf16_add()
+
+    # failed when not using exteranl:
+    #   unable to legalize instruction: %176:_(<2 x s16>) = G_FADD %172:_, %175:_
+    _test_vector_vector_bf16_add()

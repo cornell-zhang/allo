@@ -33,6 +33,22 @@ aie_ctype_map = {
     "ui64": "unsigned long",
 }
 
+aie_external_kernel_ctype_map = {
+    "bf16": "bfloat16",
+    "f32": "float",
+    "f64": "double",
+    "i8": "int8_t",
+    "i16": "short",
+    "i32": "int",
+    "i64": "long",
+    "i128": "__int128_t",  # unverified
+    "ui1": "bool",
+    "ui8": "uint8_t",
+    "ui16": "unsigned short",
+    "ui32": "unsigned int",
+    "ui64": "unsigned long",
+}
+
 
 def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool], dict]:
     """
@@ -65,7 +81,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
                                 op_name = op.operation.name.split(".")[1]
                                 include_src.add(f'#include "{op_name}.cc"\n')
                                 dtype = str(op.inputs[0].type.element_type)
-                                ctype = aie_ctype_map[dtype]
+                                ctype = aie_external_kernel_ctype_map[dtype]
                                 kernel_name = f"{op_name}_{dtype}_vector"
                                 use_external_kernels[func_name] = True
                                 kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
