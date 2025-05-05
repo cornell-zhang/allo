@@ -43,7 +43,7 @@ def test_builtin_linear():
     print("Passed!")
 
 
-def test_cascased_linear():
+def test_cascaded_linear():
     BS, M0, M1, M2 = 16, 32, 16, 10
     X = np.random.randn(BS, M0)
     W0 = np.random.randn(M1, M0)
