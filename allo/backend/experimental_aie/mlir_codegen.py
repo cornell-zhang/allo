@@ -1,12 +1,14 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 
 # =======================
+
 import aie.dialects.aie as aie_d
 import aie.dialects.aiex as aiex_d
 import aie.dialects.arith as aie_arith_d
@@ -17,12 +19,106 @@ import aie.ir as aie_ir
 
 # =======================
 
+import allo._mlir._mlir_libs._mlir as allo_ir
+import allo._mlir.dialects._memref_ops_gen as allo_memref_d
+
+from ..._mlir.ir import (
+    MemRefType,
+    InsertionPoint,
+    Context,
+    Type,
+    IntegerType,
+    F16Type,
+    F32Type,
+    BF16Type,
+)
+
 from ..utils import format_str
 from ..._mlir.dialects import func as allo_func_d
 from .memory import AIE_DTensor
 
 from .utils import get_element_type
 from ..aie import map_kernels_to_device_mesh
+
+
+class Stream:
+    def __init__(self, name: str):
+        self.name = name
+        self.type_str = None
+        self.depth = -1
+        self.shape: list[int] = None
+        self.dtype: str = None
+        self.allo_elememt_type: Type = None  # allo context
+        self.is_tensor = False
+
+        self.src: str = None
+        self.dst: str = None
+
+    def set_element_type(self, type_str: str, context: Context):
+        if self.depth >= 0:
+            assert type_str == self.type_str
+            return
+        match = re.match(r"!allo\.stream<([^,]+),\s*(\d+)>", type_str)
+        shape: list[int] = None
+        dtype: str = None
+        if match:
+            with context, allo_ir.ir.Location.unknown():
+                element_type_str = match.group(1)
+                self.depth = int(match.group(2))
+                memref_match = re.match(
+                    r"memref<([0-9x\?]*)x?([a-z0-9]+)>", element_type_str
+                )
+                if memref_match:
+                    shape_part = memref_match.group(1)
+                    dtype = memref_match.group(2)
+                    if shape_part == "":
+                        shape = []
+                    else:
+                        shape = [
+                            -1 if dim == "?" else int(dim)
+                            for dim in shape_part.split("x")
+                            if dim
+                        ]
+                else:
+                    type_match = re.match(r"([a-z]+[0-9]*)", element_type_str)
+                    if type_match:
+                        shape, dtype = [], element_type_str
+                    else:
+                        raise ValueError(f"Invalid stream type {type_str}.")
+
+                def get_element_allo_type(dtype_str: str) -> Type:
+                    if dtype_str == "i32":
+                        return IntegerType.get_signless(32)
+                    if dtype_str == "i16":
+                        return IntegerType.get_signless(16)
+                    if dtype_str == "i8":
+                        return IntegerType.get_signless(8)
+                    if dtype_str == "f32":
+                        return F32Type.get()
+                    if dtype_str == "f16":
+                        return F16Type.get()
+                    if dtype_str == "bf16":
+                        return BF16Type.get()
+                    raise ValueError(f"Unsupported dtype: {dtype_str}")
+
+                self.allo_elememt_type = MemRefType.get(
+                    shape,
+                    get_element_allo_type(dtype),
+                )
+                self.shape = shape
+                self.dtype = dtype
+                self.is_tensor = len(shape) > 0
+        else:
+            raise ValueError(f"Invalid stream type {type_str}.")
+
+    def __str__(self):
+        return f"Stream (name={self.name}, depth={self.depth}, allo dtype={self.allo_elememt_type}, is tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
+
+
+@dataclass
+class Argument:
+    dtensor: AIE_DTensor
+    stream: Stream
 
 
 @dataclass(frozen=True)
@@ -174,11 +270,13 @@ class CodeGenerator:
         device_type: str,
         global_inputs: list[AIE_DTensor],
         global_outputs: list[AIE_DTensor],
+        top_function: allo_func_d.FuncOp,
     ):
         self.device_type = device_type
 
         self.global_inputs: list[AIE_DTensor] = global_inputs
         self.global_outputs: list[AIE_DTensor] = global_outputs
+        self.top_function = top_function
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
         self.fifo_map: dict[str, aie_d.object_fifo] = {}
@@ -191,21 +289,98 @@ class CodeGenerator:
             None  # mark the inserting point for buffers
         )
 
-    def preporocess_dumped_core_func(self, original_func: allo_func_d.FuncOp) -> str:
+    def collect_stream_info(self, streams: dict[str, Stream], context):
+        for func_block in self.top_function.body:
+            for op in func_block.operations:
+                if op.name == "allo.stream_construct":
+                    streams[op.attributes["name"].value].set_element_type(
+                        str(op.res.type), context
+                    )
+
+    def preporocess_dumped_core_func(
+        self,
+        original_func: allo_func_d.FuncOp,
+        func_args: dict[int, tuple[Argument, bool]],
+    ) -> str:
+
+        # replace pipe with memref operations
+        with original_func.context, allo_ir.ir.Location.unknown():
+            func_inputs = original_func.type.inputs
+            for idx, arg_info in func_args.items():
+                if arg_info[0].stream is not None:
+                    func_inputs[idx] = arg_info[0].stream.allo_elememt_type
+            func_type = allo_func_d.FunctionType.get(
+                func_inputs,
+                original_func.type.results,
+            )
+            new_function = allo_func_d.FuncOp(
+                original_func.name.value,
+                func_type,
+                ip=InsertionPoint(original_func),
+            )
+            entry_block = new_function.add_entry_block()
+            for old, new in zip(original_func.arguments, new_function.arguments):
+                old.replace_all_uses_with(new)
+            with InsertionPoint(entry_block):
+                for func_block in original_func.body:
+                    for op in func_block.operations:
+                        new_op = op.clone()
+                        for old, new in zip(op.results, new_op.results):
+                            old.replace_all_uses_with(new)
+            original_func.erase()
+            for idx, arg_info in func_args.items():
+                if arg_info[0].stream is not None:
+                    argument = new_function.arguments[idx]
+                    for use_ in argument.uses:
+                        op = use_.owner
+                        if op.name == "allo.stream_put":
+                            operands = op.operands
+                            # store/copy
+                            if arg_info[0].stream.is_tensor:
+                                new_op = allo_memref_d.CopyOp(
+                                    operands[1], operands[0], ip=InsertionPoint(op)
+                                )
+                            else:
+                                new_op = allo_memref_d.StoreOp(
+                                    operands[1], operands[0], [], ip=InsertionPoint(op)
+                                )
+                        elif op.name == "allo.stream_get":
+                            # load/alloc
+                            if arg_info[0].stream.is_tensor:
+                                # replace use with alloc
+                                new_op = allo_memref_d.AllocOp(
+                                    arg_info[0].stream.allo_elememt_type,
+                                    [],
+                                    [],
+                                    ip=InsertionPoint(op),
+                                )
+                                # use copy to track
+                                allo_memref_d.CopyOp(
+                                    op.operands[0], new_op.memref, ip=InsertionPoint(op)
+                                )
+                            else:
+                                new_op = allo_memref_d.LoadOp(
+                                    argument, [], ip=InsertionPoint(op)
+                                )
+                        else:
+                            continue
+                        # replace use
+                        for old, new in zip(op.results, new_op.results):
+                            old.replace_all_uses_with(new)
+                        op.erase()
+
         # declare external kernel function before use
-        func_str = self.external_functions + "\n" + str(original_func)
-        # TODO: resolve `allo` (unregistered dialect)
+        func_str = self.external_functions + "\n" + str(new_function)
         return func_str
 
     def build_core_function(
         self,
         func_core: aie_d.Core,
         original_func: allo_func_d.FuncOp,
-        func_args: list[tuple[AIE_DTensor, bool]],
+        func_args: dict[int, tuple[Argument, bool]],
     ):
-        original_module = aie_ir.Module.parse(
-            self.preporocess_dumped_core_func(original_func)
-        )
+        func_string = self.preporocess_dumped_core_func(original_func, func_args)
+        original_module = aie_ir.Module.parse(func_string)
         parsed_function: aie_func_d.FuncOp = None
         for func in original_module.body.operations:
             if isinstance(func, aie_func_d.FuncOp):
@@ -218,7 +393,6 @@ class CodeGenerator:
                     else:
                         raise ValueError("Too many core functions. Fail to resolve.")
         assert not parsed_function is None
-
         func_body = func_core.regions[0]
         entry_block = aie_ir.Block.create_at_start(func_body)
         with aie_ir.InsertionPoint(entry_block):
@@ -231,13 +405,53 @@ class CodeGenerator:
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
             with aie_ir.InsertionPoint(loop.body):
                 # insert operations to get 'function parameter', acquire and subview
-                io_map = self.compute_core_io[parsed_function.name.value]
+                io_map = (
+                    self.compute_core_io[parsed_function.name.value]
+                    if parsed_function.name.value in self.compute_core_io
+                    else {}
+                )
                 for i, argument in enumerate(parsed_function.arguments):
-                    arg_info: tuple[AIE_DTensor, bool] = func_args[i]
-                    acquired = self.fifo_map[io_map[arg_info[0]]].acquire(
-                        1 if arg_info[1] else 0, 1
-                    )
-                    argument.replace_all_uses_with(acquired)
+                    if not i in func_args:
+                        continue
+                    arg_info: tuple[Argument, bool] = func_args[i]
+                    if arg_info[0].dtensor is not None:
+                        acquired = self.fifo_map[io_map[arg_info[0].dtensor]].acquire(
+                            1 if arg_info[1] else 0, 1
+                        )
+                        argument.replace_all_uses_with(acquired)
+                    else:
+                        stream: Stream = arg_info[0].stream
+                        fifo = self.fifo_map[stream.name]
+                        for use_ in argument.uses:
+                            op = use_.owner
+                            with aie_ir.InsertionPoint(op.operation):
+                                if op.name == "memref.store" or (
+                                    op.name == "memref.copy"
+                                    and argument == op.operands[1]
+                                ):  # allo.stream_put
+                                    acquired = fifo.acquire(0, 1)
+                                    op.operands[1] = acquired
+                                    new_op = op.clone()  # no use, no need to replace
+                                    fifo.release(0, 1)
+                                    op.erase()
+                                elif (
+                                    op.name == "memref.load"
+                                ):  # allo.stream_get, non-tensor
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    for old, new in zip(op.results, new_op.results):
+                                        old.replace_all_uses_with(new)
+                                    fifo.release(1, 1)
+                                    op.erase()
+                                elif (
+                                    op.name == "memref.copy"
+                                ):  # allo.stream_get, tensor
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    fifo.release(1, 1)
+                                    op.erase()
 
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
@@ -272,10 +486,13 @@ class CodeGenerator:
 
                 # release
                 for i, _ in enumerate(parsed_function.arguments):
-                    arg_info: tuple[AIE_DTensor, bool] = func_args[i]
-                    self.fifo_map[io_map[arg_info[0]]].release(
-                        1 if arg_info[1] else 0, 1
-                    )
+                    if not i in func_args:
+                        continue
+                    arg_info: tuple[Argument, bool] = func_args[i]
+                    if not arg_info[0].dtensor is None:
+                        self.fifo_map[io_map[arg_info[0].dtensor]].release(
+                            1 if arg_info[1] else 0, 1
+                        )
 
                 aie_scf_d.YieldOp([])
             aie_d.EndOp()
@@ -287,8 +504,8 @@ class CodeGenerator:
         inputs,
         outputs,
         use_external_kernels: dict[str, bool],
-        # stream_info: dict,
-        core_func_args: dict[str, tuple[AIE_DTensor, bool]],
+        core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
+        streams: dict[str, Stream],
     ) -> aie_ir.Module:
 
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
@@ -406,16 +623,21 @@ class CodeGenerator:
                                     compute_tiles = []
                                     name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
                                     for tile in placement[tensor_tile]:
-                                        idx_str = "_".join([str(x) for x in tile])
-                                        # seems confusing. "sym_name" is parsed in this way
-                                        compute_tiles.append(
-                                            self.tile_map[
-                                                f"compute_{func_name}_{idx_str}"
-                                            ]
-                                        )
-                                        self.compute_core_io.setdefault(
-                                            f"{func_name}_{idx_str}", {}
-                                        )[dtensor] = name
+                                        # some distributed tile do not have global output
+                                        if (
+                                            dtensor in outputs[func_name][tile]
+                                            or dtensor in inputs[func_name][tile]
+                                        ):
+                                            idx_str = "_".join([str(x) for x in tile])
+                                            # seems confusing. "sym_name" is parsed in this way
+                                            compute_tiles.append(
+                                                self.tile_map[
+                                                    f"compute_{func_name}_{idx_str}"
+                                                ]
+                                            )
+                                            self.compute_core_io.setdefault(
+                                                f"{func_name}_{idx_str}", {}
+                                            )[dtensor] = name
                                     if io == "in":
                                         producer = mem_tile
                                     else:
@@ -444,7 +666,20 @@ class CodeGenerator:
                                     mem_stride[:-1] if io == "in" else [],
                                 )
                 # compute <-> compute
-                # TODO: allo stream
+                self.collect_stream_info(streams, self.top_function.context)
+                for stream_name, stream in streams.items():
+                    src_tile = self.tile_map[f"compute_{stream.src}"]
+                    dst_tile = [self.tile_map[f"compute_{stream.dst}"]]
+                    self.fifo_map[stream_name] = aie_d.object_fifo(
+                        stream_name,
+                        src_tile,
+                        dst_tile,
+                        depth=stream.depth,
+                        datatype=aie_ir.MemRefType.get(
+                            stream.shape,
+                            get_element_type(str(stream.dtype)),
+                        ),
+                    )
 
                 for func_name in core_func_groups:
                     for func in core_func_groups[func_name]:

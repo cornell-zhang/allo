@@ -57,7 +57,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
     Return:
         - use_external_kernels: func_name -> use external
         - injected_kernels: kernel name -> external code snippet
-        - include_src: source file inclusion in external code
+        - include_src: source file inclusion in exteranl code
     """
     use_external_kernels = {}
     injected_kernels: dict = {}

@@ -12,9 +12,10 @@ from ..._mlir.dialects import func as allo_func_d
 
 from ...passes import analyze_read_write_patterns
 from .memory import AIE_DTensor
+from ...memory import DTensor
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
-from .mlir_codegen import CodeGenerator
+from .mlir_codegen import CodeGenerator, Argument, Stream
 from .utils import (
     inject_external_kernels,
     classify_aie_functions,
@@ -35,26 +36,45 @@ class AIE_MLIRModule:
     ):
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
+        self.streams: dict[str, Stream] = {}
 
         # fixme: this is a dummy fix
         tmp_map: dict = {}
-        self.func_args: dict[str, list[AIE_DTensor]] = {}
+        self.func_args: dict[str, list[Argument]] = {}
         for func_name, args in func_args.items():
             self.func_args[func_name] = []
             for arg in args:
                 if arg in tmp_map:
                     self.func_args[func_name].append(tmp_map[arg])
+                elif isinstance(arg, DTensor):
+                    argument = Argument(AIE_DTensor(arg), None)
+                    self.func_args[func_name].append(argument)
+                    tmp_map[arg] = argument
+                elif isinstance(arg, str):
+                    stream = Stream(arg)
+                    self.streams[arg] = stream
+                    argument = Argument(None, stream)
+                    self.func_args[func_name].append(argument)
+                    tmp_map[arg] = argument
                 else:
-                    new_dtensor = AIE_DTensor(arg)
-                    self.func_args[func_name].append(new_dtensor)
-                    tmp_map[arg] = new_dtensor
+                    raise ValueError(f"Unresolved function argument {arg}")
 
-        self.stream_info: dict = stream_info
+        self.stream_info: dict[str, dict[str, bool]] = {}
+        for func_name, info_list in stream_info.items():
+            self.stream_info[func_name] = {}
+            for name, io in info_list:
+                if io == "in":
+                    self.streams[name].dst = func_name
+                    self.stream_info[func_name][name] = True
+                else:
+                    self.streams[name].src = func_name
+                    self.stream_info[func_name][name] = False
+
         self.project_dir: str = project_dir
 
         self.global_inputs: set = set()
         self.global_outputs: set = set()
-        self.core_func_args: dict[str, tuple[AIE_DTensor, bool]] = (
+        self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = (
             {}
         )  # core func name -> a list of (dtensors, is_in)
 
@@ -75,7 +95,7 @@ class AIE_MLIRModule:
             outputs[func_name]["_global"] = []
             for func in funcs:
                 func_name_w_id = func.attributes["sym_name"].value
-                self.core_func_args[func_name_w_id] = []
+                self.core_func_args[func_name_w_id] = {}
                 # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
                 func_id = tuple(
                     int(x) for x in func_name_w_id.split(func_name + "_")[-1].split("_")
@@ -88,18 +108,33 @@ class AIE_MLIRModule:
                 ):
                     io_lst[func_name][func_id] = []
                     for idx in io_idx:
-                        dtensor = self.func_args[func_name_w_id][idx]
-                        dtensor.type_as_param = func.arguments[idx].type.shape
-                        self.core_func_args[func_name_w_id].append(
-                            (dtensor, io == "in")
+                        argument: Argument = self.func_args[func_name_w_id][idx]
+                        self.core_func_args[func_name_w_id][idx] = (
+                            argument,
+                            io == "in",
                         )
-                        if dtensor not in io_lst[func_name]["_global"]:
-                            io_lst[func_name]["_global"].append(dtensor)
-                            if io == "in":
-                                global_inputs.add(dtensor)
-                            else:
-                                global_outputs.add(dtensor)
-                        io_lst[func_name][func_id].append(dtensor)
+                        if not argument.dtensor is None:
+                            argument.dtensor.type_as_param = func.arguments[
+                                idx
+                            ].type.shape
+                            if argument.dtensor not in io_lst[func_name]["_global"]:
+                                io_lst[func_name]["_global"].append(argument.dtensor)
+                                if io == "in":
+                                    global_inputs.add(argument.dtensor)
+                                else:
+                                    global_outputs.add(argument.dtensor)
+                            io_lst[func_name][func_id].append(argument.dtensor)
+                for i, _ in enumerate(func.arguments):
+                    func_arg = self.func_args[func_name_w_id][i]
+                    if (
+                        i in self.core_func_args[func_name_w_id]
+                        or func_arg.stream is None  # unused
+                    ):
+                        continue
+                    self.core_func_args[func_name_w_id][i] = (
+                        func_arg,
+                        self.stream_info[func_name_w_id][func_arg.stream.name],
+                    )
         self.global_inputs = list(global_inputs)
         self.global_outputs = list(global_outputs)
         return inputs, outputs
@@ -122,12 +157,14 @@ class AIE_MLIRModule:
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        _, core_func_groups, external_funcs = classify_aie_functions(self.allo_module)
+        top_func, core_func_groups, external_funcs = classify_aie_functions(
+            self.allo_module
+        )
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
         inputs, outputs = self.collect_io(core_func_groups)
 
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs
+            device_type, self.global_inputs, self.global_outputs, top_func
         )
         self.aie_module = code_generator.aie_codegen(
             core_func_groups,
@@ -135,8 +172,8 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
-            # self.stream_info,
             self.core_func_args,
+            self.streams,
         )
         with open(
             os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"

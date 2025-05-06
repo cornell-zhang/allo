@@ -63,10 +63,10 @@ class AIE_DTensor:
         elif len(self.shape) == 2:
             tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
             device_a, device_b = None, None  # 2D device to be mapped
+            partition = self.layout.placement
             if len(self.mapping) == 1:
                 device_a, device_b = 1, self.mapping[0]
             elif len(self.mapping) == 2:
-                partition = self.layout.placement
                 if partition[0][0] == "S":
                     partition[1] = (partition[1][0], 1 - partition[0][1])
                 elif partition[1][0] == "S":  # partition[0][0] == "R"
