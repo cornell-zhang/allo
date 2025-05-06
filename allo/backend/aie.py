@@ -289,47 +289,79 @@ def inject_aie_kernels(mod):
             for block in func.regions[0].blocks:
                 for op in block.operations:
                     if (
-                        op.operation.name in {"linalg.add", "linalg.mul"}
-                        and len(MemRefType(op.inputs[0].type).shape) == 1
-                    ) or op.operation.name == "linalg.matmul":
-                        op_name = op.operation.name.split(".")[1]
-                        # Inject AIE kernel
-                        func_type = func_d.FunctionType.get(
-                            [op.inputs[0].type, op.inputs[1].type, op.outputs[0].type],
-                            [],
+                        (
+                            op.operation.name in {"linalg.add", "linalg.mul"}
+                            and len(MemRefType(op.inputs[0].type).shape) == 1
                         )
-                        dtype = str(op.inputs[0].type.element_type)
-                        shape = MemRefType(op.inputs[0].type).shape
-                        if op.operation.name in {"linalg.add", "linalg.mul"}:
-                            kernel_name = f"{op_name}_{dtype}_vector"
+                        or op.operation.name == "linalg.matmul"
+                        or (
+                            "op_name" in op.attributes
+                            and "init_zero" in op.attributes["op_name"].value
+                        )
+                    ):
+                        if op.operation.name in {
+                            "linalg.add",
+                            "linalg.mul",
+                            "linalg.matmul",
+                        }:
+                            op_name = op.operation.name.split(".")[1]
+                            # Inject AIE kernel
+                            func_type = func_d.FunctionType.get(
+                                [
+                                    op.inputs[0].type,
+                                    op.inputs[1].type,
+                                    op.outputs[0].type,
+                                ],
+                                [],
+                            )
+                            dtype = str(op.inputs[0].type.element_type)
+                            shape = MemRefType(op.inputs[0].type).shape
+                            if op.operation.name in {"linalg.add", "linalg.mul"}:
+                                kernel_name = f"{op_name}_{dtype}_vector"
+                                external_kernels[
+                                    func.attributes["sym_name"].value
+                                ].append((op_name, dtype, shape))
+                            else:  # linalg.matmul
+                                M, K = MemRefType(op.inputs[0].type).shape
+                                _, N = MemRefType(op.inputs[1].type).shape
+                                out_dtype = str(op.outputs[0].type.element_type)
+                                if (dtype, out_dtype) not in [
+                                    ("i8", "i8"),
+                                    ("i16", "i16"),
+                                    ("i16", "i32"),
+                                    ("bf16", "bf16"),
+                                    ("bf16", "f32"),
+                                ]:
+                                    # f"Unsupported in_dtype {dtype} and out_dtype {out_dtype} pair"
+                                    continue
+                                kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                                external_kernels[
+                                    func.attributes["sym_name"].value
+                                ].append((op_name, dtype, out_dtype, M, N, K))
+                            func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(kernel_name),
+                                [op.inputs[0], op.inputs[1], op.outputs[0]],
+                                ip=InsertionPoint(op),
+                            )
+                        else:  # linalg.fill init_zero
+                            op_name = "zero"
+                            func_type = func_d.FunctionType.get(
+                                [op.outputs[0].type], []
+                            )
+                            dtype = str(op.outputs[0].type.element_type)
+                            shape = MemRefType(op.outputs[0].type).shape
+                            kernel_name = f"zero_{dtype}_vector"
                             external_kernels[func.attributes["sym_name"].value].append(
                                 (op_name, dtype, shape)
                             )
-                        else:  # linalg.matmul
-                            M, K = MemRefType(op.inputs[0].type).shape
-                            _, N = MemRefType(op.inputs[1].type).shape
-                            out_dtype = str(op.outputs[0].type.element_type)
-                            if (dtype, out_dtype) not in [
-                                ("i8", "i8"),
-                                ("i16", "i16"),
-                                ("i16", "i32"),
-                                ("bf16", "bf16"),
-                                ("bf16", "f32"),
-                            ]:
-                                # f"Unsupported in_dtype {dtype} and out_dtype {out_dtype} pair"
-                                continue
-                            kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                            external_kernels[func.attributes["sym_name"].value].append(
-                                (op_name, dtype, out_dtype, M, N, K)
+                            func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(kernel_name),
+                                [op.outputs[0]],
+                                ip=InsertionPoint(op),
                             )
-                        func_d.CallOp(
-                            [],
-                            FlatSymbolRefAttr.get(kernel_name),
-                            [op.inputs[0], op.inputs[1], op.outputs[0]],
-                            ip=InsertionPoint(op),
-                        )
                         op.erase()
-
                         if kernel_name in injected_kernels:
                             continue
                         injected_kernels.add(kernel_name)
@@ -362,6 +394,13 @@ def codegen_external_kernels(external_kernels):
                 ctype = "bfloat16"
             if kernel == "matmul":
                 pass
+            elif kernel == "zero":
+                dtype, shape = items[1], items[2]
+                kernel_code += f"void zero_{dtype}_vector"
+                kernel_code += f"({ctype} *C_out)"
+                kernel_code += " {\n"
+                kernel_code += f"  zero_vectorized<{ctype}, {shape[0]}, {shape[1] if len(shape) == 2 else 1}>(C_out);\n"
+                kernel_code += "}\n\n"
             else:
                 kernel, dtype, shape = items
                 kernel_code += f"void {kernel}_{dtype}_vector"
@@ -383,6 +422,8 @@ def codegen_external_kernels(external_kernels):
                 code += f"#define DIM_K {K}\n"
                 code += f"#define {dtype}_{out_dtype}_ONLY\n"
                 code += '#include "mm.cc"\n'
+            case "zero":
+                code += '#include "zero.cc"\n'
     code += '\nextern "C" {\n\n'
     code += kernel_code
     code += '} // extern "C"\n'
@@ -1320,6 +1361,18 @@ def record_local_buffer(mod):
     return kernel_buf_dicts
 
 
+def get_func_groups(module):
+    _, all_funcs = get_public_funcs(module)
+    func_groups = {}
+    for func in all_funcs:
+        func_name_w_id = func.attributes["sym_name"].value
+        func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+        if func_name not in func_groups:
+            func_groups[func_name] = []
+        func_groups[func_name].append(func)
+    return func_groups
+
+
 class AIEModule:
     def __init__(
         self,
@@ -1340,22 +1393,12 @@ class AIEModule:
         assert "MLIR_AIE_INSTALL_DIR" in os.environ, "Please set MLIR_AIE_INSTALL_DIR"
         assert "PEANO_INSTALL_DIR" in os.environ, "Please set PEANO_INSTALL_DIR"
         os.makedirs(os.path.join(self.project, "build"), exist_ok=True)
-        external_kernels = inject_aie_kernels(self.module)
         with open(
             os.path.join(self.project, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.module))
-        lower_tensor_to_memref(self.module)
-        kernel_buf_dicts = record_local_buffer(self.module)
-        _, all_funcs = get_public_funcs(self.module)
         # Create a dictionary to store the kernel functions
-        func_groups = {}
-        for func in all_funcs:
-            func_name_w_id = func.attributes["sym_name"].value
-            func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-            if func_name not in func_groups:
-                func_groups[func_name] = []
-            func_groups[func_name].append(func)
+        func_groups = get_func_groups(self.module)
         inputs = {}
         outputs = {}
         for func_name, funcs in func_groups.items():
@@ -1387,6 +1430,11 @@ class AIEModule:
                         io_lst["_global"].append(tensor)
         self.inputs = inputs
         self.outputs = outputs
+        external_kernels = inject_aie_kernels(self.module)
+        lower_tensor_to_memref(self.module)
+        kernel_buf_dicts = record_local_buffer(self.module)
+        # update the function groups
+        func_groups = get_func_groups(self.module)
         code = codegen_aie_mlir(
             self.module,
             func_groups,

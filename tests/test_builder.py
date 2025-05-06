@@ -220,6 +220,23 @@ def test_logic_and_or():
     assert mod(np_A, 2) == kernel(np_A, 2)
 
 
+def test_multiple_conditions():
+    def multiple_conditions(A: int32[3], b: int32, c: int32) -> int32:
+        r: int32 = 0
+        if A[0] > 0 and A[1] > 0 and A[2] > 0 and b > 0 and c > 0:
+            r = 1
+        return r
+
+    s = allo.customize(multiple_conditions)
+    print(s.module)
+    np_A = np.array([1, 1, -1], dtype=np.int32)
+    mod = s.build()
+    assert mod(np_A, 1, 1) == multiple_conditions(np_A, 1, 1)
+    assert mod(np_A, 1, -1) == multiple_conditions(np_A, 1, -1)
+    assert mod(np_A, -1, 1) == multiple_conditions(np_A, -1, 1)
+    assert mod(np_A, -1, -1) == multiple_conditions(np_A, -1, -1)
+
+
 def test_assign_logic():
     def kernel(A: int32) -> int32:
         B: int32 = 0

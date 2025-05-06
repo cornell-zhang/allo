@@ -11,7 +11,7 @@ from allo.autoscheduler.dfg import DFG
 from allo.autoscheduler.passes import dataflow_optimization_pass
 
 
-def test_simple():
+def test_simple_graph_parallel():
     def simple() -> int32[10, 10]:
         A: int32[10, 10]
         B: int32[10, 10]
@@ -88,6 +88,97 @@ def test_3mm():
             )
         else:
             raise e
+
+
+def test_simple_node_parallel():
+    def simple() -> float32[64, 64]:
+        A: float32[64, 64]
+        B: float32[64, 64]
+        for i in range(64):
+            for j in range(64):
+                A[i, j] = i + j
+
+        for j in range(64):
+            for i in range(64):
+                B[i, j] = A[i, j] + 1
+
+        return B
+
+    s = allo.customize(simple)
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    dfg = DFG.from_module(s.module)
+
+    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    tiling_factors = dfg.create_node_parallelism_performance_model(
+        loop_permutation=permutations,
+        debug_output="simple-node",
+        dsp_limit=16,
+        verbose=True,
+    )
+    print(tiling_factors)
+
+    assert len(tiling_factors) == 4
+    assert all(tiling_factor[2] == 4 for tiling_factor in tiling_factors)
+
+
+def test_simple_node_parallel_full_unroll():
+    def simple() -> float32[64, 64]:
+        A: float32[64, 64]
+        B: float32[64, 64]
+        for i in range(64):
+            for j in range(64):
+                A[i, j] = i + j
+
+        for j in range(64):
+            for i in range(64):
+                B[i, j] = A[i, j] + 1
+
+        return B
+
+    s = allo.customize(simple)
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    dfg = DFG.from_module(s.module)
+
+    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    tiling_factors = dfg.create_node_parallelism_performance_model(
+        loop_permutation=permutations,
+        debug_output="simple-node",
+        dsp_limit=2**12,
+        verbose=True,
+    )
+    print(tiling_factors)
+
+    assert len(tiling_factors) == 4
+    assert all(tiling_factor[2] == 64 for tiling_factor in tiling_factors)
+
+
+def test_simple_node_parallel_infeasible():
+    def simple() -> float32[64, 64]:
+        A: float32[64, 64]
+        B: float32[64, 64]
+        for i in range(64):
+            for j in range(64):
+                A[i, j] = i + j
+
+        for j in range(64):
+            for i in range(64):
+                B[i, j] = A[i, j] + 1
+
+        return B
+
+    s = allo.customize(simple)
+    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    dfg = DFG.from_module(s.module)
+
+    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+
+    with pytest.raises(RuntimeError, match="Optimization failed with status 3"):
+        dfg.create_node_parallelism_performance_model(
+            loop_permutation=permutations,
+            debug_output="simple-node",
+            dsp_limit=2,
+            verbose=True,
+        )
 
 
 if __name__ == "__main__":
