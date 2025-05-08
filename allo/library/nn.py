@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
+# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation, chained-comparison
 
 from .. import dsl
 from .systolic import systolic
@@ -199,3 +199,101 @@ def scaled_dot_product_attention[
             Z[i, h * (D // H) + j] = C_h[i, j]
 
     return Z
+
+
+def conv2d[
+    Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1
+](
+    inp: "Ty[B, Cin, H, W]", kernel: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
+) -> "Ty[B, Cout, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    Z: Ty[B, Cout, Oh, Ow]
+
+    # Current implementation is does not support dilation other than 1
+    for batch, cout, oh, ow in dsl.grid(B, Cout, Oh, Ow):
+        temp: Ty = bias[cout]
+
+        for cin, kh, kw in dsl.grid(Cin, Kh, Kw):
+            h_pos: Ty = oh * Sh + kh - Pd0
+            w_pos: Ty = ow * Sw + kw - Pd1
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                temp += inp[batch, cin, h_pos, w_pos] * kernel[cout, cin, kh, kw]
+
+        Z[batch, cout, oh, ow] = temp
+    return Z
+
+
+def schedule_conv2d(s):
+    s.pipeline("conv2d:cout")
+    s.pipeline("conv2d:ow")
+    return s
+
+
+def maxpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        max_val: Ty = -1000000000000.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                new_max: Ty = max(max_val, inp[batch, c, h_pos, w_pos])
+                max_val = new_max
+        Z[batch, c, oh, ow] = max_val
+    return Z
+
+
+def schedule_maxpool2d(s):
+    s.pipeline("maxpool2d:c")
+    s.pipeline("maxpool2d:ow")
+    return s
+
+
+def avgpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        temp: Ty = 0.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                temp += inp[batch, c, h_pos, w_pos]
+        Z[batch, c, oh, ow] = temp / (K * K)
+    return Z
+
+
+def schedule_avgpool2d(s):
+    s.pipeline("avgpool2d:c")
+    s.pipeline("avgpool2d:ow")
+    return s
+
+
+def batchnorm2d[
+    Ty, B, C, H, W
+](
+    X: "Ty[B, C, H, W]",
+    gamma: "Ty[C]",
+    beta: "Ty[C]",
+    eps: "Ty",
+    mean: "Ty[C]",
+    var: "Ty[C]",
+) -> "Ty[B, C, H, W]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
+    Z: Ty[B, C, H, W]
+    for b, c, h, w in dsl.grid(B, C, H, W):
+        Z[b, c, h, w] = (
+            gamma[c] * (X[b, c, h, w] - mean[c]) / dsl.sqrt(var[c] + eps) + beta[c]
+        )
+
+    return Z
+
+
+def schedule_batchnorm2d(s):
+    s.pipeline("batchnorm2d:w")
+    return s

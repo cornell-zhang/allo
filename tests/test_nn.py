@@ -31,11 +31,11 @@ def test_linear():
 
 def test_builtin_linear():
     M, N, K = 16, 32, 16
-    X = np.random.randn(M, K)
-    W = np.random.randn(N, K)
+    X = np.random.randn(M, K).astype(np.float32)
+    W = np.random.randn(N, K).astype(np.float32)
     b = np.random.randn(
         N,
-    )
+    ).astype(np.float32)
     s = allo.customize(nn.linear2d, instantiate=[float32, M, N, K])
     mod = s.build(target="llvm")
     Z = mod(X, W, b)
@@ -43,17 +43,17 @@ def test_builtin_linear():
     print("Passed!")
 
 
-def test_cascased_linear():
+def test_cascaded_linear():
     BS, M0, M1, M2 = 16, 32, 16, 10
-    X = np.random.randn(BS, M0)
-    W0 = np.random.randn(M1, M0)
-    W1 = np.random.randn(M2, M1)
+    X = np.random.randn(BS, M0).astype(np.float32)
+    W0 = np.random.randn(M1, M0).astype(np.float32)
+    W1 = np.random.randn(M2, M1).astype(np.float32)
     b0 = np.random.randn(
         M1,
-    )
+    ).astype(np.float32)
     b1 = np.random.randn(
         M2,
-    )
+    ).astype(np.float32)
 
     def cascaded_linear(
         X: float32[BS, M0],
@@ -299,6 +299,133 @@ def test_bert():
 
     np_out = bert_layer(X, Wq, Wk, Wv, Wp, W1, W2, gamma1, beta1, gamma2, beta2)
     np.testing.assert_allclose(allo_out, np_out, atol=1e-2, rtol=1e-2)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def np_conv2d(inp, filter, stride=1, padding=0):
+    N, C, H, W = inp.shape
+    F, _, HH, WW = filter.shape
+    H_out = (H + 2 * padding - HH) // stride + 1
+    W_out = (W + 2 * padding - WW) // stride + 1
+    out = np.zeros((N, F, H_out, W_out))
+    inp_padded = np.pad(inp, ((0,), (0,), (padding,), (padding,)), mode="constant")
+    for n, f, h, w in np.ndindex(N, F, H_out, W_out):
+        out[n, f, h, w] = np.sum(
+            inp_padded[
+                n,
+                :,
+                h * stride : h * stride + HH,
+                w * stride : w * stride + WW,
+            ]
+            * filter[f]
+        )
+    return out
+
+
+def test_conv2d():
+    from allo.library.nn import conv2d
+
+    N, C, H, W = 1, 3, 16, 16
+    K, F, S, P = 2, 2, 2, 1
+
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+    kernel = np.random.randn(F, C, K, K).astype(np.float32)
+    bias = np.random.randn(F).astype(np.float32)
+
+    Oh = (H + 2 * P - K) // S + 1
+    Ow = (W + 2 * P - K) // S + 1
+
+    s = allo.customize(
+        conv2d, instantiate=[float32, N, C, F, H, W, K, K, Oh, Ow, S, S, P, P]
+    )
+    mod = s.build()
+    allo_out = mod(inp, kernel, bias)
+    np_out = np_conv2d(inp, kernel, S, P) + bias.reshape(1, F, 1, 1)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_maxpool2d():
+    from allo.library.nn import maxpool2d
+
+    N, C, H, W = 1, 3, 16, 16
+    K, S, P = 2, 2, 1
+
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+
+    Oh = (H + 2 * P - K) // S + 1
+    Ow = (W + 2 * P - K) // S + 1
+
+    s = allo.customize(maxpool2d, instantiate=[float32, N, C, H, W, K, Oh, Ow, S, P])
+    mod = s.build()
+    allo_out = mod(inp)
+
+    inp_padded = np.pad(
+        inp, ((0,), (0,), (P,), (P,)), mode="constant", constant_values=-np.inf
+    )
+    np_out = np.zeros((N, C, Oh, Ow), dtype=np.float32)
+    for n, c, h, w in np.ndindex(N, C, Oh, Ow):
+        h_start = h * S
+        w_start = w * S
+        window = inp_padded[n, c, h_start : h_start + K, w_start : w_start + K]
+        np_out[n, c, h, w] = np.max(window)
+
+    np.testing.assert_allclose(allo_out, np_out)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_avgpool2d():
+    from allo.library.nn import avgpool2d
+
+    N, C, H, W = 1, 3, 16, 16
+    K, S, P = 2, 2, 1
+
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+
+    Oh = (H + 2 * P - K) // S + 1
+    Ow = (W + 2 * P - K) // S + 1
+
+    s = allo.customize(avgpool2d, instantiate=[float32, N, C, H, W, K, Oh, Ow, S, P])
+    mod = s.build()
+    allo_out = mod(inp)
+
+    inp_padded = np.pad(inp, ((0,), (0,), (P,), (P,)), mode="constant")
+    np_out = np.zeros((N, C, Oh, Ow), dtype=np.float32)
+    for n, c, h, w in np.ndindex(N, C, Oh, Ow):
+        h_start = h * S
+        w_start = w * S
+        window = inp_padded[n, c, h_start : h_start + K, w_start : w_start + K]
+        np_out[n, c, h, w] = np.mean(window)
+
+    np.testing.assert_allclose(allo_out, np_out)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_batchnorm2d():
+    from allo.library.nn import batchnorm2d
+
+    N, C, H, W = 1, 3, 16, 16
+    inp = np.random.randn(N, C, H, W).astype(np.float32)
+    gamma = np.random.randn(C).astype(np.float32)
+    beta = np.random.randn(C).astype(np.float32)
+
+    # Simulating running mean and variance, which are usually computed during training and different input means and var
+    running_mean = np.random.randn(C).astype(np.float32)
+    running_var = np.abs(np.random.randn(C)).astype(np.float32)
+
+    s = allo.customize(batchnorm2d, instantiate=[float32, N, C, H, W])
+    mod = s.build()
+    allo_out = mod(inp, gamma, beta, 1e-5, running_mean, running_var)
+
+    np_out = (inp - running_mean.reshape(1, C, 1, 1)) / np.sqrt(
+        running_var.reshape(1, C, 1, 1) + 1e-5
+    ) * gamma.reshape(1, C, 1, 1) + beta.reshape(1, C, 1, 1)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-04)
     print("Passed!")
     print(s.build(target="vhls"))
 
