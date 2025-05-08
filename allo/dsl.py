@@ -109,15 +109,26 @@ def conv2d(inp, filter, name=None):
     return np.einsum("fcij,nchwij->nfhw", filter, sub_matrices)
 
 
-def maxpool(inp, filter, name=None):
-    view_shape = (
-        tuple(inp.shape[:2])
-        + tuple(np.subtract(inp.shape[2:], filter.shape) + 1)
-        + filter.shape
+def maxpool(inp, kernel_size, stride=(1, 1)):
+    kh, kw = kernel_size
+    sh, sw = stride
+
+    n, c, h, w = inp.shape
+    oh = (h - kh) // sh + 1
+    ow = (w - kw) // sw + 1
+
+    shape = (n, c, oh, ow, kh, kw)
+    strides = (
+        inp.strides[0],
+        inp.strides[1],
+        inp.strides[2] * sh,
+        inp.strides[3] * sw,
+        inp.strides[2],
+        inp.strides[3],
     )
-    strides = inp.strides[:2] + inp.strides[2:] + inp.strides[2:]
-    sub_matrices = np.lib.stride_tricks.as_strided(inp, view_shape, strides)
-    return np.max(sub_matrices, axis=(4, 5))
+
+    windows = np.lib.stride_tricks.as_strided(inp, shape=shape, strides=strides)
+    return np.max(windows, axis=(4, 5))
 
 
 def sumpool(inp, filter, name=None):
