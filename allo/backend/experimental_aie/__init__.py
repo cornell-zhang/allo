@@ -84,6 +84,10 @@ class AIE_MLIRModule:
         self,
         func_groups: dict[str, list[allo_func_d.FuncOp]],
     ) -> tuple[dict, dict]:
+        """
+        Analyze input/output tensors of each function in the groups.
+        Returns dictionaries of input/output DTensors for each function group and core.
+        """
         inputs = {}
         outputs = {}
         global_inputs: set = set()
@@ -141,6 +145,10 @@ class AIE_MLIRModule:
 
     def build(self, device_type="npu1_4col"):
         os.makedirs(os.path.join(self.project_dir, "build"), exist_ok=True)
+        # TODO: maybe use other ways to capture the relationship between DTensor, function group
+        _, core_func_groups, _ = classify_aie_functions(self.allo_module)
+        inputs, outputs = self.collect_io(core_func_groups)
+
         # - extract external kernels
         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
             self.allo_module
@@ -160,9 +168,6 @@ class AIE_MLIRModule:
         top_func, core_func_groups, external_funcs = classify_aie_functions(
             self.allo_module
         )
-        # TODO: maybe use other ways to capture the relationship between DTensor, function group
-        inputs, outputs = self.collect_io(core_func_groups)
-
         code_generator = CodeGenerator(
             device_type, self.global_inputs, self.global_outputs, top_func
         )

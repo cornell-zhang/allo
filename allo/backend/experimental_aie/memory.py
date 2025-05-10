@@ -7,9 +7,16 @@ from ...memory import Layout, DTensor
 class AIE_DTensor:
     """
     Distributed tensor used in experimental AIE
+    Wraps a DTensor with methods to determine memory access patterns based on tensor layout and sharding.
     """
 
     def __init__(self, dtensor: DTensor):
+        """
+        Initialize the AIE_DTensor with properties extracted from a DTensor.
+
+        Args:
+            - dtensor (DTensor): The underlying distributed tensor.
+        """
         self.rank = dtensor.rank  # dtensor idx
         self.mapping = dtensor.mapping  # global mapping
         self.shape = dtensor.shape  # global shape
@@ -23,7 +30,7 @@ class AIE_DTensor:
 
     def get_local_shape(self):
         """
-        Get the local shape of the tensor.
+        Get the local shape of the tensor. (same as DTensor)
         """
         if self.layout is None:
             return self.shape
@@ -43,9 +50,9 @@ class AIE_DTensor:
             (tensor has at most 4 dimensions: DMA support 4-dimension address generation)
 
         Returns:
-            - device_dims: make partition at which dimensions
-            - size: tensor size
-            - stride: access stride in global tensor
+            - device_dims (list): Indexes of tensor dimensions sharded across devices.
+            - size (list): 4D tensor dimensions used for access.
+            - stride (list): Stride along each dimension in the global tensor.
         """
         partition_str = "".join([p[0] for p in self.layout.placement])
         if len(self.shape) == 1:

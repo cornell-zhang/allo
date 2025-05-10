@@ -42,19 +42,31 @@ from ..aie import map_kernels_to_device_mesh
 
 
 class Stream:
+    """
+    Allo Stream class
+    """
+
     def __init__(self, name: str):
         self.name = name
         self.type_str = None
         self.depth = -1
         self.shape: list[int] = None
         self.dtype: str = None
-        self.allo_elememt_type: Type = None  # allo context
-        self.is_tensor = False
+        self.allo_elememt_type: Type = None  # element type in allo context
+        self.is_tensor = False  # whether the stream carries tensor data
 
-        self.src: str = None
-        self.dst: str = None
+        self.src: str = None  # source tile of the stream
+        self.dst: str = None  # destination tile of the stream
 
     def set_element_type(self, type_str: str, context: Context):
+        """
+        Set the element type of the stream from a type string.
+        This function parses the type string and extracts the data shape and dtype.
+
+        Args:
+            - type_str (str): The IR type string
+            - context (Context): The current allo MLIR context used for constructing types
+        """
         if self.depth >= 0:
             assert type_str == self.type_str
             return
@@ -117,6 +129,10 @@ class Stream:
 
 @dataclass
 class Argument:
+    """
+    Represents an argument to a function, either a DTensor or a Stream.
+    """
+
     dtensor: AIE_DTensor
     stream: Stream
 
@@ -134,10 +150,23 @@ class DMATensorTile:
 
 def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int, int]:
     """
+    TODO: make use of the fifth mem tile
+    TODO: The current mapping scheme requires the matrices to be completely partitioned without remaining elements (shape should be divided by tile num).
+
+    Allocate (shim-tile, mem-tile) pairs for every DTensor that crosses the
+    NPU boundary, while respecting the per-mem-tile ObjectFIFO limits.
+
+    The algorithm tries to pack as much traffic as possible into the fewest
+    number of memory tiles, only falling back to splitting (called "parts")
+    when the requested number of FIFOs would exceed the quota per memory tile.
+
     Current constrains:
         - use 4 mem-shim tile pairs for io
         - each port is assigned to one dtensor tile
 
+    Args:
+        - inputs: A dictionary mapping function names (group name + id) to lists of objects as inputs.
+        - outputs: A dictionary mapping function names (group name + id) to lists of objects as outputs.
     Return:
         - tile_map: dtensor name -> a list of dma tiles
         - mem_tile_num
@@ -183,6 +212,8 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
 
     def map_dtensor_to_tile(dtensor: AIE_DTensor, is_input: bool):
         """
+        Split a DTensor into Part instances so each Part fits on some memory tile with respect to FIFO limits.
+
         Currently, we focus on dtensor io using memory tiles.
         Shim tiles are assigned using a one-to-one mapping from memory tiles.
 
@@ -265,6 +296,13 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
 
 
 class CodeGenerator:
+    """
+    CodeGenerator is responsible for transforming Allo functions and their associated
+    DTensor-based input/output mappings into AIE (AI Engine) core-compatible IR.
+    It manages stream transformations, memory operations, and integrates with the
+    AIE dialect of MLIR.
+    """
+
     def __init__(
         self,
         device_type: str,
@@ -284,12 +322,19 @@ class CodeGenerator:
         self.compute_core_io: dict[str : dict[AIE_DTensor, str]] = {}
         self.external_functions: str = ""
 
-        self.aie_module = None
+        self.aie_module = None  # The top-level AIE IR module
         self.global_ip: aie_ir.InsertionPoint = (
             None  # mark the inserting point for buffers
         )
 
     def collect_stream_info(self, streams: dict[str, Stream], context):
+        """
+        Extract and update allo.stream element types from the top_function body.
+
+        Args:
+            - streams (dict[str, Stream]): Dictionary of allo.stream objects.
+            - context: The current allo MLIR context.
+        """
         for func_block in self.top_function.body:
             for op in func_block.operations:
                 if op.name == "allo.stream_construct":
@@ -302,7 +347,16 @@ class CodeGenerator:
         original_func: allo_func_d.FuncOp,
         func_args: dict[int, tuple[Argument, bool]],
     ) -> str:
+        """
+        Preprocess the core function in allo MLIR.
 
+        Args:
+            - original_func (FuncOp): The function in allo MLIR to transform.
+            - func_args (dict): Maps function argument indices to (Argument, is_output) pairs.
+
+        Returns:
+            - str: A string representation of the rewritten function with allo.stream ops replaced.
+        """
         # replace pipe with memref operations
         with original_func.context, allo_ir.ir.Location.unknown():
             func_inputs = original_func.type.inputs
@@ -379,6 +433,15 @@ class CodeGenerator:
         original_func: allo_func_d.FuncOp,
         func_args: dict[int, tuple[Argument, bool]],
     ):
+        """
+        Generate the computation logic for the fake 'while(1)' loop body for an AIE compute core, transforming high-level Allo ops
+        into AIE MLIR.
+
+        Args:
+            - func_core (aie_d.Core): The target compute core to insert into.
+            - original_func (FuncOp): The Allo function to compile.
+            - func_args (dict): Maps argument indices to (Argument, is_output) tuples.
+        """
         func_string = self.preporocess_dumped_core_func(original_func, func_args)
         original_module = aie_ir.Module.parse(func_string)
         parsed_function: aie_func_d.FuncOp = None
@@ -507,7 +570,9 @@ class CodeGenerator:
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         streams: dict[str, Stream],
     ) -> aie_ir.Module:
-
+        """
+        Generate an AIE MLIR module.
+        """
         io_mapping, mem_tile_num, shim_tile_num = map_global_io(inputs, outputs)
         wrapper_code = f"""
             module {{
