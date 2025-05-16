@@ -24,7 +24,7 @@ from .ir.types import Stream
 from .passes import df_pipeline
 
 if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
-    from .backend.experimental_aie import AIE_MLIRModule
+    from .backend.experimental import AIE_MLIRModule
 
 
 def get_pid():
