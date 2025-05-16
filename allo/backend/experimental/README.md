@@ -22,7 +22,7 @@ python3 -m pip install -v -e .
 
 ### Commands Used
 
-Below are the exact commands I used to set up the environment:
+Below are the exact commands to set up the environment:
 
 1. create env and activate
    ```bash
@@ -62,7 +62,7 @@ Below are the exact commands I used to set up the environment:
    ```
 
 6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. In my case, I used `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
    ```bash
    git clone https://github.com/cornell-zhang/allo.git
    cd allo
@@ -72,7 +72,7 @@ Below are the exact commands I used to set up the environment:
 Do not forget to setup Vitis and XRT.
 
 ### Patches and Configuration
-We rely on components from the [MLIR-AIE toolchain](https://github.com/Xilinx/mlir-aie) as libraries:
+To use components from the [MLIR-AIE toolchain](https://github.com/Xilinx/mlir-aie) as libraries:
 
 - To use [external kernels](https://github.com/Xilinx/mlir-aie/tree/ea9b4dfe7ea91f09c5c29c4d51ca74baea2dc4aa/aie_kernels) as an AIE kernel library, copy the directory to a desired location and set the environment variable:
 
@@ -86,15 +86,13 @@ We rely on components from the [MLIR-AIE toolchain](https://github.com/Xilinx/ml
   export RUNTIME_LIB_DIR=/your/copied/path/runtime_lib
   ```
 
-When using `aiecc.py` to compile, we met various problems. 
-
-If you encounter errors similar to 
+If you run into issues when using `aiecc.py`, such as:
 ```text
 error: expected ')' at end of argument list
 declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
                                                           ^
 ``` 
-To resolve this, you can patch the `downgrade_ir_for_peano` function in:
+You can fix this by modifying the `downgrade_ir_for_peano` function in:
 ```text
 $MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py
 ```

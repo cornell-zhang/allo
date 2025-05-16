@@ -124,7 +124,7 @@ class Stream:
             raise ValueError(f"Invalid stream type {type_str}.")
 
     def __str__(self):
-        return f"Stream (name={self.name}, depth={self.depth}, allo dtype={self.allo_elememt_type}, is tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
+        return f"Stream (name={self.name}, depth={self.depth}, dtype={self.allo_elememt_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
 
 
 @dataclass
