@@ -20,6 +20,57 @@ git clone https://github.com/cornell-zhang/allo.git && cd allo
 python3 -m pip install -v -e .
 ```
 
+### Commands Used
+
+Below are the exact commands I used to set up the environment:
+
+1. create env and activate
+   ```bash
+   conda create -n allo python=3.12
+   conda activate allo
+   ```
+
+2. install release 1.0
+   ```bash
+   # Install IRON library and mlir-aie from a wheel
+   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
+   # Install Peano from a llvm-aie wheel
+   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+   ```
+
+3. Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
+   ```bash
+   git clone https://github.com/Xilinx/mlir-aie.git
+   cd mlir-aie
+   git checkout 07320d6
+   ```
+4. Install
+   ```bash
+   # Install basic Python requirements 
+   python3 -m pip install -r python/requirements.txt
+   # Install the pre-commit hooks defined in .pre-commit-config.yaml
+   pre-commit install
+   # Install MLIR Python Extras 
+   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
+   # Install Torch for ML examples
+   python3 -m pip install -r python/requirements_ml.txt
+   ```
+
+5. Setup environment and add tools to PATHs
+   ```bash
+   source utils/env_setup.sh
+   ```
+
+6. Clone the allo repository and install.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. In my case, I used `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   ```bash
+   git clone https://github.com/cornell-zhang/allo.git
+   cd allo
+   python3 -m pip install -v -e .
+   ```
+
+Do not forget to setup Vitis and XRT.
+
 ### Patches and Configuration
 We rely on components from the [MLIR-AIE toolchain](https://github.com/Xilinx/mlir-aie) as libraries:
 
@@ -190,4 +241,28 @@ def test_producer_consumer():
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
+```
+
+### ⚠️ Note
+Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.
+
+This is mainly due to recent **syntax changes in `mlir-aie`**. For example, running:
+
+```
+tests/dataflow/aie/test_vector.py
+```
+
+may result in the following error:
+
+```
+Unable to parse module assembly: 
+error: "-":44:30: expected SSA operand
+```
+
+This happens because the syntax of operations like the following has changed:
+
+```
+aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, 1024][0, 0, 0, 1]) {
+  id = 0 : i64, issue_token = true, metadata = @in_shim_A
+} : memref<1024xi32>
 ```
