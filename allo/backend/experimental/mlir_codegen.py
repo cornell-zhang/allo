@@ -35,7 +35,7 @@ from ..._mlir.ir import (
 
 from ..utils import format_str
 from ..._mlir.dialects import func as allo_func_d
-from .memory import AIE_DTensor
+from ...memory import DTensor
 
 from .utils import get_element_type
 from ..aie import map_kernels_to_device_mesh
@@ -52,7 +52,7 @@ class Stream:
         self.depth = -1
         self.shape: list[int] = None
         self.dtype: str = None
-        self.allo_elememt_type: Type = None  # element type in allo context
+        self.allo_element_type: Type = None  # element type in allo context
         self.is_tensor = False  # whether the stream carries tensor data
 
         self.src: str = None  # source tile of the stream
@@ -113,7 +113,7 @@ class Stream:
                         return BF16Type.get()
                     raise ValueError(f"Unsupported dtype: {dtype_str}")
 
-                self.allo_elememt_type = MemRefType.get(
+                self.allo_element_type = MemRefType.get(
                     shape,
                     get_element_allo_type(dtype),
                 )
@@ -124,7 +124,7 @@ class Stream:
             raise ValueError(f"Invalid stream type {type_str}.")
 
     def __str__(self):
-        return f"Stream (name={self.name}, depth={self.depth}, dtype={self.allo_elememt_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
+        return f"Stream (name={self.name}, depth={self.depth}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
 
 
 @dataclass
@@ -133,7 +133,7 @@ class Argument:
     Represents an argument to a function, either a DTensor or a Stream.
     """
 
-    dtensor: AIE_DTensor
+    dtensor: DTensor
     stream: Stream
 
 
@@ -210,7 +210,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         # 3. No tile fits
         return -1
 
-    def map_dtensor_to_tile(dtensor: AIE_DTensor, is_input: bool):
+    def map_dtensor_to_tile(dtensor: DTensor, is_input: bool):
         """
         Split a DTensor into Part instances so each Part fits on some memory tile with respect to FIFO limits.
 
@@ -306,20 +306,20 @@ class CodeGenerator:
     def __init__(
         self,
         device_type: str,
-        global_inputs: list[AIE_DTensor],
-        global_outputs: list[AIE_DTensor],
+        global_inputs: list[DTensor],
+        global_outputs: list[DTensor],
         top_function: allo_func_d.FuncOp,
     ):
         self.device_type = device_type
 
-        self.global_inputs: list[AIE_DTensor] = global_inputs
-        self.global_outputs: list[AIE_DTensor] = global_outputs
+        self.global_inputs: list[DTensor] = global_inputs
+        self.global_outputs: list[DTensor] = global_outputs
         self.top_function = top_function
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
         self.fifo_map: dict[str, aie_d.object_fifo] = {}
         # function name (with id) -> a map from DTensor to fifo name
-        self.compute_core_io: dict[str : dict[AIE_DTensor, str]] = {}
+        self.compute_core_io: dict[str : dict[DTensor, str]] = {}
         self.external_functions: str = ""
 
         self.aie_module = None  # The top-level AIE IR module
@@ -362,7 +362,7 @@ class CodeGenerator:
             func_inputs = original_func.type.inputs
             for idx, arg_info in func_args.items():
                 if arg_info[0].stream is not None:
-                    func_inputs[idx] = arg_info[0].stream.allo_elememt_type
+                    func_inputs[idx] = arg_info[0].stream.allo_element_type
             func_type = allo_func_d.FunctionType.get(
                 func_inputs,
                 original_func.type.results,
@@ -403,7 +403,7 @@ class CodeGenerator:
                             if arg_info[0].stream.is_tensor:
                                 # replace use with alloc
                                 new_op = allo_memref_d.AllocOp(
-                                    arg_info[0].stream.allo_elememt_type,
+                                    arg_info[0].stream.allo_element_type,
                                     [],
                                     [],
                                     ip=InsertionPoint(op),

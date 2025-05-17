@@ -11,7 +11,8 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
 
 from ...passes import analyze_read_write_patterns
-from .memory import AIE_DTensor
+
+# from .memory import AIE_DTensor
 from ...memory import DTensor
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
@@ -47,7 +48,7 @@ class AIE_MLIRModule:
                 if arg in tmp_map:
                     self.func_args[func_name].append(tmp_map[arg])
                 elif isinstance(arg, DTensor):
-                    argument = Argument(AIE_DTensor(arg), None)
+                    argument = Argument(arg, None)
                     self.func_args[func_name].append(argument)
                     tmp_map[arg] = argument
                 elif isinstance(arg, str):
