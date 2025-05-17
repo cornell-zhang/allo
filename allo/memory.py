@@ -85,7 +85,8 @@ class DTensor:
         self.dtype = dtype
         self.layout = layout
         self.name = name
-        self.global_placement: dict[str, tuple] = layout.get_placement(mapping)
+        if layout is not None and mapping is not None:
+            self.global_placement: dict[str, tuple] = layout.get_placement(mapping)
         self.type_as_param: list = None
 
     def get_local_shape(self):
