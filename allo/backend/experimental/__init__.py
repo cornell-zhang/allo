@@ -12,7 +12,6 @@ from ..._mlir.dialects import func as allo_func_d
 
 from ...passes import analyze_read_write_patterns
 
-# from .memory import AIE_DTensor
 from ...memory import DTensor
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
