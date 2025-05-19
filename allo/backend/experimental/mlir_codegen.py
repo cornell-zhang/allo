@@ -221,10 +221,9 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         Since memory tile is used for transfer, we assume that `receive` implies one `send` and `send` implies one `receive`.
         """
         device_dims, size, stride = dtensor.get_access_pattern()
-        tensor_tiles = list(
-            dtensor.global_placement.keys()
+        tensor_tiles = sorted(
+            list(dtensor.global_placement.keys())
         )  # 'R' can use one port yet multiple destinations
-
         send_need = len(tensor_tiles) if is_input else 1
         recv_need = 1 if is_input else len(tensor_tiles)
         mem_tile_id = assign_tile(send_need, recv_need)
@@ -262,12 +261,8 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
                     "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
                     "exceeded or no more available tiles."
                 )
-            if len(device_dims) == 1:
-                offset[device_dims[0]] = start_idx
-                size[device_dims[0]] = len(chunk)
-            else:
-                offset[device_dims[1]] = start_idx // lose_factor
-                size[device_dims[1]] = len(chunk) // lose_factor
+            offset[device_dims[0]] = start_idx // lose_factor
+            size[device_dims[0]] = len(chunk) // lose_factor
             dma_tensor_tiles.append(
                 DMATensorTile(
                     len(dma_tensor_tiles),
@@ -306,14 +301,14 @@ class CodeGenerator:
     def __init__(
         self,
         device_type: str,
-        global_inputs: list[DTensor],
-        global_outputs: list[DTensor],
+        global_inputs: dict[int, DTensor],
+        global_outputs: dict[int, DTensor],
         top_function: allo_func_d.FuncOp,
     ):
         self.device_type = device_type
 
-        self.global_inputs: list[DTensor] = global_inputs
-        self.global_outputs: list[DTensor] = global_outputs
+        self.global_inputs: dict[int, DTensor] = global_inputs
+        self.global_outputs: dict[int, DTensor] = global_outputs
         self.top_function = top_function
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
@@ -766,66 +761,48 @@ class CodeGenerator:
                 # runtime sequence
                 runtime_seq = aiex_d.RuntimeSequenceOp()
                 runtime_args = []
-                for input_ in self.global_inputs:
+                for i in range(len(self.global_inputs) + len(self.global_outputs)):
+                    arg = (
+                        self.global_inputs[i]
+                        if i in self.global_inputs
+                        else self.global_outputs[i]
+                    )
                     runtime_args.append(
                         aie_ir.MemRefType.get(
-                            input_.shape, get_element_type(str(input_.dtype))
+                            arg.shape, get_element_type(str(arg.dtype))
                         )
                     )
-                for output_ in self.global_outputs:
-                    runtime_args.append(
-                        aie_ir.MemRefType.get(
-                            output_.shape, get_element_type(str(output_.dtype))
-                        )
-                    )
+
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
-                    dma_tasks: list = []
-                    cnt = 0
-                    for io, arg_lst in (
-                        ("in", self.global_inputs),
-                        ("out", self.global_outputs),
-                    ):
-                        for dtensor in arg_lst:
-                            for dma_tile in io_mapping[dtensor.name]:
-                                dma_fifo = self.fifo_map[
-                                    f"{io}_shim_{dtensor.name}{dma_tile.dtensor_tile_id}"
-                                ]
-                                dma_task = aiex_d.dma_configure_task_for(
-                                    dma_fifo,
-                                    issue_token=True,
-                                    repeat_count=dma_tile.size[
-                                        0
-                                    ],  # the highest dimension size in transfer length is the BD repeat count
-                                )
-                                dma_entry_block = aie_ir.Block.create_at_start(
-                                    dma_task.body
-                                )
-                                with aie_ir.InsertionPoint(dma_entry_block):
-                                    tile_length, tile_offset = 1, 0
-                                    # 'aie.dma_bd' length should match length of transfer expressed by lowest three dimensions of data layout
-                                    for tile_len in dma_tile.size[1:]:
-                                        tile_length *= tile_len
-                                    for offset, stride in zip(
-                                        dma_tile.offset, dma_tile.stride
-                                    ):
-                                        tile_offset += offset * stride
-                                    aie_d.DMABDOp(
-                                        buffer=runtime_seq_entry_block.arguments[cnt],
-                                        offset=tile_offset,
-                                        len=tile_length,
-                                        dimensions=aie_d.bd_dim_layout_array_attr_builder(
-                                            list(zip(dma_tile.size, dma_tile.stride))
-                                        ),
-                                    )
-                                    aie_d.EndOp()
-                                aiex_d.dma_start_task(dma_task)
-                                dma_tasks.append(dma_task)
-                            cnt += 1
+                    dma_tiles: list = []
+                    bd_cnt = 0
+                    for i in range(len(self.global_inputs) + len(self.global_outputs)):
+                        io = "in" if i in self.global_inputs else "out"
+                        dtensor = (
+                            self.global_inputs[i]
+                            if i in self.global_inputs
+                            else self.global_outputs[i]
+                        )
+
+                        for dma_tile in io_mapping[dtensor.name]:
+                            dma_fifo = self.fifo_map[
+                                f"{io}_shim_{dtensor.name}{dma_tile.dtensor_tile_id}"
+                            ]
+                            aiex_d.NpuDmaMemcpyNd(
+                                metadata=dma_fifo,
+                                bd_id=bd_cnt,
+                                mem=runtime_seq_entry_block.arguments[i],
+                                offsets=dma_tile.offset,
+                                sizes=dma_tile.size,
+                                strides=dma_tile.stride,
+                                issue_token=True,
+                            )
+                            bd_cnt += 1
+                            dma_tiles.append(dma_fifo)
                     # DMA wait
-                    for task_ in dma_tasks:
-                        aiex_d.dma_await_task(task_)
-                        aiex_d.dma_free_task(task_)
+                    for dma_tile in dma_tiles:
+                        aiex_d.dma_wait(dma_tile)
                     aie_d.EndOp()
 
         return self.aie_module
