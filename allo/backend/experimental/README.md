@@ -77,6 +77,14 @@ To use components from the [MLIR-AIE toolchain](https://github.com/Xilinx/mlir-a
 > ⚠️ **Note:** The instructions below are based on [MLIR-AIE release v1.0](https://github.com/Xilinx/mlir-aie/releases/tag/v1.0), which corresponds to commit [`07320d6`](https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd).
 > For compatibility, make sure to use this commit when copying the following components:
 
+You can clone and checkout the specific commit with:
+
+```bash
+git clone https://github.com/Xilinx/mlir-aie.git
+cd mlir-aie
+git checkout 07320d6
+```
+
 - To use [external kernels](https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/aie_kernels) as an AIE kernel library, copy the directory to a desired location and set the environment variable:
 
   ```bash
