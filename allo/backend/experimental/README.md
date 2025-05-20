@@ -74,13 +74,24 @@ Do not forget to setup Vitis and XRT.
 ### Patches and Configuration
 To use components from the [MLIR-AIE toolchain](https://github.com/Xilinx/mlir-aie) as libraries:
 
-- To use [external kernels](https://github.com/Xilinx/mlir-aie/tree/ea9b4dfe7ea91f09c5c29c4d51ca74baea2dc4aa/aie_kernels) as an AIE kernel library, copy the directory to a desired location and set the environment variable:
+> ⚠️ **Note:** The instructions below are based on [MLIR-AIE release v1.0](https://github.com/Xilinx/mlir-aie/releases/tag/v1.0), which corresponds to commit [`07320d6`](https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd).
+> For compatibility, make sure to use this commit when copying the following components:
+
+You can clone and checkout the specific commit with:
+
+```bash
+git clone https://github.com/Xilinx/mlir-aie.git
+cd mlir-aie
+git checkout 07320d6
+```
+
+- To use [external kernels](https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/aie_kernels) as an AIE kernel library, copy the directory to a desired location and set the environment variable:
 
   ```bash
   export MLIR_AIE_EXTERNAL_KERNEL_DIR=/your/copied/path/aie_kernels
   ```
 
-- To use [runtime\_lib](https://github.com/Xilinx/mlir-aie/tree/ea9b4dfe7ea91f09c5c29c4d51ca74baea2dc4aa/runtime_lib) for the host, copy it to a desired location and set the environment variable:
+- To use [runtime\_lib](https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/runtime_lib) for the host, copy it to a desired location and set the environment variable:
 
   ```bash
   export RUNTIME_LIB_DIR=/your/copied/path/runtime_lib

@@ -4,6 +4,7 @@
 
 import os
 import subprocess
+import shutil
 
 import aie.ir as aie_ir
 
@@ -72,8 +73,10 @@ class AIE_MLIRModule:
 
         self.project_dir: str = project_dir
 
-        self.global_inputs: set = set()
-        self.global_outputs: set = set()
+        # index in top fucntion argument list -> DTensor
+        self.global_inputs: dict[int, DTensor] = {}
+        self.global_outputs: dict[int, DTensor] = {}
+
         self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = (
             {}
         )  # core func name -> a list of (dtensors, is_in)
@@ -90,8 +93,6 @@ class AIE_MLIRModule:
         """
         inputs = {}
         outputs = {}
-        global_inputs: set = set()
-        global_outputs: set = set()
         for func_name, funcs in func_groups.items():
             inputs[func_name] = {}
             outputs[func_name] = {}
@@ -124,10 +125,19 @@ class AIE_MLIRModule:
                             if argument.dtensor not in io_lst[func_name]["_global"]:
                                 io_lst[func_name]["_global"].append(argument.dtensor)
                                 if io == "in":
-                                    global_inputs.add(argument.dtensor)
+                                    self.global_inputs[
+                                        self.func_args[self.top_func_name].index(
+                                            argument
+                                        )
+                                    ] = argument.dtensor
                                 else:
-                                    global_outputs.add(argument.dtensor)
+                                    self.global_outputs[
+                                        self.func_args[self.top_func_name].index(
+                                            argument
+                                        )
+                                    ] = argument.dtensor
                             io_lst[func_name][func_id].append(argument.dtensor)
+                # streams
                 for i, _ in enumerate(func.arguments):
                     func_arg = self.func_args[func_name_w_id][i]
                     if (
@@ -139,12 +149,23 @@ class AIE_MLIRModule:
                         func_arg,
                         self.stream_info[func_name_w_id][func_arg.stream.name],
                     )
-        self.global_inputs = list(global_inputs)
-        self.global_outputs = list(global_outputs)
+        # validity check
+        for i in range(len(self.global_inputs)):
+            assert (
+                i in self.global_inputs
+            ), "inputs should be the starting arguments of the function"
+        for i in range(len(self.global_outputs)):
+            assert (
+                i + len(self.global_inputs) in self.global_outputs
+            ), "outputs should be the ending arguments of the function"
+
         return inputs, outputs
 
     def build(self, device_type="npu1_4col"):
-        os.makedirs(os.path.join(self.project_dir, "build"), exist_ok=True)
+        build_dir = os.path.join(self.project_dir, "build")
+        if os.path.exists(build_dir):
+            shutil.rmtree(build_dir)
+        os.makedirs(build_dir)
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
         _, core_func_groups, _ = classify_aie_functions(self.allo_module)
         inputs, outputs = self.collect_io(core_func_groups)
@@ -233,7 +254,7 @@ class AIE_MLIRModule:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
         result = read_tensor_from_file(
-            self.global_outputs[-1].dtype,
+            self.global_outputs[len(args) - 1].dtype,
             args[-1].shape,
             f"{self.project_dir}/output.data",
         )
