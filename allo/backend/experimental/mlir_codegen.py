@@ -243,7 +243,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         dma_tensor_tiles: list[DMATensorTile] = []
         # fixme: incomplete
         #   Currently, we may allow tensor tiles on a sharding dimension to be sent using different memory tiles
-        assert len(device_dims) == 1 or len(device_dims) == 2 
+        assert len(device_dims) == 1 or len(device_dims) == 2
         lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
         inc_factor = (
             size[device_dims[0]] if len(device_dims) <= 1 else size[device_dims[1]]
