@@ -251,6 +251,57 @@ def test_producer_consumer():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 ```
+### New Feature
+#### Profiling
+A new profiling feature has been added to help measure the performance of the module during execution. 
+
+To enable profiling, use the `do_profile` flag in the `__call__` method in the [`AIE_MLIRModule` class](__init__.py):
+```python
+def __call__(
+    self,
+    *args,
+    do_profile: bool = False,
+    warmup_iterations: int = 20,
+    test_iterations: int = 100,
+):
+```
+
+**Parameters:**
+
+- `do_profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
+- `warmup_iterations` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
+- `test_iterations` (`int`): Number of timed iterations used to compute execution time. Default is `100`.
+
+##### Example
+```python
+import allo
+from allo.ir.types import int16, int32, float32
+import allo.dataflow as df
+import numpy as np
+from allo.memory import Layout
+
+Ty = int16
+M, N, K = 128, 128, 32
+Pm, Pn, Pk = 4, 4, 1
+Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
+
+LyA = Layout("S1S2")
+LyB = Layout("S2S0")
+LyC = Layout("S1S0")
+
+@df.region()
+def top1():
+    @df.kernel(mapping=[Pk, Pm, Pn])
+    def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
+        C[:, :] = allo.matmul(A, B)
+
+mod = df.build(top1, target="aie-mlir")
+A = np.random.randint(0, 32, (M, K)).astype(np.int16)
+B = np.random.randint(0, 32, (K, N)).astype(np.int16)
+C = np.zeros((M, N)).astype(np.int32)
+tmp_C = np.zeros((M, N)).astype(np.int32)
+mod(A, B, C, do_profile=True)
+```
 
 ### ⚠️ Note
 Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.

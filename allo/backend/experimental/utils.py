@@ -52,7 +52,9 @@ aie_external_kernel_ctype_map = {
 }
 
 
-def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool], dict]:
+def inject_external_kernels(
+    module: allo_ir.ir.Module, top_function_name
+) -> tuple[dict[str, bool], dict]:
     """
     Inject external kernels for compute cores.
 
@@ -78,7 +80,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
                 "sym_visibility" not in func.attributes
                 or func.attributes["sym_visibility"].value != "private"
             ):
-                if func.attributes["sym_name"].value != "top":
+                if func.attributes["sym_name"].value != top_function_name:
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
                     # continue  # fixme: crash when using external kernels
@@ -154,7 +156,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
 
 
 def classify_aie_functions(
-    module: allo_ir.ir.Module,
+    module: allo_ir.ir.Module, top_function_name: str
 ) -> tuple[
     allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp]
 ]:
@@ -178,7 +180,7 @@ def classify_aie_functions(
                     and func.attributes["sym_visibility"].value == "private"
                 ):
                     external_funcs.append(func)
-                elif func.attributes["sym_name"].value == "top":
+                elif func.attributes["sym_name"].value == top_function_name:
                     top_func = func
                 else:
                     func_name_w_id = func.attributes["sym_name"].value
@@ -300,6 +302,9 @@ int main(int argc, const char *argv[]) {
   po::options_description options("Allowed options");
   po::variables_map vm;
   test_utils::add_default_options(options);
+  options.add_options()
+    ("profile,p", po::value<bool>()->default_value(false), "enable profiling")
+    ("test_iter,t", po::value<int>()->default_value(100), "number of test iterations");
 
   test_utils::parse_options(argc, argv, options, vm);
   int verbosity = vm["verbosity"].as<int>();
@@ -307,6 +312,8 @@ int main(int argc, const char *argv[]) {
   int n_iterations = vm["iters"].as<int>();
   int n_warmup_iterations = vm["warmup"].as<int>();
   int trace_size = vm["trace_sz"].as<int>();
+  bool do_profile = vm["profile"].as<bool>();
+  int n_test_iterations = vm["test_iter"].as<int>();
 
   // Load instruction sequence
   std::vector<uint32_t> instr_v =
@@ -439,25 +446,60 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
         # run kernels
         code += format_str("if (verbosity >= 1)")
         code += format_str('  std::cout << "Running Kernel.\\n";', strip=False)
-        code += format_str(
-            "\nauto start = std::chrono::high_resolution_clock::now();", strip=False
-        )
         inbufs = ", ".join([f"bo_in{i}" for i in range(len(inputs))])
         outbufs = ", ".join([f"bo_out{i}" for i in range(len(outputs))])
-        code += format_str("// gid: (opcode, instr, instr_size, ...)")
-        code += format_str(
-            f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
-        )
-        code += format_str("run.wait();")
-        code += format_str(
-            "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
-        )
-        code += format_str(
-            "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
-        )
-        code += format_str(
-            'std::cout << "NPU execution time: " << npu_time << "us\\n";'
-        )
+        code += format_str("if (!do_profile) {")
+        with format_code(indent=4):
+            code += format_str(
+                "auto start = std::chrono::high_resolution_clock::now();", strip=False
+            )
+            code += format_str("// gid: (opcode, instr, instr_size, ...)")
+            code += format_str(
+                f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+            )
+            code += format_str("run.wait();")
+            code += format_str(
+                "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
+            )
+            code += format_str(
+                "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
+            )
+            code += format_str(
+                'std::cout << "NPU execution time: " << npu_time << "us\\n";'
+            )
+        code += format_str("} else {")
+        with format_code(indent=4):
+            code += format_str("for (size_t i = 0; i < n_warmup_iterations; i++) {")
+            with format_code(indent=8):
+                code += format_str(
+                    f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+                )
+                code += format_str("run.wait();")
+            code += format_str("}")
+            code += format_str("float total_npu_time = 0;")
+            code += format_str("for (size_t i = 0; i < n_test_iterations; i++) {")
+            with format_code(indent=8):
+                code += format_str(
+                    "auto start = std::chrono::high_resolution_clock::now();",
+                    strip=False,
+                )
+                code += format_str(
+                    f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+                )
+                code += format_str("run.wait();")
+                code += format_str(
+                    "\nauto end = std::chrono::high_resolution_clock::now();",
+                    strip=False,
+                )
+                code += format_str(
+                    "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
+                )
+                code += format_str("total_npu_time += npu_time;")
+            code += format_str("}")
+            code += format_str(
+                'std::cout << "Avg NPU execution time: " << total_npu_time / n_test_iterations << "us\\n";'
+            )
+        code += format_str("}")
         # get results
         for i in range(len(outputs)):
             dtensor = outputs[i + len(inputs)]
