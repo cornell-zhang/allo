@@ -243,7 +243,11 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         dma_tensor_tiles: list[DMATensorTile] = []
         # fixme: incomplete
         #   Currently, we may allow tensor tiles on a sharding dimension to be sent using different memory tiles
+        assert len(device_dims) == 1 or len(device_dims) == 2
         lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
+        inc_factor = (
+            size[device_dims[0]] if len(device_dims) <= 1 else size[device_dims[1]]
+        )
         remaining = tensor_tiles[:]
         start_idx = 0
         while remaining:
@@ -261,8 +265,8 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
                     "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
                     "exceeded or no more available tiles."
                 )
-            offset[device_dims[0]] = start_idx // lose_factor
-            size[device_dims[0]] = len(chunk) // lose_factor
+            offset[device_dims[0]] = start_idx // inc_factor
+            size[device_dims[0]] = len(chunk) // inc_factor
             dma_tensor_tiles.append(
                 DMATensorTile(
                     len(dma_tensor_tiles),

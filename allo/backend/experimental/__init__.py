@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -39,7 +39,6 @@ class AIE_MLIRModule:
         self.top_func_name: str = top_func_name
         self.streams: dict[str, Stream] = {}
 
-        # fixme: this is a dummy fix
         tmp_map: dict = {}
         self.func_args: dict[str, list[Argument]] = {}
         for func_name, args in func_args.items():
@@ -82,6 +81,7 @@ class AIE_MLIRModule:
         )  # core func name -> a list of (dtensors, is_in)
 
         self.aie_module: aie_ir.Module = None
+        self.profile: bool = False
 
     def collect_io(
         self,
@@ -161,18 +161,29 @@ class AIE_MLIRModule:
 
         return inputs, outputs
 
-    def build(self, device_type="npu1_4col"):
+    def build(
+        self,
+        device_type="npu1_4col",
+        profile: bool = False,
+        warmup: int = 20,
+        num_iters: int = 100,
+    ):
+        self.profile = profile
+        self.warmup = warmup
+        self.num_iters = num_iters
         build_dir = os.path.join(self.project_dir, "build")
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
-        _, core_func_groups, _ = classify_aie_functions(self.allo_module)
+        _, core_func_groups, _ = classify_aie_functions(
+            self.allo_module, self.top_func_name
+        )
         inputs, outputs = self.collect_io(core_func_groups)
 
         # - extract external kernels
         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module
+            self.allo_module, self.top_func_name
         )
         # record original allo mlir
         with open(
@@ -187,7 +198,7 @@ class AIE_MLIRModule:
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
         top_func, core_func_groups, external_funcs = classify_aie_functions(
-            self.allo_module
+            self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
             device_type, self.global_inputs, self.global_outputs, top_func
@@ -211,7 +222,6 @@ class AIE_MLIRModule:
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
                 f.write(kernel_code)
-            # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
             cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
             with subprocess.Popen(cmd, shell=True) as process:
                 process.wait()
@@ -233,7 +243,6 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
         ) as f:
             f.write(host_code)
-        # fixme: lib path
         cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
@@ -247,7 +256,7 @@ class AIE_MLIRModule:
                 os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
             ) as f:
                 f.write("\n".join([str(i) for i in args[i].flatten()]))
-        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE"
+        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
