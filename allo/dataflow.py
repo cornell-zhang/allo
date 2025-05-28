@@ -301,12 +301,12 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    do_profile=False,
-    warmup_iterations=20,
-    test_iterations=100,
+    profile=False,
+    warmup=20,
+    num_iters=100,
 ):
     assert (
-        not do_profile or target == "aie-mlir"
+        not profile or target == "aie-mlir"
     ), "Profiling is only supported for AIE target"
     if target == "aie":
         global_vars = get_global_vars(func)
@@ -336,9 +336,9 @@ def build(
             stream_info,
         )
         aie_mod.build(
-            do_profile=do_profile,
-            warmup_iterations=warmup_iterations,
-            test_iterations=test_iterations,
+            profile=profile,
+            warmup=warmup,
+            num_iters=num_iters,
         )
         return aie_mod
 
