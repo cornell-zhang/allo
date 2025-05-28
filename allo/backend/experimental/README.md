@@ -325,9 +325,9 @@ def build(
 
 **New Parameters:**
 
-- `do_profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
-- `warmup_iterations` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
-- `test_iterations` (`int`): Number of timed iterations used to compute execution time. Default is `100`.
+- `profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
+- `warmup` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
+- `num_iters` (`int`): Number of timed iterations used to compute execution time. Default is `100`.
 
 ##### Example
 ```python
