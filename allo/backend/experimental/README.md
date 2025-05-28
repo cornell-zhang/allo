@@ -306,18 +306,24 @@ print("PASSED!")
 #### Profiling
 A new profiling feature has been added to help measure the performance of the module during execution. 
 
-To enable profiling, use the `do_profile` flag in the `__call__` method in the [`AIE_MLIRModule` class](__init__.py):
+To enable profiling, use the `do_profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
-def __call__(
-    self,
-    *args,
-    do_profile: bool = False,
-    warmup_iterations: int = 20,
-    test_iterations: int = 100,
+def build(
+    func,
+    target="vitis_hls",
+    mode="csim",
+    project="top.prj",
+    configs=None,
+    wrap_io=True,
+    opt_default=True,
+    enable_tensor=False,
+    do_profile=False,
+    warmup_iterations=20,
+    test_iterations=100,
 ):
 ```
 
-**Parameters:**
+**New Parameters:**
 
 - `do_profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
 - `warmup_iterations` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
@@ -346,12 +352,18 @@ def top1():
     def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
         C[:, :] = allo.matmul(A, B)
 
-mod = df.build(top1, target="aie-mlir")
+mod = df.build(
+    top1,
+    target="aie-mlir",
+    do_profile=True,
+    warmup_iterations=200,
+    test_iterations=1000,
+)
 A = np.random.randint(0, 32, (M, K)).astype(np.int16)
 B = np.random.randint(0, 32, (K, N)).astype(np.int16)
 C = np.zeros((M, N)).astype(np.int32)
 tmp_C = np.zeros((M, N)).astype(np.int32)
-mod(A, B, C, do_profile=True)
+mod(A, B, C)
 ```
 
 ### ⚠️ Note

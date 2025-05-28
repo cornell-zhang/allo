@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -81,6 +81,7 @@ class AIE_MLIRModule:
         )  # core func name -> a list of (dtensors, is_in)
 
         self.aie_module: aie_ir.Module = None
+        self.do_profile: bool = False
 
     def collect_io(
         self,
@@ -160,7 +161,16 @@ class AIE_MLIRModule:
 
         return inputs, outputs
 
-    def build(self, device_type="npu1_4col"):
+    def build(
+        self,
+        device_type="npu1_4col",
+        do_profile: bool = False,
+        warmup_iterations: int = 20,
+        test_iterations: int = 100,
+    ):
+        self.do_profile = do_profile
+        self.warmup_iterations = warmup_iterations
+        self.test_iterations = test_iterations
         build_dir = os.path.join(self.project_dir, "build")
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
@@ -240,19 +250,13 @@ class AIE_MLIRModule:
             raise RuntimeError("Failed to build AIE project.")
         return self
 
-    def __call__(
-        self,
-        *args,
-        do_profile: bool = False,
-        warmup_iterations: int = 20,
-        test_iterations: int = 100,
-    ):
+    def __call__(self, *args):
         for i in range(len(self.global_inputs)):
             with open(
                 os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
             ) as f:
                 f.write("\n".join([str(i) for i in args[i].flatten()]))
-        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE {f'-p true --warmup {warmup_iterations} --test_iter {test_iterations}' if do_profile else ''}"
+        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE {f'-p true --warmup {self.warmup_iterations} --test_iter {self.test_iterations}' if self.do_profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:

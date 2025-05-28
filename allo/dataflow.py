@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments
 
 import functools
 import os
@@ -301,7 +301,13 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
+    do_profile=False,
+    warmup_iterations=20,
+    test_iterations=100,
 ):
+    assert (
+        not do_profile or target == "aie-mlir"
+    ), "Profiling is only supported for AIE target"
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
@@ -329,7 +335,11 @@ def build(
             project,
             stream_info,
         )
-        aie_mod.build()
+        aie_mod.build(
+            do_profile=do_profile,
+            warmup_iterations=warmup_iterations,
+            test_iterations=test_iterations,
+        )
         return aie_mod
 
     if target == "simulator":
