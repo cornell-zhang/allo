@@ -6,6 +6,29 @@ from itertools import product
 
 
 class Layout:
+    """
+      Example:
+
+      mesh_dim = [2, 2, 2]
+        +-----+
+     2 /|    /|
+      +-+---+ +
+    1 |/    |/
+      +-----+
+         0
+      2D tensor: [32, 32]
+      +-----------+
+      | 0,0 | 0,1 |
+      +-----------+
+      | 1,0 | 1,1 |
+      +-----------+
+
+      placement = "S2S0" ->   (tensor_dim[-1], shard on mesh_dim[2]),
+                              (tensor_dim[-2], shard on mesh_dim[0])
+
+      PE tile (a, ?, b) gets tensor tile (a, b)
+    """
+
     def __init__(self, placement):
         # R: replicated, S: shared
         # e.g., S0S1R, S0R, RS0
@@ -80,8 +103,8 @@ class DTensor:
 
     def __init__(self, rank, mapping, shape, dtype, layout, name=None):
         self.rank = rank
-        self.mapping = mapping
-        self.shape = shape  # global shape
+        self.mapping = mapping  # mesh dims
+        self.shape = shape  # tensor shape
         self.dtype = dtype
         self.layout = layout
         self.name = name
@@ -139,7 +162,7 @@ class DTensor:
                     partition[1] = (partition[1][0], 1 - partition[0][1])
                 elif partition[1][0] == "S":  # partition[0][0] == "R"
                     partition[0] = (partition[0][0], 1 - partition[1][1])
-                else:
+                else:  # "RR"
                     partition[0] = (partition[0], 1)
                     partition[1] = (partition[1], 0)
                 device_a, device_b = (
@@ -162,20 +185,14 @@ class DTensor:
                 ]
             elif partition_str == "SR":
                 # First dim sharded across all devices, second replicated
-                total_devices = device_a * device_b
                 device_dims = [1]
-                size = [1, total_devices, tensor_m // total_devices, tensor_n]
-                stride = [0, (tensor_m // total_devices) * tensor_n, tensor_n, 1]
+                size = [1, device_a, tensor_m // device_a, tensor_n]
+                stride = [0, (tensor_m // device_a) * tensor_n, tensor_n, 1]
             elif partition_str == "RS":
                 # First dim replicated, second sharded across second dim of mesh
                 device_dims = [1]
                 size = [1, device_b, tensor_m, tensor_n // device_b]
-                stride = [
-                    (tensor_m * tensor_n) // (device_a * device_b),
-                    tensor_n // device_b,
-                    tensor_n,
-                    1,
-                ]
+                stride = [0, tensor_n // device_b, tensor_n, 1]
             elif partition_str == "RR":
                 # Both dimensions replicated
                 device_dims = []
