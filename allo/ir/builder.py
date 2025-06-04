@@ -2024,9 +2024,9 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo._mlir")
         ):
             modules_to_check = (
-                (IPModule,)
-                if os.getenv("USE_AIE_MLIR_BUILDER") != "1"
-                else (IPModule, ExternalModule)
+                (IPModule, ExternalModule)
+                if os.getenv("USE_AIE_MLIR_BUILDER") == "1"
+                else (IPModule,)
             )
             fn_name = obj.__name__ if not isinstance(obj, modules_to_check) else None
             if fn_name == "array":
