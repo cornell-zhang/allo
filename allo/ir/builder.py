@@ -4,6 +4,7 @@
 # pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used, bad-builtin
 
 import gc
+import os
 import ast
 import sys
 import traceback
@@ -61,9 +62,11 @@ from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule, c2allo_type
-from ..backend.experimental.external_kernel import ExternalModule
 from ..utils import get_mlir_dtype_from_str
 from ..logging import print_error_message
+
+if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
+    from ..backend.experimental.external_kernel import ExternalModule
 
 
 class ASTBuilder(ASTVisitor):

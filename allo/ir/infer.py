@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
 
+import os
 import ast
 import sys
 import traceback
@@ -30,7 +31,6 @@ from .types import (
 )
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
-from ..backend.experimental.external_kernel import ExternalModule
 from ..utils import (
     is_anywidth_int_type_and_not_np,
     get_bitwidth_from_type,
@@ -41,6 +41,9 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+
+if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
+    from ..backend.experimental.external_kernel import ExternalModule
 
 
 # pylint: disable=too-many-public-methods
