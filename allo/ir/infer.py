@@ -867,7 +867,9 @@ class TypeInferer(ASTVisitor):
                 node.shape = None
                 node.dtype = None
                 return node
-            if isinstance(obj, ExternalModule):
+            if os.getenv("USE_AIE_MLIR_BUILDER") == "1" and isinstance(
+                obj, ExternalModule
+            ):
                 # AIE external kernel, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
                 node.shape = None

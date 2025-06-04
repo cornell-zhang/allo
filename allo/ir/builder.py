@@ -2023,11 +2023,12 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
-            fn_name = (
-                obj.__name__
-                if not isinstance(obj, (IPModule, ExternalModule))
-                else None
+            modules_to_check = (
+                (IPModule,)
+                if os.getenv("USE_AIE_MLIR_BUILDER") != "1"
+                else (IPModule, ExternalModule)
             )
+            fn_name = obj.__name__ if not isinstance(obj, modules_to_check) else None
             if fn_name == "array":
                 # as it directly runs the node inside, this branch is put in the front
                 array = eval(ast.unparse(node), ctx.global_vars)
@@ -2044,7 +2045,7 @@ class ASTTransformer(ASTBuilder):
                 return results
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
-            if isinstance(obj, (IPModule, ExternalModule)):
+            if isinstance(obj, modules_to_check):
                 # Add HLS IP as external library
                 if obj not in ctx.ext_libs:
                     ctx.ext_libs.append(obj)
