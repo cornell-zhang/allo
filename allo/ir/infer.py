@@ -30,6 +30,7 @@ from .types import (
 )
 from .typing_rule import get_typing_rule
 from ..backend.ip import IPModule
+from ..backend.experimental.external_kernel import ExternalModule
 from ..utils import (
     is_anywidth_int_type_and_not_np,
     get_bitwidth_from_type,
@@ -859,6 +860,12 @@ class TypeInferer(ASTVisitor):
             new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # HLS IP, suppose it does not have return values
+                # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                node.shape = None
+                node.dtype = None
+                return node
+            if isinstance(obj, ExternalModule):
+                # AIE external kernel, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
                 node.shape = None
                 node.dtype = None

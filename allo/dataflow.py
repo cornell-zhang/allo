@@ -329,11 +329,7 @@ def build(
         stream_info = move_stream_to_interface(s)
         s = _build_top(s, stream_info, target="aie")
         aie_mod = AIE_MLIRModule(
-            s.module,
-            s.top_func_name,
-            s.func_args,
-            project,
-            stream_info,
+            s.module, s.top_func_name, s.func_args, project, stream_info, s.ext_libs
         )
         aie_mod.build(
             profile=profile,

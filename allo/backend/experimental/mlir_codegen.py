@@ -249,7 +249,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
             lose_factor = size[device_dims[0]]
             inc_factor = size[device_dims[1]]
         else:
-            raise ValueError(f"Unsupported access pattern.")
+            raise ValueError("Unsupported access pattern.")
         remaining = tensor_tiles[:]
         start_idx = 0
         while remaining:

@@ -12,8 +12,8 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
 
 from ...passes import analyze_read_write_patterns
-
 from ...memory import DTensor
+from .external_kernel import ExternalModule
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from .mlir_codegen import CodeGenerator, Argument, Stream
@@ -34,6 +34,7 @@ class AIE_MLIRModule:
         func_args: dict,
         project_dir: str,
         stream_info: dict,
+        ext_libs: list = None,
     ):
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
@@ -72,6 +73,11 @@ class AIE_MLIRModule:
 
         self.project_dir: str = project_dir
 
+        self.external_kernel_lib: dict[str, ExternalModule] = {}
+        for ext_kernel in ext_libs:
+            if isinstance(ext_kernel, ExternalModule):
+                self.external_kernel_lib[ext_kernel.top] = ext_kernel
+
         # index in top fucntion argument list -> DTensor
         self.global_inputs: dict[int, DTensor] = {}
         self.global_outputs: dict[int, DTensor] = {}
@@ -81,7 +87,6 @@ class AIE_MLIRModule:
         )  # core func name -> a list of (dtensors, is_in)
 
         self.aie_module: aie_ir.Module = None
-        self.profile: bool = False
 
     def collect_io(
         self,
@@ -106,7 +111,9 @@ class AIE_MLIRModule:
                     int(x) for x in func_name_w_id.split(func_name + "_")[-1].split("_")
                 )
                 # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-                in_idx, out_idx = analyze_read_write_patterns(func)
+                in_idx, out_idx = analyze_read_write_patterns(
+                    func, self.external_kernel_lib
+                )
                 for io_lst, io_idx, io in (
                     (inputs, in_idx, "in"),
                     (outputs, out_idx, "out"),
@@ -183,7 +190,7 @@ class AIE_MLIRModule:
 
         # - extract external kernels
         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module, self.top_func_name
+            self.allo_module, self.top_func_name, self.external_kernel_lib
         )
         # record original allo mlir
         with open(
@@ -217,12 +224,23 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.aie_module))
         if len(injected_kernels) > 0:
+            paths = set()
+            # user defined external kernels
+            for ext_module in self.external_kernel_lib.values():
+                paths.add(ext_module.impl_path)
+            for src_path in paths:
+                target_path = os.path.join(self.project_dir, os.path.basename(src_path))
+                if os.path.exists(target_path) and os.path.samefile(
+                    src_path, target_path
+                ):
+                    continue
+                shutil.copy(src_path, target_path)
             kernel_code = codegen_external_kernels(injected_kernels, include_src)
             with open(
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
                 f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
             with subprocess.Popen(cmd, shell=True) as process:
                 process.wait()
             if process.returncode != 0:
