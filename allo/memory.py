@@ -6,6 +6,29 @@ from itertools import product
 
 
 class Layout:
+    """
+      Example:
+
+      mesh_dim = [2, 2, 2]
+        +-----+
+     2 /|    /|
+      +-+---+ +
+    1 |/    |/
+      +-----+
+         0
+      2D tensor: [32, 32]
+      +-----------+
+      | 0,0 | 0,1 |
+      +-----------+
+      | 1,0 | 1,1 |
+      +-----------+
+
+      placement = "S2S0" ->   (tensor_dim[-1], shard on mesh_dim[2]),
+                              (tensor_dim[-2], shard on mesh_dim[0])
+
+      PE tile (a, ?, b) gets tensor tile (a, b)
+    """
+
     def __init__(self, placement):
         # R: replicated, S: shared
         # e.g., S0S1R, S0R, RS0
@@ -80,8 +103,8 @@ class DTensor:
 
     def __init__(self, rank, mapping, shape, dtype, layout, name=None):
         self.rank = rank
-        self.mapping = mapping
-        self.shape = shape  # global shape
+        self.mapping = mapping  # mesh dims
+        self.shape = shape  # tensor shape
         self.dtype = dtype
         self.layout = layout
         self.name = name
@@ -116,11 +139,12 @@ class DTensor:
             - stride (list): Stride along each dimension in the global tensor.
         """
         partition_str = "".join([p[0] for p in self.layout.placement])
+        partition_dim = [p[1] for p in self.layout.placement]
         if len(self.shape) == 1:
             if partition_str == "S":
-                shard_size = self.shape[0] // self.mapping[0]
+                shard_size = self.shape[0] // self.mapping[-partition_dim[0] - 1]
                 device_dims = [2]  # partition idx = 2
-                size = [1, 1, self.mapping[0], shard_size]
+                size = [1, 1, self.mapping[-partition_dim[0] - 1], shard_size]
                 stride = [0, 0, shard_size, 1]
             elif partition_str == "R":
                 device_dims = []  # no partition
@@ -130,28 +154,11 @@ class DTensor:
                 raise ValueError("Unsupported access pattern for 1D tensor.")
         elif len(self.shape) == 2:
             tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
-            device_a, device_b = None, None  # 2D device to be mapped
-            partition = self.layout.placement
-            if len(self.mapping) == 1:
-                device_a, device_b = 1, self.mapping[0]
-            elif len(self.mapping) == 2:
-                if partition[0][0] == "S":
-                    partition[1] = (partition[1][0], 1 - partition[0][1])
-                elif partition[1][0] == "S":  # partition[0][0] == "R"
-                    partition[0] = (partition[0][0], 1 - partition[1][1])
-                else:
-                    partition[0] = (partition[0], 1)
-                    partition[1] = (partition[1], 0)
-                device_a, device_b = (
-                    self.mapping[-partition[0][1] - 1],
-                    self.mapping[-partition[1][1] - 1],
-                )
-            else:
-                device_a, device_b = (
-                    self.mapping[-partition[0][1] - 1],
-                    self.mapping[-partition[1][1] - 1],
-                )
             if partition_str == "SS":
+                device_a, device_b = (
+                    self.mapping[-partition_dim[0] - 1],
+                    self.mapping[-partition_dim[1] - 1],
+                )
                 device_dims = [0, 1]
                 size = [device_a, device_b, tensor_m // device_a, tensor_n // device_b]
                 stride = [
@@ -161,21 +168,17 @@ class DTensor:
                     1,
                 ]
             elif partition_str == "SR":
+                device_a = self.mapping[-partition_dim[0] - 1]
                 # First dim sharded across all devices, second replicated
-                total_devices = device_a * device_b
                 device_dims = [1]
-                size = [1, total_devices, tensor_m // total_devices, tensor_n]
-                stride = [0, (tensor_m // total_devices) * tensor_n, tensor_n, 1]
+                size = [1, device_a, tensor_m // device_a, tensor_n]
+                stride = [0, (tensor_m // device_a) * tensor_n, tensor_n, 1]
             elif partition_str == "RS":
+                device_b = self.mapping[-partition_dim[1] - 1]
                 # First dim replicated, second sharded across second dim of mesh
                 device_dims = [1]
                 size = [1, device_b, tensor_m, tensor_n // device_b]
-                stride = [
-                    (tensor_m * tensor_n) // (device_a * device_b),
-                    tensor_n // device_b,
-                    tensor_n,
-                    1,
-                ]
+                stride = [0, tensor_n // device_b, tensor_n, 1]
             elif partition_str == "RR":
                 # Both dimensions replicated
                 device_dims = []

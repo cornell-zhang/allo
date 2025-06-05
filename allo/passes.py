@@ -714,7 +714,7 @@ def analyze_use_def(mod):
     return res
 
 
-def analyze_read_write_patterns(mlir_func):
+def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
     """
     Analyze the read/write patterns of function arguments to determine which are inputs and outputs.
     Handles subview operations and common linalg operations.
@@ -801,8 +801,25 @@ def analyze_read_write_patterns(mlir_func):
             for op in block.operations:
                 op_name = str(op.operation.name)
 
+                # user defined external kernel
+                if (
+                    isinstance(op, func_d.CallOp)
+                    and op.callee.value in external_kernel_lib
+                ):
+                    callee_name = op.callee.value
+                    ext_module = external_kernel_lib[callee_name]
+                    input_arg_idx, output_arg_idx = set(), set()
+                    for idx in ext_module.input_idx:
+                        input_arg_idx.add(resolve_to_func_arg_index(op.operands[idx]))
+                    for idx in ext_module.output_idx:
+                        output_arg_idx.add(resolve_to_func_arg_index(op.operands[idx]))
+                    if arg_index in input_arg_idx:
+                        is_input = True
+                    if arg_index in output_arg_idx:
+                        is_output = True
+
                 # Handle common memory operations directly
-                if op_name in {"memref.load", "affine.load"}:
+                elif op_name in {"memref.load", "affine.load"}:
                     # First operand (or last for affine) is the source memref
                     mem_index = 0 if op_name == "memref.load" else -1
                     if len(op.operands) > abs(mem_index):

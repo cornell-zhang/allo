@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
 
+import os
 import ast
 import sys
 import traceback
@@ -40,6 +41,9 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+
+if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
+    from ..backend.experimental.external_kernel import ExternalModule
 
 
 # pylint: disable=too-many-public-methods
@@ -859,6 +863,14 @@ class TypeInferer(ASTVisitor):
             new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # HLS IP, suppose it does not have return values
+                # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                node.shape = None
+                node.dtype = None
+                return node
+            if os.getenv("USE_AIE_MLIR_BUILDER") == "1" and isinstance(
+                obj, ExternalModule
+            ):
+                # AIE external kernel, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
                 node.shape = None
                 node.dtype = None
