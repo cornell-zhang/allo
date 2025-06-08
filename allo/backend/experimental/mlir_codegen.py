@@ -38,7 +38,7 @@ from ..._mlir.dialects import func as allo_func_d
 from ...memory import DTensor
 
 from .utils import get_element_type
-from ..aie import map_kernels_to_device_mesh
+from ..ai_engine import map_kernels_to_device_mesh
 
 
 class Stream:
