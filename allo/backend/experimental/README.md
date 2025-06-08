@@ -5,20 +5,19 @@
 ## Environment Setup
 Please follow the [Getting Started](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai-on-linux) guide to install MLIR-AIE.
 
-In **Step 3: Install IRON library, mlir-aie, and llvm-aie compilers from wheels**, under the section [Install IRON for AMD Ryzen™ AI AIE Application Development](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-iron-for-amd-ryzen-ai-aie-application-development), please install version `v1.0` using the following commands:
-```bash
-# Install IRON library and mlir-aie from a wheel
-python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-
-# Install Peano from a llvm-aie wheel
-python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-```
-
-Then, install Allo as usual:
+Install Allo:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
 python3 -m pip install -v -e .
 ```
+This will install the IRON library, and the mlir-aie and llvm-aie compiler release v1.0 from whls.
+
+Install MLIR Python Extras:
+```bash
+HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
+```
+
+
 
 ### Commands Used
 
@@ -30,12 +29,13 @@ Below are the exact commands to set up the environment:
    conda activate allo
    ```
 
-2. install release 1.0
+2. Clone the allo repository and install.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
    ```bash
-   # Install IRON library and mlir-aie from a wheel
-   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-   # Install Peano from a llvm-aie wheel
-   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+   git clone https://github.com/cornell-zhang/allo.git
+   cd allo
+   python3 -m pip install -v -e .
+   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
    ```
 
 3. Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
@@ -50,8 +50,6 @@ Below are the exact commands to set up the environment:
    python3 -m pip install -r python/requirements.txt
    # Install the pre-commit hooks defined in .pre-commit-config.yaml
    pre-commit install
-   # Install MLIR Python Extras 
-   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
    # Install Torch for ML examples
    python3 -m pip install -r python/requirements_ml.txt
    ```
@@ -59,14 +57,6 @@ Below are the exact commands to set up the environment:
 5. Setup environment and add tools to PATHs
    ```bash
    source utils/env_setup.sh
-   ```
-
-6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
-   ```bash
-   git clone https://github.com/cornell-zhang/allo.git
-   cd allo
-   python3 -m pip install -v -e .
    ```
 
 Do not forget to setup Vitis and XRT.
