@@ -4,7 +4,6 @@
 # pylint: disable=no-name-in-module, unused-argument, unexpected-keyword-arg, no-value-for-parameter, eval-used, bad-builtin
 
 import gc
-import os
 import ast
 import sys
 import traceback
@@ -64,9 +63,7 @@ from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule, c2allo_type
 from ..utils import get_mlir_dtype_from_str
 from ..logging import print_error_message
-
-if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
-    from ..backend.experimental.external_kernel import ExternalModule
+from ..backend.experimental.external_kernel import ExternalModule
 
 
 class ASTBuilder(ASTVisitor):
@@ -2023,12 +2020,16 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
-            modules_to_check = (
-                (IPModule, ExternalModule)
-                if os.getenv("USE_AIE_MLIR_BUILDER") == "1"
-                else (IPModule,)
+            # modules_to_check = (
+            #     (IPModule, ExternalModule)
+            #     if os.getenv("USE_AIE_MLIR_BUILDER") == "1"
+            #     else (IPModule,)
+            # )
+            fn_name = (
+                obj.__name__
+                if not isinstance(obj, (IPModule, ExternalModule))
+                else None
             )
-            fn_name = obj.__name__ if not isinstance(obj, modules_to_check) else None
             if fn_name == "array":
                 # as it directly runs the node inside, this branch is put in the front
                 array = eval(ast.unparse(node), ctx.global_vars)
@@ -2045,7 +2046,7 @@ class ASTTransformer(ASTBuilder):
                 return results
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
-            if isinstance(obj, modules_to_check):
+            if isinstance(obj, (IPModule, ExternalModule)):
                 # Add HLS IP as external library
                 if obj not in ctx.ext_libs:
                     ctx.ext_libs.append(obj)
