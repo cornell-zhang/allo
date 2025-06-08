@@ -18,4 +18,7 @@ sympy
 rich
 ml_dtypes
 gurobipy
+pyparsing
+mlir_aie @ https://github.com/Xilinx/mlir-aie/releases/download/v1.0/mlir_aie-0.0.1.2025042204+24208c0-cp312-cp312-manylinux_2_35_x86_64.whl
+llvm_aie @ https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 past @ https://github.com/cornell-zhang/past-python-bindings/releases/download/65f989b/past-0.7.2-cp312-cp312-linux_x86_64.whl
