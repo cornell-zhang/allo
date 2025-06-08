@@ -43,6 +43,7 @@ jobs:
       shell: bash
       run: |
         source activate allo
+        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest --ignore=tests/dataflow tests -v
