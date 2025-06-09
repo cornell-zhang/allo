@@ -275,7 +275,8 @@
         <span class="c1"># Update insertion point</span>
         <span class="n">sch</span><span class="o">.</span><span class="n">ip</span> <span class="o">=</span> <span class="n">InsertionPoint</span><span class="o">.</span><span class="n">at_block_terminator</span><span class="p">(</span><span class="n">sch</span><span class="o">.</span><span class="n">top_func</span><span class="o">.</span><span class="n">entry_block</span><span class="p">)</span>
         <span class="c1"># Record primitive sequences</span>
-        <span class="n">sch</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="n">kwargs</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">!=</span> <span class="s2">&quot;compose&quot;</span><span class="p">:</span>
+            <span class="n">sch</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="n">kwargs</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">res</span>
 
     <span class="k">return</span> <span class="n">wrapper</span>
@@ -303,7 +304,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">top_func</span> <span class="o">=</span> <span class="n">top_func</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">top_func_name</span> <span class="o">=</span> <span class="n">top_func</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">value</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span> <span class="o">=</span> <span class="n">func_args</span>  <span class="c1"># only store names here</span>
+        <span class="c1"># func_args are dtensors</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span> <span class="o">=</span> <span class="n">func_args</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ip</span> <span class="o">=</span> <span class="n">ip</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">primitive_sequences</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="n">ext_libs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -463,7 +465,7 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        target: allo.ir.utils.MockBuffer</span>
+<span class="sd">        target: allo.ir.utils.MockBuffer | str</span>
 <span class="sd">            The array to partition.</span>
 
 <span class="sd">        partition_type: allo.customize.Partition</span>
@@ -491,6 +493,8 @@
                 <span class="n">partition_type</span> <span class="o">=</span> <span class="mi">2</span>
             <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">AlloValueError</span><span class="p">(</span><span class="s2">&quot;Not supported partition type&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">MockBuffer</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">target</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
         <span class="c1"># test whether partitioning the same array</span>
         <span class="k">for</span> <span class="n">parray</span><span class="p">,</span> <span class="n">items</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partitioned_arrays</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
@@ -518,15 +522,22 @@
             <span class="n">visited_target_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">mlir_target</span> <span class="o">=</span> <span class="n">find_buffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">inner_target</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">)</span>
             <span class="c1"># equivalent users</span>
-            <span class="k">if</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]:</span>
+            <span class="n">arg_names</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">dtensor</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">dtensor</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">dtensor</span>
+                <span class="k">for</span> <span class="n">dtensor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">inner_target</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">arg_names</span><span class="p">:</span>
                 <span class="c1"># is a function argument</span>
-                <span class="n">idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">arg_names</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">inner_target</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
                 <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inner_target</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="k">for</span> <span class="n">buf_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_equivalent_variables</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
                 <span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span> <span class="o">=</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">buf_name</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
                     <span class="c1"># function argument</span>
-                    <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)],</span> <span class="s2">&quot;name&quot;</span><span class="p">):</span>
+                        <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span><span class="o">.</span><span class="n">name</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">buf_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">[</span><span class="n">path</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">buf_name</span><span class="p">)]</span>
                 <span class="n">recursive_partition</span><span class="p">(</span><span class="n">MockBuffer</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">buf_name</span><span class="p">))</span>
             <span class="c1"># calling the same function</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mlir_target</span><span class="p">,</span> <span class="n">func_d</span><span class="o">.</span><span class="n">CallOp</span><span class="p">):</span>
@@ -1193,8 +1204,7 @@
                 <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">context</span><span class="p">,</span> <span class="n">Location</span><span class="o">.</span><span class="n">unknown</span><span class="p">():</span>
                     <span class="n">primitive_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
                     <span class="c1"># directly apply primitives to new functions</span>
-                    <span class="n">primitive_func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">primitive_sequences</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">primitive</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">))</span></div>
+                    <span class="n">primitive_func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_equivalent_variables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
