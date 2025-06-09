@@ -3,7 +3,6 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments
 
 import functools
-import os
 from ._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -17,14 +16,12 @@ from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_df_kernels
-from .backend.aie import AIEModule
+from .backend.ai_engine import AIEModule
 
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
-
-if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
-    from .backend.experimental import AIE_MLIRModule
+from .backend.experimental import AIE_MLIRModule
 
 
 def get_pid():
@@ -329,11 +326,7 @@ def build(
         stream_info = move_stream_to_interface(s)
         s = _build_top(s, stream_info, target="aie")
         aie_mod = AIE_MLIRModule(
-            s.module,
-            s.top_func_name,
-            s.func_args,
-            project,
-            stream_info,
+            s.module, s.top_func_name, s.func_args, project, stream_info, s.ext_libs
         )
         aie_mod.build(
             profile=profile,

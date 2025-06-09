@@ -33,6 +33,7 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install -v -e .
+        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
     - name: Formatting Check
       shell: bash
       run: |
@@ -42,6 +43,7 @@ jobs:
       shell: bash
       run: |
         source activate allo
+        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest --ignore=tests/dataflow tests -v
@@ -49,12 +51,14 @@ jobs:
       shell: bash
       run: |
         source activate allo
+        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest tutorials -v
     - name: Benchmark
       shell: bash
       run: |
         source activate allo
+        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest examples/polybench -v
     # no left space!

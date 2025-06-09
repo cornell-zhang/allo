@@ -5,20 +5,19 @@
 ## Environment Setup
 Please follow the [Getting Started](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai-on-linux) guide to install MLIR-AIE.
 
-In **Step 3: Install IRON library, mlir-aie, and llvm-aie compilers from wheels**, under the section [Install IRON for AMD Ryzen™ AI AIE Application Development](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-iron-for-amd-ryzen-ai-aie-application-development), please install version `v1.0` using the following commands:
-```bash
-# Install IRON library and mlir-aie from a wheel
-python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-
-# Install Peano from a llvm-aie wheel
-python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-```
-
-Then, install Allo as usual:
+Install Allo:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
 python3 -m pip install -v -e .
 ```
+This will install the IRON library, and the mlir-aie and llvm-aie compiler release v1.0 from whls.
+
+Install MLIR Python Extras:
+```bash
+HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
+```
+
+
 
 ### Commands Used
 
@@ -30,12 +29,13 @@ Below are the exact commands to set up the environment:
    conda activate allo
    ```
 
-2. install release 1.0
+2. Clone the allo repository and install.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
    ```bash
-   # Install IRON library and mlir-aie from a wheel
-   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-   # Install Peano from a llvm-aie wheel
-   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+   git clone https://github.com/cornell-zhang/allo.git
+   cd allo
+   python3 -m pip install -v -e .
+   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
    ```
 
 3. Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
@@ -50,8 +50,6 @@ Below are the exact commands to set up the environment:
    python3 -m pip install -r python/requirements.txt
    # Install the pre-commit hooks defined in .pre-commit-config.yaml
    pre-commit install
-   # Install MLIR Python Extras 
-   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
    # Install Torch for ML examples
    python3 -m pip install -r python/requirements_ml.txt
    ```
@@ -59,14 +57,6 @@ Below are the exact commands to set up the environment:
 5. Setup environment and add tools to PATHs
    ```bash
    source utils/env_setup.sh
-   ```
-
-6. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
-   ```bash
-   git clone https://github.com/cornell-zhang/allo.git
-   cd allo
-   python3 -m pip install -v -e .
    ```
 
 Do not forget to setup Vitis and XRT.
@@ -365,6 +355,92 @@ C = np.zeros((M, N)).astype(np.int32)
 tmp_C = np.zeros((M, N)).astype(np.int32)
 mod(A, B, C)
 ```
+
+## New Feature
+### Support for user-defined external kernels
+
+Originally, complex computations on AIE cores were implemented using a limited set of [external kernels provided in the `mlir-aie` repository](https://github.com/Xilinx/mlir-aie/tree/v1.0/aie_kernels). However, this external kernel library supports only a narrow range of operations and leaves room for performance improvement. To address these limitations, we add support for user-defined external kernels.
+
+Users can now register and invoke external kernels implemented in C++ and exposed via extern "C" interfaces. These kernels can be written using the AIE API and integrated into the programming model workflow.
+
+Suppose the external kernel is implemented in the `norm.cc` file:
+```cpp
+#include <aie_api/aie.hpp>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <type_traits>
+
+#define NOCPP
+
+#define EPS 1e-6f // epsilon
+
+template <typename T_in, typename T_out, const int SEQ_LEN, const int HIDDEN>
+void rms_norm_single_batch(T_in *input_tensor, T_in *weight,
+                           T_out *output_tensor) {
+  constexpr int vec_factor = 16;
+  using vec_t = aie::vector<T_in, vec_factor>;
+  event0();
+  for (int iter = 0; iter < SEQ_LEN; iter++) {
+    T_in *__restrict input_ptr = input_tensor;
+    T_in *__restrict weight_ptr = weight;
+    T_out *__restrict output_ptr = output_tensor;
+    float square_sum = 0.0f;
+    const int F = HIDDEN / vec_factor;
+    for (int i = 0; i < F; i++) {
+      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+      input_ptr += vec_factor;
+      vec_t square_vec = aie::mul(input_vec, input_vec);
+      square_sum += aie::reduce_add(square_vec);
+    }
+    vec_t square_sum_vec =
+        aie::broadcast<T_in, vec_factor>(square_sum / HIDDEN + EPS);
+    vec_t rms = aie::invsqrt(square_sum_vec);
+    input_ptr = input_tensor;
+    for (int i = 0; i < F; i++) {
+      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+      input_ptr += vec_factor;
+      vec_t normed = aie::mul(input_vec, rms);
+      vec_t weight_vec = aie::load_v<vec_factor>(weight_ptr);
+      weight_ptr += vec_factor;
+      vec_t result = aie::mul(normed, weight_vec);
+      aie::store_v(output_ptr, result);
+      output_ptr += vec_factor;
+    }
+    input_tensor += HIDDEN;
+    output_tensor += HIDDEN;
+  }
+  event1();
+}
+```
+and exposed via extern "C" interfaces
+```cpp
+extern "C" {
+  void layer_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
+    rms_norm_single_batch<float, float, 4, 512>(&A_in[0][0], B_in, &C_out[0][0]);
+  }
+}
+```
+
+We can create an [ExternalModule](external_kernel.py) to wrap the kernel and use it in computation on AIE core.
+
+Register the `ExternalModule` in the context.
+```python
+norm = ExternalModule(
+    top="layer_norm",       # Name of the top-level function defined with `extern "C"`
+    impl_path="norm.cc",    # Path to the user-provided source file that implements the external kernel
+    input_idx=[0, 1],       # Indices of input arguments in the argument list passed to the module
+    output_idx=[2],         # Indices of output arguments in the argument list passed to the module
+)
+```
+And the external module can then be used in an Allo kernel.
+```python
+@df.kernel(mapping=[1])
+    def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
+        norm(A, B, C)
+```
+
+An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
 
 ### ⚠️ Note
 Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.

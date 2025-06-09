@@ -43,10 +43,12 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pip install -v -e .
+        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
     - name: Build docs
       shell: bash
       run: |
         source activate allo
+        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
         export PATH=/root/llvm-project/build/bin:${PATH}
         cd docs
         export LLVM_BUILD_DIR=/root/llvm-project/build

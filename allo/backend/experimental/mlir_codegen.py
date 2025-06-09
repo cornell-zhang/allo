@@ -38,7 +38,7 @@ from ..._mlir.dialects import func as allo_func_d
 from ...memory import DTensor
 
 from .utils import get_element_type
-from ..aie import map_kernels_to_device_mesh
+from ..ai_engine import map_kernels_to_device_mesh
 
 
 class Stream:
@@ -243,11 +243,13 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
         dma_tensor_tiles: list[DMATensorTile] = []
         # fixme: incomplete
         #   Currently, we may allow tensor tiles on a sharding dimension to be sent using different memory tiles
-        assert len(device_dims) == 1 or len(device_dims) == 2
-        lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
-        inc_factor = (
-            size[device_dims[0]] if len(device_dims) <= 1 else size[device_dims[1]]
-        )
+        if len(device_dims) <= 1:
+            lose_factor, inc_factor = 1, 1
+        elif len(device_dims) == 2:
+            lose_factor = size[device_dims[0]]
+            inc_factor = size[device_dims[1]]
+        else:
+            raise ValueError("Unsupported access pattern.")
         remaining = tensor_tiles[:]
         start_idx = 0
         while remaining:

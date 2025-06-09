@@ -11,6 +11,7 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
 from ..utils import format_str, format_code
 from ...memory import DTensor
+from .external_kernel import ExternalModule
 
 from ..._mlir.ir import (
     MemRefType,
@@ -53,7 +54,9 @@ aie_external_kernel_ctype_map = {
 
 
 def inject_external_kernels(
-    module: allo_ir.ir.Module, top_function_name
+    module: allo_ir.ir.Module,
+    top_function_name,
+    external_kernel_lib: dict[str, ExternalModule],
 ) -> tuple[dict[str, bool], dict]:
     """
     Inject external kernels for compute cores.
@@ -83,9 +86,23 @@ def inject_external_kernels(
                 if func.attributes["sym_name"].value != top_function_name:
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
-                    # continue  # fixme: crash when using external kernels
                     for block in func.regions[0].blocks:
                         for op in block.operations:
+                            if isinstance(op, allo_func_d.CallOp):
+                                use_external_kernels[func_name] = True
+                                callee_name = op.callee.value
+                                # register external kernel
+                                if callee_name in injected_kernels:
+                                    continue
+                                external_module = external_kernel_lib[callee_name]
+                                assert (
+                                    external_module is not None
+                                ), "external module not found"
+                                include_src.add(
+                                    f'#include "{external_module.filename}"\n'
+                                )
+                                injected_kernels[callee_name] = ("", "")
+                                continue
                             kernel_code, kernel_header = "", ""
                             # vec add/mul
                             if op.operation.name in {"linalg.add", "linalg.mul"}:

@@ -1,0 +1,6 @@
+# This file is copied from the mlir-aie-AIE (https://github.com/Xilinx/mlir-aie/blob/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/python/requirements_extras.txt).
+
+# This can't go in the normal requirements file because the way the wheels build parses requirements.txt
+# does not support github packages
+git+https://github.com/makslevental/mlir-python-extras@f08db06
+-f https://github.com/llvm/eudsl/releases/expanded_assets/latest
