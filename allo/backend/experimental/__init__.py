@@ -6,7 +6,10 @@ import os
 import subprocess
 import shutil
 
-import aie.ir as aie_ir
+try:
+    import aie.ir as aie_ir
+except ImportError:
+    pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
