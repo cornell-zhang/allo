@@ -5,19 +5,22 @@
 ## Environment Setup
 Please follow the [Getting Started](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai-on-linux) guide to install MLIR-AIE.
 
-Install Allo:
+In **Step 3: Install IRON library, mlir-aie, and llvm-aie compilers from wheels**, under the section [Install IRON for AMD Ryzen™ AI AIE Application Development](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-iron-for-amd-ryzen-ai-aie-application-development), please install version `v1.0` using the following commands:
+```bash
+# Install IRON library and mlir-aie from a wheel
+python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
+
+# Install Peano from a llvm-aie wheel
+python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+```
+> ⚠️ **Note:** The mlir_aie wheel require `manylinux_2_35`, and some systems (e.g., those with glibc 2.34, can be confirmed by `ldd --version`) do not meet this requirement. This results in an installation failure like:
+> `ERROR: mlir_aie-0.0.1.2025042204+24208c0-cp312-cp312-manylinux_2_35_x86_64.whl is not a supported wheel on this platform.`
+
+Then, install Allo as usual:
 ```bash
 git clone https://github.com/cornell-zhang/allo.git && cd allo
 python3 -m pip install -v -e .
 ```
-This will install the IRON library, and the mlir-aie and llvm-aie compiler release v1.0 from whls.
-
-Install MLIR Python Extras:
-```bash
-HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
-```
-
-
 
 ### Commands Used
 
@@ -29,13 +32,12 @@ Below are the exact commands to set up the environment:
    conda activate allo
    ```
 
-2. Clone the allo repository and install.
-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+2. install release 1.0
    ```bash
-   git clone https://github.com/cornell-zhang/allo.git
-   cd allo
-   python3 -m pip install -v -e .
-   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
+   # Install IRON library and mlir-aie from a wheel
+   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
+   # Install Peano from a llvm-aie wheel
+   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
    ```
 
 3. Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
@@ -50,6 +52,8 @@ Below are the exact commands to set up the environment:
    python3 -m pip install -r python/requirements.txt
    # Install the pre-commit hooks defined in .pre-commit-config.yaml
    pre-commit install
+   # Install MLIR Python Extras 
+   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
    # Install Torch for ML examples
    python3 -m pip install -r python/requirements_ml.txt
    ```
@@ -57,6 +61,14 @@ Below are the exact commands to set up the environment:
 5. Setup environment and add tools to PATHs
    ```bash
    source utils/env_setup.sh
+   ```
+
+6. Clone the allo repository and install.
+   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
+   ```bash
+   git clone https://github.com/cornell-zhang/allo.git
+   cd allo
+   python3 -m pip install -v -e .
    ```
 
 Do not forget to setup Vitis and XRT.
@@ -119,13 +131,7 @@ def downgrade_ir_for_peano(llvmir):
 
 ## Usage
 
-To enable the experimental MLIR-AIE codegen, set the following environment variable:
-
-```bash
-export USE_AIE_MLIR_BUILDER=1
-```
-
-Then, specify `"aie-mlir"` as the target in the `dataflow.build` function.
+To enable the experimental MLIR-AIE codegen, specify `"aie-mlir"` as the target in the `dataflow.build` function.
 
 ### Example
 vector addition
@@ -356,8 +362,7 @@ tmp_C = np.zeros((M, N)).astype(np.int32)
 mod(A, B, C)
 ```
 
-## New Feature
-### Support for user-defined external kernels
+#### Support for user-defined external kernels
 
 Originally, complex computations on AIE cores were implemented using a limited set of [external kernels provided in the `mlir-aie` repository](https://github.com/Xilinx/mlir-aie/tree/v1.0/aie_kernels). However, this external kernel library supports only a narrow range of operations and leaves room for performance improvement. To address these limitations, we add support for user-defined external kernels.
 

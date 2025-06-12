@@ -13,6 +13,11 @@ def extract_extern_C_blocks(code: str) -> list[str]:
        extern "C" { ... }
     (properly handling nested braces) and return them as raw strings.
     """
+    # Remove all // comments
+    code = re.sub(r"//.*?$", "", code, flags=re.MULTILINE)
+    # Remove all /* ... */ comments (including multiline)
+    code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
+
     extern_kw = Keyword("extern")
     c_literal = Literal('"C"')
     brace_group = nestedExpr("{", "}")

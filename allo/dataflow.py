@@ -21,7 +21,7 @@ from .backend.ai_engine import AIEModule
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
-from .backend.experimental import AIE_MLIRModule
+from .backend import AIE_MLIRModule
 
 
 def get_pid():
