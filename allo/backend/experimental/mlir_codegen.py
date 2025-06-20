@@ -47,6 +47,7 @@ from ..ai_engine import map_kernels_to_device_mesh
 from .mapping import (
     SwitchNode,
     PEInterface,
+    LiveDTensorTile,
     LiveDTensorTileGroup,
     DTensorTileGroup,
     ComputationGraph,
@@ -629,6 +630,7 @@ class CodeGenerator:
     # ------------------------------------------------------------
     @dataclass(frozen=True)
     class GlobalIODMAPort:
+        order_tag: int
         fifo: FIFO
         connect_interface: list  # [MulticastInterface]
         size: list[int]
@@ -637,6 +639,7 @@ class CodeGenerator:
 
     @dataclass(frozen=True)
     class GlobalIODMATask:
+        token: str
         start_time: int
         end_time: int
         io_port: "CodeGenerator.GlobalIODMAPort"
@@ -1207,8 +1210,14 @@ class CodeGenerator:
                             )
                         shim_port_to_mem.bind_to_fifo(dma_fifo)
                         mem_port_to_shim.bind_to_fifo(dma_fifo)
+                        order_tag = len(node_order_tag)
+                        for multicase_interfaces in interface_list:
+                            for interface in multicase_interfaces.interface_list:
+                                if order_tag > node_order_tag[interface.pe]:
+                                    order_tag = node_order_tag[interface.pe]
                         global_io_port.append(
                             CodeGenerator.GlobalIODMAPort(
+                                order_tag=order_tag,
                                 fifo=dma_fifo,
                                 connect_interface=interface_list,
                                 size=coalesced_size.to_list(),
@@ -1309,8 +1318,14 @@ class CodeGenerator:
                                 )
                             shim_port_to_mem.bind_to_fifo(dma_fifo)
                             mem_port_to_shim.bind_to_fifo(dma_fifo)
+                            order_tag = len(node_order_tag)
+                            for multicase_interfaces in partitioned_interface_list:
+                                for interface in multicase_interfaces.interface_list:
+                                    if order_tag > node_order_tag[interface.pe]:
+                                        order_tag = node_order_tag[interface.pe]
                             global_io_port.append(
                                 CodeGenerator.GlobalIODMAPort(
+                                    order_tag=order_tag,
                                     fifo=dma_fifo,
                                     connect_interface=partitioned_interface_list,
                                     size=coalesced_size.to_list(),
@@ -1324,6 +1339,28 @@ class CodeGenerator:
                     inc = partitioned_size.get_total_size()
                     interface_list = interface_list[inc:]
 
+        class GlobalTokenMap:
+            def __init__(self):
+                self.cnt = 0
+                self.map: dict[str, str] = {}
+
+            def create_token(self):
+                self.cnt += 1
+                return f"token_{self.cnt}"
+
+            def put_token(self, token: str, keys: list[str]):
+                for key_ in keys:
+                    assert key_ not in self.map
+                    self.map[key_] = token
+
+            def get_token(self, keys: list[str]):
+                for key_ in keys:
+                    if key_ in self.map:
+                        return self.map[key_]
+                return None
+
+        token_map = GlobalTokenMap()
+        # TODO: use token_map
         for io_port in global_io_port:
             interfaces: list[MulticastInterface] = io_port.connect_interface
             # TODO: only support limited cases (need to use assert as guard)
@@ -1335,8 +1372,11 @@ class CodeGenerator:
                     dtensor_ = global_dtensor[live_tensor_tile.tile.dtensor_id]
                     self.global_dma_trough_port.append(
                         CodeGenerator.GlobalIODMATask(
-                            start_time=live_tensor_tile.first_use,
-                            end_time=live_tensor_tile.last_use,
+                            token=live_tensor_tile.token,
+                            start_time=live_tensor_tile.first_use
+                            + Config.GLOBAL_CODE_OFFSET * io_port.order_tag,
+                            end_time=live_tensor_tile.last_use
+                            + Config.GLOBAL_CODE_OFFSET * io_port.order_tag,
                             io_port=io_port,
                             dtensor=dtensor_,
                             offset=dtensor_.offset_map[
@@ -1604,8 +1644,14 @@ class CodeGenerator:
                     )
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
-                    self.global_dma_trough_port.sort(key=lambda x: x.start_time)
+                    # data with same token should be transferred together
+                    # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
+                    print("## global_dma_trough_port")
+                    for ele in self.global_dma_trough_port:
+                        print(ele)
+                    print()
                     launched_dma = []
+                    self.global_dma_trough_port.sort(key=lambda x: x.start_time)
                     for global_dma in self.global_dma_trough_port:
                         dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
                         aiex_d.NpuDmaMemcpyNd(

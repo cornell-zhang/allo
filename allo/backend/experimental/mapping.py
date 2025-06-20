@@ -11,7 +11,6 @@ from .utils import (
     Argument,
     parse_kernel_name,
     Stream,
-    StreamType,
     get_df_kernels,
     Config,
 )
@@ -379,8 +378,12 @@ class InitialNode(NodeBase):
         """
         for live_tile_list in self.global_interfaces.values():
             for live_tile in live_tile_list:
-                live_tile.first_use = 0
-                live_tile.last_use = 9
+                if live_tile.is_input:
+                    live_tile.first_use = 0
+                    live_tile.last_use = 9
+                else:
+                    live_tile.first_use = 10
+                    live_tile.last_use = 19
 
 
 class CollocatedNode(NodeBase):
@@ -572,8 +575,8 @@ class ComputationGraph:
         chained_node.global_interfaces.update(node_a.global_interfaces)
         for key, value in node_b.global_interfaces.items():
             for live_tile in value:
-                live_tile.first_use += Config.CODE_OFFSET * node_a.length
-                live_tile.last_use += Config.CODE_OFFSET * node_a.length
+                live_tile.first_use += Config.LOCAL_CODE_OFFSET * node_a.length
+                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.length
             chained_node.global_interfaces[arg_idx_offset + key] = value
         new_token = node_a.name + "-" + node_b.name
         for live_tile_list in chained_node.global_interfaces.values():
