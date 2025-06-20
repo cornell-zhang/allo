@@ -871,3 +871,38 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
             code += format_str(f"ifile{i}.close();")
         code += file_close_str
     return code
+
+
+# ############################################################
+# Tools
+# ############################################################
+
+
+class UnionFind:
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, x):
+        # Path compression
+        if self.parent.setdefault(x, x) != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x, y):
+        self.parent[self.find(x)] = self.find(y)
+
+
+def merge_token_sets(token_sets: list) -> list:
+    uf = UnionFind()
+    # union all overlapping tokens
+    for token_set in token_sets:
+        token_list = list(token_set)
+        for i in range(1, len(token_list)):
+            uf.union(token_list[0], token_list[i])
+    # group tokens
+    groups = {}
+    for token_set in token_sets:
+        for token in token_set:
+            root = uf.find(token)
+            groups.setdefault(root, set()).add(token)
+    return list(groups.values())

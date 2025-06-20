@@ -38,6 +38,7 @@ from ...memory import (
 from .utils import (
     get_element_type,
     collect_op_by_name,
+    merge_token_sets,
     device_config_map,
     Argument,
     Stream,
@@ -646,6 +647,17 @@ class CodeGenerator:
         dtensor: DTensor
         offset: list[int]
 
+    class DMATaskWithToken:
+        def __init__(self, task: "CodeGenerator.GlobalIODMATask"):
+            self.start_time: int = task.start_time
+            self.end_time: int = task.end_time
+            self.tasks: list[CodeGenerator.GlobalIODMATask] = [task]
+
+        def add(self, task: "CodeGenerator.GlobalIODMATask"):
+            self.start_time = min(self.start_time, task.start_time)
+            self.end_time = max(self.end_time, task.end_time)
+            self.tasks.append(task)
+
     def map_data_transfer(self) -> dict[str, dict[int, FIFO]]:
 
         def partition(size: Size4D) -> Size4D:
@@ -719,6 +731,14 @@ class CodeGenerator:
             def __init__(self, interface: PEInterface):
                 self.sample_interface: PEInterface = interface
                 self.interface_list: set[PEInterface] = {interface}
+                sample_global_tensors = global_tensors[interface.pe][
+                    interface.interface_idx
+                ]
+                # disjoint
+                self.tokens: set[tuple[str]] = set()
+                self.tokens.add(
+                    tuple(sorted(list(sample_global_tensors.dtensor_groups.keys())))
+                )
 
             def _equal_data_transfer(self, other: "MulticastInterface") -> bool:
                 sample_global_tensors: LiveDTensorTileGroup = global_tensors[
@@ -753,7 +773,8 @@ class CodeGenerator:
                 other_global_tensor: LiveDTensorTileGroup = global_tensors[
                     other.sample_interface.pe
                 ][other.sample_interface.interface_idx]
-                # TODO: can be relaxed
+                # TODO: can be relaxed:
+                #   currently, if the interface is reused by multiple groups (different tokens), it cannot be multicast
                 if (
                     len(sample_global_tensors.dtensor_groups)
                     == len(other_global_tensor.dtensor_groups)
@@ -806,6 +827,11 @@ class CodeGenerator:
                             new_size_list[i] = (
                                 new_size_list[i] + offset_2[i] - offset_1[i]
                             )
+                        self.tokens.add(
+                            tuple(
+                                sorted(list(other_global_tensor.dtensor_groups.keys()))
+                            )
+                        )
                         return Size4D.from_list(new_size_list)
                 return None
 
@@ -1339,28 +1365,28 @@ class CodeGenerator:
                     inc = partitioned_size.get_total_size()
                     interface_list = interface_list[inc:]
 
-        class GlobalTokenMap:
-            def __init__(self):
-                self.cnt = 0
-                self.map: dict[str, str] = {}
+        token_map: dict[str, str] = {}
+        token_cnt = 0
+        related_token_list: list[set[tuple[str]]] = []
+        for io_port in global_io_port:
+            interfaces: list[MulticastInterface] = io_port.connect_interface
+            related_tokens: set[tuple[str]] = set()
+            for interface in interfaces:
+                related_tokens.update(interface.tokens)
+            related_token_list.append(related_tokens)
+        merged_token_sets: list[set[tuple[str]]] = merge_token_sets(related_token_list)
+        for token_set in merged_token_sets:
+            if len(token_set) > 1:
+                token_cnt += 1
+                token = f"token_{token_cnt}"
+                for local_token in token_set:
+                    assert len(local_token) == 1
+                    token_map[local_token[0]] = token
+            else:
+                for local_token in list(token_set)[0]:
+                    token_cnt += 1
+                    token_map[local_token] = f"token_{token_cnt}"
 
-            def create_token(self):
-                self.cnt += 1
-                return f"token_{self.cnt}"
-
-            def put_token(self, token: str, keys: list[str]):
-                for key_ in keys:
-                    assert key_ not in self.map
-                    self.map[key_] = token
-
-            def get_token(self, keys: list[str]):
-                for key_ in keys:
-                    if key_ in self.map:
-                        return self.map[key_]
-                return None
-
-        token_map = GlobalTokenMap()
-        # TODO: use token_map
         for io_port in global_io_port:
             interfaces: list[MulticastInterface] = io_port.connect_interface
             # TODO: only support limited cases (need to use assert as guard)
@@ -1372,7 +1398,7 @@ class CodeGenerator:
                     dtensor_ = global_dtensor[live_tensor_tile.tile.dtensor_id]
                     self.global_dma_trough_port.append(
                         CodeGenerator.GlobalIODMATask(
-                            token=live_tensor_tile.token,
+                            token=token_map[live_tensor_tile.token],
                             start_time=live_tensor_tile.first_use
                             + Config.GLOBAL_CODE_OFFSET * io_port.order_tag,
                             end_time=live_tensor_tile.last_use
@@ -1642,34 +1668,54 @@ class CodeGenerator:
                             arg.shape, get_element_type(str(arg.dtype))
                         )
                     )
+
+                dma_task_groups: dict[str, CodeGenerator.DMATaskWithToken] = {}
+                for global_dma in self.global_dma_trough_port:
+                    if global_dma.token not in dma_task_groups:
+                        group = CodeGenerator.DMATaskWithToken(global_dma)
+                        dma_task_groups[global_dma.token] = group
+                    else:
+                        group = dma_task_groups[global_dma.token]
+                        group.add(global_dma)
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
                     # data with same token should be transferred together
                     # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
-                    print("## global_dma_trough_port")
-                    for ele in self.global_dma_trough_port:
-                        print(ele)
-                    print()
                     launched_dma = []
-                    self.global_dma_trough_port.sort(key=lambda x: x.start_time)
-                    for global_dma in self.global_dma_trough_port:
-                        dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
-                        aiex_d.NpuDmaMemcpyNd(
-                            metadata=dma_fifo,
-                            bd_id=len(launched_dma),
-                            mem=runtime_seq_entry_block.arguments[
-                                global_dma.dtensor.global_id
-                            ],
-                            offsets=global_dma.offset,
-                            sizes=global_dma.io_port.size,
-                            strides=global_dma.io_port.stride,
-                            issue_token=True,
-                        )
-                        launched_dma.append(dma_fifo)
-                        if len(launched_dma) == Config.DMA_MAX_BDS:
+                    task_groups: list[CodeGenerator.DMATaskWithToken] = list(
+                        dma_task_groups.values()
+                    )
+                    task_groups.sort(key=lambda x: x.start_time)
+                    for task_group in task_groups:
+                        # assert len(task_group.tasks) <= Config.DMA_MAX_BDS
+                        if (
+                            len(task_group.tasks) + len(launched_dma)
+                            > Config.DMA_MAX_BDS
+                        ):
                             for launched_fifo in launched_dma:
                                 aiex_d.dma_wait(launched_fifo)
                             launched_dma.clear()
+                        task_group.tasks.sort(key=lambda x: x.start_time)
+
+                        # self.global_dma_trough_port.sort(key=lambda x:(x.token, x.start_time))
+                        for global_dma in task_group.tasks:
+                            dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
+                            aiex_d.NpuDmaMemcpyNd(
+                                metadata=dma_fifo,
+                                bd_id=len(launched_dma),
+                                mem=runtime_seq_entry_block.arguments[
+                                    global_dma.dtensor.global_id
+                                ],
+                                offsets=global_dma.offset,
+                                sizes=global_dma.io_port.size,
+                                strides=global_dma.io_port.stride,
+                                issue_token=True,
+                            )
+                            launched_dma.append(dma_fifo)
+                            if len(launched_dma) == Config.DMA_MAX_BDS:
+                                for launched_fifo in launched_dma:
+                                    aiex_d.dma_wait(launched_fifo)
+                                launched_dma.clear()
                     for launched_fifo in launched_dma:
                         aiex_d.dma_wait(launched_fifo)
 

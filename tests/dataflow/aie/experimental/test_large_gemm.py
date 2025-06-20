@@ -93,7 +93,7 @@ def _test_pingpong_gemm_4x4x4():
         ],
         profile=True,
         warmup=200,
-        num_iters=1000
+        num_iters=1000,
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
