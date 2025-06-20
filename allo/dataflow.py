@@ -309,7 +309,7 @@ def build(
     opt_default=True,
     enable_tensor=False,
     mapping_primitives: list[tuple[str, list]] = None,
-    profile=True,
+    profile=False,
     warmup=20,
     num_iters=100,
 ):

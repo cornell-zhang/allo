@@ -159,7 +159,9 @@ class AIE_MLIRModule:
             kernel_name = kernel.attributes["sym_name"].value
             self.core_func_args[kernel_name] = {}
             # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-            in_idx_list, out_idx_list = analyze_read_write_patterns(kernel)
+            in_idx_list, out_idx_list = analyze_read_write_patterns(
+                kernel, self.external_kernel_lib
+            )
             for io_idx_list, io_type in (
                 (in_idx_list, "in"),
                 (out_idx_list, "out"),
