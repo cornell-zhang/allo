@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import enum
 import sys
 import itertools
+from typing import Union, Optional
+from collections.abc import Callable
 import gurobipy as gp
 from gurobipy import GRB
 from allo._mlir.dialects import (
@@ -24,12 +26,14 @@ from .util import (
 
 
 @dataclass
-class DFGAnalysisResult():
+class DFGAnalysisResult:
     """Result of a dataflow graph analysis."""
+
     # loop_permutations: list of tuples (node_id, perm_idx) for each node
     loop_permutations: list[tuple[int, int]]
-    # tiling_factors: list of tuples (node_id, depth, tiling_factor) for each node in ORIGINAL loop order
-    tiling_factors: list[tuple[int, int, int]]
+    # tiling_factors: dict of node_idx, (depth, tiling factor) for each node in ORIGINAL loop order
+    tiling_factors: dict[int, tuple[int, int]]
+
 
 class DFGNodeType(enum.Enum):
     AFFINE = 0
@@ -559,7 +563,7 @@ class DFG:
     ):
         """Create a performance model for graph parallelism."""
         return self.create_performance_model(
-            loop_permutations=None,
+            pinned_permutations=None,
             enable_tile=False,
             debug_output=debug_output,
             verbose=verbose,
@@ -567,14 +571,14 @@ class DFG:
 
     def create_performance_model(
         self,
-        loop_permutations=None,
-        enable_tile=False,
-        debug_output=None,
-        verbose=False,
-        dsp_limit=2560,
-        tiling_limit=4,
+        pinned_permutations: Optional[Union[Callable, list[tuple[int, int]]]] = None,
+        enable_tile: bool = False,
+        debug_output: Optional[str] = None,
+        verbose: bool = False,
+        dsp_limit: int = 2560,
+        tiling_limit: Optional[int] = None,
     ) -> DFGAnalysisResult:
-        """Create a general performance model. 
+        """Create a general performance model.
         loop_permutations: list of tuples (node_id, perm_idx) to pin
         enable_tile: whether to enable tiling
         debug_output: file name for debugging output
@@ -594,16 +598,26 @@ class DFG:
 
         sink_node_ids = self._find_sink_nodes()
 
+        # allow passing a function that returns permutations
+        if callable(pinned_permutations):
+            pinned_permutations = [
+                (node_idx, pinned_permutations(node_idx))
+                for node_idx, node in self.nodes.items()
+                if node.type == DFGNodeType.AFFINE
+            ]
+
         b_vars = self._create_permutation_variables(
-            model, pinned_permutation=loop_permutations
+            model, pinned_permutation=pinned_permutations
         )
         st_vars, fw_vars, lw_vars = self._create_timing_variables(model)
 
         # Create tiling variables
-        x_vars, u_vars = self._create_tiling_variables(model, tiling_limit, enable_tile=enable_tile)
+        x_vars, u_vars = self._create_tiling_variables(
+            model, enable_tile=enable_tile, tiling_limit=tiling_limit
+        )
 
         # Add constraints
-        self._add_tiling_constraints(model, b_vars, x_vars, dsp_limit)
+        self._add_tiling_constraints(model, x_vars, dsp_limit)
         self._add_permutation_constraints(model, b_vars)
         self._add_start_time_constraints(
             model, b_vars, st_vars, fw_vars, lw_vars, topo_order
@@ -640,16 +654,21 @@ class DFG:
         # Return optimal tiling factors in the form of (node_id, depth, tiling_factor)
         # in non-permuted loop order
 
-        if not loop_permutations:
-            loop_permutation_results = [k for k, b_var in b_vars.items() if b_var.x > 0.5]
-        if enable_tile: 
-            tiling_results = [
-                (node_id, depth, int(round(x.X))) for (node_id, depth), x in x_vars.items()
+        if not pinned_permutations:
+            loop_permutation_results = [
+                k for k, b_var in b_vars.items() if b_var.x > 0.5
             ]
-        
+        else:
+            loop_permutation_results = pinned_permutations
+        if enable_tile:
+            tiling_results = defaultdict(list)
+            for (node_id, depth), x in x_vars.items():
+                tiling_results[node_id].append((depth, int(round(x.X))))
+
         return DFGAnalysisResult(
-            loop_permutations=loop_permutation_results if not loop_permutations else None,
-            tiling_factors=tiling_results if enable_tile else None)
+            loop_permutations=loop_permutation_results,
+            tiling_factors=tiling_results if enable_tile else None,
+        )
 
     def _find_sink_nodes(self):
         """Find the sink node (return node) in the graph."""
@@ -672,27 +691,15 @@ class DFG:
                     )
 
         if pinned_permutation:
-            if not callable(pinned_permutation):
-                pinned_map = {
-                    node_id: perm_idx
-                    for node_id, perm_idx in pinned_permutation
-                }
-                
-                pinned_permutation = lambda node_id: pinned_map[node_id]
+            for node_id, perm_idx in pinned_permutation:
+                model.addConstr(
+                    b_vars[(node_id, perm_idx)] == 1,
+                    name=f"pinned_{node_id}_{perm_idx}",
+                )
 
-            for node_id, node in self.nodes.items():
-                if node.type != DFGNodeType.AFFINE:
-                    continue
-                pin = pinned_permutation(node_id) 
-                if not pinned_permutation:
-                    raise ValueError(
-                        f"No pinned permutation found for node {node_id}"
-                    )
-                model.addConstr(b_vars[(node_id, pin)] == 1,
-                               name=f"pinned_{node_id}_{pin}")
         return b_vars
 
-    def _create_tiling_variables(self, model, tiling_limit, enable_tile):
+    def _create_tiling_variables(self, model, enable_tile, tiling_limit=None):
         """Create tiling variables for the model."""
         u_vars = {}
         x_vars = {}
@@ -703,11 +710,12 @@ class DFG:
             for d, loop in enumerate(node.loop_info):
                 tc = loop.trip_count
 
-                lb = min(tc, tiling_limit) if enable_tile else 1
-                
                 # Tiling factor
                 xv = model.addVar(
-                    vtype=GRB.INTEGER, lb=lb, ub=tc, name=f"x{node.id}_{d}"
+                    vtype=GRB.INTEGER,
+                    lb=1,
+                    ub=tc - 1 if tiling_limit is None else tiling_limit,
+                    name=f"x{node.id}_{d}",
                 )
 
                 # Unroll factor (tc / xv)
@@ -718,15 +726,15 @@ class DFG:
                 # If tiling is not allowed, then force xv (the tiling factor) to be 1
                 if enable_tile:
                     model.addConstr(xv * uv == tc, name=f"c_uf{node.id}_{d}")
-                else: 
+                else:
                     model.addConstr(xv == 1, name=f"c_xf{node.id}_{d}")
 
                 x_vars[(node.id, d)] = xv
                 u_vars[(node.id, d)] = uv
-        
+
         return x_vars, u_vars
 
-    def _add_tiling_constraints(self, model: gp.Model, b_vars, x_vars, dsp_limit):
+    def _add_tiling_constraints(self, model: gp.Model, x_vars, dsp_limit):
         """Add constraints for tiling."""
 
         # tile size equality constraints
@@ -745,10 +753,7 @@ class DFG:
                 src_info = src_node.node_info[0]
 
                 memref = e.value
-                assert (
-                    memref in dst_info.loads_map
-                    and memref in src_info.stores_map
-                )
+                assert memref in dst_info.loads_map and memref in src_info.stores_map
 
                 dst_access = dst_info.loads_map[memref].access_map
                 src_access = src_info.stores_map[memref].access_map
@@ -756,8 +761,7 @@ class DFG:
                 n_dim = len(dst_access.results)
 
                 lookup = {
-                    AffineExpr.get_dim(i, src_access.context): i
-                    for i in range(n_dim)
+                    AffineExpr.get_dim(i, src_access.context): i for i in range(n_dim)
                 }
                 for dst_result, src_result in zip(
                     dst_access.results, src_access.results
@@ -995,9 +999,9 @@ class DFG:
         edge: Edge,
         node_id: int,
         dst_node: Node,
-        b_vars: dict[tuple[int,int], gp.Var],
-        u_vars: dict[tuple[int,int], gp.Var] = None,
-    ) -> list[tuple[gp.LinExpr | int, gp.Var, int]]:
+        b_vars: dict[tuple[int, int], gp.Var],
+        u_vars: dict[tuple[int, int], gp.Var] = None,
+    ) -> list[tuple[Union[gp.LinExpr, int], gp.Var, int]]:
         """
         Returns a list of triples (lr_expr, b_var, perm_idx) for every consumer perm
         that actually reads `edge.value`.
@@ -1050,7 +1054,6 @@ class DFG:
 
         return rlr_terms
 
-
     def _compute_depend_term(self, model, src_id, node_id, rlr_terms, st_vars, lw_vars):
         r"""Depend(n, n') = max(st(n) + sum(b \in B_n) [LR_n^n'], lw(n'))"""
         depend_term = model.addVar(vtype=GRB.INTEGER, name=f"depend_{src_id}_{node_id}")
@@ -1072,10 +1075,13 @@ class DFG:
 
     def _compute_epilogue_term(
         self,
-        model, edge, node_id, dst_node,
+        model,
+        edge,
+        node_id,
+        dst_node,
         lw_vars: dict[int, gp.Var],
-        b_vars: dict[tuple[int,int], gp.Var],
-        u_vars: dict[tuple[int,int], gp.Var] = None,
+        b_vars: dict[tuple[int, int], gp.Var],
+        u_vars: dict[tuple[int, int], gp.Var] = None,
     ):
         src_id = edge.id
         epilogue_term = model.addVar(
@@ -1100,9 +1106,8 @@ class DFG:
             epilogue_term == gp.quicksum(epi_terms),
             name=f"epilogue_{src_id}_{node_id}",
         )
-        
-        return epilogue_term
 
+        return epilogue_term
 
     @classmethod
     def from_module(cls, module, dsp_factors=None, mem_r_ports=None, mem_w_ports=None):
@@ -1119,5 +1124,3 @@ class DFG:
         dfg.init()
 
         return dfg
-
-

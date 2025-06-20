@@ -13,7 +13,7 @@ from allo.backend.hls import is_available
 
 kinds = [
     "graph",
-    # "node",
+    "node",
     # "combined"
 ]
 
@@ -43,7 +43,7 @@ def test_simple(debug_point, kind):
         return B
 
     s = allo.customize(simple)
-    
+
     # Create AutoschedulerConfig with the specified parameters
     cfg = AutoschedulerConfig.builder().with_debug_point(debug_point).with_kind(kind)
     optimized_schedule = dataflow_optimization_pass(s, cfg)
@@ -54,9 +54,11 @@ def test_simple(debug_point, kind):
             expected[i, j] = i + j + 1
 
     if debug_point is not None:
+        print(optimized_schedule.module)
         mod = optimized_schedule.build()
         input = np.zeros((10, 10), dtype=np.int32)
         np.testing.assert_allclose(mod(input), expected)
+        print("pass!")
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
@@ -79,10 +81,12 @@ def test_three_mm(debug_point, kind):
     )
     try:
         # Create AutoschedulerConfig with the specified parameters
-        cfg = (AutoschedulerConfig.builder()
-               .with_debug_point(debug_point)
-               .with_kind(kind)
-               .with_verbose(True))
+        cfg = (
+            AutoschedulerConfig.builder()
+            .with_debug_point(debug_point)
+            .with_kind(kind)
+            .with_verbose(True)
+        )
         optimized_schedule = dataflow_optimization_pass(schedule, cfg)
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -115,10 +119,12 @@ def test_two_mm(debug_point, kind):
     )
     try:
         # Create AutoschedulerConfig with the specified parameters
-        cfg = (AutoschedulerConfig.builder()
-               .with_debug_point(debug_point)
-               .with_kind(kind)
-               .with_verbose(True))
+        cfg = (
+            AutoschedulerConfig.builder()
+            .with_debug_point(debug_point)
+            .with_kind(kind)
+            .with_verbose(True)
+        )
         optimized_schedule = dataflow_optimization_pass(schedule, cfg)
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -149,10 +155,12 @@ def test_atax(debug_point, kind):
     )
     try:
         # Create AutoschedulerConfig with the specified parameters
-        cfg = (AutoschedulerConfig.builder()
-               .with_debug_point(debug_point)
-               .with_kind(kind)
-               .with_verbose(True))
+        cfg = (
+            AutoschedulerConfig.builder()
+            .with_debug_point(debug_point)
+            .with_kind(kind)
+            .with_verbose(True)
+        )
         optimized_schedule = dataflow_optimization_pass(schedule, cfg)
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -207,9 +215,9 @@ def test_gemm(debug_point, kind):
     )
     try:
         # Create AutoschedulerConfig with the specified parameters
-        cfg = (AutoschedulerConfig.builder()
-               .with_debug_point(debug_point)
-               .with_kind(kind))
+        cfg = (
+            AutoschedulerConfig.builder().with_debug_point(debug_point).with_kind(kind)
+        )
         optimized_schedule = dataflow_optimization_pass(schedule, cfg)
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -245,9 +253,9 @@ def test_gesummv(debug_point, kind):
     )
     try:
         # Create AutoschedulerConfig with the specified parameters
-        cfg = (AutoschedulerConfig.builder()
-               .with_debug_point(debug_point)
-               .with_kind(kind))
+        cfg = (
+            AutoschedulerConfig.builder().with_debug_point(debug_point).with_kind(kind)
+        )
         optimized_schedule = dataflow_optimization_pass(schedule, cfg)
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
@@ -294,4 +302,5 @@ def test_gesummv(debug_point, kind):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_simple(debug_point="loop_opts", kind="node")

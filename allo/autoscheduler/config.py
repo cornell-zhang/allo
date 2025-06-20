@@ -1,22 +1,28 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from dataclasses import dataclass, field
-from typing import Optional, Dict
+from typing import Optional
+
 
 @dataclass
 class AutoschedulerConfig:
-    dsp_factors: Dict[str, int] = field(default_factory=lambda: {
-        "arith.mulf": 3,
-        "arith.addf": 1,
-        "arith.subf": 1,
-        "arith.divf": 14,
-        "arith.remf": 14,
-        "arith.muli": 1,
-        "arith.addi": 0,
-        "arith.subi": 0,
-        "arith.divi": 8,
-        "arith.divu": 8,
-        "arith.remi": 8,
-        "arith.remu": 8,
-    })
+    dsp_factors: dict[str, int] = field(
+        default_factory=lambda: {
+            "arith.mulf": 3,
+            "arith.addf": 1,
+            "arith.subf": 1,
+            "arith.divf": 14,
+            "arith.remf": 14,
+            "arith.muli": 1,
+            "arith.addi": 0,
+            "arith.subi": 0,
+            "arith.divi": 8,
+            "arith.divu": 8,
+            "arith.remi": 8,
+            "arith.remu": 8,
+        }
+    )
     dsp_limit: int = 2560
     tiling_limit: int = 4
     mem_w_ports: Optional[int] = None
@@ -32,7 +38,7 @@ class AutoschedulerConfig:
         """Start a new builder chain."""
         return AutoschedulerConfig()
 
-    def with_dsp_factors(self, factors: Dict[str, int]):
+    def with_dsp_factors(self, factors: dict[str, int]):
         self.dsp_factors = factors
         return self
 

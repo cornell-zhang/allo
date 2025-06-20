@@ -31,8 +31,8 @@ def test_simple_graph_parallel():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    assert permutations[0][1] != permutations[1][1]
+    sol = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    assert sol.loop_permutations[0][1] != sol.loop_permutations[1][1]
 
 
 def test_simple2():
@@ -55,10 +55,8 @@ def test_simple2():
 
     dfg = DFG.from_module(s.module)
     dfg.print_as_dot("simple2.dot")
-    permutations = dfg.create_graph_parallelism_performance_model(
-        debug_output="simple2"
-    )
-    assert permutations[0][1] == permutations[1][1]
+    sol = dfg.create_graph_parallelism_performance_model(debug_output="simple2")
+    assert sol.loop_permutations[0][1] == sol.loop_permutations[1][1]
 
 
 def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
@@ -114,15 +112,22 @@ def test_simple_node_parallel():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    tiling_factors = dfg.create_node_parallelism_performance_model(
-        loop_permutation=permutations,
+    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    tiling_factors = dfg.create_performance_model(
+        pinned_permutations=res.loop_permutations,
+        enable_tile=True,
         debug_output="simple-node",
         dsp_limit=20,
         verbose=True,
     )
-    assert len(tiling_factors) == 4
-    assert all(tiling_factor[2] in (4, 5) for tiling_factor in tiling_factors)
+
+    sol = tiling_factors.tiling_factors
+    assert len(sol.keys()) == 2
+    assert all(
+        tiling_factor[1] in (4, 5)
+        for factors in sol.values()
+        for tiling_factor in factors
+    )
 
 
 def test_simple_node_parallel_full_unroll():
@@ -144,17 +149,18 @@ def test_simple_node_parallel_full_unroll():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    tiling_factors = dfg.create_node_parallelism_performance_model(
-        loop_permutation=permutations,
+    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    tiling_factors = dfg.create_performance_model(
+        pinned_permutations=res.loop_permutations,
+        enable_tile=True,
         debug_output="simple-node",
         dsp_limit=2**12,
         verbose=True,
     )
-    print(tiling_factors)
 
-    assert len(tiling_factors) == 4
-    assert all(tiling_factor[2] == 64 for tiling_factor in tiling_factors)
+    sol = tiling_factors.tiling_factors
+    assert len(sol) == 2
+    assert all(factor[1] == 32 for factors in sol.values() for factor in factors)
 
 
 def test_simple_node_parallel_infeasible():
@@ -176,13 +182,14 @@ def test_simple_node_parallel_infeasible():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
 
     with pytest.raises(RuntimeError, match="Optimization failed with status 3"):
-        dfg.create_node_parallelism_performance_model(
-            loop_permutation=permutations,
+        dfg.create_performance_model(
+            pinned_permutations=res.loop_permutations,
+            enable_tile=True,
             debug_output="simple-node",
-            dsp_limit=2,
+            dsp_limit=0,
             verbose=True,
         )
 
