@@ -308,6 +308,7 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
+    use_default_codegen:bool = False,
     mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
     warmup=20,
@@ -350,7 +351,13 @@ def build(
             stream_types_dict,
             s.ext_libs,
         )
-        if mapping_primitives is not None:
+        if use_default_codegen:
+            aie_mod.build(
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
+        elif mapping_primitives is not None:
             aie_mod.build_experimental(
                 enable_virtual_mapping=True,
                 mapping_primitives=mapping_primitives,
@@ -366,7 +373,6 @@ def build(
                 warmup=warmup,
                 num_iters=num_iters,
             )
-            # aie_mod.build()
         return aie_mod
 
     if target == "simulator":

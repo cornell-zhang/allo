@@ -91,6 +91,9 @@ def _test_pingpong_gemm_4x4x4():
             ("chain", ["gemm_0_3_3-gemm_1_3_3", "gemm_2_3_3"]),
             ("chain", ["gemm_0_3_3-gemm_1_3_3-gemm_2_3_3", "gemm_3_3_3"]),
         ],
+        profile=True,
+        warmup=200,
+        num_iters=1000
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
