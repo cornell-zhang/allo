@@ -1,12 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 import enum
 import sys
 import itertools
 from typing import Union, Optional
-from collections.abc import Callable
 import gurobipy as gp
 from gurobipy import GRB
 from allo._mlir.dialects import (
