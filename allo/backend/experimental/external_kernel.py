@@ -45,6 +45,7 @@ class ExternalModule:
         assert self.filename.endswith(
             ".cc"
         ), f"Expected a .cc file, but got: {self.filename}"
+        self.filename = self.filename.removesuffix(".cc") + "_.cc"
 
         self.input_idx = input_idx
         self.output_idx = output_idx
