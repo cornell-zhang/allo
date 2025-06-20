@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 from collections import defaultdict
+from dataclasses import dataclass
 import enum
 import sys
 import itertools
@@ -21,6 +22,14 @@ from .util import (
     compute_loop_II,
 )
 
+
+@dataclass
+class DFGAnalysisResult():
+    """Result of a dataflow graph analysis."""
+    # loop_permutations: list of tuples (node_id, perm_idx) for each node
+    loop_permutations: list[tuple[int, int]]
+    # tiling_factors: list of tuples (node_id, depth, tiling_factor) for each node in ORIGINAL loop order
+    tiling_factors: list[tuple[int, int, int]]
 
 class DFGNodeType(enum.Enum):
     AFFINE = 0
@@ -548,70 +557,26 @@ class DFG:
     def create_graph_parallelism_performance_model(
         self, debug_output=None, verbose=False
     ):
-        model = gp.Model("graph_parallelism_performance_model")
-
-        model.setParam("OutputFlag", 1 if verbose else 0)
-
-        # Get topological order and verify no cycles
-        topo_order = self.topological_sort()
-        if not topo_order:
-            print("Error: Cycle detected in graph")
-            return False
-
-        # Find sink nodes
-        sink_node_ids = self._find_sink_nodes()
-
-        # Create variables for the optimization model
-        b_vars = self._create_permutation_variables(model)
-        st_vars, fw_vars, lw_vars = self._create_timing_variables(model)
-
-        # Add constraints
-        self._add_permutation_constraints(model, b_vars)
-        self._add_start_time_constraints(
-            model, b_vars, st_vars, fw_vars, lw_vars, topo_order
-        )
-        self._add_first_write_time_constraints(
-            model, b_vars, st_vars, fw_vars, topo_order
-        )
-        self._add_last_write_time_constraints(
-            model, b_vars, st_vars, lw_vars, topo_order
+        """Create a performance model for graph parallelism."""
+        return self.create_performance_model(
+            loop_permutations=None,
+            enable_tile=False,
+            debug_output=debug_output,
+            verbose=verbose,
         )
 
-        max_lw = model.addVar(name="max_last_write_time")
-        for sink_node_id in sink_node_ids:
-            model.addConstr(max_lw >= lw_vars[sink_node_id])
-
-        model.setObjective(max_lw, GRB.MINIMIZE)
-        model.optimize()
-        if debug_output:
-            model.write(f"{debug_output}.lp")
-
-        status_ok = model.status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.SUBOPTIMAL)
-
-        if not status_ok:
-            debug_output = debug_output or "debug"
-            model.write(f"{debug_output}.lp")
-            raise RuntimeError(
-                f"Optimization failed with status {model.status}.\n"
-                f"Model: {model.getAttr('ModelSense')}\n"
-                f"Objective: {model.getAttr('ObjVal')}\n"
-                f"Model dumped to {debug_output}.lp\n"
-            )
-
-        # Return optimal permutation assignments
-        # format is list of (node_id, perm_idx)
-        return [k for k, b_var in b_vars.items() if b_var.x > 0.5]
-
-    def create_node_parallelism_performance_model(
+    def create_performance_model(
         self,
-        loop_permutation,
+        loop_permutations=None,
+        enable_tile=False,
         debug_output=None,
         verbose=False,
         dsp_limit=2560,
         tiling_limit=4,
-    ):
-        """Create a performance model for node-level parallelism.
-        loop_permutation: list of tuples (node_id, perm_idx) to pin
+    ) -> DFGAnalysisResult:
+        """Create a general performance model. 
+        loop_permutations: list of tuples (node_id, perm_idx) to pin
+        enable_tile: whether to enable tiling
         debug_output: file name for debugging output
         verbose: whether to print verbose output
         dsp_limit: DSP budget for the model
@@ -630,12 +595,12 @@ class DFG:
         sink_node_ids = self._find_sink_nodes()
 
         b_vars = self._create_permutation_variables(
-            model, pinned_permutation=loop_permutation
+            model, pinned_permutation=loop_permutations
         )
         st_vars, fw_vars, lw_vars = self._create_timing_variables(model)
 
         # Create tiling variables
-        x_vars, u_vars = self._create_tiling_variables(model, tiling_limit)
+        x_vars, u_vars = self._create_tiling_variables(model, tiling_limit, enable_tile=enable_tile)
 
         # Add constraints
         self._add_tiling_constraints(model, b_vars, x_vars, dsp_limit)
@@ -673,9 +638,18 @@ class DFG:
             )
 
         # Return optimal tiling factors in the form of (node_id, depth, tiling_factor)
-        return [
-            (node_id, depth, int(round(x.X))) for (node_id, depth), x in x_vars.items()
-        ]
+        # in non-permuted loop order
+
+        if not loop_permutations:
+            loop_permutation_results = [k for k, b_var in b_vars.items() if b_var.x > 0.5]
+        if enable_tile: 
+            tiling_results = [
+                (node_id, depth, int(round(x.X))) for (node_id, depth), x in x_vars.items()
+            ]
+        
+        return DFGAnalysisResult(
+            loop_permutations=loop_permutation_results if not loop_permutations else None,
+            tiling_factors=tiling_results if enable_tile else None)
 
     def _find_sink_nodes(self):
         """Find the sink node (return node) in the graph."""
@@ -687,7 +661,7 @@ class DFG:
         assert len(sink_nodes) > 0, "Expected at least one sink node"
         return sink_nodes
 
-    def _create_permutation_variables(self, model, pinned_permutation=None):
+    def _create_permutation_variables(self, model, pinned_permutation):
         """Create binary variables for node permutations."""
         b_vars = {}
         for node_id, node in self.nodes.items():
@@ -698,15 +672,27 @@ class DFG:
                     )
 
         if pinned_permutation:
-            for node_id, perm_idx in pinned_permutation:
-                model.addConstr(
-                    b_vars[(node_id, perm_idx)] == 1,
-                    name=f"pinned_{node_id}_{perm_idx}",
-                )
+            if not callable(pinned_permutation):
+                pinned_map = {
+                    node_id: perm_idx
+                    for node_id, perm_idx in pinned_permutation
+                }
+                
+                pinned_permutation = lambda node_id: pinned_map[node_id]
 
+            for node_id, node in self.nodes.items():
+                if node.type != DFGNodeType.AFFINE:
+                    continue
+                pin = pinned_permutation(node_id) 
+                if not pinned_permutation:
+                    raise ValueError(
+                        f"No pinned permutation found for node {node_id}"
+                    )
+                model.addConstr(b_vars[(node_id, pin)] == 1,
+                               name=f"pinned_{node_id}_{pin}")
         return b_vars
 
-    def _create_tiling_variables(self, model, tiling_limit):
+    def _create_tiling_variables(self, model, tiling_limit, enable_tile):
         """Create tiling variables for the model."""
         u_vars = {}
         x_vars = {}
@@ -717,16 +703,27 @@ class DFG:
             for d, loop in enumerate(node.loop_info):
                 tc = loop.trip_count
 
-                lb = min(tc, tiling_limit)
+                lb = min(tc, tiling_limit) if enable_tile else 1
+                
+                # Tiling factor
                 xv = model.addVar(
                     vtype=GRB.INTEGER, lb=lb, ub=tc, name=f"x{node.id}_{d}"
                 )
+
+                # Unroll factor (tc / xv)
                 uv = model.addVar(
                     vtype=GRB.INTEGER, lb=1, ub=tc, name=f"u{node.id}_{d}"
                 )
-                model.addConstr(xv * uv == tc, name=f"c_uf{node.id}_{d}")
+
+                # If tiling is not allowed, then force xv (the tiling factor) to be 1
+                if enable_tile:
+                    model.addConstr(xv * uv == tc, name=f"c_uf{node.id}_{d}")
+                else: 
+                    model.addConstr(xv == 1, name=f"c_xf{node.id}_{d}")
+
                 x_vars[(node.id, d)] = xv
                 u_vars[(node.id, d)] = uv
+        
         return x_vars, u_vars
 
     def _add_tiling_constraints(self, model: gp.Model, b_vars, x_vars, dsp_limit):
@@ -744,54 +741,41 @@ class DFG:
                 if src_node.type != DFGNodeType.AFFINE:
                     continue
 
-                for q, dst_info in enumerate(dst_node.node_info):
-                    for p, src_info in enumerate(src_node.node_info):
-                        # indicator variable for both permutations chosen
-                        z = model.addVar(
-                            vtype=GRB.BINARY, name=f"z_and_{src_id}_{p}_{dst_id}_{q}"
-                        )
-                        model.addGenConstrAnd(
-                            z,
-                            [b_vars[(src_id, p)], b_vars[(dst_id, q)]],
-                            name=f"and_{src_id}_{p}_{dst_id}_{q}",
-                        )
+                dst_info = dst_node.node_info[0]
+                src_info = src_node.node_info[0]
 
-                        memref = e.value
-                        assert (
-                            memref in dst_info.loads_map
-                            and memref in src_info.stores_map
-                        )
+                memref = e.value
+                assert (
+                    memref in dst_info.loads_map
+                    and memref in src_info.stores_map
+                )
 
-                        dst_access = dst_info.loads_map[memref].access_map
-                        src_access = src_info.stores_map[memref].access_map
+                dst_access = dst_info.loads_map[memref].access_map
+                src_access = src_info.stores_map[memref].access_map
 
-                        n_dim = len(dst_access.results)
+                n_dim = len(dst_access.results)
 
-                        lookup = {
-                            AffineExpr.get_dim(i, src_access.context): i
-                            for i in range(n_dim)
-                        }
-                        for dst_result, src_result in zip(
-                            dst_access.results, src_access.results
-                        ):
-                            assert (
-                                dst_result in lookup and src_result in lookup
-                            ), f"Expected {dst_result} and {src_result} to be in lookup"
+                lookup = {
+                    AffineExpr.get_dim(i, src_access.context): i
+                    for i in range(n_dim)
+                }
+                for dst_result, src_result in zip(
+                    dst_access.results, src_access.results
+                ):
+                    assert (
+                        dst_result in lookup and src_result in lookup
+                    ), f"Expected {dst_result} and {src_result} to be in lookup"
 
-                            depth_src = lookup[src_result]
-                            depth_dst = lookup[dst_result]
+                    depth_src = lookup[src_result]
+                    depth_dst = lookup[dst_result]
 
-                            x_src = x_vars[(src_id, depth_src)]
-                            x_dst = x_vars[(dst_id, depth_dst)]
+                    x_src = x_vars[(src_id, depth_src)]
+                    x_dst = x_vars[(dst_id, depth_dst)]
 
-                            model.addGenConstrIndicator(
-                                z,
-                                True,
-                                x_src - x_dst,
-                                GRB.EQUAL,
-                                0,
-                                name=f"tiling_eq_{src_id}_{depth_src}_{dst_id}_{depth_dst}_{p}_{q}",
-                            )
+                    model.addConstr(
+                        x_src == x_dst,
+                        name=f"tiling_eq_{src_id}_{depth_src}_{dst_id}_{depth_dst}",
+                    )
         # DSP Budget
         dsp_terms = []
         for node in self.nodes.values():
@@ -987,7 +971,7 @@ class DFG:
 
                 # Compute epilogue term
                 epilogue_term = self._compute_epilogue_term(
-                    model, src_id, node_id, dst_node, depend_term, lw_vars, b_vars
+                    model, edge, node_id, dst_node, lw_vars, b_vars, u_vars
                 )
 
                 # Combine terms for this edge
@@ -1006,42 +990,66 @@ class DFG:
                     lw_vars[node_id], lw_terms, name=f"lw_constr_{node_id}"
                 )
 
+    def _collect_last_read_exprs(
+        self,
+        edge: Edge,
+        node_id: int,
+        dst_node: Node,
+        b_vars: dict[tuple[int,int], gp.Var],
+        u_vars: dict[tuple[int,int], gp.Var] = None,
+    ) -> list[tuple[gp.LinExpr | int, gp.Var, int]]:
+        """
+        Returns a list of triples (lr_expr, b_var, perm_idx) for every consumer perm
+        that actually reads `edge.value`.
+        """
+        out = []
+        if dst_node.type != DFGNodeType.AFFINE:
+            return out
+
+        for perm_idx, node_info in enumerate(dst_node.node_info):
+            if edge.value not in node_info.loads_map:
+                continue
+            info = node_info.loads_map[edge.value]
+
+            if u_vars is None:
+                lr = info.last_element_time
+            else:
+                mask = info.last_mask
+                xs = [u_vars[(node_id, d)] for d in node_info.permutation]
+                lr = self._make_time_eq(mask, xs)
+
+            b = b_vars[(node_id, perm_idx)]
+            out.append((lr, b, perm_idx))
+
+        return out
+
     def _compute_relative_last_read_terms(
         self, model, edge, node_id, dst_node, b_vars, st_vars, u_vars=None
     ):
-        """Compute relative last read terms for selected permutation [II * lr_time * b]"""
         rlr_terms = []
         src_id = edge.id
+
         if dst_node.type == DFGNodeType.AFFINE:
+            # seed with st(n)
             rlr_terms.append(st_vars[node_id])
-            for perm_idx, node_info in enumerate(dst_node.node_info):
-                memref = edge.value
-                if memref in node_info.loads_map:
-                    edge_info = node_info.loads_map[memref]
-                    if u_vars is None:
-                        lr_expr = edge_info.last_element_time
-                    else:
-                        mask = edge_info.last_mask
-                        xs = [u_vars[(node_id, d)] for d in node_info.permutation]
-                        print("computing last read time for", node_id)
-                        lr_expr = self._make_time_eq(mask, xs)
 
-                    ii = node_info.II
-
-                    term = model.addVar(
-                        vtype=GRB.INTEGER,
-                        lb=0,
-                        name=f"rlr_term_{src_id}_{node_id}_{perm_idx}",
-                    )
-
-                    model.addConstr(
-                        term == ii * lr_expr * b_vars[(node_id, perm_idx)],
-                        name=f"c_rlr_{src_id}_{node_id}_{perm_idx}",
-                    )
-
-                    rlr_terms.append(term)
+            for lr, b, perm_idx in self._collect_last_read_exprs(
+                edge, node_id, dst_node, b_vars, u_vars
+            ):
+                ii = dst_node.node_info[perm_idx].II
+                term = model.addVar(
+                    vtype=GRB.INTEGER,
+                    lb=0,
+                    name=f"rlr_term_{src_id}_{node_id}_{perm_idx}",
+                )
+                model.addConstr(
+                    term == ii * lr * b,
+                    name=f"c_rlr_{src_id}_{node_id}_{perm_idx}",
+                )
+                rlr_terms.append(term)
 
         return rlr_terms
+
 
     def _compute_depend_term(self, model, src_id, node_id, rlr_terms, st_vars, lw_vars):
         r"""Depend(n, n') = max(st(n) + sum(b \in B_n) [LR_n^n'], lw(n'))"""
@@ -1063,34 +1071,38 @@ class DFG:
         return depend_term
 
     def _compute_epilogue_term(
-        self, model, src_id, node_id, dst_node, depend_term, lw_vars, b_vars
+        self,
+        model, edge, node_id, dst_node,
+        lw_vars: dict[int, gp.Var],
+        b_vars: dict[tuple[int,int], gp.Var],
+        u_vars: dict[tuple[int,int], gp.Var] = None,
     ):
-        r"""Epilogue(n, n') = sum(b \in B_n) [(lw_n - LR_n^{n'}) * b]"""
+        src_id = edge.id
         epilogue_term = model.addVar(
             vtype=GRB.INTEGER, name=f"epilogue_{src_id}_{node_id}"
         )
-
         epi_terms = []
-        if dst_node.type == DFGNodeType.AFFINE:
-            for dst_perm_idx, _ in enumerate(dst_node.node_info):
-                # (lw_n - lr_n^{n'}) * b
-                term = model.addVar(
-                    vtype=GRB.INTEGER,
-                    name=f"epi_term_{src_id}_{node_id}_{dst_perm_idx}",
-                )
 
-                model.addConstr(
-                    term
-                    == (depend_term - lw_vars[src_id]) * b_vars[(node_id, dst_perm_idx)]
-                )
-                epi_terms.append(term)
+        for lr, b, perm_idx in self._collect_last_read_exprs(
+            edge, node_id, dst_node, b_vars, u_vars
+        ):
+            term = model.addVar(
+                vtype=GRB.INTEGER,
+                name=f"epi_term_{src_id}_{node_id}_{perm_idx}",
+            )
+            model.addConstr(
+                term == (lw_vars[src_id] - lr) * b,
+                name=f"epi_term_{src_id}_{node_id}_{perm_idx}",
+            )
+            epi_terms.append(term)
 
         model.addConstr(
             epilogue_term == gp.quicksum(epi_terms),
             name=f"epilogue_{src_id}_{node_id}",
         )
-
+        
         return epilogue_term
+
 
     @classmethod
     def from_module(cls, module, dsp_factors=None, mem_r_ports=None, mem_w_ports=None):
@@ -1107,3 +1119,5 @@ class DFG:
         dfg.init()
 
         return dfg
+
+

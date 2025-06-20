@@ -39,3 +39,16 @@ class SchedulePrimitive:
     @staticmethod
     def buffer_to_fifo(target: MockBuffer, dst: str):
         return SchedulePrimitive("to", [target, dst])
+    
+
+class UnresolvedFIFOPrimitive():
+    def __init__(self, buffer_name: str, node_id: int):
+        self.buffer_name = buffer_name
+        self.node_id = node_id
+    
+    def resolve(self, top_fn_name: str, node_to_fn: dict[int, str]) -> SchedulePrimitive:
+        """Resolve the unresolved FIFO primitive to a concrete SchedulePrimitive."""
+        return SchedulePrimitive.buffer_to_fifo(MockBuffer(top_fn_name, self.buffer_name), node_to_fn[self.node_id])
+
+    
+    

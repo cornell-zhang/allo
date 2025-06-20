@@ -14,16 +14,20 @@ from allo._mlir.ir import (
     IntegerType,
     WalkResult,
     Operation,
+    MemRefType,
+    IndexType
 )
 from allo._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
+    arith as arith_d,
 )
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from allo.customize import Schedule
 from allo.ir.transform import find_func_in_module
 from allo.ir.utils import MockBuffer
+from allo.ir.transform import find_buffer
 import allo
 
 from .util import (
@@ -32,8 +36,9 @@ from .util import (
     check_all_functions_inlined,
 )
 
-from .dfg import DFG, DFGNodeType, NodeInfo
-from .primitives import SchedulePrimitive
+from .dfg import DFG, DFGNodeType, NodeInfo, DFGAnalysisResult, LoopInfo
+from .primitives import SchedulePrimitive, UnresolvedFIFOPrimitive
+from .config import AutoschedulerConfig
 
 DEBUG_POINTS = [
     "mlir_preprocess",
@@ -46,22 +51,22 @@ PARALLELISM_MODELS = ["graph", "node", "combined"]
 
 
 def dataflow_optimization_pass(
-    schedule: Schedule, debug_point=None, kind=None, verify=False, verbose=False
+    schedule: Schedule, cfg: AutoschedulerConfig, 
 ) -> Schedule:
     """
     Applies autoscheduler optimization passes to the schedule.
     """
     assert (
-        debug_point is None or debug_point in DEBUG_POINTS
-    ), f"Invalid debug point: {debug_point}"
+        cfg.debug_point is None or cfg.debug_point in DEBUG_POINTS
+    ), f"Invalid debug point: {cfg.debug_point}"
     assert (
-        kind is None or kind in PARALLELISM_MODELS
-    ), f"Invalid parallelism model: {kind}"
+        cfg.kind is None or cfg.kind in PARALLELISM_MODELS
+    ), f"Invalid parallelism model: {cfg.kind}"
 
     assert check_call_graph_acyclic(schedule.module), "Call graph is not acyclic"
     top_fn_name = schedule.top_func.name.value
     mod = _mlir_preprocess(schedule.module, top_fn_name)
-    if debug_point == "mlir_preprocess":
+    if cfg.debug_point == "mlir_preprocess":
         return Schedule(
             mod,
             find_func_in_module(mod, top_fn_name),
@@ -84,7 +89,7 @@ def dataflow_optimization_pass(
         print("Error: failed to run dataflow canonicalization pass, printing module...")
         print(mod)
         raise e
-    if debug_point == "dataflow_canonicalization":
+    if cfg.debug_point == "dataflow_canonicalization":
         return Schedule(
             mod_dcp,
             find_func_in_module(mod_dcp, top_fn_name),
@@ -94,13 +99,45 @@ def dataflow_optimization_pass(
             schedule.inst_list,
         )
 
-    dfg = DFG.from_module(mod_dcp)
+    dfg = DFG.from_module(mod_dcp, cfg.dsp_factors, cfg.mem_w_ports, cfg.mem_r_ports)
 
     # name all unnamed buffers
     mod_dcp = name_buffers_pass(mod_dcp)
 
+    # build performance model
+    match cfg.kind:
+        case "graph":
+            result: DFGAnalysisResult = dfg.create_graph_parallelism_performance_model(
+                verbose=cfg.verbose
+            )
+        case "node":
+            # set permutation to default for node level parallelism
+            pinned_permutations = lambda x: 0
+
+            tiling_factors = dfg.create_node_parallelism_performance_model(
+                pinned_permutations, verbose=cfg.verbose, dsp_limit=cfg.dsp_limit, tiling_limit=cfg.tiling_limit
+            )            
+            # loop_opts.extend(
+            #     extract_tiling_factors(
+            #         tiling_factors, dfg, node_to_fn, schedule))
+            # fifos.extend(
+            #     extract_buffer_to_fifo(
+            #         tiling_factors, dfg, node_to_fn, schedule
+            #     )
+            # )
+        case "combined":
+            # TODO: implement combined parallelism performance model
+            pass
+        case _:
+            raise ValueError(f"Invalid parallelism model: {cfg.kind}")
+
+    # extract FIFO primitives prior to outlining, since this requires IR manipulation 
+    # dependent on references from the inlined result
+    unresolved_fifos = extract_buffer_to_fifo(result, dfg, schedule)
+
     mod_outlined, node_to_fn = outline_loops_pass(mod_dcp, dfg)
 
+    # construct the schedule with the outlined module
     schedule = Schedule(
         mod_outlined,
         find_func_in_module(mod_outlined, top_fn_name),
@@ -110,15 +147,16 @@ def dataflow_optimization_pass(
         schedule.inst_list,
     )
 
-    if debug_point == "outline_loops":
+    if cfg.debug_point == "outline_loops":
         return schedule
-
+    
+    # clone the original schedule for verification
     try:
         import past  # pylint: disable=unused-import
     except ImportError:
-        verify = False
+        cfg.verify = False
 
-    if verify:
+    if cfg.verify:
         # hacky clone
         mod_outlined_clone = Module.parse(
             mod_outlined.operation.get_asm(), mod_outlined.context
@@ -132,54 +170,38 @@ def dataflow_optimization_pass(
             schedule.inst_list,
         )
 
-    loop_opts = []
-    fifos = []
-    # build performance model
-    match kind:
-        case "graph":
-            permutations = dfg.create_graph_parallelism_performance_model(
-                verbose=verbose
-            )
-            loop_opts.extend(
-                extract_reorder_and_pipeline(permutations, dfg, node_to_fn, schedule)
-            )
-            fifos.extend(
-                extract_buffer_to_fifo(permutations, dfg, node_to_fn, schedule)
-            )
-        case "node":
-            # TODO: implement node parallelism performance model
-            pass
-        case "combined":
-            # TODO: implement combined parallelism performance model
-            pass
-        case _:
-            raise ValueError(f"Invalid parallelism model: {kind}")
-
-    if verbose:
-        print("Loop opts:")
-        for primitive in loop_opts:
-            print(f"\t{primitive}")
-        print("FIFOs:")
-        for primitive in fifos:
-            print(f"\t{primitive}")
+    # loop opt extraction post-outlining
+    loop_opts = extract_reorder_and_pipeline(result, dfg, node_to_fn, schedule)
 
     for primitive in loop_opts:
         primitive.applyTo(schedule)
 
-    if debug_point == "loop_opts":
+    if cfg.verbose or True:
+        print("Loop opts:")
+        for primitive in loop_opts:
+            print(f"\t{primitive}")
+
+    if cfg.debug_point == "loop_opts":
         return schedule
 
-    if verify:
+    fifos = [p.resolve(top_fn_name, node_to_fn) for p in unresolved_fifos]
+
+    if cfg.verbose:
+        print("FIFOs:")
+        for primitive in fifos:
+            print(f"\t{primitive}")
+
+
+    if cfg.verify:
         verifier = allo.verify(schedule, original_schedule)
         assert (
             verifier
         ), "Failed verification: Schedule is not equivalent to original schedule"
-
+    # apply FIFO primitives to the schedule
     for primitive in fifos:
         primitive.applyTo(schedule)
 
     return schedule
-
 
 def _mlir_preprocess(module, top_func_name):
     """
@@ -326,7 +348,8 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     irrelevant_loops = [
         loop for loop in loop_nest if loop.induction_variable not in loop_load.indices
     ]
-    irrelevant_ivs = [loop.induction_variable for loop in irrelevant_loops]
+
+    irrelevant_ivs = [loop.opview.induction_variable for loop in irrelevant_loops]
 
     if len(irrelevant_ivs) == 0:
         return False
@@ -529,9 +552,11 @@ def post_process_module(module: Module) -> tuple[Module, dict[int, str]]:
 
 
 def extract_reorder_and_pipeline(
-    permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule
+    analysis_result: DFGAnalysisResult, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule
 ) -> list[SchedulePrimitive]:
     schedule_primitives = []
+    permutations = analysis_result.loop_permutations
+
     for node_id, perm_idx in permutations:
         loop_band_collection = list(
             v for _, v in schedule.get_loops(node_to_fn[node_id])
@@ -557,11 +582,14 @@ def extract_reorder_and_pipeline(
 
 
 def extract_buffer_to_fifo(
-    permutations, dfg: DFG, node_to_fn: dict[int, str], schedule: Schedule
-):
+    analysis_result: DFGAnalysisResult, dfg: DFG, schedule: Schedule,
+) -> list[UnresolvedFIFOPrimitive]:
     top_level_fn_name = schedule.top_func_name
+    permutations = analysis_result.loop_permutations
+    tiling_factors = analysis_result.tiling_factors
+
     permutations = dict(permutations)
-    schedule_primitives = []
+    result = []
     for node_idx, node in dfg.nodes.items():
         if node.type != DFGNodeType.AFFINE:
             continue
@@ -581,35 +609,25 @@ def extract_buffer_to_fifo(
                 assert (
                     "name" in memref.owner.attributes
                 ), f"Buffer {memref.owner} has no name"
+
+                buffer_name = memref.owner.attributes["name"].value
                 buffer = MockBuffer(
-                    top_level_fn_name, memref.owner.attributes["name"].value
+                    top_level_fn_name, buffer_name
                 )
 
-                src_fn_name = node_to_fn[edge.id]
-                fn_name = node_to_fn[node_idx]
+                if tiling_factors:
+                    convert_buffer_to_fifo_array_pre_tiling(
+                        schedule, buffer, tiling_factors, edge.id
+                    )
 
-                # find store_op and load_op in the new module
-                store_op_new = _find_store_load_op(
-                    affine_d.AffineStoreOp,
-                    memref.owner.attributes["name"].value,
-                    schedule.module,
-                    src_fn_name,
-                )
-                load_op_new = _find_store_load_op(
-                    affine_d.AffineLoadOp,
-                    memref.owner.attributes["name"].value,
-                    schedule.module,
-                    fn_name,
+                _insert_guard(src_node_info.stores_map[memref].op, src_node.loop_info)
+                _insert_guard(dst_node_info.loads_map[memref].op, node.loop_info)
+
+                result.append(
+                    UnresolvedFIFOPrimitive(buffer_name, node_idx)
                 )
 
-                _insert_guard(store_op_new, schedule.get_loops(src_fn_name))
-                _insert_guard(load_op_new, schedule.get_loops(fn_name))
-
-                schedule_primitives.append(
-                    SchedulePrimitive.buffer_to_fifo(buffer, fn_name)
-                )
-
-    return schedule_primitives
+    return result
 
 
 def _get_affine_if_op(op):
@@ -619,37 +637,23 @@ def _get_affine_if_op(op):
     return parent
 
 
-def _insert_guard(op: Operation, loops):
+def _insert_guard(op: Operation, loops: list[LoopInfo]):
     op = op.opview
     assert isinstance(op, (affine_d.AffineLoadOp, affine_d.AffineStoreOp))
     affine_if_op = _get_affine_if_op(op)
     if not affine_if_op:
         # insert guard before the fifo write/read
-
-        loop_band_collection = list(v for _, v in loops)
-        loop_band = list(l.loop for l in loop_band_collection[0].loops.values())
-
-        irrelevant_loops = [
-            loop for loop in loop_band if loop.induction_variable not in op.indices
-        ]
-        if len(irrelevant_loops) == 0:
-            return
-
-        lower_bounds = [
-            int(str(loop.lowerBoundMap.value.results[0])) for loop in irrelevant_loops
-        ]
-        upper_bounds = [
-            int(str(loop.upperBoundMap.value.results[0])) for loop in irrelevant_loops
-        ]
-
+        irrelevant_loops = [loop for loop in loops if loop.op.opview.induction_variable not in op.indices]
+        if not irrelevant_loops:
+            return 
         with op.context:
             if isinstance(op, affine_d.AffineLoadOp):
                 guard_condition = affine_d.IntegerSet.get(
                     len(irrelevant_loops),
                     0,
                     [
-                        affine_d.AffineExpr.get_dim(i) - lower_bound
-                        for i, lower_bound in enumerate(lower_bounds)
+                        affine_d.AffineExpr.get_dim(i) - loop_info.lower_bound
+                        for i, loop_info in enumerate(irrelevant_loops)
                     ],
                     [True] * len(irrelevant_loops),
                 )
@@ -658,8 +662,8 @@ def _insert_guard(op: Operation, loops):
                     len(irrelevant_loops),
                     0,
                     [
-                        affine_d.AffineExpr.get_dim(i) - upper_bound + 1
-                        for i, upper_bound in enumerate(upper_bounds)
+                        affine_d.AffineExpr.get_dim(i) - loop_info.upper_bound + loop_info.step
+                        for i, loop_info in enumerate(irrelevant_loops)
                     ],
                     [True] * len(irrelevant_loops),
                 )
@@ -667,7 +671,7 @@ def _insert_guard(op: Operation, loops):
             with InsertionPoint(op) as ip:
                 guard_if = affine_d.AffineIfOp(
                     results_=[],
-                    _gen_arg_0=[loop.induction_variable for loop in irrelevant_loops],
+                    _gen_arg_0=[loop.op.opview.induction_variable for loop in irrelevant_loops],
                     loc=Location.unknown(),
                     ip=ip,
                 )
@@ -749,3 +753,64 @@ def _find_store_load_op(optype, buffer_name, module: Module, func_name: str):
     if target_op is None:
         raise RuntimeError(f"Store/load operation for buffer {buffer_name} not found")
     return target_op
+
+
+# Node-parallel specific code 
+
+def convert_buffer_to_fifo_array_pre_tiling(
+    schedule: Schedule,
+    buffer: MockBuffer,
+    tiling_factors: dict[int, list[tuple[int, int]]],
+    src_idx: int,
+) -> tuple[MockBuffer, memref_d.AllocOp, list[int]]:
+    """
+    Convert a buffer to a FIFO array before tiling, using modulo indexing.
+    """
+    func, _, mlir_buffer = find_buffer(schedule.module, buffer, schedule.func_args)
+    
+    if not mlir_buffer:
+        raise RuntimeError(f"Buffer {buffer} not found")
+    
+    buffer_type = mlir_buffer.result.type
+    element_type = buffer_type.element_type
+    
+    # Determine FIFO array dimensions from planned tiling factors
+    fifo_dims = []
+    for node_id, factors in tiling_factors.items():
+        # Get the tiling factors that will be applied
+        for depth, factor in sorted(factors):
+            if factor > 1:
+                fifo_dims.append(factor)
+        break  # Use first node's tiling for now
+    
+    if not fifo_dims:
+        return buffer  # No tiling planned, keep as is
+    
+    with schedule.module.context, Location.unknown():
+        fifo_shape = fifo_dims + [1] 
+        fifo_type = MemRefType.get(fifo_shape, element_type)
+        
+        ip = InsertionPoint.at_block_begin(func.body.blocks[0])
+        fifo_array = memref_d.AllocOp(fifo_type, [], [], ip=ip)
+        fifo_array.attributes["name"] = StringAttr.get(f"{buffer.name}_fifo_array")
+            
+    return MockBuffer(schedule.top_func_name, f"{buffer.name}_fifo_array"), fifo_array, fifo_dims
+
+def transform_accesses_with_modulo(func, old_buffer, fifo_array, fifo_dims):
+    """
+    Transform buffer accesses to use modulo indexing: buffer[i,j] -> fifo[i%Ti, j%Tj][0]
+    """
+    def transform_op(op):
+        # TODO: Unimplemented
+        raise NotImplementedError(
+            f"Transforming accesses for {op} is not implemented yet."
+        )
+    
+    func.walk(transform_op)
+
+def transform_store_with_modulo(store_op, fifo_array, fifo_dims):
+    """
+    Transform: C[i,j] = value
+    To: fifo_array[i % Ti, j % Tj, 0] = value
+    """
+   
