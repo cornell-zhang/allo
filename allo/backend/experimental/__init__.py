@@ -8,11 +8,13 @@ import shutil
 
 try:
     import aie.ir as aie_ir
+    import aie.passmanager as aie_pass_manager
 except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
+from ..._mlir.ir import Type
 
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
@@ -21,28 +23,70 @@ from .external_kernel import ExternalModule
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from .mlir_codegen import CodeGenerator, Argument, Stream
 from .utils import (
+    Argument,
+    Stream,
     inject_external_kernels,
+    get_df_kernels,
     classify_aie_functions,
+    classify_aie_functions_experimental,
     codegen_external_kernels,
+    lib_kernel_replacement,
+    local_buffer_opt,
     read_tensor_from_file,
     codegen_host,
 )
+from .mapping import ComputationGraph, OrderedDTensorTileGroup
 
 
 class AIE_MLIRModule:
+    # ############################################################
+    # Construction
+    # ############################################################
     def __init__(
         self,
         module: allo_ir.ir.Module,
         top_func_name: str,
+        parameter_list: dict[str, int],
         func_args: dict,
         project_dir: str,
         stream_info: dict,
+        stream_types_dict: dict[str, Type],
         ext_libs: list = None,
     ):
+        """
+        Note: the module is data-driven,
+            we need to carefully manage data transfer between 'functions' to avoid deadlocks.
+            For example, launching the kernels in topological order.
+        """
+        # module metadata
+        # print(module)
+        self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
-        self.streams: dict[str, Stream] = {}
+        self.module_parameter_list = [
+            k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
+        ]
 
+        self.external_kernel_lib: dict[str, ExternalModule] = {}
+        for ext_kernel in ext_libs:
+            if isinstance(ext_kernel, ExternalModule):
+                self.external_kernel_lib[ext_kernel.top] = ext_kernel
+
+        self.func_args: dict[str, list[Argument]] = {}
+        self.streams: dict[str, Stream] = {}
+        self.stream_info: dict[str, dict[str, bool]] = {}
+        self._init_func_args(func_args)
+        self._init_streams(stream_info, stream_types_dict)
+
+        # index in top fucntion argument list -> DTensor
+        self.global_inputs: dict[int, DTensor] = None
+        self.global_outputs: dict[int, DTensor] = None
+        # function name -> (argument index -> (argument, is_input))
+        self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = None
+
+        self.aie_module: aie_ir.Module = None
+
+    def _init_func_args(self, func_args: dict):
         tmp_map: dict = {}
         self.func_args: dict[str, list[Argument]] = {}
         for func_name, args in func_args.items():
@@ -63,10 +107,16 @@ class AIE_MLIRModule:
                 else:
                     raise ValueError(f"Unresolved function argument {arg}")
 
-        self.stream_info: dict[str, dict[str, bool]] = {}
+    def _init_streams(self, stream_info: dict, stream_types_dict: dict[str, Type]):
+        """
+        Collect allo.stream information for each function.
+        """
         for func_name, info_list in stream_info.items():
             self.stream_info[func_name] = {}
             for name, io in info_list:
+                self.streams[name].set_element_type(
+                    str(stream_types_dict[name]), self.allo_module.context
+                )
                 if io == "in":
                     self.streams[name].dst = func_name
                     self.stream_info[func_name][name] = True
@@ -74,22 +124,227 @@ class AIE_MLIRModule:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
 
-        self.project_dir: str = project_dir
+    # ############################################################
+    # Build
+    # ############################################################
+    def _init_virtual_graph(self):
+        assert (
+            self.core_func_args is not None
+            and self.global_inputs is not None
+            and self.global_outputs is not None
+        ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
-        self.external_kernel_lib: dict[str, ExternalModule] = {}
-        for ext_kernel in ext_libs:
-            if isinstance(ext_kernel, ExternalModule):
-                self.external_kernel_lib[ext_kernel.top] = ext_kernel
+        self.virtual_computation_graph: ComputationGraph = ComputationGraph(
+            self.allo_module,
+            self.streams,
+            self.core_func_args,
+        )
 
-        # index in top fucntion argument list -> DTensor
-        self.global_inputs: dict[int, DTensor] = {}
-        self.global_outputs: dict[int, DTensor] = {}
+    def analyze_kernel_parameters(self):
+        """
+        Analyze the parameters of each df.kernel.
 
-        self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = (
-            {}
-        )  # core func name -> a list of (dtensors, is_in)
+        Collected information:
+            - self.core_func_args: function name -> (argument index -> (argument, is_input))
+            - self.global_inputs: global input argument index -> DTensor
+            - self.global_outputs: global output argument index -> DTensor
+        """
+        # init
+        self.core_func_args = {}
+        self.global_inputs = {}
+        self.global_outputs = {}
+        # analyze
+        df_kernels = get_df_kernels(self.allo_module)
+        for kernel in df_kernels:
+            kernel_name = kernel.attributes["sym_name"].value
+            self.core_func_args[kernel_name] = {}
+            # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+            in_idx_list, out_idx_list = analyze_read_write_patterns(kernel)
+            for io_idx_list, io_type in (
+                (in_idx_list, "in"),
+                (out_idx_list, "out"),
+            ):
+                for io_idx in io_idx_list:
+                    argument: Argument = self.func_args[kernel_name][io_idx]
+                    self.core_func_args[kernel_name][io_idx] = (
+                        argument,
+                        io_type == "in",
+                    )
+                    if not argument.dtensor is None:
+                        argument.dtensor.set_access_pattern()
+                        argument.dtensor.type_as_param = kernel.arguments[
+                            io_idx
+                        ].type.shape
+                        global_idx = self.func_args[self.top_func_name].index(argument)
+                        argument.dtensor.set_global_id(global_idx)
+                        if io_type == "in":
+                            self.global_inputs[global_idx] = argument.dtensor
+                        else:
+                            self.global_outputs[global_idx] = argument.dtensor
+            # streams
+            for i, _ in enumerate(kernel.arguments):
+                func_arg = self.func_args[kernel_name][i]
+                if (
+                    i in self.core_func_args[kernel_name]
+                    or func_arg.stream is None  # unused
+                ):
+                    continue
+                self.core_func_args[kernel_name][i] = (
+                    func_arg,
+                    self.stream_info[kernel_name][func_arg.stream.name],
+                )
+        # validity check
+        for i in range(len(self.global_inputs)):
+            assert (
+                i in self.global_inputs
+            ), "inputs should be the starting arguments of the function"
+        for i in range(len(self.global_outputs)):
+            assert (
+                i + len(self.global_inputs) in self.global_outputs
+            ), "outputs should be the ending arguments of the function"
 
-        self.aie_module: aie_ir.Module = None
+    def allo_opt(self):
+        """
+        run optimized passes on allo mlir
+        """
+        for node in self.virtual_computation_graph.nodes.values():
+            function = node.func
+            lib_kernel_replacement(function)
+            local_buffer_opt(function)
+
+        pipeline = f"builtin.module(canonicalize)"
+        with self.allo_module.context:
+            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+
+        # record optimized allo mlir
+        with open(
+            os.path.join(self.project_dir, "original_opt.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+
+    def build_experimental(
+        self,
+        device_type="npu1_4col",
+        enable_virtual_mapping: bool = False,
+        mapping_primitives: list[tuple[str, list]] = [],
+        profile: bool = False,
+        warmup: int = 20,
+        num_iters: int = 100,
+    ):
+        self.profile = profile
+        self.warmup = warmup
+        self.num_iters = num_iters
+        build_dir = os.path.join(self.project_dir, "build")
+        if os.path.exists(build_dir):
+            shutil.rmtree(build_dir)
+        os.makedirs(build_dir)
+
+        self.analyze_kernel_parameters()
+        self._init_virtual_graph()
+        if enable_virtual_mapping:
+            for mapping in mapping_primitives:
+                primitive = mapping[0]
+                arg_list = mapping[1]
+                if primitive == "chain":
+                    assert len(arg_list) == 2
+                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                if primitive == "bundle":
+                    self.virtual_computation_graph.bundle(arg_list)
+        # inject external kernels
+        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
+            self.allo_module, self.top_func_name, self.external_kernel_lib
+        )
+        # record original allo mlir
+        with open(
+            os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+
+        self.allo_opt()
+
+        passes = [
+            "func.func(convert-linalg-to-affine-loops),lower-affine",
+        ]
+        pipeline = f'builtin.module({",".join(passes)})'
+        with self.allo_module.context:
+            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+        # code generation
+        top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
+            self.allo_module, self.top_func_name
+        )
+        code_generator = CodeGenerator(
+            device_type,
+            self.global_inputs,
+            self.global_outputs,
+            top_func,
+            self.core_func_args,
+            self.streams,
+            self.virtual_computation_graph,
+        )
+        self.aie_module = code_generator.aie_codegen_nightly(
+            core_funcs,
+            external_funcs,
+            use_external_kernels,
+        )
+
+        # TODO: opt passes on aie-mlir
+        passes = [
+            "func.func(affine-loop-unroll), canonicalize",
+        ]
+        pipeline = f'builtin.module({",".join(passes)})'
+        with self.aie_module.context:
+            aie_pass_manager.PassManager.parse(pipeline).run(self.aie_module.operation)
+
+        self.post_codegen_build(injected_kernels, include_src)
+        return self
+
+    def post_codegen_build(self, injected_kernels, include_src):
+        with open(
+            os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.aie_module))
+        if len(injected_kernels) > 0:
+            paths = set()
+            # user defined external kernels
+            for ext_module in self.external_kernel_lib.values():
+                paths.add((ext_module.impl_path, ext_module.filename))
+            for src_path, dst_file in paths:
+                target_path = os.path.join(self.project_dir, dst_file)
+                if os.path.exists(target_path) and os.path.samefile(
+                    src_path, target_path
+                ):
+                    continue
+                shutil.copy(src_path, target_path)
+            kernel_code = codegen_external_kernels(injected_kernels, include_src)
+            with open(
+                os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
+            ) as f:
+                f.write(kernel_code)
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
+            with subprocess.Popen(cmd, shell=True) as process:
+                process.wait()
+            if process.returncode != 0:
+                raise RuntimeError("Failed to compile external kernels.")
+        # build mlir-aie
+        cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+        with subprocess.Popen(cmd, shell=True) as process:
+            process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to compile the MLIR-AIE code")
+        # generate host code
+        path = os.path.dirname(__file__)
+        path = os.path.join(path, "../../harness/aie")
+        os.system(f"cp -r {path}/* {self.project_dir}")
+        host_code = codegen_host(self.global_inputs, self.global_outputs)
+        with open(
+            os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
+        ) as f:
+            f.write(host_code)
+        cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
+        with subprocess.Popen(cmd, shell=True) as process:
+            process.wait()
+        if process.returncode != 0:
+            raise RuntimeError("Failed to build AIE project.")
 
     def collect_io(
         self,
@@ -99,6 +354,10 @@ class AIE_MLIRModule:
         Analyze input/output tensors of each function in the groups.
         Returns dictionaries of input/output DTensors for each function group and core.
         """
+        # init
+        self.core_func_args = {}
+        self.global_inputs = {}
+        self.global_outputs = {}
         inputs = {}
         outputs = {}
         for func_name, funcs in func_groups.items():
@@ -129,6 +388,7 @@ class AIE_MLIRModule:
                             io == "in",
                         )
                         if not argument.dtensor is None:
+                            argument.dtensor.set_access_pattern()
                             argument.dtensor.type_as_param = func.arguments[
                                 idx
                             ].type.shape
@@ -222,54 +482,12 @@ class AIE_MLIRModule:
             self.core_func_args,
             self.streams,
         )
-        with open(
-            os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"
-        ) as f:
-            f.write(str(self.aie_module))
-        if len(injected_kernels) > 0:
-            paths = set()
-            # user defined external kernels
-            for ext_module in self.external_kernel_lib.values():
-                paths.add((ext_module.impl_path, ext_module.filename))
-            for src_path, dst_file in paths:
-                target_path = os.path.join(self.project_dir, dst_file)
-                if os.path.exists(target_path) and os.path.samefile(
-                    src_path, target_path
-                ):
-                    continue
-                shutil.copy(src_path, target_path)
-            kernel_code = codegen_external_kernels(injected_kernels, include_src)
-            with open(
-                os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
-            ) as f:
-                f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
-            with subprocess.Popen(cmd, shell=True) as process:
-                process.wait()
-            if process.returncode != 0:
-                raise RuntimeError("Failed to compile external kernels.")
-        # TODO
-        # build mlir-aie
-        cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
-        with subprocess.Popen(cmd, shell=True) as process:
-            process.wait()
-        if process.returncode != 0:
-            raise RuntimeError("Failed to compile the MLIR-AIE code")
-        # generate host code
-        path = os.path.dirname(__file__)
-        path = os.path.join(path, "../../harness/aie")
-        os.system(f"cp -r {path}/* {self.project_dir}")
-        host_code = codegen_host(self.global_inputs, self.global_outputs)
-        with open(
-            os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
-        ) as f:
-            f.write(host_code)
-        cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
-        with subprocess.Popen(cmd, shell=True) as process:
-            process.wait()
-        if process.returncode != 0:
-            raise RuntimeError("Failed to build AIE project.")
+        self.post_codegen_build(injected_kernels, include_src)
         return self
+
+    def help(self):
+        # print the parameter list of the module
+        print("Parameter reference:", self.module_parameter_list)
 
     def __call__(self, *args):
         for i in range(len(self.global_inputs)):

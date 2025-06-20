@@ -5,6 +5,7 @@
 import re
 import os
 import numpy as np
+from dataclasses import dataclass
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -13,12 +14,174 @@ from ..utils import format_str, format_code
 from ...memory import DTensor
 from .external_kernel import ExternalModule
 
+
 from ..._mlir.ir import (
     MemRefType,
     InsertionPoint,
     FlatSymbolRefAttr,
     StringAttr,
+    Type,
+    Context,
+    IntegerType,
+    F16Type,
+    F32Type,
+    BF16Type,
 )
+
+
+# ############################################################
+# Configurations
+# ############################################################
+class Config:
+    # https://riallto.ai/notebooks/3_2_Ryzenai_capabilities.html#interface-tile-properties
+    COMPUTE_MAX_SEND = 2
+    COMPUTE_MAX_RECV = 2
+    MEM_MAX_SEND = 6
+    MEM_MAX_RECV = 6
+    SHIM_MAX_SEND = 2
+    SHIM_MAX_RECV = 2
+    # https://github.com/Xilinx/mlir-aie/blob/46bb8c25967f173eebe56056661be226b3933a14/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd
+    DMA_MAX_BDS = 16
+
+    # fixme: some hyper-parameters, can be optimized
+    IO_TILE_LOSE_FACTOR = 4
+    COMPUTE_TILE_WITH_SHARED_MEMORY = 2
+    CODE_OFFSET = 100
+
+
+device_config_map = {
+    "npu1": {"mesh": (4, 5), "mem_tile_num": 5, "shim_tile_num": 4},
+    "npu1_4col": {"mesh": (4, 4), "mem_tile_num": 4, "shim_tile_num": 4},
+    "npu1_3col": {"mesh": (4, 3), "mem_tile_num": 3, "shim_tile_num": 3},
+    "npu1_2col": {"mesh": (4, 2), "mem_tile_num": 2, "shim_tile_num": 2},
+    "npu1_1col": {"mesh": (4, 1), "mem_tile_num": 1, "shim_tile_num": 1},
+}
+
+
+# ############################################################
+# MLIR Code Generation
+# ############################################################
+
+
+@dataclass(frozen=True)
+class StreamType:
+    depth: int
+    shape: list[int]
+    dtype: str
+
+    def __str__(self):
+        return f"({self.dtype} {self.shape}, depth={self.depth})"
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class Stream:
+    """
+    Allo Stream class
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+        self.type_str = None
+        self.type: StreamType = None
+        self.allo_element_type: Type = None  # element type in allo context
+        self.is_tensor = False  # whether the stream carries tensor data
+
+        self.src: str = None  # source tile of the stream
+        self.dst: str = None  # destination tile of the stream
+
+    def _init_from_stream(self, stream: "Stream", updated_src: str, updated_dst: str):
+        """
+        Construct a new stream from an existing stream
+        and update the source and destination tiles.
+        """
+        self.name = stream.name
+        self.type_str = stream.type_str
+        self.type = stream.type
+        self.allo_element_type = stream.allo_element_type
+        self.is_tensor = stream.is_tensor
+        self.src = updated_src
+        self.dst = updated_dst
+
+    def set_element_type(self, type_str: str, context: Context):
+        """
+        Set the element type of the stream from a type string.
+        This function parses the type string and extracts the data shape and dtype.
+
+        Args:
+            - type_str (str): The IR type string
+            - context (Context): The current allo MLIR context used for constructing types
+        """
+        if self.type is not None:
+            assert type_str == self.type_str
+            return
+        self.type_str = type_str
+        match = re.match(r"!allo\.stream<([^,]+),\s*(\d+)>", type_str)
+        shape: list[int] = None
+        dtype: str = None
+        if match:
+            with context, allo_ir.ir.Location.unknown():
+                element_type_str = match.group(1)
+                depth = int(match.group(2))
+                memref_match = re.match(
+                    r"memref<([0-9x\?]*)x?([a-z0-9]+)>", element_type_str
+                )
+                if memref_match:
+                    shape_part = memref_match.group(1)
+                    dtype = memref_match.group(2)
+                    if shape_part == "":
+                        shape = []
+                    else:
+                        shape = [
+                            -1 if dim == "?" else int(dim)
+                            for dim in shape_part.split("x")
+                            if dim
+                        ]
+                else:
+                    type_match = re.match(r"([a-z]+[0-9]*)", element_type_str)
+                    if type_match:
+                        shape, dtype = [], element_type_str
+                    else:
+                        raise ValueError(f"Invalid stream type {type_str}.")
+
+                def get_element_allo_type(dtype_str: str) -> Type:
+                    if dtype_str == "i32":
+                        return IntegerType.get_signless(32)
+                    if dtype_str == "i16":
+                        return IntegerType.get_signless(16)
+                    if dtype_str == "i8":
+                        return IntegerType.get_signless(8)
+                    if dtype_str == "f32":
+                        return F32Type.get()
+                    if dtype_str == "f16":
+                        return F16Type.get()
+                    if dtype_str == "bf16":
+                        return BF16Type.get()
+                    raise ValueError(f"Unsupported dtype: {dtype_str}")
+
+                self.allo_element_type = MemRefType.get(
+                    shape,
+                    get_element_allo_type(dtype),
+                )
+                self.type = StreamType(depth, shape, dtype)
+                self.is_tensor = len(shape) > 0
+        else:
+            raise ValueError(f"Invalid stream type {type_str}.")
+
+    def __str__(self):
+        return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
+
+
+@dataclass
+class Argument:
+    """
+    Represents an argument to a function, either a DTensor or a Stream.
+    """
+
+    dtensor: DTensor
+    stream: Stream
+
 
 aie_ctype_map = {
     "bf16": "std::bfloat16_t",
@@ -53,6 +216,32 @@ aie_external_kernel_ctype_map = {
 }
 
 
+def parse_kernel_name(name: str):
+    match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
+    if not match:
+        raise ValueError(f"Invalid format: {name}")
+
+    prefix = match.group(1).rstrip("_")
+    indexs = tuple(int(n) for n in match.group(2).split("_") if n != "")
+    return prefix, indexs
+
+
+def collect_op_by_name(root, target: str) -> list:
+    collected_op = []
+
+    def collect(op):
+        if op.name == target:
+            collected_op.append(op.operation)
+            return
+        for region in op.regions:
+            for block in region.blocks:
+                for inner_op in block.operations:
+                    collect(inner_op)
+
+    collect(root)
+    return collected_op
+
+
 def inject_external_kernels(
     module: allo_ir.ir.Module,
     top_function_name,
@@ -73,8 +262,8 @@ def inject_external_kernels(
                             strings (C++ code and preprocessor defines).
         - include_src: A set of C++ include directives needed for the external kernels.
     """
-    use_external_kernels = {}
-    injected_kernels: dict = {}
+    use_external_kernels: dict[str, bool] = {}
+    injected_kernels: dict[str, tuple[str, str]] = {}
     include_src: set[str] = set()
 
     with module.context, allo_ir.ir.Location.unknown():
@@ -104,9 +293,11 @@ def inject_external_kernels(
                                 injected_kernels[callee_name] = ("", "")
                                 continue
                             kernel_code, kernel_header = "", ""
+                            lib_kernel_name: str = None
                             # vec add/mul
                             if op.operation.name in {"linalg.add", "linalg.mul"}:
                                 op_name = op.operation.name.split(".")[1]
+                                lib_kernel_name = op_name
                                 include_src.add(f'#include "{op_name}.cc"\n')
                                 dtype = str(op.inputs[0].type.element_type)
                                 ctype = aie_external_kernel_ctype_map[dtype]
@@ -118,6 +309,7 @@ def inject_external_kernels(
                                 kernel_code += "}\n\n"
                             # matmul
                             elif op.operation.name == "linalg.matmul":
+                                lib_kernel_name = "matmul"
                                 M, K = MemRefType(op.inputs[0].type).shape
                                 _, N = MemRefType(op.inputs[1].type).shape
                                 dtype = str(op.inputs[0].type.element_type)
@@ -169,7 +361,50 @@ def inject_external_kernels(
                             kernel.attributes["sym_visibility"] = StringAttr.get(
                                 "private"
                             )
+                            if lib_kernel_name is not None:
+                                kernel.attributes["lib_kernel_name"] = StringAttr.get(
+                                    lib_kernel_name
+                                )
     return use_external_kernels, injected_kernels, include_src
+
+
+def get_df_kernels(module: allo_ir.ir.Module) -> list[allo_func_d.FuncOp]:
+    df_kernels = []
+    for func in module.body.operations:
+        if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
+            df_kernels.append(func)
+    return df_kernels
+
+
+def classify_aie_functions_experimental(
+    module: allo_ir.ir.Module, top_function_name: str
+) -> tuple[allo_func_d.FuncOp, list[allo_func_d.FuncOp], list[allo_func_d.FuncOp]]:
+    """
+    Classify the functions in allo module as
+        - top
+        - compute core functions
+        - external kernel functions
+    """
+    top_func: allo_func_d.FuncOp = None
+    core_funcs: list[allo_func_d.FuncOp] = []
+    external_funcs: list[allo_func_d.FuncOp] = []
+    with module.context, allo_ir.ir.Location.unknown():
+        for func in module.body.operations:
+            if isinstance(func, allo_func_d.FuncOp):
+                if (
+                    "sym_visibility" in func.attributes
+                    and func.attributes["sym_visibility"].value == "private"
+                ):
+                    external_funcs.append(func)
+                elif func.attributes["sym_name"].value == top_function_name:
+                    top_func = func
+                elif "df.kernel" in func.attributes:
+                    core_funcs.append(func)
+                else:
+                    raise ValueError(
+                        f"Unknown function type: {func.attributes['sym_name'].value}"
+                    )
+    return top_func, core_funcs, external_funcs
 
 
 def classify_aie_functions(
@@ -265,6 +500,105 @@ def codegen_external_kernels(injected_kernels: dict, include_src) -> str:
     return code
 
 
+# ############################################################
+# Optimization Passes
+# ############################################################
+
+
+def lib_kernel_replacement(function: allo_func_d.FuncOp):
+    """
+    Replace code with efficient lib/external kernels
+        pattern matching based
+    """
+
+    def replace_redundant_matmul(function: allo_func_d.FuncOp):
+        """
+        %alloc_0 = memref.alloc() : memref<32x32xi16>
+        linalg.fill {op_name = "matmul_init_zero_0"} ins(%c0_i16 : i16) outs(%alloc_0 : memref<32x32xi16>)
+        call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc_0) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+        %alloc_1 = memref.alloc() : memref<32x32xi16>
+        call @add_i16_vector(%alloc_0, %alloc, %alloc_1) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+
+        ==> (if %alloc can be write safely)
+        call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+        """
+        matmul_ops: list[allo_func_d.CallOp] = []
+
+        def collect_matmuls(op):
+            if isinstance(op, allo_func_d.CallOp):
+                if "@matmul" in str(op.callee) and len(op.operands_) == 3:
+                    matmul_ops.append(op.operation)
+                return
+
+            for region in op.regions:
+                for block in region.blocks:
+                    for inner_op in block.operations:
+                        collect_matmuls(inner_op)
+
+        collect_matmuls(function)
+        for call_matmul_op in matmul_ops:
+            output = call_matmul_op.operands[-1]
+            uses = list(output.uses)
+            if (
+                isinstance(output.owner, allo_ir.ir.Operation)
+                and output.owner.name == "memref.alloc"
+                and len(uses) == 3
+            ):
+                init_zero_op, acc_op = None, None
+                for operand in uses:
+                    op = operand.owner
+                    if isinstance(op, allo_func_d.CallOp) and "@add" in str(op.callee):
+                        acc_op = op
+                    elif op.attributes.__contains__(
+                        "op_name"
+                    ) and "matmul_init_zero_0" in str(
+                        op.attributes.__getitem__("op_name")
+                    ):
+                        init_zero_op = op
+                if init_zero_op is not None and acc_op is not None:
+                    acc_base = (
+                        acc_op.operands_[0]
+                        if acc_op.operands_[0] != output
+                        else acc_op.operands_[1]
+                    )
+                    if list(acc_base.uses)[0].owner == acc_op:
+                        # accumulation is the last use
+                        call_matmul_op.operands[-1] = acc_base
+                        init_zero_op.erase()
+                        acc_op.operands_[-1].replace_all_uses_with(acc_base)
+                        acc_op.erase()
+
+    replace_redundant_matmul(function)
+
+
+def local_buffer_opt(function: allo_func_d.FuncOp):
+    """
+    Optimize local buffer (allocated memory) usage
+    """
+
+    def copy_on_write(function: allo_func_d.FuncOp):
+        """
+        avoid copy with best effort
+        """
+        copy_ops = collect_op_by_name(function, "linalg.copy")
+        for copy_op in copy_ops:
+            src, dst = copy_op.operands[0], copy_op.operands[1]
+            if list(src.uses)[0].owner == copy_op:
+                # copy is the last use
+                dst.replace_all_uses_with(src)
+                copy_op.erase()
+
+    copy_on_write(function)
+
+
+def loop_rerolling(function: allo_func_d.FuncOp):
+    # TODO
+    pass
+
+
+# ############################################################
+# Run-time Utils
+# ############################################################
 np_supported_types = {
     "bf16": np.float32,  # numpy does not support bf16
     "f16": np.float16,
@@ -287,8 +621,9 @@ def read_tensor_from_file(dtype, shape, file_path):
     return arr.reshape(shape)
 
 
-# ==================================================================================================
-
+# ############################################################
+# Host Code Generation
+# ############################################################
 host_header = """
 //=============================================================================
 // Auto generated by Allo
