@@ -214,7 +214,7 @@ class AIE_MLIRModule:
             lib_kernel_replacement(function)
             # local_buffer_opt(function)
 
-        pipeline = f"builtin.module(canonicalize)"
+        pipeline = f"builtin.module(copy-on-write, canonicalize)"
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 

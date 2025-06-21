@@ -164,6 +164,11 @@ static bool memRefDCE(MlirModule &mlir_mod) {
   return applyMemRefDCE(mod);
 }
 
+static bool copyOnWrite(MlirModule &mlir_mod) {
+  auto mod = unwrap(mlir_mod);
+  return applyCopyOnWrite(mod);
+}
+
 static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2,
                                int loop_num) {
   auto mod1 = unwrap(mlir_mod1);

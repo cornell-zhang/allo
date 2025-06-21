@@ -29,7 +29,7 @@ def _test_gemm_2D():
         mapping_primitives=[
             ("chain", ["gemm_0_0", "gemm_0_1"]),
             ("chain", ["gemm_1_0", "gemm_1_1"]),
-            ("bundle", ["gemm_0_0-gemm_0_1","gemm_1_0-gemm_1_1"]),
+            ("bundle", ["gemm_0_0-gemm_0_1", "gemm_1_0-gemm_1_1"]),
         ],
         profile=True,
         warmup=200,
