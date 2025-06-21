@@ -212,7 +212,7 @@ class AIE_MLIRModule:
         for node in self.virtual_computation_graph.nodes.values():
             function = node.func
             lib_kernel_replacement(function)
-            local_buffer_opt(function)
+            # local_buffer_opt(function)
 
         pipeline = f"builtin.module(canonicalize)"
         with self.allo_module.context:

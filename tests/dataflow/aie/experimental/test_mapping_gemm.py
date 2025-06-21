@@ -30,9 +30,6 @@ def _test_gemm_2D_v1():
             ("bundle", ["gemm_0_0", "gemm_0_1"]),
             ("bundle", ["gemm_1_0", "gemm_1_1"]),
         ],
-        profile=True,
-        warmup=200,
-        num_iters=1000,
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
@@ -65,9 +62,6 @@ def _test_gemm_2D_v2():
             ("chain", ["gemm_1_0", "gemm_1_1"]),
             ("bundle", ["gemm_0_0-gemm_0_1", "gemm_1_0-gemm_1_1"]),
         ],
-        profile=True,
-        warmup=200,
-        num_iters=1000,
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)

@@ -1687,7 +1687,7 @@ class CodeGenerator:
                     )
                     task_groups.sort(key=lambda x: x.start_time)
                     for task_group in task_groups:
-                        # assert len(task_group.tasks) <= Config.DMA_MAX_BDS
+                        # TODO: assert len(task_group.tasks) <= Config.DMA_MAX_BDS, or splict based on 'liveness range'
                         if (
                             len(task_group.tasks) + len(launched_dma)
                             > Config.DMA_MAX_BDS
@@ -1696,8 +1696,6 @@ class CodeGenerator:
                                 aiex_d.dma_wait(launched_fifo)
                             launched_dma.clear()
                         task_group.tasks.sort(key=lambda x: x.start_time)
-
-                        # self.global_dma_trough_port.sort(key=lambda x:(x.token, x.start_time))
                         for global_dma in task_group.tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
                             aiex_d.NpuDmaMemcpyNd(
