@@ -1,0 +1,726 @@
+diff --git a/allo/backend/experimental/__init__.py b/allo/backend/experimental/__init__.py
+index d781e25..02d517b 100644
+--- a/allo/backend/experimental/__init__.py
++++ b/allo/backend/experimental/__init__.py
+@@ -5,6 +5,7 @@
+ import os
+ import subprocess
+ import shutil
++from pathlib import Path
+ 
+ import aie.ir as aie_ir
+ 
+@@ -167,7 +168,7 @@ class AIE_MLIRModule:
+             shutil.rmtree(build_dir)
+         os.makedirs(build_dir)
+         # TODO: maybe use other ways to capture the relationship between DTensor, function group
+-        _, core_func_groups, _ = classify_aie_functions(self.allo_module)
++        _, core_func_groups, _, _ = classify_aie_functions(self.allo_module)
+         inputs, outputs = self.collect_io(core_func_groups)
+ 
+         # - extract external kernels
+@@ -186,11 +187,11 @@ class AIE_MLIRModule:
+         pipeline = f'builtin.module({",".join(passes)})'
+         with self.allo_module.context:
+             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+-        top_func, core_func_groups, external_funcs = classify_aie_functions(
++        top_func, core_func_groups, external_funcs, global_ops = classify_aie_functions(
+             self.allo_module
+         )
+         code_generator = CodeGenerator(
+-            device_type, self.global_inputs, self.global_outputs, top_func
++            device_type, self.global_inputs, self.global_outputs, top_func, global_ops
+         )
+         self.aie_module = code_generator.aie_codegen(
+             core_func_groups,
+@@ -212,11 +213,32 @@ class AIE_MLIRModule:
+             ) as f:
+                 f.write(kernel_code)
+             # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
+-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
++            path = Path(__file__).resolve()
++            parts = list(path.parts)
++            del parts[-3]
++            parts[-1] = "aie"
++            parts[-2] = "library"
++            path = Path(*parts).with_suffix("")
++            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I {path} -I $RUNTIME_LIB_DIR/../aie_runtime_lib/AIE2 -c external.cc -o external.o"
+             with subprocess.Popen(cmd, shell=True) as process:
+                 process.wait()
+             if process.returncode != 0:
+                 raise RuntimeError("Failed to compile external kernels.")
++            lut_need = False
++            for kernel_name in injected_kernels:
++                if kernel_name.startswith("exp") or kernel_name.startswith("softmax"):
++                    lut_need = True
++            if lut_need:
++                cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -c $RUNTIME_LIB_DIR/../aie_runtime_lib/AIE2/lut_based_ops.cpp -o lut_based_ops.o"
++                process = subprocess.Popen(cmd, shell=True)
++                process.wait()
++                if process.returncode != 0:
++                    raise RuntimeError("Failed to compile lut based ops.")
++            cmd = f"cd {self.project_dir} && ar rvs external.a external.o{" lut_based_ops.o"if lut_need else ""}"
++            process = subprocess.Popen(cmd, shell=True)
++            process.wait()
++            if process.returncode != 0:
++                raise RuntimeError("Failed to create external.a.")
+         # TODO
+         # build mlir-aie
+         cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+diff --git a/allo/backend/experimental/mlir_codegen.py b/allo/backend/experimental/mlir_codegen.py
+index f9ef977..56be6e3 100644
+--- a/allo/backend/experimental/mlir_codegen.py
++++ b/allo/backend/experimental/mlir_codegen.py
+@@ -31,6 +31,7 @@ from ..._mlir.ir import (
+     F16Type,
+     F32Type,
+     BF16Type,
++    Operation,
+ )
+ 
+ from ..utils import format_str
+@@ -304,6 +305,7 @@ class CodeGenerator:
+         global_inputs: dict[int, DTensor],
+         global_outputs: dict[int, DTensor],
+         top_function: allo_func_d.FuncOp,
++        global_ops: list,
+     ):
+         self.device_type = device_type
+ 
+@@ -321,6 +323,7 @@ class CodeGenerator:
+         self.global_ip: aie_ir.InsertionPoint = (
+             None  # mark the inserting point for buffers
+         )
++        self.global_ops = global_ops  # The global operations except for FuncOp in the AIE IR
+ 
+     def collect_stream_info(self, streams: dict[str, Stream], context):
+         """
+@@ -419,7 +422,8 @@ class CodeGenerator:
+                         op.erase()
+ 
+         # declare external kernel function before use
+-        func_str = self.external_functions + "\n" + str(new_function)
++        global_ops_str = "\n".join([str(op) for op in self.global_ops])
++        func_str = self.external_functions + "\n" + global_ops_str + "\n" + str(new_function)
+         return func_str
+ 
+     def build_core_function(
+@@ -579,6 +583,11 @@ class CodeGenerator:
+             self.external_functions += format_str(str(func), indent=4)
+ 
+         wrapper_code += self.external_functions
++        # add global operations
++        global_ops_str = ""
++        for op in self.global_ops:
++            global_ops_str += format_str(str(op), indent=4)
++        wrapper_code += global_ops_str
+         wrapper_code += """
+                 }
+             }
+@@ -747,7 +756,7 @@ class CodeGenerator:
+                         func_core = aie_d.Core(
+                             tile=self.tile_map[f"compute_{func_name_w_id}"],
+                             link_with=(
+-                                "external.o"
++                                "external.a"
+                                 if use_external_kernels[func_name_w_id]
+                                 else None
+                             ),
+diff --git a/allo/backend/experimental/utils.py b/allo/backend/experimental/utils.py
+index bbd9762..5f9e4fd 100644
+--- a/allo/backend/experimental/utils.py
++++ b/allo/backend/experimental/utils.py
+@@ -199,7 +199,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
+                     [type_in, type_out, i32], []
+                 )
+                 input_size = np.prod(type_in.shape)
+-                include_src.add('#include "softmax.cc"\n')
++                include_src.add('#include "bf16_softmax.cc"\n')
+                 kernel_name = "softmax_bf16"
+                 use_external_kernels[func_name] = True
+                 with InsertionPoint(op):
+@@ -275,6 +275,38 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
+                 old_funcOp.erase()
+                 op.erase()
+                 add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            elif (
++                op.operation.name == "func.call"
++                and op.callee.value.startswith("gelu")
++            ):
++                op_name = "gelu"
++                type_in = op.operation.operands[0].type
++                type_out = op.operation.results[0].type
++                func_type = allo_func_d.FunctionType.get(
++                    [type_in, type_out], []
++                )
++                dtype_in = str(type_in.element_type)
++                include_src.add(f'#include "gelu.cc"\n')
++                kernel_name = f"{op_name}_{dtype_in}_vector"
++                use_external_kernels[func_name] = True
++                ctype_in = aie_external_kernel_ctype_map[dtype_in]
++                kernel_code += f"void {op_name}_{dtype_in}_vector"
++                kernel_code += f"({ctype_in} *A_in, {ctype_in} *C_out)"
++                kernel_code += " {\n"
++                kernel_code += f"  gelu_tanh<{ctype_in}, {type_in.shape[0]}, {type_in.shape[1]}>(A_in, C_out);\n"
++                kernel_code += "}\n\n"
++                with InsertionPoint(op):
++                    dest = memref_d.AllocOp(type_out, [], []).result
++                    allo_func_d.CallOp(
++                        [],
++                        FlatSymbolRefAttr.get(kernel_name),
++                        [op.operation.operands[0], dest],
++                    )
++                    op.results[0].replace_all_uses_with(dest)
++                old_funcOp = symtab[op.callee.value]
++                old_funcOp.erase()
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
+             else:
+                 # Recursively traverse into all regions and blocks of the operation
+                 for region in op.regions:
+@@ -302,7 +334,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
+                             injected_kernels,
+                             use_external_kernels,
+                             include_src,
+-                            func.attributes["sym_name"].value,
++                            symtab,
+                         )
+     return use_external_kernels, injected_kernels, include_src
+ 
+@@ -310,7 +342,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
+ def classify_aie_functions(
+     module: allo_ir.ir.Module,
+ ) -> tuple[
+-    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp]
++    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp], list
+ ]:
+     """
+     Classify the functions in allo module as
+@@ -324,23 +356,27 @@ def classify_aie_functions(
+     core_func_groups: dict[str, list[allo_func_d.FuncOp]] = {}
+     # external functions
+     external_funcs: list[allo_func_d.FuncOp] = []
++    global_ops = []
+     with module.context, allo_ir.ir.Location.unknown():
+-        for func in module.body.operations:
+-            if isinstance(func, allo_func_d.FuncOp):
++        for op in module.body.operations:
++            if isinstance(op, allo_func_d.FuncOp):
+                 if (
+-                    "sym_visibility" in func.attributes
+-                    and func.attributes["sym_visibility"].value == "private"
++                    "sym_visibility" in op.attributes
++                    and op.attributes["sym_visibility"].value == "private"
+                 ):
+-                    external_funcs.append(func)
+-                elif func.attributes["sym_name"].value == "top":
+-                    top_func = func
++                    external_funcs.append(op)
++                elif op.attributes["sym_name"].value == "top":
++                    top_func = op
+                 else:
+-                    func_name_w_id = func.attributes["sym_name"].value
++                    func_name_w_id = op.attributes["sym_name"].value
+                     func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
+                     if func_name not in core_func_groups:
+                         core_func_groups[func_name] = []
+-                    core_func_groups[func_name].append(func)
+-    return top_func, core_func_groups, external_funcs
++                    core_func_groups[func_name].append(op)
++            else:
++                # Non-function operations (e.g., global variables)
++                global_ops.append(op)
++    return top_func, core_func_groups, external_funcs, global_ops
+ 
+ 
+ def get_element_type(dtype_str: str) -> aie_ir.Type:
+diff --git a/allo/dsl.py b/allo/dsl.py
+index 0254244..c31b129 100644
+--- a/allo/dsl.py
++++ b/allo/dsl.py
+@@ -141,7 +141,7 @@ def view(x, shape, name=None):
+     return np.reshape(x, shape)
+ 
+ 
+-def layernorm(x, gamma, beta, eps: float = 1e-5):
++def layernorm(x, gamma = 1.0, beta = 0.0, eps: float = 1e-5):
+     mean = np.mean(x, axis=-1, keepdims=True)
+     variance = np.var(x, axis=-1, keepdims=True)
+     x = gamma * (x - mean) / np.sqrt(variance + eps) + beta
+diff --git a/allo/ir/builder.py b/allo/ir/builder.py
+index 62fdf0b..5d527d2 100644
+--- a/allo/ir/builder.py
++++ b/allo/ir/builder.py
+@@ -18,6 +18,7 @@ from .._mlir.ir import (
+     ShapedType,
+     IntegerType,
+     F32Type,
++    BF16Type,
+     UnitAttr,
+     IntegerAttr,
+     StringAttr,
+@@ -581,7 +582,7 @@ class ASTTransformer(ASTBuilder):
+     def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape, dims):
+         # No shape checking in this function, since it has been done in
+         # type inference pass in infer.py
+-        if src_shape == dst_shape:
++        if tuple(src_shape) == tuple(dst_shape):
+             return op
+         if len(src_shape) == 0:
+             # Get zero-rank memref for constant
+@@ -841,7 +842,6 @@ class ASTTransformer(ASTBuilder):
+                 "copy",
+                 "transpose",
+                 "linear",
+-                "view",
+                 "concat",
+             }
+         ):
+@@ -2103,7 +2103,7 @@ class ASTTransformer(ASTBuilder):
+                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
+                         arg_types.append(arg.result.type)
+             if all(
+-                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
++                isinstance(arg_type, (F32Type, IntegerType, BF16Type)) for arg_type in arg_types
+             ):
+                 opcls = {
+                     "exp": math_d.ExpOp,
+diff --git a/allo/ir/infer.py b/allo/ir/infer.py
+index 62fa754..a245763 100644
+--- a/allo/ir/infer.py
++++ b/allo/ir/infer.py
+@@ -964,7 +964,7 @@ class TypeInferer(ASTVisitor):
+                 assert (
+                     argAshape[-1] == argBshape[-2]
+                 ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"
+-                node.shape = tuple(argAshape[:-1] + argBshape[-1:])
++                node.shape = tuple(argAshape[:-1]) + tuple(argBshape[-1:])
+             elif op_name == "bmm":
+                 assert (
+                     len(argAshape) == 3 and len(argBshape) == 3
+@@ -995,9 +995,21 @@ class TypeInferer(ASTVisitor):
+                 node.dtype = new_args[0].dtype
+             else:
+                 shape = new_args[0].shape
+-                axes = compile(ast.Expression(new_args[1]), "", "eval")
+-                # pylint: disable=eval-used
+-                axes = eval(axes)
++                if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
++                    axes = compile(ast.Expression(new_args[1]), "", "eval")
++                    # pylint: disable=eval-used
++                    axes = eval(axes)
++                else:
++                    axes = []
++                    for dim in new_args[1].elts:
++                        if isinstance(dim, ast.Constant):
++                            axes.append(dim.value)
++                        elif isinstance(dim, ast.Name):
++                            axes.append(ASTResolver.resolve(dim, ctx.global_vars))
++                        else:
++                            raise RuntimeError(
++                                f"Unsupported transpose axis {ast.unparse(dim)}"
++                            )
+                 assert len(shape) == len(
+                     axes
+                 ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
+@@ -1006,9 +1018,21 @@ class TypeInferer(ASTVisitor):
+                 node.dtype = new_args[0].dtype
+             return node
+         if op_name in {"view"}:
+-            axes = compile(ast.Expression(new_args[1]), "", "eval")
+-            # pylint: disable=eval-used
+-            axes = eval(axes)
++            if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
++                axes = compile(ast.Expression(new_args[1]), "", "eval")
++                # pylint: disable=eval-used
++                axes = eval(axes)
++            else:
++                axes = []
++                for dim in new_args[1].elts:
++                    if isinstance(dim, ast.Constant):
++                        axes.append(dim.value)
++                    elif isinstance(dim, ast.Name):
++                        axes.append(ASTResolver.resolve(dim, ctx.global_vars))
++                    else:
++                        raise RuntimeError(
++                            f"Unsupported transpose shape {ast.unparse(dim)}"
++                        )
+             node.shape = axes
+             node.dtype = new_args[0].dtype
+             return node
+@@ -1017,9 +1041,21 @@ class TypeInferer(ASTVisitor):
+             node.dtype = new_args[0].dtype
+             return node
+         if op_name in {"ones", "zeros"}:
+-            axes = compile(ast.Expression(new_args[0]), "", "eval")
+-            # pylint: disable=eval-used
+-            axes = eval(axes)
++            if (all(isinstance(dim, ast.Constant) for dim in new_args[0].elts)):
++                axes = compile(ast.Expression(new_args[0]), "", "eval")
++                # pylint: disable=eval-used
++                axes = eval(axes)
++            else:
++                axes = []
++                for dim in new_args[0].elts:
++                    if isinstance(dim, ast.Constant):
++                        axes.append(dim.value)
++                    elif isinstance(dim, ast.Name):
++                        axes.append(ASTResolver.resolve(dim, ctx.global_vars))
++                    else:
++                        raise RuntimeError(
++                            f"Unsupported shape axis {ast.unparse(dim)}"
++                        )
+             node.shape = axes
+             assert (
+                 node.keywords[0].arg == "dtype"
+diff --git a/allo/library/nn.py b/allo/library/nn.py
+index 09cff17..724cfb0 100644
+--- a/allo/library/nn.py
++++ b/allo/library/nn.py
+@@ -81,22 +81,22 @@ def schedule_relu4d(s):
+     return s
+ 
+ 
+-def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
+-    Z: Ty[L, L]
+-    E: Ty[L, L]
+-    M: Ty[L] = -1000000000000.0
+-    S: Ty[L] = 0.0
++def softmax[Ty, N, L](X: "Ty[N, L]") -> "Ty[N, L]":
++    Z: Ty[N, L]
++    E: Ty[N, L]
++    M: Ty[N] = -1000000000000.0
++    S: Ty[N] = 0.0
+ 
+-    for i, j in dsl.grid(L, L, name="row_max"):
++    for i, j in dsl.grid(N, L, name="row_max"):
+         if X[i, j] > M[i]:
+             M[i] = X[i, j]
+ 
+     # compute exp and sum
+-    for i, j in dsl.grid(L, L, name="exp_sum"):
++    for i, j in dsl.grid(N, L, name="exp_sum"):
+         E[i, j] = dsl.exp(X[i, j] - M[i])
+         S[i] += E[i, j]
+ 
+-    for i, j in dsl.grid(L, L, name="update"):
++    for i, j in dsl.grid(N, L, name="update"):
+         Z[i, j] = E[i, j] / S[i]
+ 
+     return Z
+diff --git a/allo/passes.py b/allo/passes.py
+index e3f5773..2e2eb1d 100644
+--- a/allo/passes.py
++++ b/allo/passes.py
+@@ -760,14 +760,27 @@ def analyze_read_write_patterns(mlir_func):
+         collect_subviews(block)
+ 
+     # Helper to resolve a value to its original argument index if it's a subview
+-    def resolve_to_func_arg_index(value):
++    def resolve_to_func_arg_index(value, visited=None):
++        if visited is None:
++            visited = set()
++        if value in visited:
++            return None
++        visited.add(value)
+         while BlockArgument.isinstance(value):
+-            arg = BlockArgument(value)
+-            if isinstance(arg.owner.owner, func_d.FuncOp):
+-                return arg.arg_number
+-            value = arg.owner.owner.operands[arg.arg_number]
+-        if value in subview_map:
+-            return subview_map[value]
++            block = value.owner
++            parent_op = block.owner
++            value = BlockArgument(value)
++            if isinstance(parent_op, func_d.FuncOp):
++                return value.arg_number
++            idx = value.arg_number
++            if idx < len(parent_op.operands):
++                return resolve_to_func_arg_index(parent_op.operands[idx], visited)
++            return None
++        defining_op = value.owner
++        for op_operand in defining_op.operands:
++            res = resolve_to_func_arg_index(op_operand, visited)
++            if res is not None:
++                return res
+         return None
+ 
+     # Dictionary of common linalg operations and their input/output patterns
+diff --git a/tests/dataflow/aie/test_gpt2.py b/tests/dataflow/aie/test_gpt2.py
+new file mode 100644
+index 0000000..8adb7af
+--- /dev/null
++++ b/tests/dataflow/aie/test_gpt2.py
+@@ -0,0 +1,271 @@
++import numpy as np
++import allo
++import allo.dataflow as df
++from allo.ir.types import float32, bfloat16, int32
++from allo.memory import Layout
++from ml_dtypes import bfloat16 as np_bfloat16
++
++# -------------------------------- configuration --------------------------------
++VOCAB_SIZE = 2
++BATCH = 4
++SEQ = 4
++EMBD = 16
++N_HEAD = 2
++HEAD_DIM = EMBD // N_HEAD
++FFN_HID = EMBD * 4
++Ty = float32  # All tensors use float32
++P0, P1 = 1, 1
++
++# -------------------------------- layouts --------------------------------
++# S0 / S1 shard on mesh dims, R = replicated
++LyX = Layout("S0R")   # shard rows (token dim) replicate cols
++LyW = Layout("RS1")   # replicate rows shard cols
++LyY = Layout("S0S1")  # shard rows & cols
++LyR = Layout("R")     # replicated (scalars / vectors)
++
++BN = BATCH * N_HEAD # 8   flattened (batch*head)
++N = BATCH * SEQ           # 16   flattened (batch*seq)
++NS = BATCH * N_HEAD * SEQ # 32  flattened for attention matrices
++
++N_local = N // P0
++SEQ_local = SEQ // P0
++NS_local = NS // P0
++BN_local = BN // P0
++
++# -------------------------------- helper: bias‑free linear (2‑D params) --------------------------------
++
++def build_linear(in_dim: int, out_dim: int):
++    @df.region()
++    def top():
++        @df.kernel(mapping=[P0, P1])
++        def linear(A: Ty[N, in_dim] @ LyX,    # input flattened
++                   W: Ty[in_dim, out_dim] @ LyW,
++                   Y: Ty[N, out_dim] @ LyY):
++            Y[:, :] = allo.matmul(A, W)
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- scaled dot‑product attention score (2‑D) --------------------------------
++# SCALE = np.float32(1 / math.sqrt(HEAD_DIM))
++SCALE = 0.35355339059  # TODO: can't resolve global equation, using constant for now
++
++def build_attn_score():
++    @df.region()
++    def top():
++        @df.kernel(mapping=[P0, P1])
++        def attn_score(Qf: Ty[N, EMBD] @ LyX,
++                       Kf: Ty[N, EMBD] @ LyX,
++                       Sf: Ty[NS, SEQ] @ LyY):
++            for b, h in allo.grid(BATCH, N_HEAD):
++                Q_blk: Ty[SEQ, HEAD_DIM] = 0
++                K_blk_T: Ty[HEAD_DIM, SEQ] = 0
++                for i, d in allo.grid(SEQ, HEAD_DIM):
++                    row: int32 = b * SEQ + i
++                    col: int32 = h * HEAD_DIM + d
++                    Q_blk[i, d] = Qf[row, col]
++                    K_blk_T[d, i] = Kf[row, col]
++                S_blk: Ty[SEQ, SEQ] = 0
++                S_blk[:, :] = allo.matmul(Q_blk, K_blk_T)
++                base: int32 = (b * N_HEAD + h) * SEQ
++                for i, j in allo.grid(SEQ, SEQ):
++                    Sf[base + i, j] = S_blk[i, j] * SCALE
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- softmax (2‑D) --------------------------------
++def build_softmax():
++    from allo.library.nn import softmax
++    @df.region()
++    def top():
++        @df.kernel(mapping=[1])
++        def softmax_kernel(Sf: bfloat16[NS, SEQ],
++                           Pf: bfloat16[NS, SEQ]):
++            for i in range(NS):
++                Sf_cast: bfloat16[SEQ]
++                for j in range(SEQ):
++                    Sf_cast[j] = Sf[i, j]
++                Pf_cast: bfloat16[SEQ] = allo.softmax(Sf_cast)
++                for j in range(SEQ):
++                    Pf[i, j] = Pf_cast[j]
++            # E: bfloat16[NS, SEQ]
++            # M: Ty[NS] = -1000000000000.0
++            # S: Ty[NS] = 0.0
++            # TMP: bfloat16[NS, SEQ]
++
++            # for i, j in allo.grid(NS, SEQ, name="row_max"):
++            #     if Sf[i, j] > M[i]:
++            #         M[i] = Sf[i, j]
++            # for i, j in allo.grid(NS, SEQ, name="exp"):
++            #     TMP[i, j] = Sf[i, j] - M[i]
++            # E[:, :] = allo.exp(TMP[:, :])
++            # for i, j in allo.grid(NS, SEQ, name="sum"):
++            #     S[i] += E[i, j]
++            # for i, j in allo.grid(NS, SEQ, name="update"):
++            #     Pf[i, j] = E[i, j] / S[i]
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- attention value (2‑D params) --------------------------------
++def build_attn_out():
++    @df.region()
++    def top():
++        @df.kernel(mapping=[P0, P1])
++        def attn_out(Pf: Ty[NS, SEQ] @ LyX,
++                     Vf: Ty[N, EMBD] @ LyX,
++                     Of: Ty[N, EMBD] @ LyY):
++
++            for b, h in allo.grid(BATCH, N_HEAD):
++                P_blk: Ty[SEQ, SEQ] = 0
++                base: int32 = (b * N_HEAD + h) * SEQ
++                for i, j in allo.grid(SEQ, SEQ):
++                    P_blk[i, j] = Pf[base + i, j]
++                V_blk: Ty[SEQ, HEAD_DIM] = 0
++                for i, d in allo.grid(SEQ, HEAD_DIM):
++                    row: int32 = b * SEQ + i
++                    col: int32 = h * HEAD_DIM + d
++                    V_blk[i, d] = Vf[row, col]
++                O_blk: Ty[SEQ, HEAD_DIM] = 0
++                O_blk[:, :] = allo.matmul(P_blk, V_blk)
++                for i, d in allo.grid(SEQ, HEAD_DIM):
++                    row: int32 = b * SEQ + i
++                    col: int32 = h * HEAD_DIM + d
++                    Of[row, col] = O_blk[i, d]
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- residual + layernorm (2‑D) --------------------------------
++def build_add_ln():
++    @df.region()
++    def top():
++        @df.kernel(mapping=[P0, 1])
++        def add_ln(Xf: Ty[N, EMBD] @ LyX,
++                   Yf: Ty[N, EMBD] @ LyX,
++                   Zf: Ty[N, EMBD] @ LyX):
++            GAMMA: Ty[EMBD] = 1.0
++            Zf[:, :] = allo.layernorm(Xf + Yf, GAMMA)
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- GELU (2‑D) --------------------------------
++def build_gelu():
++    @df.region()
++    def top():
++        @df.kernel(mapping=[P0, P1])
++        def gelu_kernel(S: Ty[N, FFN_HID] @ LyY,
++                        T: Ty[N, FFN_HID] @ LyY):
++            T[:, :] = allo.gelu(S)
++    return df.build(top, target="aie-mlir")
++
++# -------------------------------- host orchestration --------------------------------
++
++def run_block(x_fp32: np.ndarray, params: dict):
++    # convert to float32
++    x = x_fp32.astype(np.float32)
++
++    Xf = x.reshape(N, EMBD)
++
++    # linear projections
++    Q = np.empty_like(Xf)
++    K = np.empty_like(Xf)
++    V = np.empty_like(Xf)
++    mod_qkvo_proj = build_linear(EMBD, EMBD)
++    mod_qkvo_proj(Xf, params['Wq'], Q)
++    mod_qkvo_proj(Xf, params['Wk'], K)
++    mod_qkvo_proj(Xf, params['Wv'], V)
++
++    # attention score + mask
++    Sf = np.empty((NS, SEQ), dtype=np.float32)
++    mod_attn_score = build_attn_score()
++    mod_attn_score(Q, K, Sf)
++    mask = (np.triu(np.ones((SEQ, SEQ), dtype=np.float32), 1) * (-10000)).astype(np.float32)
++    Sf += np.repeat(mask[np.newaxis, :, :], BN, axis=0).reshape(NS, SEQ)
++
++    # softmax
++    Pf = np.empty_like(Sf).astype(np_bfloat16)
++    Sf = Sf.astype(np_bfloat16)
++    mod_softmax = build_softmax()
++    mod_softmax(Sf, Pf)
++    Pf = Pf.astype(np.float32)
++
++    # attention value
++    Of = np.empty_like(Q)
++    mod_attn_out = build_attn_out()
++    mod_attn_out(Pf, V, Of)
++
++    # output projection
++    Attn_out_f = np.empty_like(Xf)
++    mod_qkvo_proj = build_linear(EMBD, EMBD)
++    mod_qkvo_proj(Of, params['Wo'], Attn_out_f)
++
++    # residual + ln1
++    LN1_f = np.empty_like(Xf)
++    mod_add_ln = build_add_ln()
++    mod_add_ln(Xf, Attn_out_f, LN1_f)
++
++    # FFN
++    F1 = np.empty((N, FFN_HID), dtype=np.float32)
++    mod_ffn1 = build_linear(EMBD, FFN_HID)
++    mod_ffn1(LN1_f, params['W1'], F1)
++    # F2 = np.empty_like(F1)
++    # mod_gelu = build_gelu()
++    # mod_gelu(F1, F2)
++    F2 = F1
++    F3 = np.empty((N, EMBD), dtype=np.float32)
++    mod_ffn2 = build_linear(FFN_HID, EMBD)
++    mod_ffn2(F2, params['W2'], F3)
++
++    # residual + ln2
++    Out_f = np.empty_like(Xf)
++    mod_add_ln = build_add_ln()
++    mod_add_ln(LN1_f, F3, Out_f)
++
++    return Out_f.reshape(BATCH, SEQ, EMBD)
++
++# -------------------------------- reference test (float32 path) --------------------------------
++if __name__ == "__main__":
++    import torch
++    import torch.nn as nn
++
++    torch.manual_seed(0)
++    np.random.seed(0)
++
++    class MiniGPT2(nn.Module):
++        def __init__(self):
++            super().__init__()
++            self.attn = nn.MultiheadAttention(EMBD, N_HEAD, batch_first=True)
++            self.ln1 = nn.LayerNorm(EMBD, elementwise_affine=False)
++            self.ff1 = nn.Linear(EMBD, FFN_HID, bias=False)
++            self.ff2 = nn.Linear(FFN_HID, EMBD, bias=False)
++            # self.gelu = nn.GELU()
++            self.ln2 = nn.LayerNorm(EMBD, elementwise_affine=False)
++            self.attn.in_proj_bias.data.zero_()
++            self.attn.out_proj.bias.data.zero_()
++
++        def forward(self, x: torch.Tensor):
++            attn_out, _ = self.attn(x, x, x, need_weights=False,
++                                     attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool())
++            y1 = self.ln1(x + attn_out)
++            # ffn_out = self.ff2(self.gelu(self.ff1(y1)))
++            ffn_out = self.ff2(self.ff1(y1))
++            return self.ln2(y1 + ffn_out)
++
++
++    ref_model = MiniGPT2().eval()
++
++    # reference weights (float32)
++    p = {n: v.detach().numpy() for n, v in ref_model.named_parameters()}
++    params_fp32 = {
++        'Wq': p['attn.in_proj_weight'][:EMBD, :].T,
++        'Wk': p['attn.in_proj_weight'][EMBD:2*EMBD, :].T,
++        'Wv': p['attn.in_proj_weight'][2*EMBD:, :].T,
++        'Wo': p['attn.out_proj.weight'].T,
++        'W1': p['ff1.weight'].T,
++        'W2': p['ff2.weight'].T,
++    }
++    
++    params = {k: v.astype(np.float32) if isinstance(v, np.ndarray) else v for k, v in params_fp32.items()}
++
++    # random input
++    x_float = torch.randn(BATCH, SEQ, EMBD)
++    ref_out = ref_model(x_float).detach().numpy()
++
++    allo_out_float32 = run_block(x_float.numpy(), params)
++    allo_out_float32 = allo_out_float32.astype(np.float32)
++
++    np.testing.assert_allclose(allo_out_float32, ref_out, atol=5e-2, rtol=5e-2)
++    print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
