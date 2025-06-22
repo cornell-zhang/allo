@@ -109,7 +109,7 @@ def np_softmax(x, axis=-1):
 def test_softmax():
     from allo.library.nn import softmax
 
-    s = allo.customize(softmax, instantiate=[float32, 8])
+    s = allo.customize(softmax, instantiate=[float32, 8, 8])
     mod = s.build()
     inp = np.random.randn(8, 8).astype(np.float32)
     inp = 1000 * inp

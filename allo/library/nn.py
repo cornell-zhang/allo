@@ -191,7 +191,7 @@ def scaled_dot_product_attention[
         Y: Ty[L, L] = 0
         systolic[Ty, Ty, Ty, L, D // H, L, M0, M1, "QKT"](Q_h, K_h, Y)
         # Need to return a new value
-        S = softmax[Ty, L](Y)
+        S = softmax[Ty, L, L](Y)
         # YV = (L, L) x (L, D//H) = (L, D//H)
         systolic[Ty, Ty, Ty, L, L, D // H, M0, M1, "YV"](S, V_h, C_h)
 
