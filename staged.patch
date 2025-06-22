@@ -1,8 +1,364 @@
+diff --git a/.github/workflows/config.yml b/.github/workflows/config.yml
+index 5d083c8..a2a3c23 100644
+--- a/.github/workflows/config.yml
++++ b/.github/workflows/config.yml
+@@ -33,7 +33,6 @@ jobs:
+         source activate allo
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+         python3 -m pip install -v -e .
+-        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
+     - name: Formatting Check
+       shell: bash
+       run: |
+@@ -43,7 +42,6 @@ jobs:
+       shell: bash
+       run: |
+         source activate allo
+-        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
+         export PATH=/root/llvm-project/build/bin:${PATH}
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+         python3 -m pytest --ignore=tests/dataflow tests -v
+@@ -51,14 +49,12 @@ jobs:
+       shell: bash
+       run: |
+         source activate allo
+-        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+         python3 -m pytest tutorials -v
+     - name: Benchmark
+       shell: bash
+       run: |
+         source activate allo
+-        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+         python3 -m pytest examples/polybench -v
+     # no left space!
+diff --git a/.github/workflows/sphinx_build.yml b/.github/workflows/sphinx_build.yml
+index de7cd00..d3414a4 100644
+--- a/.github/workflows/sphinx_build.yml
++++ b/.github/workflows/sphinx_build.yml
+@@ -43,12 +43,10 @@ jobs:
+         source activate allo
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+         python3 -m pip install -v -e .
+-        HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
+     - name: Build docs
+       shell: bash
+       run: |
+         source activate allo
+-        export PYTHONPATH=/root/miniconda/envs/allo/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
+         export PATH=/root/llvm-project/build/bin:${PATH}
+         cd docs
+         export LLVM_BUILD_DIR=/root/llvm-project/build
+diff --git a/allo/backend/__init__.py b/allo/backend/__init__.py
+index 55b20b3..a2a0b67 100644
+--- a/allo/backend/__init__.py
++++ b/allo/backend/__init__.py
+@@ -1,4 +1,4 @@
+ # Copyright Allo authors. All Rights Reserved.
+ # SPDX-License-Identifier: Apache-2.0
+-import os
+-from . import ai_engine, llvm, hls, ip, experimental
++
++from . import llvm, hls, ip, aie
+diff --git a/allo/backend/ai_engine.py b/allo/backend/aie.py
+similarity index 100%
+rename from allo/backend/ai_engine.py
+rename to allo/backend/aie.py
+diff --git a/allo/backend/experimental/README.md b/allo/backend/experimental/README.md
+index bb8fcc9..e976b14 100644
+--- a/allo/backend/experimental/README.md
++++ b/allo/backend/experimental/README.md
+@@ -5,20 +5,21 @@
+ ## Environment Setup
+ Please follow the [Getting Started](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai-on-linux) guide to install MLIR-AIE.
+ 
+-Install Allo:
++In **Step 3: Install IRON library, mlir-aie, and llvm-aie compilers from wheels**, under the section [Install IRON for AMD Ryzen™ AI AIE Application Development](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#install-iron-for-amd-ryzen-ai-aie-application-development), please install version `v1.0` using the following commands:
+ ```bash
+-git clone https://github.com/cornell-zhang/allo.git && cd allo
+-python3 -m pip install -v -e .
++# Install IRON library and mlir-aie from a wheel
++python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
++
++# Install Peano from a llvm-aie wheel
++python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+ ```
+-This will install the IRON library, and the mlir-aie and llvm-aie compiler release v1.0 from whls.
+ 
+-Install MLIR Python Extras:
++Then, install Allo as usual:
+ ```bash
+-HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
++git clone https://github.com/cornell-zhang/allo.git && cd allo
++python3 -m pip install -v -e .
+ ```
+ 
+-
+-
+ ### Commands Used
+ 
+ Below are the exact commands to set up the environment:
+@@ -29,13 +30,12 @@ Below are the exact commands to set up the environment:
+    conda activate allo
+    ```
+ 
+-2. Clone the allo repository and install.
+-   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
++2. install release 1.0
+    ```bash
+-   git clone https://github.com/cornell-zhang/allo.git
+-   cd allo
+-   python3 -m pip install -v -e .
+-   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r requirements_extra.txt
++   # Install IRON library and mlir-aie from a wheel
++   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
++   # Install Peano from a llvm-aie wheel
++   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+    ```
+ 
+ 3. Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
+@@ -50,6 +50,8 @@ Below are the exact commands to set up the environment:
+    python3 -m pip install -r python/requirements.txt
+    # Install the pre-commit hooks defined in .pre-commit-config.yaml
+    pre-commit install
++   # Install MLIR Python Extras 
++   HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
+    # Install Torch for ML examples
+    python3 -m pip install -r python/requirements_ml.txt
+    ```
+@@ -59,6 +61,14 @@ Below are the exact commands to set up the environment:
+    source utils/env_setup.sh
+    ```
+ 
++6. Clone the allo repository and install.
++   - You may want to set up environment variables to use a custom CMake and LLVM build. For example, `export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH` and `export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build`.
++   ```bash
++   git clone https://github.com/cornell-zhang/allo.git
++   cd allo
++   python3 -m pip install -v -e .
++   ```
++
+ Do not forget to setup Vitis and XRT.
+ 
+ ### Patches and Configuration
+@@ -242,206 +252,6 @@ def test_producer_consumer():
+ 
+ ```
+ 
+-large scale GEMM
+-```python
+-import allo
+-from allo.ir.types import int16, int32
+-import allo.dataflow as df
+-import numpy as np
+-from allo.memory import Layout
+-
+-LyA = Layout("S0R")
+-LyB = Layout("RS1")
+-LyC = Layout("S0S1")
+-
+-
+-TyI, TyO = int16, int32
+-total_M, total_N, total_K = 128, 128, 512
+-M, N, K = 128, 128, 32
+-
+-
+-@df.region()
+-def top1():
+-    @df.kernel(mapping=[4, 4])
+-    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+-        C[:, :] = allo.matmul(A, B)
+-
+-
+-@df.region()
+-def top2():
+-    @df.kernel(mapping=[2, 4])
+-    def core(A: TyO[M, N] @ LyC, B: TyO[M, N] @ LyC, C: TyO[M, N] @ LyC):
+-        C[:, :] = allo.add(A, B)
+-
+-
+-mod1 = df.build(top1, target="aie-mlir", project="top1.prj")
+-mod2 = df.build(top2, target="aie-mlir", project="top2.prj")
+-
+-A = np.random.randint(0, 8, (total_M, total_K)).astype(np.int16)
+-B = np.random.randint(0, 8, (total_K, total_N)).astype(np.int16)
+-C_tmp = np.zeros((M, N)).astype(np.int32)
+-C = np.zeros((M, N)).astype(np.int32)
+-
+-for i in range(total_K // K):
+-    tile_A = A[:, i * K : (i + 1) * K]
+-    tile_B = B[i * K : (i + 1) * K, :]
+-    mod1(tile_A, tile_B, C_tmp)
+-    mod2(C, C_tmp, C)
+-
+-np.testing.assert_allclose(C, A @ B, atol=1e-5)
+-print("PASSED!")
+-```
+-
+-### New Feature
+-#### Profiling
+-A new profiling feature has been added to help measure the performance of the module during execution. 
+-
+-To enable profiling, use the `do_profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
+-```python
+-def build(
+-    func,
+-    target="vitis_hls",
+-    mode="csim",
+-    project="top.prj",
+-    configs=None,
+-    wrap_io=True,
+-    opt_default=True,
+-    enable_tensor=False,
+-    profile=False,
+-    warmup=20,
+-    num_iters=100,
+-):
+-```
+-
+-**New Parameters:**
+-
+-- `profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
+-- `warmup` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
+-- `num_iters` (`int`): Number of timed iterations used to compute execution time. Default is `100`.
+-
+-##### Example
+-```python
+-import allo
+-from allo.ir.types import int16, int32, float32
+-import allo.dataflow as df
+-import numpy as np
+-from allo.memory import Layout
+-
+-Ty = int16
+-M, N, K = 128, 128, 32
+-Pm, Pn, Pk = 4, 4, 1
+-Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
+-
+-LyA = Layout("S1S2")
+-LyB = Layout("S2S0")
+-LyC = Layout("S1S0")
+-
+-@df.region()
+-def top1():
+-    @df.kernel(mapping=[Pk, Pm, Pn])
+-    def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: int32[M, N] @ LyC):
+-        C[:, :] = allo.matmul(A, B)
+-
+-mod = df.build(
+-    top1,
+-    target="aie-mlir",
+-    profile=True,
+-    warmup=200,
+-    num_iters=1000,
+-)
+-A = np.random.randint(0, 32, (M, K)).astype(np.int16)
+-B = np.random.randint(0, 32, (K, N)).astype(np.int16)
+-C = np.zeros((M, N)).astype(np.int32)
+-tmp_C = np.zeros((M, N)).astype(np.int32)
+-mod(A, B, C)
+-```
+-
+-## New Feature
+-### Support for user-defined external kernels
+-
+-Originally, complex computations on AIE cores were implemented using a limited set of [external kernels provided in the `mlir-aie` repository](https://github.com/Xilinx/mlir-aie/tree/v1.0/aie_kernels). However, this external kernel library supports only a narrow range of operations and leaves room for performance improvement. To address these limitations, we add support for user-defined external kernels.
+-
+-Users can now register and invoke external kernels implemented in C++ and exposed via extern "C" interfaces. These kernels can be written using the AIE API and integrated into the programming model workflow.
+-
+-Suppose the external kernel is implemented in the `norm.cc` file:
+-```cpp
+-#include <aie_api/aie.hpp>
+-#include <stdint.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <type_traits>
+-
+-#define NOCPP
+-
+-#define EPS 1e-6f // epsilon
+-
+-template <typename T_in, typename T_out, const int SEQ_LEN, const int HIDDEN>
+-void rms_norm_single_batch(T_in *input_tensor, T_in *weight,
+-                           T_out *output_tensor) {
+-  constexpr int vec_factor = 16;
+-  using vec_t = aie::vector<T_in, vec_factor>;
+-  event0();
+-  for (int iter = 0; iter < SEQ_LEN; iter++) {
+-    T_in *__restrict input_ptr = input_tensor;
+-    T_in *__restrict weight_ptr = weight;
+-    T_out *__restrict output_ptr = output_tensor;
+-    float square_sum = 0.0f;
+-    const int F = HIDDEN / vec_factor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t square_vec = aie::mul(input_vec, input_vec);
+-      square_sum += aie::reduce_add(square_vec);
+-    }
+-    vec_t square_sum_vec =
+-        aie::broadcast<T_in, vec_factor>(square_sum / HIDDEN + EPS);
+-    vec_t rms = aie::invsqrt(square_sum_vec);
+-    input_ptr = input_tensor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t normed = aie::mul(input_vec, rms);
+-      vec_t weight_vec = aie::load_v<vec_factor>(weight_ptr);
+-      weight_ptr += vec_factor;
+-      vec_t result = aie::mul(normed, weight_vec);
+-      aie::store_v(output_ptr, result);
+-      output_ptr += vec_factor;
+-    }
+-    input_tensor += HIDDEN;
+-    output_tensor += HIDDEN;
+-  }
+-  event1();
+-}
+-```
+-and exposed via extern "C" interfaces
+-```cpp
+-extern "C" {
+-  void layer_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
+-    rms_norm_single_batch<float, float, 4, 512>(&A_in[0][0], B_in, &C_out[0][0]);
+-  }
+-}
+-```
+-
+-We can create an [ExternalModule](external_kernel.py) to wrap the kernel and use it in computation on AIE core.
+-
+-Register the `ExternalModule` in the context.
+-```python
+-norm = ExternalModule(
+-    top="layer_norm",       # Name of the top-level function defined with `extern "C"`
+-    impl_path="norm.cc",    # Path to the user-provided source file that implements the external kernel
+-    input_idx=[0, 1],       # Indices of input arguments in the argument list passed to the module
+-    output_idx=[2],         # Indices of output arguments in the argument list passed to the module
+-)
+-```
+-And the external module can then be used in an Allo kernel.
+-```python
+-@df.kernel(mapping=[1])
+-    def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
+-        norm(A, B, C)
+-```
+-
+-An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
+-
+ ### ⚠️ Note
+ Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.
+ 
 diff --git a/allo/backend/experimental/__init__.py b/allo/backend/experimental/__init__.py
-index d781e25..02d517b 100644
+index f5abc31..02d517b 100644
 --- a/allo/backend/experimental/__init__.py
 +++ b/allo/backend/experimental/__init__.py
-@@ -5,6 +5,7 @@
+@@ -1,10 +1,11 @@
+-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
++# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks
+ # Copyright Allo authors. All Rights Reserved.
+ # SPDX-License-Identifier: Apache-2.0
+ 
  import os
  import subprocess
  import shutil
@@ -10,22 +366,94 @@ index d781e25..02d517b 100644
  
  import aie.ir as aie_ir
  
-@@ -167,7 +168,7 @@ class AIE_MLIRModule:
+@@ -12,8 +13,8 @@ import allo._mlir._mlir_libs._mlir as allo_ir
+ from ..._mlir.dialects import func as allo_func_d
+ 
+ from ...passes import analyze_read_write_patterns
++
+ from ...memory import DTensor
+-from .external_kernel import ExternalModule
+ 
+ from ..._mlir.passmanager import PassManager as mlir_pass_manager
+ from .mlir_codegen import CodeGenerator, Argument, Stream
+@@ -34,12 +35,12 @@ class AIE_MLIRModule:
+         func_args: dict,
+         project_dir: str,
+         stream_info: dict,
+-        ext_libs: list = None,
+     ):
+         self.allo_module: allo_ir.ir.Module = module
+         self.top_func_name: str = top_func_name
+         self.streams: dict[str, Stream] = {}
+ 
++        # fixme: this is a dummy fix
+         tmp_map: dict = {}
+         self.func_args: dict[str, list[Argument]] = {}
+         for func_name, args in func_args.items():
+@@ -73,11 +74,6 @@ class AIE_MLIRModule:
+ 
+         self.project_dir: str = project_dir
+ 
+-        self.external_kernel_lib: dict[str, ExternalModule] = {}
+-        for ext_kernel in ext_libs:
+-            if isinstance(ext_kernel, ExternalModule):
+-                self.external_kernel_lib[ext_kernel.top] = ext_kernel
+-
+         # index in top fucntion argument list -> DTensor
+         self.global_inputs: dict[int, DTensor] = {}
+         self.global_outputs: dict[int, DTensor] = {}
+@@ -111,9 +107,7 @@ class AIE_MLIRModule:
+                     int(x) for x in func_name_w_id.split(func_name + "_")[-1].split("_")
+                 )
+                 # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+-                in_idx, out_idx = analyze_read_write_patterns(
+-                    func, self.external_kernel_lib
+-                )
++                in_idx, out_idx = analyze_read_write_patterns(func)
+                 for io_lst, io_idx, io in (
+                     (inputs, in_idx, "in"),
+                     (outputs, out_idx, "out"),
+@@ -168,29 +162,18 @@ class AIE_MLIRModule:
+ 
+         return inputs, outputs
+ 
+-    def build(
+-        self,
+-        device_type="npu1_4col",
+-        profile: bool = False,
+-        warmup: int = 20,
+-        num_iters: int = 100,
+-    ):
+-        self.profile = profile
+-        self.warmup = warmup
+-        self.num_iters = num_iters
++    def build(self, device_type="npu1_4col"):
+         build_dir = os.path.join(self.project_dir, "build")
+         if os.path.exists(build_dir):
              shutil.rmtree(build_dir)
          os.makedirs(build_dir)
          # TODO: maybe use other ways to capture the relationship between DTensor, function group
--        _, core_func_groups, _ = classify_aie_functions(self.allo_module)
+-        _, core_func_groups, _ = classify_aie_functions(
+-            self.allo_module, self.top_func_name
+-        )
 +        _, core_func_groups, _, _ = classify_aie_functions(self.allo_module)
          inputs, outputs = self.collect_io(core_func_groups)
  
          # - extract external kernels
-@@ -186,11 +187,11 @@ class AIE_MLIRModule:
+         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
+-            self.allo_module, self.top_func_name, self.external_kernel_lib
++            self.allo_module
+         )
+         # record original allo mlir
+         with open(
+@@ -204,11 +187,11 @@ class AIE_MLIRModule:
          pipeline = f'builtin.module({",".join(passes)})'
          with self.allo_module.context:
              mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 -        top_func, core_func_groups, external_funcs = classify_aie_functions(
+-            self.allo_module, self.top_func_name
 +        top_func, core_func_groups, external_funcs, global_ops = classify_aie_functions(
-             self.allo_module
++            self.allo_module
          )
          code_generator = CodeGenerator(
 -            device_type, self.global_inputs, self.global_outputs, top_func
@@ -33,11 +461,28 @@ index d781e25..02d517b 100644
          )
          self.aie_module = code_generator.aie_codegen(
              core_func_groups,
-@@ -212,11 +213,32 @@ class AIE_MLIRModule:
+@@ -224,27 +207,38 @@ class AIE_MLIRModule:
+         ) as f:
+             f.write(str(self.aie_module))
+         if len(injected_kernels) > 0:
+-            paths = set()
+-            # user defined external kernels
+-            for ext_module in self.external_kernel_lib.values():
+-                paths.add(ext_module.impl_path)
+-            for src_path in paths:
+-                target_path = os.path.join(self.project_dir, os.path.basename(src_path))
+-                if os.path.exists(target_path) and os.path.samefile(
+-                    src_path, target_path
+-                ):
+-                    continue
+-                shutil.copy(src_path, target_path)
+             kernel_code = codegen_external_kernels(injected_kernels, include_src)
+             with open(
+                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
              ) as f:
                  f.write(kernel_code)
-             # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
--            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -c external.cc -o external.o"
+-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
++            # fixme: export MLIR_AIE_EXTERNAL_KERNEL_DIR
 +            path = Path(__file__).resolve()
 +            parts = list(path.parts)
 +            del parts[-3]
@@ -67,8 +512,90 @@ index d781e25..02d517b 100644
          # TODO
          # build mlir-aie
          cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+@@ -261,6 +255,7 @@ class AIE_MLIRModule:
+             os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
+         ) as f:
+             f.write(host_code)
++        # fixme: lib path
+         cmd = f"cd {self.project_dir}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
+         with subprocess.Popen(cmd, shell=True) as process:
+             process.wait()
+@@ -274,7 +269,7 @@ class AIE_MLIRModule:
+                 os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
+             ) as f:
+                 f.write("\n".join([str(i) for i in args[i].flatten()]))
+-        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
++        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE"
+         with subprocess.Popen(cmd, shell=True) as process:
+             process.wait()
+         if process.returncode != 0:
+diff --git a/allo/backend/experimental/external_kernel.py b/allo/backend/experimental/external_kernel.py
+deleted file mode 100644
+index 84e72de..0000000
+--- a/allo/backend/experimental/external_kernel.py
++++ /dev/null
+@@ -1,59 +0,0 @@
+-# Copyright Allo authors. All Rights Reserved.
+-# SPDX-License-Identifier: Apache-2.0
+-
+-import re
+-import os
+-from pyparsing import Keyword, Literal, nestedExpr, originalTextFor
+-from ..ip import parse_cpp_function
+-
+-
+-def extract_extern_C_blocks(code: str) -> list[str]:
+-    """
+-    Scan `code` for all occurrences of:
+-       extern "C" { ... }
+-    (properly handling nested braces) and return them as raw strings.
+-    """
+-    extern_kw = Keyword("extern")
+-    c_literal = Literal('"C"')
+-    brace_group = nestedExpr("{", "}")
+-    extern_block = originalTextFor(extern_kw + c_literal + brace_group)
+-
+-    blocks = []
+-    # scanString yields every non-overlapping match
+-    for tokens, _, _ in extern_block.scanString(code):
+-        # tokens[0] is the full matched text
+-        blocks.append(tokens[0])
+-    return blocks
+-
+-
+-class ExternalModule:
+-    """
+-    User defined external kernel for aie
+-    """
+-
+-    def __init__(
+-        self, top: str, impl_path: str, input_idx: list[int], output_idx: list[int]
+-    ):
+-        self.top = top  # identifier
+-        self.impl_path = impl_path
+-        self.filename = os.path.basename(impl_path)
+-        assert self.filename.endswith(
+-            ".cc"
+-        ), f"Expected a .cc file, but got: {self.filename}"
+-
+-        self.input_idx = input_idx
+-        self.output_idx = output_idx
+-
+-        with open(self.impl_path, "r", encoding="utf-8") as f:
+-            code = f.read()
+-            extern_C_blocks = extract_extern_C_blocks(code)
+-            all_functions = []
+-            for block in extern_C_blocks:
+-                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.top}\s*\([^)]*\)\s*{{"
+-                functions = re.findall(func_pattern, block)
+-                all_functions.extend(functions)
+-            assert len(all_functions) == 1, "invalid external function"
+-            self.args = parse_cpp_function(all_functions[0], self.top)
+-        assert (self.args is not None) or len(self.args) != len(self.input_idx) + len(
+-            self.output_idx
+-        ), f"Failed to parse {self.impl}"
 diff --git a/allo/backend/experimental/mlir_codegen.py b/allo/backend/experimental/mlir_codegen.py
-index f9ef977..56be6e3 100644
+index 85db713..56be6e3 100644
 --- a/allo/backend/experimental/mlir_codegen.py
 +++ b/allo/backend/experimental/mlir_codegen.py
 @@ -31,6 +31,7 @@ from ..._mlir.ir import (
@@ -79,7 +606,42 @@ index f9ef977..56be6e3 100644
  )
  
  from ..utils import format_str
-@@ -304,6 +305,7 @@ class CodeGenerator:
+@@ -38,7 +39,7 @@ from ..._mlir.dialects import func as allo_func_d
+ from ...memory import DTensor
+ 
+ from .utils import get_element_type
+-from ..ai_engine import map_kernels_to_device_mesh
++from ..aie import map_kernels_to_device_mesh
+ 
+ 
+ class Stream:
+@@ -243,13 +244,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
+         dma_tensor_tiles: list[DMATensorTile] = []
+         # fixme: incomplete
+         #   Currently, we may allow tensor tiles on a sharding dimension to be sent using different memory tiles
+-        if len(device_dims) <= 1:
+-            lose_factor, inc_factor = 1, 1
+-        elif len(device_dims) == 2:
+-            lose_factor = size[device_dims[0]]
+-            inc_factor = size[device_dims[1]]
+-        else:
+-            raise ValueError("Unsupported access pattern.")
++        lose_factor = 1 if len(device_dims) <= 1 else size[device_dims[0]]
+         remaining = tensor_tiles[:]
+         start_idx = 0
+         while remaining:
+@@ -267,8 +262,8 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
+                     "Failed to allocate (shim, memory) tile: per-tile FIFO limit "
+                     "exceeded or no more available tiles."
+                 )
+-            offset[device_dims[0]] = start_idx // inc_factor
+-            size[device_dims[0]] = len(chunk) // inc_factor
++            offset[device_dims[0]] = start_idx // lose_factor
++            size[device_dims[0]] = len(chunk) // lose_factor
+             dma_tensor_tiles.append(
+                 DMATensorTile(
+                     len(dma_tensor_tiles),
+@@ -310,6 +305,7 @@ class CodeGenerator:
          global_inputs: dict[int, DTensor],
          global_outputs: dict[int, DTensor],
          top_function: allo_func_d.FuncOp,
@@ -87,7 +649,7 @@ index f9ef977..56be6e3 100644
      ):
          self.device_type = device_type
  
-@@ -321,6 +323,7 @@ class CodeGenerator:
+@@ -327,6 +323,7 @@ class CodeGenerator:
          self.global_ip: aie_ir.InsertionPoint = (
              None  # mark the inserting point for buffers
          )
@@ -95,7 +657,7 @@ index f9ef977..56be6e3 100644
  
      def collect_stream_info(self, streams: dict[str, Stream], context):
          """
-@@ -419,7 +422,8 @@ class CodeGenerator:
+@@ -425,7 +422,8 @@ class CodeGenerator:
                          op.erase()
  
          # declare external kernel function before use
@@ -105,7 +667,7 @@ index f9ef977..56be6e3 100644
          return func_str
  
      def build_core_function(
-@@ -579,6 +583,11 @@ class CodeGenerator:
+@@ -585,6 +583,11 @@ class CodeGenerator:
              self.external_functions += format_str(str(func), indent=4)
  
          wrapper_code += self.external_functions
@@ -117,7 +679,7 @@ index f9ef977..56be6e3 100644
          wrapper_code += """
                  }
              }
-@@ -747,7 +756,7 @@ class CodeGenerator:
+@@ -753,7 +756,7 @@ class CodeGenerator:
                          func_core = aie_d.Core(
                              tile=self.tile_map[f"compute_{func_name_w_id}"],
                              link_with=(
@@ -127,22 +689,251 @@ index f9ef977..56be6e3 100644
                                  else None
                              ),
 diff --git a/allo/backend/experimental/utils.py b/allo/backend/experimental/utils.py
-index bbd9762..5f9e4fd 100644
+index 3f5e88e..5f9e4fd 100644
 --- a/allo/backend/experimental/utils.py
 +++ b/allo/backend/experimental/utils.py
-@@ -199,7 +199,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
-                     [type_in, type_out, i32], []
-                 )
-                 input_size = np.prod(type_in.shape)
--                include_src.add('#include "softmax.cc"\n')
+@@ -8,16 +8,23 @@ import numpy as np
+ 
+ import aie.ir as aie_ir
+ import allo._mlir._mlir_libs._mlir as allo_ir
+-from ..._mlir.dialects import func as allo_func_d
++from ..._mlir.dialects import (
++    func as allo_func_d,
++    memref as memref_d,
++    arith as arith_d,
++)
+ from ..utils import format_str, format_code
+ from ...memory import DTensor
+-from .external_kernel import ExternalModule
+ 
+ from ..._mlir.ir import (
+     MemRefType,
+     InsertionPoint,
+     FlatSymbolRefAttr,
+     StringAttr,
++    SymbolTable,
++    BF16Type,
++    IntegerType,
++    IntegerAttr,
+ )
+ 
+ aie_ctype_map = {
+@@ -53,11 +60,20 @@ aie_external_kernel_ctype_map = {
+ }
+ 
+ 
+-def inject_external_kernels(
+-    module: allo_ir.ir.Module,
+-    top_function_name,
+-    external_kernel_lib: dict[str, ExternalModule],
+-) -> tuple[dict[str, bool], dict]:
++def add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header):
++    if kernel_name not in injected_kernels:
++        injected_kernels[kernel_name] = (kernel_code, kernel_header)
++        kernel = allo_func_d.FuncOp(
++            kernel_name,
++            func_type,
++            ip=InsertionPoint(func),
++        )
++        kernel.attributes["sym_visibility"] = StringAttr.get(
++            "private"
++        )
++
++
++def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool], dict]:
+     """
+     Inject external kernels for compute cores.
+ 
+@@ -73,109 +89,260 @@ def inject_external_kernels(
+                             strings (C++ code and preprocessor defines).
+         - include_src: A set of C++ include directives needed for the external kernels.
+     """
++    def traverse_operations(operations, func_name, injected_kernels, use_external_kernels, include_src, symtab):
++        for op in operations:
++            kernel_code, kernel_header = "", ""
++            # vec add/mul
++            if op.operation.name in {"linalg.add", "linalg.mul"}:
++                op_name = op.operation.name.split(".")[1]
++                include_src.add(f'#include "{op_name}.cc"\n')
++                dtype = str(op.inputs[0].type.element_type)
++                ctype = aie_external_kernel_ctype_map[dtype]
++                kernel_name = f"{op_name}_{dtype}_vector"
++                use_external_kernels[func_name] = True
++                kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
++                kernel_code += " {\n"
++                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
++                kernel_code += "}\n\n"
++                # Inject AIE kernel
++                func_type = allo_func_d.FunctionType.get(
++                    [
++                        op.inputs[0].type,
++                        op.inputs[1].type,
++                        op.outputs[0].type,
++                    ],
++                    [],
++                )
++                # replace operation
++                allo_func_d.CallOp(
++                    [],
++                    FlatSymbolRefAttr.get(kernel_name),
++                    [op.inputs[0], op.inputs[1], op.outputs[0]],
++                    ip=InsertionPoint(op),
++                )
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            # matmul
++            elif op.operation.name == "linalg.matmul":
++                M, K = MemRefType(op.inputs[0].type).shape
++                _, N = MemRefType(op.inputs[1].type).shape
++                dtype = str(op.inputs[0].type.element_type)
++                out_dtype = str(op.outputs[0].type.element_type)
++                if (dtype, out_dtype) not in [
++                    ("i8", "i8"),
++                    ("i16", "i16"),
++                    ("i16", "i32"),
++                    ("bf16", "bf16"),
++                    ("bf16", "f32"),
++                ]:
++                    continue
++                include_src.add('#include "mm.cc"\n')
++                kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
++                use_external_kernels[func_name] = True
++                kernel_header += f"#define DIM_M {M}\n"
++                kernel_header += f"#define DIM_N {N}\n"
++                kernel_header += f"#define DIM_K {K}\n"
++                kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
++                func_type = allo_func_d.FunctionType.get(
++                    [
++                        op.inputs[0].type,
++                        op.inputs[1].type,
++                        op.outputs[0].type,
++                    ],
++                    [],
++                )
++                allo_func_d.CallOp(
++                    [],
++                    FlatSymbolRefAttr.get(kernel_name),
++                    [op.inputs[0], op.inputs[1], op.outputs[0]],
++                    ip=InsertionPoint(op),
++                )
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            # linalg.fill init_zero
++            elif "op_name" in op.attributes and op.attributes["op_name"].value.startswith("init_zero"):
++                op_name = "zero"
++                func_type = allo_func_d.FunctionType.get(
++                    [op.outputs[0].type], []
++                )
++                dtype = str(op.outputs[0].type.element_type)
++                shape = MemRefType(op.outputs[0].type).shape
++                ctype = aie_external_kernel_ctype_map[dtype]
++                include_src.add(f'#include "zero.cc"\n')
++                kernel_name = f"zero_{dtype}_vector"
++                use_external_kernels[func_name] = True
++                if "bfloat" in ctype:
++                    ctype = "bfloat16"
++                kernel_code += f"void zero_{dtype}_vector"
++                kernel_code += f"({ctype} *C_out)"
++                kernel_code += " {\n"
++                kernel_code += f"  zero_vectorized<{ctype}, {shape[0]}, {shape[1] if len(shape) == 2 else 1}>(C_out);\n"
++                kernel_code += "}\n\n"
++                allo_func_d.CallOp(
++                    [],
++                    FlatSymbolRefAttr.get(kernel_name),
++                    [op.outputs[0]],
++                    ip=InsertionPoint(op),
++                )
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            elif op.operation.name == "linalg.softmax":
++                type_in = op.input.type
++                type_out = op.output.type
++                if not isinstance(type_in, MemRefType) or not isinstance(
++                    type_in.element_type, BF16Type
++                ):
++                    raise ValueError("Only BF16 MemRef type is supported for softmax")
++                op_name = "softmax"
++                i32 = IntegerType.get_signless(32)
++                func_type = allo_func_d.FunctionType.get(
++                    [type_in, type_out, i32], []
++                )
++                input_size = np.prod(type_in.shape)
 +                include_src.add('#include "bf16_softmax.cc"\n')
-                 kernel_name = "softmax_bf16"
-                 use_external_kernels[func_name] = True
-                 with InsertionPoint(op):
-@@ -275,6 +275,38 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
-                 old_funcOp.erase()
-                 op.erase()
-                 add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++                kernel_name = "softmax_bf16"
++                use_external_kernels[func_name] = True
++                with InsertionPoint(op):
++                    const_val = arith_d.ConstantOp(i32, IntegerAttr.get(i32, input_size)).result
++                    allo_func_d.CallOp(
++                        [],
++                        FlatSymbolRefAttr.get(kernel_name),
++                        [op.input, op.output, const_val],
++                    )
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            elif op.operation.name == "linalg.exp":
++                type_in = op.inputs[0].type
++                type_out = op.outputs[0].type
++                if not isinstance(type_in, MemRefType) or not isinstance(type_in.element_type, BF16Type):
++                    raise ValueError("Only BF16 MemRef type is supported for exp")
++                op_name = "exp"
++                func_type = allo_func_d.FunctionType.get(
++                    [type_in, type_out], []
++                )
++                input_size = np.prod(type_in.shape)
++                include_src.add('#include "bf16_exp.cc"\n')
++                kernel_name = f"exp_bf16_vector_{input_size}"
++                use_external_kernels[func_name] = True
++                kernel_code += f"void exp_bf16_vector_{input_size}"
++                kernel_code += f"(bfloat16 *A_in, bfloat16 *C_out)"
++                kernel_code += " {\n"
++                kernel_code += f"  exp_bf16_func<{input_size}>(A_in, C_out);\n"
++                kernel_code += "}\n\n"
++                allo_func_d.CallOp(
++                    [],
++                    FlatSymbolRefAttr.get(kernel_name),
++                    [op.inputs[0], op.outputs[0]],
++                    ip=InsertionPoint(op),
++                )
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
++            elif (
++                op.operation.name == "func.call"
++                and (
++                    op.callee.value.startswith("layernorm")
++                    or op.callee.value.startswith("rmsnorm")
++                )
++            ):
++                op_name = "layernorm" if op.callee.value.startswith("layernorm") else "rmsnorm"
++                type_in = op.operation.operands[0].type
++                type_w = op.operation.operands[1].type
++                type_out = op.operation.results[0].type
++                func_type = allo_func_d.FunctionType.get(
++                    [type_in, type_w, type_out], []
++                )
++                dtype_in = str(type_in.element_type)
++                dtype_out = str(type_out.element_type)
++                include_src.add(f'#include "norm.cc"\n')
++                kernel_name = f"{op_name}_{dtype_in}_{dtype_out}_vector"
++                use_external_kernels[func_name] = True
++                ctype_in = aie_external_kernel_ctype_map[dtype_in]
++                ctype_out = aie_external_kernel_ctype_map[dtype_out]
++                kernel_code += f"void {op_name}_{dtype_in}_{dtype_out}_vector"
++                kernel_code += f"({ctype_in} *A_in, {ctype_in} *GAMMA, {ctype_out} *C_out)"
++                kernel_code += " {\n"
++                kernel_code += f"  layer_norm_single_batch_no_bias<{ctype_in}, {ctype_out}, {type_in.shape[0]}, {type_in.shape[1]}>(A_in, GAMMA, C_out);\n"
++                kernel_code += "}\n\n"
++                with InsertionPoint(op):
++                    dest = memref_d.AllocOp(type_out, [], []).result
++                    allo_func_d.CallOp(
++                        [],
++                        FlatSymbolRefAttr.get(kernel_name),
++                        [op.operation.operands[0], op.operation.operands[1], dest],
++                    )
++                    op.results[0].replace_all_uses_with(dest)
++                old_funcOp = symtab[op.callee.value]
++                old_funcOp.erase()
++                op.erase()
++                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
 +            elif (
 +                op.operation.name == "func.call"
 +                and op.callee.value.startswith("gelu")
@@ -175,28 +966,132 @@ index bbd9762..5f9e4fd 100644
 +                old_funcOp.erase()
 +                op.erase()
 +                add_kernel(kernel_name, injected_kernels, func, func_type, kernel_code, kernel_header)
-             else:
-                 # Recursively traverse into all regions and blocks of the operation
-                 for region in op.regions:
-@@ -302,7 +334,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
-                             injected_kernels,
-                             use_external_kernels,
-                             include_src,
--                            func.attributes["sym_name"].value,
++            else:
++                # Recursively traverse into all regions and blocks of the operation
++                for region in op.regions:
++                    for block in region.blocks:
++                        traverse_operations(block.operations, func_name, injected_kernels, use_external_kernels, include_src, symtab)
++    
+     use_external_kernels = {}
+     injected_kernels: dict = {}
+     include_src: set[str] = set()
+-
++    symtab = SymbolTable(module.operation)
+     with module.context, allo_ir.ir.Location.unknown():
+         for func in module.body.operations:
+             if isinstance(func, allo_func_d.FuncOp) and (
+                 "sym_visibility" not in func.attributes
+                 or func.attributes["sym_visibility"].value != "private"
+             ):
+-                if func.attributes["sym_name"].value != top_function_name:
++                if func.attributes["sym_name"].value != "top":
+                     func_name: str = func.attributes["sym_name"].value
+                     use_external_kernels[func_name] = False
++                    # continue  # fixme: crash when using external kernels
+                     for block in func.regions[0].blocks:
+-                        for op in block.operations:
+-                            if isinstance(op, allo_func_d.CallOp):
+-                                use_external_kernels[func_name] = True
+-                                callee_name = op.callee.value
+-                                # register external kernel
+-                                if callee_name in injected_kernels:
+-                                    continue
+-                                external_module = external_kernel_lib[callee_name]
+-                                assert (
+-                                    external_module is not None
+-                                ), "external module not found"
+-                                include_src.add(
+-                                    f'#include "{external_module.filename}"\n'
+-                                )
+-                                injected_kernels[callee_name] = ("", "")
+-                                continue
+-                            kernel_code, kernel_header = "", ""
+-                            # vec add/mul
+-                            if op.operation.name in {"linalg.add", "linalg.mul"}:
+-                                op_name = op.operation.name.split(".")[1]
+-                                include_src.add(f'#include "{op_name}.cc"\n')
+-                                dtype = str(op.inputs[0].type.element_type)
+-                                ctype = aie_external_kernel_ctype_map[dtype]
+-                                kernel_name = f"{op_name}_{dtype}_vector"
+-                                use_external_kernels[func_name] = True
+-                                kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+-                                kernel_code += " {\n"
+-                                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
+-                                kernel_code += "}\n\n"
+-                            # matmul
+-                            elif op.operation.name == "linalg.matmul":
+-                                M, K = MemRefType(op.inputs[0].type).shape
+-                                _, N = MemRefType(op.inputs[1].type).shape
+-                                dtype = str(op.inputs[0].type.element_type)
+-                                out_dtype = str(op.outputs[0].type.element_type)
+-                                if (dtype, out_dtype) not in [
+-                                    ("i8", "i8"),
+-                                    ("i16", "i16"),
+-                                    ("i16", "i32"),
+-                                    ("bf16", "bf16"),
+-                                    ("bf16", "f32"),
+-                                ]:
+-                                    continue
+-                                include_src.add('#include "mm.cc"\n')
+-                                kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+-                                use_external_kernels[func_name] = True
+-                                kernel_header += f"#define DIM_M {M}\n"
+-                                kernel_header += f"#define DIM_N {N}\n"
+-                                kernel_header += f"#define DIM_K {K}\n"
+-                                kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
+-                            else:
+-                                continue
+-
+-                            # Inject AIE kernel
+-                            func_type = allo_func_d.FunctionType.get(
+-                                [
+-                                    op.inputs[0].type,
+-                                    op.inputs[1].type,
+-                                    op.outputs[0].type,
+-                                ],
+-                                [],
+-                            )
+-                            # replace operation
+-                            allo_func_d.CallOp(
+-                                [],
+-                                FlatSymbolRefAttr.get(kernel_name),
+-                                [op.inputs[0], op.inputs[1], op.outputs[0]],
+-                                ip=InsertionPoint(op),
+-                            )
+-                            op.erase()
+-                            # register external kernel
+-                            if kernel_name in injected_kernels:
+-                                continue
+-                            injected_kernels[kernel_name] = (kernel_code, kernel_header)
+-                            kernel = allo_func_d.FuncOp(
+-                                kernel_name,
+-                                func_type,
+-                                ip=InsertionPoint(func),
+-                            )
+-                            kernel.attributes["sym_visibility"] = StringAttr.get(
+-                                "private"
+-                            )
++                        traverse_operations(
++                            block.operations,
++                            func_name,
++                            injected_kernels,
++                            use_external_kernels,
++                            include_src,
 +                            symtab,
-                         )
++                        )
      return use_external_kernels, injected_kernels, include_src
  
-@@ -310,7 +342,7 @@ def inject_external_kernels(module: allo_ir.ir.Module) -> tuple[dict[str, bool],
+ 
  def classify_aie_functions(
-     module: allo_ir.ir.Module,
+-    module: allo_ir.ir.Module, top_function_name: str
++    module: allo_ir.ir.Module,
  ) -> tuple[
 -    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp]
 +    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp], list
  ]:
      """
      Classify the functions in allo module as
-@@ -324,23 +356,27 @@ def classify_aie_functions(
+@@ -189,23 +356,27 @@ def classify_aie_functions(
      core_func_groups: dict[str, list[allo_func_d.FuncOp]] = {}
      # external functions
      external_funcs: list[allo_func_d.FuncOp] = []
@@ -213,7 +1108,7 @@ index bbd9762..5f9e4fd 100644
 +                    and op.attributes["sym_visibility"].value == "private"
                  ):
 -                    external_funcs.append(func)
--                elif func.attributes["sym_name"].value == "top":
+-                elif func.attributes["sym_name"].value == top_function_name:
 -                    top_func = func
 +                    external_funcs.append(op)
 +                elif op.attributes["sym_name"].value == "top":
@@ -234,6 +1129,169 @@ index bbd9762..5f9e4fd 100644
  
  
  def get_element_type(dtype_str: str) -> aie_ir.Type:
+@@ -319,9 +490,6 @@ int main(int argc, const char *argv[]) {
+   po::options_description options("Allowed options");
+   po::variables_map vm;
+   test_utils::add_default_options(options);
+-  options.add_options()
+-    ("profile,p", po::value<bool>()->default_value(false), "enable profiling")
+-    ("test_iter,t", po::value<int>()->default_value(100), "number of test iterations");
+ 
+   test_utils::parse_options(argc, argv, options, vm);
+   int verbosity = vm["verbosity"].as<int>();
+@@ -329,8 +497,6 @@ int main(int argc, const char *argv[]) {
+   int n_iterations = vm["iters"].as<int>();
+   int n_warmup_iterations = vm["warmup"].as<int>();
+   int trace_size = vm["trace_sz"].as<int>();
+-  bool do_profile = vm["profile"].as<bool>();
+-  int n_test_iterations = vm["test_iter"].as<int>();
+ 
+   // Load instruction sequence
+   std::vector<uint32_t> instr_v =
+@@ -463,60 +629,25 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
+         # run kernels
+         code += format_str("if (verbosity >= 1)")
+         code += format_str('  std::cout << "Running Kernel.\\n";', strip=False)
++        code += format_str(
++            "\nauto start = std::chrono::high_resolution_clock::now();", strip=False
++        )
+         inbufs = ", ".join([f"bo_in{i}" for i in range(len(inputs))])
+         outbufs = ", ".join([f"bo_out{i}" for i in range(len(outputs))])
+-        code += format_str("if (!do_profile) {")
+-        with format_code(indent=4):
+-            code += format_str(
+-                "auto start = std::chrono::high_resolution_clock::now();", strip=False
+-            )
+-            code += format_str("// gid: (opcode, instr, instr_size, ...)")
+-            code += format_str(
+-                f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+-            )
+-            code += format_str("run.wait();")
+-            code += format_str(
+-                "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
+-            )
+-            code += format_str(
+-                "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
+-            )
+-            code += format_str(
+-                'std::cout << "NPU execution time: " << npu_time << "us\\n";'
+-            )
+-        code += format_str("} else {")
+-        with format_code(indent=4):
+-            code += format_str("for (size_t i = 0; i < n_warmup_iterations; i++) {")
+-            with format_code(indent=8):
+-                code += format_str(
+-                    f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+-                )
+-                code += format_str("run.wait();")
+-            code += format_str("}")
+-            code += format_str("float total_npu_time = 0;")
+-            code += format_str("for (size_t i = 0; i < n_test_iterations; i++) {")
+-            with format_code(indent=8):
+-                code += format_str(
+-                    "auto start = std::chrono::high_resolution_clock::now();",
+-                    strip=False,
+-                )
+-                code += format_str(
+-                    f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
+-                )
+-                code += format_str("run.wait();")
+-                code += format_str(
+-                    "\nauto end = std::chrono::high_resolution_clock::now();",
+-                    strip=False,
+-                )
+-                code += format_str(
+-                    "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
+-                )
+-                code += format_str("total_npu_time += npu_time;")
+-            code += format_str("}")
+-            code += format_str(
+-                'std::cout << "Avg NPU execution time: " << total_npu_time / n_test_iterations << "us\\n";'
+-            )
+-        code += format_str("}")
++        code += format_str("// gid: (opcode, instr, instr_size, ...)")
++        code += format_str(
++            f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
++        )
++        code += format_str("run.wait();")
++        code += format_str(
++            "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
++        )
++        code += format_str(
++            "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
++        )
++        code += format_str(
++            'std::cout << "NPU execution time: " << npu_time << "us\\n";'
++        )
+         # get results
+         for i in range(len(outputs)):
+             dtensor = outputs[i + len(inputs)]
+diff --git a/allo/dataflow.py b/allo/dataflow.py
+index 7b43a84..0dbac4f 100644
+--- a/allo/dataflow.py
++++ b/allo/dataflow.py
+@@ -1,8 +1,9 @@
+ # Copyright Allo authors. All Rights Reserved.
+ # SPDX-License-Identifier: Apache-2.0
+-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments
++# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
+ 
+ import functools
++import os
+ from ._mlir.ir import (
+     InsertionPoint,
+     FlatSymbolRefAttr,
+@@ -16,12 +17,14 @@ from ._mlir.dialects import func as func_d, allo as allo_d
+ from ._mlir.passmanager import PassManager as mlir_pass_manager
+ from .customize import customize as _customize
+ from .ir.utils import get_global_vars, get_all_df_kernels
+-from .backend.ai_engine import AIEModule
++from .backend.aie import AIEModule
+ 
+ from .backend.simulator import LLVMOMPModule
+ from .ir.types import Stream
+ from .passes import df_pipeline
+-from .backend.experimental import AIE_MLIRModule
++
++if os.getenv("USE_AIE_MLIR_BUILDER") == "1":
++    from .backend.experimental import AIE_MLIRModule
+ 
+ 
+ def get_pid():
+@@ -298,13 +301,7 @@ def build(
+     wrap_io=True,
+     opt_default=True,
+     enable_tensor=False,
+-    profile=False,
+-    warmup=20,
+-    num_iters=100,
+ ):
+-    assert (
+-        not profile or target == "aie-mlir"
+-    ), "Profiling is only supported for AIE target"
+     if target == "aie":
+         global_vars = get_global_vars(func)
+         s = _customize(func, global_vars=global_vars, enable_tensor=False)
+@@ -326,13 +323,13 @@ def build(
+         stream_info = move_stream_to_interface(s)
+         s = _build_top(s, stream_info, target="aie")
+         aie_mod = AIE_MLIRModule(
+-            s.module, s.top_func_name, s.func_args, project, stream_info, s.ext_libs
+-        )
+-        aie_mod.build(
+-            profile=profile,
+-            warmup=warmup,
+-            num_iters=num_iters,
++            s.module,
++            s.top_func_name,
++            s.func_args,
++            project,
++            stream_info,
+         )
++        aie_mod.build()
+         return aie_mod
+ 
+     if target == "simulator":
 diff --git a/allo/dsl.py b/allo/dsl.py
 index 0254244..c31b129 100644
 --- a/allo/dsl.py
@@ -248,7 +1306,7 @@ index 0254244..c31b129 100644
      variance = np.var(x, axis=-1, keepdims=True)
      x = gamma * (x - mean) / np.sqrt(variance + eps) + beta
 diff --git a/allo/ir/builder.py b/allo/ir/builder.py
-index 62fdf0b..5d527d2 100644
+index 42b00a9..5d527d2 100644
 --- a/allo/ir/builder.py
 +++ b/allo/ir/builder.py
 @@ -18,6 +18,7 @@ from .._mlir.ir import (
@@ -259,7 +1317,15 @@ index 62fdf0b..5d527d2 100644
      UnitAttr,
      IntegerAttr,
      StringAttr,
-@@ -581,7 +582,7 @@ class ASTTransformer(ASTBuilder):
+@@ -63,7 +64,6 @@ from .symbol_resolver import ASTResolver
+ from ..backend.ip import IPModule, c2allo_type
+ from ..utils import get_mlir_dtype_from_str
+ from ..logging import print_error_message
+-from ..backend.experimental.external_kernel import ExternalModule
+ 
+ 
+ class ASTBuilder(ASTVisitor):
+@@ -582,7 +582,7 @@ class ASTTransformer(ASTBuilder):
      def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape, dims):
          # No shape checking in this function, since it has been done in
          # type inference pass in infer.py
@@ -268,7 +1334,7 @@ index 62fdf0b..5d527d2 100644
              return op
          if len(src_shape) == 0:
              # Get zero-rank memref for constant
-@@ -841,7 +842,6 @@ class ASTTransformer(ASTBuilder):
+@@ -842,7 +842,6 @@ class ASTTransformer(ASTBuilder):
                  "copy",
                  "transpose",
                  "linear",
@@ -276,7 +1342,29 @@ index 62fdf0b..5d527d2 100644
                  "concat",
              }
          ):
-@@ -2103,7 +2103,7 @@ class ASTTransformer(ASTBuilder):
+@@ -2020,11 +2019,7 @@ class ASTTransformer(ASTBuilder):
+             and not obj.__module__.startswith("allo.library")
+             and not obj.__module__.startswith("allo._mlir")
+         ):
+-            fn_name = (
+-                obj.__name__
+-                if not isinstance(obj, (IPModule, ExternalModule))
+-                else None
+-            )
++            fn_name = obj.__name__ if not isinstance(obj, IPModule) else None
+             if fn_name == "array":
+                 # as it directly runs the node inside, this branch is put in the front
+                 array = eval(ast.unparse(node), ctx.global_vars)
+@@ -2041,7 +2036,7 @@ class ASTTransformer(ASTBuilder):
+                 return results
+             # Allo library functions
+             new_args = build_stmts(ctx, node.args)
+-            if isinstance(obj, (IPModule, ExternalModule)):
++            if isinstance(obj, IPModule):
+                 # Add HLS IP as external library
+                 if obj not in ctx.ext_libs:
+                     ctx.ext_libs.append(obj)
+@@ -2108,7 +2103,7 @@ class ASTTransformer(ASTBuilder):
                      if hasattr(arg, "result") and hasattr(arg.result, "type"):
                          arg_types.append(arg.result.type)
              if all(
@@ -286,10 +1374,31 @@ index 62fdf0b..5d527d2 100644
                  opcls = {
                      "exp": math_d.ExpOp,
 diff --git a/allo/ir/infer.py b/allo/ir/infer.py
-index 62fa754..a245763 100644
+index 23e8aa9..a245763 100644
 --- a/allo/ir/infer.py
 +++ b/allo/ir/infer.py
-@@ -964,7 +964,7 @@ class TypeInferer(ASTVisitor):
+@@ -40,7 +40,6 @@ from ..utils import (
+ from ..memory import DTensor, Layout
+ from ..logging import print_error_message
+ from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+-from ..backend.experimental.external_kernel import ExternalModule
+ 
+ 
+ # pylint: disable=too-many-public-methods
+@@ -864,12 +863,6 @@ class TypeInferer(ASTVisitor):
+                 node.shape = None
+                 node.dtype = None
+                 return node
+-            if isinstance(obj, ExternalModule):
+-                # AIE external kernel, suppose it does not have return values
+-                # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+-                node.shape = None
+-                node.dtype = None
+-                return node
+             fn_name = obj.__name__
+             if fn_name == "pipe":
+                 stream = eval(ast.unparse(node), ctx.global_vars)
+@@ -971,7 +964,7 @@ class TypeInferer(ASTVisitor):
                  assert (
                      argAshape[-1] == argBshape[-2]
                  ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"
@@ -298,7 +1407,7 @@ index 62fa754..a245763 100644
              elif op_name == "bmm":
                  assert (
                      len(argAshape) == 3 and len(argBshape) == 3
-@@ -995,9 +995,21 @@ class TypeInferer(ASTVisitor):
+@@ -1002,9 +995,21 @@ class TypeInferer(ASTVisitor):
                  node.dtype = new_args[0].dtype
              else:
                  shape = new_args[0].shape
@@ -323,7 +1432,7 @@ index 62fa754..a245763 100644
                  assert len(shape) == len(
                      axes
                  ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
-@@ -1006,9 +1018,21 @@ class TypeInferer(ASTVisitor):
+@@ -1013,9 +1018,21 @@ class TypeInferer(ASTVisitor):
                  node.dtype = new_args[0].dtype
              return node
          if op_name in {"view"}:
@@ -348,7 +1457,7 @@ index 62fa754..a245763 100644
              node.shape = axes
              node.dtype = new_args[0].dtype
              return node
-@@ -1017,9 +1041,21 @@ class TypeInferer(ASTVisitor):
+@@ -1024,9 +1041,21 @@ class TypeInferer(ASTVisitor):
              node.dtype = new_args[0].dtype
              return node
          if op_name in {"ones", "zeros"}:
@@ -408,11 +1517,139 @@ index 09cff17..724cfb0 100644
          Z[i, j] = E[i, j] / S[i]
  
      return Z
+diff --git a/allo/memory.py b/allo/memory.py
+index 32cfd11..4d9e17f 100644
+--- a/allo/memory.py
++++ b/allo/memory.py
+@@ -6,29 +6,6 @@ from itertools import product
+ 
+ 
+ class Layout:
+-    """
+-      Example:
+-
+-      mesh_dim = [2, 2, 2]
+-        +-----+
+-     2 /|    /|
+-      +-+---+ +
+-    1 |/    |/
+-      +-----+
+-         0
+-      2D tensor: [32, 32]
+-      +-----------+
+-      | 0,0 | 0,1 |
+-      +-----------+
+-      | 1,0 | 1,1 |
+-      +-----------+
+-
+-      placement = "S2S0" ->   (tensor_dim[-1], shard on mesh_dim[2]),
+-                              (tensor_dim[-2], shard on mesh_dim[0])
+-
+-      PE tile (a, ?, b) gets tensor tile (a, b)
+-    """
+-
+     def __init__(self, placement):
+         # R: replicated, S: shared
+         # e.g., S0S1R, S0R, RS0
+@@ -103,8 +80,8 @@ class DTensor:
+ 
+     def __init__(self, rank, mapping, shape, dtype, layout, name=None):
+         self.rank = rank
+-        self.mapping = mapping  # mesh dims
+-        self.shape = shape  # tensor shape
++        self.mapping = mapping
++        self.shape = shape  # global shape
+         self.dtype = dtype
+         self.layout = layout
+         self.name = name
+@@ -139,12 +116,11 @@ class DTensor:
+             - stride (list): Stride along each dimension in the global tensor.
+         """
+         partition_str = "".join([p[0] for p in self.layout.placement])
+-        partition_dim = [p[1] for p in self.layout.placement]
+         if len(self.shape) == 1:
+             if partition_str == "S":
+-                shard_size = self.shape[0] // self.mapping[-partition_dim[0] - 1]
++                shard_size = self.shape[0] // self.mapping[0]
+                 device_dims = [2]  # partition idx = 2
+-                size = [1, 1, self.mapping[-partition_dim[0] - 1], shard_size]
++                size = [1, 1, self.mapping[0], shard_size]
+                 stride = [0, 0, shard_size, 1]
+             elif partition_str == "R":
+                 device_dims = []  # no partition
+@@ -154,11 +130,28 @@ class DTensor:
+                 raise ValueError("Unsupported access pattern for 1D tensor.")
+         elif len(self.shape) == 2:
+             tensor_m, tensor_n = self.shape  # [tensor_m x tensor_n]
+-            if partition_str == "SS":
++            device_a, device_b = None, None  # 2D device to be mapped
++            partition = self.layout.placement
++            if len(self.mapping) == 1:
++                device_a, device_b = 1, self.mapping[0]
++            elif len(self.mapping) == 2:
++                if partition[0][0] == "S":
++                    partition[1] = (partition[1][0], 1 - partition[0][1])
++                elif partition[1][0] == "S":  # partition[0][0] == "R"
++                    partition[0] = (partition[0][0], 1 - partition[1][1])
++                else:
++                    partition[0] = (partition[0], 1)
++                    partition[1] = (partition[1], 0)
++                device_a, device_b = (
++                    self.mapping[-partition[0][1] - 1],
++                    self.mapping[-partition[1][1] - 1],
++                )
++            else:
+                 device_a, device_b = (
+-                    self.mapping[-partition_dim[0] - 1],
+-                    self.mapping[-partition_dim[1] - 1],
++                    self.mapping[-partition[0][1] - 1],
++                    self.mapping[-partition[1][1] - 1],
+                 )
++            if partition_str == "SS":
+                 device_dims = [0, 1]
+                 size = [device_a, device_b, tensor_m // device_a, tensor_n // device_b]
+                 stride = [
+@@ -168,17 +161,21 @@ class DTensor:
+                     1,
+                 ]
+             elif partition_str == "SR":
+-                device_a = self.mapping[-partition_dim[0] - 1]
+                 # First dim sharded across all devices, second replicated
++                total_devices = device_a * device_b
+                 device_dims = [1]
+-                size = [1, device_a, tensor_m // device_a, tensor_n]
+-                stride = [0, (tensor_m // device_a) * tensor_n, tensor_n, 1]
++                size = [1, total_devices, tensor_m // total_devices, tensor_n]
++                stride = [0, (tensor_m // total_devices) * tensor_n, tensor_n, 1]
+             elif partition_str == "RS":
+-                device_b = self.mapping[-partition_dim[1] - 1]
+                 # First dim replicated, second sharded across second dim of mesh
+                 device_dims = [1]
+                 size = [1, device_b, tensor_m, tensor_n // device_b]
+-                stride = [0, tensor_n // device_b, tensor_n, 1]
++                stride = [
++                    (tensor_m * tensor_n) // (device_a * device_b),
++                    tensor_n // device_b,
++                    tensor_n,
++                    1,
++                ]
+             elif partition_str == "RR":
+                 # Both dimensions replicated
+                 device_dims = []
 diff --git a/allo/passes.py b/allo/passes.py
-index e3f5773..2e2eb1d 100644
+index f4b8646..2e2eb1d 100644
 --- a/allo/passes.py
 +++ b/allo/passes.py
-@@ -760,14 +760,27 @@ def analyze_read_write_patterns(mlir_func):
+@@ -714,7 +714,7 @@ def analyze_use_def(mod):
+     return res
+ 
+ 
+-def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
++def analyze_read_write_patterns(mlir_func):
+     """
+     Analyze the read/write patterns of function arguments to determine which are inputs and outputs.
+     Handles subview operations and common linalg operations.
+@@ -760,14 +760,27 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
          collect_subviews(block)
  
      # Helper to resolve a value to its original argument index if it's a subview
@@ -447,6 +1684,176 @@ index e3f5773..2e2eb1d 100644
          return None
  
      # Dictionary of common linalg operations and their input/output patterns
+@@ -801,25 +814,8 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
+             for op in block.operations:
+                 op_name = str(op.operation.name)
+ 
+-                # user defined external kernel
+-                if (
+-                    isinstance(op, func_d.CallOp)
+-                    and op.callee.value in external_kernel_lib
+-                ):
+-                    callee_name = op.callee.value
+-                    ext_module = external_kernel_lib[callee_name]
+-                    input_arg_idx, output_arg_idx = set(), set()
+-                    for idx in ext_module.input_idx:
+-                        input_arg_idx.add(resolve_to_func_arg_index(op.operands[idx]))
+-                    for idx in ext_module.output_idx:
+-                        output_arg_idx.add(resolve_to_func_arg_index(op.operands[idx]))
+-                    if arg_index in input_arg_idx:
+-                        is_input = True
+-                    if arg_index in output_arg_idx:
+-                        is_output = True
+-
+                 # Handle common memory operations directly
+-                elif op_name in {"memref.load", "affine.load"}:
++                if op_name in {"memref.load", "affine.load"}:
+                     # First operand (or last for affine) is the source memref
+                     mem_index = 0 if op_name == "memref.load" else -1
+                     if len(op.operands) > abs(mem_index):
+diff --git a/requirements.txt b/requirements.txt
+index 2ede3b8..b70b310 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -18,7 +18,4 @@ sympy
+ rich
+ ml_dtypes
+ gurobipy
+-pyparsing
+-mlir_aie @ https://github.com/Xilinx/mlir-aie/releases/download/v1.0/mlir_aie-0.0.1.2025042204+24208c0-cp312-cp312-manylinux_2_35_x86_64.whl
+-llvm_aie @ https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+ past @ https://github.com/cornell-zhang/past-python-bindings/releases/download/65f989b/past-0.7.2-cp312-cp312-linux_x86_64.whl
+\ No newline at end of file
+diff --git a/requirements_extra.txt b/requirements_extra.txt
+deleted file mode 100644
+index 4142b92..0000000
+--- a/requirements_extra.txt
++++ /dev/null
+@@ -1,6 +0,0 @@
+-# This file is copied from the mlir-aie-AIE (https://github.com/Xilinx/mlir-aie/blob/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/python/requirements_extras.txt).
+-
+-# This can't go in the normal requirements file because the way the wheels build parses requirements.txt
+-# does not support github packages
+-git+https://github.com/makslevental/mlir-python-extras@f08db06
+--f https://github.com/llvm/eudsl/releases/expanded_assets/latest
+\ No newline at end of file
+diff --git a/tests/dataflow/aie/norm.cc b/tests/dataflow/aie/norm.cc
+deleted file mode 100644
+index 7d060c5..0000000
+--- a/tests/dataflow/aie/norm.cc
++++ /dev/null
+@@ -1,110 +0,0 @@
+-/*
+- * Copyright Allo authors. All Rights Reserved.
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-#include <aie_api/aie.hpp>
+-#include <stdint.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <type_traits>
+-
+-#define NOCPP
+-
+-#define EPS 1e-6f // epsilon
+-
+-template <typename T_in, typename T_out, const int SEQ_LEN, const int HIDDEN>
+-void layer_norm_single_batch_no_bias(T_in *input_tensor, T_in *weight,
+-                                     T_out *output_tensor) {
+-  constexpr int vec_factor = 16;
+-  using vec_t = aie::vector<T_in, vec_factor>;
+-  event0();
+-  for (int iter = 0; iter < SEQ_LEN; iter++) {
+-    T_in *__restrict input_ptr = input_tensor;
+-    T_in *__restrict weight_ptr = weight;
+-    T_out *__restrict output_ptr = output_tensor;
+-    float mean = 0.0f, variance_sum = 0.0f;
+-    const int F = HIDDEN / vec_factor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      mean += aie::reduce_add(input_vec);
+-    }
+-    mean /= HIDDEN;
+-    input_ptr = input_tensor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t diff = aie::sub(input_vec, mean);
+-      vec_t square_vec = aie::mul(diff, diff);
+-      variance_sum += aie::reduce_add(square_vec);
+-    }
+-    vec_t variance_vec =
+-        aie::broadcast<T_in, vec_factor>(variance_sum / HIDDEN + EPS);
+-    vec_t rms = aie::invsqrt(variance_vec);
+-    input_ptr = input_tensor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t normed = aie::mul(aie::sub(input_vec, mean), rms);
+-      vec_t weight_vec = aie::load_v<vec_factor>(weight_ptr);
+-      weight_ptr += vec_factor;
+-      vec_t result = aie::mul(normed, weight_vec);
+-      aie::store_v(output_ptr, result);
+-      output_ptr += vec_factor;
+-    }
+-    input_tensor += HIDDEN;
+-    output_tensor += HIDDEN;
+-  }
+-  event1();
+-}
+-
+-template <typename T_in, typename T_out, const int SEQ_LEN, const int HIDDEN>
+-void rms_norm_single_batch(T_in *input_tensor, T_in *weight,
+-                           T_out *output_tensor) {
+-  constexpr int vec_factor = 16;
+-  using vec_t = aie::vector<T_in, vec_factor>;
+-  event0();
+-  for (int iter = 0; iter < SEQ_LEN; iter++) {
+-    T_in *__restrict input_ptr = input_tensor;
+-    T_in *__restrict weight_ptr = weight;
+-    T_out *__restrict output_ptr = output_tensor;
+-    float square_sum = 0.0f;
+-    const int F = HIDDEN / vec_factor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t square_vec = aie::mul(input_vec, input_vec);
+-      square_sum += aie::reduce_add(square_vec);
+-    }
+-    vec_t square_sum_vec =
+-        aie::broadcast<T_in, vec_factor>(square_sum / HIDDEN + EPS);
+-    vec_t rms = aie::invsqrt(square_sum_vec);
+-    input_ptr = input_tensor;
+-    for (int i = 0; i < F; i++) {
+-      vec_t input_vec = aie::load_v<vec_factor>(input_ptr);
+-      input_ptr += vec_factor;
+-      vec_t normed = aie::mul(input_vec, rms);
+-      vec_t weight_vec = aie::load_v<vec_factor>(weight_ptr);
+-      weight_ptr += vec_factor;
+-      vec_t result = aie::mul(normed, weight_vec);
+-      aie::store_v(output_ptr, result);
+-      output_ptr += vec_factor;
+-    }
+-    input_tensor += HIDDEN;
+-    output_tensor += HIDDEN;
+-  }
+-  event1();
+-}
+-
+-extern "C" {
+-
+-void layer_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
+-  layer_norm_single_batch_no_bias<float, float, 4, 512>(&A_in[0][0], B_in, &C_out[0][0]);
+-}
+-
+-void rms_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
+-  rms_norm_single_batch<float, float, 4, 512>(&A_in[0][0], B_in, &C_out[0][0]);
+-}
+-
+-} // extern "C"
+\ No newline at end of file
 diff --git a/tests/dataflow/aie/test_gpt2.py b/tests/dataflow/aie/test_gpt2.py
 new file mode 100644
 index 0000000..8adb7af
@@ -724,3 +2131,120 @@ index 0000000..8adb7af
 +
 +    np.testing.assert_allclose(allo_out_float32, ref_out, atol=5e-2, rtol=5e-2)
 +    print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
+diff --git a/tests/dataflow/aie/test_norm.py b/tests/dataflow/aie/test_norm.py
+deleted file mode 100644
+index f5fd2c1..0000000
+--- a/tests/dataflow/aie/test_norm.py
++++ /dev/null
+@@ -1,111 +0,0 @@
+-# Copyright Allo authors. All Rights Reserved.
+-# SPDX-License-Identifier: Apache-2.0
+-
+-import os
+-import torch
+-import torch.nn as nn
+-from allo.ir.types import float32
+-import allo.dataflow as df
+-import numpy as np
+-from allo.memory import Layout
+-from allo.backend.experimental.external_kernel import ExternalModule
+-from allo.ir.types import float32
+-
+-Ly = Layout("R")
+-LyA = Layout("S0R")
+-
+-seq_len = 16
+-hidden_size = 512
+-
+-
+-def layernorm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+-    """
+-    x: shape [..., dim] - input tensor
+-    weight: shape [dim] - scale parameter γ
+-    eps: small constant for numerical stability
+-    """
+-    mean = x.mean(dim=-1, keepdim=True)
+-    var = x.var(dim=-1, unbiased=False, keepdim=True)
+-    normalized = (x - mean) / torch.sqrt(var + eps)
+-    return normalized * weight
+-
+-
+-def _test_layer_norm():
+-
+-    norm = ExternalModule(
+-        top="layer_norm",
+-        impl_path="norm.cc",
+-        input_idx=[0, 1],
+-        output_idx=[2],
+-    )
+-
+-    Ty = float32
+-    M, N = seq_len, hidden_size
+-
+-    @df.region()
+-    def top():
+-        @df.kernel(mapping=[4])
+-        def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
+-            norm(A, B, C)
+-
+-    input_tensor = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+-    weight = torch.randn(hidden_size, dtype=torch.float32)
+-    output = layernorm(input_tensor, weight)
+-
+-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+-        mod = df.build(top, target="aie-mlir")
+-        output_allo = np.zeros((seq_len, hidden_size)).astype(np.float32)
+-        mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
+-        np.testing.assert_allclose(output_allo, output, rtol=1e-2)
+-        print("PASSED!")
+-    else:
+-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+-
+-
+-class RMSNorm(nn.Module):
+-    def __init__(self, eps=1e-6):
+-        super().__init__()
+-        self.eps = eps
+-
+-    def forward(self, x, weight):
+-        norm = x.norm(dim=-1, keepdim=True)  # L2 norm along last dim
+-        rms = norm / (x.shape[-1] ** 0.5)
+-        return x / (rms + self.eps) * weight
+-
+-
+-def _test_rms_norm():
+-
+-    norm = ExternalModule(
+-        top="rms_norm",
+-        impl_path="norm.cc",
+-        input_idx=[0, 1],
+-        output_idx=[2],
+-    )
+-
+-    Ty = float32
+-    M, N = seq_len, hidden_size
+-
+-    @df.region()
+-    def top():
+-        @df.kernel(mapping=[4])
+-        def core(A: Ty[M, N] @ LyA, B: Ty[N] @ Ly, C: Ty[M, N] @ LyA):
+-            norm(A, B, C)
+-
+-    input_tensor = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+-    weight = torch.randn(hidden_size, dtype=torch.float32)
+-    rms_norm = RMSNorm()
+-    output = rms_norm(input_tensor, weight)
+-
+-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+-        mod = df.build(top, target="aie-mlir")
+-        output_allo = np.zeros((seq_len, hidden_size)).astype(np.float32)
+-        mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
+-        np.testing.assert_allclose(output_allo, output, rtol=1e-2)
+-        print("PASSED!")
+-    else:
+-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+-
+-
+-if __name__ == "__main__":
+-    _test_layer_norm()
+-    _test_rms_norm()
