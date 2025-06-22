@@ -1,4 +1,3 @@
-
 """
 Model Architecture: https://huggingface.co/openai-community/gpt2
     ```
@@ -39,6 +38,7 @@ Model Architecture: https://huggingface.co/openai-community/gpt2
         (lm_head): Linear(in_features=768, out_features=50257, bias=False)
     )
 """
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -57,7 +57,7 @@ np.random.seed(0)
 # fixme: align with https://huggingface.co/openai-community/gpt2/blob/main/config.json
 # ===============================================================================
 BATCH = 1
-SEQ = 4
+SEQ = 8
 EMBD = 768
 N_HEAD = 12
 HEAD_DIM = EMBD // N_HEAD
@@ -69,15 +69,16 @@ FFN_HID = EMBD * 4
 # ===============================================================================
 class MiniGPT2(nn.Module):
     """
-    References 
+    References
         - GPT2Block forward: https://github.com/huggingface/transformers/blob/2166b6b4ff09f6dd3867ab982f262f66482aa968/src/transformers/models/gpt2/modeling_gpt2.py#L388
 
     """
+
     def __init__(self):
         super().__init__()
         self.attn = nn.MultiheadAttention(EMBD, N_HEAD, batch_first=True)
         self.ln_1 = nn.LayerNorm(EMBD, elementwise_affine=True)
-        self.ffn_up = nn.Linear(EMBD, FFN_HID, bias=False) 
+        self.ffn_up = nn.Linear(EMBD, FFN_HID, bias=False)
         self.ffn_down = nn.Linear(FFN_HID, EMBD, bias=False)
         self.gelu = nn.GELU()
         self.ln_2 = nn.LayerNorm(EMBD, elementwise_affine=True)
@@ -98,7 +99,7 @@ class MiniGPT2(nn.Module):
         # residual = x
         # x = self.ln_2(x)
         # activeated_x = self.gelu(self.ffn_up(x))
-        # x = self.ffn_down(activeated_x) 
+        # x = self.ffn_down(activeated_x)
         # x = residual + x
         return x
 
@@ -109,7 +110,7 @@ class MiniGPT2(nn.Module):
 
 # -------------------------------- configuration --------------------------------
 Ty = float32  # All tensors use float32
-P0, P1 = 1, 1
+P0, P1 = 2, 1
 # S0 / S1 shard on mesh dims, R = replicated
 LyX = Layout("S0R")  # shard rows (token dim) replicate cols
 LyW = Layout("RS1")  # replicate rows shard cols
@@ -125,6 +126,7 @@ SEQ_local = SEQ // P0
 NS_local = NS // P0
 BN_local = BN // P0
 
+
 def run(x_fp32: np.ndarray, params: dict):
     norm = ExternalModule(
         top="layer_norm",
@@ -137,23 +139,29 @@ def run(x_fp32: np.ndarray, params: dict):
     NORM_TILE = SEQ // P0
     norm_io_layout = Layout("S0R")
     norm_arg_layout = Layout("R")
+
     @df.region()
     def layer_norm_kernel():
-        pipe = df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1)
+        pipe = df.array(
+            df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1), shape=(P0,)
+        )
 
-        @df.kernel(mapping=[P1, P0])
+        @df.kernel(mapping=[P0])
         def norm_no_bias(
-            input_x: Ty[NORM_TILE, EMBD] @ norm_io_layout, weight: Ty[EMBD] @ norm_arg_layout,
+            input_x: Ty[SEQ, EMBD] @ norm_io_layout,
+            weight: Ty[EMBD] @ norm_arg_layout,
         ):
+            pi = df.get_pid()
             tmp: Ty[NORM_TILE, EMBD] = 0
             norm(input_x, weight, tmp)
-            pipe.put(tmp)
-            
-        @df.kernel(mapping=[P1, P0])
+            pipe[pi].put(tmp)
+
+        @df.kernel(mapping=[P0])
         def norm_add_bias(
-            bias: Ty[EMBD] @ norm_arg_layout, output_x: Ty[NORM_TILE, EMBD] @ norm_io_layout
+            bias: Ty[EMBD] @ norm_arg_layout, output_x: Ty[SEQ, EMBD] @ norm_io_layout
         ):
-            data = pipe.get()
+            pi = df.get_pid()
+            data = pipe[pi].get()
             output_x[:, :] = allo.add(data, bias)
 
     layer_norm_mod = df.build(layer_norm_kernel, target="aie-mlir", project="norm.prj")
@@ -161,7 +169,7 @@ def run(x_fp32: np.ndarray, params: dict):
     x = x_fp32.astype(np.float32)
     Xf = x.reshape(N, EMBD)
     Sf = np.empty((N, EMBD), dtype=np.float32)
-    layer_norm_mod(Xf, params['W_norm_1'], params['b_norm_1'], Sf )
+    layer_norm_mod(Xf, params["W_norm_1"], params["b_norm_1"], Sf)
     return Sf
     # # QKV projection
     # @df.region()
@@ -180,19 +188,22 @@ if __name__ == "__main__":
     # reference weights (float32)
     p = {n: v.detach().numpy() for n, v in ref_model.named_parameters()}
     params_fp32 = {
-        'Wq': p['attn.in_proj_weight'][:EMBD, :].T,
-        'Wk': p['attn.in_proj_weight'][EMBD:2*EMBD, :].T,
-        'Wv': p['attn.in_proj_weight'][2*EMBD:, :].T,
-        'Wo': p['attn.out_proj.weight'].T,
-        'W_up': p['ffn_up.weight'].T,
-        'W_down': p['ffn_down.weight'].T,
-        'W_norm_1': p['ln_1.weight'],
-        'b_norm_1': p['ln_1.bias'],
-        'W_norm_2': p['ln_2.weight'],
-        'b_norm_2': p['ln_2.bias'], 
+        "Wq": p["attn.in_proj_weight"][:EMBD, :].T,
+        "Wk": p["attn.in_proj_weight"][EMBD : 2 * EMBD, :].T,
+        "Wv": p["attn.in_proj_weight"][2 * EMBD :, :].T,
+        "Wo": p["attn.out_proj.weight"].T,
+        "W_up": p["ffn_up.weight"].T,
+        "W_down": p["ffn_down.weight"].T,
+        "W_norm_1": p["ln_1.weight"],
+        "b_norm_1": p["ln_1.bias"],
+        "W_norm_2": p["ln_2.weight"],
+        "b_norm_2": p["ln_2.bias"],
     }
-    
-    params = {k: v.astype(np.float32) if isinstance(v, np.ndarray) else v for k, v in params_fp32.items()}
+
+    params = {
+        k: v.astype(np.float32) if isinstance(v, np.ndarray) else v
+        for k, v in params_fp32.items()
+    }
 
     # random input
     x_float = torch.randn(BATCH, SEQ, EMBD)

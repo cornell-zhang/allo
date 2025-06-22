@@ -2033,6 +2033,7 @@ class ASTTransformer(ASTBuilder):
                 )
                 # explicitly unravel the array
                 results = []
+                print(array.shape)
                 for dim in np.ndindex(*array.shape):
                     stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                     # pylint: disable=bad-builtin
