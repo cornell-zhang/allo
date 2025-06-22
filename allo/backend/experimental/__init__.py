@@ -31,7 +31,6 @@ from .utils import (
     classify_aie_functions_experimental,
     codegen_external_kernels,
     lib_kernel_replacement,
-    local_buffer_opt,
     read_tensor_from_file,
     codegen_host,
 )
@@ -212,7 +211,6 @@ class AIE_MLIRModule:
         for node in self.virtual_computation_graph.nodes.values():
             function = node.func
             lib_kernel_replacement(function)
-            # local_buffer_opt(function)
 
         pipeline = f"builtin.module(copy-on-write, canonicalize)"
         with self.allo_module.context:

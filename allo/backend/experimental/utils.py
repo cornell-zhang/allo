@@ -250,6 +250,9 @@ def inject_external_kernels(
 ) -> tuple[dict[str, bool], dict]:
     """
     Inject external kernels for compute cores.
+    TODO: is it possible to use cpp pass to inject? 
+            Ideally, we may want to pass the rewrite rule of each external kernel 
+            and use rewriter to perform pattern matching and replacement.
 
     For each top-level (non-private, non-top) function in the module, the function scans
     its operations. When it detects vector operations (`linalg.add` or `linalg.mul`) or
@@ -570,26 +573,6 @@ def lib_kernel_replacement(function: allo_func_d.FuncOp):
                         acc_op.erase()
 
     replace_redundant_matmul(function)
-
-
-def local_buffer_opt(function: allo_func_d.FuncOp):
-    """
-    Optimize local buffer (allocated memory) usage
-    """
-
-    def copy_on_write(function: allo_func_d.FuncOp):
-        """
-        avoid copy with best effort
-        """
-        copy_ops = collect_op_by_name(function, "linalg.copy")
-        for copy_op in copy_ops:
-            src, dst = copy_op.operands[0], copy_op.operands[1]
-            if list(src.uses)[0].owner == copy_op:
-                # copy is the last use
-                dst.replace_all_uses_with(src)
-                copy_op.erase()
-
-    copy_on_write(function)
 
 
 def loop_rerolling(function: allo_func_d.FuncOp):
