@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 // CopyOnWrtite Pass
 // This pass avoids copying data until the source have to be modifed
+// TODO: better solution for 'last use' and 'all use after'
 //===----------------------------------------------------------------------===//
 #include "PassDetail.h"
 #include "allo/Dialect/AlloOps.h"
@@ -55,9 +56,25 @@ void removeRedundentCopy(func::FuncOp &func) {
         }
       }
       // llvm::errs() << resolvable << " " << *last_user << "\n";
+      // llvm::errs() << "remove" << " " << *op << "\n";
       if (resolvable && last_user == op) {
-        op->erase();
-        dst.replaceAllUsesWith(src);
+        for (auto &use : dst.getUses()) {
+          Operation *user = use.getOwner();
+          if (user->getBlock() != op->getBlock()) {
+            resolvable = false;
+            break;
+          }
+        }
+        if (resolvable) {
+          for (auto &use : llvm::make_early_inc_range(dst.getUses())) {
+            Operation *user = use.getOwner();
+            if (user->getBlock() == op->getBlock() &&
+                op->isBeforeInBlock(user)) {
+              use.set(src);
+            }
+          }
+          op->erase();
+        }
       }
     }
   }
