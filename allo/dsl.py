@@ -141,7 +141,7 @@ def view(x, shape, name=None):
     return np.reshape(x, shape)
 
 
-def layernorm(x, gamma = 1.0, beta = 0.0, eps: float = 1e-5):
+def layernorm(x, gamma=1.0, beta=0.0, eps: float = 1e-5):
     mean = np.mean(x, axis=-1, keepdims=True)
     variance = np.var(x, axis=-1, keepdims=True)
     x = gamma * (x - mean) / np.sqrt(variance + eps) + beta

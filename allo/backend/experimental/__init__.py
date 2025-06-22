@@ -261,13 +261,13 @@ class AIE_MLIRModule:
                     lut_need = True
             if lut_need:
                 cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -c $RUNTIME_LIB_DIR/../aie_runtime_lib/AIE2/lut_based_ops.cpp -o lut_based_ops.o"
-                process = subprocess.Popen(cmd, shell=True)
-                process.wait()
+                with subprocess.Popen(cmd, shell=True) as process:
+                    process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to compile lut based ops.")
             cmd = f"cd {self.project_dir} && ar rvs external.a external.o{" lut_based_ops.o"if lut_need else ""}"
-            process = subprocess.Popen(cmd, shell=True)
-            process.wait()
+            with subprocess.Popen(cmd, shell=True) as process:
+                process.wait()
             if process.returncode != 0:
                 raise RuntimeError("Failed to create external.a.")
         # TODO

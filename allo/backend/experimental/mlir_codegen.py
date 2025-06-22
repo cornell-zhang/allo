@@ -328,7 +328,9 @@ class CodeGenerator:
         self.global_ip: aie_ir.InsertionPoint = (
             None  # mark the inserting point for buffers
         )
-        self.global_ops = global_ops  # The global operations except for FuncOp in the AIE IR
+        self.global_ops = (
+            global_ops  # The global operations except for FuncOp in the AIE IR
+        )
 
     def collect_stream_info(self, streams: dict[str, Stream], context):
         """
@@ -428,7 +430,9 @@ class CodeGenerator:
 
         # declare external kernel function before use
         global_ops_str = "\n".join([str(op) for op in self.global_ops])
-        func_str = self.external_functions + "\n" + global_ops_str + "\n" + str(new_function)
+        func_str = (
+            self.external_functions + "\n" + global_ops_str + "\n" + str(new_function)
+        )
         return func_str
 
     def build_core_function(

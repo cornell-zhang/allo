@@ -1002,7 +1002,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_args[0].dtype
             else:
                 shape = new_args[0].shape
-                if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
+                if all(isinstance(dim, ast.Constant) for dim in new_args[1].elts):
                     axes = compile(ast.Expression(new_args[1]), "", "eval")
                     # pylint: disable=eval-used
                     axes = eval(axes)
@@ -1025,7 +1025,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_args[0].dtype
             return node
         if op_name in {"view"}:
-            if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
+            if all(isinstance(dim, ast.Constant) for dim in new_args[1].elts):
                 axes = compile(ast.Expression(new_args[1]), "", "eval")
                 # pylint: disable=eval-used
                 axes = eval(axes)
@@ -1048,7 +1048,7 @@ class TypeInferer(ASTVisitor):
             node.dtype = new_args[0].dtype
             return node
         if op_name in {"ones", "zeros"}:
-            if (all(isinstance(dim, ast.Constant) for dim in new_args[0].elts)):
+            if all(isinstance(dim, ast.Constant) for dim in new_args[0].elts):
                 axes = compile(ast.Expression(new_args[0]), "", "eval")
                 # pylint: disable=eval-used
                 axes = eval(axes)
@@ -1060,9 +1060,7 @@ class TypeInferer(ASTVisitor):
                     elif isinstance(dim, ast.Name):
                         axes.append(ASTResolver.resolve(dim, ctx.global_vars))
                     else:
-                        raise RuntimeError(
-                            f"Unsupported shape axis {ast.unparse(dim)}"
-                        )
+                        raise RuntimeError(f"Unsupported shape axis {ast.unparse(dim)}")
             node.shape = axes
             assert (
                 node.keywords[0].arg == "dtype"

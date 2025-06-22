@@ -8,25 +8,12 @@ import numpy as np
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
-from ..._mlir.dialects import (
-    func as allo_func_d,
-    memref as memref_d,
-    arith as arith_d,
-)
+from ..._mlir.dialects import func as allo_func_d
 from ..utils import format_str, format_code
 from ...memory import DTensor
 from .external_kernel import ExternalModule
 
-from ..._mlir.ir import (
-    MemRefType,
-    InsertionPoint,
-    FlatSymbolRefAttr,
-    StringAttr,
-    SymbolTable,
-    BF16Type,
-    IntegerType,
-    IntegerAttr,
-)
+from ..._mlir.ir import MemRefType, InsertionPoint, FlatSymbolRefAttr, StringAttr
 
 aie_ctype_map = {
     "bf16": "std::bfloat16_t",
@@ -81,7 +68,7 @@ def inject_external_kernels(
                             strings (C++ code and preprocessor defines).
         - include_src: A set of C++ include directives needed for the external kernels.
     """
-    
+
     use_external_kernels = {}
     injected_kernels: dict = {}
     include_src: set[str] = set()
@@ -96,12 +83,8 @@ def inject_external_kernels(
                 if callee_name in injected_kernels:
                     continue
                 external_module = external_kernel_lib[callee_name]
-                assert (
-                    external_module is not None
-                ), "external module not found"
-                include_src.add(
-                    f'#include "{external_module.filename}"\n'
-                )
+                assert external_module is not None, "external module not found"
+                include_src.add(f'#include "{external_module.filename}"\n')
                 injected_kernels[callee_name] = ("", "")
                 continue
             # 2. builtin external kernel
@@ -115,7 +98,9 @@ def inject_external_kernels(
                 ctype = aie_external_kernel_ctype_map[dtype]
                 kernel_name = f"{op_name}_{dtype}_vector"
                 use_external_kernels[df_function_name] = True
-                kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                kernel_code += (
+                    f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                )
                 kernel_code += " {\n"
                 kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
                 kernel_code += "}\n\n"
@@ -168,13 +153,13 @@ def inject_external_kernels(
                     func_type,
                     ip=InsertionPoint(func),
                 )
-                kernel.attributes["sym_visibility"] = StringAttr.get(
-                    "private"
-                )
+                kernel.attributes["sym_visibility"] = StringAttr.get("private")
             else:
                 for region in op.regions:
                     for block in region.blocks:
-                        inject_external_kernels_recursive(block.operations, df_function_name)
+                        inject_external_kernels_recursive(
+                            block.operations, df_function_name
+                        )
 
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
@@ -186,14 +171,15 @@ def inject_external_kernels(
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
                     for block in func.regions[0].blocks:
-                        inject_external_kernels_recursive( block.operations, func_name)
+                        inject_external_kernels_recursive(block.operations, func_name)
     return use_external_kernels, injected_kernels, include_src
 
 
-def classify_aie_functions(
-    module: allo_ir.ir.Module, top_function_name: str
-) -> tuple[
-    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp], list
+def classify_aie_functions(module: allo_ir.ir.Module, top_function_name: str) -> tuple[
+    allo_func_d.FuncOp,
+    dict[str, list[allo_func_d.FuncOp]],
+    list[allo_func_d.FuncOp],
+    list,
 ]:
     """
     Classify the functions in allo module as
