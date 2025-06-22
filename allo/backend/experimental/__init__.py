@@ -5,6 +5,7 @@
 import os
 import subprocess
 import shutil
+from pathlib import Path
 
 try:
     import aie.ir as aie_ir
@@ -186,7 +187,7 @@ class AIE_MLIRModule:
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
         # TODO: maybe use other ways to capture the relationship between DTensor, function group
-        _, core_func_groups, _ = classify_aie_functions(
+        _, core_func_groups, _, _ = classify_aie_functions(
             self.allo_module, self.top_func_name
         )
         inputs, outputs = self.collect_io(core_func_groups)
@@ -207,11 +208,11 @@ class AIE_MLIRModule:
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        top_func, core_func_groups, external_funcs = classify_aie_functions(
+        top_func, core_func_groups, external_funcs, global_ops = classify_aie_functions(
             self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs, top_func
+            device_type, self.global_inputs, self.global_outputs, top_func, global_ops
         )
         self.aie_module = code_generator.aie_codegen(
             core_func_groups,
@@ -243,11 +244,32 @@ class AIE_MLIRModule:
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
                 f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
+            path = Path(__file__).resolve()
+            parts = list(path.parts)
+            del parts[-3]
+            parts[-1] = "aie"
+            parts[-2] = "library"
+            path = Path(*parts).with_suffix("")
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I {path} -I $RUNTIME_LIB_DIR/../aie_runtime_lib/AIE2 -c external.cc -o external.o"
             with subprocess.Popen(cmd, shell=True) as process:
                 process.wait()
             if process.returncode != 0:
                 raise RuntimeError("Failed to compile external kernels.")
+            lut_need = False
+            for kernel_name in injected_kernels:
+                if kernel_name.startswith("exp") or kernel_name.startswith("softmax"):
+                    lut_need = True
+            if lut_need:
+                cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -c $RUNTIME_LIB_DIR/../aie_runtime_lib/AIE2/lut_based_ops.cpp -o lut_based_ops.o"
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to compile lut based ops.")
+            cmd = f"cd {self.project_dir} && ar rvs external.a external.o{" lut_based_ops.o"if lut_need else ""}"
+            process = subprocess.Popen(cmd, shell=True)
+            process.wait()
+            if process.returncode != 0:
+                raise RuntimeError("Failed to create external.a.")
         # TODO
         # build mlir-aie
         cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"

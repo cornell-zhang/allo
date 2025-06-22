@@ -18,6 +18,7 @@ from .._mlir.ir import (
     ShapedType,
     IntegerType,
     F32Type,
+    BF16Type,
     UnitAttr,
     IntegerAttr,
     StringAttr,
@@ -582,7 +583,7 @@ class ASTTransformer(ASTBuilder):
     def build_broadcast_op(ctx, op, dtype, src_shape, dst_shape, dims):
         # No shape checking in this function, since it has been done in
         # type inference pass in infer.py
-        if src_shape == dst_shape:
+        if tuple(src_shape) == tuple(dst_shape):
             return op
         if len(src_shape) == 0:
             # Get zero-rank memref for constant
@@ -2108,7 +2109,7 @@ class ASTTransformer(ASTBuilder):
                     if hasattr(arg, "result") and hasattr(arg.result, "type"):
                         arg_types.append(arg.result.type)
             if all(
-                isinstance(arg_type, (F32Type, IntegerType)) for arg_type in arg_types
+                isinstance(arg_type, (F32Type, IntegerType, BF16Type)) for arg_type in arg_types
             ):
                 opcls = {
                     "exp": math_d.ExpOp,

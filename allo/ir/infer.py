@@ -971,7 +971,7 @@ class TypeInferer(ASTVisitor):
                 assert (
                     argAshape[-1] == argBshape[-2]
                 ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"
-                node.shape = tuple(argAshape[:-1] + argBshape[-1:])
+                node.shape = tuple(argAshape[:-1]) + tuple(argBshape[-1:])
             elif op_name == "bmm":
                 assert (
                     len(argAshape) == 3 and len(argBshape) == 3
@@ -1002,9 +1002,21 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_args[0].dtype
             else:
                 shape = new_args[0].shape
-                axes = compile(ast.Expression(new_args[1]), "", "eval")
-                # pylint: disable=eval-used
-                axes = eval(axes)
+                if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
+                    axes = compile(ast.Expression(new_args[1]), "", "eval")
+                    # pylint: disable=eval-used
+                    axes = eval(axes)
+                else:
+                    axes = []
+                    for dim in new_args[1].elts:
+                        if isinstance(dim, ast.Constant):
+                            axes.append(dim.value)
+                        elif isinstance(dim, ast.Name):
+                            axes.append(ASTResolver.resolve(dim, ctx.global_vars))
+                        else:
+                            raise RuntimeError(
+                                f"Unsupported transpose axis {ast.unparse(dim)}"
+                            )
                 assert len(shape) == len(
                     axes
                 ), f"Transpose shape mismatch, should provide the same number of dimensions as the input, got {len(shape)} and {axes}"
@@ -1013,9 +1025,21 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_args[0].dtype
             return node
         if op_name in {"view"}:
-            axes = compile(ast.Expression(new_args[1]), "", "eval")
-            # pylint: disable=eval-used
-            axes = eval(axes)
+            if (all(isinstance(dim, ast.Constant) for dim in new_args[1].elts)):
+                axes = compile(ast.Expression(new_args[1]), "", "eval")
+                # pylint: disable=eval-used
+                axes = eval(axes)
+            else:
+                axes = []
+                for dim in new_args[1].elts:
+                    if isinstance(dim, ast.Constant):
+                        axes.append(dim.value)
+                    elif isinstance(dim, ast.Name):
+                        axes.append(ASTResolver.resolve(dim, ctx.global_vars))
+                    else:
+                        raise RuntimeError(
+                            f"Unsupported transpose shape {ast.unparse(dim)}"
+                        )
             node.shape = axes
             node.dtype = new_args[0].dtype
             return node
@@ -1024,9 +1048,21 @@ class TypeInferer(ASTVisitor):
             node.dtype = new_args[0].dtype
             return node
         if op_name in {"ones", "zeros"}:
-            axes = compile(ast.Expression(new_args[0]), "", "eval")
-            # pylint: disable=eval-used
-            axes = eval(axes)
+            if (all(isinstance(dim, ast.Constant) for dim in new_args[0].elts)):
+                axes = compile(ast.Expression(new_args[0]), "", "eval")
+                # pylint: disable=eval-used
+                axes = eval(axes)
+            else:
+                axes = []
+                for dim in new_args[0].elts:
+                    if isinstance(dim, ast.Constant):
+                        axes.append(dim.value)
+                    elif isinstance(dim, ast.Name):
+                        axes.append(ASTResolver.resolve(dim, ctx.global_vars))
+                    else:
+                        raise RuntimeError(
+                            f"Unsupported shape axis {ast.unparse(dim)}"
+                        )
             node.shape = axes
             assert (
                 node.keywords[0].arg == "dtype"

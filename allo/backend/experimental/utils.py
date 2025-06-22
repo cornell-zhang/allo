@@ -8,7 +8,11 @@ import numpy as np
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
-from ..._mlir.dialects import func as allo_func_d
+from ..._mlir.dialects import (
+    func as allo_func_d,
+    memref as memref_d,
+    arith as arith_d,
+)
 from ..utils import format_str, format_code
 from ...memory import DTensor
 from .external_kernel import ExternalModule
@@ -18,6 +22,10 @@ from ..._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
     StringAttr,
+    SymbolTable,
+    BF16Type,
+    IntegerType,
+    IntegerAttr,
 )
 
 aie_ctype_map = {
@@ -73,9 +81,100 @@ def inject_external_kernels(
                             strings (C++ code and preprocessor defines).
         - include_src: A set of C++ include directives needed for the external kernels.
     """
+    
     use_external_kernels = {}
     injected_kernels: dict = {}
     include_src: set[str] = set()
+
+    def inject_external_kernels_recursive(operations, df_function_name: str):
+        for op in operations:
+            # 1. customized external kernel
+            if isinstance(op, allo_func_d.CallOp):
+                use_external_kernels[df_function_name] = True
+                callee_name = op.callee.value
+                # register external kernel
+                if callee_name in injected_kernels:
+                    continue
+                external_module = external_kernel_lib[callee_name]
+                assert (
+                    external_module is not None
+                ), "external module not found"
+                include_src.add(
+                    f'#include "{external_module.filename}"\n'
+                )
+                injected_kernels[callee_name] = ("", "")
+                continue
+            # 2. builtin external kernel
+            kernel_code, kernel_header = "", ""
+            call_builtin = False
+            # vec add/mul
+            if op.operation.name in {"linalg.add", "linalg.mul"}:
+                op_name = op.operation.name.split(".")[1]
+                include_src.add(f'#include "{op_name}.cc"\n')
+                dtype = str(op.inputs[0].type.element_type)
+                ctype = aie_external_kernel_ctype_map[dtype]
+                kernel_name = f"{op_name}_{dtype}_vector"
+                use_external_kernels[df_function_name] = True
+                kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                kernel_code += " {\n"
+                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
+                kernel_code += "}\n\n"
+                call_builtin = True
+            # matmul
+            elif op.operation.name == "linalg.matmul":
+                M, K = MemRefType(op.inputs[0].type).shape
+                _, N = MemRefType(op.inputs[1].type).shape
+                dtype = str(op.inputs[0].type.element_type)
+                out_dtype = str(op.outputs[0].type.element_type)
+                if (dtype, out_dtype) in [
+                    ("i8", "i8"),
+                    ("i16", "i16"),
+                    ("i16", "i32"),
+                    ("bf16", "bf16"),
+                    ("bf16", "f32"),
+                ]:
+                    include_src.add('#include "mm.cc"\n')
+                    kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                    use_external_kernels[df_function_name] = True
+                    kernel_header += f"#define DIM_M {M}\n"
+                    kernel_header += f"#define DIM_N {N}\n"
+                    kernel_header += f"#define DIM_K {K}\n"
+                    kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
+                    call_builtin = True
+            if call_builtin:
+                # Inject AIE kernel
+                func_type = allo_func_d.FunctionType.get(
+                    [
+                        op.inputs[0].type,
+                        op.inputs[1].type,
+                        op.outputs[0].type,
+                    ],
+                    [],
+                )
+                # replace operation
+                allo_func_d.CallOp(
+                    [],
+                    FlatSymbolRefAttr.get(kernel_name),
+                    [op.inputs[0], op.inputs[1], op.outputs[0]],
+                    ip=InsertionPoint(op),
+                )
+                op.erase()
+                # register external kernel
+                if kernel_name in injected_kernels:
+                    continue
+                injected_kernels[kernel_name] = (kernel_code, kernel_header)
+                kernel = allo_func_d.FuncOp(
+                    kernel_name,
+                    func_type,
+                    ip=InsertionPoint(func),
+                )
+                kernel.attributes["sym_visibility"] = StringAttr.get(
+                    "private"
+                )
+            else:
+                for region in op.regions:
+                    for block in region.blocks:
+                        inject_external_kernels_recursive(block.operations, df_function_name)
 
     with module.context, allo_ir.ir.Location.unknown():
         for func in module.body.operations:
@@ -87,95 +186,14 @@ def inject_external_kernels(
                     func_name: str = func.attributes["sym_name"].value
                     use_external_kernels[func_name] = False
                     for block in func.regions[0].blocks:
-                        for op in block.operations:
-                            if isinstance(op, allo_func_d.CallOp):
-                                use_external_kernels[func_name] = True
-                                callee_name = op.callee.value
-                                # register external kernel
-                                if callee_name in injected_kernels:
-                                    continue
-                                external_module = external_kernel_lib[callee_name]
-                                assert (
-                                    external_module is not None
-                                ), "external module not found"
-                                include_src.add(
-                                    f'#include "{external_module.filename}"\n'
-                                )
-                                injected_kernels[callee_name] = ("", "")
-                                continue
-                            kernel_code, kernel_header = "", ""
-                            # vec add/mul
-                            if op.operation.name in {"linalg.add", "linalg.mul"}:
-                                op_name = op.operation.name.split(".")[1]
-                                include_src.add(f'#include "{op_name}.cc"\n')
-                                dtype = str(op.inputs[0].type.element_type)
-                                ctype = aie_external_kernel_ctype_map[dtype]
-                                kernel_name = f"{op_name}_{dtype}_vector"
-                                use_external_kernels[func_name] = True
-                                kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-                                kernel_code += " {\n"
-                                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
-                                kernel_code += "}\n\n"
-                            # matmul
-                            elif op.operation.name == "linalg.matmul":
-                                M, K = MemRefType(op.inputs[0].type).shape
-                                _, N = MemRefType(op.inputs[1].type).shape
-                                dtype = str(op.inputs[0].type.element_type)
-                                out_dtype = str(op.outputs[0].type.element_type)
-                                if (dtype, out_dtype) not in [
-                                    ("i8", "i8"),
-                                    ("i16", "i16"),
-                                    ("i16", "i32"),
-                                    ("bf16", "bf16"),
-                                    ("bf16", "f32"),
-                                ]:
-                                    continue
-                                include_src.add('#include "mm.cc"\n')
-                                kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                                use_external_kernels[func_name] = True
-                                kernel_header += f"#define DIM_M {M}\n"
-                                kernel_header += f"#define DIM_N {N}\n"
-                                kernel_header += f"#define DIM_K {K}\n"
-                                kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
-                            else:
-                                continue
-
-                            # Inject AIE kernel
-                            func_type = allo_func_d.FunctionType.get(
-                                [
-                                    op.inputs[0].type,
-                                    op.inputs[1].type,
-                                    op.outputs[0].type,
-                                ],
-                                [],
-                            )
-                            # replace operation
-                            allo_func_d.CallOp(
-                                [],
-                                FlatSymbolRefAttr.get(kernel_name),
-                                [op.inputs[0], op.inputs[1], op.outputs[0]],
-                                ip=InsertionPoint(op),
-                            )
-                            op.erase()
-                            # register external kernel
-                            if kernel_name in injected_kernels:
-                                continue
-                            injected_kernels[kernel_name] = (kernel_code, kernel_header)
-                            kernel = allo_func_d.FuncOp(
-                                kernel_name,
-                                func_type,
-                                ip=InsertionPoint(func),
-                            )
-                            kernel.attributes["sym_visibility"] = StringAttr.get(
-                                "private"
-                            )
+                        inject_external_kernels_recursive( block.operations, func_name)
     return use_external_kernels, injected_kernels, include_src
 
 
 def classify_aie_functions(
     module: allo_ir.ir.Module, top_function_name: str
 ) -> tuple[
-    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp]
+    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp], list
 ]:
     """
     Classify the functions in allo module as
@@ -189,23 +207,27 @@ def classify_aie_functions(
     core_func_groups: dict[str, list[allo_func_d.FuncOp]] = {}
     # external functions
     external_funcs: list[allo_func_d.FuncOp] = []
+    global_ops = []
     with module.context, allo_ir.ir.Location.unknown():
-        for func in module.body.operations:
-            if isinstance(func, allo_func_d.FuncOp):
+        for op in module.body.operations:
+            if isinstance(op, allo_func_d.FuncOp):
                 if (
-                    "sym_visibility" in func.attributes
-                    and func.attributes["sym_visibility"].value == "private"
+                    "sym_visibility" in op.attributes
+                    and op.attributes["sym_visibility"].value == "private"
                 ):
-                    external_funcs.append(func)
-                elif func.attributes["sym_name"].value == top_function_name:
-                    top_func = func
+                    external_funcs.append(op)
+                elif op.attributes["sym_name"].value == top_function_name:
+                    top_func = op
                 else:
-                    func_name_w_id = func.attributes["sym_name"].value
+                    func_name_w_id = op.attributes["sym_name"].value
                     func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
                     if func_name not in core_func_groups:
                         core_func_groups[func_name] = []
-                    core_func_groups[func_name].append(func)
-    return top_func, core_func_groups, external_funcs
+                    core_func_groups[func_name].append(op)
+            else:
+                # Non-function operations (e.g., global variables)
+                global_ops.append(op)
+    return top_func, core_func_groups, external_funcs, global_ops
 
 
 def get_element_type(dtype_str: str) -> aie_ir.Type:

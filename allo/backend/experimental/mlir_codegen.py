@@ -310,6 +310,7 @@ class CodeGenerator:
         global_inputs: dict[int, DTensor],
         global_outputs: dict[int, DTensor],
         top_function: allo_func_d.FuncOp,
+        global_ops: list,
     ):
         self.device_type = device_type
 
@@ -327,6 +328,7 @@ class CodeGenerator:
         self.global_ip: aie_ir.InsertionPoint = (
             None  # mark the inserting point for buffers
         )
+        self.global_ops = global_ops  # The global operations except for FuncOp in the AIE IR
 
     def collect_stream_info(self, streams: dict[str, Stream], context):
         """
@@ -425,7 +427,8 @@ class CodeGenerator:
                         op.erase()
 
         # declare external kernel function before use
-        func_str = self.external_functions + "\n" + str(new_function)
+        global_ops_str = "\n".join([str(op) for op in self.global_ops])
+        func_str = self.external_functions + "\n" + global_ops_str + "\n" + str(new_function)
         return func_str
 
     def build_core_function(
@@ -585,6 +588,11 @@ class CodeGenerator:
             self.external_functions += format_str(str(func), indent=4)
 
         wrapper_code += self.external_functions
+        # add global operations
+        global_ops_str = ""
+        for op in self.global_ops:
+            global_ops_str += format_str(str(op), indent=4)
+        wrapper_code += global_ops_str
         wrapper_code += """
                 }
             }
@@ -753,7 +761,7 @@ class CodeGenerator:
                         func_core = aie_d.Core(
                             tile=self.tile_map[f"compute_{func_name_w_id}"],
                             link_with=(
-                                "external.o"
+                                "external.a"
                                 if use_external_kernels[func_name_w_id]
                                 else None
                             ),

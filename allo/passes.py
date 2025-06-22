@@ -760,14 +760,27 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
         collect_subviews(block)
 
     # Helper to resolve a value to its original argument index if it's a subview
-    def resolve_to_func_arg_index(value):
+    def resolve_to_func_arg_index(value, visited=None):
+        if visited is None:
+            visited = set()
+        if value in visited:
+            return None
+        visited.add(value)
         while BlockArgument.isinstance(value):
-            arg = BlockArgument(value)
-            if isinstance(arg.owner.owner, func_d.FuncOp):
-                return arg.arg_number
-            value = arg.owner.owner.operands[arg.arg_number]
-        if value in subview_map:
-            return subview_map[value]
+            block = value.owner
+            parent_op = block.owner
+            value = BlockArgument(value)
+            if isinstance(parent_op, func_d.FuncOp):
+                return value.arg_number
+            idx = value.arg_number
+            if idx < len(parent_op.operands):
+                return resolve_to_func_arg_index(parent_op.operands[idx], visited)
+            return None
+        defining_op = value.owner
+        for op_operand in defining_op.operands:
+            res = resolve_to_func_arg_index(op_operand, visited)
+            if res is not None:
+                return res
         return None
 
     # Dictionary of common linalg operations and their input/output patterns

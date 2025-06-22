@@ -81,22 +81,22 @@ def schedule_relu4d(s):
     return s
 
 
-def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
-    Z: Ty[L, L]
-    E: Ty[L, L]
-    M: Ty[L] = -1000000000000.0
-    S: Ty[L] = 0.0
+def softmax[Ty, N, L](X: "Ty[N, L]") -> "Ty[N, L]":
+    Z: Ty[N, L]
+    E: Ty[N, L]
+    M: Ty[N] = -1000000000000.0
+    S: Ty[N] = 0.0
 
-    for i, j in dsl.grid(L, L, name="row_max"):
+    for i, j in dsl.grid(N, L, name="row_max"):
         if X[i, j] > M[i]:
             M[i] = X[i, j]
 
     # compute exp and sum
-    for i, j in dsl.grid(L, L, name="exp_sum"):
+    for i, j in dsl.grid(N, L, name="exp_sum"):
         E[i, j] = dsl.exp(X[i, j] - M[i])
         S[i] += E[i, j]
 
-    for i, j in dsl.grid(L, L, name="update"):
+    for i, j in dsl.grid(N, L, name="update"):
         Z[i, j] = E[i, j] / S[i]
 
     return Z
