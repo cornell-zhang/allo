@@ -230,9 +230,9 @@ class AIE_MLIRModule:
             paths = set()
             # user defined external kernels
             for ext_module in self.external_kernel_lib.values():
-                paths.add(ext_module.impl_path)
-            for src_path in paths:
-                target_path = os.path.join(self.project_dir, os.path.basename(src_path))
+                paths.add((ext_module.impl_path, ext_module.filename))
+            for src_path, dst_file in paths:
+                target_path = os.path.join(self.project_dir, dst_file)
                 if os.path.exists(target_path) and os.path.samefile(
                     src_path, target_path
                 ):
