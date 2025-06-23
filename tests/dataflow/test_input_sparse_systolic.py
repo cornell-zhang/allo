@@ -43,7 +43,8 @@ def top():
             for k in range(K):
                 a: float32 = fifo_A[i, j].get()
                 b: float32 = fifo_B[i, j].get()
-                c += a * b
+                if a != 0:
+                    c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_B[i + 1, j].put(b)
             C[i - 1, j - 1] = c
