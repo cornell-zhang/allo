@@ -195,7 +195,36 @@ def run(x_fp32: np.ndarray, params: dict):
         ):
             C[:, :] = allo.add(A, B)
 
+    # ----------------------------------------------------------------
+    # Attention Score
+    # ----------------------------------------------------------------
+    attn_score = ExternalModule(
+        top="partial_attn_score",
+        impl_path="attn_score.cc",
+        input_idx=[0, 1],
+        output_idx=[2],
+    )
+    ATTN_P0 = 2
+    ATTN_P1 = 2
+    ATTN_SCORE_M_TILE = ATTN_P0 * 32
+    ATTN_SCORE_N_TILE = ATTN_P1 * 32
+    ATTN_SCORE_LyA = Layout("S0R")
+    ATTN_SCORE_LyB = Layout("S1R")
+    ATTN_SCORE_LyC = Layout("S0S1")
+
+    @df.region()
+    def attn_score_kernel():
+        @df.kernel(mapping=[ATTN_P0, ATTN_P1])
+        def core(
+            A: Ty[ATTN_SCORE_M_TILE, HEAD_DIM] @ ATTN_SCORE_LyA,
+            B: Ty[ATTN_SCORE_N_TILE, HEAD_DIM] @ ATTN_SCORE_LyB,
+            C: Ty[ATTN_SCORE_M_TILE, ATTN_SCORE_N_TILE] @ ATTN_SCORE_LyC,
+        ):
+            attn_score(A, B, C)
+
+    # ##############################################################
     # BUILD
+    # ##############################################################
     layer_norm_mod = df.build(layer_norm_kernel, target="aie-mlir", project="norm.prj")
     linear_matmul_mod = df.build(
         linear_matmul_kernel, target="aie-mlir", project="linear_matmul.prj"
@@ -203,8 +232,13 @@ def run(x_fp32: np.ndarray, params: dict):
     linear_accumulate_mod = df.build(
         linear_accumulate_kernel, target="aie-mlir", project="linear_accumulate.prj"
     )
+    attn_score_mod = df.build(
+        attn_score_kernel, target="aie-mlir", project="attn_score.prj"
+    )
 
+    # ##############################################################
     # TOOL
+    # ##############################################################
     def linear_projection(A, B, C, M, N, K):
         for i in range(M // LINEAR_M):
             for j in range(N // LINEAR_N):
@@ -231,27 +265,57 @@ def run(x_fp32: np.ndarray, params: dict):
                         ],
                     )
 
+    # ##############################################################
+    # FORWARD
+    # ##############################################################
     x = x_fp32.astype(np.float32)
-    Xf = x.reshape(N, EMBD)
-    Sf = np.empty((N, EMBD), dtype=np.float32)
+    residual = x.reshape(N, EMBD)
+    x = np.empty((N, EMBD), dtype=np.float32)
     for i in range(N // NORM_SEQ_TILE):
-        tile_input = Xf[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :]
+        tile_input = residual[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :]
         layer_norm_mod(
             tile_input,
             params["W_norm_1"],
             params["b_norm_1"],
-            Sf[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :],
+            x[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :],
         )
 
-    # linear projections (M = SEQ, N = EMBD, K = EMBD)
+    # qkv projections (M = SEQ, N = EMBD, K = EMBD)
     query = np.zeros((SEQ, EMBD)).astype(np.float32)
     key = np.zeros((SEQ, EMBD)).astype(np.float32)
     value = np.zeros((SEQ, EMBD)).astype(np.float32)
-    linear_projection(Sf, params["Wq"], query, SEQ, EMBD, EMBD)
-    linear_projection(Sf, params["Wk"], key, SEQ, EMBD, EMBD)
-    linear_projection(Sf, params["Wv"], value, SEQ, EMBD, EMBD)
-    
-    return query
+    linear_projection(x, params["Wq"], query, SEQ, EMBD, EMBD)
+    linear_projection(x, params["Wk"], key, SEQ, EMBD, EMBD)
+    linear_projection(x, params["Wv"], value, SEQ, EMBD, EMBD)
+
+    # attention score
+    attention_score = np.empty((N_HEAD, SEQ, SEQ), dtype=np.float32)
+    for i in range(SEQ // ATTN_SCORE_M_TILE):
+        for j in range(SEQ // ATTN_SCORE_N_TILE):
+            for k in range(N_HEAD):
+                attn_score_mod(
+                    query[
+                        i * ATTN_SCORE_M_TILE : (i + 1) * ATTN_SCORE_M_TILE,
+                        k * HEAD_DIM : (k + 1) * HEAD_DIM,
+                    ],
+                    key[
+                        j * ATTN_SCORE_N_TILE : (j + 1) * ATTN_SCORE_N_TILE,
+                        k * HEAD_DIM : (k + 1) * HEAD_DIM,
+                    ],
+                    attention_score[
+                        k,
+                        i * ATTN_SCORE_M_TILE : (i + 1) * ATTN_SCORE_M_TILE,
+                        j * ATTN_SCORE_N_TILE : (j + 1) * ATTN_SCORE_N_TILE,
+                    ],
+                )
+    # softmax
+
+    # attention value
+
+    # output projection
+
+    #
+    return attention_score
 
 
 if __name__ == "__main__":
@@ -282,6 +346,8 @@ if __name__ == "__main__":
     # print(ref_out)
     # print(params['b_norm_2'].shape)
     q = ref_out @ params_fp32["Wq"]
+    k = ref_out @ params_fp32["Wk"]
+    attn_ = ((q[:, :64]) @ (k[:, :64].T)) * 0.125
     allo_out = run(x_float.numpy(), params)
-    np.testing.assert_allclose(allo_out, q, rtol=1e-2)
+    np.testing.assert_allclose(allo_out[0], attn_, rtol=1e-2)
     print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")

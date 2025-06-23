@@ -62,7 +62,8 @@ void layer_norm_single_batch_no_bias(T_in *input_tensor, T_in *weight,
 extern "C" {
 
 void layer_norm(float A_in[4][768], float B_in[768], float C_out[4][768]) {
-  layer_norm_single_batch_no_bias<float, float, 4, 768>(&A_in[0][0], B_in, &C_out[0][0]);
+  layer_norm_single_batch_no_bias<float, float, 4, 768>(&A_in[0][0], B_in,
+                                                        &C_out[0][0]);
 }
 
 } // extern "C"
