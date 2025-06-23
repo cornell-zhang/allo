@@ -54,11 +54,10 @@ np.random.seed(0)
 
 # ===============================================================================
 # Model Configuration
-# fixme: align with https://huggingface.co/openai-community/gpt2/blob/main/config.json
 # ===============================================================================
-BATCH = 1
-SEQ = 8
-EMBD = 768
+BATCH = 1  # fixme: don't care for now
+SEQ = 64
+EMBD = 768  # 64 * 12
 N_HEAD = 12
 HEAD_DIM = EMBD // N_HEAD
 FFN_HID = EMBD * 4
@@ -71,7 +70,6 @@ class MiniGPT2(nn.Module):
     """
     References
         - GPT2Block forward: https://github.com/huggingface/transformers/blob/2166b6b4ff09f6dd3867ab982f262f66482aa968/src/transformers/models/gpt2/modeling_gpt2.py#L388
-
     """
 
     def __init__(self):
@@ -128,27 +126,31 @@ BN_local = BN // P0
 
 
 def run(x_fp32: np.ndarray, params: dict):
+
+    # ----------------------------------------------------------------
+    # LayerNorm
+    # ----------------------------------------------------------------
     norm = ExternalModule(
         top="layer_norm",
         impl_path="layer_norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
-
-    # LayerNorm
-    NORM_TILE = SEQ // P0
+    NORM_P0 = 4
+    NORM_SEQ_TILE = 16
+    NORM_TILE = NORM_SEQ_TILE // NORM_P0
     norm_io_layout = Layout("S0R")
     norm_arg_layout = Layout("R")
 
     @df.region()
     def layer_norm_kernel():
         pipe = df.array(
-            df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1), shape=(P0,)
+            df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1), shape=(NORM_P0,)
         )
 
-        @df.kernel(mapping=[P0])
+        @df.kernel(mapping=[NORM_P0])
         def norm_no_bias(
-            input_x: Ty[SEQ, EMBD] @ norm_io_layout,
+            input_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
             weight: Ty[EMBD] @ norm_arg_layout,
         ):
             pi = df.get_pid()
@@ -156,31 +158,100 @@ def run(x_fp32: np.ndarray, params: dict):
             norm(input_x, weight, tmp)
             pipe[pi].put(tmp)
 
-        @df.kernel(mapping=[P0])
+        @df.kernel(mapping=[NORM_P0])
         def norm_add_bias(
-            bias: Ty[EMBD] @ norm_arg_layout, output_x: Ty[SEQ, EMBD] @ norm_io_layout
+            bias: Ty[EMBD] @ norm_arg_layout,
+            output_x: Ty[NORM_SEQ_TILE, EMBD] @ norm_io_layout,
         ):
             pi = df.get_pid()
             data = pipe[pi].get()
             output_x[:, :] = allo.add(data, bias)
 
+    # ----------------------------------------------------------------
+    # Linear
+    # ----------------------------------------------------------------
+    LINEAR_M, LINEAR_N, LINEAR_K = 64, 64, 64
+    linear_A_layout = Layout("S0R")
+    linear_B_layout = Layout("RS1")
+    linear_C_layout = Layout("S0S1")
+
+    @df.region()
+    def linear_matmul_kernel():
+        @df.kernel(mapping=[4, 4])
+        def gemm(
+            A: Ty[LINEAR_M, LINEAR_K] @ linear_A_layout,
+            B: Ty[LINEAR_K, LINEAR_N] @ linear_B_layout,
+            C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+        ):
+            C[:, :] = allo.matmul(A, B)
+
+    @df.region()
+    def linear_accumulate_kernel():
+        @df.kernel(mapping=[2, 4])
+        def core(
+            A: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            B: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+            C: Ty[LINEAR_M, LINEAR_N] @ linear_C_layout,
+        ):
+            C[:, :] = allo.add(A, B)
+
+    # BUILD
     layer_norm_mod = df.build(layer_norm_kernel, target="aie-mlir", project="norm.prj")
+    linear_matmul_mod = df.build(
+        linear_matmul_kernel, target="aie-mlir", project="linear_matmul.prj"
+    )
+    linear_accumulate_mod = df.build(
+        linear_accumulate_kernel, target="aie-mlir", project="linear_accumulate.prj"
+    )
+
+    # TOOL
+    def linear_projection(A, B, C, M, N, K):
+        for i in range(M // LINEAR_M):
+            for j in range(N // LINEAR_N):
+                C_tmp = np.zeros((LINEAR_M, LINEAR_N)).astype(np.float32)
+                for k in range(K // LINEAR_K):
+                    tile_A = A[
+                        i * LINEAR_M : (i + 1) * LINEAR_M,
+                        k * LINEAR_K : (k + 1) * LINEAR_K,
+                    ]
+                    tile_B = B[
+                        k * LINEAR_K : (k + 1) * LINEAR_K,
+                        j * LINEAR_N : (j + 1) * LINEAR_N,
+                    ]
+                    linear_matmul_mod(tile_A, tile_B, C_tmp)
+                    linear_accumulate_mod(
+                        C[
+                            i * LINEAR_M : (i + 1) * LINEAR_M,
+                            j * LINEAR_N : (j + 1) * LINEAR_N,
+                        ],
+                        C_tmp,
+                        C[
+                            i * LINEAR_M : (i + 1) * LINEAR_M,
+                            j * LINEAR_N : (j + 1) * LINEAR_N,
+                        ],
+                    )
 
     x = x_fp32.astype(np.float32)
     Xf = x.reshape(N, EMBD)
     Sf = np.empty((N, EMBD), dtype=np.float32)
-    layer_norm_mod(Xf, params["W_norm_1"], params["b_norm_1"], Sf)
-    return Sf
-    # # QKV projection
-    # @df.region()
-    # def qkv_linear():
-    #     @df.kernel(mapping=[P0, P1])
-    #     def linear(
-    #         A: Ty[N, in_dim] @ LyX,  # input flattened
-    #         W: Ty[in_dim, out_dim] @ LyW,
-    #         Y: Ty[N, out_dim] @ LyY,
-    #     ):
-    #         Y[:, :] = allo.matmul(A, W)
+    for i in range(N // NORM_SEQ_TILE):
+        tile_input = Xf[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :]
+        layer_norm_mod(
+            tile_input,
+            params["W_norm_1"],
+            params["b_norm_1"],
+            Sf[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :],
+        )
+
+    # linear projections (M = SEQ, N = EMBD, K = EMBD)
+    query = np.zeros((SEQ, EMBD)).astype(np.float32)
+    key = np.zeros((SEQ, EMBD)).astype(np.float32)
+    value = np.zeros((SEQ, EMBD)).astype(np.float32)
+    linear_projection(Sf, params["Wq"], query, SEQ, EMBD, EMBD)
+    linear_projection(Sf, params["Wk"], key, SEQ, EMBD, EMBD)
+    linear_projection(Sf, params["Wv"], value, SEQ, EMBD, EMBD)
+    
+    return query
 
 
 if __name__ == "__main__":
@@ -206,10 +277,11 @@ if __name__ == "__main__":
     }
 
     # random input
-    x_float = torch.randn(BATCH, SEQ, EMBD)
+    x_float = torch.randn(SEQ, EMBD)
     ref_out = ref_model(x_float).detach().numpy()
     # print(ref_out)
     # print(params['b_norm_2'].shape)
-    allo_out = (run(x_float.numpy(), params)).reshape(BATCH, SEQ, EMBD)
-
-    np.testing.assert_allclose(allo_out, ref_out, rtol=1e-2)
+    q = ref_out @ params_fp32["Wq"]
+    allo_out = run(x_float.numpy(), params)
+    np.testing.assert_allclose(allo_out, q, rtol=1e-2)
+    print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
