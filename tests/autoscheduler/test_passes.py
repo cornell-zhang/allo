@@ -58,7 +58,6 @@ def test_simple(debug_point, kind):
         mod = optimized_schedule.build()
         input = np.zeros((10, 10), dtype=np.int32)
         np.testing.assert_allclose(mod(input), expected)
-        print("pass!")
 
     elif is_available("vitis_hls"):
         mod = optimized_schedule.build(
@@ -302,5 +301,4 @@ def test_gesummv(debug_point, kind):
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_simple(debug_point="loop_opts", kind="node")
+    pytest.main([__file__])
