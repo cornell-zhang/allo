@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Model Architecture: https://huggingface.co/openai-community/gpt2
     ```
@@ -48,7 +51,6 @@ import allo.dataflow as df
 from allo.ir.types import float32, bfloat16, int32
 from allo.memory import Layout
 from allo.backend.experimental import ExternalModule
-from ml_dtypes import bfloat16 as np_bfloat16
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -90,7 +92,6 @@ class MiniGPT2(nn.Module):
             scores = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(
                 torch.tensor(d_k, dtype=torch.float32)
             )
-
             if attn_mask is not None:
                 scores = scores.masked_fill(attn_mask == 0, float("-inf"))
 
@@ -135,13 +136,13 @@ class MiniGPT2(nn.Module):
             need_weights=False,
             attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool(),
         )
-        # x = attn_out + residual
-        # residual = x
-        # x = self.ln_2(x)
-        # activeated_x = self.gelu(self.ffn_up(x))
-        # x = self.ffn_down(activeated_x)
-        # x = residual + x
-        return attn_out
+        x = attn_out + residual
+        residual = x
+        x = self.ln_2(x)
+        activeated_x = self.gelu(self.ffn_up(x))
+        x = self.ffn_down(activeated_x)
+        x = residual + x
+        return x
 
 
 # ===============================================================================
@@ -265,6 +266,16 @@ def run(x_fp32: np.ndarray, params: dict):
     # ##############################################################
     # TOOL
     # ##############################################################
+    def layernorm(input_x, weight, bias, output_x):
+        for i in range(SEQ // NORM_SEQ_TILE):
+            tile_input = input_x[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :]
+            layer_norm_mod(
+                tile_input,
+                weight,
+                bias,
+                output_x[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :],
+            )
+
     def linear_projection(A, B, C, M, N, K):
         for i in range(M // LINEAR_M):
             for j in range(N // LINEAR_N):
@@ -291,20 +302,35 @@ def run(x_fp32: np.ndarray, params: dict):
                         ],
                     )
 
+    def add_residual(residual, x, M, N):
+        """
+        reuse 'linear_accumulate_mod' for residual
+        residual = residual + x
+        """
+        for i in range(M // LINEAR_M):
+            for j in range(N // LINEAR_N):
+                linear_accumulate_mod(
+                    residual[
+                        i * LINEAR_M : (i + 1) * LINEAR_M,
+                        j * LINEAR_N : (j + 1) * LINEAR_N,
+                    ],
+                    x[
+                        i * LINEAR_M : (i + 1) * LINEAR_M,
+                        j * LINEAR_N : (j + 1) * LINEAR_N,
+                    ],
+                    residual[
+                        i * LINEAR_M : (i + 1) * LINEAR_M,
+                        j * LINEAR_N : (j + 1) * LINEAR_N,
+                    ],
+                )
+
     # ##############################################################
     # FORWARD
     # ##############################################################
     x = x_fp32.astype(np.float32)
-    residual = x.reshape(N, EMBD)
-    x = np.empty((N, EMBD), dtype=np.float32)
-    for i in range(N // NORM_SEQ_TILE):
-        tile_input = residual[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :]
-        layer_norm_mod(
-            tile_input,
-            params["W_norm_1"],
-            params["b_norm_1"],
-            x[i * NORM_SEQ_TILE : (i + 1) * NORM_SEQ_TILE, :],
-        )
+    residual = x.reshape(SEQ, EMBD)
+    x = np.empty((SEQ, EMBD), dtype=np.float32)
+    layernorm(residual, params["W_norm_1"], params["b_norm_1"], x)
 
     # qkv projections (M = SEQ, N = EMBD, K = EMBD)
     query = np.zeros((SEQ, EMBD)).astype(np.float32)
@@ -334,16 +360,19 @@ def run(x_fp32: np.ndarray, params: dict):
                         j * ATTN_SCORE_N_TILE : (j + 1) * ATTN_SCORE_N_TILE,
                     ],
                 )
+
     # TODO: mask and safe softmax
     #   fixme ------------------------------
-    mask = np.triu(np.ones((SEQ, SEQ), dtype=np.float32), k=1) * -1e4
-    attention_score += mask
-    attn_score_max = np.max(attention_score, axis=-1, keepdims=True)
-    attn_score_shift = attention_score - attn_score_max
-    exp_score = np.exp(attn_score_shift)
-    sum_ = np.sum(exp_score, axis=-1, keepdims=True)
-    attn_weight = exp_score / sum_
+    mask = torch.triu(torch.ones(SEQ, SEQ), 1).bool()
+    mask = np.repeat(mask[np.newaxis, :, :], N_HEAD, axis=0)
+    # mask.unsqueeze(0)
+    attention_score[mask == 1] = -np.inf
+    # attention_score = attention_score.masked_fill(mask == 1, float("-inf"))
+    tensor_atten_score = torch.from_numpy(attention_score)
+    attn_weight = F.softmax(tensor_atten_score, dim=-1)
+    attn_weight = attn_weight.numpy()
     #   fixme ------------------------------
+
     # attention value
     attn_value = np.zeros((SEQ, EMBD)).astype(np.float32)
     for k in range(N_HEAD):
@@ -355,12 +384,28 @@ def run(x_fp32: np.ndarray, params: dict):
             SEQ,
             HEAD_DIM,
         )
-
     # output projection
+    x = np.zeros((SEQ, EMBD)).astype(np.float32)
     linear_projection(attn_value, params["Wo"], x, SEQ, EMBD, EMBD)
+    # add residual
+    add_residual(residual, x, SEQ, EMBD)
+    # norm
+    layernorm(residual, params["W_norm_2"], params["b_norm_2"], x)
+    # up projection
+    ffn_up_x = np.zeros((SEQ, FFN_HID)).astype(np.float32)
+    linear_projection(x, params["W_up"], ffn_up_x, SEQ, FFN_HID, EMBD)
 
-    #
-    return x
+    # TODO: glue activation
+    #   fixme ------------------------------
+    tensor_ffn_up_x = torch.from_numpy(ffn_up_x)
+    gelu_func = nn.GELU()
+    activeated_x = gelu_func(tensor_ffn_up_x).numpy()
+    #   fixme ------------------------------
+
+    x = np.zeros((SEQ, EMBD)).astype(np.float32)
+    linear_projection(activeated_x, params["W_down"], x, SEQ, EMBD, FFN_HID)
+    add_residual(residual, x, SEQ, EMBD)
+    return residual
 
 
 if __name__ == "__main__":
@@ -387,22 +432,8 @@ if __name__ == "__main__":
 
     # random input
     x_float = torch.randn(SEQ, EMBD)
-    residual = x_float
-    x = ref_model.ln_1(x_float)
-    sample = ref_model.get_sample_attn_(x)
-    attn_out, _ = ref_model.attn(
-        x,
-        x,
-        x,
-        need_weights=False,
-        attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool(),
-    )
-    print(sample)
-    print(attn_out)
-
-    ref_out = ref_model(x_float).detach().numpy()
-    print(ref_out)
-    print(params["b_norm_2"].shape)
+    # test
+    sample = ref_model(x_float)
     allo_out = run(x_float.numpy(), params)
-    np.testing.assert_allclose(allo_out, attn_out, rtol=1e-2)
+    np.testing.assert_allclose(allo_out, sample.detach().numpy(), rtol=1e-2)
     print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
