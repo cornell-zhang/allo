@@ -41,6 +41,7 @@ Model Architecture: https://huggingface.co/openai-community/gpt2
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import allo
 import allo.dataflow as df
@@ -83,46 +84,71 @@ class MiniGPT2(nn.Module):
         self.attn.in_proj_bias.data.zero_()
         self.attn.out_proj.bias.data.zero_()
 
+    def get_sample_attn_(self, x):
+        def scaled_dot_product_attention(q, k, v, attn_mask=None):
+            d_k = q.size(-1)
+            scores = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(
+                torch.tensor(d_k, dtype=torch.float32)
+            )
+
+            if attn_mask is not None:
+                scores = scores.masked_fill(attn_mask == 0, float("-inf"))
+
+            attn = F.softmax(scores, dim=-1)
+            output = torch.matmul(attn, v)
+            return output
+
+        def manual_multihead_attention(x):
+            Wqkv = self.attn.in_proj_weight
+            Wq, Wk, Wv = torch.split(Wqkv, EMBD, dim=0)
+            Wo = self.attn.out_proj.weight
+            # Broadcast mask
+            mask = ~torch.triu(torch.ones(SEQ, SEQ), 1).bool()
+            mask.unsqueeze(0)
+            # Linear projections
+            q = x @ Wq.T
+            k = x @ Wk.T
+            v = x @ Wv.T
+
+            # Reshape to (SEQ, N_HEAD, HEAD_DIM)
+            q = q.view(SEQ, N_HEAD, HEAD_DIM).transpose(0, 1)
+            k = k.view(SEQ, N_HEAD, HEAD_DIM).transpose(0, 1)
+            v = v.view(SEQ, N_HEAD, HEAD_DIM).transpose(0, 1)
+
+            # Compute attention
+            out = scaled_dot_product_attention(q, k, v, mask)
+            # Concatenate heads
+            out = out.transpose(0, 1).contiguous().view(SEQ, EMBD)
+            # Final linear projection
+            out = out @ Wo.T
+            return out
+
+        return manual_multihead_attention(x)
+
     def forward(self, x: torch.Tensor):
         residual = x
         x = self.ln_1(x)
-        # attn_out, _ = self.attn(
-        #     x,
-        #     x,
-        #     x,
-        #     need_weights=False,
-        #     attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool(),
-        # )
+        attn_out, _ = self.attn(
+            x,
+            x,
+            x,
+            need_weights=False,
+            attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool(),
+        )
         # x = attn_out + residual
         # residual = x
         # x = self.ln_2(x)
         # activeated_x = self.gelu(self.ffn_up(x))
         # x = self.ffn_down(activeated_x)
         # x = residual + x
-        return x
+        return attn_out
 
 
 # ===============================================================================
 # Allo Version
 # ===============================================================================
-
-# -------------------------------- configuration --------------------------------
 Ty = float32  # All tensors use float32
-P0, P1 = 2, 1
-# S0 / S1 shard on mesh dims, R = replicated
-LyX = Layout("S0R")  # shard rows (token dim) replicate cols
-LyW = Layout("RS1")  # replicate rows shard cols
-LyY = Layout("S0S1")  # shard rows & cols
-LyR = Layout("R")  # replicated (scalars / vectors)
-
-BN = BATCH * N_HEAD  # 8   flattened (batch*head)
 N = BATCH * SEQ  # 16   flattened (batch*seq)
-NS = BATCH * N_HEAD * SEQ  # 32  flattened for attention matrices
-
-N_local = N // P0
-SEQ_local = SEQ // P0
-NS_local = NS // P0
-BN_local = BN // P0
 
 
 def run(x_fp32: np.ndarray, params: dict):
@@ -308,14 +334,33 @@ def run(x_fp32: np.ndarray, params: dict):
                         j * ATTN_SCORE_N_TILE : (j + 1) * ATTN_SCORE_N_TILE,
                     ],
                 )
-    # softmax
-
+    # TODO: mask and safe softmax
+    #   fixme ------------------------------
+    mask = np.triu(np.ones((SEQ, SEQ), dtype=np.float32), k=1) * -1e4
+    attention_score += mask
+    attn_score_max = np.max(attention_score, axis=-1, keepdims=True)
+    attn_score_shift = attention_score - attn_score_max
+    exp_score = np.exp(attn_score_shift)
+    sum_ = np.sum(exp_score, axis=-1, keepdims=True)
+    attn_weight = exp_score / sum_
+    #   fixme ------------------------------
     # attention value
+    attn_value = np.zeros((SEQ, EMBD)).astype(np.float32)
+    for k in range(N_HEAD):
+        linear_projection(
+            attn_weight[k, :, :],
+            value[:, k * HEAD_DIM : (k + 1) * HEAD_DIM],
+            attn_value[:, k * HEAD_DIM : (k + 1) * HEAD_DIM],
+            SEQ,
+            SEQ,
+            HEAD_DIM,
+        )
 
     # output projection
+    linear_projection(attn_value, params["Wo"], x, SEQ, EMBD, EMBD)
 
     #
-    return attention_score
+    return x
 
 
 if __name__ == "__main__":
@@ -342,12 +387,22 @@ if __name__ == "__main__":
 
     # random input
     x_float = torch.randn(SEQ, EMBD)
+    residual = x_float
+    x = ref_model.ln_1(x_float)
+    sample = ref_model.get_sample_attn_(x)
+    attn_out, _ = ref_model.attn(
+        x,
+        x,
+        x,
+        need_weights=False,
+        attn_mask=torch.triu(torch.ones(SEQ, SEQ), 1).bool(),
+    )
+    print(sample)
+    print(attn_out)
+
     ref_out = ref_model(x_float).detach().numpy()
-    # print(ref_out)
-    # print(params['b_norm_2'].shape)
-    q = ref_out @ params_fp32["Wq"]
-    k = ref_out @ params_fp32["Wk"]
-    attn_ = ((q[:, :64]) @ (k[:, :64].T)) * 0.125
+    print(ref_out)
+    print(params["b_norm_2"].shape)
     allo_out = run(x_float.numpy(), params)
-    np.testing.assert_allclose(allo_out[0], attn_, rtol=1e-2)
+    np.testing.assert_allclose(allo_out, attn_out, rtol=1e-2)
     print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
