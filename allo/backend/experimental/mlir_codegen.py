@@ -1682,7 +1682,16 @@ class CodeGenerator:
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
                     # data with same token should be transferred together
                     # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
-                    launched_dma = []
+                    # fixme: currently, I'm using some tricks to hide the issue (fifo reuse, before launching new task, previous ones using the same fifo may complete safely)
+                    launched_dma: dict[int, aie_d.object_fifo] = {}
+                    fifo_name_to_bd_ids: dict[str, list[int]] = defaultdict(list)
+
+                    def get_free_bd():
+                        for i in range(Config.DMA_MAX_BDS):
+                            if i not in launched_dma:
+                                return i
+                        return -1
+
                     task_groups: list[CodeGenerator.DMATaskWithSameToken] = list(
                         dma_task_groups.values()
                     )
@@ -1696,71 +1705,87 @@ class CodeGenerator:
                             fifo_to_tasks[global_dma.io_port.fifo.name].append(
                                 global_dma
                             )
-                        coalesced_fifo_to_tasks: dict[
-                            str, list[CodeGenerator.GlobalIODMATask]
-                        ] = defaultdict(list)
-                        for fifo, tasks in fifo_to_tasks.items():
-                            left = 0
-                            while left < len(tasks):
-                                base_size = [1, 1, 1, 1]
-                                inc_idx = None
-                                current_offset = Offset4D(
-                                    tasks[left].offset[0],
-                                    tasks[left].offset[1],
-                                    tasks[left].offset[2],
-                                    tasks[left].offset[3],
-                                )
-                                right = left + 1
-                                while right < len(tasks):
-                                    if tasks[left].dtensor == tasks[right].dtensor:
-                                        incomming_offset = Offset4D(
-                                            tasks[right].offset[0],
-                                            tasks[right].offset[1],
-                                            tasks[right].offset[2],
-                                            tasks[right].offset[3],
-                                        )
-                                        idx = current_offset.check_next_offset(
-                                            incomming_offset
-                                        )
-                                        if idx >= 0 and (
-                                            inc_idx is None or inc_idx == idx
-                                        ):
-                                            inc_idx = idx
-                                            base_size[idx] += 1
-                                            current_offset = incomming_offset
-                                            right += 1
-                                        else:
-                                            break
-                                for i in range(4):
-                                    base_size[i] *= tasks[left].size[i]
-                                coalesced_task = CodeGenerator.GlobalIODMATask(
-                                    tasks[left].token,
-                                    tasks[left].start_time,
-                                    tasks[right - 1].end_time,
-                                    tasks[left].io_port,
-                                    tasks[left].dtensor,
-                                    base_size,
-                                    tasks[left].offset,
-                                )
-                                coalesced_fifo_to_tasks[fifo].append(coalesced_task)
-                                left = right
+                        updated = True
+                        while updated:
+                            updated = False
+                            coalesced_fifo_to_tasks: dict[
+                                str, list[CodeGenerator.GlobalIODMATask]
+                            ] = defaultdict(list)
+                            for fifo, tasks in fifo_to_tasks.items():
+                                left = 0
+                                while left < len(tasks):
+                                    base_size = [1, 1, 1, 1]
+                                    inc_idx = None
+                                    current_offset = Offset4D(
+                                        tasks[left].offset[0],
+                                        tasks[left].offset[1],
+                                        tasks[left].offset[2],
+                                        tasks[left].offset[3],
+                                    )
+                                    right = left + 1
+                                    while right < len(tasks):
+                                        if tasks[left].dtensor == tasks[right].dtensor:
+                                            incomming_offset = Offset4D(
+                                                tasks[right].offset[0],
+                                                tasks[right].offset[1],
+                                                tasks[right].offset[2],
+                                                tasks[right].offset[3],
+                                            )
+                                            idx = current_offset.check_next_offset(
+                                                incomming_offset
+                                            )
+                                            if idx >= 0 and (
+                                                inc_idx is None or inc_idx == idx
+                                            ):
+                                                inc_idx = idx
+                                                base_size[idx] += 1
+                                                current_offset = incomming_offset
+                                                right += 1
+                                            else:
+                                                break
+                                    for i in range(4):
+                                        if base_size[i] > 1:
+                                            updated = True
+                                        base_size[i] *= tasks[left].size[i]
+                                    coalesced_task = CodeGenerator.GlobalIODMATask(
+                                        tasks[left].token,
+                                        tasks[left].start_time,
+                                        tasks[right - 1].end_time,
+                                        tasks[left].io_port,
+                                        tasks[left].dtensor,
+                                        base_size,
+                                        tasks[left].offset,
+                                    )
+                                    coalesced_fifo_to_tasks[fifo].append(coalesced_task)
+                                    left = right
+                            fifo_to_tasks = coalesced_fifo_to_tasks
                         coalesced_tasks: list[CodeGenerator.GlobalIODMATask] = []
-                        for tasks in coalesced_fifo_to_tasks.values():
+                        for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks.sort(key=lambda x: x.start_time)
-                        # TODO: assert len(coalesced_tasks) <= Config.DMA_MAX_BDS, or splict based on 'liveness range'
-                        if (
-                            len(coalesced_tasks) + len(launched_dma)
-                            > Config.DMA_MAX_BDS
-                        ):
-                            for launched_fifo in launched_dma:
-                                aiex_d.dma_wait(launched_fifo)
-                            launched_dma.clear()
                         for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
+                            bd_id = get_free_bd()
+                            if (
+                                bd_id < 0
+                                and len(
+                                    fifo_name_to_bd_ids[global_dma.io_port.fifo.name]
+                                )
+                                > 0
+                            ):
+                                for launched_id in fifo_name_to_bd_ids[
+                                    global_dma.io_port.fifo.name
+                                ]:
+                                    aiex_d.dma_wait(launched_dma.pop(launched_id))
+                                fifo_name_to_bd_ids[
+                                    global_dma.io_port.fifo.name
+                                ].clear()
+                            bd_id = get_free_bd()
+                            if bd_id < 0:
+                                raise ValueError("fail to assign buffer descriptor")
                             aiex_d.NpuDmaMemcpyNd(
                                 metadata=dma_fifo,
-                                bd_id=len(launched_dma),
+                                bd_id=bd_id,
                                 mem=runtime_seq_entry_block.arguments[
                                     global_dma.dtensor.global_id
                                 ],
@@ -1769,12 +1794,11 @@ class CodeGenerator:
                                 strides=global_dma.io_port.stride,
                                 issue_token=True,
                             )
-                            launched_dma.append(dma_fifo)
-                            if len(launched_dma) == Config.DMA_MAX_BDS:
-                                for launched_fifo in launched_dma:
-                                    aiex_d.dma_wait(launched_fifo)
-                                launched_dma.clear()
-                    for launched_fifo in launched_dma:
+                            launched_dma[bd_id] = dma_fifo
+                            fifo_name_to_bd_ids[global_dma.io_port.fifo.name].append(
+                                bd_id
+                            )
+                    for launched_fifo in launched_dma.values():
                         aiex_d.dma_wait(launched_fifo)
 
                     aie_d.EndOp()

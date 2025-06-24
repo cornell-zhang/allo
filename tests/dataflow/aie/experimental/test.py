@@ -8,7 +8,6 @@ import numpy as np
 from allo.memory import Layout
 
 
-
 def _test_vector_scalar_add():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
@@ -19,17 +18,14 @@ def _test_vector_scalar_add():
     @df.region()
     def top():
         @df.kernel(mapping=[4])
-        def core(A: Ty[M//4] @ LyA, B: Ty[M] @ LyB):
+        def core(A: Ty[M // 4] @ LyA, B: Ty[M] @ LyB):
             B[:] = allo.add(A, 1)
 
-    A = np.random.randint(0, 100, M//4).astype(np.int32)
+    A = np.random.randint(0, 100, M // 4).astype(np.int32)
     mod = df.build(
-        top, target="aie-mlir",
-        mapping_primitives=[
-            ("bundle", [
-                "core_0", "core_1", "core_2", "core_3"
-            ])
-        ]
+        top,
+        target="aie-mlir",
+        mapping_primitives=[("bundle", ["core_0", "core_1", "core_2", "core_3"])],
     )
     B = np.zeros(M).astype(np.int32)
     mod(A, B)

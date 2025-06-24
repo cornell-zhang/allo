@@ -32,6 +32,7 @@ def _test_pingpong_gemm_4x4x4(TyI, TyO):
         pipe = df.array(
             df.pipe(dtype=TyO, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
         )
+
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()

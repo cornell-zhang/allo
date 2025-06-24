@@ -7,38 +7,30 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
+
 def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
     # chaining to k dimension
     mapping_primitives = []
+    bases: list[list[str]] = []
     for i in range(Pm):
+        bases.append([])
         for j in range(Pn):
             base = f"gemm_0_{i}_{j}"
-            for k in range(1,Pk):
-                mapping_primitives.append(
-                    ("chain", [base,  f"gemm_{k}_{i}_{j}"])
-                )
+            for k in range(1, Pk):
+                mapping_primitives.append(("chain", [base, f"gemm_{k}_{i}_{j}"]))
                 base += f"-gemm_{k}_{i}_{j}"
+            bases[i].append(base)
 
-    for i in range(Pn):
-        mapping_primitives.append(
-            ("bundle", [
-                f"gemm_0_0_{i}-gemm_1_0_{i}-gemm_2_0_{i}-gemm_3_0_{i}",
-                f"gemm_0_1_{i}-gemm_1_1_{i}-gemm_2_1_{i}-gemm_3_1_{i}",
-                # f"gemm_0_{i}_2-gemm_1_{i}_2-gemm_2_{i}_2-gemm_3_{i}_2",
-                # f"gemm_0_{i}_3-gemm_1_{i}_3-gemm_2_{i}_3-gemm_3_{i}_3"
-            ])
-        )
-    # for ele in mapping_primitives:
-    #     print(ele)
+    for i in range(Pm):
+        mapping_primitives.append(("bundle", bases[i]))
     return mapping_primitives
-
 
 
 def _test_pingpong_gemm_4x4x4():
 
     Ty = int16
     M, N, K = 128, 128, 512
-    Pm, Pn, Pk = 2, 4, 4
+    Pm, Pn, Pk = 4, 2, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
     LyA = Layout("S1S2")
@@ -63,11 +55,12 @@ def _test_pingpong_gemm_4x4x4():
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
-    mapping_primitives = gen_pingpong_gemm_mapping_primitive(Pm,Pn,Pk)
+
+    mapping_primitives = gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk)
     mod = df.build(
         top,
         target="aie-mlir",
-        mapping_primitives = mapping_primitives,
+        mapping_primitives=mapping_primitives,
         profile=True,
         warmup=200,
         num_iters=1000,
