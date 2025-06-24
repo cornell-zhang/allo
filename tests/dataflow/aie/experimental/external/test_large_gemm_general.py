@@ -112,4 +112,4 @@ def _test_pingpong_gemm_4x4x4(TyI, TyO):
 
 
 if __name__ == "__main__":
-    _test_pingpong_gemm_4x4x4(int16, int32)
+    _test_pingpong_gemm_4x4x4(int16, int16)

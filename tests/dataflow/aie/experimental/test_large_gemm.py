@@ -21,8 +21,13 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
                 base += f"-gemm_{k}_{i}_{j}"
             bases[i].append(base)
 
-    for i in range(Pm):
-        mapping_primitives.append(("bundle", bases[i]))
+    if Pn // 4 > 1:
+        for i in range(Pm):
+            for j in range(4):
+                mapping_primitives.append(
+                    ("bundle", bases[i][j * (Pn // 4) : (j + 1) * (Pn // 4)])
+                )
+                print(bases[i][j * (Pn // 4) : (j + 1) * (Pn // 4)])
     return mapping_primitives
 
 
@@ -30,7 +35,7 @@ def _test_pingpong_gemm_4x4x4():
 
     Ty = int16
     M, N, K = 128, 128, 512
-    Pm, Pn, Pk = 4, 2, 4
+    Pm, Pn, Pk = 4, 4, 8
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
     LyA = Layout("S1S2")
