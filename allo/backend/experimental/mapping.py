@@ -248,7 +248,9 @@ class LiveDTensorTile:
         )
 
     def __str__(self):
-        return f"{self.tile} [{self.first_use,self.last_use}] {self.is_input}"
+        return (
+            f"{self.token} {self.tile} [{self.first_use,self.last_use}] {self.is_input}"
+        )
 
     def __repr__(self):
         return self.__str__()
@@ -378,12 +380,8 @@ class InitialNode(NodeBase):
         """
         for live_tile_list in self.global_interfaces.values():
             for live_tile in live_tile_list:
-                if live_tile.is_input:
-                    live_tile.first_use = 0
-                    live_tile.last_use = 9
-                else:
-                    live_tile.first_use = 10
-                    live_tile.last_use = 19
+                live_tile.first_use = 0
+                live_tile.last_use = 9
 
 
 class CollocatedNode(NodeBase):

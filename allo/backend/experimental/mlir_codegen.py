@@ -413,7 +413,6 @@ class CodeGenerator:
                     if parsed_function.name.value in compute_core_io
                     else {}
                 )
-                argument_info: dict[str, list[tuple]] = defaultdict(list)
 
                 for i, argument in enumerate(parsed_function.arguments):
                     if not i in func_args:
@@ -645,9 +644,10 @@ class CodeGenerator:
         end_time: int
         io_port: "CodeGenerator.GlobalIODMAPort"
         dtensor: DTensor
+        size: list[int]
         offset: list[int]
 
-    class DMATaskWithToken:
+    class DMATaskWithSameToken:
         def __init__(self, task: "CodeGenerator.GlobalIODMATask"):
             self.start_time: int = task.start_time
             self.end_time: int = task.end_time
@@ -1405,6 +1405,7 @@ class CodeGenerator:
                             + Config.GLOBAL_CODE_OFFSET * io_port.order_tag,
                             io_port=io_port,
                             dtensor=dtensor_,
+                            size=io_port.size,
                             offset=dtensor_.offset_map[
                                 live_tensor_tile.tile.tensor_tile_label
                             ].to_list(),
@@ -1669,10 +1670,10 @@ class CodeGenerator:
                         )
                     )
 
-                dma_task_groups: dict[str, CodeGenerator.DMATaskWithToken] = {}
+                dma_task_groups: dict[str, CodeGenerator.DMATaskWithSameToken] = {}
                 for global_dma in self.global_dma_trough_port:
                     if global_dma.token not in dma_task_groups:
-                        group = CodeGenerator.DMATaskWithToken(global_dma)
+                        group = CodeGenerator.DMATaskWithSameToken(global_dma)
                         dma_task_groups[global_dma.token] = group
                     else:
                         group = dma_task_groups[global_dma.token]
@@ -1682,21 +1683,80 @@ class CodeGenerator:
                     # data with same token should be transferred together
                     # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
                     launched_dma = []
-                    task_groups: list[CodeGenerator.DMATaskWithToken] = list(
+                    task_groups: list[CodeGenerator.DMATaskWithSameToken] = list(
                         dma_task_groups.values()
                     )
                     task_groups.sort(key=lambda x: x.start_time)
                     for task_group in task_groups:
-                        # TODO: assert len(task_group.tasks) <= Config.DMA_MAX_BDS, or splict based on 'liveness range'
+                        task_group.tasks.sort(key=lambda x: x.start_time)
+                        fifo_to_tasks: dict[
+                            str, list[CodeGenerator.GlobalIODMATask]
+                        ] = defaultdict(list)
+                        for global_dma in task_group.tasks:
+                            fifo_to_tasks[global_dma.io_port.fifo.name].append(
+                                global_dma
+                            )
+                        coalesced_fifo_to_tasks: dict[
+                            str, list[CodeGenerator.GlobalIODMATask]
+                        ] = defaultdict(list)
+                        for fifo, tasks in fifo_to_tasks.items():
+                            left = 0
+                            while left < len(tasks):
+                                base_size = [1, 1, 1, 1]
+                                inc_idx = None
+                                current_offset = Offset4D(
+                                    tasks[left].offset[0],
+                                    tasks[left].offset[1],
+                                    tasks[left].offset[2],
+                                    tasks[left].offset[3],
+                                )
+                                right = left + 1
+                                while right < len(tasks):
+                                    if tasks[left].dtensor == tasks[right].dtensor:
+                                        incomming_offset = Offset4D(
+                                            tasks[right].offset[0],
+                                            tasks[right].offset[1],
+                                            tasks[right].offset[2],
+                                            tasks[right].offset[3],
+                                        )
+                                        idx = current_offset.check_next_offset(
+                                            incomming_offset
+                                        )
+                                        if idx >= 0 and (
+                                            inc_idx is None or inc_idx == idx
+                                        ):
+                                            inc_idx = idx
+                                            base_size[idx] += 1
+                                            current_offset = incomming_offset
+                                            right += 1
+                                        else:
+                                            break
+                                for i in range(4):
+                                    base_size[i] *= tasks[left].size[i]
+                                coalesced_task = CodeGenerator.GlobalIODMATask(
+                                    tasks[left].token,
+                                    tasks[left].start_time,
+                                    tasks[right - 1].end_time,
+                                    tasks[left].io_port,
+                                    tasks[left].dtensor,
+                                    base_size,
+                                    tasks[left].offset,
+                                )
+                                coalesced_fifo_to_tasks[fifo].append(coalesced_task)
+                                left = right
+                        coalesced_tasks: list[CodeGenerator.GlobalIODMATask] = []
+                        for tasks in coalesced_fifo_to_tasks.values():
+                            coalesced_tasks.extend(tasks)
+                        coalesced_tasks.sort(key=lambda x: x.start_time)
+                        # TODO: assert len(coalesced_tasks) <= Config.DMA_MAX_BDS, or splict based on 'liveness range'
                         if (
-                            len(task_group.tasks) + len(launched_dma)
+                            len(coalesced_tasks) + len(launched_dma)
                             > Config.DMA_MAX_BDS
                         ):
                             for launched_fifo in launched_dma:
                                 aiex_d.dma_wait(launched_fifo)
                             launched_dma.clear()
-                        task_group.tasks.sort(key=lambda x: x.start_time)
-                        for global_dma in task_group.tasks:
+                        for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
                             aiex_d.NpuDmaMemcpyNd(
                                 metadata=dma_fifo,
@@ -1705,7 +1765,7 @@ class CodeGenerator:
                                     global_dma.dtensor.global_id
                                 ],
                                 offsets=global_dma.offset,
-                                sizes=global_dma.io_port.size,
+                                sizes=global_dma.size,
                                 strides=global_dma.io_port.stride,
                                 issue_token=True,
                             )

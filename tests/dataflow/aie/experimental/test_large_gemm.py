@@ -7,12 +7,38 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
+def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
+    # chaining to k dimension
+    mapping_primitives = []
+    for i in range(Pm):
+        for j in range(Pn):
+            base = f"gemm_0_{i}_{j}"
+            for k in range(1,Pk):
+                mapping_primitives.append(
+                    ("chain", [base,  f"gemm_{k}_{i}_{j}"])
+                )
+                base += f"-gemm_{k}_{i}_{j}"
+
+    for i in range(Pn):
+        mapping_primitives.append(
+            ("bundle", [
+                f"gemm_0_0_{i}-gemm_1_0_{i}-gemm_2_0_{i}-gemm_3_0_{i}",
+                f"gemm_0_1_{i}-gemm_1_1_{i}-gemm_2_1_{i}-gemm_3_1_{i}",
+                # f"gemm_0_{i}_2-gemm_1_{i}_2-gemm_2_{i}_2-gemm_3_{i}_2",
+                # f"gemm_0_{i}_3-gemm_1_{i}_3-gemm_2_{i}_3-gemm_3_{i}_3"
+            ])
+        )
+    # for ele in mapping_primitives:
+    #     print(ele)
+    return mapping_primitives
+
+
 
 def _test_pingpong_gemm_4x4x4():
 
     Ty = int16
     M, N, K = 128, 128, 512
-    Pm, Pn, Pk = 4, 4, 4
+    Pm, Pn, Pk = 2, 4, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
     LyA = Layout("S1S2")
@@ -37,60 +63,11 @@ def _test_pingpong_gemm_4x4x4():
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
-
+    mapping_primitives = gen_pingpong_gemm_mapping_primitive(Pm,Pn,Pk)
     mod = df.build(
         top,
         target="aie-mlir",
-        mapping_primitives=[
-            ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-            ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
-            ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
-            ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-            ("chain", ["gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1"]),
-            ("chain", ["gemm_0_0_1-gemm_1_0_1-gemm_2_0_1", "gemm_3_0_1"]),
-            ("chain", ["gemm_0_0_2", "gemm_1_0_2"]),
-            ("chain", ["gemm_0_0_2-gemm_1_0_2", "gemm_2_0_2"]),
-            ("chain", ["gemm_0_0_2-gemm_1_0_2-gemm_2_0_2", "gemm_3_0_2"]),
-            ("chain", ["gemm_0_0_3", "gemm_1_0_3"]),
-            ("chain", ["gemm_0_0_3-gemm_1_0_3", "gemm_2_0_3"]),
-            ("chain", ["gemm_0_0_3-gemm_1_0_3-gemm_2_0_3", "gemm_3_0_3"]),
-            ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-            ("chain", ["gemm_0_1_0-gemm_1_1_0", "gemm_2_1_0"]),
-            ("chain", ["gemm_0_1_0-gemm_1_1_0-gemm_2_1_0", "gemm_3_1_0"]),
-            ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
-            ("chain", ["gemm_0_1_1-gemm_1_1_1", "gemm_2_1_1"]),
-            ("chain", ["gemm_0_1_1-gemm_1_1_1-gemm_2_1_1", "gemm_3_1_1"]),
-            ("chain", ["gemm_0_1_2", "gemm_1_1_2"]),
-            ("chain", ["gemm_0_1_2-gemm_1_1_2", "gemm_2_1_2"]),
-            ("chain", ["gemm_0_1_2-gemm_1_1_2-gemm_2_1_2", "gemm_3_1_2"]),
-            ("chain", ["gemm_0_1_3", "gemm_1_1_3"]),
-            ("chain", ["gemm_0_1_3-gemm_1_1_3", "gemm_2_1_3"]),
-            ("chain", ["gemm_0_1_3-gemm_1_1_3-gemm_2_1_3", "gemm_3_1_3"]),
-            ("chain", ["gemm_0_2_0", "gemm_1_2_0"]),
-            ("chain", ["gemm_0_2_0-gemm_1_2_0", "gemm_2_2_0"]),
-            ("chain", ["gemm_0_2_0-gemm_1_2_0-gemm_2_2_0", "gemm_3_2_0"]),
-            ("chain", ["gemm_0_2_1", "gemm_1_2_1"]),
-            ("chain", ["gemm_0_2_1-gemm_1_2_1", "gemm_2_2_1"]),
-            ("chain", ["gemm_0_2_1-gemm_1_2_1-gemm_2_2_1", "gemm_3_2_1"]),
-            ("chain", ["gemm_0_2_2", "gemm_1_2_2"]),
-            ("chain", ["gemm_0_2_2-gemm_1_2_2", "gemm_2_2_2"]),
-            ("chain", ["gemm_0_2_2-gemm_1_2_2-gemm_2_2_2", "gemm_3_2_2"]),
-            ("chain", ["gemm_0_2_3", "gemm_1_2_3"]),
-            ("chain", ["gemm_0_2_3-gemm_1_2_3", "gemm_2_2_3"]),
-            ("chain", ["gemm_0_2_3-gemm_1_2_3-gemm_2_2_3", "gemm_3_2_3"]),
-            ("chain", ["gemm_0_3_0", "gemm_1_3_0"]),
-            ("chain", ["gemm_0_3_0-gemm_1_3_0", "gemm_2_3_0"]),
-            ("chain", ["gemm_0_3_0-gemm_1_3_0-gemm_2_3_0", "gemm_3_3_0"]),
-            ("chain", ["gemm_0_3_1", "gemm_1_3_1"]),
-            ("chain", ["gemm_0_3_1-gemm_1_3_1", "gemm_2_3_1"]),
-            ("chain", ["gemm_0_3_1-gemm_1_3_1-gemm_2_3_1", "gemm_3_3_1"]),
-            ("chain", ["gemm_0_3_2", "gemm_1_3_2"]),
-            ("chain", ["gemm_0_3_2-gemm_1_3_2", "gemm_2_3_2"]),
-            ("chain", ["gemm_0_3_2-gemm_1_3_2-gemm_2_3_2", "gemm_3_3_2"]),
-            ("chain", ["gemm_0_3_3", "gemm_1_3_3"]),
-            ("chain", ["gemm_0_3_3-gemm_1_3_3", "gemm_2_3_3"]),
-            ("chain", ["gemm_0_3_3-gemm_1_3_3-gemm_2_3_3", "gemm_3_3_3"]),
-        ],
+        mapping_primitives = mapping_primitives,
         profile=True,
         warmup=200,
         num_iters=1000,
