@@ -802,10 +802,17 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
             code += format_str(
                 f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
             )
-            code += format_str("run.wait();")
+            code += format_str("ert_cmd_state r = run.wait();")
             code += format_str(
                 "\nauto end = std::chrono::high_resolution_clock::now();", strip=False
             )
+            code += format_str("if (r != ERT_CMD_STATE_COMPLETED) {")
+            with format_code(indent=8):
+                code += format_str(
+                    'std::cout << "Kernel did not complete. Returned status: " << r << "\\n";'
+                )
+                code += format_str("return 1;")
+            code += format_str("}")
             code += format_str(
                 "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
             )
@@ -819,7 +826,14 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
                 code += format_str(
                     f"auto run = kernel(opcode, bo_instr, instr_v.size(), {inbufs}, {outbufs});"
                 )
-                code += format_str("run.wait();")
+                code += format_str("ert_cmd_state r = run.wait();")
+                code += format_str("if (r != ERT_CMD_STATE_COMPLETED) {")
+                with format_code(indent=12):
+                    code += format_str(
+                        'std::cout << "Kernel did not complete. Returned status: " << r << "\\n";'
+                    )
+                    code += format_str("return 1;")
+                code += format_str("}")
             code += format_str("}")
             code += format_str("float total_npu_time = 0;")
             code += format_str("for (size_t i = 0; i < n_test_iterations; i++) {")
