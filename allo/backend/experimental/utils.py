@@ -50,12 +50,21 @@ class Config:
     GLOBAL_CODE_OFFSET = 10000
 
 
+# reference: https://github.com/Xilinx/mlir-aie/blob/v1.0/docs/Devices.md
 device_config_map = {
     "npu1": {"mesh": (4, 5), "mem_tile_num": 5, "shim_tile_num": 4},
     "npu1_4col": {"mesh": (4, 4), "mem_tile_num": 4, "shim_tile_num": 4},
     "npu1_3col": {"mesh": (4, 3), "mem_tile_num": 3, "shim_tile_num": 3},
     "npu1_2col": {"mesh": (4, 2), "mem_tile_num": 2, "shim_tile_num": 2},
     "npu1_1col": {"mesh": (4, 1), "mem_tile_num": 1, "shim_tile_num": 1},
+    "npu2": {"mesh": (4, 8), "mem_tile_num": 8, "shim_tile_num": 8},
+    "npu2_7col": {"mesh": (4, 7), "mem_tile_num": 7, "shim_tile_num": 7},
+    "npu2_6col": {"mesh": (4, 6), "mem_tile_num": 6, "shim_tile_num": 6},
+    "npu2_5col": {"mesh": (4, 5), "mem_tile_num": 5, "shim_tile_num": 5},
+    "npu2_4col": {"mesh": (4, 4), "mem_tile_num": 4, "shim_tile_num": 4},
+    "npu2_3col": {"mesh": (4, 3), "mem_tile_num": 3, "shim_tile_num": 3},
+    "npu2_2col": {"mesh": (4, 2), "mem_tile_num": 2, "shim_tile_num": 2},
+    "npu2_1col": {"mesh": (4, 1), "mem_tile_num": 1, "shim_tile_num": 1},
 }
 
 
@@ -250,8 +259,8 @@ def inject_external_kernels(
 ) -> tuple[dict[str, bool], dict]:
     """
     Inject external kernels for compute cores.
-    TODO: is it possible to use cpp pass to inject? 
-            Ideally, we may want to pass the rewrite rule of each external kernel 
+    TODO: is it possible to use cpp pass to inject?
+            Ideally, we may want to pass the rewrite rule of each external kernel
             and use rewriter to perform pattern matching and replacement.
 
     For each top-level (non-private, non-top) function in the module, the function scans

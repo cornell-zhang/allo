@@ -231,6 +231,13 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if "npu1" in device_type:
+            self.device = "npu1"
+        elif "npu2" in device_type:
+            self.device = "npu2"
+        else:
+            raise ValueError("Unsupported device type.")
+
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -320,7 +327,7 @@ class AIE_MLIRModule:
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
                 f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2{"p" if self.device == "npu2" else ""}-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
             with subprocess.Popen(cmd, shell=True) as process:
                 process.wait()
             if process.returncode != 0:
