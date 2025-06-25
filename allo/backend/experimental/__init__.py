@@ -266,7 +266,10 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.bundle(arg_list)
         # inject external kernels
         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module, self.top_func_name, self.external_kernel_lib
+            self.allo_module,
+            self.top_func_name,
+            self.external_kernel_lib,
+            "aie2" if self.device == "npu1" else "aie2p",
         )
         # record original allo mlir
         with open(
@@ -473,7 +476,10 @@ class AIE_MLIRModule:
 
         # - extract external kernels
         use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module, self.top_func_name, self.external_kernel_lib
+            self.allo_module,
+            self.top_func_name,
+            self.external_kernel_lib,
+            "aie2" if self.device == "npu1" else "aie2p",
         )
         # record original allo mlir
         with open(

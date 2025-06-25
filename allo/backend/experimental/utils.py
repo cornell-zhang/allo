@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.dialects import func as allo_func_d
+from ..._mlir.dialects import arith as allo_arith_d
 from ..utils import format_str, format_code
 from ...memory import DTensor
 from .external_kernel import ExternalModule
@@ -256,6 +257,7 @@ def inject_external_kernels(
     module: allo_ir.ir.Module,
     top_function_name,
     external_kernel_lib: dict[str, ExternalModule],
+    lib_dir: str = "aie2",
 ) -> tuple[dict[str, bool], dict[str, tuple[str, str]], set[str]]:
     """
     Inject external kernels for compute cores.
@@ -296,8 +298,33 @@ def inject_external_kernels(
             # 2. builtin external kernel
             kernel_code, kernel_header = "", ""
             call_builtin = False
+            # fill with zero
+            if op.operation.name == "linalg.fill" and isinstance(
+                op.inputs[0].owner.opview, allo_arith_d.ConstantOp
+            ):
+                if (
+                    op.inputs[0].owner.opview.literal_value == 0
+                    and len(op.outputs[0].type.shape) <= 2
+                ):
+                    M = (
+                        1
+                        if len(op.outputs[0].type.shape) < 2
+                        else op.outputs[0].type.shape[0]
+                    )
+                    N = op.outputs[0].type.shape[-1]
+                    dtype = str(op.outputs[0].type.element_type)
+                    ctype = aie_external_kernel_ctype_map[dtype]
+                    include_src.add(f'#include "{lib_dir}/zero.cc"\n')
+                    use_external_kernels[df_function_name] = True
+                    kernel_name = f"fill_zeros_{dtype}_{M}_{N}_vector"
+                    kernel_code += f"void {kernel_name}({ctype} *A)"
+                    kernel_code += " {\n"
+                    kernel_code += f"  zero_vectorized<{ctype}, {M}, {N}>(A);\n"
+                    kernel_code += "}\n\n"
+                    call_builtin = True
+                    operands = [op.outputs[0]]
             # vec add/mul
-            if op.operation.name in {"linalg.add", "linalg.mul"}:
+            elif op.operation.name in {"linalg.add", "linalg.mul"}:
                 op_name = op.operation.name.split(".")[1]
                 include_src.add(f'#include "aie2/{op_name}.cc"\n')
                 dtype = str(op.inputs[0].type.element_type)
@@ -311,6 +338,11 @@ def inject_external_kernels(
                 kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
                 kernel_code += "}\n\n"
                 call_builtin = True
+                operands = [
+                    op.inputs[0],
+                    op.inputs[1],
+                    op.outputs[0],
+                ]
             # matmul
             elif op.operation.name == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape
@@ -332,21 +364,23 @@ def inject_external_kernels(
                     kernel_header += f"#define DIM_K {K}\n"
                     kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
                     call_builtin = True
+                    operands = [
+                        op.inputs[0],
+                        op.inputs[1],
+                        op.outputs[0],
+                    ]
             if call_builtin:
+                operand_types = [x.type for x in operands]
                 # Inject AIE kernel
                 func_type = allo_func_d.FunctionType.get(
-                    [
-                        op.inputs[0].type,
-                        op.inputs[1].type,
-                        op.outputs[0].type,
-                    ],
+                    operand_types,
                     [],
                 )
                 # replace operation
                 allo_func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(kernel_name),
-                    [op.inputs[0], op.inputs[1], op.outputs[0]],
+                    operands,
                     ip=InsertionPoint(op),
                 )
                 op.erase()
@@ -567,8 +601,11 @@ def lib_kernel_replacement(function: allo_func_d.FuncOp):
                 init_zero_op, acc_op = None, None
                 for operand in uses:
                     op = operand.owner
-                    if isinstance(op, allo_func_d.CallOp) and "@add" in str(op.callee):
-                        acc_op = op
+                    if isinstance(op, allo_func_d.CallOp):
+                        if "@add" in str(op.callee):
+                            acc_op = op
+                        elif "@fill_zeros" in str(op.callee):
+                            init_zero_op = op
                     elif op.attributes.__contains__(
                         "op_name"
                     ) and "matmul_init_zero_0" in str(
