@@ -1671,6 +1671,7 @@ class CodeGenerator:
                     )
 
                 dma_task_groups: dict[str, CodeGenerator.DMATaskWithSameToken] = {}
+                fifo_workload_map: dict[str, int] = {}
                 for global_dma in self.global_dma_trough_port:
                     if global_dma.token not in dma_task_groups:
                         group = CodeGenerator.DMATaskWithSameToken(global_dma)
@@ -1678,6 +1679,10 @@ class CodeGenerator:
                     else:
                         group = dma_task_groups[global_dma.token]
                         group.add(global_dma)
+                    if global_dma.io_port.fifo.name not in fifo_workload_map:
+                        fifo_workload_map[global_dma.io_port.fifo.name] = 0
+                    fifo_workload_map[global_dma.io_port.fifo.name] += 1
+                assert len(fifo_workload_map) <= Config.DMA_MAX_BDS
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
                     # data with same token should be transferred together
@@ -1685,9 +1690,21 @@ class CodeGenerator:
                     # fixme: currently, I'm using some tricks to hide the issue (fifo reuse, before launching new task, previous ones using the same fifo may complete safely)
                     launched_dma: dict[int, aie_d.object_fifo] = {}
                     fifo_name_to_bd_ids: dict[str, list[int]] = defaultdict(list)
+                    fifo_name_to_dedicated_bd_ids: dict[str, list[int]] = defaultdict(
+                        list
+                    )
+                    sorted_fifo_names = sorted(
+                        fifo_workload_map,
+                        key=lambda k: fifo_workload_map[k],
+                        reverse=True,
+                    )
+                    for i in range(Config.DMA_MAX_BDS):
+                        fifo_name_to_dedicated_bd_ids[
+                            sorted_fifo_names[i % len(sorted_fifo_names)]
+                        ].append(i)
 
-                    def get_free_bd():
-                        for i in range(Config.DMA_MAX_BDS):
+                    def get_free_bd(fifo_name: str):
+                        for i in fifo_name_to_dedicated_bd_ids[fifo_name]:
                             if i not in launched_dma:
                                 return i
                         return -1
@@ -1765,7 +1782,7 @@ class CodeGenerator:
                         coalesced_tasks.sort(key=lambda x: x.start_time)
                         for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
-                            bd_id = get_free_bd()
+                            bd_id = get_free_bd(global_dma.io_port.fifo.name)
                             if (
                                 bd_id < 0
                                 and len(
@@ -1780,7 +1797,7 @@ class CodeGenerator:
                                 fifo_name_to_bd_ids[
                                     global_dma.io_port.fifo.name
                                 ].clear()
-                            bd_id = get_free_bd()
+                            bd_id = get_free_bd(global_dma.io_port.fifo.name)
                             if bd_id < 0:
                                 raise ValueError("fail to assign buffer descriptor")
                             aiex_d.NpuDmaMemcpyNd(
