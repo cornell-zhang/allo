@@ -245,6 +245,13 @@ class AIE_MLIRModule:
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
+        # record original allo mlir
+        with open(
+            os.path.join(self.project_dir, "original_virtual.mlir"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(str(self.allo_module))
 
         self.analyze_kernel_parameters()
         self._init_virtual_graph()
@@ -305,7 +312,9 @@ class AIE_MLIRModule:
         self.post_codegen_build(injected_kernels, include_src)
         return self
 
-    def post_codegen_build(self, injected_kernels, include_src):
+    def post_codegen_build(
+        self, injected_kernels: dict[str, tuple[str, str]], include_src: set[str]
+    ):
         with open(
             os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"
         ) as f:
@@ -322,12 +331,16 @@ class AIE_MLIRModule:
                 ):
                     continue
                 shutil.copy(src_path, target_path)
-            kernel_code = codegen_external_kernels(injected_kernels, include_src)
+            kernel_code = codegen_external_kernels(
+                injected_kernels,
+                include_src,
+                "aie2" if self.device == "npu1" else "aie2p",
+            )
             with open(
                 os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
             ) as f:
                 f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2{"p" if self.device == "npu2" else ""}-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/aie2 -I. -c external.cc -o external.o"
+            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2{"p" if self.device == "npu2" else ""}-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/ -I. -c external.cc -o external.o"
             with subprocess.Popen(cmd, shell=True) as process:
                 process.wait()
             if process.returncode != 0:

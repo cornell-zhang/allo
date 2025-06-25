@@ -1797,7 +1797,7 @@ class CodeGenerator:
                                 fifo_name_to_bd_ids[
                                     global_dma.io_port.fifo.name
                                 ].clear()
-                            bd_id = get_free_bd(global_dma.io_port.fifo.name)
+                                bd_id = get_free_bd(global_dma.io_port.fifo.name)
                             if bd_id < 0:
                                 raise ValueError("fail to assign buffer descriptor")
                             aiex_d.NpuDmaMemcpyNd(
