@@ -18,7 +18,7 @@ from ..._mlir.ir import Type
 
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
-from .external_kernel import ExternalModule
+from .external_kernel import ExternalModule, ExternalModuleBase
 
 from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from .mlir_codegen import CodeGenerator, Argument, Stream
@@ -69,7 +69,7 @@ class AIE_MLIRModule:
         self.external_kernel_lib: dict[str, ExternalModule] = {}
         for ext_kernel in ext_libs:
             if isinstance(ext_kernel, ExternalModule):
-                self.external_kernel_lib[ext_kernel.top] = ext_kernel
+                self.external_kernel_lib[ext_kernel.name] = ext_kernel
 
         self.func_args: dict[str, list[Argument]] = {}
         self.streams: dict[str, Stream] = {}
@@ -137,7 +137,9 @@ class AIE_MLIRModule:
             self.allo_module, self.streams, self.core_func_args, use_external_kernels
         )
 
-    def analyze_kernel_parameters(self):
+    def analyze_kernel_parameters(
+        self, injected_external_kernels: dict[str:ExternalModuleBase]
+    ):
         """
         Analyze the parameters of each df.kernel.
 
@@ -157,7 +159,7 @@ class AIE_MLIRModule:
             self.core_func_args[kernel_name] = {}
             # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
             in_idx_list, out_idx_list = analyze_read_write_patterns(
-                kernel, self.external_kernel_lib
+                kernel, injected_external_kernels
             )
             for io_idx_list, io_type in (
                 (in_idx_list, "in"),
@@ -251,15 +253,17 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
 
-        self.analyze_kernel_parameters()
-        # inject external kernels 
+        # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
-        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module,
-            self.top_func_name,
-            self.external_kernel_lib,
-            "aie2" if self.device == "npu1" else "aie2p",
+        use_external_kernels, injected_external_kernels, include_src = (
+            inject_external_kernels(
+                self.allo_module,
+                self.top_func_name,
+                self.external_kernel_lib,
+                "aie2" if self.device == "npu1" else "aie2p",
+            )
         )
+        self.analyze_kernel_parameters(injected_external_kernels)
         self._init_virtual_graph(use_external_kernels)
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
@@ -311,11 +315,11 @@ class AIE_MLIRModule:
         with self.aie_module.context:
             aie_pass_manager.PassManager.parse(pipeline).run(self.aie_module.operation)
 
-        self.post_codegen_build(injected_kernels, include_src)
+        self.post_codegen_build(injected_external_kernels, include_src)
         return self
 
     def post_codegen_build(
-        self, injected_kernels: dict[str, tuple[str, str]], include_src: set[str]
+        self, injected_kernels: dict[str, ExternalModuleBase], include_src: set[str]
     ):
         with open(
             os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"
@@ -474,11 +478,13 @@ class AIE_MLIRModule:
         inputs, outputs = self.collect_io(core_func_groups)
 
         # - extract external kernels
-        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module,
-            self.top_func_name,
-            self.external_kernel_lib,
-            "aie2" if self.device == "npu1" else "aie2p",
+        use_external_kernels, injected_external_kernels, include_src = (
+            inject_external_kernels(
+                self.allo_module,
+                self.top_func_name,
+                self.external_kernel_lib,
+                "aie2" if self.device == "npu1" else "aie2p",
+            )
         )
         # record original allo mlir
         with open(
@@ -507,7 +513,7 @@ class AIE_MLIRModule:
             self.core_func_args,
             self.streams,
         )
-        self.post_codegen_build(injected_kernels, include_src)
+        self.post_codegen_build(injected_external_kernels, include_src)
         return self
 
     def help(self):

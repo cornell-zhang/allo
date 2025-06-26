@@ -7,6 +7,42 @@ from pyparsing import Keyword, Literal, nestedExpr, originalTextFor
 from ..ip import parse_cpp_function
 
 
+class ExternalModuleBase:
+    def __init__(
+        self,
+        name: str,
+        input_idx: list[int],
+        output_idx: list[int],
+        kernel_code: str = "",
+        kernel_header: str = "",
+    ):
+        self.name = name
+        self.input_idx = input_idx
+        self.output_idx = output_idx
+        self.kernel_code = kernel_code
+        self.kernel_header = kernel_header
+
+
+class BuiltinExternalModule(ExternalModuleBase):
+    def __init__(
+        self,
+        name: str,
+        input_idx: list[int],
+        output_idx: list[int],
+        kernel_code: str,
+        kernel_header: str,
+        arg_layout=None,
+    ):
+        super().__init__(
+            name=name,
+            input_idx=input_idx,
+            output_idx=output_idx,
+            kernel_code=kernel_code,
+            kernel_header=kernel_header,
+        )
+        self.arg_layout = arg_layout
+
+
 def extract_extern_C_blocks(code: str) -> list[str]:
     """
     Scan `code` for all occurrences of:
@@ -31,7 +67,7 @@ def extract_extern_C_blocks(code: str) -> list[str]:
     return blocks
 
 
-class ExternalModule:
+class ExternalModule(ExternalModuleBase):
     """
     User defined external kernel for aie
     """
@@ -39,27 +75,27 @@ class ExternalModule:
     def __init__(
         self, top: str, impl_path: str, input_idx: list[int], output_idx: list[int]
     ):
-        self.top = top  # identifier
+        super().__init__(
+            name=top,
+            input_idx=input_idx,
+            output_idx=output_idx,
+        )
         self.impl_path = impl_path
         self.filename = os.path.basename(impl_path)
         assert self.filename.endswith(
             ".cc"
         ), f"Expected a .cc file, but got: {self.filename}"
         self.filename = self.filename.removesuffix(".cc") + "_.cc"
-
-        self.input_idx = input_idx
-        self.output_idx = output_idx
-
         with open(self.impl_path, "r", encoding="utf-8") as f:
             code = f.read()
             extern_C_blocks = extract_extern_C_blocks(code)
             all_functions = []
             for block in extern_C_blocks:
-                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.top}\s*\([^)]*\)\s*{{"
+                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.name}\s*\([^)]*\)\s*{{"
                 functions = re.findall(func_pattern, block)
                 all_functions.extend(functions)
             assert len(all_functions) == 1, "invalid external function"
-            self.args = parse_cpp_function(all_functions[0], self.top)
+            self.args = parse_cpp_function(all_functions[0], self.name)
         assert (self.args is not None) or len(self.args) != len(self.input_idx) + len(
             self.output_idx
         ), f"Failed to parse {self.impl}"
