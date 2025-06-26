@@ -126,7 +126,7 @@ class AIE_MLIRModule:
     # ############################################################
     # Build
     # ############################################################
-    def _init_virtual_graph(self):
+    def _init_virtual_graph(self, use_external_kernels: dict[str, bool]):
         assert (
             self.core_func_args is not None
             and self.global_inputs is not None
@@ -134,9 +134,7 @@ class AIE_MLIRModule:
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
-            self.allo_module,
-            self.streams,
-            self.core_func_args,
+            self.allo_module, self.streams, self.core_func_args, use_external_kernels
         )
 
     def analyze_kernel_parameters(self):
@@ -254,7 +252,15 @@ class AIE_MLIRModule:
             f.write(str(self.allo_module))
 
         self.analyze_kernel_parameters()
-        self._init_virtual_graph()
+        # inject external kernels 
+        # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
+        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
+            self.allo_module,
+            self.top_func_name,
+            self.external_kernel_lib,
+            "aie2" if self.device == "npu1" else "aie2p",
+        )
+        self._init_virtual_graph(use_external_kernels)
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -264,13 +270,7 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
-        # inject external kernels
-        use_external_kernels, injected_kernels, include_src = inject_external_kernels(
-            self.allo_module,
-            self.top_func_name,
-            self.external_kernel_lib,
-            "aie2" if self.device == "npu1" else "aie2p",
-        )
+
         # record original allo mlir
         with open(
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
@@ -301,7 +301,6 @@ class AIE_MLIRModule:
         self.aie_module = code_generator.aie_codegen_nightly(
             core_funcs,
             external_funcs,
-            use_external_kernels,
         )
 
         # TODO: opt passes on aie-mlir

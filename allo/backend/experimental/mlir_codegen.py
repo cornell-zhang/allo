@@ -4,7 +4,7 @@
 
 import re
 import os
-from collections import defaultdict, Counter
+from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 
@@ -15,8 +15,6 @@ import aie.dialects.aiex as aiex_d
 import aie.dialects.arith as aie_arith_d
 import aie.dialects.func as aie_func_d
 import aie.dialects.scf as aie_scf_d
-import aie.dialects._memref_ops_gen as aie_memref_d
-
 import aie.ir as aie_ir
 
 # =======================
@@ -48,7 +46,6 @@ from ..ai_engine import map_kernels_to_device_mesh
 from .mapping import (
     SwitchNode,
     PEInterface,
-    LiveDTensorTile,
     LiveDTensorTileGroup,
     DTensorTileGroup,
     ComputationGraph,
@@ -1543,7 +1540,6 @@ class CodeGenerator:
         self,
         core_funcs: list[allo_func_d.FuncOp],
         external_funcs: list[allo_func_d.FuncOp],
-        use_external_kernels: dict[str, bool],
     ) -> aie_ir.Module:
         # mapping to physical/logical
         # TODO: co-designed mapping to different types of tiles
@@ -1615,6 +1611,7 @@ class CodeGenerator:
                             dma_fifo.data_shape,
                             get_element_type(str(dma_fifo.dtype)),
                         ),
+                        dimensionsToStream=dma_fifo.dimensions_to_stream,
                     )
                 # link fifos: in aie, mem tile serves as the linkages
                 for dma_node in self.used_mem_tiles:
@@ -1643,7 +1640,11 @@ class CodeGenerator:
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
                         link_with=(
-                            "external.o" if use_external_kernels[func_name] else None
+                            "external.o"
+                            if self.virtual_computation_graph.nodes[
+                                func_name
+                            ].use_external_kernel
+                            else None
                         ),
                     )
                     if self.global_ip is None:
@@ -1828,7 +1829,7 @@ class CodeGenerator:
         external_funcs: list[allo_func_d.FuncOp],
         inputs,
         outputs,
-        use_external_kernels: dict[str, bool],
+        use_external_kernels: bool,
     ) -> aie_ir.Module:
         """
         Generate an AIE MLIR module.

@@ -351,14 +351,20 @@ def build(
             stream_types_dict,
             s.ext_libs,
         )
+        if os.getenv("NPU2") == "1":
+            device_type = "npu2"
+        else:
+            device_type = "npu1_4col"
         if use_default_codegen:
             aie_mod.build(
+                device_type=device_type,
                 profile=profile,
                 warmup=warmup,
                 num_iters=num_iters,
             )
         elif mapping_primitives is not None:
             aie_mod.build_experimental(
+                device_type=device_type,
                 enable_virtual_mapping=True,
                 mapping_primitives=mapping_primitives,
                 profile=profile,
@@ -367,6 +373,7 @@ def build(
             )
         else:
             aie_mod.build_experimental(
+                device_type=device_type,
                 enable_virtual_mapping=True,
                 mapping_primitives=[],
                 profile=profile,

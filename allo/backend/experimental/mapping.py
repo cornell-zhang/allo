@@ -118,6 +118,7 @@ class FIFO:
         self.data_shape = data_shape
         self.dtype = dtype
         self.depth = depth
+        self.dimensions_to_stream = []
 
     def __str__(self):
         return f"FIFO({self.name}, src={self.src}, dst={self.dst}, {self.dtype}{self.data_shape}, depth={self.depth})"
@@ -319,6 +320,7 @@ class NodeBase:
         self,
         name: str = None,
         func: func_d.FuncOp = None,
+        use_external_kernel: bool = False,
         tag: str = None,
         repeat: int = 0,
         length: int = 1,
@@ -327,6 +329,7 @@ class NodeBase:
         NodeBase.node_list.append(self)
         self.name = name if name is not None else f"function_{self.id}"
         self.func: func_d.FuncOp = func
+        self.use_external_kernel = use_external_kernel
         self.repeat: int = repeat
         self.length: int = length
         self.op_tag: str = tag
@@ -370,8 +373,10 @@ class NodeBase:
 
 
 class InitialNode(NodeBase):
-    def __init__(self, func: func_d.FuncOp, tag: str):
-        super().__init__(func.attributes["sym_name"].value, func, tag, 1)
+    def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
+        super().__init__(
+            func.attributes["sym_name"].value, func, use_external_kernel, tag, 1
+        )
 
     def init_live_tile(self):
         """
@@ -396,6 +401,7 @@ class CollocatedNode(NodeBase):
         super().__init__(name=name, func=func, tag=tag, repeat=repeat, length=length)
 
     def _init_for_bundle(self, sample_node: NodeBase):
+        self.use_external_kernel = sample_node.use_external_kernel
         self.input_streams = list(sample_node.input_streams)
         self.output_streams = list(sample_node.output_streams)
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
@@ -408,6 +414,7 @@ class ComputationGraph:
         allo_module: allo_ir.ir.Module,
         stream_map: dict[str, Stream],
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
+        use_external_kernels: dict[str, bool],
     ):
         self.allo_module = allo_module
         self.nodes: dict[str, NodeBase] = {}
@@ -424,7 +431,9 @@ class ComputationGraph:
             tag_key = re.sub(
                 r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
             )
-            node = InitialNode(func, self.tagger.get_init_tag(tag_key))
+            node = InitialNode(
+                func, use_external_kernels[func_name], self.tagger.get_init_tag(tag_key)
+            )
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
             for idx, (argument, is_input) in params.items():
@@ -533,6 +542,9 @@ class ComputationGraph:
             name=f"{node_a.name}-{node_b.name}",
             repeat=1,
             length=node_a.length + node_b.length,
+        )
+        chained_node.use_external_kernel = (
+            node_a.use_external_kernel or node_b.use_external_kernel
         )
         bufferized_stream: dict[Stream, BufferizedStream] = {}
         node_a.output_streams = [
