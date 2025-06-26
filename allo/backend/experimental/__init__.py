@@ -208,9 +208,9 @@ class AIE_MLIRModule:
         """
         run optimized passes on allo mlir
         """
-        pipeline = f"builtin.module(copy-on-write)"
-        with self.allo_module.context:
-            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+        # pipeline = f"builtin.module(copy-on-write)"
+        # with self.allo_module.context:
+        #     mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:

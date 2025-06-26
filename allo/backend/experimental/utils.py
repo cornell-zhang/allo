@@ -13,7 +13,7 @@ from ..._mlir.dialects import func as allo_func_d
 from ..._mlir.dialects import arith as allo_arith_d
 from ..utils import format_str, format_code
 from ...memory import DTensor
-from .external_kernel import ExternalModule, BuiltinExternalModule, ExternalModuleBase
+from .external_kernel import ExternalModule, ExternalModuleBase
 
 
 from ..._mlir.ir import (
@@ -393,7 +393,7 @@ def inject_external_kernels(
                 # register external kernel
                 if kernel_name in injected_external_kernels:
                     continue
-                injected_external_kernels[kernel_name] = BuiltinExternalModule(
+                injected_external_kernels[kernel_name] = ExternalModuleBase(
                     kernel_name,
                     input_idx,
                     output_idx,

@@ -8,6 +8,12 @@ from ..ip import parse_cpp_function
 
 
 class ExternalModuleBase:
+    """
+    Base class of ExternalModule (external functions)
+        - builtin
+        - customized
+    """
+
     def __init__(
         self,
         name: str,
@@ -15,32 +21,14 @@ class ExternalModuleBase:
         output_idx: list[int],
         kernel_code: str = "",
         kernel_header: str = "",
+        arg_layout=None,
     ):
         self.name = name
         self.input_idx = input_idx
         self.output_idx = output_idx
         self.kernel_code = kernel_code
         self.kernel_header = kernel_header
-
-
-class BuiltinExternalModule(ExternalModuleBase):
-    def __init__(
-        self,
-        name: str,
-        input_idx: list[int],
-        output_idx: list[int],
-        kernel_code: str,
-        kernel_header: str,
-        arg_layout=None,
-    ):
-        super().__init__(
-            name=name,
-            input_idx=input_idx,
-            output_idx=output_idx,
-            kernel_code=kernel_code,
-            kernel_header=kernel_header,
-        )
-        # TODO: data layout at tranfer time
+        # TODO: data layout at tranfer time?
         self.arg_layout = arg_layout
 
 
