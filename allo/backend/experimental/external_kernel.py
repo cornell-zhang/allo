@@ -40,6 +40,7 @@ class BuiltinExternalModule(ExternalModuleBase):
             kernel_code=kernel_code,
             kernel_header=kernel_header,
         )
+        # TODO: data layout at tranfer time
         self.arg_layout = arg_layout
 
 

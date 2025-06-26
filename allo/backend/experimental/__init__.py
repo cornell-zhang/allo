@@ -208,9 +208,13 @@ class AIE_MLIRModule:
         """
         run optimized passes on allo mlir
         """
-        for node in self.virtual_computation_graph.nodes.values():
-            function = node.func
-            lib_kernel_replacement(function)
+        pipeline = f"builtin.module(copy-on-write)"
+        with self.allo_module.context:
+            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+
+        for func in self.allo_module.body.operations:
+            if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
+                lib_kernel_replacement(func)
 
         pipeline = f"builtin.module(copy-on-write, canonicalize)"
         with self.allo_module.context:

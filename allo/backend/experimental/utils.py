@@ -622,19 +622,17 @@ def lib_kernel_replacement(function: allo_func_d.FuncOp):
                             acc_op = op
                         elif "@fill_zeros" in str(op.callee):
                             init_zero_op = op
-                    elif op.attributes.__contains__(
-                        "op_name"
-                    ) and "matmul_init_zero_0" in str(
-                        op.attributes.__getitem__("op_name")
-                    ):
-                        init_zero_op = op
                 if init_zero_op is not None and acc_op is not None:
                     acc_base = (
                         acc_op.operands_[0]
                         if acc_op.operands_[0] != output
                         else acc_op.operands_[1]
                     )
-                    if list(acc_base.uses)[0].owner == acc_op:
+                    if (
+                        list(acc_base.uses)[0].owner == acc_op
+                        and isinstance(acc_op.operands_[-1].owner, allo_ir.ir.Operation)
+                        and acc_op.operands_[-1].owner.name == "memref.alloc"
+                    ):
                         # accumulation is the last use
                         call_matmul_op.operands[-1] = acc_base
                         init_zero_op.erase()
