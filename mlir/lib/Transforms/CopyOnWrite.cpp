@@ -36,28 +36,28 @@ void removeRedundentCopy(func::FuncOp &func) {
     // llvm::errs() << *op << "\n";
     auto src = op->getOperand(0);
     auto dst = op->getOperand(1);
-    // if dst is local
-    if (dst.getDefiningOp<memref::AllocOp>()) {
-      bool resolvable = true;
-      Operation *last_user = nullptr;
-      for (auto &use : src.getUses()) {
-        Operation *user = use.getOwner();
-        if (last_user == nullptr) {
-          last_user = user;
-          continue;
-        }
-        if (user->getBlock() != op->getBlock()) {
-          // Use in a different block, don't trust isBeforeInBlock
-          resolvable = false;
-          break;
-        }
-        if (last_user->isBeforeInBlock(user)) {
-          last_user = user;
-        }
+
+    bool resolvable = true;
+    Operation *last_user = nullptr;
+    for (auto &use : src.getUses()) {
+      Operation *user = use.getOwner();
+      if (last_user == nullptr) {
+        last_user = user;
+        continue;
       }
-      // llvm::errs() << resolvable << " " << *last_user << "\n";
-      // llvm::errs() << "remove" << " " << *op << "\n";
-      if (resolvable && last_user == op) {
+      if (user->getBlock() != op->getBlock()) {
+        // Use in a different block, don't trust isBeforeInBlock
+        resolvable = false;
+        break;
+      }
+      if (last_user->isBeforeInBlock(user)) {
+        last_user = user;
+      }
+    }
+    // if copy is the last use of src
+    if (resolvable && last_user == op) {
+      // if dst is local
+      if (dst.getDefiningOp<memref::AllocOp>()) {
         for (auto &use : dst.getUses()) {
           Operation *user = use.getOwner();
           if (user->getBlock() != op->getBlock()) {
@@ -72,6 +72,23 @@ void removeRedundentCopy(func::FuncOp &func) {
                 op->isBeforeInBlock(user)) {
               use.set(src);
             }
+          }
+          op->erase();
+        }
+      }
+      // if dst is not local, but src is local
+      else if (src.getDefiningOp<memref::AllocOp>()) {
+        for (auto &use : dst.getUses()) {
+          Operation *user = use.getOwner();
+          if (user->getBlock() != op->getBlock() || user->isBeforeInBlock(op)) {
+            resolvable = false;
+            break;
+          }
+        }
+        if (resolvable) {
+          for (auto &use : llvm::make_early_inc_range(src.getUses())) {
+            Operation *user = use.getOwner();
+            use.set(dst);
           }
           op->erase();
         }
