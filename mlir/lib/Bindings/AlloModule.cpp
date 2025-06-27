@@ -141,6 +141,11 @@ static bool lowerBitOps(MlirModule &mlir_mod) {
   return applyLowerBitOps(mod);
 }
 
+static bool lowerViewWithLayoutOps(MlirModule &mlir_mod) {
+  auto mod = unwrap(mlir_mod);
+  return applyLowerViewWithLayoutOps(mod);
+}
+
 static bool legalizeCast(MlirModule &mlir_mod) {
   auto mod = unwrap(mlir_mod);
   return applyLegalizeCast(mod);

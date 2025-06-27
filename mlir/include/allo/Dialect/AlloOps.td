@@ -1029,4 +1029,32 @@ def StreamPutOp : Allo_Op<"stream_put"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Layout operations
+//===----------------------------------------------------------------------===//
+
+def ViewWithLayoutOp : Allo_Op<"view_with_layout"> {
+  let summary = "Access a memref with a new layout";
+  let description = [{
+    Takes a memref and three constant integer arrays: offsets, sizes, and strides per dimension.
+    Returns a new memref with updated layout.
+  }];
+
+  let arguments = (ins
+    AnyStaticShapeMemRef:$source,
+    DenseI64ArrayAttr:$offsets,
+    DenseI64ArrayAttr:$sizes,
+    DenseI64ArrayAttr:$strides
+  );
+
+  let results = (outs AnyStaticShapeMemRef:$result);
+
+  let assemblyFormat = [{
+    $source `offsets` `=` $offsets
+            `sizes` `=` $sizes
+            `strides` `=` $strides
+            attr-dict `:` type($source) `->` type($result)
+  }];
+}
+
 #endif // ALLO_OPS

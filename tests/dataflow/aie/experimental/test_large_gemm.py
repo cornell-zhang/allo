@@ -31,9 +31,8 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
     return mapping_primitives
 
 
-def _test_pingpong_gemm_4x4x4():
+def _test_pingpong_gemm_4x4x4(TyI, TyO):
 
-    Ty = int16
     M, N, K = 128, 128, 512
     Pm, Pn, Pk = 4, 4, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
@@ -45,17 +44,19 @@ def _test_pingpong_gemm_4x4x4():
     @df.region()
     def top():
         pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
+            df.pipe(dtype=TyO, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
         )
 
         @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in: TyO[Mt, Nt] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
-            C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
+                C_in: TyO[Mt, Nt] = 0
+            # tmp_c: TyO[Mt, Nt] = allo.matmul(A, B)
+            # C_out: TyO[Mt, Nt] = allo.add(tmp_c, C_in)
+            C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
@@ -79,4 +80,4 @@ def _test_pingpong_gemm_4x4x4():
 
 
 if __name__ == "__main__":
-    _test_pingpong_gemm_4x4x4()
+    _test_pingpong_gemm_4x4x4(int16, int16)
