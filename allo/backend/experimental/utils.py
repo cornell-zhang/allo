@@ -230,13 +230,13 @@ aie_external_kernel_ctype_map = {
 }
 
 matmul_externel_kernel_config_map = {
-    ("i8", "i8"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
-    ("i8", "i16"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
-    ("i8", "i32"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
-    ("i16", "i16"): {"npu": (4, 4, 4), "npu2": (4, 4, 8)},
-    ("i16", "i32"): {"npu": (4, 4, 4), "npu2": (4, 4, 8)},
-    ("bf16", "bf16"): {"npu": (4, 8, 4), "npu2": (8, 8, 8)},
-    ("bf16", "f32"): {"npu": (4, 8, 4), "npu2": (8, 8, 8)},
+    ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i16", "i16"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
+    ("i16", "i32"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
+    ("bf16", "bf16"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
+    ("bf16", "f32"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
 }
 
 
@@ -366,8 +366,10 @@ def inject_external_kernels(
                 _, N = MemRefType(op.inputs[1].type).shape
                 dtype = str(op.inputs[0].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
-                matmul_configs = matmul_externel_kernel_config_map[(dtype, out_dtype)]
-                if matmul_configs is not None:
+                if (dtype, out_dtype) in matmul_externel_kernel_config_map:
+                    matmul_configs = matmul_externel_kernel_config_map[
+                        (dtype, out_dtype)
+                    ]
                     include_src.add('#include "mm.cc"\n')
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
@@ -378,10 +380,7 @@ def inject_external_kernels(
                     output_idx.append(2)
                     call_builtin = True
                     if os.getenv("USE_VECTORIZED_MATMUL") == "1":
-                        if os.getenv("NPU2") == "1":
-                            m, n, k = matmul_configs["npu2"]
-                        else:
-                            m, n, k = matmul_configs["npu"]
+                        m, n, k = matmul_configs[lib_dir]
                         kernel_name = f"matmul_{dtype}_{out_dtype}"
                         new_input_0 = allo_d.view_with_layout(
                             op.inputs[0].type,
