@@ -375,7 +375,7 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
 
     with InsertionPoint.at_block_begin(loop_nest[0].body):
         first_iter_set = affine_d.IntegerSet.get(
-            1,
+            len(irrelevant_ivs),
             0,
             [affine_d.AffineExpr.get_dim(i) for i in range(len(irrelevant_ivs))],
             [True] * len(irrelevant_ivs),

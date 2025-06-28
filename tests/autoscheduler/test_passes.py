@@ -74,6 +74,65 @@ def test_simple(debug_point, kind):
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
 @pytest.mark.parametrize("kind", kinds)
+def test_conv2d(debug_point, kind):
+    IR, IC = 30, 30  # Input rows and columns
+    FR, FC = 6, 6  # Filter rows and columns
+    OR, OC = 25, 25  # Output rows and columns
+
+    def conv2D(A: float32[IR, IC], B: float32[FR, FC]) -> float32[OR, OC]:
+        C: float32[OR, OC] = 0.0
+        for y, x in allo.grid(OR, OC):  # these are the output dimensions
+            for r, c in allo.reduction(FR, FC):  # this is the filter dimensions
+                C[y, x] += A[y + r, x + c] * B[r, c]
+        return C
+
+    s = allo.customize(conv2D)
+    # Create AutoschedulerConfig with the specified parameters
+    cfg = (
+        AutoschedulerConfig.builder()
+        .with_debug_point(debug_point)
+        .with_kind(kind)
+        .with_verbose(True)
+    )
+    try:
+        optimized_schedule = dataflow_optimization_pass(s, cfg)
+    except GurobiError as e:
+        if "Model too large for size-limited license" in str(e):
+            pytest.skip(
+                "Skipping test: model too large for size-limited Gurobi license"
+            )
+        else:
+            raise e
+
+    input_A = np.random.rand(IR, IC).astype(np.float32)
+    input_B = np.random.rand(FR, FC).astype(np.float32)
+    expected = np.zeros((OR, OC), dtype=np.float32)
+    for y in range(OR):
+        for x in range(OC):
+            for r in range(FR):
+                for c in range(FC):
+                    expected[y, x] += input_A[y + r, x + c] * input_B[r, c]
+    expected = expected.astype(np.float32)
+    print(optimized_schedule.module)
+
+    if debug_point is not None:
+        mod = optimized_schedule.build()
+        output = mod(input_A, input_B)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+
+    elif is_available("vitis_hls"):
+        mod = optimized_schedule.build(
+            target="vitis_hls", mode=MODE, project="test_conv2d.prj", wrap_io=True
+        )
+        output = np.zeros((OR, OC), dtype=np.float32)
+        mod(input_A, input_B, output)
+        np.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+    else:
+        pytest.skip("Skipping test: vitis_hls not available")
+
+
+@pytest.mark.parametrize("debug_point", DEBUG_POINTS)
+@pytest.mark.parametrize("kind", kinds)
 def test_three_mm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "three_mm", size="small", concrete_type=float32
