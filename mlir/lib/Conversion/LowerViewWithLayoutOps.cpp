@@ -66,11 +66,11 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
       // memory access with viewed layout
       SmallVector<int64_t> lbs(sizes.size(), 0),
           ubs(sizes.begin(), sizes.end()), steps(sizes.size(), 1);
-      SmallVector<int64_t> src_strides;
+      SmallVector<int64_t> dst_strides;
       int64_t stride = expected_size;
       for (size_t i = 0; i < sizes.size(); ++i) {
         stride /= sizes[i];
-        src_strides.push_back(stride);
+        dst_strides.push_back(stride);
       }
       affine::buildAffineLoopNest(
           rewriter, loc, lbs, sizes, steps,
@@ -80,23 +80,22 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
             Value dstIdx =
                 nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
             for (unsigned d = 0; d < sizes.size(); ++d) {
-              Value offsetConst = nestedBuilder.create<arith::ConstantIndexOp>(
-                  nestedLoc, offsets[d]);
-              Value strideConst = nestedBuilder.create<arith::ConstantIndexOp>(
-                  nestedLoc, strides[d]);
-              Value add = nestedBuilder.create<arith::AddIOp>(nestedLoc, ivs[d],
-                                                              offsetConst);
-              Value mul = nestedBuilder.create<arith::MulIOp>(nestedLoc, add,
-                                                              strideConst);
-              dstIdx =
-                  nestedBuilder.create<arith::AddIOp>(nestedLoc, dstIdx, mul);
-              Value srcStrideConst =
+              Value add = nestedBuilder.create<arith::AddIOp>(
+                  nestedLoc, ivs[d],
                   nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
-                                                               src_strides[d]);
-              mul = nestedBuilder.create<arith::MulIOp>(nestedLoc, ivs[d],
-                                                        srcStrideConst);
+                                                               offsets[d]));
+              Value mul = nestedBuilder.create<arith::MulIOp>(
+                  nestedLoc, add,
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               strides[d]));
               srcIdx =
                   nestedBuilder.create<arith::AddIOp>(nestedLoc, srcIdx, mul);
+              mul = nestedBuilder.create<arith::MulIOp>(
+                  nestedLoc, ivs[d],
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               dst_strides[d]));
+              dstIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, dstIdx, mul);
             }
             Value val = nestedBuilder.create<memref::LoadOp>(
                 nestedLoc, flatInput, ValueRange{srcIdx});

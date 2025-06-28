@@ -229,6 +229,16 @@ aie_external_kernel_ctype_map = {
     "ui64": "unsigned long",
 }
 
+matmul_externel_kernel_config_map = {
+    ("i8", "i8"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
+    ("i8", "i16"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
+    ("i8", "i32"): {"npu": (4, 8, 8), "npu2": (8, 8, 8)},
+    ("i16", "i16"): {"npu": (4, 4, 4), "npu2": (4, 4, 8)},
+    ("i16", "i32"): {"npu": (4, 4, 4), "npu2": (4, 4, 8)},
+    ("bf16", "bf16"): {"npu": (4, 8, 4), "npu2": (8, 8, 8)},
+    ("bf16", "f32"): {"npu": (4, 8, 4), "npu2": (8, 8, 8)},
+}
+
 
 def parse_kernel_name(name: str):
     match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
@@ -356,17 +366,9 @@ def inject_external_kernels(
                 _, N = MemRefType(op.inputs[1].type).shape
                 dtype = str(op.inputs[0].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
-                if (dtype, out_dtype) in [
-                    ("i8", "i8"),
-                    ("i16", "i16"),
-                    ("i16", "i32"),
-                    ("bf16", "bf16"),
-                    ("bf16", "f32"),
-                ]:
-                    m, n, k = 4, 4, 4
+                matmul_configs = matmul_externel_kernel_config_map[(dtype, out_dtype)]
+                if matmul_configs is not None:
                     include_src.add('#include "mm.cc"\n')
-                    # kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                    kernel_name = f"matmul_{dtype}_{out_dtype}"
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
@@ -375,35 +377,48 @@ def inject_external_kernels(
                     input_idx.extend([0, 1])
                     output_idx.append(2)
                     call_builtin = True
-                    new_input_0 = allo_d.view_with_layout(
-                        op.inputs[0].type,
-                        op.inputs[0],
-                        [0, 0, 0, 0],
-                        [M // m, K // k, m, k],
-                        [m * K, k, K, 1],
-                        ip=InsertionPoint(op),
-                    )
-                    new_input_1 = allo_d.view_with_layout(
-                        op.inputs[1].type,
-                        op.inputs[1],
-                        [0, 0, 0, 0],
-                        [K // k, N // n, k, n],
-                        [N * k, n, N, 1],
-                        ip=InsertionPoint(op),
-                    )
-                    new_output = allo_d.view_with_layout(
-                        op.outputs[0].type,
-                        op.outputs[0],
-                        [0, 0, 0, 0],
-                        [M // m, N // n, m, n],
-                        [m * N, n, N, 1],
-                        ip=InsertionPoint(op),
-                    )
-                    operands = [
-                        new_input_0,
-                        new_input_1,
-                        new_output,
-                    ]
+                    if os.getenv("USE_VECTORIZED_MATMUL") == "1":
+                        if os.getenv("NPU2") == "1":
+                            m, n, k = matmul_configs["npu2"]
+                        else:
+                            m, n, k = matmul_configs["npu"]
+                        kernel_name = f"matmul_{dtype}_{out_dtype}"
+                        new_input_0 = allo_d.view_with_layout(
+                            op.inputs[0].type,
+                            op.inputs[0],
+                            [0, 0, 0, 0],
+                            [M // m, K // k, m, k],
+                            [m * K, k, K, 1],
+                            ip=InsertionPoint(op),
+                        )
+                        new_input_1 = allo_d.view_with_layout(
+                            op.inputs[1].type,
+                            op.inputs[1],
+                            [0, 0, 0, 0],
+                            [K // k, N // n, k, n],
+                            [N * k, n, N, 1],
+                            ip=InsertionPoint(op),
+                        )
+                        new_output = allo_d.view_with_layout(
+                            op.outputs[0].type,
+                            op.outputs[0],
+                            [0, 0, 0, 0],
+                            [M // m, N // n, m, n],
+                            [m * N, n, N, 1],
+                            ip=InsertionPoint(op),
+                        )
+                        operands = [
+                            new_input_0,
+                            new_input_1,
+                            new_output,
+                        ]
+                    else:
+                        kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                        operands = [
+                            op.inputs[0],
+                            op.inputs[1],
+                            op.outputs[0],
+                        ]
             if call_builtin:
                 operand_types = [x.type for x in operands]
                 # Inject AIE kernel
@@ -418,7 +433,10 @@ def inject_external_kernels(
                     operands,
                     ip=InsertionPoint(op),
                 )
-                if op.operation.name == "linalg.matmul":
+                if (
+                    os.getenv("USE_VECTORIZED_MATMUL") == "1"
+                    and op.operation.name == "linalg.matmul"
+                ):
                     matmul_output = allo_d.view_with_layout(
                         new_output.type,
                         new_output,
