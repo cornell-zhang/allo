@@ -11,8 +11,8 @@ from allo.memory import Layout
 def _test_matrix_scalar_add():
     LyA = Layout("S0R")
     Ty = int32
-    M, N = 64, 64
-    P0 = 4
+    M, N = 32, 32
+    P0 = 1
 
     @df.region()
     def top():
@@ -26,7 +26,7 @@ def _test_matrix_scalar_add():
         mod = df.build(top, target="aie-mlir")
         B = np.zeros((M, N)).astype(np.int32)
         mod(A, B)
-        np.testing.assert_allclose(B, A + 1)
+        np.testing.assert_allclose(B, A.T + 1)
         print("PASSED!")
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")

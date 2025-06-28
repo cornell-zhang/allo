@@ -285,6 +285,15 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
 
+        pipeline = f"builtin.module(lower-view-with-layout-ops, canonicalize)"
+        with self.allo_module.context:
+            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+        
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+
         self.allo_opt()
 
         passes = [

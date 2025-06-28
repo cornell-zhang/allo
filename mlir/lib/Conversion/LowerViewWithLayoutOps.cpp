@@ -25,7 +25,91 @@ namespace allo {
 /// Pass entry point
 bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
-    // TODO
+    SmallVector<ViewWithLayoutOp, 8> setViewWithLayoutOps;
+    func.walk([&](Operation *op) {
+      if (auto viewWithLayoutOp = dyn_cast<ViewWithLayoutOp>(op)) {
+        setViewWithLayoutOps.push_back(viewWithLayoutOp);
+      }
+    });
+    for (auto op : setViewWithLayoutOps) {
+      Value input = op->getOperands()[0];
+      Value output = op->getResults()[0];
+      MemRefType memRefType = output.getType().dyn_cast<MemRefType>();
+      auto result_shape = memRefType.getShape();
+      auto offsets = op.getOffsets();
+      auto sizes = op.getSizes();
+      auto strides = op.getStrides();
+      if (offsets.size() != sizes.size() || sizes.size() != strides.size()) {
+        return false;
+      }
+      int64_t expected_size = 1, viewed_size = 1;
+      for (size_t i = 0; i < sizes.size(); ++i) {
+        expected_size *= result_shape[i];
+        viewed_size *= sizes[i];
+      }
+      if (expected_size != viewed_size) {
+        return false;
+      }
+      // lower to load-store
+      Location loc = op->getLoc();
+      OpBuilder rewriter(op);
+      Type eltTy = memRefType.getElementType();
+      auto flatType = MemRefType::get({viewed_size}, eltTy);
+      Value flatAlloc = rewriter.create<memref::AllocOp>(loc, flatType);
+      SmallVector<OpFoldResult> dimAttr, strideAttr;
+      dimAttr.push_back(rewriter.getIndexAttr(viewed_size));
+      strideAttr.push_back(rewriter.getIndexAttr(1));
+      Value flatInput = rewriter.create<memref::ReinterpretCastOp>(
+          loc, flatType, input, rewriter.getIndexAttr(0), dimAttr, strideAttr);
+      // memory access with viewed layout
+      SmallVector<int64_t> lbs(sizes.size(), 0),
+          ubs(sizes.begin(), sizes.end()), steps(sizes.size(), 1);
+      SmallVector<int64_t> src_strides;
+      SmallVector<OpFoldResult> outputDimAttr, outputStrideAttr;
+      int64_t stride = expected_size;
+      for (size_t i = 0; i < result_shape.size(); ++i) {
+        outputDimAttr.push_back(rewriter.getIndexAttr(result_shape[i]));
+        stride /= result_shape[i];
+        src_strides.push_back(stride);
+        outputStrideAttr.push_back(rewriter.getIndexAttr(stride));
+      }
+      affine::buildAffineLoopNest(
+          rewriter, loc, lbs, sizes, steps,
+          [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange ivs) {
+            Value srcIdx =
+                nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
+            Value dstIdx =
+                nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
+            for (unsigned d = 0; d < sizes.size(); ++d) {
+              Value offsetConst = nestedBuilder.create<arith::ConstantIndexOp>(
+                  nestedLoc, offsets[d]);
+              Value strideConst = nestedBuilder.create<arith::ConstantIndexOp>(
+                  nestedLoc, strides[d]);
+              Value add = nestedBuilder.create<arith::AddIOp>(nestedLoc, ivs[d],
+                                                              offsetConst);
+              Value mul = nestedBuilder.create<arith::MulIOp>(nestedLoc, add,
+                                                              strideConst);
+              dstIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, dstIdx, mul);
+              Value srcStrideConst =
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               src_strides[d]);
+              mul = nestedBuilder.create<arith::MulIOp>(nestedLoc, ivs[d],
+                                                        srcStrideConst);
+              srcIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, srcIdx, mul);
+            }
+            Value val = nestedBuilder.create<memref::LoadOp>(
+                nestedLoc, flatInput, ValueRange{srcIdx});
+            nestedBuilder.create<memref::StoreOp>(nestedLoc, val, flatAlloc,
+                                                  ValueRange{dstIdx});
+          });
+      Value reshapedOutput = rewriter.create<memref::ReinterpretCastOp>(
+          loc, memRefType, flatAlloc, rewriter.getIndexAttr(0), outputDimAttr,
+          outputStrideAttr);
+      output.replaceAllUsesWith(reshapedOutput);
+      op->erase();
+    }
   }
   return true;
 }

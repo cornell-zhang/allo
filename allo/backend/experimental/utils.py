@@ -9,12 +9,14 @@ from dataclasses import dataclass
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
-from ..._mlir.dialects import func as allo_func_d
-from ..._mlir.dialects import arith as allo_arith_d
 from ..utils import format_str, format_code
 from ...memory import DTensor
 from .external_kernel import ExternalModule, ExternalModuleBase
-
+from ..._mlir.dialects import (
+    allo as allo_d,
+    arith as allo_arith_d,
+    func as allo_func_d,
+)
 
 from ..._mlir.ir import (
     MemRefType,
@@ -342,8 +344,17 @@ def inject_external_kernels(
                 input_idx.extend([0, 1])
                 output_idx.append(2)
                 call_builtin = True
+                # operands = [
+                #     op.inputs[0],
+                #     op.inputs[1],
+                #     op.outputs[0],
+                # ]
+                M, N = MemRefType(op.inputs[0].type).shape
+                new_op = allo_d.view_with_layout(
+                    op.inputs[0].type,op.inputs[0],[0,0],[N,M],[1,N],ip=InsertionPoint(op),
+                )
                 operands = [
-                    op.inputs[0],
+                    new_op,
                     op.inputs[1],
                     op.outputs[0],
                 ]
