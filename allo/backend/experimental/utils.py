@@ -426,12 +426,13 @@ def inject_external_kernels(
                     [],
                 )
                 # replace operation
-                allo_func_d.CallOp(
+                call_op = allo_func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(kernel_name),
                     operands,
                     ip=InsertionPoint(op),
                 )
+                call_op.attributes["lib"] = StringAttr.get(kernel_name)
                 if (
                     os.getenv("USE_VECTORIZED_MATMUL") == "1"
                     and op.operation.name == "linalg.matmul"
@@ -631,73 +632,81 @@ def codegen_external_kernels(
 # ############################################################
 # Optimization Passes
 # ############################################################
+def collect_lib_func_call(root, kernel_name: str) -> list[allo_func_d.CallOp]:
+    ops: list[allo_func_d.CallOp] = []
 
-
-def lib_kernel_replacement(function: allo_func_d.FuncOp):
-    """
-    Replace code with efficient lib/external kernels
-        pattern matching based
-    """
-
-    def replace_redundant_matmul(function: allo_func_d.FuncOp):
-        """
-        %alloc_0 = memref.alloc() : memref<32x32xi16>
-        linalg.fill {op_name = "matmul_init_zero_0"} ins(%c0_i16 : i16) outs(%alloc_0 : memref<32x32xi16>)
-        call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc_0) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
-        %alloc_1 = memref.alloc() : memref<32x32xi16>
-        call @add_i16_vector(%alloc_0, %alloc, %alloc_1) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
-
-        ==> (if %alloc can be write safely)
-        call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
-        """
-        matmul_ops: list[allo_func_d.CallOp] = []
-
-        def collect_matmuls(op):
-            if isinstance(op, allo_func_d.CallOp):
-                if "@matmul" in str(op.callee) and len(op.operands_) == 3:
-                    matmul_ops.append(op.operation)
-                return
-
-            for region in op.regions:
-                for block in region.blocks:
-                    for inner_op in block.operations:
-                        collect_matmuls(inner_op)
-
-        collect_matmuls(function)
-        for call_matmul_op in matmul_ops:
-            output = call_matmul_op.operands[-1]
-            uses = list(output.uses)
-            if (
-                isinstance(output.owner, allo_ir.ir.Operation)
-                and output.owner.name == "memref.alloc"
-                and len(uses) == 3
+    def collect_recursive(op):
+        if isinstance(op, allo_func_d.CallOp):
+            if "lib" in op.attributes and kernel_name in str(
+                op.attributes["lib"].value
             ):
-                init_zero_op, acc_op = None, None
-                for operand in uses:
-                    op = operand.owner
-                    if isinstance(op, allo_func_d.CallOp):
-                        if "@add" in str(op.callee):
-                            acc_op = op
-                        elif "@fill_zeros" in str(op.callee):
-                            init_zero_op = op
-                if init_zero_op is not None and acc_op is not None:
-                    acc_base = (
-                        acc_op.operands_[0]
-                        if acc_op.operands_[0] != output
-                        else acc_op.operands_[1]
-                    )
-                    if (
-                        list(acc_base.uses)[0].owner == acc_op
-                        and isinstance(acc_op.operands_[-1].owner, allo_ir.ir.Operation)
-                        and acc_op.operands_[-1].owner.name == "memref.alloc"
-                    ):
-                        # accumulation is the last use
-                        call_matmul_op.operands[-1] = acc_base
-                        init_zero_op.erase()
-                        acc_op.operands_[-1].replace_all_uses_with(acc_base)
-                        acc_op.erase()
+                ops.append(op.operation)
+            return
 
-    replace_redundant_matmul(function)
+        for region in op.regions:
+            for block in region.blocks:
+                for inner_op in block.operations:
+                    collect_recursive(inner_op)
+
+    collect_recursive(root)
+    return ops
+
+
+def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
+    """
+    %alloc_0 = memref.alloc() : memref<32x32xi16>
+    linalg.fill {op_name = "matmul_init_zero_0"} ins(%c0_i16 : i16) outs(%alloc_0 : memref<32x32xi16>)
+    call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc_0) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+    %alloc_1 = memref.alloc() : memref<32x32xi16>
+    call @add_i16_vector(%alloc_0, %alloc, %alloc_1) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+
+    ==> (if %alloc can be write safely)
+    call @matmul_scalar_i16_i16(%arg0, %arg1, %alloc) : (memref<32x32xi16>, memref<32x32xi16>, memref<32x32xi16>) -> ()
+    """
+    matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "matmul")
+    for call_matmul_op in matmul_ops:
+        if "lib" in call_matmul_op.attributes:
+            print(call_matmul_op.attributes["lib"])
+        output = call_matmul_op.operands[-1]
+        uses = list(output.uses)
+        if (
+            isinstance(output.owner, allo_ir.ir.Operation)
+            and output.owner.name == "memref.alloc"
+            and len(uses) == 3
+        ):
+            init_zero_op, acc_op = None, None
+            for operand in uses:
+                op = operand.owner
+                if isinstance(op, allo_func_d.CallOp):
+                    if "@add" in str(op.callee):
+                        acc_op = op
+                    elif "@fill_zeros" in str(op.callee):
+                        init_zero_op = op
+            if init_zero_op is not None and acc_op is not None:
+                acc_base = (
+                    acc_op.operands_[0]
+                    if acc_op.operands_[0] != output
+                    else acc_op.operands_[1]
+                )
+                if (
+                    list(acc_base.uses)[0].owner == acc_op
+                    and isinstance(acc_op.operands_[-1].owner, allo_ir.ir.Operation)
+                    and acc_op.operands_[-1].owner.name == "memref.alloc"
+                ):
+                    # accumulation is the last use
+                    call_matmul_op.operands[-1] = acc_base
+                    init_zero_op.erase()
+                    acc_op.operands_[-1].replace_all_uses_with(acc_base)
+                    acc_op.erase()
+
+
+def vectorize_matmul(function: allo_func_d.FuncOp):
+    matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(
+        function, "matmul_scalar"
+    )
+    for call_matmul_op in matmul_ops:
+        print(call_matmul_op)
+        pass
 
 
 def loop_rerolling(function: allo_func_d.FuncOp):

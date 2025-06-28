@@ -30,7 +30,8 @@ from .utils import (
     classify_aie_functions,
     classify_aie_functions_experimental,
     codegen_external_kernels,
-    lib_kernel_replacement,
+    simplify_matmul_accumulate,
+    vectorize_matmul,
     read_tensor_from_file,
     codegen_host,
 )
@@ -214,11 +215,16 @@ class AIE_MLIRModule:
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
-                lib_kernel_replacement(func)
+                simplify_matmul_accumulate(func)
 
         pipeline = f"builtin.module(copy-on-write, canonicalize)"
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
+
+        # # vectorize matmul
+        # for func in self.allo_module.body.operations:
+        #     if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
+        #         vectorize_matmul(func)
 
         # record optimized allo mlir
         with open(
@@ -284,10 +290,6 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-
-        # pipeline = f"builtin.module(lower-view-with-layout-ops, canonicalize)"
-        # with self.allo_module.context:
-        #     mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
         self.allo_opt()
 
