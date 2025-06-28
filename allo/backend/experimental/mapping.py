@@ -111,6 +111,7 @@ class FIFO:
         data_shape: list[int],
         dtype: str,
         depth: int = 2,
+        dimensions_to_stream: list = [],
     ):
         self.name = name
         self.src = src
@@ -118,7 +119,7 @@ class FIFO:
         self.data_shape = data_shape
         self.dtype = dtype
         self.depth = depth
-        self.dimensions_to_stream = []
+        self.dimensions_to_stream = dimensions_to_stream
 
     def __str__(self):
         return f"FIFO({self.name}, src={self.src}, dst={self.dst}, {self.dtype}{self.data_shape}, depth={self.depth})"
@@ -133,7 +134,12 @@ class FIFOManager:
         self.fifo_map: dict[tuple, FIFO] = {}
 
     def create_fifo(
-        self, src: str, dst: list[str], data_shape: list[str], dtype: str
+        self,
+        src: str,
+        dst: list[str],
+        data_shape: list[str],
+        dtype: str,
+        dimensions_to_stream: list = [],
     ) -> FIFO:
         fifo = FIFO(
             name=f"fifo_{len(self.fifos)}",
@@ -141,6 +147,7 @@ class FIFOManager:
             dst=dst,
             data_shape=data_shape,
             dtype=dtype,
+            dimensions_to_stream=dimensions_to_stream,
         )
         self.fifos.append(fifo)
         return fifo

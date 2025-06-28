@@ -1176,6 +1176,7 @@ class CodeGenerator:
                                     dst=mem_port_to_compute.connected_nodes,
                                     data_shape=mem_port_to_compute.data_shape,
                                     dtype=mem_port_to_compute.dtype,
+                                    dimensions_to_stream=[],
                                 )
                             else:
                                 assert len(mem_port_to_compute.connected_nodes) == 1
@@ -1184,6 +1185,7 @@ class CodeGenerator:
                                     dst=[assigned_mem_tile.name],
                                     data_shape=mem_port_to_compute.data_shape,
                                     dtype=mem_port_to_compute.dtype,
+                                    dimensions_to_stream=[],
                                 )
                             for interface in connected_interfaces[idx]:
                                 mapped_interface[interface.pe][
@@ -1284,6 +1286,7 @@ class CodeGenerator:
                                         dst=mem_port_to_compute.connected_nodes,
                                         data_shape=mem_port_to_compute.data_shape,
                                         dtype=mem_port_to_compute.dtype,
+                                        dimensions_to_stream=[],
                                     )
                                 else:
                                     assert len(mem_port_to_compute.connected_nodes) == 1
@@ -1292,6 +1295,7 @@ class CodeGenerator:
                                         dst=[assigned_mem_tile.name],
                                         data_shape=mem_port_to_compute.data_shape,
                                         dtype=mem_port_to_compute.dtype,
+                                        dimensions_to_stream=[],
                                     )
                                 for interface in connected_interfaces[idx]:
                                     mapped_interface[interface.pe][

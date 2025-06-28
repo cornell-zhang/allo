@@ -419,12 +419,6 @@ def inject_external_kernels(
                             op.outputs[0],
                         ]
             if call_builtin:
-                operand_types = [x.type for x in operands]
-                # Inject AIE kernel
-                func_type = allo_func_d.FunctionType.get(
-                    operand_types,
-                    [],
-                )
                 # replace operation
                 call_op = allo_func_d.CallOp(
                     [],
@@ -458,6 +452,11 @@ def inject_external_kernels(
                     output_idx,
                     kernel_code,
                     kernel_header,
+                )
+                operand_types = [x.type for x in operands]
+                func_type = allo_func_d.FunctionType.get(
+                    operand_types,
+                    [],
                 )
                 kernel = allo_func_d.FuncOp(
                     kernel_name,
@@ -637,9 +636,7 @@ def collect_lib_func_call(root, kernel_name: str) -> list[allo_func_d.CallOp]:
 
     def collect_recursive(op):
         if isinstance(op, allo_func_d.CallOp):
-            if "lib" in op.attributes and kernel_name in str(
-                op.attributes["lib"].value
-            ):
+            if "lib" in op.attributes and kernel_name in op.attributes["lib"].value:
                 ops.append(op.operation)
             return
 
@@ -665,8 +662,6 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
     """
     matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "matmul")
     for call_matmul_op in matmul_ops:
-        if "lib" in call_matmul_op.attributes:
-            print(call_matmul_op.attributes["lib"])
         output = call_matmul_op.operands[-1]
         uses = list(output.uses)
         if (
@@ -677,10 +672,10 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
             init_zero_op, acc_op = None, None
             for operand in uses:
                 op = operand.owner
-                if isinstance(op, allo_func_d.CallOp):
-                    if "@add" in str(op.callee):
+                if isinstance(op, allo_func_d.CallOp) and "lib" in op.attributes:
+                    if "add" in op.attributes["lib"].value:
                         acc_op = op
-                    elif "@fill_zeros" in str(op.callee):
+                    elif "fill_zeros" in op.attributes["lib"].value:
                         init_zero_op = op
             if init_zero_op is not None and acc_op is not None:
                 acc_base = (
@@ -698,20 +693,6 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
                     init_zero_op.erase()
                     acc_op.operands_[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
-
-
-def vectorize_matmul(function: allo_func_d.FuncOp):
-    matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(
-        function, "matmul_scalar"
-    )
-    for call_matmul_op in matmul_ops:
-        print(call_matmul_op)
-        pass
-
-
-def loop_rerolling(function: allo_func_d.FuncOp):
-    # TODO
-    pass
 
 
 # ############################################################
