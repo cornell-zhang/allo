@@ -16,6 +16,7 @@ from ..._mlir.dialects import (
     allo as allo_d,
     arith as allo_arith_d,
     func as allo_func_d,
+    _memref_ops_gen as allo_memref_d,
 )
 
 from ..._mlir.ir import (
@@ -344,17 +345,8 @@ def inject_external_kernels(
                 input_idx.extend([0, 1])
                 output_idx.append(2)
                 call_builtin = True
-                # operands = [
-                #     op.inputs[0],
-                #     op.inputs[1],
-                #     op.outputs[0],
-                # ]
-                M, N = MemRefType(op.inputs[0].type).shape
-                new_op = allo_d.view_with_layout(
-                    op.inputs[0].type,op.inputs[0],[0,0],[N,M],[1,N],ip=InsertionPoint(op),
-                )
                 operands = [
-                    new_op,
+                    op.inputs[0],
                     op.inputs[1],
                     op.outputs[0],
                 ]
@@ -371,8 +363,10 @@ def inject_external_kernels(
                     ("bf16", "bf16"),
                     ("bf16", "f32"),
                 ]:
+                    m, n, k = 4, 4, 4
                     include_src.add('#include "mm.cc"\n')
-                    kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                    # kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                    kernel_name = f"matmul_{dtype}_{out_dtype}"
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
@@ -381,10 +375,34 @@ def inject_external_kernels(
                     input_idx.extend([0, 1])
                     output_idx.append(2)
                     call_builtin = True
-                    operands = [
+                    new_input_0 = allo_d.view_with_layout(
+                        op.inputs[0].type,
                         op.inputs[0],
+                        [0, 0, 0, 0],
+                        [M // m, K // k, m, k],
+                        [m * K, k, K, 1],
+                        ip=InsertionPoint(op),
+                    )
+                    new_input_1 = allo_d.view_with_layout(
+                        op.inputs[1].type,
                         op.inputs[1],
+                        [0, 0, 0, 0],
+                        [K // k, N // n, k, n],
+                        [N * k, n, N, 1],
+                        ip=InsertionPoint(op),
+                    )
+                    new_output = allo_d.view_with_layout(
+                        op.outputs[0].type,
                         op.outputs[0],
+                        [0, 0, 0, 0],
+                        [M // m, N // n, m, n],
+                        [m * N, n, N, 1],
+                        ip=InsertionPoint(op),
+                    )
+                    operands = [
+                        new_input_0,
+                        new_input_1,
+                        new_output,
                     ]
             if call_builtin:
                 operand_types = [x.type for x in operands]
@@ -400,6 +418,18 @@ def inject_external_kernels(
                     operands,
                     ip=InsertionPoint(op),
                 )
+                if op.operation.name == "linalg.matmul":
+                    matmul_output = allo_d.view_with_layout(
+                        new_output.type,
+                        new_output,
+                        [0, 0, 0, 0],
+                        [M // m, m, N // n, n],
+                        [m * N, n, m * n, 1],
+                        ip=InsertionPoint(op),
+                    )
+                    allo_memref_d.copy(
+                        matmul_output, op.outputs[0], ip=InsertionPoint(op)
+                    )
                 op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:

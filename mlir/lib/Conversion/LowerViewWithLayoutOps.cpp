@@ -43,9 +43,11 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
         return false;
       }
       int64_t expected_size = 1, viewed_size = 1;
-      for (size_t i = 0; i < sizes.size(); ++i) {
-        expected_size *= result_shape[i];
-        viewed_size *= sizes[i];
+      for (int64_t val : result_shape) {
+        expected_size *= val;
+      }
+      for (int64_t val : sizes) {
+        viewed_size *= val;
       }
       if (expected_size != viewed_size) {
         return false;
@@ -65,13 +67,10 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
       SmallVector<int64_t> lbs(sizes.size(), 0),
           ubs(sizes.begin(), sizes.end()), steps(sizes.size(), 1);
       SmallVector<int64_t> src_strides;
-      SmallVector<OpFoldResult> outputDimAttr, outputStrideAttr;
       int64_t stride = expected_size;
-      for (size_t i = 0; i < result_shape.size(); ++i) {
-        outputDimAttr.push_back(rewriter.getIndexAttr(result_shape[i]));
-        stride /= result_shape[i];
+      for (size_t i = 0; i < sizes.size(); ++i) {
+        stride /= sizes[i];
         src_strides.push_back(stride);
-        outputStrideAttr.push_back(rewriter.getIndexAttr(stride));
       }
       affine::buildAffineLoopNest(
           rewriter, loc, lbs, sizes, steps,
@@ -104,6 +103,13 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
             nestedBuilder.create<memref::StoreOp>(nestedLoc, val, flatAlloc,
                                                   ValueRange{dstIdx});
           });
+      SmallVector<OpFoldResult> outputDimAttr, outputStrideAttr;
+      stride = expected_size;
+      for (size_t i = 0; i < result_shape.size(); ++i) {
+        outputDimAttr.push_back(rewriter.getIndexAttr(result_shape[i]));
+        stride /= result_shape[i];
+        outputStrideAttr.push_back(rewriter.getIndexAttr(stride));
+      }
       Value reshapedOutput = rewriter.create<memref::ReinterpretCastOp>(
           loc, memRefType, flatAlloc, rewriter.getIndexAttr(0), outputDimAttr,
           outputStrideAttr);
