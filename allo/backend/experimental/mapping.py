@@ -44,6 +44,7 @@ class DTensorTile:
 class PEInterface:
     pe: str
     interface_idx: int
+    layout: tuple[list, list, list]
 
     def __hash__(self):
         return hash((self.pe, self.interface_idx))
@@ -69,37 +70,20 @@ class DTensorTileGroup:
             defaultdict(list)
         )
 
-    def add_tensor_tile(self, tile: DTensorTile, pe: str, interface_idx: int):
+    def add_tensor_tile(
+        self,
+        tile: DTensorTile,
+        pe: str,
+        interface_idx: int,
+        layout: tuple[list, list, list],
+    ):
         self.dtensor_tile_to_pe_interfaces[tile].append(
-            PEInterface(pe=pe, interface_idx=interface_idx)
+            PEInterface(pe=pe, interface_idx=interface_idx, layout=layout)
         )
 
     def print(self):
         for tile, pes in self.dtensor_tile_to_pe_interfaces.items():
             print(f"{tile}: {pes}")
-
-
-class OrderedDTensorTileGroup:
-    """
-    order_tag -> DTensorTileGroup
-
-    `order_tag` is useful to determine the correct (deadlock-free) order of tile transfer.
-    """
-
-    def __init__(self):
-        self.dtensor_tile_groups: dict[str, DTensorTileGroup] = {}
-
-    def add_tensor_tile(
-        self, tile: DTensorTile, order_tag: str, pe: str, interface_idx: int
-    ):
-        if order_tag not in self.dtensor_tile_groups:
-            self.dtensor_tile_groups[order_tag] = DTensorTileGroup(order_tag)
-        self.dtensor_tile_groups[order_tag].add_tensor_tile(tile, pe, interface_idx)
-
-    def print(self):
-        for order_tag, tiles in self.dtensor_tile_groups.items():
-            print(f"<<<<< {order_tag} >>>>>")
-            tiles.print()
 
 
 class FIFO:
@@ -119,7 +103,12 @@ class FIFO:
         self.data_shape = data_shape
         self.dtype = dtype
         self.depth = depth
-        self.dimensions_to_stream = dimensions_to_stream
+        self.dimensions_to_stream: list[tuple[int, int]] = []
+        if dimensions_to_stream is not None and len(dimensions_to_stream) == 3:
+            sizes = dimensions_to_stream[1]
+            strides = dimensions_to_stream[2]
+            for size, stride in zip(sizes, strides):
+                self.dimensions_to_stream.append((size, stride))
 
     def __str__(self):
         return f"FIFO({self.name}, src={self.src}, dst={self.dst}, {self.dtype}{self.data_shape}, depth={self.depth})"
@@ -269,7 +258,10 @@ class LiveDTensorTileGroup:
     For each interface, classified by LiveDTensorTile token, follow the sequence of liveness range.
     """
 
-    def __init__(self, live_dtensor_tiles: list[LiveDTensorTile]):
+    def __init__(
+        self, live_dtensor_tiles: list[LiveDTensorTile], layout: tuple[list, list, list]
+    ):
+        self.layout: tuple[list, list, list] = layout
         self.is_input = live_dtensor_tiles[0].is_input
         self.dtensor_groups: dict[str, list[LiveDTensorTile]] = defaultdict(list)
         self.compatible_dtensor_ids: set[int] = set()
@@ -287,7 +279,7 @@ class LiveDTensorTileGroup:
 
     def grouping(self, tile_group: "LiveDTensorTileGroup") -> bool:
         # fixme: currently using tensor_id to check data type
-        if self.is_input != tile_group.is_input:
+        if self.layout != tile_group.layout or self.is_input != tile_group.is_input:
             return False
         if self.compatible_dtensor_ids.isdisjoint(tile_group.compatible_dtensor_ids):
             return False
@@ -345,6 +337,7 @@ class NodeBase:
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.input_streams: list[Stream] = []
         self.output_streams: list[Stream] = []
+        self.interface_layout: dict[int, tuple[list, list, list]] = {}
 
     def is_isomorphic_to(self, other: "NodeBase") -> bool:
         # TODO: check in a more robust way
@@ -705,7 +698,8 @@ class ComputationGraph:
             dict_: dict[int, LiveDTensorTileGroup] = {}
             idx_to_interface: dict[int, int] = {}
             for idx, interfaces in node.global_interfaces.items():
-                dict_[idx] = LiveDTensorTileGroup(interfaces)
+                layout = node.interface_layout.get(idx)
+                dict_[idx] = LiveDTensorTileGroup(interfaces, layout)
                 idx_to_interface[idx] = idx
                 if interfaces[0].is_input:
                     input_interface += 1

@@ -43,7 +43,7 @@ from .utils import (
     read_tensor_from_file,
     codegen_host,
 )
-from .mapping import ComputationGraph, OrderedDTensorTileGroup
+from .mapping import ComputationGraph
 
 
 class AIE_MLIRModule:
@@ -67,7 +67,6 @@ class AIE_MLIRModule:
             For example, launching the kernels in topological order.
         """
         # module metadata
-        # print(module)
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
@@ -230,121 +229,135 @@ class AIE_MLIRModule:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
         # vectorize matmul
-        # # ############################################################
-        # for func in self.allo_module.body.operations:
-        #     if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
-        #         matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(
-        #             func, "matmul_scalar"
-        #         )
-        #         resolvable = True
-        #         arg_layout: dict[int, tuple[tuple, tuple, tuple]] = {}
-        #         # fixme: using strict restriction currently
-        #         for call_matmul_op in matmul_ops:
-        #             input_a, input_b = (
-        #                 call_matmul_op.operands[0],
-        #                 call_matmul_op.operands[1],
-        #             )
-        #             output = call_matmul_op.operands[-1]
-        #             if (
-        #                 input_a not in func.arguments
-        #                 or input_b not in func.arguments
-        #                 or output not in func.arguments
-        #             ):
-        #                 continue
-        #             if len(list(input_a.uses)) > 1 or len(list(input_b.uses)) > 1:
-        #                 continue
-        #             M, K = MemRefType(input_a.type).shape
-        #             _, N = MemRefType(input_b.type).shape
-        #             dtype = str(input_a.type.element_type)
-        #             out_dtype = str(output.type.element_type)
-        #             matmul_configs = matmul_externel_kernel_config_map[
-        #                 (dtype, out_dtype)
-        #             ]
-        #             if self.device == "npu1":
-        #                 m, n, k = matmul_configs["aie2"]
-        #             else:
-        #                 m, n, k = matmul_configs["aie2p"]
-        #             arg_a = BlockArgument(input_a)
-        #             arg_layout[arg_a.arg_number] = (
-        #                 (0, 0, 0, 0),
-        #                 (M // m, K // k, m, k),
-        #                 (m * K, k, K, 1),
-        #             )
-        #             arg_b = BlockArgument(input_b)
-        #             arg_layout[arg_b.arg_number] = (
-        #                 (0, 0, 0, 0),
-        #                 (K // k, N // n, k, n),
-        #                 (N * k, n, N, 1),
-        #             )
-        #             arg_c = BlockArgument(output)
-        #             arg_layout[arg_c.arg_number] = (
-        #                 (0, 0, 0, 0),
-        #                 (M // m, m, N // n, n),
-        #                 (m * N, n, m * n, 1),
-        #             )
-        #             for use in output.uses:
-        #                 if (
-        #                     isinstance(use.owner, allo_func_d.CallOp)
-        #                     and "lib" in use.owner.attributes
-        #                 ):
-        #                     # zero init is safe, no need to care about the layout since ecery element is 0
-        #                     if "fill_zeros" in use.owner.attributes["lib"].value:
-        #                         continue
-        #                     # accumulating on the same C
-        #                     if (
-        #                         use.owner in matmul_ops
-        #                         and output == use.owner.operands[-1]
-        #                     ):
-        #                         continue
-        #                 resolvable = False
-        #         if not resolvable:
-        #             continue
-        #         with func.context, allo_ir.ir.Location.unknown():
-        #             for call_matmul_op in matmul_ops:
-        #                 vectorized_kernel_name = call_matmul_op.attributes[
-        #                     "lib"
-        #                 ].value.replace("matmul_scalar_", "matmul_")
-        #                 call_op = allo_func_d.CallOp(
-        #                     [],
-        #                     FlatSymbolRefAttr.get(vectorized_kernel_name),
-        #                     call_matmul_op.operands,
-        #                     ip=InsertionPoint(call_matmul_op),
-        #                 )
-        #                 call_op.attributes["lib"] = StringAttr.get(
-        #                     vectorized_kernel_name
-        #                 )
-        #                 if vectorized_kernel_name not in self.injected_external_kernels:
-        #                     scalar_kernel: ExternalModuleBase = (
-        #                         self.injected_external_kernels[
-        #                             call_matmul_op.attributes["lib"].value
-        #                         ]
-        #                     )
-        #                     self.injected_external_kernels[vectorized_kernel_name] = (
-        #                         ExternalModuleBase(
-        #                             vectorized_kernel_name,
-        #                             scalar_kernel.input_idx,
-        #                             scalar_kernel.output_idx,
-        #                             scalar_kernel.kernel_code,
-        #                             scalar_kernel.kernel_header,
-        #                         )
-        #                     )
-        #                     operand_types = [x.type for x in call_matmul_op.operands]
-        #                     func_type = allo_func_d.FunctionType.get(
-        #                         operand_types,
-        #                         [],
-        #                     )
-        #                     vectorized_kernel = allo_func_d.FuncOp(
-        #                         vectorized_kernel_name,
-        #                         func_type,
-        #                         ip=InsertionPoint(func),
-        #                     )
-        #                     vectorized_kernel.attributes["sym_visibility"] = (
-        #                         StringAttr.get("private")
-        #                     )
-        #                 call_matmul_op.erase()
-        #         node = self.virtual_computation_graph.nodes[func.attributes["sym_name"].value]
-        #         # node.global_interfaces[]
-        # # ############################################################
+        # ############################################################
+        for func in self.allo_module.body.operations:
+            if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
+                matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(
+                    func, "matmul_scalar"
+                )
+                node = self.virtual_computation_graph.nodes[
+                    func.attributes["sym_name"].value
+                ]
+                resolvable = True
+                # fixme: using strict restriction currently
+                for call_matmul_op in matmul_ops:
+                    input_a, input_b = (
+                        call_matmul_op.operands[0],
+                        call_matmul_op.operands[1],
+                    )
+                    output = call_matmul_op.operands[-1]
+                    if (
+                        input_a not in func.arguments
+                        or input_b not in func.arguments
+                        or output not in func.arguments
+                    ):
+                        resolvable = False
+                        continue
+                    if len(list(input_a.uses)) > 1 or len(list(input_b.uses)) > 1:
+                        resolvable = False
+                        continue
+                    M, K = MemRefType(input_a.type).shape
+                    _, N = MemRefType(input_b.type).shape
+                    dtype = str(input_a.type.element_type)
+                    out_dtype = str(output.type.element_type)
+                    matmul_configs = matmul_externel_kernel_config_map[
+                        (dtype, out_dtype)
+                    ]
+                    if self.device == "npu1":
+                        m, n, k = matmul_configs["aie2"]
+                    else:
+                        m, n, k = matmul_configs["aie2p"]
+                    arg_a, arg_b, arg_c = (
+                        BlockArgument(input_a),
+                        BlockArgument(input_b),
+                        BlockArgument(output),
+                    )
+                    # global interface only
+                    if (
+                        arg_a.arg_number not in node.global_interfaces
+                        or arg_b.arg_number not in node.global_interfaces
+                        or arg_c.arg_number not in node.global_interfaces
+                    ):
+                        resolvable = False
+                        break
+                    node.interface_layout[arg_a.arg_number] = (
+                        [0, 0, 0, 0],
+                        [M // m, K // k, m, k],
+                        [m * K, k, K, 1],
+                    )
+                    node.interface_layout[arg_b.arg_number] = (
+                        [0, 0, 0, 0],
+                        [K // k, N // n, k, n],
+                        [N * k, n, N, 1],
+                    )
+                    node.interface_layout[arg_c.arg_number] = (
+                        [0, 0, 0, 0],
+                        [M // m, m, N // n, n],
+                        [m * N, n, m * n, 1],
+                    )
+                    for use in output.uses:
+                        if (
+                            isinstance(use.owner, allo_func_d.CallOp)
+                            and "lib" in use.owner.attributes
+                        ):
+                            # zero init is safe, no need to care about the layout since ecery element is 0
+                            if "fill_zeros" in use.owner.attributes["lib"].value:
+                                continue
+                            # accumulating on the same C
+                            if (
+                                use.owner in matmul_ops
+                                and output == use.owner.operands[-1]
+                            ):
+                                continue
+                        resolvable = False
+                        break
+                if not resolvable:
+                    continue
+                with func.context, allo_ir.ir.Location.unknown():
+                    for call_matmul_op in matmul_ops:
+                        vectorized_kernel_name = call_matmul_op.attributes[
+                            "lib"
+                        ].value.replace("matmul_scalar_", "matmul_")
+                        call_op = allo_func_d.CallOp(
+                            [],
+                            FlatSymbolRefAttr.get(vectorized_kernel_name),
+                            call_matmul_op.operands,
+                            ip=InsertionPoint(call_matmul_op),
+                        )
+                        call_op.attributes["lib"] = StringAttr.get(
+                            vectorized_kernel_name
+                        )
+                        if vectorized_kernel_name not in self.injected_external_kernels:
+                            scalar_kernel: ExternalModuleBase = (
+                                self.injected_external_kernels[
+                                    call_matmul_op.attributes["lib"].value
+                                ]
+                            )
+                            self.injected_external_kernels[vectorized_kernel_name] = (
+                                ExternalModuleBase(
+                                    vectorized_kernel_name,
+                                    scalar_kernel.input_idx,
+                                    scalar_kernel.output_idx,
+                                    scalar_kernel.kernel_code,
+                                    scalar_kernel.kernel_header,
+                                )
+                            )
+                            operand_types = [x.type for x in call_matmul_op.operands]
+                            func_type = allo_func_d.FunctionType.get(
+                                operand_types,
+                                [],
+                            )
+                            vectorized_kernel = allo_func_d.FuncOp(
+                                vectorized_kernel_name,
+                                func_type,
+                                ip=InsertionPoint(func),
+                            )
+                            vectorized_kernel.attributes["sym_visibility"] = (
+                                StringAttr.get("private")
+                            )
+                        call_matmul_op.erase()
+
+        # ############################################################
 
         # record optimized allo mlir
         with open(

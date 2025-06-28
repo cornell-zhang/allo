@@ -717,7 +717,7 @@ class CodeGenerator:
                 for tiles in live_dtensor_tiles.dtensor_groups.values():
                     for tile_ in tiles:
                         global_tile_to_func[tile_.tile.dtensor_id].add_tensor_tile(
-                            tile_.tile, func_name, arg_idx
+                            tile_.tile, func_name, arg_idx, live_dtensor_tiles.layout
                         )
 
         class MulticastInterface:
@@ -738,6 +738,8 @@ class CodeGenerator:
                 )
 
             def _equal_data_transfer(self, other: "MulticastInterface") -> bool:
+                if self.sample_interface.layout != other.sample_interface.layout:
+                    return False
                 sample_global_tensors: LiveDTensorTileGroup = global_tensors[
                     self.sample_interface.pe
                 ][self.sample_interface.interface_idx]
@@ -764,6 +766,8 @@ class CodeGenerator:
                     if interface in other.interface_list:
                         # TODO: can be relaxed
                         return None
+                if self.sample_interface.layout != other.sample_interface.layout:
+                    return None
                 sample_global_tensors: LiveDTensorTileGroup = global_tensors[
                     self.sample_interface.pe
                 ][self.sample_interface.interface_idx]
@@ -854,6 +858,7 @@ class CodeGenerator:
             """
 
             def __init__(self, offset: Offset4D, interface: MulticastInterface):
+                self.layout = interface.sample_interface.layout
                 self.current_offset: Offset4D = offset
                 self.total_size: Size4D = Size4D(1, 1, 1, 1)
                 self.interface_list: list[MulticastInterface] = [interface]
@@ -1147,6 +1152,7 @@ class CodeGenerator:
                     contiguous_interface.interface_list
                 )
                 size = contiguous_interface.total_size
+                transfer_layout = contiguous_interface.layout
                 while size.get_total_size() != 0:
                     coalesced_size = Size4D.coalesce(size, tile_size)
                     (
@@ -1176,7 +1182,7 @@ class CodeGenerator:
                                     dst=mem_port_to_compute.connected_nodes,
                                     data_shape=mem_port_to_compute.data_shape,
                                     dtype=mem_port_to_compute.dtype,
-                                    dimensions_to_stream=[],
+                                    dimensions_to_stream=transfer_layout,
                                 )
                             else:
                                 assert len(mem_port_to_compute.connected_nodes) == 1
@@ -1185,7 +1191,6 @@ class CodeGenerator:
                                     dst=[assigned_mem_tile.name],
                                     data_shape=mem_port_to_compute.data_shape,
                                     dtype=mem_port_to_compute.dtype,
-                                    dimensions_to_stream=[],
                                 )
                             for interface in connected_interfaces[idx]:
                                 mapped_interface[interface.pe][
@@ -1232,6 +1237,7 @@ class CodeGenerator:
                                 dst=[assigned_shim_tile.name],
                                 data_shape=shim_port_to_mem.data_shape,
                                 dtype=shim_port_to_mem.dtype,
+                                dimensions_to_stream=transfer_layout,
                             )
                         shim_port_to_mem.bind_to_fifo(dma_fifo)
                         mem_port_to_shim.bind_to_fifo(dma_fifo)
@@ -1286,7 +1292,7 @@ class CodeGenerator:
                                         dst=mem_port_to_compute.connected_nodes,
                                         data_shape=mem_port_to_compute.data_shape,
                                         dtype=mem_port_to_compute.dtype,
-                                        dimensions_to_stream=[],
+                                        dimensions_to_stream=transfer_layout,
                                     )
                                 else:
                                     assert len(mem_port_to_compute.connected_nodes) == 1
@@ -1295,7 +1301,6 @@ class CodeGenerator:
                                         dst=[assigned_mem_tile.name],
                                         data_shape=mem_port_to_compute.data_shape,
                                         dtype=mem_port_to_compute.dtype,
-                                        dimensions_to_stream=[],
                                     )
                                 for interface in connected_interfaces[idx]:
                                     mapped_interface[interface.pe][
@@ -1342,6 +1347,7 @@ class CodeGenerator:
                                     dst=[assigned_shim_tile.name],
                                     data_shape=shim_port_to_mem.data_shape,
                                     dtype=shim_port_to_mem.dtype,
+                                    dimensions_to_stream=transfer_layout,
                                 )
                             shim_port_to_mem.bind_to_fifo(dma_fifo)
                             mem_port_to_shim.bind_to_fifo(dma_fifo)
