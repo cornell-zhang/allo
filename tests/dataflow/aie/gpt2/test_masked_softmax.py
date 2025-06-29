@@ -4,9 +4,8 @@
 import os
 import torch
 import torch.nn.functional as F
-import argparse
 from typing import Annotated
-from allo.ir.types import float32, int16, int32
+from allo.ir.types import float32, int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -45,7 +44,7 @@ def masked_softmax_tiled(
 
     # Apply mask by setting masked positions to -inf
     masked_scores = attention_score_tile.masked_fill(mask, float("-inf"))
-    # max_scores = masked_scores.max(dim=-1, keepdim=True).values
+    max_scores = masked_scores.max(dim=-1, keepdim=True).values
     # stable_scores = masked_scores - max_scores
     # exp_scores = torch.exp(stable_scores)
     # Apply softmax along the last dimension (key dimension)
@@ -91,18 +90,12 @@ def _test_masked_softmax_tiled():
             target="aie-mlir",
             profile=True,
             warmup=0,
-            num_iters=1,
+            num_iters=2,
         )
         output_allo = np.zeros((SEQ_LEN_TILED, SEQ_LEN)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), np.array([0, 32]), output_allo)
-
-        # Gracefully handle verification
-        try:
-            np.testing.assert_allclose(output_allo, output, rtol=1e-2)
-            print("PASS!")
-        except AssertionError as e:
-            print("FAIL!")
-            print(f"Verification failed:\n{str(e)}")
+        np.testing.assert_allclose(output_allo, output, rtol=1e-2)
+        print("PASS!")
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
