@@ -277,11 +277,13 @@ PYBIND11_MODULE(_allo, m) {
   // Lowering APIs.
   allo_m.def("lower_composite_type", &lowerCompositeType);
   allo_m.def("lower_bit_ops", &lowerBitOps);
+  allo_m.def("lower_view_with_layout_ops", &lowerViewWithLayoutOps);
   allo_m.def("legalize_cast", &legalizeCast);
   allo_m.def("remove_stride_map", &removeStrideMap);
   allo_m.def("lower_print_ops", &lowerPrintOps);
 
   // Utility pass APIs.
   allo_m.def("memref_dce", &memRefDCE);
+  allo_m.def("copy_on_write", &copyOnWrite);
   allo_m.def("unify_kernels", &UnifyKernels);
 }
