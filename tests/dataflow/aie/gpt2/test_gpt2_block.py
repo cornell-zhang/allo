@@ -230,8 +230,8 @@ def run(x_fp32: np.ndarray, params: dict):
     # Attention Score
     # ----------------------------------------------------------------
     attn_score = ExternalModule(
-        top="partial_attn_score",
-        impl_path="attn_score.cc",
+        top="transpose_matmul_with_scale",
+        impl_path="transpose_matmul_with_scale.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )

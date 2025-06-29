@@ -43,7 +43,7 @@ void transpose_matmul_with_scale(T_in *tensor_a, T_in *tensor_b,
 
 extern "C" {
 
-void partial_attn_score(float A_in[32][64], float B_in[32][64],
+void transpose_matmul_with_scale(float A_in[32][64], float B_in[32][64],
                         float C_out[32][32]) {
   transpose_matmul_with_scale<float, float, 32, 32, 64, 0.125f>(
       &A_in[0][0], &B_in[0][0], &C_out[0][0]);

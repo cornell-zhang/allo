@@ -20,10 +20,19 @@ seq_len = 32 * 4
 
 
 def _test_attn_score():
+    """
+    Test the computation of attention scores using the external module
+    `transpose_matmul_with_scale`. This module performs the core operation
+    used in GPT-2's attention:
+
+        attn_score = (Q @ K^T) / sqrt(d)
+
+    where Q is the query matrix, K is the key matrix, and d is the head dimension.
+    """
 
     attn_score = ExternalModule(
-        top="partial_attn_score",
-        impl_path="attn_score.cc",
+        top="transpose_matmul_with_scale",
+        impl_path="transpose_matmul_with_scale.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
