@@ -20,12 +20,15 @@ import aie.ir as aie_ir
 # =======================
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-import allo._mlir.dialects._memref_ops_gen as allo_memref_d
+from allo._mlir.dialects import (
+    allo as allo_d,
+    func as allo_func_d,
+    _memref_ops_gen as allo_memref_d,
+)
 
 from ..._mlir.ir import InsertionPoint, MemRefType, IntegerType
 
 from ..utils import format_str
-from ..._mlir.dialects import func as allo_func_d
 from ...memory import (
     DTensor,
     Offset4D,

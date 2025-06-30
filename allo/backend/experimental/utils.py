@@ -669,29 +669,34 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
             and output.owner.name == "memref.alloc"
             and len(uses) == 3
         ):
-            init_zero_op, acc_op = None, None
-            for operand in uses:
-                op = operand.owner
-                if isinstance(op, allo_func_d.CallOp) and "lib" in op.attributes:
-                    if "add" in op.attributes["lib"].value:
-                        acc_op = op
-                    elif "fill_zeros" in op.attributes["lib"].value:
-                        init_zero_op = op
+            init_zero_op, acc_op = allo_d.get_first_use_in_function(
+                output, function
+            ), allo_d.get_last_use_in_function(output, function)
+            if (
+                "lib" not in init_zero_op.attributes
+                or "fill_zeros" not in init_zero_op.attributes["lib"].value
+            ):
+                init_zero_op = None
+            if (
+                "lib" not in acc_op.attributes
+                or "add" not in acc_op.attributes["lib"].value
+            ):
+                acc_op = None
             if init_zero_op is not None and acc_op is not None:
                 acc_base = (
-                    acc_op.operands_[0]
-                    if acc_op.operands_[0] != output
-                    else acc_op.operands_[1]
+                    acc_op.operands[0]
+                    if acc_op.operands[0] != output
+                    else acc_op.operands[1]
                 )
                 if (
-                    list(acc_base.uses)[0].owner == acc_op
-                    and isinstance(acc_op.operands_[-1].owner, allo_ir.ir.Operation)
-                    and acc_op.operands_[-1].owner.name == "memref.alloc"
+                    allo_d.get_last_use_in_function(acc_base, function) == acc_op
+                    and isinstance(acc_op.operands[-1].owner, allo_ir.ir.Operation)
+                    and acc_op.operands[-1].owner.name == "memref.alloc"
                 ):
                     # accumulation is the last use
                     call_matmul_op.operands[-1] = acc_base
                     init_zero_op.erase()
-                    acc_op.operands_[-1].replace_all_uses_with(acc_base)
+                    acc_op.operands[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
 
 

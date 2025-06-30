@@ -23,7 +23,11 @@ Operation *getFirstUse(Value value, Operation &func) {
       //   llvm::errs() << *firstUse->getOwner() << "\n";
     }
   }
-  return firstUse->getOwner();
+  if (!firstUse) {
+    return nullptr;
+  } else {
+    return firstUse->getOwner();
+  }
 }
 
 Operation *getLastUse(Value value, Operation &func) {
@@ -38,7 +42,11 @@ Operation *getLastUse(Value value, Operation &func) {
       //   llvm::errs() << *lastUse->getOwner() << "\n";
     }
   }
-  return lastUse->getOwner();
+  if (!lastUse) {
+    return nullptr;
+  } else {
+    return lastUse->getOwner();
+  }
 }
 } // namespace allo
 } // namespace mlir
