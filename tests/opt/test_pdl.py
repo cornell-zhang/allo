@@ -1,6 +1,7 @@
 from allo._mlir import ir, passmanager, rewrite
 from allo._mlir.rewrite import PDLModule
 from allo._mlir.dialects import arith, func, pdl
+from allo._mlir.dialects import allo as allo_d
 from allo._mlir.dialects.builtin import module
 from allo._mlir.ir import *
 
@@ -45,6 +46,7 @@ def test_string_based():
         rewrite.apply_patterns_and_fold_greedily(module, frozen)
         print(module)
 
+
 def test_module_based():
     ctx = ir.Context()
     ctx.allow_unregistered_dialects = True
@@ -63,8 +65,8 @@ def test_module_based():
         """,
             ctx,
         )
-        
-    with  ctx, Location.unknown():
+
+    with ctx, Location.unknown():
         m = Module.create()
         with InsertionPoint(m.body):
             # Change all arith.addi with index types to arith.muli.
@@ -85,10 +87,12 @@ def test_module_based():
                         name="arith.muli", args=[operand0, operand1], types=[index_type]
                     )
                     pdl.ReplaceOp(op0, with_op=newOp)
+
     frozen = rewrite.PDLModule(m).freeze()
     # Could apply frozen pattern set multiple times.
     rewrite.apply_patterns_and_fold_greedily(ir_module, frozen)
     print(ir_module)
+
 
 if __name__ == "__main__":
     test_string_based()

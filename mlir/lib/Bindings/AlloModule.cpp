@@ -4,7 +4,6 @@
  */
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-
 #include "allo/Bindings/AlloModule.h"
 #include "allo-c/Dialect/AlloAttributes.h"
 #include "allo-c/Dialect/AlloTypes.h"
@@ -15,6 +14,7 @@
 #include "allo-c/Translation/EmitVivadoHLS.h"
 #include "allo/Conversion/Passes.h"
 #include "allo/Dialect/AlloDialect.h"
+#include "allo/Support/Liveness.h"
 #include "allo/Transforms/Passes.h"
 #include "mlir-c/Bindings/Python/Interop.h"
 #include "mlir/Bindings/Python/PybindAdaptors.h"
@@ -27,6 +27,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+#include <tuple>
 
 #include "llvm-c/ErrorHandling.h"
 #include "llvm/Support/Signals.h"
@@ -182,6 +183,21 @@ static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2,
 }
 
 //===----------------------------------------------------------------------===//
+// Utility APIs
+//===----------------------------------------------------------------------===//
+static MlirOperation getFirstUseInFunction(MlirValue value,
+                                           MlirOperation &func) {
+  Operation *result = getFirstUse(unwrap(value), *unwrap(func));
+  return wrap(result);
+}
+
+static MlirOperation getLastUseInFunction(MlirValue value,
+                                          MlirOperation &func) {
+  Operation *result = getLastUse(unwrap(value), *unwrap(func));
+  return wrap(result);
+}
+
+//===----------------------------------------------------------------------===//
 // Allo Python module definition
 //===----------------------------------------------------------------------===//
 
@@ -286,4 +302,8 @@ PYBIND11_MODULE(_allo, m) {
   allo_m.def("memref_dce", &memRefDCE);
   allo_m.def("copy_on_write", &copyOnWrite);
   allo_m.def("unify_kernels", &UnifyKernels);
+
+  // Utility APIs
+  allo_m.def("get_first_use_in_function", &getFirstUseInFunction);
+  allo_m.def("get_last_use_in_function", &getLastUseInFunction);
 }
