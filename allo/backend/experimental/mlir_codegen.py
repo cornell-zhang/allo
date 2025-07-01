@@ -779,64 +779,88 @@ class CodeGenerator:
                 ][other.sample_interface.interface_idx]
                 # TODO: can be relaxed:
                 #   currently, if the interface is reused by multiple groups (different tokens), it cannot be multicast
-                if (
-                    len(sample_global_tensors.dtensor_groups)
-                    == len(other_global_tensor.dtensor_groups)
-                    == 1
+                # fixme: relax this!!
+                if len(sample_global_tensors.dtensor_groups) == len(
+                    other_global_tensor.dtensor_groups
                 ):
-                    sample_value = next(
-                        iter(sample_global_tensors.dtensor_groups.values())
-                    )
-                    other_value = next(
-                        iter(other_global_tensor.dtensor_groups.values())
-                    )
-                    if len(sample_value) == len(other_value):
-                        shape: list[int] = None
-                        for sample_tile, other_tile in zip(sample_value, other_value):
-                            if (
-                                not sample_tile.tile.dtensor_id
-                                == other_tile.tile.dtensor_id
-                            ):
-                                return None
-                            dtensor = global_dtensor[sample_tile.tile.dtensor_id]
-                            outer_shape = [1, 1, 1, 1]
-                            for i in dtensor.shared_dims:
-                                outer_shape[i] = dtensor.size[i]
-                            if shape is not None and shape != outer_shape:
-                                return None
-                            else:
-                                shape = outer_shape
-                            outer_stride = [1] * 4
-                            for i in reversed(range(3)):
-                                outer_stride[i] = (
-                                    outer_stride[i + 1] * outer_shape[i + 1]
-                                )
-                            sample_offset = dtensor.offset_map[
-                                sample_tile.tile.tensor_tile_label
-                            ].to_list()
-                            sample_flattened_idx = sum(
-                                i * s for i, s in zip(sample_offset, outer_stride)
-                            )
-                            other_offset = dtensor.offset_map[
-                                other_tile.tile.tensor_tile_label
-                            ].to_list()
-                            other_flattened_idx = sum(
-                                i * s for i, s in zip(other_offset, outer_stride)
-                            )
-                            if other_flattened_idx - sample_flattened_idx != 1:
-                                return None
-                        new_size_list = current_size.to_list()
-                        offset_1, offset_2 = sample_offset, other_offset
-                        for i in range(4):
-                            new_size_list[i] = (
-                                new_size_list[i] + offset_2[i] - offset_1[i]
-                            )
-                        self.tokens.add(
-                            tuple(
-                                sorted(list(other_global_tensor.dtensor_groups.keys()))
-                            )
+                    shape: list[int] = None
+                    new_size_list: list[int] = None
+                    for sample_value in sample_global_tensors.dtensor_groups.values():
+                        sample_matched_with_other_flag = False
+                        other_value_list = list(
+                            other_global_tensor.dtensor_groups.values()
                         )
-                        return Size4D.from_list(new_size_list)
+                        for other_idx, other_value in enumerate(other_value_list):
+                            if other_value is not None and len(sample_value) == len(
+                                other_value
+                            ):
+                                match_flag = True
+                                for sample_tile, other_tile in zip(
+                                    sample_value, other_value
+                                ):
+                                    if (
+                                        other_tile is None
+                                        or sample_tile.tile.dtensor_id
+                                        != other_tile.tile.dtensor_id
+                                    ):
+                                        match_flag = False
+                                        break
+                                    dtensor = global_dtensor[
+                                        sample_tile.tile.dtensor_id
+                                    ]
+                                    outer_shape = [1, 1, 1, 1]
+                                    for i in dtensor.shared_dims:
+                                        outer_shape[i] = dtensor.size[i]
+                                    if shape is not None and shape != outer_shape:
+                                        match_flag = False
+                                        break
+                                    else:
+                                        shape = outer_shape
+                                    outer_stride = [1] * 4
+                                    for i in reversed(range(3)):
+                                        outer_stride[i] = (
+                                            outer_stride[i + 1] * outer_shape[i + 1]
+                                        )
+                                    sample_offset = dtensor.offset_map[
+                                        sample_tile.tile.tensor_tile_label
+                                    ].to_list()
+                                    sample_flattened_idx = sum(
+                                        i * s
+                                        for i, s in zip(sample_offset, outer_stride)
+                                    )
+                                    other_offset = dtensor.offset_map[
+                                        other_tile.tile.tensor_tile_label
+                                    ].to_list()
+                                    other_flattened_idx = sum(
+                                        i * s
+                                        for i, s in zip(other_offset, outer_stride)
+                                    )
+                                    if other_flattened_idx - sample_flattened_idx != 1:
+                                        match_flag = False
+                                        break
+                                    new_size_list_ = current_size.to_list()
+                                    offset_1, offset_2 = sample_offset, other_offset
+                                    for i in range(4):
+                                        new_size_list_[i] = (
+                                            new_size_list_[i]
+                                            + offset_2[i]
+                                            - offset_1[i]
+                                        )
+                                    if new_size_list is None:
+                                        new_size_list = new_size_list_
+                                    elif new_size_list != new_size_list_:
+                                        match_flag = False
+                                        break
+                                if match_flag:
+                                    other_value_list[other_idx] = None
+                                    sample_matched_with_other_flag = True
+                                    break
+                        if not sample_matched_with_other_flag:
+                            return None
+                    self.tokens.add(
+                        tuple(sorted(list(other_global_tensor.dtensor_groups.keys())))
+                    )
+                    return Size4D.from_list(new_size_list)
                 return None
 
             def get_pes(self) -> list[str]:
@@ -990,7 +1014,6 @@ class CodeGenerator:
                     send_ports if is_input else recv_ports,
                     connected_interfaces,
                 )
-            # TODO: port reuse
             return None, -1, [], []
 
         def assign_shim_tile(
@@ -1042,7 +1065,6 @@ class CodeGenerator:
                     print("\nassigned_shim_tile: ", end="")
                     assigned_shim_tile.print()
                 return assigned_shim_tile, send_port.id if is_input else recv_port.id
-                # TODO: port reuse
             return None, -1
 
         mapped_interface: dict[str, dict[int, FIFO]] = {
@@ -1214,8 +1236,13 @@ class CodeGenerator:
                             print("============")
                             print(interface_list)
                             print("====++++====")
+                            # assigned_mem_tile.print()
                             for shim_tile in self.used_shim_tiles:
                                 shim_tile.print()
+                            for pe, fifo_dict in mapped_interface.items():
+                                print(pe)
+                                for idx, fifo in fifo_dict.items():
+                                    print("\t", idx, ":", fifo)
                             raise ValueError("Fail to assign shim tile")
                         shim_port_to_mem = (
                             assigned_shim_tile.send_ports[shim_port_id]
@@ -1387,11 +1414,13 @@ class CodeGenerator:
         merged_token_sets: list[set[tuple[str]]] = merge_token_sets(related_token_list)
         for token_set in merged_token_sets:
             if len(token_set) > 1:
-                token_cnt += 1
-                token = f"token_{token_cnt}"
-                for local_token in token_set:
-                    assert len(local_token) == 1
-                    token_map[local_token[0]] = token
+                token_number = len(list(token_set)[0])
+                for token_idx in range(token_number):
+                    token_cnt += 1
+                    token = f"token_{token_cnt}"
+                    for local_tokens in token_set:
+                        assert len(local_tokens) == token_number
+                        token_map[local_tokens[token_idx]] = token
             else:
                 for local_token in list(token_set)[0]:
                     token_cnt += 1

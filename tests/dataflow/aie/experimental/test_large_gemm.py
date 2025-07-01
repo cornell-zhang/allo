@@ -24,17 +24,18 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
     if Pn // 4 > 1:
         for i in range(Pm):
             for j in range(4):
-                mapping_primitives.append(
-                    ("bundle", bases[i][j * (Pn // 4) : (j + 1) * (Pn // 4)])
-                )
-                print(bases[i][j * (Pn // 4) : (j + 1) * (Pn // 4)])
+                bundle_list = []
+                for k in range(Pn // 4):
+                    bundle_list.append(bases[i][j + 4 * k])
+                mapping_primitives.append(("bundle", bundle_list))
+                print(bundle_list)
     return mapping_primitives
 
 
 def _test_pingpong_gemm_4x4x4(TyI, TyO):
 
-    M, N, K = 128, 128, 512
-    Pm, Pn, Pk = 4, 4, 4
+    M, N, K = 128, 256, 512
+    Pm, Pn, Pk = 4, 8, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
     LyA = Layout("S1S2")
