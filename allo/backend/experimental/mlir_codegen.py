@@ -734,11 +734,13 @@ class CodeGenerator:
                 sample_global_tensors = global_tensors[interface.pe][
                     interface.interface_idx
                 ]
-                # disjoint
-                self.tokens: set[tuple[str]] = set()
-                self.tokens.add(
-                    tuple(sorted(list(sample_global_tensors.dtensor_groups.keys())))
+                self.sample_tokens: list[str] = sorted(
+                    list(sample_global_tensors.dtensor_groups.keys())
                 )
+                # disjoint
+                # fixme: better to mentain another set in contiguous ones
+                self.tokens: set[tuple[str]] = set()
+                self.tokens.add(tuple(self.sample_tokens))
 
             def _equal_data_transfer(self, other: "MulticastInterface") -> bool:
                 if self.sample_interface.layout != other.sample_interface.layout:
@@ -779,21 +781,25 @@ class CodeGenerator:
                 ][other.sample_interface.interface_idx]
                 # TODO: can be relaxed:
                 #   currently, if the interface is reused by multiple groups (different tokens), it cannot be multicast
-                # fixme: relax this!!
                 if len(sample_global_tensors.dtensor_groups) == len(
                     other_global_tensor.dtensor_groups
                 ):
                     shape: list[int] = None
                     new_size_list: list[int] = None
-                    for sample_value in sample_global_tensors.dtensor_groups.values():
+                    sample_value_list = [
+                        sample_global_tensors.dtensor_groups[k]
+                        for k in self.sample_tokens
+                    ]
+                    new_token_list: list[str] = []
+                    for sample_value in sample_value_list:
                         sample_matched_with_other_flag = False
-                        other_value_list = list(
-                            other_global_tensor.dtensor_groups.values()
-                        )
-                        for other_idx, other_value in enumerate(other_value_list):
-                            if other_value is not None and len(sample_value) == len(
-                                other_value
-                            ):
+                        for (
+                            other_token,
+                            other_value,
+                        ) in other_global_tensor.dtensor_groups.items():
+                            if other_token not in new_token_list and len(
+                                sample_value
+                            ) == len(other_value):
                                 match_flag = True
                                 for sample_tile, other_tile in zip(
                                     sample_value, other_value
@@ -852,14 +858,12 @@ class CodeGenerator:
                                         match_flag = False
                                         break
                                 if match_flag:
-                                    other_value_list[other_idx] = None
+                                    new_token_list.append(other_token)
                                     sample_matched_with_other_flag = True
                                     break
                         if not sample_matched_with_other_flag:
                             return None
-                    self.tokens.add(
-                        tuple(sorted(list(other_global_tensor.dtensor_groups.keys())))
-                    )
+                    self.tokens.add(tuple(new_token_list))
                     return Size4D.from_list(new_size_list)
                 return None
 
@@ -1115,6 +1119,7 @@ class CodeGenerator:
                                 current.interface_list.update(
                                     multicast_list[j].interface_list
                                 )
+                                current.tokens.update(multicast_list[j].tokens)
                                 used[j] = True
                                 changed = True
                         new_list.append(current)
@@ -1413,18 +1418,13 @@ class CodeGenerator:
             related_token_list.append(related_tokens)
         merged_token_sets: list[set[tuple[str]]] = merge_token_sets(related_token_list)
         for token_set in merged_token_sets:
-            if len(token_set) > 1:
-                token_number = len(list(token_set)[0])
-                for token_idx in range(token_number):
-                    token_cnt += 1
-                    token = f"token_{token_cnt}"
-                    for local_tokens in token_set:
-                        assert len(local_tokens) == token_number
-                        token_map[local_tokens[token_idx]] = token
-            else:
-                for local_token in list(token_set)[0]:
-                    token_cnt += 1
-                    token_map[local_token] = f"token_{token_cnt}"
+            token_number = len(list(token_set)[0])
+            for token_idx in range(token_number):
+                token = f"token_{token_cnt + token_idx}"
+                for local_tokens in token_set:
+                    assert len(local_tokens) == token_number
+                    token_map[local_tokens[token_idx]] = token
+            token_cnt += token_number
 
         for io_port in global_io_port:
             interfaces: list[MulticastInterface] = io_port.connect_interface
