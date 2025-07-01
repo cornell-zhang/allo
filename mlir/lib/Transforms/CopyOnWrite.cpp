@@ -104,6 +104,11 @@ bool applyCopyOnWrite(ModuleOp &mod) {
   }
   return true;
 }
+
+void applyCopyOnWriteOnFunction(Operation &func) {
+  func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  removeRedundentCopy(funcOp);
+}
 } // namespace allo
 } // namespace mlir
 

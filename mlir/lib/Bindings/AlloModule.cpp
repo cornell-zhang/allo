@@ -175,6 +175,10 @@ static bool copyOnWrite(MlirModule &mlir_mod) {
   return applyCopyOnWrite(mod);
 }
 
+static void copyOnWriteOnFunction(MlirOperation &func) {
+  applyCopyOnWriteOnFunction(*unwrap(func));
+}
+
 static MlirModule UnifyKernels(MlirModule &mlir_mod1, MlirModule &mlir_mod2,
                                int loop_num) {
   auto mod1 = unwrap(mlir_mod1);
@@ -302,6 +306,8 @@ PYBIND11_MODULE(_allo, m) {
   allo_m.def("memref_dce", &memRefDCE);
   allo_m.def("copy_on_write", &copyOnWrite);
   allo_m.def("unify_kernels", &UnifyKernels);
+
+  allo_m.def("copy_on_write_on_function", &copyOnWriteOnFunction);
 
   // Utility APIs
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);

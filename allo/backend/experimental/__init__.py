@@ -413,21 +413,10 @@ class AIE_MLIRModule:
             for op in dead_ops:
                 op.erase()
 
-        # pipeline = f"builtin.module(copy-on-write)"
-        # with self.allo_module.context:
-        #     mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
                 simplify_matmul_accumulate(func)
-                # allo_d.copy_on_write(func)
-
-        pipeline = f"builtin.module(copy-on-write)"
-        with self.allo_module.context:
-            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-
-        for func in self.allo_module.body.operations:
-            if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
+                allo_d.copy_on_write_on_function(func)
                 vectorize_matmul(func)
                 optimize_layout_transformation(func)
 

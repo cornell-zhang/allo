@@ -6,6 +6,7 @@
 #ifndef ALLO_TRANSFORMS_PASSES_H
 #define ALLO_TRANSFORMS_PASSES_H
 
+#include "mlir/CAPI/IR.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
@@ -29,6 +30,7 @@ bool applyRemoveStrideMap(ModuleOp &module);
 bool applyMemRefDCE(ModuleOp &module);
 bool applyDataPlacement(ModuleOp &module);
 bool applyCopyOnWrite(ModuleOp &module);
+void applyCopyOnWriteOnFunction(Operation &func);
 ModuleOp applyUnifyKernels(ModuleOp &module1, ModuleOp &module2, int loop_num);
 
 /// Registers all Allo transformation passes
