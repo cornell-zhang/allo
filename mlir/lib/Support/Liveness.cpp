@@ -11,6 +11,7 @@ using namespace allo;
 
 namespace mlir {
 namespace allo {
+// ! These functions may fail if multiple first/last use are in branches
 Operation *getFirstUse(Value value, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
   DominanceInfo domInfo(&func);
