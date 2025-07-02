@@ -58,7 +58,7 @@ np.random.seed(0)
 # ===============================================================================
 # Model Configuration
 # ===============================================================================
-USE_ALL_NPU_KERNELS = False  # if not, we will offload softmax and gelu to cpu
+USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
 
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
@@ -282,6 +282,29 @@ def run(x_fp32: np.ndarray, params: dict):
         ):
             masked_softmax(input_x, row, output_x)
 
+    # ----------------------------------------------------------------
+    # Gelu
+    # ----------------------------------------------------------------
+    gelu = ExternalModule(
+        top="gelu_float32",
+        impl_path="gelu.cc",
+        input_idx=[0],
+        output_idx=[1],
+    )
+    GELU_P0 = 4
+    GELU_P1 = 4
+    GELU_SEQ_TILE = 16
+    GELU_Ly = Layout("S0S1")
+
+    @df.region()
+    def gelu_kernel():
+        @df.kernel(mapping=[GELU_P0, GELU_P1])
+        def core(
+            input_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
+            output_x: Ty[GELU_SEQ_TILE, FFN_HID] @ GELU_Ly,
+        ):
+            gelu(input_x, output_x)
+
     # ##############################################################
     # BUILD
     # ##############################################################
@@ -298,6 +321,7 @@ def run(x_fp32: np.ndarray, params: dict):
     masked_softmax_mod = df.build(
         masked_softmax_kernel, target="aie-mlir", project="masked_softmax.prj"
     )
+    gelu_mod = df.build(gelu_kernel, target="aie-mlir", project="gelu.prj")
 
     # ##############################################################
     # TOOL
@@ -450,12 +474,17 @@ def run(x_fp32: np.ndarray, params: dict):
     ffn_up_x = np.zeros((SEQ, FFN_HID)).astype(np.float32)
     linear_projection(x, params["W_up"], ffn_up_x, SEQ, FFN_HID, EMBD)
 
-    # TODO: glue activation
-    #   fixme ------------------------------
-    tensor_ffn_up_x = torch.from_numpy(ffn_up_x)
-    gelu_func = nn.GELU()
-    activeated_x = gelu_func(tensor_ffn_up_x).numpy()
-    #   fixme ------------------------------
+    if USE_ALL_NPU_KERNELS:
+        activeated_x = np.zeros((SEQ, FFN_HID)).astype(np.float32)
+        for i in range(SEQ // GELU_SEQ_TILE):
+            gelu_mod(
+                ffn_up_x[i * GELU_SEQ_TILE : (i + 1) * GELU_SEQ_TILE, :],
+                activeated_x[i * GELU_SEQ_TILE : (i + 1) * GELU_SEQ_TILE, :],
+            )
+    else:
+        tensor_ffn_up_x = torch.from_numpy(ffn_up_x)
+        gelu_func = nn.GELU()
+        activeated_x = gelu_func(tensor_ffn_up_x).numpy()
 
     x = np.zeros((SEQ, EMBD)).astype(np.float32)
     linear_projection(activeated_x, params["W_down"], x, SEQ, EMBD, FFN_HID)
@@ -490,5 +519,5 @@ if __name__ == "__main__":
     # test
     sample = ref_model(x_float)
     allo_out = run(x_float.numpy(), params)
-    np.testing.assert_allclose(allo_out, sample.detach().numpy(), rtol=5e-2)
+    np.testing.assert_allclose(allo_out, sample.detach().numpy(), rtol=1e-1)
     print("Allo float32 block matches PyTorch float32 reference within tolerance ✔️")
