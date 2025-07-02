@@ -87,20 +87,17 @@ void masked_softmax_float32(float attention_score[32][64],
     float *__restrict current_attention_score_row_ptr = &attention_score[r][0];
     float *__restrict current_attn_weights_row_ptr = &attn_weights[r][0];
 
-    // Load the two vector segments for the current row (64 columns / 32
     for (int k = 0; k < SEQ_COLS; ++k) {
       if (k > global_row_idx) {
         attention_score[r][k] = neg_inf;
       }
     }
-
     aie::vector<float, VEC_SIZE> scores_v0 =
         aie::load_v<VEC_SIZE>(current_attention_score_row_ptr);
     aie::vector<float, VEC_SIZE> scores_v1 =
         aie::load_v<VEC_SIZE>(current_attention_score_row_ptr + VEC_SIZE);
 
     // --- Find Max Value for Numerical Stability (LogSumExp trick) ---
-    // aie::reduce_max should work for float vectors.
     float row_max = aie::reduce_max(scores_v0);
     row_max = std::max(row_max, aie::reduce_max(scores_v1));
     scores_v0 = aie::add(scores_v0, -row_max);

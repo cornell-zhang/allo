@@ -58,6 +58,8 @@ np.random.seed(0)
 # ===============================================================================
 # Model Configuration
 # ===============================================================================
+USE_ALL_NPU_KERNELS = False  # if not, we will offload softmax and gelu to cpu
+
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
 EMBD = 768  # 64 * 12
@@ -65,7 +67,7 @@ N_HEAD = 12
 HEAD_DIM = EMBD // N_HEAD
 FFN_HID = EMBD * 4
 
-assert SEQ % 64 == 0, "SEQ must be a multiple of 64"
+assert SEQ == 64, "SEQ must be 64 (to use masked softmax external kernel)"
 assert EMBD % 64 == 0, "EMBD must be a multiple of 64"
 assert HEAD_DIM % 64 == 0, "HEAD_DIM must be a multiple of 64"
 
@@ -253,6 +255,33 @@ def run(x_fp32: np.ndarray, params: dict):
         ):
             attn_score(A, B, C)
 
+    # ----------------------------------------------------------------
+    # Masked Softmax
+    # ----------------------------------------------------------------
+    masked_softmax = ExternalModule(
+        top="masked_softmax_float32",
+        impl_path="masked_softmax.cc",
+        input_idx=[0, 1],
+        output_idx=[2],
+    )
+    Tint = int32
+    SOFTMAX_P0 = 2
+    SOFTMAX_P1 = 3
+    SOFTMAX_HEAD_TILE = SOFTMAX_P1
+    SOFTMAX_SEQ_TILE = SEQ // SOFTMAX_P0
+    SOFTMAX_Ly = Layout("S1S0")
+    SOFTMAX_ROW_Ly = Layout("S1")
+
+    @df.region()
+    def masked_softmax_kernel():
+        @df.kernel(mapping=[SOFTMAX_P0, SOFTMAX_P1])
+        def core(
+            input_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
+            row: Tint[SOFTMAX_P0] @ SOFTMAX_ROW_Ly,
+            output_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
+        ):
+            masked_softmax(input_x, row, output_x)
+
     # ##############################################################
     # BUILD
     # ##############################################################
@@ -265,6 +294,9 @@ def run(x_fp32: np.ndarray, params: dict):
     )
     attn_score_mod = df.build(
         attn_score_kernel, target="aie-mlir", project="attn_score.prj"
+    )
+    masked_softmax_mod = df.build(
+        masked_softmax_kernel, target="aie-mlir", project="masked_softmax.prj"
     )
 
     # ##############################################################
@@ -328,6 +360,21 @@ def run(x_fp32: np.ndarray, params: dict):
                     ],
                 )
 
+    def masked_softmax(attention_score, attention_weight):
+        row_idx = np.array(list(range(0, SEQ, SOFTMAX_SEQ_TILE)))
+        for i in range(N_HEAD // SOFTMAX_HEAD_TILE):
+            masked_softmax_mod(
+                attention_score[
+                    :,
+                    i * (SOFTMAX_HEAD_TILE * SEQ) : (i + 1) * (SOFTMAX_HEAD_TILE * SEQ),
+                ],
+                row_idx,
+                attention_weight[
+                    :,
+                    i * (SOFTMAX_HEAD_TILE * SEQ) : (i + 1) * (SOFTMAX_HEAD_TILE * SEQ),
+                ],
+            )
+
     # ##############################################################
     # FORWARD
     # ##############################################################
@@ -365,23 +412,27 @@ def run(x_fp32: np.ndarray, params: dict):
                     ],
                 )
 
-    # TODO: mask and safe softmax
-    #   fixme ------------------------------
-    mask = torch.triu(torch.ones(SEQ, SEQ), 1).bool()
-    mask = np.repeat(mask[np.newaxis, :, :], N_HEAD, axis=0)
-    # mask.unsqueeze(0)
-    attention_score[mask == 1] = -np.inf
-    # attention_score = attention_score.masked_fill(mask == 1, float("-inf"))
-    tensor_atten_score = torch.from_numpy(attention_score)
-    attn_weight = F.softmax(tensor_atten_score, dim=-1)
-    attn_weight = attn_weight.numpy()
-    #   fixme ------------------------------
+    # safe softmax
+    if USE_ALL_NPU_KERNELS:
+        attn_weight = np.zeros((SEQ, N_HEAD * SEQ)).astype(np.float32)
+        masked_softmax(attention_score, attn_weight)
+    else:
+        mask = torch.triu(torch.ones(SEQ, SEQ), 1).bool()
+        mask = np.repeat(mask[np.newaxis, :, :], N_HEAD, axis=0)
+        attention_score[mask == 1] = -np.inf
+        tensor_atten_score = torch.from_numpy(attention_score)
+        attn_weight = F.softmax(tensor_atten_score, dim=-1)
+        attn_weight = attn_weight.numpy()
 
     # attention value
     attn_value = np.zeros((SEQ, EMBD)).astype(np.float32)
     for k in range(N_HEAD):
         linear_projection(
-            attn_weight[k, :, :],
+            (
+                attn_weight[:, k * SEQ : (k + 1) * SEQ]
+                if USE_ALL_NPU_KERNELS
+                else attn_weight[k, :, :]
+            ),
             value[:, k * HEAD_DIM : (k + 1) * HEAD_DIM],
             attn_value[:, k * HEAD_DIM : (k + 1) * HEAD_DIM],
             SEQ,
