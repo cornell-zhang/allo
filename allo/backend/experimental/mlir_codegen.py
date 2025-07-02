@@ -1685,7 +1685,7 @@ class CodeGenerator:
                             "external.o"
                             if self.virtual_computation_graph.nodes[
                                 func_name
-                            ].use_external_kernel
+                            ].meta_data.use_external_kernel
                             else None
                         ),
                     )

@@ -99,7 +99,7 @@ class FIFO:
     ):
         self.name = name
         self.src = src
-        self.dst = sorted(dst)
+        self.dst = dst
         self.data_shape = data_shape
         self.dtype = dtype
         self.depth = depth
@@ -210,20 +210,6 @@ class SwitchNode:
 # ############################################################
 # Computation Mapping Graph
 # ############################################################
-class OperationTagger:
-    def __init__(self) -> None:
-        self.tag_map: dict[str, str] = {}
-        self.counter = 0
-
-    def get_init_tag(self, key: str) -> str:
-        """Return existing tag or assign a new one if not present."""
-        if key not in self.tag_map:
-            tag = f"tag_{self.counter}"
-            self.tag_map[key] = tag
-            self.counter += 1
-        return self.tag_map[key]
-
-
 class LiveDTensorTile:
     def __init__(self, tile: DTensorTile, token: str, is_input: bool):
         self.tile = tile
@@ -312,37 +298,28 @@ class LiveDTensorTileGroup:
 
 
 # ------------------------------------------------------------
-class NodeBase:
-    node_list: list["NodeBase"] = []
+class NodeMetaData:
+    node_cnt = 0
 
     def __init__(
         self,
         name: str = None,
-        func: func_d.FuncOp = None,
         use_external_kernel: bool = False,
         tag: str = None,
         repeat: int = 0,
         length: int = 1,
     ):
-        self.id = len(NodeBase.node_list)
-        NodeBase.node_list.append(self)
+        self.id = NodeMetaData.node_cnt
+        NodeMetaData.node_cnt += 1
         self.name = name if name is not None else f"function_{self.id}"
-        self.func: func_d.FuncOp = func
         self.use_external_kernel = use_external_kernel
-        self.repeat: int = repeat
-        self.length: int = length
         self.op_tag: str = tag
-        # arg_idx -> tiling using arg as interface
-        # TODO: interface reuse
-        self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
+        self.repeat: int = repeat  # repeat count after bundling
+        self.length: int = length
         self.input_streams: list[Stream] = []
         self.output_streams: list[Stream] = []
-        self.interface_layout: dict[int, tuple[list, list, list]] = {}
 
-    def is_isomorphic_to(self, other: "NodeBase") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
+    def test_isomorphism(self, other: "NodeMetaData") -> bool:
         if self.op_tag != other.op_tag:
             return False
         in1 = Counter((s.src, s.type_str) for s in self.input_streams)
@@ -355,17 +332,57 @@ class NodeBase:
             return False
         return True
 
+
+class IntermediateNode:
+    """
+    Intermediate node in the computation graph, make sure to 'finalize' which actually does 'collocation'.
+    """
+
+    def __init__(
+        self, name=None, use_external_kernel=False, tag=None, repeat=0, length=1
+    ):
+        self.meta_data: NodeMetaData = NodeMetaData(
+            name, use_external_kernel, tag, repeat, length
+        )
+        self.interfaces: dict[str, dict[int, list[LiveDTensorTile]]] = {}
+        self.interface_layout: dict[int, tuple[list, list, list]] = {}
+
+
+class NodeBase:
+    def __init__(
+        self,
+        name: str = None,
+        func: func_d.FuncOp = None,
+        use_external_kernel: bool = False,
+        tag: str = None,
+        repeat: int = 0,
+        length: int = 1,
+    ):
+        self.meta_data: NodeMetaData = NodeMetaData(
+            name, use_external_kernel, tag, repeat, length
+        )
+        self.func: func_d.FuncOp = func
+        # arg_idx -> tiling using arg as interface
+        self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
+        self.interface_layout: dict[int, tuple[list, list, list]] = {}
+
+    def is_isomorphic_to(self, other: "NodeBase") -> bool:
+        # TODO: check in a more robust way
+        if self is other:
+            return True
+        return self.meta_data.test_isomorphism(other.meta_data)
+
     def __str__(self) -> str:
         def fmt_list(lst: list) -> str:
             return "[" + ", ".join(str(item) for item in lst) + "]"
 
         return (
-            f"Node({self.id}) {self.name}"
-            f"Operation(tag='{self.op_tag}', repeat={self.repeat})\n"
+            f"Node({self.meta_data.id}) {self.meta_data.name}"
+            f"Operation(tag='{self.meta_data.op_tag}', repeat={self.meta_data.repeat})\n"
             f"\tGlobal IO Tiles: "
             f"{ {k: fmt_list(v) for k, v in self.global_interfaces.items()} }\n"
-            f"\tInput Streams: {[str(s) for s in self.input_streams]}\n"
-            f"\tOutput Streams: {[str(s) for s in self.output_streams]}"
+            f"\tInput Streams: {[str(s) for s in self.meta_data.input_streams]}\n"
+            f"\tOutput Streams: {[str(s) for s in self.meta_data.output_streams]}"
         )
 
     def __repr__(self) -> str:
@@ -401,14 +418,27 @@ class CollocatedNode(NodeBase):
         super().__init__(name=name, func=func, tag=tag, repeat=repeat, length=length)
 
     def _init_for_bundle(self, sample_node: NodeBase):
-        self.use_external_kernel = sample_node.use_external_kernel
-        self.input_streams = list(sample_node.input_streams)
-        self.output_streams = list(sample_node.output_streams)
+        self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
+        self.meta_data.input_streams = list(sample_node.meta_data.input_streams)
+        self.meta_data.output_streams = list(sample_node.meta_data.output_streams)
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
 
 
 # ------------------------------------------------------------
 class ComputationGraph:
+    class OperationTagger:
+        def __init__(self) -> None:
+            self.tag_map: dict[str, tuple[str, func_d.FuncOp]] = {}
+            self.counter = 0
+
+        def get_tag(self, key: str, func: func_d.FuncOp) -> str:
+            """Return existing tag or assign a new one if not present."""
+            if key not in self.tag_map:
+                tag = f"tag_{self.counter}"
+                self.tag_map[key] = (tag, func)
+                self.counter += 1
+            return self.tag_map[key][0]
+
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
@@ -421,7 +451,7 @@ class ComputationGraph:
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.tagger = OperationTagger()
+        self.tagger = ComputationGraph.OperationTagger()
         self.dependencies: dict[str, set[str]] = {}
 
         df_kernels = get_df_kernels(allo_module)
@@ -432,16 +462,18 @@ class ComputationGraph:
                 r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
             )
             node = InitialNode(
-                func, use_external_kernels[func_name], self.tagger.get_init_tag(tag_key)
+                func,
+                use_external_kernels[func_name],
+                self.tagger.get_tag(tag_key, func),
             )
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
             for idx, (argument, is_input) in params.items():
                 if argument.stream is not None:
                     if is_input:
-                        node.input_streams.append(argument.stream)
+                        node.meta_data.input_streams.append(argument.stream)
                     else:
-                        node.output_streams.append(argument.stream)
+                        node.meta_data.output_streams.append(argument.stream)
                 if argument.dtensor is not None:
                     tensor_tile = DTensorTile(
                         argument.dtensor.global_id,
@@ -460,6 +492,19 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
+    def bundle_exp(self, node_name_list: list[str]):
+        """
+        [A] [B] [C] [D]  => [A] x 4
+
+        TODO: bundled nodes can be safely reordered
+        """
+        assert len(node_name_list) >= 2, "bundle at least two nodes"
+
+    def chain_exp(self, node_name_a: str, node_name_b: str):
+        """
+        [A] [B] => [[A]-[B]]
+        """
+        pass
 
     def bundle(self, node_name_list: list[str]):
         """
@@ -476,17 +521,17 @@ class ComputationGraph:
         for node in node_list:
             if not sample_node.is_isomorphic_to(node):
                 raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.name}) is not isomorphic to Node({sample_node.name})"
+                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
                 )
         bundled_node = CollocatedNode(
-            tag=sample_node.op_tag,
-            name=sample_node.name,
+            tag=sample_node.meta_data.op_tag,
+            name=sample_node.meta_data.name,
             func=sample_node.func,
-            length=sample_node.length,
+            length=sample_node.meta_data.length,
         )
         bundled_node._init_for_bundle(sample_node)
         for node in node_list:
-            bundled_node.repeat += node.repeat
+            bundled_node.meta_data.repeat += node.meta_data.repeat
             for key, value in node.global_interfaces.items():
                 assert key in bundled_node.global_interfaces
                 bundled_node.global_interfaces[key].extend(value)
@@ -495,19 +540,19 @@ class ComputationGraph:
         for name, stream in self.edges.items():
             if stream.src in node_name_list:
                 self.dependencies[stream.dst].pop(stream.src)
-                stream.src = bundled_node.name
-                self.dependencies[stream.dst].add(bundled_node.name)
+                stream.src = bundled_node.meta_data.name
+                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
             if stream.dst in node_name_list:
-                stream.dst = bundled_node.name
-                self.dependencies[bundled_node.name].add(stream.src)
+                stream.dst = bundled_node.meta_data.name
+                self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
         for name in node_name_list:
             removed = self.nodes.pop(name)
-            if not name == bundled_node.name:
+            if not name == bundled_node.meta_data.name:
                 removed.func.erase()
                 self.func_args.pop(name)
                 self.dependencies.pop(name)
-        self.nodes[bundled_node.name] = bundled_node
+        self.nodes[bundled_node.meta_data.name] = bundled_node
 
     def chain(self, node_name_a: str, node_name_b: str):
         """
@@ -532,26 +577,26 @@ class ComputationGraph:
             )
         # TODO: repeat function
         assert (
-            node_a.repeat == node_b.repeat == 1
+            node_a.meta_data.repeat == node_b.meta_data.repeat == 1
         ), "Cannot chaining nodes with repeats currently"
-        bundled_tag = (
-            f"({node_a.op_tag})x{node_a.repeat}-({node_b.op_tag})x{node_b.repeat}"
-        )
+        bundled_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
         chained_node = CollocatedNode(
             bundled_tag,
-            name=f"{node_a.name}-{node_b.name}",
+            name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
             repeat=1,
-            length=node_a.length + node_b.length,
+            length=node_a.meta_data.length + node_b.meta_data.length,
         )
-        chained_node.use_external_kernel = (
-            node_a.use_external_kernel or node_b.use_external_kernel
+        chained_node.meta_data.use_external_kernel = (
+            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
         )
         bufferized_stream: dict[Stream, BufferizedStream] = {}
-        node_a.output_streams = [
-            stream for stream in node_a.output_streams if stream.dst != node_name_b
+        node_a.meta_data.output_streams = [
+            stream
+            for stream in node_a.meta_data.output_streams
+            if stream.dst != node_name_b
         ]
         kept_streams = []
-        for stream in node_b.input_streams:
+        for stream in node_b.meta_data.input_streams:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
                 for idx, arg_info in param_a.items():
@@ -568,11 +613,11 @@ class ComputationGraph:
                 )
             else:
                 kept_streams.append(stream)
-        node_b.input_streams = kept_streams
-        chained_node.input_streams.extend(node_a.input_streams)
-        chained_node.input_streams.extend(node_b.input_streams)
-        chained_node.output_streams.extend(node_a.output_streams)
-        chained_node.output_streams.extend(node_b.output_streams)
+        node_b.meta_data.input_streams = kept_streams
+        chained_node.meta_data.input_streams.extend(node_a.meta_data.input_streams)
+        chained_node.meta_data.input_streams.extend(node_b.meta_data.input_streams)
+        chained_node.meta_data.output_streams.extend(node_a.meta_data.output_streams)
+        chained_node.meta_data.output_streams.extend(node_b.meta_data.output_streams)
         # refactor function
         function_a: func_d.FuncOp = node_a.func
         function_b: func_d.FuncOp = node_b.func
@@ -585,10 +630,12 @@ class ComputationGraph:
         chained_node.global_interfaces.update(node_a.global_interfaces)
         for key, value in node_b.global_interfaces.items():
             for live_tile in value:
-                live_tile.first_use += Config.LOCAL_CODE_OFFSET * node_a.length
-                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.length
+                live_tile.first_use += (
+                    Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
+                )
+                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
             chained_node.global_interfaces[arg_idx_offset + key] = value
-        new_token = node_a.name + "-" + node_b.name
+        new_token = node_a.meta_data.name + "-" + node_b.meta_data.name
         for live_tile_list in chained_node.global_interfaces.values():
             for live_tile in live_tile_list:
                 live_tile.token = new_token
@@ -597,7 +644,7 @@ class ComputationGraph:
                 in_types_a + in_types_b, out_types_a + out_types_b
             )
             new_function = func_d.FuncOp(
-                chained_node.name,
+                chained_node.meta_data.name,
                 func_type,
                 ip=InsertionPoint(function_a),
             )
@@ -664,26 +711,33 @@ class ComputationGraph:
         chained_node.func = new_function
         self.func_args.pop(node_name_a)
         self.func_args.pop(node_name_b)
-        self.func_args[chained_node.name] = param_a
+        self.func_args[chained_node.meta_data.name] = param_a
         for key, value in param_b.items():
-            self.func_args[chained_node.name][arg_idx_offset + key] = value
+            self.func_args[chained_node.meta_data.name][arg_idx_offset + key] = value
 
         dep = self.dependencies.pop(node_name_a)
         dep.update(self.dependencies.pop(node_name_b))
-        self.dependencies[chained_node.name] = dep
+        self.dependencies[chained_node.meta_data.name] = dep
         for deps in self.dependencies.values():
             if node_name_a in deps:
                 deps.remove(node_name_a)
-                deps.add(chained_node.name)
+                deps.add(chained_node.meta_data.name)
             if node_name_b in deps:
                 deps.remove(node_name_b)
-                deps.add(chained_node.name)
+                deps.add(chained_node.meta_data.name)
         for stream in self.edges.values():
             if stream.src == node_name_a or stream.src == node_name_b:
-                stream.src = chained_node.name
+                stream.src = chained_node.meta_data.name
             if stream.dst == node_name_a or stream.dst == node_name_b:
-                stream.dst = chained_node.name
-        self.nodes[chained_node.name] = chained_node
+                stream.dst = chained_node.meta_data.name
+        self.nodes[chained_node.meta_data.name] = chained_node
+
+    # ------------------------------------------------------------
+    # Graph Information
+    # ------------------------------------------------------------
+    def finalize(self):
+        # TODO
+        pass
 
     # ------------------------------------------------------------
     # Graph Information
@@ -747,7 +801,10 @@ class ComputationGraph:
     def get_connections(self) -> dict[tuple[str, str], int]:
         connections: dict[tuple[str, str], int] = {}
         for stream in self.edges.values():
-            id_1, id_2 = self.nodes[stream.src].id, self.nodes[stream.dst].id
+            id_1, id_2 = (
+                self.nodes[stream.src].meta_data.id,
+                self.nodes[stream.dst].meta_data.id,
+            )
             if id_1 > id_2:
                 key = (stream.dst, stream.src)
             else:

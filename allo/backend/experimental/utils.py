@@ -105,19 +105,6 @@ class Stream:
         self.src: str = None  # source tile of the stream
         self.dst: str = None  # destination tile of the stream
 
-    def _init_from_stream(self, stream: "Stream", updated_src: str, updated_dst: str):
-        """
-        Construct a new stream from an existing stream
-        and update the source and destination tiles.
-        """
-        self.name = stream.name
-        self.type_str = stream.type_str
-        self.type = stream.type
-        self.allo_element_type = stream.allo_element_type
-        self.is_tensor = stream.is_tensor
-        self.src = updated_src
-        self.dst = updated_dst
-
     def set_element_type(self, type_str: str, context: Context):
         """
         Set the element type of the stream from a type string.
