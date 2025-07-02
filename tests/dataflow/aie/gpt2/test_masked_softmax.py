@@ -89,8 +89,8 @@ def _test_masked_softmax_tiled():
             top,
             target="aie-mlir",
             profile=True,
-            warmup=0,
-            num_iters=2,  # ! executing only once may get undefined result.
+            warmup=20,
+            num_iters=100,  # ! executing only once may get undefined result.
         )
         output_allo = np.zeros((SEQ_LEN_TILED, SEQ_LEN)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), np.array([0, 32]), output_allo)
