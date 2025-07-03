@@ -328,9 +328,14 @@ class AIE_MLIRModule:
                     call_matmul_op.erase()
 
         def optimize_layout_transformation(function: allo_func_d.FuncOp):
-            node = self.virtual_computation_graph.nodes[
-                func.attributes["sym_name"].value
-            ]
+            if os.getenv("EXP") == "1":
+                node = self.virtual_computation_graph.collocated_nodes[
+                    func.attributes["sym_name"].value
+                ]
+            else:
+                node = self.virtual_computation_graph.nodes[
+                    func.attributes["sym_name"].value
+                ]
             dead_ops = []
             op_stack_map: dict = {}
             # no need to transform if the result is unchanged
@@ -479,9 +484,19 @@ class AIE_MLIRModule:
                 arg_list = mapping[1]
                 if primitive == "chain":
                     assert len(arg_list) == 2
-                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                    if os.getenv("EXP") == "1":
+                        self.virtual_computation_graph.chain_exp(
+                            arg_list[0], arg_list[1]
+                        )
+                    else:
+                        self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    if os.getenv("EXP") == "1":
+                        self.virtual_computation_graph.bundle_exp(arg_list)
+                    else:
+                        self.virtual_computation_graph.bundle(arg_list)
+            if os.getenv("EXP") == "1":
+                self.virtual_computation_graph.finalize()
 
         # record original allo mlir
         with open(

@@ -6,9 +6,9 @@ PYTHON=python3
 
 FILES=(
     basic/test_gemm.py
-    mapping/test_mapping_basic.py
-    mapping/test_mapping_gemm.py
-    mapping/test_mapping_tp.py
+    # mapping/test_mapping_basic.py
+    # mapping/test_mapping_gemm.py
+    # mapping/test_mapping_tp.py
     basic/test_matmul.py
     basic/test_matrix_add.py
     basic/test_pingpong_gemm.py

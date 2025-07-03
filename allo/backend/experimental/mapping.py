@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 from dataclasses import dataclass
 from collections import defaultdict, Counter
@@ -344,7 +345,23 @@ class IntermediateNode:
         self.meta_data: NodeMetaData = NodeMetaData(
             name, use_external_kernel, tag, repeat, length
         )
-        self.interfaces: dict[str, dict[int, list[LiveDTensorTile]]] = {}
+        # nested list of (name, iteration)s
+        self.code_list: list[tuple] = []
+
+
+class InitialIntermediateNode(IntermediateNode):
+    def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
+        super().__init__(func.attributes["sym_name"].value, use_external_kernel, tag, 1)
+        self.function = func
+        self.code_list.append((self.meta_data.name, 1))
+        self.interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
+
+
+class CollocatedNode:
+    def __init__(self, node_id: int, use_external_kernel: bool):
+        self.id = node_id
+        self.use_external_kernel = use_external_kernel
+        self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.interface_layout: dict[int, tuple[list, list, list]] = {}
 
 
@@ -406,7 +423,7 @@ class InitialNode(NodeBase):
                 live_tile.last_use = 9
 
 
-class CollocatedNode(NodeBase):
+class CoNode(NodeBase):
     def __init__(
         self,
         tag: str,
@@ -428,16 +445,16 @@ class CollocatedNode(NodeBase):
 class ComputationGraph:
     class OperationTagger:
         def __init__(self) -> None:
-            self.tag_map: dict[str, tuple[str, func_d.FuncOp]] = {}
+            self.tag_map: dict[str, str] = {}
             self.counter = 0
 
-        def get_tag(self, key: str, func: func_d.FuncOp) -> str:
+        def get_tag(self, key: str) -> str:
             """Return existing tag or assign a new one if not present."""
             if key not in self.tag_map:
                 tag = f"tag_{self.counter}"
-                self.tag_map[key] = (tag, func)
+                self.tag_map[key] = tag
                 self.counter += 1
-            return self.tag_map[key][0]
+            return self.tag_map[key]
 
     def __init__(
         self,
@@ -448,6 +465,9 @@ class ComputationGraph:
     ):
         self.allo_module = allo_module
         self.nodes: dict[str, NodeBase] = {}
+        self.intermediate_nodes: dict[str, IntermediateNode] = {}
+        self.init_nodes: dict[str, InitialIntermediateNode] = {}
+        self.collocated_nodes: dict[str, CollocatedNode] = {}
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
@@ -461,10 +481,10 @@ class ComputationGraph:
             tag_key = re.sub(
                 r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
             )
-            node = InitialNode(
-                func,
-                use_external_kernels[func_name],
-                self.tagger.get_tag(tag_key, func),
+            tag = self.tagger.get_tag(tag_key)
+            node = InitialNode(func, use_external_kernels[func_name], tag)
+            intermediate_node = InitialIntermediateNode(
+                func, use_external_kernels[func_name], tag
             )
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
@@ -472,18 +492,30 @@ class ComputationGraph:
                 if argument.stream is not None:
                     if is_input:
                         node.meta_data.input_streams.append(argument.stream)
+                        intermediate_node.meta_data.input_streams.append(
+                            argument.stream
+                        )
                     else:
                         node.meta_data.output_streams.append(argument.stream)
+                        intermediate_node.meta_data.output_streams.append(
+                            argument.stream
+                        )
                 if argument.dtensor is not None:
                     tensor_tile = DTensorTile(
                         argument.dtensor.global_id,
                         argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
                     )
-                    node.global_interfaces[idx].append(
-                        LiveDTensorTile(tensor_tile, func_name, is_input)
+                    live_dtensor_tile = LiveDTensorTile(
+                        tensor_tile, func_name, is_input
                     )
-            node.init_live_tile()
+                    # TODO: determine first_use and last_use with liveness analysis
+                    live_dtensor_tile.first_use = 0
+                    live_dtensor_tile.last_use = 9
+                    node.global_interfaces[idx].append(live_dtensor_tile)
+                    intermediate_node.interfaces[idx].append(live_dtensor_tile)
             self.nodes[func_name] = node
+            self.intermediate_nodes[func_name] = intermediate_node
+            self.init_nodes[func_name] = intermediate_node
             self.dependencies[func_name] = set()
         # initiate dependencies
         for stream in self.edges.values():
@@ -523,7 +555,7 @@ class ComputationGraph:
                 raise ValueError(
                     f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
                 )
-        bundled_node = CollocatedNode(
+        bundled_node = CoNode(
             tag=sample_node.meta_data.op_tag,
             name=sample_node.meta_data.name,
             func=sample_node.func,
@@ -580,7 +612,7 @@ class ComputationGraph:
             node_a.meta_data.repeat == node_b.meta_data.repeat == 1
         ), "Cannot chaining nodes with repeats currently"
         bundled_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
-        chained_node = CollocatedNode(
+        chained_node = CoNode(
             bundled_tag,
             name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
             repeat=1,
@@ -736,8 +768,30 @@ class ComputationGraph:
     # Graph Information
     # ------------------------------------------------------------
     def finalize(self):
-        # TODO
-        pass
+        def build_():
+            pass
+
+        node_cnt = 0
+        for name, node in self.intermediate_nodes.items():
+            collocated_node = CollocatedNode(
+                node_cnt, node.meta_data.use_external_kernel
+            )
+            self.collocated_nodes[name] = collocated_node
+            node_cnt += 1
+            # initial function, no need to transform
+            if name in self.init_nodes:
+                collocated_node.global_interfaces.update(
+                    self.init_nodes[name].interfaces
+                )
+                continue
+            # TODO
+            raise ValueError("TODO!!!!")
+
+        for func in self.allo_module.body.operations:
+            if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+                func_name = func.attributes["sym_name"].value
+                if func_name not in self.intermediate_nodes:
+                    func.erase()
 
     # ------------------------------------------------------------
     # Graph Information
@@ -745,9 +799,13 @@ class ComputationGraph:
     def get_global_io(
         self,
     ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
+        if os.getenv("EXP") == "1":
+            nodes = self.collocated_nodes
+        else:
+            nodes = self.nodes
         global_tile_io: dict[str, dict[int, LiveDTensorTileGroup]] = {}
         arg_idx_to_interface: dict[str, dict[int, int]] = {}
-        for name, node in self.nodes.items():
+        for name, node in nodes.items():
             input_interface, output_interface = 0, 0
             dict_: dict[int, LiveDTensorTileGroup] = {}
             idx_to_interface: dict[int, int] = {}
@@ -793,7 +851,14 @@ class ComputationGraph:
         return global_tile_io, arg_idx_to_interface
 
     def get_node_dependencies(self) -> dict[str, set[str]]:
-        dependencies: dict[str, set[str]] = {key: set() for key in self.nodes.keys()}
+        if os.getenv("EXP") == "1":
+            dependencies: dict[str, set[str]] = {
+                key: set() for key in self.collocated_nodes.keys()
+            }
+        else:
+            dependencies: dict[str, set[str]] = {
+                key: set() for key in self.nodes.keys()
+            }
         for stream in self.edges.values():
             dependencies[stream.dst].add(stream.src)
         return dependencies
@@ -801,10 +866,16 @@ class ComputationGraph:
     def get_connections(self) -> dict[tuple[str, str], int]:
         connections: dict[tuple[str, str], int] = {}
         for stream in self.edges.values():
-            id_1, id_2 = (
-                self.nodes[stream.src].meta_data.id,
-                self.nodes[stream.dst].meta_data.id,
-            )
+            if os.getenv("EXP") == "1":
+                id_1, id_2 = (
+                    self.collocated_nodes[stream.src].id,
+                    self.collocated_nodes[stream.dst].id,
+                )
+            else:
+                id_1, id_2 = (
+                    self.nodes[stream.src].meta_data.id,
+                    self.nodes[stream.dst].meta_data.id,
+                )
             if id_1 > id_2:
                 key = (stream.dst, stream.src)
             else:

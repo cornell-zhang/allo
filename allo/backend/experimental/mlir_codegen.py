@@ -1513,9 +1513,12 @@ class CodeGenerator:
 
             connection_info = self.virtual_computation_graph.get_connections()
             connection_info.sort(key=lambda x: x[0], reverse=True)
+            if os.getenv("EXP") == "1":
+                names = self.virtual_computation_graph.collocated_nodes.keys()
+            else:
+                names = self.virtual_computation_graph.nodes.keys()
             grouped_nodes: dict[str, NodeDeque] = {
-                name: NodeDeque(name)
-                for name in self.virtual_computation_graph.nodes.keys()
+                name: NodeDeque(name) for name in names
             }
             for connection in connection_info:
                 grouped_a, grouped_b = (
@@ -1679,15 +1682,19 @@ class CodeGenerator:
                 # compute logic on each compute tile
                 for func in core_funcs:
                     func_name = func.attributes["sym_name"].value
+                    if os.getenv("EXP") == "1":
+                        use_external_kernel = (
+                            self.virtual_computation_graph.collocated_nodes[
+                                func_name
+                            ].use_external_kernel
+                        )
+                    else:
+                        use_external_kernel = self.virtual_computation_graph.nodes[
+                            func_name
+                        ].meta_data.use_external_kernel
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
-                        link_with=(
-                            "external.o"
-                            if self.virtual_computation_graph.nodes[
-                                func_name
-                            ].meta_data.use_external_kernel
-                            else None
-                        ),
+                        link_with=("external.o" if use_external_kernel else None),
                     )
                     if self.global_ip is None:
                         self.global_ip = aie_ir.InsertionPoint(func_core)
