@@ -1,7 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import re
 from dataclasses import dataclass
 from collections import defaultdict, Counter
@@ -298,14 +297,6 @@ class LiveDTensorTileGroup:
         return self.__str__()
 
 
-@dataclass
-class BufferizedStream:
-    arg_idx_a: int
-    arg_idx_b: int
-    arg_a: Value
-    arg_b: Value
-
-
 # ------------------------------------------------------------
 class NodeMetaData:
     node_cnt = 0
@@ -353,30 +344,7 @@ class IntermediateNode:
         self.meta_data: NodeMetaData = NodeMetaData(
             name, use_external_kernel, tag, repeat, length
         )
-        # nested list of name or set of name
-        self.code_list: list = []
-        self.bufferized_stream: dict[Stream, BufferizedStream] = {}
-
-    def is_isomorphic_to(self, other: "IntermediateNode") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
-        return self.meta_data.test_isomorphism(other.meta_data)
-
-
-class InitialIntermediateNode(IntermediateNode):
-    def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
-        super().__init__(func.attributes["sym_name"].value, use_external_kernel, tag, 1)
-        self.function = func
-        self.code_list.append(self.meta_data.name)
-        self.interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
-
-
-class CollocatedNode:
-    def __init__(self, node_id: int, use_external_kernel: bool):
-        self.id = node_id
-        self.use_external_kernel = use_external_kernel
-        self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
+        self.interfaces: dict[str, dict[int, list[LiveDTensorTile]]] = {}
         self.interface_layout: dict[int, tuple[list, list, list]] = {}
 
 
@@ -438,7 +406,7 @@ class InitialNode(NodeBase):
                 live_tile.last_use = 9
 
 
-class CoNode(NodeBase):
+class CollocatedNode(NodeBase):
     def __init__(
         self,
         tag: str,
@@ -451,8 +419,8 @@ class CoNode(NodeBase):
 
     def _init_for_bundle(self, sample_node: NodeBase):
         self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
-        self.meta_data.input_streams = sample_node.meta_data.input_streams
-        self.meta_data.output_streams = sample_node.meta_data.output_streams
+        self.meta_data.input_streams = list(sample_node.meta_data.input_streams)
+        self.meta_data.output_streams = list(sample_node.meta_data.output_streams)
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
 
 
@@ -460,16 +428,16 @@ class CoNode(NodeBase):
 class ComputationGraph:
     class OperationTagger:
         def __init__(self) -> None:
-            self.tag_map: dict[str, str] = {}
+            self.tag_map: dict[str, tuple[str, func_d.FuncOp]] = {}
             self.counter = 0
 
-        def get_tag(self, key: str) -> str:
+        def get_tag(self, key: str, func: func_d.FuncOp) -> str:
             """Return existing tag or assign a new one if not present."""
             if key not in self.tag_map:
                 tag = f"tag_{self.counter}"
-                self.tag_map[key] = tag
+                self.tag_map[key] = (tag, func)
                 self.counter += 1
-            return self.tag_map[key]
+            return self.tag_map[key][0]
 
     def __init__(
         self,
@@ -480,14 +448,11 @@ class ComputationGraph:
     ):
         self.allo_module = allo_module
         self.nodes: dict[str, NodeBase] = {}
-        self.intermediate_nodes: dict[str, IntermediateNode] = {}
-        self.init_nodes: dict[str, InitialIntermediateNode] = {}
-        self.collocated_nodes: dict[str, CollocatedNode] = {}
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
         self.tagger = ComputationGraph.OperationTagger()
-        self.dependencies: dict[str, set[str]] = defaultdict(set)
+        self.dependencies: dict[str, set[str]] = {}
 
         df_kernels = get_df_kernels(allo_module)
         # construct nodes
@@ -496,10 +461,10 @@ class ComputationGraph:
             tag_key = re.sub(
                 r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
             )
-            tag = self.tagger.get_tag(tag_key)
-            node = InitialNode(func, use_external_kernels[func_name], tag)
-            intermediate_node = InitialIntermediateNode(
-                func, use_external_kernels[func_name], tag
+            node = InitialNode(
+                func,
+                use_external_kernels[func_name],
+                self.tagger.get_tag(tag_key, func),
             )
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
@@ -507,30 +472,18 @@ class ComputationGraph:
                 if argument.stream is not None:
                     if is_input:
                         node.meta_data.input_streams.append(argument.stream)
-                        intermediate_node.meta_data.input_streams.append(
-                            argument.stream
-                        )
                     else:
                         node.meta_data.output_streams.append(argument.stream)
-                        intermediate_node.meta_data.output_streams.append(
-                            argument.stream
-                        )
                 if argument.dtensor is not None:
                     tensor_tile = DTensorTile(
                         argument.dtensor.global_id,
                         argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
                     )
-                    live_dtensor_tile = LiveDTensorTile(
-                        tensor_tile, func_name, is_input
+                    node.global_interfaces[idx].append(
+                        LiveDTensorTile(tensor_tile, func_name, is_input)
                     )
-                    # TODO: determine first_use and last_use with liveness analysis
-                    live_dtensor_tile.first_use = 0
-                    live_dtensor_tile.last_use = 9
-                    node.global_interfaces[idx].append(live_dtensor_tile)
-                    intermediate_node.interfaces[idx].append(live_dtensor_tile)
+            node.init_live_tile()
             self.nodes[func_name] = node
-            self.intermediate_nodes[func_name] = intermediate_node
-            self.init_nodes[func_name] = intermediate_node
             self.dependencies[func_name] = set()
         # initiate dependencies
         for stream in self.edges.values():
@@ -546,68 +499,12 @@ class ComputationGraph:
         TODO: bundled nodes can be safely reordered
         """
         assert len(node_name_list) >= 2, "bundle at least two nodes"
-        node_list: list[IntermediateNode] = []
-        for name in node_name_list:
-            assert name in self.intermediate_nodes, f"Node({name}) not found"
-            node_list.append(self.intermediate_nodes.pop(name))
-        sample_node = node_list[0]
-        repeat_cnt = 0
-        for node in node_list:
-            repeat_cnt += node.meta_data.repeat
-            if not sample_node.is_isomorphic_to(node):
-                raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                )
-        bundled_node = IntermediateNode(
-            f"{sample_node.meta_data.name}-",
-            sample_node.meta_data.use_external_kernel,
-            sample_node.meta_data.op_tag,
-            repeat_cnt,
-        )
-        # TODO: bundled_node.code_list.append()
-        bundled_node.meta_data.input_streams.extend(sample_node.meta_data.input_streams)
-        bundled_node.meta_data.output_streams.extend(
-            sample_node.meta_data.output_streams
-        )
-        bundled_node.bufferized_stream.update(sample_node.bufferized_stream)
-        # update stream
-        for name, stream in self.edges.items():
-            if stream.src in node_name_list:
-                self.dependencies[stream.dst].pop(stream.src)
-                stream.src = bundled_node.meta_data.name
-                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
-            if stream.dst in node_name_list:
-                stream.dst = bundled_node.meta_data.name
-                self.dependencies[bundled_node.meta_data.name].add(stream.src)
-        for name in node_name_list:
-            self.dependencies.pop(name)
-        self.intermediate_nodes[bundled_node.meta_data.name] = bundled_node
 
     def chain_exp(self, node_name_a: str, node_name_b: str):
         """
         [A] [B] => [[A]-[B]]
         """
-        node_a, node_b = self.intermediate_nodes.pop(
-            node_name_a
-        ), self.intermediate_nodes.pop(node_name_b)
-        assert node_a is not None and node_b is not None, "node not found"
-        if node_name_b in self.dependencies[node_name_a]:
-            raise ValueError(
-                f"Cannot chain Node({node_name_a}) and Node({node_name_b})"
-            )
-        bundled_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
-        chained_node = IntermediateNode(
-            f"{node_a.meta_data.name}-{node_b.meta_data.name}",
-            node_a.meta_data.use_external_kernel
-            or node_b.meta_data.use_external_kernel,
-            bundled_tag,
-            1,
-        )
-        for stream in node_b.meta_data.input_streams:
-            if stream.src == node_name_a:
-                pass
-                # TODO
-                # chained_node.bufferized_stream[stream] = BufferizedStream
+        pass
 
     def bundle(self, node_name_list: list[str]):
         """
@@ -626,7 +523,7 @@ class ComputationGraph:
                 raise ValueError(
                     f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
                 )
-        bundled_node = CoNode(
+        bundled_node = CollocatedNode(
             tag=sample_node.meta_data.op_tag,
             name=sample_node.meta_data.name,
             func=sample_node.func,
@@ -661,6 +558,16 @@ class ComputationGraph:
         """
         [A] [B] => [[A]-[B]]
         """
+
+        @dataclass
+        class BufferizedStream:
+            arg_idx_a: int
+            arg_idx_b: int
+            arg_a: Value
+            arg_b: Value
+            stream_input: list[Value]
+            stream_output: list[Value]
+
         node_a, node_b = self.nodes.pop(node_name_a), self.nodes.pop(node_name_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         assert node_a is not None and node_b is not None, "node not found"
@@ -673,7 +580,7 @@ class ComputationGraph:
             node_a.meta_data.repeat == node_b.meta_data.repeat == 1
         ), "Cannot chaining nodes with repeats currently"
         bundled_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
-        chained_node = CoNode(
+        chained_node = CollocatedNode(
             bundled_tag,
             name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
             repeat=1,
@@ -701,7 +608,9 @@ class ComputationGraph:
                         idx_b = idx
                         break
                 assert idx_a >= 0 and idx_b >= 0
-                bufferized_stream[stream] = BufferizedStream(idx_a, idx_b, None, None)
+                bufferized_stream[stream] = BufferizedStream(
+                    idx_a, idx_b, None, None, [], []
+                )
             else:
                 kept_streams.append(stream)
         node_b.meta_data.input_streams = kept_streams
@@ -827,237 +736,8 @@ class ComputationGraph:
     # Graph Information
     # ------------------------------------------------------------
     def finalize(self):
-        node_cnt = 0
-        for name, node in self.intermediate_nodes.items():
-            collocated_node = CollocatedNode(
-                node_cnt, node.meta_data.use_external_kernel
-            )
-            self.collocated_nodes[name] = collocated_node
-            node_cnt += 1
-            # initial function, no need to transform
-            if name in self.init_nodes:
-                collocated_node.global_interfaces.update(
-                    self.init_nodes[name].interfaces
-                )
-                continue
-            # construct new function
-            # - build function header
-            input_types = []
-            output_types = []
-            arguments = []
-            org_funcs: list[func_d.FuncOp] = []
-            base_offset_stack: list[int] = []
-            code_length = 0
-
-            def visit_chained(code_list: list, base_offset: int, base_code_length: int):
-                sub_input_types = []
-                sub_output_types = []
-                sub_arguments = []
-                sub_org_funcs: list[func_d.FuncOp] = []
-                sub_code_length = base_code_length
-                for code_seg in code_list:
-                    if isinstance(code_seg, str):
-                        org_func_node: InitialIntermediateNode = self.init_nodes[
-                            code_seg
-                        ]
-                        sub_org_funcs.append(org_func_node.function)
-                        arg_idx_offset = len(sub_input_types) + base_offset
-                        for org_arg_idx, live_tiles in org_func_node.interfaces.items():
-                            for live_tile in live_tiles:
-                                live_tile.first_use += (
-                                    Config.LOCAL_CODE_OFFSET * sub_code_length
-                                )
-                                live_tile.last_use += (
-                                    Config.LOCAL_CODE_OFFSET * sub_code_length
-                                )
-                            collocated_node.global_interfaces[
-                                org_arg_idx + arg_idx_offset
-                            ].extend(live_tiles)
-                        sub_input_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.inputs
-                        )
-                        sub_output_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.results
-                        )
-                        sub_arguments.extend(org_func_node.function.arguments)
-                        sub_code_length += 1
-                    elif isinstance(code_seg, set):
-                        visit_bundled(code_seg)
-                        pass
-                    elif isinstance(code_seg, list):
-                        (
-                            sub_list_input_types,
-                            sub_list_output_types,
-                            sub_list_arguments,
-                            sub_list_org_funcs,
-                            sub_list_code_length,
-                        ) = visit_chained(
-                            code_seg,
-                            len(sub_input_types) + base_offset,
-                            base_code_length,
-                        )
-                        sub_input_types.extend(sub_list_input_types)
-                        sub_output_types.extend(sub_list_output_types)
-                        sub_arguments.extend(sub_list_arguments)
-                        sub_org_funcs.extend(sub_list_org_funcs)
-                        sub_code_length = sub_list_code_length
-                    else:
-                        raise ValueError("invalid element in code_list")
-                return (
-                    sub_input_types,
-                    sub_output_types,
-                    sub_arguments,
-                    sub_org_funcs,
-                    sub_code_length,
-                )
-
-            def visit_bundled(code_set: set, base_offset: int, base_code_length: int):
-                sub_input_types = []
-                sub_output_types = []
-                sub_arguments = []
-                sub_org_funcs: list[func_d.FuncOp] = []
-                sample_seg = next(iter(code_set))
-                if isinstance(sample_seg, str):
-                    org_func_node: InitialIntermediateNode = self.init_nodes[sample_seg]
-                    sub_org_funcs.append(org_func_node.function)
-                    sub_input_types.extend(
-                        org_func_node.function.attributes["function_type"].value.inputs
-                    )
-                    sub_output_types.extend(
-                        org_func_node.function.attributes["function_type"].value.results
-                    )
-                    sub_arguments.extend(org_func_node.function.arguments)
-                    for seg in code_set:
-                        org_func_node = self.init_nodes[seg]
-                        for (
-                            org_arg_idx,
-                            live_tiles,
-                        ) in org_func_node.interfaces.items():
-                            for live_tile in live_tiles:
-                                live_tile.first_use += (
-                                    Config.LOCAL_CODE_OFFSET * base_code_length
-                                )
-                                live_tile.last_use += (
-                                    Config.LOCAL_CODE_OFFSET * base_code_length
-                                )
-                            collocated_node.global_interfaces[
-                                org_arg_idx + base_offset
-                            ].extend(live_tiles)
-                    return (
-                        sub_input_types,
-                        sub_output_types,
-                        sub_arguments,
-                        sub_org_funcs,
-                        base_code_length + 1,
-                    )
-                elif isinstance(sample_seg, set):
-                    # TODO
-                    pass
-                elif isinstance(sample_seg, list):
-                    # TODO
-                    pass
-                else:
-                    raise ValueError("invalid element in code_list")
-
-            def get_function_info(code_list: list):
-                base_offset_stack.append[len(input_types)]
-                for code_seg in code_list:
-                    if isinstance(code_seg, str):
-                        org_func_node: InitialIntermediateNode = self.init_nodes[
-                            code_seg
-                        ]
-                        org_funcs.append(org_func_node.function)
-                        arg_idx_offset = len(input_types)
-                        for org_arg_idx, live_tiles in org_func_node.interfaces.items():
-                            for live_tile in live_tiles:
-                                live_tile.first_use += (
-                                    Config.LOCAL_CODE_OFFSET * code_length
-                                )
-                                live_tile.last_use += (
-                                    Config.LOCAL_CODE_OFFSET * code_length
-                                )
-                            collocated_node.global_interfaces[
-                                org_arg_idx + arg_idx_offset
-                            ].extend(live_tiles)
-                        input_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.inputs
-                        )
-                        output_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.results
-                        )
-                        arguments.extend(org_func_node.function.arguments)
-                    elif isinstance(code_seg, set):
-                        sample_seg = next(iter(code_seg))
-                        if not isinstance(sample_seg, str):
-                            raise ValueError("TO BE IMPLEMENTED")
-                        org_func_node: InitialIntermediateNode = self.init_nodes[
-                            sample_seg
-                        ]
-                        org_funcs.append(org_func_node.function)
-                        arg_idx_offset = len(input_types)
-                        input_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.inputs
-                        )
-                        output_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.results
-                        )
-                        arguments.extend(org_func_node.function.arguments)
-                        for seg in code_seg:
-                            org_func_node = self.init_nodes[seg]
-                            for (
-                                org_arg_idx,
-                                live_tiles,
-                            ) in org_func_node.interfaces.items():
-                                for live_tile in live_tiles:
-                                    live_tile.first_use += (
-                                        Config.LOCAL_CODE_OFFSET * code_length
-                                    )
-                                    live_tile.last_use += (
-                                        Config.LOCAL_CODE_OFFSET * code_length
-                                    )
-                                collocated_node.global_interfaces[
-                                    org_arg_idx + arg_idx_offset
-                                ].extend(live_tiles)
-                    else:
-                        raise ValueError("invalid element in code_list")
-                    code_length += 1
-                base_offset_stack.pop()
-
-            get_function_info(node.code_list)
-            with self.allo_module.context, allo_ir.ir.Location.unknown():
-                func_type = FunctionType.get(input_types, output_types)
-                new_function = func_d.FuncOp(
-                    name,
-                    func_type,
-                    ip=InsertionPoint(org_funcs[0]),
-                )
-                new_function.attributes["df.kernel"] = UnitAttr.get()
-                for old, new in zip(arguments, new_function.arguments):
-                    old.replace_all_uses_with(new)
-
-            # build function body
-
-            # TODO
-            raise ValueError("TODO!!!!")
-
-        for func in self.allo_module.body.operations:
-            if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
-                func_name = func.attributes["sym_name"].value
-                if func_name not in self.intermediate_nodes:
-                    self.func_args.pop(func_name)
-                    func.erase()
+        # TODO
+        pass
 
     # ------------------------------------------------------------
     # Graph Information
@@ -1065,13 +745,9 @@ class ComputationGraph:
     def get_global_io(
         self,
     ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
-        if os.getenv("EXP") == "1":
-            nodes = self.collocated_nodes
-        else:
-            nodes = self.nodes
         global_tile_io: dict[str, dict[int, LiveDTensorTileGroup]] = {}
         arg_idx_to_interface: dict[str, dict[int, int]] = {}
-        for name, node in nodes.items():
+        for name, node in self.nodes.items():
             input_interface, output_interface = 0, 0
             dict_: dict[int, LiveDTensorTileGroup] = {}
             idx_to_interface: dict[int, int] = {}
@@ -1117,14 +793,7 @@ class ComputationGraph:
         return global_tile_io, arg_idx_to_interface
 
     def get_node_dependencies(self) -> dict[str, set[str]]:
-        if os.getenv("EXP") == "1":
-            dependencies: dict[str, set[str]] = {
-                key: set() for key in self.collocated_nodes.keys()
-            }
-        else:
-            dependencies: dict[str, set[str]] = {
-                key: set() for key in self.nodes.keys()
-            }
+        dependencies: dict[str, set[str]] = {key: set() for key in self.nodes.keys()}
         for stream in self.edges.values():
             dependencies[stream.dst].add(stream.src)
         return dependencies
@@ -1132,16 +801,10 @@ class ComputationGraph:
     def get_connections(self) -> dict[tuple[str, str], int]:
         connections: dict[tuple[str, str], int] = {}
         for stream in self.edges.values():
-            if os.getenv("EXP") == "1":
-                id_1, id_2 = (
-                    self.collocated_nodes[stream.src].id,
-                    self.collocated_nodes[stream.dst].id,
-                )
-            else:
-                id_1, id_2 = (
-                    self.nodes[stream.src].meta_data.id,
-                    self.nodes[stream.dst].meta_data.id,
-                )
+            id_1, id_2 = (
+                self.nodes[stream.src].meta_data.id,
+                self.nodes[stream.dst].meta_data.id,
+            )
             if id_1 > id_2:
                 key = (stream.dst, stream.src)
             else:
