@@ -32,7 +32,7 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
     return mapping_primitives
 
 
-def _test_pingpong_gemm_4x4x4(TyI, TyO):
+def _test_pingpong_gemm(TyI, TyO):
 
     M, N, K = 256, 512, 512
     Pm, Pn, Pk = 8, 8, 4
@@ -81,4 +81,4 @@ def _test_pingpong_gemm_4x4x4(TyI, TyO):
 
 
 if __name__ == "__main__":
-    _test_pingpong_gemm_4x4x4(int16, int16)
+    _test_pingpong_gemm(int16, int16)

@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, too-many-function-args, no-value-for-parameter
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -19,7 +19,7 @@ from allo._mlir.dialects import (
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
-from ..._mlir.ir import (
+from allo._mlir.ir import (
     Type,
     StringAttr,
     InsertionPoint,
@@ -27,13 +27,11 @@ from ..._mlir.ir import (
     BlockArgument,
     MemRefType,
 )
-
+from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
 from .external_kernel import ExternalModule, ExternalModuleBase
-
-from ..._mlir.passmanager import PassManager as mlir_pass_manager
-from .mlir_codegen import CodeGenerator, Argument, Stream
+from .mlir_codegen import CodeGenerator
 from .utils import (
     Argument,
     Stream,
@@ -282,7 +280,7 @@ class AIE_MLIRModule:
                     vectorized_kernel_name = call_matmul_op.attributes[
                         "lib"
                     ].value.replace("matmul_scalar_", "matmul_")
-                    call_op = allo_func_d.CallOp(
+                    allo_func_d.CallOp(
                         [],
                         FlatSymbolRefAttr.get(vectorized_kernel_name),
                         [new_input_0, new_input_1, new_output],
@@ -338,14 +336,9 @@ class AIE_MLIRModule:
                 - some can be 'push out of the function' and done at transfer time (e.g. with dma)
                 - some contiguous inverse transformation can be safely removed.
             """
-            if os.getenv("EXP") == "1":
-                node = self.virtual_computation_graph.collocated_nodes[
-                    func.attributes["sym_name"].value
-                ]
-            else:
-                node = self.virtual_computation_graph.nodes[
-                    func.attributes["sym_name"].value
-                ]
+            node = self.virtual_computation_graph.nodes[
+                func.attributes["sym_name"].value
+            ]
             dead_ops = []
             op_stack_map: dict = {}
             # no need to transform if the result is unchanged
@@ -435,7 +428,7 @@ class AIE_MLIRModule:
                 vectorize_matmul(func)
                 optimize_layout_transformation(func)
 
-        pipeline = f"builtin.module(canonicalize)"
+        pipeline = "builtin.module(canonicalize)"
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
@@ -449,7 +442,7 @@ class AIE_MLIRModule:
         self,
         device_type="npu1_4col",
         enable_virtual_mapping: bool = False,
-        mapping_primitives: list[tuple[str, list]] = [],
+        mapping_primitives: list[tuple[str, list]] = None,
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
@@ -488,19 +481,9 @@ class AIE_MLIRModule:
                 arg_list = mapping[1]
                 if primitive == "chain":
                     assert len(arg_list) == 2
-                    if os.getenv("EXP") == "1":
-                        self.virtual_computation_graph.chain_exp(
-                            arg_list[0], arg_list[1]
-                        )
-                    else:
-                        self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    if os.getenv("EXP") == "1":
-                        self.virtual_computation_graph.bundle_exp(arg_list)
-                    else:
-                        self.virtual_computation_graph.bundle(arg_list)
-            if os.getenv("EXP") == "1":
-                self.virtual_computation_graph.finalize()
+                    self.virtual_computation_graph.bundle(arg_list)
 
         # record original allo mlir
         with open(

@@ -1,11 +1,11 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import re
 import os
-import numpy as np
 from dataclasses import dataclass
+import numpy as np
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -16,7 +16,6 @@ from ..._mlir.dialects import (
     allo as allo_d,
     arith as allo_arith_d,
     func as allo_func_d,
-    _memref_ops_gen as allo_memref_d,
 )
 
 from ..._mlir.ir import (
@@ -354,9 +353,6 @@ def inject_external_kernels(
                 dtype = str(op.inputs[0].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
                 if (dtype, out_dtype) in matmul_externel_kernel_config_map:
-                    matmul_configs = matmul_externel_kernel_config_map[
-                        (dtype, out_dtype)
-                    ]
                     include_src.add('#include "mm.cc"\n')
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
@@ -366,45 +362,12 @@ def inject_external_kernels(
                     input_idx.extend([0, 1])
                     output_idx.append(2)
                     call_builtin = True
-                    if os.getenv("USE_VECTORIZED_MATMUL") == "1":
-                        m, n, k = matmul_configs[lib_dir]
-                        kernel_name = f"matmul_{dtype}_{out_dtype}"
-                        new_input_0 = allo_d.transform_layout(
-                            op.inputs[0].type,
-                            op.inputs[0],
-                            [0, 0, 0, 0],
-                            [M // m, K // k, m, k],
-                            [m * K, k, K, 1],
-                            ip=InsertionPoint(op),
-                        )
-                        new_input_1 = allo_d.transform_layout(
-                            op.inputs[1].type,
-                            op.inputs[1],
-                            [0, 0, 0, 0],
-                            [K // k, N // n, k, n],
-                            [N * k, n, N, 1],
-                            ip=InsertionPoint(op),
-                        )
-                        new_output = allo_d.transform_layout(
-                            op.outputs[0].type,
-                            op.outputs[0],
-                            [0, 0, 0, 0],
-                            [M // m, N // n, m, n],
-                            [m * N, n, N, 1],
-                            ip=InsertionPoint(op),
-                        )
-                        operands = [
-                            new_input_0,
-                            new_input_1,
-                            new_output,
-                        ]
-                    else:
-                        kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                        operands = [
-                            op.inputs[0],
-                            op.inputs[1],
-                            op.outputs[0],
-                        ]
+                    kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
+                    operands = [
+                        op.inputs[0],
+                        op.inputs[1],
+                        op.outputs[0],
+                    ]
             if call_builtin:
                 # replace operation
                 call_op = allo_func_d.CallOp(
@@ -414,21 +377,6 @@ def inject_external_kernels(
                     ip=InsertionPoint(op),
                 )
                 call_op.attributes["lib"] = StringAttr.get(kernel_name)
-                if (
-                    os.getenv("USE_VECTORIZED_MATMUL") == "1"
-                    and op.operation.name == "linalg.matmul"
-                ):
-                    matmul_output = allo_d.transform_layout(
-                        new_output.type,
-                        new_output,
-                        [0, 0, 0, 0],
-                        [M // m, m, N // n, n],
-                        [m * N, n, m * n, 1],
-                        ip=InsertionPoint(op),
-                    )
-                    allo_memref_d.copy(
-                        matmul_output, op.outputs[0], ip=InsertionPoint(op)
-                    )
                 op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:

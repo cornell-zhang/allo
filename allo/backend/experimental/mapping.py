@@ -1,3 +1,4 @@
+# pylint: disable=dangerous-default-value, consider-using-enumerate, too-many-branches, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -5,8 +6,8 @@ import re
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
-from ..._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr
-from ..._mlir.dialects import func as func_d, allo as allo_d
+from allo._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr
+from allo._mlir.dialects import func as func_d, allo as allo_d
 from .utils import (
     Argument,
     parse_kernel_name,
@@ -151,9 +152,13 @@ class FIFOManager:
 class SwitchNode:
     class Port:
         def __init__(
-            self, id: int, data_shape: list[int], dtype: str, connected_nodes: list[str]
+            self,
+            port_id: int,
+            data_shape: list[int],
+            dtype: str,
+            connected_nodes: list[str],
         ):
-            self.id = id
+            self.id = port_id
             self.data_shape = data_shape
             self.dtype = dtype
             self.connected_nodes = connected_nodes
@@ -333,21 +338,6 @@ class NodeMetaData:
         return True
 
 
-class IntermediateNode:
-    """
-    Intermediate node in the computation graph, make sure to 'finalize' which actually does 'collocation'.
-    """
-
-    def __init__(
-        self, name=None, use_external_kernel=False, tag=None, repeat=0, length=1
-    ):
-        self.meta_data: NodeMetaData = NodeMetaData(
-            name, use_external_kernel, tag, repeat, length
-        )
-        self.interfaces: dict[str, dict[int, list[LiveDTensorTile]]] = {}
-        self.interface_layout: dict[int, tuple[list, list, list]] = {}
-
-
 class NodeBase:
     def __init__(
         self,
@@ -492,20 +482,6 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
-    def bundle_exp(self, node_name_list: list[str]):
-        """
-        [A] [B] [C] [D]  => [A] x 4
-
-        TODO: bundled nodes can be safely reordered
-        """
-        assert len(node_name_list) >= 2, "bundle at least two nodes"
-
-    def chain_exp(self, node_name_a: str, node_name_b: str):
-        """
-        [A] [B] => [[A]-[B]]
-        """
-        pass
-
     def bundle(self, node_name_list: list[str]):
         """
         [A] [B] [C] [D]  => [A] x 4
@@ -726,9 +702,9 @@ class ComputationGraph:
                 deps.remove(node_name_b)
                 deps.add(chained_node.meta_data.name)
         for stream in self.edges.values():
-            if stream.src == node_name_a or stream.src == node_name_b:
+            if stream.src in (node_name_a, node_name_b):
                 stream.src = chained_node.meta_data.name
-            if stream.dst == node_name_a or stream.dst == node_name_b:
+            if stream.dst in (node_name_a, node_name_b):
                 stream.dst = chained_node.meta_data.name
         self.nodes[chained_node.meta_data.name] = chained_node
 

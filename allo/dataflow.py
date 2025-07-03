@@ -308,7 +308,7 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen:bool = False,
+    use_default_codegen: bool = False,
     mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
     warmup=20,

@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type, consider-using-enumerate, too-many-instance-attributes, chained-comparison
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -165,7 +165,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
             lose_factor = size[device_dims[0]]
             inc_factor = size[device_dims[1]]
         else:
-            raise ValueError(f"Unsupported access pattern.")
+            raise ValueError("Unsupported access pattern.")
         remaining = tensor_tiles[:]
         start_idx = 0
         while remaining:
@@ -555,7 +555,6 @@ class CodeGenerator:
                             acquired = fifo.acquire(1 if is_input else 0, 1)
                             # incorrect
                             argument.replace_all_uses_with(acquired)
-                    pass
                 else:
                     stream: Stream = arg_info[0].stream
                     fifo = self.fifo_map[stream.name]
@@ -764,8 +763,7 @@ class CodeGenerator:
                         iter(other_global_tensor.dtensor_groups.values())
                     )
                     return sample_value == other_value
-                else:
-                    return False
+                return False
 
             def _contiguous_data_transfer(
                 self, other: "MulticastInterface", current_size: Size4D
@@ -823,8 +821,7 @@ class CodeGenerator:
                                     if shape is not None and shape != outer_shape:
                                         match_flag = False
                                         break
-                                    else:
-                                        shape = outer_shape
+                                    shape = outer_shape
                                     outer_stride = [1] * 4
                                     for i in reversed(range(3)):
                                         outer_stride[i] = (
@@ -888,7 +885,7 @@ class CodeGenerator:
 
         class ContiguousInterface:
             """
-            ContiguousInterface always acquire adjacent memory blocks in external memory 
+            ContiguousInterface always acquire adjacent memory blocks in external memory
             """
 
             def __init__(self, offset: Offset4D, interface: MulticastInterface):
@@ -965,7 +962,7 @@ class CodeGenerator:
                 connected_interfaces: list[list[PEInterface]] = []
                 for i in range(send_need):
                     port = SwitchNode.Port(
-                        id=len(assigned_mem_tile.send_ports),
+                        port_id=len(assigned_mem_tile.send_ports),
                         data_shape=send_shape,
                         dtype=dtype,
                         connected_nodes=interface_list[i].get_pes() if is_input else [],
@@ -979,7 +976,7 @@ class CodeGenerator:
                 if is_input:
                     for i in range(recv_need):
                         port = SwitchNode.Port(
-                            id=len(assigned_mem_tile.recv_ports),
+                            port_id=len(assigned_mem_tile.recv_ports),
                             data_shape=recv_shape,
                             dtype=dtype,
                             connected_nodes=[],
@@ -990,7 +987,7 @@ class CodeGenerator:
                     for multicast_interface in interface_list:
                         for pe_interface in multicast_interface.interface_list:
                             port = SwitchNode.Port(
-                                id=len(assigned_mem_tile.recv_ports),
+                                port_id=len(assigned_mem_tile.recv_ports),
                                 data_shape=recv_shape,
                                 dtype=dtype,
                                 connected_nodes=[pe_interface.pe],
@@ -1057,7 +1054,7 @@ class CodeGenerator:
                 connected_mem = [mem_tile.name]
                 if is_input:
                     send_port = SwitchNode.Port(
-                        id=len(assigned_shim_tile.send_ports),
+                        port_id=len(assigned_shim_tile.send_ports),
                         data_shape=mem_port.data_shape,
                         dtype=mem_port.dtype,
                         connected_nodes=connected_mem,
@@ -1065,7 +1062,7 @@ class CodeGenerator:
                     assigned_shim_tile.send_ports.append(send_port)
                 else:
                     recv_port = SwitchNode.Port(
-                        id=len(assigned_shim_tile.recv_ports),
+                        port_id=len(assigned_shim_tile.recv_ports),
                         data_shape=mem_port.data_shape,
                         dtype=mem_port.dtype,
                         connected_nodes=connected_mem,
@@ -1199,7 +1196,7 @@ class CodeGenerator:
             return False
 
         mapped_interface: dict[str, dict[int, FIFO]] = {
-            i: dict() for i in global_tensors.keys()
+            i: {} for i in global_tensors.keys()
         }
         global_io_port: list[CodeGenerator.GlobalIODMAPort] = []
         for idx, dtensor_tile_group in global_tile_to_func.items():
@@ -1385,7 +1382,7 @@ class CodeGenerator:
                 print(ele)
             print()
         global_arg_idx_to_interface: dict[str, dict[int, FIFO]] = {
-            i: dict() for i in global_tensors.keys()
+            i: {} for i in global_tensors.keys()
         }
         for func_name, interface_map in mapped_interface.items():
             dict_: dict[int, FIFO] = {}
@@ -1442,12 +1439,9 @@ class CodeGenerator:
 
             connection_info = self.virtual_computation_graph.get_connections()
             connection_info.sort(key=lambda x: x[0], reverse=True)
-            if os.getenv("EXP") == "1":
-                names = self.virtual_computation_graph.collocated_nodes.keys()
-            else:
-                names = self.virtual_computation_graph.nodes.keys()
             grouped_nodes: dict[str, NodeDeque] = {
-                name: NodeDeque(name) for name in names
+                name: NodeDeque(name)
+                for name in self.virtual_computation_graph.nodes.keys()
             }
             for connection in connection_info:
                 grouped_a, grouped_b = (
@@ -1504,8 +1498,7 @@ class CodeGenerator:
                     print(f"{node}: ({row}, {col})")
                 print()
             return core_fucn_mapping
-        else:
-            raise ValueError("To be implemented")
+        raise ValueError("To be implemented")
 
     # ############################################################
     # AIE Code Generation
@@ -1611,16 +1604,9 @@ class CodeGenerator:
                 # compute logic on each compute tile
                 for func in core_funcs:
                     func_name = func.attributes["sym_name"].value
-                    if os.getenv("EXP") == "1":
-                        use_external_kernel = (
-                            self.virtual_computation_graph.collocated_nodes[
-                                func_name
-                            ].use_external_kernel
-                        )
-                    else:
-                        use_external_kernel = self.virtual_computation_graph.nodes[
-                            func_name
-                        ].meta_data.use_external_kernel
+                    use_external_kernel = self.virtual_computation_graph.nodes[
+                        func_name
+                    ].meta_data.use_external_kernel
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
                         link_with=("external.o" if use_external_kernel else None),
