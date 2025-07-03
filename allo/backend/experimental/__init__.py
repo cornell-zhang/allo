@@ -480,6 +480,7 @@ class AIE_MLIRModule:
             )
         )
         self.analyze_kernel_parameters(self.injected_external_kernels)
+        # ------------------------- virtual mapping -------------------------
         self._init_virtual_graph(use_external_kernels)
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
@@ -507,6 +508,7 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
 
+        # ------------------------- code optimization -------------------------
         self.allo_opt()
 
         passes = [
@@ -515,7 +517,7 @@ class AIE_MLIRModule:
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        # code generation
+        # ------------------------- mlir-aie code generation -------------------------
         top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
             self.allo_module, self.top_func_name
         )
@@ -541,6 +543,7 @@ class AIE_MLIRModule:
         with self.aie_module.context:
             aie_pass_manager.PassManager.parse(pipeline).run(self.aie_module.operation)
 
+        # ------------------------- build project -------------------------
         self.post_codegen_build(self.injected_external_kernels, include_src)
         return self
 

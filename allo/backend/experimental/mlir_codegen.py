@@ -657,6 +657,11 @@ class CodeGenerator:
             self.tasks.append(task)
 
     def map_data_transfer(self) -> dict[str, dict[int, FIFO]]:
+        """
+        Construct data transfer path from external memory to each (logical) compute tile.
+
+        TODO: may have influenc on DMA scheduling
+        """
 
         def partition(size: Size4D) -> Size4D:
             """
@@ -883,7 +888,7 @@ class CodeGenerator:
 
         class ContiguousInterface:
             """
-            ContiguousInterface always acquire adjacent memory block
+            ContiguousInterface always acquire adjacent memory blocks in external memory 
             """
 
             def __init__(self, offset: Offset4D, interface: MulticastInterface):
@@ -917,7 +922,6 @@ class CodeGenerator:
             tile_shape: list[int],
         ):
             """
-            fixme: maybe too aie-specific?
             Assign a memory tile to the given dtensor tiles.
             If no memory tile is available, return None.
             Else, return the assigned memory tile, the port id to shim, and the port ids to compute.
@@ -1023,6 +1027,11 @@ class CodeGenerator:
             mem_port: SwitchNode.Port,
             is_input: bool,
         ):
+            """
+            Assign a shim tile connected to a mem tile port.
+            If no shim tile is available, return None.
+            Else, return the assigned shim tile, and the shim port id.
+            """
             send_need = 1 if is_input else 0
             recv_need = 0 if is_input else 1
             assigned_shim_tile = None
@@ -1076,6 +1085,10 @@ class CodeGenerator:
             is_input: bool,
             tile_param_type: list,
         ) -> bool:
+            """
+            Assign a shim tile and mem tile for contiguous interfaces (send/receive data contiguous in external memory).
+            Return True if the assignment succeeded, otherwise return False.
+            """
             coalesced_size = Size4D.coalesce(total_size, tile_size)
             (
                 assigned_mem_tile,
@@ -1344,6 +1357,7 @@ class CodeGenerator:
         for io_port in global_io_port:
             interfaces: list[MulticastInterface] = io_port.connect_interface
             # TODO: only support limited cases (need to use assert as guard)
+            # TODO: related to DMA scheduling
             tensor_tile_group = global_tensors[interfaces[0].sample_interface.pe][
                 interfaces[0].sample_interface.interface_idx
             ]
@@ -1634,7 +1648,7 @@ class CodeGenerator:
                             arg.shape, get_element_type(str(arg.dtype))
                         )
                     )
-
+                # TODO: need more robust and smart DMA scheduling
                 dma_task_groups: dict[str, CodeGenerator.DMATaskWithSameToken] = {}
                 fifo_workload_map: dict[str, int] = {}
                 for global_dma in self.global_dma_trough_port:
