@@ -297,12 +297,14 @@ class LiveDTensorTileGroup:
     def __repr__(self):
         return self.__str__()
 
+
 @dataclass
 class BufferizedStream:
     arg_idx_a: int
     arg_idx_b: int
     arg_a: Value
     arg_b: Value
+
 
 # ------------------------------------------------------------
 class NodeMetaData:
@@ -564,7 +566,9 @@ class ComputationGraph:
         )
         # TODO: bundled_node.code_list.append()
         bundled_node.meta_data.input_streams.extend(sample_node.meta_data.input_streams)
-        bundled_node.meta_data.output_streams.extend(sample_node.meta_data.output_streams)
+        bundled_node.meta_data.output_streams.extend(
+            sample_node.meta_data.output_streams
+        )
         bundled_node.bufferized_stream.update(sample_node.bufferized_stream)
         # update stream
         for name, stream in self.edges.items():
@@ -842,44 +846,132 @@ class ComputationGraph:
             output_types = []
             arguments = []
             org_funcs: list[func_d.FuncOp] = []
+            base_offset_stack: list[int] = []
             code_length = 0
-            for code_seg in node.code_list:
-                if isinstance(code_seg, str):
-                    org_func_node: InitialIntermediateNode = self.init_nodes[code_seg]
-                    org_funcs.append(org_func_node.function)
-                    arg_idx_offset = len(input_types)
-                    for org_arg_idx, live_tiles in org_func_node.interfaces.items():
-                        for live_tile in live_tiles:
-                            live_tile.first_use += (
-                                Config.LOCAL_CODE_OFFSET * code_length
-                            )
-                            live_tile.last_use += Config.LOCAL_CODE_OFFSET * code_length
-                        collocated_node.global_interfaces[
-                            org_arg_idx + arg_idx_offset
-                        ].extend(live_tiles)
-                    input_types.extend(
-                        org_func_node.function.attributes["function_type"].value.inputs
-                    )
-                    output_types.extend(
-                        org_func_node.function.attributes["function_type"].value.results
-                    )
-                    arguments.extend(org_func_node.function.arguments)
-                elif isinstance(code_seg, set):
-                    sample_seg = next(iter(code_seg))
-                    if not isinstance(sample_seg, str):
-                        raise ValueError("TO BE IMPLEMENTED")
+
+            def visit_chained(code_list: list, base_offset: int, base_code_length: int):
+                sub_input_types = []
+                sub_output_types = []
+                sub_arguments = []
+                sub_org_funcs: list[func_d.FuncOp] = []
+                sub_code_length = base_code_length
+                for code_seg in code_list:
+                    if isinstance(code_seg, str):
+                        org_func_node: InitialIntermediateNode = self.init_nodes[
+                            code_seg
+                        ]
+                        sub_org_funcs.append(org_func_node.function)
+                        arg_idx_offset = len(sub_input_types) + base_offset
+                        for org_arg_idx, live_tiles in org_func_node.interfaces.items():
+                            for live_tile in live_tiles:
+                                live_tile.first_use += (
+                                    Config.LOCAL_CODE_OFFSET * sub_code_length
+                                )
+                                live_tile.last_use += (
+                                    Config.LOCAL_CODE_OFFSET * sub_code_length
+                                )
+                            collocated_node.global_interfaces[
+                                org_arg_idx + arg_idx_offset
+                            ].extend(live_tiles)
+                        sub_input_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.inputs
+                        )
+                        sub_output_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.results
+                        )
+                        sub_arguments.extend(org_func_node.function.arguments)
+                        sub_code_length += 1
+                    elif isinstance(code_seg, set):
+                        visit_bundled(code_seg)
+                        pass
+                    elif isinstance(code_seg, list):
+                        (
+                            sub_list_input_types,
+                            sub_list_output_types,
+                            sub_list_arguments,
+                            sub_list_org_funcs,
+                            sub_list_code_length,
+                        ) = visit_chained(
+                            code_seg,
+                            len(sub_input_types) + base_offset,
+                            base_code_length,
+                        )
+                        sub_input_types.extend(sub_list_input_types)
+                        sub_output_types.extend(sub_list_output_types)
+                        sub_arguments.extend(sub_list_arguments)
+                        sub_org_funcs.extend(sub_list_org_funcs)
+                        sub_code_length = sub_list_code_length
+                    else:
+                        raise ValueError("invalid element in code_list")
+                return (
+                    sub_input_types,
+                    sub_output_types,
+                    sub_arguments,
+                    sub_org_funcs,
+                    sub_code_length,
+                )
+
+            def visit_bundled(code_set: set, base_offset: int, base_code_length: int):
+                sub_input_types = []
+                sub_output_types = []
+                sub_arguments = []
+                sub_org_funcs: list[func_d.FuncOp] = []
+                sample_seg = next(iter(code_set))
+                if isinstance(sample_seg, str):
                     org_func_node: InitialIntermediateNode = self.init_nodes[sample_seg]
-                    org_funcs.append(org_func_node.function)
-                    arg_idx_offset = len(input_types)
-                    input_types.extend(
+                    sub_org_funcs.append(org_func_node.function)
+                    sub_input_types.extend(
                         org_func_node.function.attributes["function_type"].value.inputs
                     )
-                    output_types.extend(
+                    sub_output_types.extend(
                         org_func_node.function.attributes["function_type"].value.results
                     )
-                    arguments.extend(org_func_node.function.arguments)
-                    for seg in code_seg:
+                    sub_arguments.extend(org_func_node.function.arguments)
+                    for seg in code_set:
                         org_func_node = self.init_nodes[seg]
+                        for (
+                            org_arg_idx,
+                            live_tiles,
+                        ) in org_func_node.interfaces.items():
+                            for live_tile in live_tiles:
+                                live_tile.first_use += (
+                                    Config.LOCAL_CODE_OFFSET * base_code_length
+                                )
+                                live_tile.last_use += (
+                                    Config.LOCAL_CODE_OFFSET * base_code_length
+                                )
+                            collocated_node.global_interfaces[
+                                org_arg_idx + base_offset
+                            ].extend(live_tiles)
+                    return (
+                        sub_input_types,
+                        sub_output_types,
+                        sub_arguments,
+                        sub_org_funcs,
+                        base_code_length + 1,
+                    )
+                elif isinstance(sample_seg, set):
+                    # TODO
+                    pass
+                elif isinstance(sample_seg, list):
+                    # TODO
+                    pass
+                else:
+                    raise ValueError("invalid element in code_list")
+
+            def get_function_info(code_list: list):
+                base_offset_stack.append[len(input_types)]
+                for code_seg in code_list:
+                    if isinstance(code_seg, str):
+                        org_func_node: InitialIntermediateNode = self.init_nodes[
+                            code_seg
+                        ]
+                        org_funcs.append(org_func_node.function)
+                        arg_idx_offset = len(input_types)
                         for org_arg_idx, live_tiles in org_func_node.interfaces.items():
                             for live_tile in live_tiles:
                                 live_tile.first_use += (
@@ -891,9 +983,59 @@ class ComputationGraph:
                             collocated_node.global_interfaces[
                                 org_arg_idx + arg_idx_offset
                             ].extend(live_tiles)
-                else:
-                    raise ValueError("invalid element in code_list")
-                code_length += 1
+                        input_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.inputs
+                        )
+                        output_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.results
+                        )
+                        arguments.extend(org_func_node.function.arguments)
+                    elif isinstance(code_seg, set):
+                        sample_seg = next(iter(code_seg))
+                        if not isinstance(sample_seg, str):
+                            raise ValueError("TO BE IMPLEMENTED")
+                        org_func_node: InitialIntermediateNode = self.init_nodes[
+                            sample_seg
+                        ]
+                        org_funcs.append(org_func_node.function)
+                        arg_idx_offset = len(input_types)
+                        input_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.inputs
+                        )
+                        output_types.extend(
+                            org_func_node.function.attributes[
+                                "function_type"
+                            ].value.results
+                        )
+                        arguments.extend(org_func_node.function.arguments)
+                        for seg in code_seg:
+                            org_func_node = self.init_nodes[seg]
+                            for (
+                                org_arg_idx,
+                                live_tiles,
+                            ) in org_func_node.interfaces.items():
+                                for live_tile in live_tiles:
+                                    live_tile.first_use += (
+                                        Config.LOCAL_CODE_OFFSET * code_length
+                                    )
+                                    live_tile.last_use += (
+                                        Config.LOCAL_CODE_OFFSET * code_length
+                                    )
+                                collocated_node.global_interfaces[
+                                    org_arg_idx + arg_idx_offset
+                                ].extend(live_tiles)
+                    else:
+                        raise ValueError("invalid element in code_list")
+                    code_length += 1
+                base_offset_stack.pop()
+
+            get_function_info(node.code_list)
             with self.allo_module.context, allo_ir.ir.Location.unknown():
                 func_type = FunctionType.get(input_types, output_types)
                 new_function = func_d.FuncOp(
