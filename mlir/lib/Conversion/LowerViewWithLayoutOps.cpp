@@ -4,7 +4,7 @@
  */
 
 //===----------------------------------------------------------------------===//
-// Lower ViewWithLayout Ops
+// Lower TransformLayout Ops
 //===----------------------------------------------------------------------===//
 #include "allo/Conversion/Passes.h"
 #include "allo/Dialect/AlloDialect.h"
@@ -23,15 +23,15 @@ namespace mlir {
 namespace allo {
 
 /// Pass entry point
-bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
+bool applyLowerTransformLayoutOps(ModuleOp &mod) {
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
-    SmallVector<ViewWithLayoutOp, 8> setViewWithLayoutOps;
+    SmallVector<TransformLayoutOp, 8> setTransformLayoutOps;
     func.walk([&](Operation *op) {
-      if (auto viewWithLayoutOp = dyn_cast<ViewWithLayoutOp>(op)) {
-        setViewWithLayoutOps.push_back(viewWithLayoutOp);
+      if (auto transformLayoutOp = dyn_cast<TransformLayoutOp>(op)) {
+        setTransformLayoutOps.push_back(transformLayoutOp);
       }
     });
-    for (auto op : setViewWithLayoutOps) {
+    for (auto op : setTransformLayoutOps) {
       Value input = op->getOperands()[0];
       Value output = op->getResults()[0];
       MemRefType memRefType = output.getType().dyn_cast<MemRefType>();
@@ -42,28 +42,28 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
       if (offsets.size() != sizes.size() || sizes.size() != strides.size()) {
         return false;
       }
-      int64_t expected_size = 1, viewed_size = 1;
+      int64_t expected_size = 1, transformed_size = 1;
       for (int64_t val : result_shape) {
         expected_size *= val;
       }
       for (int64_t val : sizes) {
-        viewed_size *= val;
+        transformed_size *= val;
       }
-      if (expected_size != viewed_size) {
+      if (expected_size != transformed_size) {
         return false;
       }
       // lower to load-store
       Location loc = op->getLoc();
       OpBuilder rewriter(op);
       Type eltTy = memRefType.getElementType();
-      auto flatType = MemRefType::get({viewed_size}, eltTy);
+      auto flatType = MemRefType::get({transformed_size}, eltTy);
       Value flatAlloc = rewriter.create<memref::AllocOp>(loc, flatType);
       SmallVector<OpFoldResult> dimAttr, strideAttr;
-      dimAttr.push_back(rewriter.getIndexAttr(viewed_size));
+      dimAttr.push_back(rewriter.getIndexAttr(transformed_size));
       strideAttr.push_back(rewriter.getIndexAttr(1));
       Value flatInput = rewriter.create<memref::ReinterpretCastOp>(
           loc, flatType, input, rewriter.getIndexAttr(0), dimAttr, strideAttr);
-      // memory access with viewed layout
+      // memory access with transformed layout
       SmallVector<int64_t> lbs(sizes.size(), 0),
           ubs(sizes.begin(), sizes.end()), steps(sizes.size(), 1);
       SmallVector<int64_t> dst_strides;
@@ -122,12 +122,12 @@ bool applyLowerViewWithLayoutOps(ModuleOp &mod) {
 } // namespace mlir
 
 namespace {
-struct AlloLowerViewWithLayoutOpsTransformation
-    : public LowerViewWithLayoutOpsBase<
-          AlloLowerViewWithLayoutOpsTransformation> {
+struct AlloLowerTransformLayoutOpsTransformation
+    : public LowerTransformLayoutOpsBase<
+          AlloLowerTransformLayoutOpsTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
-    if (!applyLowerViewWithLayoutOps(mod)) {
+    if (!applyLowerTransformLayoutOps(mod)) {
       return signalPassFailure();
     }
   }
@@ -137,8 +137,8 @@ struct AlloLowerViewWithLayoutOpsTransformation
 namespace mlir {
 namespace allo {
 
-std::unique_ptr<OperationPass<ModuleOp>> createLowerViewWithLayoutOpsPass() {
-  return std::make_unique<AlloLowerViewWithLayoutOpsTransformation>();
+std::unique_ptr<OperationPass<ModuleOp>> createLowerTransformLayoutOpsPass() {
+  return std::make_unique<AlloLowerTransformLayoutOpsTransformation>();
 }
 } // namespace allo
 } // namespace mlir

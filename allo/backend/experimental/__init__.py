@@ -45,7 +45,6 @@ from .utils import (
     codegen_external_kernels,
     simplify_matmul_accumulate,
     collect_lib_func_call,
-    collect_op_by_name,
     read_tensor_from_file,
     codegen_host,
 )
@@ -224,6 +223,12 @@ class AIE_MLIRModule:
         """
 
         def vectorize_matmul(function: allo_func_d.FuncOp):
+            """
+            Using vectorized matmul to replace scalar version.
+            Layout transform is required before and after using vectorized matmul.
+
+            * All external kernels are from https://github.com/Xilinx/mlir-aie/tree/v1.0/aie_kernels.
+            """
             matmul_ops: list[allo_func_d.CallOp] = collect_lib_func_call(
                 function, "matmul_scalar"
             )
@@ -241,7 +246,7 @@ class AIE_MLIRModule:
                 else:
                     m, n, k = matmul_configs["aie2p"]
                 with function.context, allo_ir.ir.Location.unknown():
-                    new_input_0 = allo_d.view_with_layout(
+                    new_input_0 = allo_d.transform_layout(
                         input_a.type,
                         input_a,
                         [0, 0, 0, 0],
@@ -252,7 +257,7 @@ class AIE_MLIRModule:
                     new_input_0.owner.attributes["layout_hint"] = StringAttr.get(
                         f"A_to_{M}x{N}x{K}_{m}x{n}x{k}"
                     )
-                    new_input_1 = allo_d.view_with_layout(
+                    new_input_1 = allo_d.transform_layout(
                         input_b.type,
                         input_b,
                         [0, 0, 0, 0],
@@ -263,7 +268,7 @@ class AIE_MLIRModule:
                     new_input_1.owner.attributes["layout_hint"] = StringAttr.get(
                         f"B_to_{M}x{N}x{K}_{m}x{n}x{k}"
                     )
-                    new_output = allo_d.view_with_layout(
+                    new_output = allo_d.transform_layout(
                         output.type,
                         output,
                         [0, 0, 0, 0],
@@ -283,7 +288,7 @@ class AIE_MLIRModule:
                         [new_input_0, new_input_1, new_output],
                         ip=InsertionPoint(call_matmul_op),
                     )
-                    matmul_output = allo_d.view_with_layout(
+                    matmul_output = allo_d.transform_layout(
                         new_output.type,
                         new_output,
                         [0, 0, 0, 0],
@@ -328,6 +333,11 @@ class AIE_MLIRModule:
                     call_matmul_op.erase()
 
         def optimize_layout_transformation(function: allo_func_d.FuncOp):
+            """
+            Optimize layout transformation operations
+                - some can be 'push out of the function' and done at transfer time (e.g. with dma)
+                - some contiguous inverse transformation can be safely removed.
+            """
             if os.getenv("EXP") == "1":
                 node = self.virtual_computation_graph.collocated_nodes[
                     func.attributes["sym_name"].value
@@ -349,7 +359,7 @@ class AIE_MLIRModule:
                 ):
                     excuse_operands.add(op.operands[0])
                     return
-                if op.name == "allo.view_with_layout":
+                if op.name == "allo.transform_layout":
                     if op.operands[0] in excuse_operands:
                         op.result.replace_all_uses_with(op.operands[0])
                         excuse_operands.remove(op.operands[0])
@@ -359,14 +369,14 @@ class AIE_MLIRModule:
                         arg = BlockArgument(op.operands[0])
                         if arg.arg_number in node.global_interfaces:
                             # only used once
-                            view_with_layout_cnt = 0
+                            transform_layout_cnt = 0
                             for use in arg.uses:
                                 if (
-                                    use.owner.name == "allo.view_with_layout"
+                                    use.owner.name == "allo.transform_layout"
                                     and use.owner not in dead_ops
                                 ):
-                                    view_with_layout_cnt += 1
-                            if view_with_layout_cnt == 1:
+                                    transform_layout_cnt += 1
+                            if transform_layout_cnt == 1:
                                 node.interface_layout[arg.arg_number] = (
                                     list(op.attributes["offsets"]),
                                     list(op.attributes["sizes"]),
@@ -458,13 +468,6 @@ class AIE_MLIRModule:
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
-        # record original allo mlir
-        with open(
-            os.path.join(self.project_dir, "original_virtual.mlir"),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(str(self.allo_module))
 
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
@@ -507,7 +510,7 @@ class AIE_MLIRModule:
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-view-with-layout-ops,lower-affine",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops,lower-affine",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
@@ -525,7 +528,7 @@ class AIE_MLIRModule:
             self.streams,
             self.virtual_computation_graph,
         )
-        self.aie_module = code_generator.aie_codegen_nightly(
+        self.aie_module = code_generator.aie_codegen_experimental(
             core_funcs,
             external_funcs,
         )

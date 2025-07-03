@@ -369,7 +369,7 @@ def inject_external_kernels(
                     if os.getenv("USE_VECTORIZED_MATMUL") == "1":
                         m, n, k = matmul_configs[lib_dir]
                         kernel_name = f"matmul_{dtype}_{out_dtype}"
-                        new_input_0 = allo_d.view_with_layout(
+                        new_input_0 = allo_d.transform_layout(
                             op.inputs[0].type,
                             op.inputs[0],
                             [0, 0, 0, 0],
@@ -377,7 +377,7 @@ def inject_external_kernels(
                             [m * K, k, K, 1],
                             ip=InsertionPoint(op),
                         )
-                        new_input_1 = allo_d.view_with_layout(
+                        new_input_1 = allo_d.transform_layout(
                             op.inputs[1].type,
                             op.inputs[1],
                             [0, 0, 0, 0],
@@ -385,7 +385,7 @@ def inject_external_kernels(
                             [N * k, n, N, 1],
                             ip=InsertionPoint(op),
                         )
-                        new_output = allo_d.view_with_layout(
+                        new_output = allo_d.transform_layout(
                             op.outputs[0].type,
                             op.outputs[0],
                             [0, 0, 0, 0],
@@ -418,7 +418,7 @@ def inject_external_kernels(
                     os.getenv("USE_VECTORIZED_MATMUL") == "1"
                     and op.operation.name == "linalg.matmul"
                 ):
-                    matmul_output = allo_d.view_with_layout(
+                    matmul_output = allo_d.transform_layout(
                         new_output.type,
                         new_output,
                         [0, 0, 0, 0],

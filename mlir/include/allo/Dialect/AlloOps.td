@@ -1033,7 +1033,7 @@ def StreamPutOp : Allo_Op<"stream_put"> {
 // Layout operations
 //===----------------------------------------------------------------------===//
 
-def ViewWithLayoutOp : Allo_Op<"view_with_layout"> {
+def TransformLayoutOp : Allo_Op<"transform_layout"> {
   let summary = "Access a memref with a new layout";
   let description = [{
     Takes a memref and three constant integer arrays: offsets, sizes, and strides per dimension.
