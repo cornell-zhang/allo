@@ -888,7 +888,7 @@ class CodeGenerator:
 
         class ContiguousInterface:
             """
-            ContiguousInterface always acquire adjacent memory blocks in external memory 
+            ContiguousInterface always acquire adjacent memory blocks in external memory
             """
 
             def __init__(self, offset: Offset4D, interface: MulticastInterface):

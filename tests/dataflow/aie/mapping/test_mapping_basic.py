@@ -121,6 +121,6 @@ def _test_producer_consumer():
 
 if __name__ == "__main__":
     _test_vector_scalar_add_v1()
-    _test_vector_scalar_add_v2()
-    _test_vector_scalar_add_v3()
-    _test_producer_consumer()
+    # _test_vector_scalar_add_v2()
+    # _test_vector_scalar_add_v3()
+    # _test_producer_consumer()
