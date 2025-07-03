@@ -12,7 +12,6 @@ from .utils import (
     Argument,
     parse_kernel_name,
     Stream,
-    get_df_kernels,
     Config,
 )
 
@@ -458,19 +457,6 @@ class CoNode(NodeBase):
 
 # ------------------------------------------------------------
 class ComputationGraph:
-    class OperationTagger:
-        def __init__(self) -> None:
-            self.tag_map: dict[str, str] = {}
-            self.counter = 0
-
-        def get_tag(self, key: str) -> str:
-            """Return existing tag or assign a new one if not present."""
-            if key not in self.tag_map:
-                tag = f"tag_{self.counter}"
-                self.tag_map[key] = tag
-                self.counter += 1
-            return self.tag_map[key]
-
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
@@ -488,7 +474,6 @@ class ComputationGraph:
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.tagger = ComputationGraph.OperationTagger()
         self.dependencies: dict[str, set[str]] = defaultdict(set)
 
         df_kernels = []
@@ -501,10 +486,7 @@ class ComputationGraph:
         # construct nodes
         for func in df_kernels:
             func_name = func.attributes["sym_name"].value
-            tag_key = re.sub(
-                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
-            )
-            tag = self.tagger.get_tag(tag_key)
+            tag = func.attributes["tag"].value
             node = InitialNode(func, use_external_kernels[func_name], tag)
             intermediate_node = InitialIntermediateNode(
                 func, use_external_kernels[func_name], tag
@@ -880,6 +862,7 @@ class ComputationGraph:
                 node_cnt, node.meta_data.use_external_kernel
             )
             self.collocated_nodes[name] = collocated_node
+            self.func_args[name] = {}
             node_cnt += 1
             # initial function, no need to transform
             if name in self.init_nodes:
@@ -902,6 +885,10 @@ class ComputationGraph:
                             code_seg
                         ]
                         arg_idx_offset = len(sub_input_types) + base_offset
+                        for org_arg_idx, arg in self.func_args[
+                            org_func_node.meta_data.name
+                        ]:
+                            self.func_args[name][org_arg_idx + arg_idx_offset] = arg
                         for org_arg_idx, live_tiles in org_func_node.interfaces.items():
                             for live_tile in live_tiles:
                                 live_tile.first_use += (
@@ -989,6 +976,10 @@ class ComputationGraph:
                         org_func_node.function.attributes["function_type"].value.results
                     )
                     sub_arguments.extend(org_func_node.function.arguments)
+                    for org_arg_idx, arg in self.func_args[
+                        org_func_node.meta_data.name
+                    ]:
+                        self.func_args[name][org_arg_idx + base_offset] = arg
                     for seg in code_tuple:
                         org_func_node = self.init_nodes[seg]
                         for (
@@ -1097,6 +1088,7 @@ class ComputationGraph:
                     pass
                 # TODO
                 raise ValueError("TODO!!!!")
+                # TODO: bufferized_stream
 
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:

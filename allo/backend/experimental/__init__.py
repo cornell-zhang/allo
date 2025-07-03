@@ -154,8 +154,39 @@ class AIE_MLIRModule:
             use_external_kernels,
         )
 
+    def assign_tag_to_kernel(self):
+        """
+        Assign tag to df kernels (serve as some kind of rerolling)
+        """
+
+        class Tagger:
+            def __init__(self) -> None:
+                self.tag_map: dict[str, str] = {}
+                self.counter = 0
+
+            def get_tag(self, key: str) -> str:
+                """Return existing tag or assign a new one if not present."""
+                if key not in self.tag_map:
+                    tag = f"tag_{self.counter}"
+                    self.tag_map[key] = tag
+                    self.counter += 1
+                return self.tag_map[key]
+
+        tagger = Tagger()
+        df_kernels = get_df_kernels(self.allo_module)
+        for kernel in df_kernels:
+            tag_key = re.sub(
+                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
+            )
+            tag = tagger.get_tag(tag_key)
+            with kernel.context:
+                kernel.attributes["tag"] = StringAttr.get(tag)
+        return df_kernels
+
     def analyze_kernel_parameters(
-        self, injected_external_kernels: dict[str:ExternalModuleBase]
+        self,
+        df_kernels: list[allo_func_d.FuncOp],
+        injected_external_kernels: dict[str:ExternalModuleBase],
     ):
         """
         Analyze the parameters of each df.kernel.
@@ -165,19 +196,25 @@ class AIE_MLIRModule:
             - self.global_inputs: global input argument index -> DTensor
             - self.global_outputs: global output argument index -> DTensor
         """
+        tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
         self.global_inputs = {}
         self.global_outputs = {}
         # analyze
-        df_kernels = get_df_kernels(self.allo_module)
+        # df_kernels = get_df_kernels(self.allo_module)
         for kernel in df_kernels:
             kernel_name = kernel.attributes["sym_name"].value
             self.core_func_args[kernel_name] = {}
-            # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-            in_idx_list, out_idx_list = analyze_read_write_patterns(
-                kernel, injected_external_kernels
-            )
+            tag = kernel.attributes["tag"].value
+            if tag in tag_to_read_write_pattern:
+                in_idx_list, out_idx_list = tag_to_read_write_pattern[tag]
+            else:
+                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+                in_idx_list, out_idx_list = analyze_read_write_patterns(
+                    kernel, injected_external_kernels
+                )
+                tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
             for io_idx_list, io_type in (
                 (in_idx_list, "in"),
                 (out_idx_list, "out"),
@@ -464,7 +501,6 @@ class AIE_MLIRModule:
             self.device = "npu2"
         else:
             raise ValueError("Unsupported device type.")
-
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -475,6 +511,10 @@ class AIE_MLIRModule:
 
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
+        from datetime import datetime
+
+        now = datetime.now()
+        print(now)
         use_external_kernels, self.injected_external_kernels, include_src = (
             inject_external_kernels(
                 self.allo_module,
@@ -483,9 +523,22 @@ class AIE_MLIRModule:
                 "aie2" if self.device == "npu1" else "aie2p",
             )
         )
-        self.analyze_kernel_parameters(self.injected_external_kernels)
+        # record original allo mlir
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+        now = datetime.now()
+        print(now, "start analyzing params")
+        self.analyze_kernel_parameters(
+            self.assign_tag_to_kernel(), self.injected_external_kernels
+        )
         # ------------------------- virtual mapping -------------------------
+        now = datetime.now()
+        print(now, "start init virtual graph")
         self._init_virtual_graph(use_external_kernels)
+        now = datetime.now()
+        print(now, f"start mapping {len(mapping_primitives)} primitives")
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -505,6 +558,8 @@ class AIE_MLIRModule:
                         self.virtual_computation_graph.bundle(arg_list)
             if os.getenv("EXP") == "1":
                 self.virtual_computation_graph.finalize()
+        now = datetime.now()
+        print(now, "Done")
 
         # record original allo mlir
         with open(
