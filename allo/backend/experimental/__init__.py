@@ -80,7 +80,7 @@ class AIE_MLIRModule:
         self.external_kernel_lib: dict[str, ExternalModule] = {}
         for ext_kernel in ext_libs:
             if isinstance(ext_kernel, ExternalModule):
-                self.external_kernel_lib[ext_kernel.name] = ext_kernel
+                self.external_kernel_lib[ext_kernel.top] = ext_kernel
 
         self.func_args: dict[str, list[Argument]] = {}
         self.streams: dict[str, Stream] = {}

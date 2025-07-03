@@ -16,14 +16,14 @@ class ExternalModuleBase:
 
     def __init__(
         self,
-        name: str,
+        top: str,
         input_idx: list[int],
         output_idx: list[int],
         kernel_code: str = "",
         kernel_header: str = "",
         arg_layout=None,
     ):
-        self.name = name
+        self.top = top
         self.input_idx = input_idx
         self.output_idx = output_idx
         self.kernel_code = kernel_code
@@ -65,7 +65,7 @@ class ExternalModule(ExternalModuleBase):
         self, top: str, impl_path: str, input_idx: list[int], output_idx: list[int]
     ):
         super().__init__(
-            name=top,
+            top=top,
             input_idx=input_idx,
             output_idx=output_idx,
         )
@@ -80,11 +80,11 @@ class ExternalModule(ExternalModuleBase):
             extern_C_blocks = extract_extern_C_blocks(code)
             all_functions = []
             for block in extern_C_blocks:
-                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.name}\s*\([^)]*\)\s*{{"
+                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.top}\s*\([^)]*\)\s*{{"
                 functions = re.findall(func_pattern, block)
                 all_functions.extend(functions)
             assert len(all_functions) == 1, "invalid external function"
-            self.args = parse_cpp_function(all_functions[0], self.name)
+            self.args = parse_cpp_function(all_functions[0], self.top)
         assert (self.args is not None) or len(self.args) != len(self.input_idx) + len(
             self.output_idx
         ), f"Failed to parse {self.impl}"
