@@ -147,7 +147,11 @@ class AIE_MLIRModule:
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
-            self.allo_module, self.streams, self.core_func_args, use_external_kernels
+            self.allo_module,
+            self.top_func_name,
+            self.streams,
+            self.core_func_args,
+            use_external_kernels,
         )
 
     def analyze_kernel_parameters(

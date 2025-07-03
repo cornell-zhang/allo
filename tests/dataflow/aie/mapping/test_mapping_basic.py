@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import allo
 from allo.ir.types import int16, int32
 import allo.dataflow as df
@@ -78,7 +79,11 @@ def _test_vector_scalar_add_v3():
         mapping_primitives=[
             ("bundle", ["core_0", "core_1"]),  # -> bundled_node_name: core_0
             ("bundle", ["core_2", "core_3"]),  # -> bundled_node_name: core_2
-            ("bundle", ["core_0", "core_2"]),  # name after bundled, may be confusing
+            (
+                ("bundle", ["core_0-", "core_2-"])
+                if os.getenv("EXP") == "1"
+                else ("bundle", ["core_0", "core_2"])
+            ),  # name after bundled, may be confusing
         ],
     )
     B = np.zeros(M).astype(np.int32)
@@ -121,6 +126,6 @@ def _test_producer_consumer():
 
 if __name__ == "__main__":
     _test_vector_scalar_add_v1()
-    # _test_vector_scalar_add_v2()
-    # _test_vector_scalar_add_v3()
-    # _test_producer_consumer()
+    _test_vector_scalar_add_v2()
+    _test_vector_scalar_add_v3()
+    _test_producer_consumer()

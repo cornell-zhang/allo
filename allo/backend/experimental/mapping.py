@@ -353,7 +353,7 @@ class IntermediateNode:
         self.meta_data: NodeMetaData = NodeMetaData(
             name, use_external_kernel, tag, repeat, length
         )
-        # nested list of name or set of name
+        # nested list of name or tuple of name
         self.code_list: list = []
         self.bufferized_stream: list[Stream] = []
 
@@ -474,11 +474,13 @@ class ComputationGraph:
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
+        top_func_name: str,
         stream_map: dict[str, Stream],
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         use_external_kernels: dict[str, bool],
     ):
         self.allo_module = allo_module
+        self.insert_point: InsertionPoint = None
         self.nodes: dict[str, NodeBase] = {}
         self.intermediate_nodes: dict[str, IntermediateNode] = {}
         self.init_nodes: dict[str, InitialIntermediateNode] = {}
@@ -489,7 +491,13 @@ class ComputationGraph:
         self.tagger = ComputationGraph.OperationTagger()
         self.dependencies: dict[str, set[str]] = defaultdict(set)
 
-        df_kernels = get_df_kernels(allo_module)
+        df_kernels = []
+        for func in allo_module.body.operations:
+            if func.attributes["sym_name"].value == top_func_name:
+                self.insert_point = InsertionPoint(func)
+            elif isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+                df_kernels.append(func)
+
         # construct nodes
         for func in df_kernels:
             func_name = func.attributes["sym_name"].value
@@ -548,6 +556,7 @@ class ComputationGraph:
         assert len(node_name_list) >= 2, "bundle at least two nodes"
         node_list: list[IntermediateNode] = []
         for name in node_name_list:
+            print(self.intermediate_nodes.keys())
             assert name in self.intermediate_nodes, f"Node({name}) not found"
             node_list.append(self.intermediate_nodes.pop(name))
         sample_node = node_list[0]
@@ -564,10 +573,10 @@ class ComputationGraph:
             sample_node.meta_data.op_tag,
             repeat_cnt,
         )
-        code_list_set = {
+        code_list_tuple = tuple(
             (x.code_list if len(x.code_list) > 1 else x.code_list[0]) for x in node_list
-        }
-        bundled_node.code_list.append(code_list_set)
+        )
+        bundled_node.code_list.append(code_list_tuple)
         bundled_node.meta_data.input_streams.extend(sample_node.meta_data.input_streams)
         bundled_node.meta_data.output_streams.extend(
             sample_node.meta_data.output_streams
@@ -583,7 +592,8 @@ class ComputationGraph:
                 stream.dst = bundled_node.meta_data.name
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         for name in node_name_list:
-            self.dependencies.pop(name)
+            sample_dep = self.dependencies.pop(name)
+        self.dependencies[bundled_node.meta_data.name] = sample_dep
         self.intermediate_nodes[bundled_node.meta_data.name] = bundled_node
 
     def chain_exp(self, node_name_a: str, node_name_b: str):
@@ -609,6 +619,12 @@ class ComputationGraph:
             or node_b.meta_data.use_external_kernel,
             chained_tag,
             1,
+        )
+        chained_node.code_list.append(
+            node_a.code_list if len(node_a.code_list) > 1 else node_a.code_list[0]
+        )
+        chained_node.code_list.append(
+            node_b.code_list if len(node_b.code_list) > 1 else node_b.code_list[0]
         )
         chained_node.bufferized_stream.extend(node_a.bufferized_stream)
         chained_node.bufferized_stream.extend(node_b.bufferized_stream)
@@ -768,7 +784,7 @@ class ComputationGraph:
             new_function = func_d.FuncOp(
                 chained_node.meta_data.name,
                 func_type,
-                ip=InsertionPoint(function_a),
+                ip=self.insert_point,
             )
             new_function.attributes["df.kernel"] = UnitAttr.get()
             entry_block = new_function.add_entry_block()
@@ -878,7 +894,6 @@ class ComputationGraph:
                 sub_input_types = []
                 sub_output_types = []
                 sub_arguments = []
-                sub_org_funcs: list[func_d.FuncOp] = []
                 sub_live_tiles: list[LiveDTensorTile] = []
                 sub_code_length = base_code_length
                 for code_seg in code_list:
@@ -886,7 +901,6 @@ class ComputationGraph:
                         org_func_node: InitialIntermediateNode = self.init_nodes[
                             code_seg
                         ]
-                        sub_org_funcs.append(org_func_node.function)
                         arg_idx_offset = len(sub_input_types) + base_offset
                         for org_arg_idx, live_tiles in org_func_node.interfaces.items():
                             for live_tile in live_tiles:
@@ -910,33 +924,29 @@ class ComputationGraph:
                                 "function_type"
                             ].value.results
                         )
-                        sub_arguments.extend(org_func_node.function.arguments)
                         sub_code_length += 1
-                    elif isinstance(code_seg, set):
+                    elif isinstance(code_seg, tuple):
                         (
-                            sub_set_input_types,
-                            sub_set_output_types,
-                            sub_set_arguments,
-                            sub_set_org_funcs,
-                            sub_set_live_tiles,
-                            sub_set_code_length,
+                            sub_tuple_input_types,
+                            sub_tuple_output_types,
+                            sub_tuple_arguments,
+                            sub_tuple_live_tiles,
+                            sub_tuple_code_length,
                         ) = visit_bundled(
                             code_seg,
                             len(sub_input_types) + base_offset,
                             sub_code_length,
                         )
-                        sub_input_types.extend(sub_set_input_types)
-                        sub_output_types.extend(sub_set_output_types)
-                        sub_arguments.extend(sub_set_arguments)
-                        sub_org_funcs.extend(sub_set_org_funcs)
-                        sub_live_tiles.extend(sub_set_live_tiles)
-                        sub_code_length = sub_set_code_length
+                        sub_input_types.extend(sub_tuple_input_types)
+                        sub_output_types.extend(sub_tuple_output_types)
+                        sub_arguments.extend(sub_tuple_arguments)
+                        sub_live_tiles.extend(sub_tuple_live_tiles)
+                        sub_code_length = sub_tuple_code_length
                     elif isinstance(code_seg, list):
                         (
                             sub_list_input_types,
                             sub_list_output_types,
                             sub_list_arguments,
-                            sub_list_org_funcs,
                             sub_list_live_tiles,
                             sub_list_code_length,
                         ) = visit_chained(
@@ -947,7 +957,6 @@ class ComputationGraph:
                         sub_input_types.extend(sub_list_input_types)
                         sub_output_types.extend(sub_list_output_types)
                         sub_arguments.extend(sub_list_arguments)
-                        sub_org_funcs.extend(sub_list_org_funcs)
                         sub_live_tiles.extend(sub_list_live_tiles)
                         sub_code_length = sub_list_code_length
                     else:
@@ -959,21 +968,20 @@ class ComputationGraph:
                     sub_input_types,
                     sub_output_types,
                     sub_arguments,
-                    sub_org_funcs,
                     sub_live_tiles,
                     sub_code_length,
                 )
 
-            def visit_bundled(code_set: set, base_offset: int, base_code_length: int):
+            def visit_bundled(
+                code_tuple: tuple, base_offset: int, base_code_length: int
+            ):
                 sub_input_types = []
                 sub_output_types = []
                 sub_arguments = []
-                sub_org_funcs: list[func_d.FuncOp] = []
                 sub_live_tiles: list[LiveDTensorTile] = []
-                sample_seg = next(iter(code_set))
+                sample_seg = next(iter(code_tuple))
                 if isinstance(sample_seg, str):
                     org_func_node: InitialIntermediateNode = self.init_nodes[sample_seg]
-                    sub_org_funcs.append(org_func_node.function)
                     sub_input_types.extend(
                         org_func_node.function.attributes["function_type"].value.inputs
                     )
@@ -981,7 +989,7 @@ class ComputationGraph:
                         org_func_node.function.attributes["function_type"].value.results
                     )
                     sub_arguments.extend(org_func_node.function.arguments)
-                    for seg in code_set:
+                    for seg in code_tuple:
                         org_func_node = self.init_nodes[seg]
                         for (
                             org_arg_idx,
@@ -1002,48 +1010,43 @@ class ComputationGraph:
                         sub_input_types,
                         sub_output_types,
                         sub_arguments,
-                        sub_org_funcs,
                         sub_live_tiles,
                         base_code_length + 1,
                     )
-                if isinstance(sample_seg, set):
+                if isinstance(sample_seg, tuple):
                     (
-                        sub_set_input_types,
-                        sub_set_output_types,
-                        sub_set_arguments,
-                        sub_set_org_funcs,
-                        sub_set_live_tiles,
-                        sub_set_code_length,
+                        sub_tuple_input_types,
+                        sub_tuple_output_types,
+                        sub_tuple_arguments,
+                        sub_tuple_live_tiles,
+                        sub_tuple_code_length,
                     ) = visit_bundled(
                         sample_seg,
                         base_offset,
                         base_code_length,
                     )
-                    for seg in code_set:
+                    for seg in code_tuple:
                         visit_bundled(
                             seg,
                             base_offset,
                             base_code_length,
                         )
-                    sub_input_types.extend(sub_set_input_types)
-                    sub_output_types.extend(sub_set_output_types)
-                    sub_arguments.extend(sub_set_arguments)
-                    sub_org_funcs.extend(sub_set_org_funcs)
-                    sub_live_tiles.extend(sub_set_live_tiles)
+                    sub_input_types.extend(sub_tuple_input_types)
+                    sub_output_types.extend(sub_tuple_output_types)
+                    sub_arguments.extend(sub_tuple_arguments)
+                    sub_live_tiles.extend(sub_tuple_live_tiles)
                     return (
                         sub_input_types,
                         sub_output_types,
                         sub_arguments,
-                        sub_org_funcs,
                         sub_live_tiles,
-                        sub_set_code_length,
+                        sub_tuple_code_length,
                     )
                 elif isinstance(sample_seg, list):
                     (
                         sub_list_input_types,
                         sub_list_output_types,
                         sub_list_arguments,
-                        sub_list_org_funcs,
                         sub_list_live_tiles,
                         sub_list_code_length,
                     ) = visit_chained(
@@ -1051,7 +1054,7 @@ class ComputationGraph:
                         base_offset,
                         base_code_length,
                     )
-                    for seg in code_set:
+                    for seg in code_tuple:
                         visit_chained(
                             seg,
                             base_offset,
@@ -1060,13 +1063,11 @@ class ComputationGraph:
                     sub_input_types.extend(sub_list_input_types)
                     sub_output_types.extend(sub_list_output_types)
                     sub_arguments.extend(sub_list_arguments)
-                    sub_org_funcs.extend(sub_list_org_funcs)
                     sub_live_tiles.extend(sub_list_live_tiles)
                     return (
                         sub_input_types,
                         sub_output_types,
                         sub_arguments,
-                        sub_org_funcs,
                         sub_live_tiles,
                         sub_list_code_length,
                     )
@@ -1076,7 +1077,6 @@ class ComputationGraph:
                 input_types,
                 output_types,
                 arguments,
-                org_funcs,
                 _,
                 _,
             ) = visit_chained(node.code_list, 0, 0)
@@ -1085,7 +1085,7 @@ class ComputationGraph:
                 new_function = func_d.FuncOp(
                     name,
                     func_type,
-                    ip=InsertionPoint(org_funcs[0]),
+                    ip=self.insert_point,
                 )
                 new_function.attributes["df.kernel"] = UnitAttr.get()
                 entry_block = new_function.add_entry_block()
@@ -1093,6 +1093,8 @@ class ComputationGraph:
                     old.replace_all_uses_with(new)
 
                 # build function body
+                with InsertionPoint(entry_block):
+                    pass
                 # TODO
                 raise ValueError("TODO!!!!")
 
