@@ -1667,34 +1667,15 @@ class CodeGenerator:
                     # data with same token should be transferred together
                     # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
                     # fixme: currently, I'm using some tricks to hide the issue (fifo reuse, before launching new task, previous ones using the same fifo may complete safely)
-                    launched_dma: dict[int, aie_d.object_fifo] = {}
-                    fifo_name_to_bd_ids: dict[str, list[int]] = defaultdict(list)
-                    fifo_name_to_dedicated_bd_ids: dict[str, list[int]] = defaultdict(
-                        list
-                    )
-                    dma_bd_list_map: dict[str, list] = {
-                        shim_tile.name: [] for shim_tile in self.used_shim_tiles
-                    }
-                    sorted_fifo_names = sorted(
-                        fifo_workload_map,
-                        key=lambda k: fifo_workload_map[k],
-                        reverse=True,
-                    )
-                    for i in range(Config.DMA_MAX_BDS):
-                        fifo_name_to_dedicated_bd_ids[
-                            sorted_fifo_names[i % len(sorted_fifo_names)]
-                        ].append(i)
-
-                    def get_free_bd(fifo_name: str):
-                        for i in fifo_name_to_dedicated_bd_ids[fifo_name]:
-                            if i not in launched_dma:
-                                return i
-                        return -1
-
                     task_groups: list[CodeGenerator.DMATaskWithSameToken] = list(
                         dma_task_groups.values()
                     )
                     task_groups.sort(key=lambda x: x.start_time)
+                    dma_bd_map: dict[str, int] = {
+                        shim_tile.name: 0 for shim_tile in self.used_shim_tiles
+                    }
+                    launched_dma_to_external: list[aie_d.object_fifo] = []
+                    # launch a group of tasks with the same token
                     for task_group in task_groups:
                         task_group.tasks.sort(key=lambda x: x.start_time)
                         fifo_to_tasks: dict[
@@ -1762,48 +1743,38 @@ class CodeGenerator:
                         for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks.sort(key=lambda x: x.start_time)
+                        dma_bd_workload: dict[str, int] = {
+                            shim_tile.name: 0 for shim_tile in self.used_shim_tiles
+                        }
+                        # check buffer descriptor workload
+                        overload_flag = False
+                        for global_dma in coalesced_tasks:
+                            used_shim = (
+                                global_dma.io_port.fifo.src
+                                if global_dma.io_port.is_input
+                                else global_dma.io_port.fifo.dst[0]
+                            )
+                            dma_bd_workload[used_shim] += 1
+                            if dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS:
+                                overload_flag = True
+                                break
+                        # sync on output before reusing buffer descriptor (https://github.com/Xilinx/mlir-aie/blob/main/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd)
+                        if overload_flag:
+                            for fifo in launched_dma_to_external:
+                                aiex_d.dma_wait(fifo)
+                            launched_dma_to_external.clear()
                         for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
-                            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                            if os.getenv("DMA_V1") == 1:
-                                used_shim = (
-                                    global_dma.io_port.fifo.src
-                                    if global_dma.io_port.is_input
-                                    else global_dma.io_port.fifo.dst[0]
-                                )
-                                bd_id = -1
-                                for idx, name in enumerate(dma_bd_list_map[used_shim]):
-                                    if name == global_dma.io_port.fifo.name:
-                                        aiex_d.dma_wait(dma_fifo)
-                                        bd_id = idx
-                                        break
-                                if bd_id < 0:
-                                    bd_id = len(dma_bd_list_map[used_shim])
-                                    dma_bd_list_map[used_shim].append(
-                                        global_dma.io_port.fifo.name
-                                    )
-                            else:
-                                bd_id = get_free_bd(global_dma.io_port.fifo.name)
-                                if (
-                                    bd_id < 0
-                                    and len(
-                                        fifo_name_to_bd_ids[
-                                            global_dma.io_port.fifo.name
-                                        ]
-                                    )
-                                    > 0
-                                ):
-                                    for launched_id in fifo_name_to_bd_ids[
-                                        global_dma.io_port.fifo.name
-                                    ]:
-                                        aiex_d.dma_wait(launched_dma.pop(launched_id))
-                                    fifo_name_to_bd_ids[
-                                        global_dma.io_port.fifo.name
-                                    ].clear()
-                                    bd_id = get_free_bd(global_dma.io_port.fifo.name)
-                                if bd_id < 0:
-                                    raise ValueError("fail to assign buffer descriptor")
-                            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                            used_shim = (
+                                global_dma.io_port.fifo.src
+                                if global_dma.io_port.is_input
+                                else global_dma.io_port.fifo.dst[0]
+                            )
+                            bd_id = dma_bd_map[used_shim]
+                            assert (
+                                bd_id < Config.DMA_MAX_BDS
+                            ), "each shim tile have at most 16 buffer descriptor"
+                            dma_bd_map[used_shim] += 1
                             aiex_d.NpuDmaMemcpyNd(
                                 metadata=dma_fifo,
                                 bd_id=bd_id,
@@ -1815,11 +1786,9 @@ class CodeGenerator:
                                 strides=global_dma.io_port.stride,
                                 issue_token=True,
                             )
-                            launched_dma[bd_id] = dma_fifo
-                            fifo_name_to_bd_ids[global_dma.io_port.fifo.name].append(
-                                bd_id
-                            )
-                    for launched_fifo in launched_dma.values():
+                            if not global_dma.io_port.is_input:
+                                launched_dma_to_external.append(dma_fifo)
+                    for launched_fifo in launched_dma_to_external:
                         aiex_d.dma_wait(launched_fifo)
 
                     aie_d.EndOp()
