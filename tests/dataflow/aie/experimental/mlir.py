@@ -40,7 +40,7 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
     for i, arg in enumerate(args[:-1]):
         with open(os.path.join(project, f"input{i}.data"), "w", encoding="utf-8") as f:
             f.write("\n".join([str(i) for i in arg.flatten()]))
-    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -t {trace_size}"
+    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
     with subprocess.Popen(cmd, shell=True) as process:
         process.wait()
     if process.returncode != 0:
@@ -54,13 +54,14 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
 
 
 # fixme: update parameters as you need
-from allo.ir.types import int32
+from allo.ir.types import int16
 
-TyI, TyO = int32, int32
-M, N, K = 16, 16, 16
-A = np.random.randint(0, 64, (M, K)).astype(np.int32)
-B = np.zeros((M, N), dtype=np.int32)
+TyI, TyO = int16, int16
+M, N, K = 512, 512, 512
+A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+C = np.zeros((M, N)).astype(np.int16)
 
-call_mlir("top.prj", TyI, 0, A, B)
-np.testing.assert_allclose(A, B)
+call_mlir("top.prj", TyI, 0, A, B, C)
+np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")

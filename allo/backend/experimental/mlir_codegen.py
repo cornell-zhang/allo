@@ -1672,6 +1672,9 @@ class CodeGenerator:
                     fifo_name_to_dedicated_bd_ids: dict[str, list[int]] = defaultdict(
                         list
                     )
+                    dma_bd_list_map: dict[str, list] = {
+                        shim_tile.name: [] for shim_tile in self.used_shim_tiles
+                    }
                     sorted_fifo_names = sorted(
                         fifo_workload_map,
                         key=lambda k: fifo_workload_map[k],
@@ -1761,24 +1764,46 @@ class CodeGenerator:
                         coalesced_tasks.sort(key=lambda x: x.start_time)
                         for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
-                            bd_id = get_free_bd(global_dma.io_port.fifo.name)
-                            if (
-                                bd_id < 0
-                                and len(
-                                    fifo_name_to_bd_ids[global_dma.io_port.fifo.name]
+                            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                            if os.getenv("DMA_V1") == 1:
+                                used_shim = (
+                                    global_dma.io_port.fifo.src
+                                    if global_dma.io_port.is_input
+                                    else global_dma.io_port.fifo.dst[0]
                                 )
-                                > 0
-                            ):
-                                for launched_id in fifo_name_to_bd_ids[
-                                    global_dma.io_port.fifo.name
-                                ]:
-                                    aiex_d.dma_wait(launched_dma.pop(launched_id))
-                                fifo_name_to_bd_ids[
-                                    global_dma.io_port.fifo.name
-                                ].clear()
+                                bd_id = -1
+                                for idx, name in enumerate(dma_bd_list_map[used_shim]):
+                                    if name == global_dma.io_port.fifo.name:
+                                        aiex_d.dma_wait(dma_fifo)
+                                        bd_id = idx
+                                        break
+                                if bd_id < 0:
+                                    bd_id = len(dma_bd_list_map[used_shim])
+                                    dma_bd_list_map[used_shim].append(
+                                        global_dma.io_port.fifo.name
+                                    )
+                            else:
                                 bd_id = get_free_bd(global_dma.io_port.fifo.name)
-                            if bd_id < 0:
-                                raise ValueError("fail to assign buffer descriptor")
+                                if (
+                                    bd_id < 0
+                                    and len(
+                                        fifo_name_to_bd_ids[
+                                            global_dma.io_port.fifo.name
+                                        ]
+                                    )
+                                    > 0
+                                ):
+                                    for launched_id in fifo_name_to_bd_ids[
+                                        global_dma.io_port.fifo.name
+                                    ]:
+                                        aiex_d.dma_wait(launched_dma.pop(launched_id))
+                                    fifo_name_to_bd_ids[
+                                        global_dma.io_port.fifo.name
+                                    ].clear()
+                                    bd_id = get_free_bd(global_dma.io_port.fifo.name)
+                                if bd_id < 0:
+                                    raise ValueError("fail to assign buffer descriptor")
+                            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                             aiex_d.NpuDmaMemcpyNd(
                                 metadata=dma_fifo,
                                 bd_id=bd_id,
