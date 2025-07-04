@@ -59,7 +59,7 @@ np.random.seed(0)
 # Model Configuration
 # ===============================================================================
 USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
-
+KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
 EMBD = 768  # 64 * 12
@@ -165,7 +165,7 @@ def run(x_fp32: np.ndarray, params: dict):
     # ----------------------------------------------------------------
     norm = ExternalModule(
         top="layer_norm",
-        impl_path="layer_norm.cc",
+        impl_path=KERNEL_LIB_PATH + "layer_norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -233,7 +233,7 @@ def run(x_fp32: np.ndarray, params: dict):
     # ----------------------------------------------------------------
     attn_score = ExternalModule(
         top="transpose_matmul_with_scale",
-        impl_path="transpose_matmul_with_scale.cc",
+        impl_path=KERNEL_LIB_PATH + "transpose_matmul_with_scale.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -260,7 +260,7 @@ def run(x_fp32: np.ndarray, params: dict):
     # ----------------------------------------------------------------
     masked_softmax = ExternalModule(
         top="masked_softmax_float32",
-        impl_path="masked_softmax.cc",
+        impl_path=KERNEL_LIB_PATH + "masked_softmax.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -287,7 +287,7 @@ def run(x_fp32: np.ndarray, params: dict):
     # ----------------------------------------------------------------
     gelu = ExternalModule(
         top="gelu_float32",
-        impl_path="gelu.cc",
+        impl_path=KERNEL_LIB_PATH + "gelu.cc",
         input_idx=[0],
         output_idx=[1],
     )

@@ -11,6 +11,8 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.experimental.external_kernel import ExternalModule
 
+KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+
 Ly = Layout("S1S0")
 Ly_1 = Layout("S1")
 
@@ -52,37 +54,9 @@ def masked_softmax_tiled(
 
 
 def _test_masked_softmax_tiled():
-    SEQ = 64
     masked_softmax_kernel = ExternalModule(
         top="masked_softmax_float32",
-        impl_path="masked_softmax.cc",
-        input_idx=[0, 1],
-        output_idx=[2],
-    )
-    SOFTMAX_P0 = 2
-    SOFTMAX_P1 = 3
-    SOFTMAX_HEAD_TILE = SOFTMAX_P1
-    SOFTMAX_SEQ_TILE = SEQ // SOFTMAX_P0
-    SOFTMAX_Ly = Layout("S1S0")
-    SOFTMAX_ROW_Ly = Layout("S1")
-
-    @df.region()
-    def masked_softmax_kernel():
-        @df.kernel(mapping=[SOFTMAX_P0, SOFTMAX_P1])
-        def core(
-            input_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
-            row: Ty[SOFTMAX_P0] @ SOFTMAX_ROW_Ly,
-            output_x: Ty[SEQ, SEQ * SOFTMAX_HEAD_TILE] @ SOFTMAX_Ly,
-        ):
-            masked_softmax_kernel(input_x, row, output_x)
-
-    masked_softmax_mod = df.build(
-        masked_softmax_kernel, target="aie-mlir", project="masked_softmax.prj"
-    )
-
-    masked_softmax_kernel = ExternalModule(
-        top="masked_softmax_float32",
-        impl_path="masked_softmax.cc",
+        impl_path=KERNEL_LIB_PATH + "masked_softmax.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )

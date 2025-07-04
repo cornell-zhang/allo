@@ -11,6 +11,8 @@ from allo.memory import Layout
 from allo.backend.experimental.external_kernel import ExternalModule
 from allo.ir.types import float32
 
+KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+
 Ly = Layout("S0S1")
 Ty = float32
 
@@ -21,7 +23,7 @@ seq_tile = 16
 def _test_gelu():
     gelu = ExternalModule(
         top="gelu_float32",
-        impl_path="gelu.cc",
+        impl_path=KERNEL_LIB_PATH + "gelu.cc",
         input_idx=[0],
         output_idx=[1],
     )
