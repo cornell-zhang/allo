@@ -426,6 +426,7 @@ extern "C" {
   }
 }
 ```
+> ⚠️ **Note:** External kernel function arguments must have fully specified constant shapes. Pointer types are not allowed.
 
 We can create an [ExternalModule](external_kernel.py) to wrap the kernel and use it in computation on AIE core.
 
@@ -446,6 +447,10 @@ And the external module can then be used in an Allo kernel.
 ```
 
 An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
+
+##### Allo External Kernel Library 
+The [`kernels`](./kernels) directory contains several external kernels used in the GPT-2 block.
+Corresponding tests can be found in [`tests/dataflow/aie/gpt2`](../../../tests/dataflow/aie/gpt2/).
 
 ### ⚠️ Note
 Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.
