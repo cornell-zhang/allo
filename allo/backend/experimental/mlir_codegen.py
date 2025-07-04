@@ -252,6 +252,7 @@ class CodeGenerator:
         # ------------------------------------------------------------
         self.used_mem_tiles: list[SwitchNode] = []
         self.used_shim_tiles: list[SwitchNode] = []
+        self.paths: list[CodeGenerator.DMAPath] = []
         self.function_port_map: dict[str, dict[DTensor, SwitchNode.Port]] = defaultdict(
             lambda: defaultdict(SwitchNode.Port)
         )
@@ -626,6 +627,24 @@ class CodeGenerator:
     # ------------------------------------------------------------
     # Data Transfer
     # ------------------------------------------------------------
+    class DMAPath:
+        def __init__(
+            self,
+            dtype: str,
+            tile_shape: list[int],
+            coalesced_size: list[int],
+            connected_interfaces: list[list[PEInterface]],
+            mem_ports_to_compute: list[SwitchNode.Port],
+            tokens: set,
+        ):
+            self.dtype = dtype
+            self.tile_shape = tile_shape
+            self.coalesced_size = coalesced_size
+            self.connected_interfaces = connected_interfaces
+            self.mem_ports_to_compute = mem_ports_to_compute
+            self.related_tokens = set()
+            self.related_tokens.update(tokens)
+
     @dataclass(frozen=True)
     class GlobalIODMAPort:
         order_tag: int
@@ -672,6 +691,7 @@ class CodeGenerator:
                 if size.get_dim_size(dim) > 1:
                     break
             if dim >= 3:
+                print(size)
                 raise ValueError("Fail to partition")
             size_part = size.copy()
             partition_size = size.get_dim_size(dim) - 1
@@ -1020,48 +1040,6 @@ class CodeGenerator:
                     recv_ports,
                     connected_interfaces,
                 )
-            # Reuse: check if such path exists
-            # fixme: data transfers using the same port cannot be lauched together (should have different token)
-            for mem_tile in self.used_mem_tiles:
-                for intra_connect in mem_tile.intra_connect:
-                    if send_need != len(
-                        intra_connect.send_port_ids
-                    ) or recv_need != len(intra_connect.recv_port_ids):
-                        continue
-                    matched = True
-                    for idx, send_port_id in enumerate(intra_connect.send_port_ids):
-                        port = mem_tile.send_ports[send_port_id]
-                        if port.data_shape != send_shape or port.dtype != dtype:
-                            matched = False
-                            break
-                        if (
-                            is_input
-                            and port.connected_nodes != interface_list[idx].get_pes()
-                        ):
-                            matched = False
-                            break
-                    if matched:
-                        for idx, recv_port_id in enumerate(intra_connect.recv_port_ids):
-                            port = mem_tile.recv_ports[recv_port_id]
-                            if port.data_shape != recv_shape or port.dtype != dtype:
-                                matched = False
-                                break
-                            if (not is_input) and port.connected_nodes != [
-                                connected_interfaces[idx][0].pe
-                            ]:
-                                matched = False
-                                break
-                    if matched:
-                        return (
-                            mem_tile,
-                            (
-                                mem_tile.recv_ports[0]
-                                if is_input
-                                else mem_tile.send_ports[0]
-                            ),
-                            mem_tile.send_ports if is_input else mem_tile.recv_ports,
-                            connected_interfaces,
-                        )
             return None, -1, [], connected_interfaces
 
         def assign_shim_tile(
@@ -1145,6 +1123,11 @@ class CodeGenerator:
             Return True if the assignment succeeded, otherwise return False.
             """
             coalesced_size = Size4D.coalesce(total_size, tile_size)
+            tokens = set()
+            for multicast_interface in contiguous_interface:
+                for token_tuple in multicast_interface.tokens:
+                    for token in token_tuple:
+                        tokens.add(token)
             (
                 assigned_mem_tile,
                 send_ports,
@@ -1173,41 +1156,38 @@ class CodeGenerator:
                 if assigned_shim_tile is None:
                     # invalidate the intra_connect
                     assigned_mem_tile.intra_connect.pop()
-                    # TODO: reuse path
-                    print(mem_port_to_shim)
-                    print("============")
-                    print(contiguous_interface)
-                    print("====++++====")
-                    for shim_tile in self.used_shim_tiles:
-                        shim_tile.print()
-                    for pe, fifo_dict in mapped_interface.items():
-                        print(pe)
-                        for idx, fifo in fifo_dict.items():
-                            print("\t", idx, ":", fifo)
-                    raise ValueError("Fail to assign shim tile")
+                    # raise ValueError("Fail to assign shim tile")
                 else:
                     assigned_mem_tile.send_ports.extend(send_ports)
                     assigned_mem_tile.recv_ports.extend(recv_ports)
+                    path = CodeGenerator.DMAPath(
+                        tile_dtype,
+                        tile_param_type,
+                        coalesced_size.to_list(),
+                        connected_interfaces,
+                        ports_to_compute,
+                        tokens,
+                    )
+                    self.paths.append(path)
                     assert len(connected_interfaces) == len(ports_to_compute)
                     for idx, mem_port_to_compute in enumerate(ports_to_compute):
-                        if mem_port_to_compute.bind_fifo is None:
-                            if is_input:
-                                dma_fifo = self.fifo_manager.create_fifo(
-                                    src=assigned_mem_tile.name,
-                                    dst=mem_port_to_compute.connected_nodes,
-                                    data_shape=mem_port_to_compute.data_shape,
-                                    dtype=mem_port_to_compute.dtype,
-                                    dimensions_to_stream=transfer_layout,
-                                )
-                            else:
-                                assert len(mem_port_to_compute.connected_nodes) == 1
-                                dma_fifo = self.fifo_manager.create_fifo(
-                                    src=mem_port_to_compute.connected_nodes[0],
-                                    dst=[assigned_mem_tile.name],
-                                    data_shape=mem_port_to_compute.data_shape,
-                                    dtype=mem_port_to_compute.dtype,
-                                )
-                            mem_port_to_compute.bind_to_fifo(dma_fifo)
+                        if is_input:
+                            dma_fifo = self.fifo_manager.create_fifo(
+                                src=assigned_mem_tile.name,
+                                dst=mem_port_to_compute.connected_nodes,
+                                data_shape=mem_port_to_compute.data_shape,
+                                dtype=mem_port_to_compute.dtype,
+                                dimensions_to_stream=transfer_layout,
+                            )
+                        else:
+                            assert len(mem_port_to_compute.connected_nodes) == 1
+                            dma_fifo = self.fifo_manager.create_fifo(
+                                src=mem_port_to_compute.connected_nodes[0],
+                                dst=[assigned_mem_tile.name],
+                                data_shape=mem_port_to_compute.data_shape,
+                                dtype=mem_port_to_compute.dtype,
+                            )
+                        mem_port_to_compute.bind_to_fifo(dma_fifo)
                         for interface in connected_interfaces[idx]:
                             mapped_interface[interface.pe][
                                 interface.interface_idx
@@ -1256,7 +1236,23 @@ class CodeGenerator:
                     )
                     return True
             # reuse path
-            # TODO
+            for path in self.paths:
+                if (
+                    path.dtype == tile_dtype
+                    and path.tile_shape == tile_param_type
+                    and path.coalesced_size == coalesced_size.to_list()
+                    and path.connected_interfaces == connected_interfaces
+                ):
+                    if path.related_tokens.isdisjoint(tokens):
+                        path.related_tokens.update(tokens)
+                        for idx, mem_port_to_compute in enumerate(
+                            path.mem_ports_to_compute
+                        ):
+                            for interface in connected_interfaces[idx]:
+                                mapped_interface[interface.pe][
+                                    interface.interface_idx
+                                ] = mem_port_to_compute.bind_fifo
+                        return True
             return False
 
         mapped_interface: dict[str, dict[int, FIFO]] = {
