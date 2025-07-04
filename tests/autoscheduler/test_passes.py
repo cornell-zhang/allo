@@ -11,11 +11,7 @@ from tests.autoscheduler.polybench import get_polybench
 import allo
 from allo.backend.hls import is_available
 
-kinds = [
-    "graph",
-    "node",
-    # "combined"
-]
+kinds = ["graph", "node", "combined"]
 
 MODE = "sw_emu"
 

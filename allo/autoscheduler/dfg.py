@@ -558,17 +558,6 @@ class DFG:
 
             f.write("}\n")
 
-    def create_graph_parallelism_performance_model(
-        self, debug_output=None, verbose=False
-    ):
-        """Create a performance model for graph parallelism."""
-        return self.create_performance_model(
-            pinned_permutations=None,
-            enable_tile=False,
-            debug_output=debug_output,
-            verbose=verbose,
-        )
-
     def create_performance_model(
         self,
         pinned_permutations: Optional[Union[Callable, list[tuple[int, int]]]] = None,
@@ -579,14 +568,15 @@ class DFG:
         tiling_limit: Optional[int] = None,
     ) -> DFGAnalysisResult:
         """Create a general performance model.
-        loop_permutations: list of tuples (node_id, perm_idx) to pin
+        pinned_permutations: list of tuples (node_id, perm_idx) to pin specific permutations
         enable_tile: whether to enable tiling
         debug_output: file name for debugging output
         verbose: whether to print verbose output
         dsp_limit: DSP budget for the model
         tiling_limit: minimum tile size for tiling
         """
-        model = gp.Model("node_parallelism_performance_model")
+
+        model = gp.Model("dataflow_graph_performance_model")
 
         model.setParam("OutputFlag", 1 if verbose else 0)
 

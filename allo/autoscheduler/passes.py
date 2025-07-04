@@ -105,15 +105,23 @@ def dataflow_optimization_pass(
     # build performance model
     match cfg.kind:
         case "graph":
-            result: DFGAnalysisResult = dfg.create_graph_parallelism_performance_model(
-                verbose=cfg.verbose
-            )
-        case "node":
-            # solve seperately for a fixed permutation
-            permutation_result: DFGAnalysisResult = (
-                dfg.create_graph_parallelism_performance_model(verbose=cfg.verbose)
+            result: DFGAnalysisResult = dfg.create_performance_model(
+                enable_tile=False,
+                verbose=cfg.verbose,
+                dsp_limit=cfg.dsp_limit,
+                tiling_limit=cfg.tiling_limit,
             )
 
+        case "node":
+            # solve seperately for a fixed permutation
+            permutation_result: DFGAnalysisResult = dfg.create_performance_model(
+                enable_tile=False,
+                verbose=cfg.verbose,
+                dsp_limit=cfg.dsp_limit,
+                tiling_limit=cfg.tiling_limit,
+            )
+
+            # fix the permutation to the previously solved solution and solve for tiling factors
             result: DFGAnalysisResult = dfg.create_performance_model(
                 permutation_result.loop_permutations,
                 enable_tile=True,
@@ -123,8 +131,12 @@ def dataflow_optimization_pass(
             )
 
         case "combined":
-            # TODO: implement combined parallelism performance model
-            pass
+            result: DFGAnalysisResult = dfg.create_performance_model(
+                enable_tile=True,
+                verbose=cfg.verbose,
+                dsp_limit=cfg.dsp_limit,
+                tiling_limit=cfg.tiling_limit,
+            )
         case _:
             raise ValueError(f"Invalid parallelism model: {cfg.kind}")
 
