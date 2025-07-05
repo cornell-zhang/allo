@@ -35,6 +35,7 @@ from ..._mlir.ir import (
 # ############################################################
 # Configurations
 # ############################################################
+@dataclass(frozen=True)
 class Config:
     # https://riallto.ai/notebooks/3_2_Ryzenai_capabilities.html#interface-tile-properties
     COMPUTE_MAX_SEND = 2
@@ -215,7 +216,11 @@ aie_external_kernel_ctype_map = {
     "ui64": "unsigned long",
 }
 
-matmul_externel_kernel_config_map = {
+ 
+# aie::mmul size for different data type and different architectures used in library MatMul kernels
+#   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
+#   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
+matmul_external_kernel_config_map = {
     ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
@@ -352,7 +357,7 @@ def inject_external_kernels(
                 _, N = MemRefType(op.inputs[1].type).shape
                 dtype = str(op.inputs[0].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
-                if (dtype, out_dtype) in matmul_externel_kernel_config_map:
+                if (dtype, out_dtype) in matmul_external_kernel_config_map:
                     include_src.add('#include "mm.cc"\n')
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
