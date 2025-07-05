@@ -111,7 +111,7 @@ class Layout:
                     # For sharding, use the coordinate at the specified dimension
                     # start from right to left
                     mesh_dim = int(dim)
-                    tensor_id_parts.append(str(pe_coord[-mesh_dim - 1]))
+                    tensor_id_parts.append(int(pe_coord[-mesh_dim - 1]))
                 elif op == "R":
                     # For replication, use 'R'
                     tensor_id_parts.append("R")
