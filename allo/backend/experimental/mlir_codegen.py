@@ -42,6 +42,7 @@ from .utils import (
     Argument,
     Stream,
     Config,
+    string_sort_key,
 )
 from ..ai_engine import map_kernels_to_device_mesh
 from .mapping import (
@@ -758,7 +759,8 @@ class CodeGenerator:
                     interface.interface_idx
                 ]
                 self.sample_tokens: list[str] = sorted(
-                    list(sample_global_tensors.dtensor_groups.keys())
+                    list(sample_global_tensors.dtensor_groups.keys()),
+                    key=string_sort_key,
                 )
                 # disjoint
                 # fixme: better to mentain another set in contiguous ones
@@ -1523,7 +1525,10 @@ class CodeGenerator:
             # TODO: map nodes according to global io
             # heuristic
             traverse_idx = 0
-            sorted_values = [grouped_nodes[key] for key in sorted(grouped_nodes.keys())]
+            sorted_values = [
+                grouped_nodes[key]
+                for key in sorted(grouped_nodes.keys(), key=string_sort_key)
+            ]
             assigned = set()
             for deque in sorted_values:
                 if deque in assigned:
@@ -1707,7 +1712,6 @@ class CodeGenerator:
                     )
                 # TODO: need more robust and smart DMA scheduling
                 dma_task_groups: dict[str, CodeGenerator.DMATaskWithSameToken] = {}
-                fifo_workload_map: dict[str, int] = {}
                 for global_dma in self.global_dma_trough_port:
                     if global_dma.token not in dma_task_groups:
                         group = CodeGenerator.DMATaskWithSameToken(global_dma)
@@ -1715,10 +1719,6 @@ class CodeGenerator:
                     else:
                         group = dma_task_groups[global_dma.token]
                         group.add(global_dma)
-                    if global_dma.io_port.fifo.name not in fifo_workload_map:
-                        fifo_workload_map[global_dma.io_port.fifo.name] = 0
-                    fifo_workload_map[global_dma.io_port.fifo.name] += 1
-                assert len(fifo_workload_map) <= Config.DMA_MAX_BDS
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
                     # data with same token should be transferred together
@@ -1820,6 +1820,8 @@ class CodeGenerator:
                             for fifo in launched_dma_to_external:
                                 aiex_d.dma_wait(fifo)
                             launched_dma_to_external.clear()
+                            for shim_name in dma_bd_map.keys():
+                                dma_bd_map[shim_name] = 0
                         for global_dma in coalesced_tasks:
                             dma_fifo = self.fifo_map[global_dma.io_port.fifo.name]
                             used_shim = (
@@ -1828,6 +1830,7 @@ class CodeGenerator:
                                 else global_dma.io_port.fifo.dst[0]
                             )
                             bd_id = dma_bd_map[used_shim]
+                            print(dma_bd_map)
                             assert (
                                 bd_id < Config.DMA_MAX_BDS
                             ), "each shim tile have at most 16 buffer descriptor"

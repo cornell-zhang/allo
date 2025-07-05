@@ -22,7 +22,7 @@ from .utils import (
 @dataclass
 class DTensorTile:
     dtensor_id: int
-    tensor_tile_label: str
+    tensor_tile_label: tuple
 
     def __hash__(self):
         return hash((self.dtensor_id, self.tensor_tile_label))

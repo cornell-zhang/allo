@@ -1010,3 +1010,8 @@ def merge_token_sets(token_sets: list) -> list:
             root = uf.find(token)
             groups.setdefault(root, set()).add(token)
     return list(groups.values())
+
+
+def string_sort_key(s: str):
+    nums = tuple(map(int, re.findall(r"\d+", s)))
+    return (len(nums), nums)
