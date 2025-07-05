@@ -1811,7 +1811,7 @@ class CodeGenerator:
                                 else global_dma.io_port.fifo.dst[0]
                             )
                             dma_bd_workload[used_shim] += 1
-                            if dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS:
+                            if dma_bd_workload[used_shim] + dma_bd_map[used_shim] >= Config.DMA_MAX_BDS:
                                 overload_flag = True
                                 break
                         # sync on output before reusing buffer descriptor (https://github.com/Xilinx/mlir-aie/blob/main/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd)
@@ -1830,7 +1830,6 @@ class CodeGenerator:
                                 else global_dma.io_port.fifo.dst[0]
                             )
                             bd_id = dma_bd_map[used_shim]
-                            print(dma_bd_map)
                             assert (
                                 bd_id < Config.DMA_MAX_BDS
                             ), "each shim tile have at most 16 buffer descriptor"
