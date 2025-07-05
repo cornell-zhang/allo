@@ -1773,6 +1773,19 @@ class CodeGenerator:
                                             if idx >= 0 and (
                                                 inc_idx is None or inc_idx == idx
                                             ):
+                                                # dma size constrain
+                                                max_size = (
+                                                    Config.SHIM_DMA_HARDWARE_MAX_SIZES[
+                                                        idx
+                                                    ]
+                                                )
+                                                if (
+                                                    max_size > 0
+                                                    and max_size
+                                                    < (base_size[idx] + 1)
+                                                    * tasks[left].size[idx]
+                                                ):
+                                                    break
                                                 inc_idx = idx
                                                 base_size[idx] += 1
                                                 current_offset = incomming_offset
@@ -1811,7 +1824,10 @@ class CodeGenerator:
                                 else global_dma.io_port.fifo.dst[0]
                             )
                             dma_bd_workload[used_shim] += 1
-                            if dma_bd_workload[used_shim] + dma_bd_map[used_shim] >= Config.DMA_MAX_BDS:
+                            if (
+                                dma_bd_workload[used_shim] + dma_bd_map[used_shim]
+                                >= Config.DMA_MAX_BDS
+                            ):
                                 overload_flag = True
                                 break
                         # sync on output before reusing buffer descriptor (https://github.com/Xilinx/mlir-aie/blob/main/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd)

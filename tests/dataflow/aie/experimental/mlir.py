@@ -57,7 +57,7 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
 from allo.ir.types import int16
 
 TyI, TyO = int16, int16
-M, N, K = 128, 128, 512
+M, N, K = 128, 128, 1024
 A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
 B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
 C = np.zeros((M, N)).astype(np.int16)

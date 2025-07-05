@@ -47,6 +47,10 @@ class Config:
     # https://github.com/Xilinx/mlir-aie/blob/46bb8c25967f173eebe56056661be226b3933a14/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd
     DMA_MAX_BDS = 16
 
+    # https://github.com/Xilinx/mlir-aie/blob/v1.0/lib/Dialect/AIEX/IR/AIEXDialect.cpp#L233
+    SHIM_DMA_HARDWARE_MAX_SIZES = [64, -1, 1024, 1024]
+    # TODO: other dma size/stride constrain
+
     # fixme: some hyper-parameters, can be optimized
     IO_TILE_LOSE_FACTOR = 4
     COMPUTE_TILE_WITH_SHARED_MEMORY = 2
