@@ -44,24 +44,30 @@ def test_producer_consumer():
     @df.region()
     def top():
         pipe = df.pipe(dtype=Ty, shape=(M, N), depth=1)
-
-        @df.kernel(mapping=[1])
-        def producer(A: Ty[M, N]):
-            pipe.put(A)
+        pipe_rev = df.pipe(dtype=Ty, shape=(M, N), depth=1)
 
         @df.kernel(mapping=[1])
         def consumer(B: Ty[M, N]):
             data = pipe.get()
             for i, j in allo.grid(M, N):
                 # computation
-                B[i, j] = data[i, j] + 1
+                tmp: Ty[M, N] = data[i, j] + B[i,j]
+                pipe_rev.put(tmp)
+
+        @df.kernel(mapping=[1])
+        def producer(A: Ty[M, N], C: Ty[M, N]):
+            pipe.put(A)
+            data = pipe_rev.get()
+            for i, j in allo.grid(M, N):
+                C[i, j] = data[i, j]
+
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.zeros((M, N), dtype=np.int32)
 
     mod = df.build(top, target="aie-mlir")
-    mod(A, B)
-    np.testing.assert_allclose(A + 1, B, atol=1e-5)
+    mod(A, A, B)
+    np.testing.assert_allclose(A+A , B, atol=1e-5)
     print("Passed!")
 
 
@@ -217,8 +223,8 @@ def _test_summa():
 
 
 if __name__ == "__main__":
-    _test_vector_scalar_add()
-    # test_producer_consumer()
+    # _test_vector_scalar_add()
+    test_producer_consumer()
     # _test_summa()
     # _test_summa_2x2()
     # _test_tensor_parallelism()

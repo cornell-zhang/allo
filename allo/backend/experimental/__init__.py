@@ -752,6 +752,12 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if "npu1" in device_type:
+            self.device = "npu1"
+        elif "npu2" in device_type:
+            self.device = "npu2"
+        else:
+            raise ValueError("Unsupported device type.")
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -790,7 +796,8 @@ class AIE_MLIRModule:
             self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs, top_func
+            device_type, self.global_inputs, self.global_outputs, top_func,self.core_func_args,
+            self.streams,
         )
         self.aie_module = code_generator.aie_codegen(
             core_func_groups,
@@ -798,8 +805,6 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
-            self.core_func_args,
-            self.streams,
         )
         self.post_codegen_build(injected_external_kernels, include_src)
         return self

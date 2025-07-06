@@ -1994,7 +1994,7 @@ class CodeGenerator:
                                 for tensor_tile in dma_tile.tensor_tile_labels:
                                     # distribute to placement[tensor_tile]
                                     compute_tiles = []
-                                    name = f"{io}_mem_{dtensor.name}_{tensor_tile}"
+                                    name = f"{io}_mem_{dtensor.name}_{"_".join(tensor_tile)}"
                                     for tile in placement[tensor_tile]:
                                         # some distributed tile do not have global output
                                         if (
