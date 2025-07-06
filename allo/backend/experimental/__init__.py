@@ -88,9 +88,9 @@ class AIE_MLIRModule:
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
 
-        # index in top fucntion argument list -> DTensor
+        # index in top function argument list -> DTensor
         self.global_inputs: dict[int, DTensor] = None
         self.global_outputs: dict[int, DTensor] = None
         # function name -> (argument index -> (argument, is_input))
@@ -135,6 +135,32 @@ class AIE_MLIRModule:
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+        edge_map = {src: set() for src in stream_info.keys()}
+        for stream in self.streams.values():
+            edge_map[stream.src].add(stream.dst)
+        visited = set()
+        rec_stack = set()
+
+        def dfs(node):
+            if node in rec_stack:
+                return False  # found a cycle
+            if node in visited:
+                return True
+
+            visited.add(node)
+            rec_stack.add(node)
+
+            for neighbor in edge_map.get(node, set()):
+                if not dfs(neighbor):
+                    return False
+
+            rec_stack.remove(node)
+            return True
+
+        for node in edge_map.keys():
+            if not dfs(node):
+                return False
+        return True
 
     # ############################################################
     # Build
@@ -495,6 +521,20 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if not self.computation_is_dag:
+            if enable_virtual_mapping and len(mapping_primitives) > 0:
+                raise ValueError(
+                    "The input computation graph is not a DAG. Do not support virtual mapping now."
+                )
+            print(
+                "\033[34m[Warning] \033[0mThe input computation graph is not a DAG. Fallback to default build."
+            )
+            return self.build(
+                device_type=device_type,
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
         if "npu1" in device_type:
             self.device = "npu1"
         elif "npu2" in device_type:
@@ -796,7 +836,11 @@ class AIE_MLIRModule:
             self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs, top_func,self.core_func_args,
+            device_type,
+            self.global_inputs,
+            self.global_outputs,
+            top_func,
+            self.core_func_args,
             self.streams,
         )
         self.aie_module = code_generator.aie_codegen(

@@ -49,10 +49,11 @@ def test_producer_consumer():
         @df.kernel(mapping=[1])
         def consumer(B: Ty[M, N]):
             data = pipe.get()
+            tmp: Ty[M, N] = 0
             for i, j in allo.grid(M, N):
                 # computation
-                tmp: Ty[M, N] = data[i, j] + B[i,j]
-                pipe_rev.put(tmp)
+                tmp[i, j] = data[i, j] + B[i,j]
+            pipe_rev.put(tmp)
 
         @df.kernel(mapping=[1])
         def producer(A: Ty[M, N], C: Ty[M, N]):
