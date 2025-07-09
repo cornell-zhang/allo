@@ -24,6 +24,9 @@ from .vitis import (
     write_tensor_to_file,
     read_tensor_from_file,
 )
+from .pynq import (
+    postprocess_hls_code_pynq,
+)
 from .tapa import (
     codegen_tapa_host,
 )
@@ -275,6 +278,45 @@ class HLSModule:
                     self.top_func_name,
                     self.module,
                 )
+            elif self.platform == "pynq":
+                assert self.mode in {
+                    "csim",
+                    "csyn",
+                    "sw_emu",
+                    "hw_emu",
+                    "hw",
+                }, "Invalid mode"
+                assert (
+                    self.top_func_name != "kernel"
+                ), "kernel is a reserved keyword for vitis_hls"
+                path = os.path.dirname(__file__)
+                path = os.path.join(path, "../harness/")
+                dst_path = os.path.join(project, "description.json")
+                generate_description_file(
+                    self.top_func_name,
+                    path + "makefile_gen/description.json",
+                    dst_path,
+                    frequency=configs["frequency"],
+                )
+                generate_makefile(dst_path, project, self.platform)
+                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+                self.hls_code = postprocess_hls_code_pynq(self.hls_code, self.top_func_name)
+                for lib in self.ext_libs:
+                    cpp_file = lib.impl.split("/")[-1]
+                    with open(f"{project}/{cpp_file}", "r", encoding="utf-8") as infile:
+                        new_code = postprocess_hls_code_pynq(
+                            infile.read(), lib.top, pragma=True
+                        )
+                    with open(
+                        f"{project}/{cpp_file}", "w", encoding="utf-8"
+                    ) as outfile:
+                        outfile.write(new_code)
+                self.host_code = codegen_host(
+                    self.top_func_name,
+                    self.module,
+                )
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
@@ -470,6 +512,80 @@ class HLSModule:
                 raise RuntimeError("The output must be a tensor")
             arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
             args[-1][:] = arr.reshape(args[-1].shape)
+            return
+        elif self.platform == "pynq":
+            assert is_available("pynq"), "pynq is not available"
+            if self.mode == "csim":
+                cwd = os.getcwd()
+                mod = IPModule(
+                    top=self.top_func_name,
+                    impl=f"{cwd}/{self.project}/kernel.cpp",
+                    link_hls=True,
+                )
+                mod(*args)
+                return
+            if self.mode == "csyn":
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                assert len(args) == 0, "csyn mode does not need to pass in arguments"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
+                return
+            # Use Makefile (sw_emu, hw_emu, hw)
+            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
+            # prepare data
+            func = find_func_in_module(self.module, self.top_func_name)
+            inputs, outputs = get_func_inputs_outputs(func)
+            assert len(args) == len(inputs) + len(
+                outputs
+            ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
+            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
+                write_tensor_to_file(
+                    arg,
+                    in_shape,
+                    f"{self.project}/input{i}.data",
+                )
+            # check if the build folder exists
+            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
+            if not os.path.exists(
+                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
+            ):
+                cmd = (
+                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
+                )
+                print(cmd)
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to build the project")
+            else:
+                print("Build folder exists, skip building")
+                # run the executable
+                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                prefix += f" cd {self.project};"
+                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
+                    prefix += " make host PLATFORM=$XDEVICE;"
+                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
+                print(cmd)
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to run the executable")
+            # suppose the last argument is the output tensor
+            result = read_tensor_from_file(
+                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
+            )
+            args[-1][:] = result
             return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
