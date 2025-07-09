@@ -74,6 +74,8 @@ class ExternalModule(ExternalModuleBase):
         assert self.filename.endswith(
             ".cc"
         ), f"Expected a .cc file, but got: {self.filename}"
+
+        # avoid naming conflict with builtin library
         self.filename = self.filename.removesuffix(".cc") + "_.cc"
         with open(self.impl_path, "r", encoding="utf-8") as f:
             code = f.read()
