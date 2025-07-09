@@ -8,6 +8,7 @@ from allo.ir.types import int32, float32
 
 from allo.autoscheduler.dfg import DFG, DFGNodeType, Node
 from allo.autoscheduler.passes import dataflow_optimization_pass
+from allo.autoscheduler.config import AutoschedulerConfig
 from allo.autoscheduler.util import compose_affine_maps
 from allo._mlir.ir import AffineMap, AffineExpr
 
@@ -69,7 +70,8 @@ def three_mm(
 
 def test_3mm():
     s = allo.customize(three_mm)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
     module = s.module
     print(module)
     dfg = DFG.from_module(module)
@@ -103,7 +105,8 @@ def test_loop_info():
 
 def test_node_info():
     s = allo.customize(func)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -172,7 +175,8 @@ def test_DSP():
         return A
 
     s = allo.customize(dsp_test)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
     module = s.module
     dfg = DFG.from_module(module)
     affine_nodes = [
@@ -190,7 +194,8 @@ def test_II():
         return A
 
     s = allo.customize(loop_with_dependency)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
 
     module = s.module
     dfg = DFG.from_module(module)
@@ -215,7 +220,8 @@ def test_reduction():
         return sum
 
     s = allo.customize(reduction)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
     module = s.module
     print(s.module)
     dfg = DFG.from_module(module)
@@ -231,7 +237,8 @@ def test_reduction():
         return B
 
     s = allo.customize(not_reduction)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    cfg = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, cfg)
     module = s.module
 
     dfg = DFG.from_module(module)
