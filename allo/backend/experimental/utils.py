@@ -216,7 +216,7 @@ aie_external_kernel_ctype_map = {
     "ui64": "unsigned long",
 }
 
- 
+
 # aie::mmul size for different data type and different architectures used in library MatMul kernels
 #   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
 #   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
