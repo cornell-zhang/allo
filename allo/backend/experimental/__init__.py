@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, too-many-function-args, no-value-for-parameter
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -19,7 +19,7 @@ from allo._mlir.dialects import (
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
-from ..._mlir.ir import (
+from allo._mlir.ir import (
     Type,
     StringAttr,
     InsertionPoint,
@@ -27,18 +27,16 @@ from ..._mlir.ir import (
     BlockArgument,
     MemRefType,
 )
-
+from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
 from .external_kernel import ExternalModule, ExternalModuleBase
-
-from ..._mlir.passmanager import PassManager as mlir_pass_manager
-from .mlir_codegen import CodeGenerator, Argument, Stream
+from .mlir_codegen import CodeGenerator
 from .utils import (
     Argument,
     Stream,
     inject_external_kernels,
-    matmul_externel_kernel_config_map,
+    matmul_external_kernel_config_map,
     get_df_kernels,
     classify_aie_functions,
     classify_aie_functions_experimental,
@@ -82,7 +80,7 @@ class AIE_MLIRModule:
         self.external_kernel_lib: dict[str, ExternalModule] = {}
         for ext_kernel in ext_libs:
             if isinstance(ext_kernel, ExternalModule):
-                self.external_kernel_lib[ext_kernel.name] = ext_kernel
+                self.external_kernel_lib[ext_kernel.top] = ext_kernel
 
         self.func_args: dict[str, list[Argument]] = {}
         self.streams: dict[str, Stream] = {}

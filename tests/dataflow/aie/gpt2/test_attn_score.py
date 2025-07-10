@@ -11,6 +11,8 @@ from allo.memory import Layout
 from allo.backend.experimental.external_kernel import ExternalModule
 from allo.ir.types import float32
 
+KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+
 LyA = Layout("S0R")
 LyB = Layout("S1R")
 LyC = Layout("S0S1")
@@ -32,7 +34,7 @@ def _test_attn_score():
 
     attn_score = ExternalModule(
         top="transpose_matmul_with_scale",
-        impl_path="transpose_matmul_with_scale.cc",
+        impl_path=KERNEL_LIB_PATH + "transpose_matmul_with_scale.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )

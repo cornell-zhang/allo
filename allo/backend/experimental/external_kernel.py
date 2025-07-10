@@ -16,14 +16,14 @@ class ExternalModuleBase:
 
     def __init__(
         self,
-        name: str,
+        top: str,
         input_idx: list[int],
         output_idx: list[int],
         kernel_code: str = "",
         kernel_header: str = "",
         arg_layout=None,
     ):
-        self.name = name
+        self.top = top
         self.input_idx = input_idx
         self.output_idx = output_idx
         self.kernel_code = kernel_code
@@ -65,7 +65,7 @@ class ExternalModule(ExternalModuleBase):
         self, top: str, impl_path: str, input_idx: list[int], output_idx: list[int]
     ):
         super().__init__(
-            name=top,
+            top=top,
             input_idx=input_idx,
             output_idx=output_idx,
         )
@@ -74,6 +74,8 @@ class ExternalModule(ExternalModuleBase):
         assert self.filename.endswith(
             ".cc"
         ), f"Expected a .cc file, but got: {self.filename}"
+
+        # avoid naming conflict with builtin library
         self.filename = self.filename.removesuffix(".cc") + "_.cc"
         with open(self.impl_path, "r", encoding="utf-8") as f:
             code = f.read()

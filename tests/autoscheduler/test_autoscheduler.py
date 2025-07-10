@@ -9,6 +9,7 @@ from gurobipy import GurobiError
 from allo.ir.types import int32, float32
 from allo.autoscheduler.dfg import DFG
 from allo.autoscheduler.passes import dataflow_optimization_pass
+from allo.autoscheduler.config import AutoschedulerConfig
 
 
 def test_simple_graph_parallel():
@@ -26,11 +27,12 @@ def test_simple_graph_parallel():
         return B
 
     s = allo.customize(simple)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
-    dfg = DFG.from_module(s.module)
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
 
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    assert permutations[0][1] != permutations[1][1]
+    dfg = DFG.from_module(s.module)
+    sol = dfg.create_performance_model(enable_tile=False, debug_output="simple")
+    assert sol.loop_permutations[0][1] != sol.loop_permutations[1][1]
 
 
 def test_simple2():
@@ -48,13 +50,13 @@ def test_simple2():
         return B
 
     s = allo.customize(simple)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
+
     dfg = DFG.from_module(s.module)
     dfg.print_as_dot("simple2.dot")
-    permutations = dfg.create_graph_parallelism_performance_model(
-        debug_output="simple2"
-    )
-    assert permutations[0][1] == permutations[1][1]
+    sol = dfg.create_performance_model(enable_tile=False, debug_output="simple2")
+    assert sol.loop_permutations[0][1] == sol.loop_permutations[1][1]
 
 
 def matrix_multiply(A: int32[8, 8], B: int32[8, 8]) -> int32[8, 8]:
@@ -75,12 +77,13 @@ def test_3mm():
         return matrix_multiply(E, F)
 
     s = allo.customize(three_mm)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
     module = s.module
 
     dfg = DFG.from_module(module)
     try:
-        dfg.create_graph_parallelism_performance_model(debug_output="3mm")
+        res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
             pytest.skip(
@@ -95,30 +98,36 @@ def test_simple_node_parallel():
         A: float32[64, 64]
         B: float32[64, 64]
         for i in range(64):
-            for j in range(64):
+            for j in range(15):
                 A[i, j] = i + j
 
-        for j in range(64):
+        for j in range(15):
             for i in range(64):
                 B[i, j] = A[i, j] + 1
 
         return B
 
     s = allo.customize(simple)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
-    dfg = DFG.from_module(s.module)
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
 
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    tiling_factors = dfg.create_node_parallelism_performance_model(
-        loop_permutation=permutations,
+    dfg = DFG.from_module(s.module)
+    res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
+    tiling_factors = dfg.create_performance_model(
+        pinned_permutations=res.loop_permutations,
+        enable_tile=True,
         debug_output="simple-node",
-        dsp_limit=16,
+        dsp_limit=20,
         verbose=True,
     )
-    print(tiling_factors)
 
-    assert len(tiling_factors) == 4
-    assert all(tiling_factor[2] == 4 for tiling_factor in tiling_factors)
+    sol = tiling_factors.tiling_factors
+    assert len(sol.keys()) == 2
+    assert all(
+        tiling_factor[1] in (4, 5)
+        for factors in sol.values()
+        for tiling_factor in factors
+    )
 
 
 def test_simple_node_parallel_full_unroll():
@@ -136,20 +145,22 @@ def test_simple_node_parallel_full_unroll():
         return B
 
     s = allo.customize(simple)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
-    dfg = DFG.from_module(s.module)
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
 
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
-    tiling_factors = dfg.create_node_parallelism_performance_model(
-        loop_permutation=permutations,
+    dfg = DFG.from_module(s.module)
+    res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
+    tiling_factors = dfg.create_performance_model(
+        pinned_permutations=res.loop_permutations,
+        enable_tile=True,
         debug_output="simple-node",
         dsp_limit=2**12,
         verbose=True,
     )
-    print(tiling_factors)
 
-    assert len(tiling_factors) == 4
-    assert all(tiling_factor[2] == 64 for tiling_factor in tiling_factors)
+    sol = tiling_factors.tiling_factors
+    assert len(sol) == 2
+    assert all(factor[1] == 32 for factors in sol.values() for factor in factors)
 
 
 def test_simple_node_parallel_infeasible():
@@ -167,16 +178,22 @@ def test_simple_node_parallel_infeasible():
         return B
 
     s = allo.customize(simple)
-    s = dataflow_optimization_pass(s, debug_point="dataflow_canonicalization")
-    dfg = DFG.from_module(s.module)
+    config = AutoschedulerConfig.builder().with_debug_point("dataflow_canonicalization")
+    s = dataflow_optimization_pass(s, config)
 
-    permutations = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    dfg = DFG.from_module(s.module)
+    res = dfg.create_performance_model(
+        enable_tile=False,
+        verbose=True,
+        debug_output="simple-node",
+    )
 
     with pytest.raises(RuntimeError, match="Optimization failed with status 3"):
-        dfg.create_node_parallelism_performance_model(
-            loop_permutation=permutations,
+        dfg.create_performance_model(
+            pinned_permutations=res.loop_permutations,
+            enable_tile=True,
             debug_output="simple-node",
-            dsp_limit=2,
+            dsp_limit=0,
             verbose=True,
         )
 

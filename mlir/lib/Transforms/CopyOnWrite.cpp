@@ -23,7 +23,7 @@ using namespace allo;
 namespace mlir {
 namespace allo {
 
-void removeRedundentCopy(func::FuncOp &func) {
+void removeRedundantCopy(func::FuncOp &func) {
   SmallVector<Operation *, 8> copyOps;
   func.walk([&](Operation *op) {
     if (auto memRefCopyOp = dyn_cast<memref::CopyOp>(op)) {
@@ -100,14 +100,14 @@ void removeRedundentCopy(func::FuncOp &func) {
 /// Pass entry point
 bool applyCopyOnWrite(ModuleOp &mod) {
   for (auto func : mod.getOps<func::FuncOp>()) {
-    removeRedundentCopy(func);
+    removeRedundantCopy(func);
   }
   return true;
 }
 
 void applyCopyOnWriteOnFunction(Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
-  removeRedundentCopy(funcOp);
+  removeRedundantCopy(funcOp);
 }
 } // namespace allo
 } // namespace mlir
