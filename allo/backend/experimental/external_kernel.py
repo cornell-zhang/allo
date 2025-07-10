@@ -7,6 +7,31 @@ from pyparsing import Keyword, Literal, nestedExpr, originalTextFor
 from ..ip import parse_cpp_function
 
 
+class ExternalModuleBase:
+    """
+    Base class of ExternalModule (external functions)
+        - builtin
+        - customized
+    """
+
+    def __init__(
+        self,
+        top: str,
+        input_idx: list[int],
+        output_idx: list[int],
+        kernel_code: str = "",
+        kernel_header: str = "",
+        arg_layout=None,
+    ):
+        self.top = top
+        self.input_idx = input_idx
+        self.output_idx = output_idx
+        self.kernel_code = kernel_code
+        self.kernel_header = kernel_header
+        # TODO: data layout at tranfer time?
+        self.arg_layout = arg_layout
+
+
 def extract_extern_C_blocks(code: str) -> list[str]:
     """
     Scan `code` for all occurrences of:
@@ -31,7 +56,7 @@ def extract_extern_C_blocks(code: str) -> list[str]:
     return blocks
 
 
-class ExternalModule:
+class ExternalModule(ExternalModuleBase):
     """
     User defined external kernel for aie
     """
@@ -39,18 +64,19 @@ class ExternalModule:
     def __init__(
         self, top: str, impl_path: str, input_idx: list[int], output_idx: list[int]
     ):
-        self.top = top  # identifier
+        super().__init__(
+            top=top,
+            input_idx=input_idx,
+            output_idx=output_idx,
+        )
         self.impl_path = impl_path
         self.filename = os.path.basename(impl_path)
         assert self.filename.endswith(
             ".cc"
         ), f"Expected a .cc file, but got: {self.filename}"
+
         # avoid naming conflict with builtin library
         self.filename = self.filename.removesuffix(".cc") + "_.cc"
-
-        self.input_idx = input_idx
-        self.output_idx = output_idx
-
         with open(self.impl_path, "r", encoding="utf-8") as f:
             code = f.read()
             extern_C_blocks = extract_extern_C_blocks(code)
