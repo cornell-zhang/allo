@@ -11,11 +11,7 @@ from tests.autoscheduler.polybench import get_polybench
 import allo
 from allo.backend.hls import is_available
 
-kinds = [
-    "graph",
-    "node",
-    # "combined"
-]
+kinds = ["graph", "node", "combined"]
 
 MODE = "sw_emu"
 
@@ -266,7 +262,7 @@ def test_atax(debug_point, kind):
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-@pytest.mark.parametrize("kind", kinds)
+@pytest.mark.parametrize("kind", ["graph", "node"])
 def test_gemm(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gemm", size="small", concrete_type=float32
@@ -304,7 +300,7 @@ def test_gemm(debug_point, kind):
 
 
 @pytest.mark.parametrize("debug_point", DEBUG_POINTS)
-@pytest.mark.parametrize("kind", kinds)
+@pytest.mark.parametrize("kind", ["graph", "node"])
 def test_gesummv(debug_point, kind):
     schedule, inputs, expected = get_polybench(
         "gesummv", size="small", concrete_type=float32

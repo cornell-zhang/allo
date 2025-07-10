@@ -31,7 +31,7 @@ def test_simple_graph_parallel():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    sol = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    sol = dfg.create_performance_model(enable_tile=False, debug_output="simple")
     assert sol.loop_permutations[0][1] != sol.loop_permutations[1][1]
 
 
@@ -55,7 +55,7 @@ def test_simple2():
 
     dfg = DFG.from_module(s.module)
     dfg.print_as_dot("simple2.dot")
-    sol = dfg.create_graph_parallelism_performance_model(debug_output="simple2")
+    sol = dfg.create_performance_model(enable_tile=False, debug_output="simple2")
     assert sol.loop_permutations[0][1] == sol.loop_permutations[1][1]
 
 
@@ -83,7 +83,7 @@ def test_3mm():
 
     dfg = DFG.from_module(module)
     try:
-        dfg.create_graph_parallelism_performance_model(debug_output="3mm")
+        res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
     except GurobiError as e:
         if "Model too large for size-limited license" in str(e):
             pytest.skip(
@@ -112,7 +112,7 @@ def test_simple_node_parallel():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
     tiling_factors = dfg.create_performance_model(
         pinned_permutations=res.loop_permutations,
         enable_tile=True,
@@ -149,7 +149,7 @@ def test_simple_node_parallel_full_unroll():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    res = dfg.create_performance_model(enable_tile=False, debug_output="simple")
     tiling_factors = dfg.create_performance_model(
         pinned_permutations=res.loop_permutations,
         enable_tile=True,
@@ -182,7 +182,11 @@ def test_simple_node_parallel_infeasible():
     s = dataflow_optimization_pass(s, config)
 
     dfg = DFG.from_module(s.module)
-    res = dfg.create_graph_parallelism_performance_model(debug_output="simple")
+    res = dfg.create_performance_model(
+        enable_tile=False,
+        verbose=True,
+        debug_output="simple-node",
+    )
 
     with pytest.raises(RuntimeError, match="Optimization failed with status 3"):
         dfg.create_performance_model(
