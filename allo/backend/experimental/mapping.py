@@ -529,115 +529,6 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
-    def bundle_exp(self, node_name_list: list[str]):
-        """
-        [A] [B] [C] [D]  => [A] x 4
-
-        TODO: bundled nodes can be safely reordered
-        """
-        assert len(node_name_list) >= 2, "bundle at least two nodes"
-        node_list: list[IntermediateNode] = []
-        for name in node_name_list:
-            print(self.intermediate_nodes.keys())
-            assert name in self.intermediate_nodes, f"Node({name}) not found"
-            node_list.append(self.intermediate_nodes.pop(name))
-        sample_node = node_list[0]
-        repeat_cnt = 0
-        for node in node_list:
-            repeat_cnt += node.meta_data.repeat
-            if not sample_node.is_isomorphic_to(node):
-                raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                )
-        bundled_node = IntermediateNode(
-            f"{sample_node.meta_data.name}-",
-            sample_node.meta_data.use_external_kernel,
-            sample_node.meta_data.op_tag,
-            repeat_cnt,
-        )
-        code_list_tuple = tuple(
-            (x.code_list if len(x.code_list) > 1 else x.code_list[0]) for x in node_list
-        )
-        bundled_node.code_list.append(code_list_tuple)
-        bundled_node.meta_data.input_streams.extend(sample_node.meta_data.input_streams)
-        bundled_node.meta_data.output_streams.extend(
-            sample_node.meta_data.output_streams
-        )
-        bundled_node.bufferized_stream.extend(sample_node.bufferized_stream)
-        # update stream
-        for name, stream in self.edges.items():
-            if stream.src in node_name_list:
-                self.dependencies[stream.dst].pop(stream.src)
-                stream.src = bundled_node.meta_data.name
-                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
-            if stream.dst in node_name_list:
-                stream.dst = bundled_node.meta_data.name
-                self.dependencies[bundled_node.meta_data.name].add(stream.src)
-        for name in node_name_list:
-            sample_dep = self.dependencies.pop(name)
-        self.dependencies[bundled_node.meta_data.name] = sample_dep
-        self.intermediate_nodes[bundled_node.meta_data.name] = bundled_node
-
-    def chain_exp(self, node_name_a: str, node_name_b: str):
-        """
-        [A] [B] => [[A]-[B]]
-        """
-        node_a, node_b = self.intermediate_nodes.pop(
-            node_name_a
-        ), self.intermediate_nodes.pop(node_name_b)
-        assert node_a is not None and node_b is not None, "node not found"
-        if node_name_b in self.dependencies[node_name_a]:
-            raise ValueError(
-                f"Cannot chain Node({node_name_a}) and Node({node_name_b})"
-            )
-        # TODO: repeat function: may use token list for nested structure
-        assert (
-            node_a.meta_data.repeat == node_b.meta_data.repeat == 1
-        ), "Cannot chaining nodes with repeats currently"
-        chained_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
-        chained_node = IntermediateNode(
-            f"{node_a.meta_data.name}-{node_b.meta_data.name}",
-            node_a.meta_data.use_external_kernel
-            or node_b.meta_data.use_external_kernel,
-            chained_tag,
-            1,
-        )
-        chained_node.code_list.append(
-            node_a.code_list if len(node_a.code_list) > 1 else node_a.code_list[0]
-        )
-        chained_node.code_list.append(
-            node_b.code_list if len(node_b.code_list) > 1 else node_b.code_list[0]
-        )
-        chained_node.bufferized_stream.extend(node_a.bufferized_stream)
-        chained_node.bufferized_stream.extend(node_b.bufferized_stream)
-        for stream in node_b.meta_data.input_streams:
-            if stream.src == node_name_a:
-                chained_node.bufferized_stream.append(stream)
-            else:
-                chained_node.meta_data.input_streams.append(stream)
-        chained_node.meta_data.input_streams.extend(node_a.meta_data.input_streams)
-        for stream in node_a.meta_data.output_streams:
-            if stream.dst != node_name_b:
-                chained_node.meta_data.output_streams.append(stream)
-        chained_node.meta_data.output_streams.extend(node_b.meta_data.output_streams)
-
-        dep = self.dependencies.pop(node_name_a)
-        dep.update(self.dependencies.pop(node_name_b))
-        self.dependencies[chained_node.meta_data.name] = dep
-        for deps in self.dependencies.values():
-            if node_name_a in deps:
-                deps.remove(node_name_a)
-                deps.add(chained_node.meta_data.name)
-            if node_name_b in deps:
-                deps.remove(node_name_b)
-                deps.add(chained_node.meta_data.name)
-        for stream in self.edges.values():
-            if stream.src == node_name_a or stream.src == node_name_b:
-                stream.src = chained_node.meta_data.name
-            if stream.dst == node_name_a or stream.dst == node_name_b:
-                stream.dst = chained_node.meta_data.name
-        self.intermediate_nodes[chained_node.meta_data.name] = chained_node
-
     def bundle(self, node_name_list: list[str]):
         """
         [A] [B] [C] [D]  => [A] x 4
@@ -855,258 +746,10 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Graph Information
     # ------------------------------------------------------------
-    def finalize(self):
-        node_cnt = 0
-        for name, node in self.intermediate_nodes.items():
-            collocated_node = CollocatedNode(
-                node_cnt, node.meta_data.use_external_kernel
-            )
-            self.collocated_nodes[name] = collocated_node
-            self.func_args[name] = {}
-            node_cnt += 1
-            # initial function, no need to transform
-            if name in self.init_nodes:
-                collocated_node.global_interfaces.update(
-                    self.init_nodes[name].interfaces
-                )
-                continue
-
-            # construct new function
-            # - build function header
-            def visit_chained(code_list: list, base_offset: int, base_code_length: int):
-                sub_input_types = []
-                sub_output_types = []
-                sub_arguments = []
-                sub_live_tiles: list[LiveDTensorTile] = []
-                sub_code_length = base_code_length
-                for code_seg in code_list:
-                    if isinstance(code_seg, str):
-                        org_func_node: InitialIntermediateNode = self.init_nodes[
-                            code_seg
-                        ]
-                        arg_idx_offset = len(sub_input_types) + base_offset
-                        for org_arg_idx, arg in self.func_args[
-                            org_func_node.meta_data.name
-                        ]:
-                            self.func_args[name][org_arg_idx + arg_idx_offset] = arg
-                        for org_arg_idx, live_tiles in org_func_node.interfaces.items():
-                            for live_tile in live_tiles:
-                                live_tile.first_use += (
-                                    Config.LOCAL_CODE_OFFSET * sub_code_length
-                                )
-                                live_tile.last_use += (
-                                    Config.LOCAL_CODE_OFFSET * sub_code_length
-                                )
-                            collocated_node.global_interfaces[
-                                org_arg_idx + arg_idx_offset
-                            ].extend(live_tiles)
-                            sub_live_tiles.extend(live_tiles)
-                        sub_input_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.inputs
-                        )
-                        sub_output_types.extend(
-                            org_func_node.function.attributes[
-                                "function_type"
-                            ].value.results
-                        )
-                        sub_code_length += 1
-                    elif isinstance(code_seg, tuple):
-                        (
-                            sub_tuple_input_types,
-                            sub_tuple_output_types,
-                            sub_tuple_arguments,
-                            sub_tuple_live_tiles,
-                            sub_tuple_code_length,
-                        ) = visit_bundled(
-                            code_seg,
-                            len(sub_input_types) + base_offset,
-                            sub_code_length,
-                        )
-                        sub_input_types.extend(sub_tuple_input_types)
-                        sub_output_types.extend(sub_tuple_output_types)
-                        sub_arguments.extend(sub_tuple_arguments)
-                        sub_live_tiles.extend(sub_tuple_live_tiles)
-                        sub_code_length = sub_tuple_code_length
-                    elif isinstance(code_seg, list):
-                        (
-                            sub_list_input_types,
-                            sub_list_output_types,
-                            sub_list_arguments,
-                            sub_list_live_tiles,
-                            sub_list_code_length,
-                        ) = visit_chained(
-                            code_seg,
-                            len(sub_input_types) + base_offset,
-                            sub_code_length,
-                        )
-                        sub_input_types.extend(sub_list_input_types)
-                        sub_output_types.extend(sub_list_output_types)
-                        sub_arguments.extend(sub_list_arguments)
-                        sub_live_tiles.extend(sub_list_live_tiles)
-                        sub_code_length = sub_list_code_length
-                    else:
-                        raise ValueError("invalid element in code_list")
-                new_token = f"chain_token_{sub_code_length}"
-                for tile in sub_live_tiles:
-                    tile.token = new_token
-                return (
-                    sub_input_types,
-                    sub_output_types,
-                    sub_arguments,
-                    sub_live_tiles,
-                    sub_code_length,
-                )
-
-            def visit_bundled(
-                code_tuple: tuple, base_offset: int, base_code_length: int
-            ):
-                sub_input_types = []
-                sub_output_types = []
-                sub_arguments = []
-                sub_live_tiles: list[LiveDTensorTile] = []
-                sample_seg = next(iter(code_tuple))
-                if isinstance(sample_seg, str):
-                    org_func_node: InitialIntermediateNode = self.init_nodes[sample_seg]
-                    sub_input_types.extend(
-                        org_func_node.function.attributes["function_type"].value.inputs
-                    )
-                    sub_output_types.extend(
-                        org_func_node.function.attributes["function_type"].value.results
-                    )
-                    sub_arguments.extend(org_func_node.function.arguments)
-                    for org_arg_idx, arg in self.func_args[
-                        org_func_node.meta_data.name
-                    ]:
-                        self.func_args[name][org_arg_idx + base_offset] = arg
-                    for seg in code_tuple:
-                        org_func_node = self.init_nodes[seg]
-                        for (
-                            org_arg_idx,
-                            live_tiles,
-                        ) in org_func_node.interfaces.items():
-                            for live_tile in live_tiles:
-                                live_tile.first_use += (
-                                    Config.LOCAL_CODE_OFFSET * base_code_length
-                                )
-                                live_tile.last_use += (
-                                    Config.LOCAL_CODE_OFFSET * base_code_length
-                                )
-                            collocated_node.global_interfaces[
-                                org_arg_idx + base_offset
-                            ].extend(live_tiles)
-                            sub_live_tiles.extend(live_tiles)
-                    return (
-                        sub_input_types,
-                        sub_output_types,
-                        sub_arguments,
-                        sub_live_tiles,
-                        base_code_length + 1,
-                    )
-                if isinstance(sample_seg, tuple):
-                    (
-                        sub_tuple_input_types,
-                        sub_tuple_output_types,
-                        sub_tuple_arguments,
-                        sub_tuple_live_tiles,
-                        sub_tuple_code_length,
-                    ) = visit_bundled(
-                        sample_seg,
-                        base_offset,
-                        base_code_length,
-                    )
-                    for seg in code_tuple:
-                        visit_bundled(
-                            seg,
-                            base_offset,
-                            base_code_length,
-                        )
-                    sub_input_types.extend(sub_tuple_input_types)
-                    sub_output_types.extend(sub_tuple_output_types)
-                    sub_arguments.extend(sub_tuple_arguments)
-                    sub_live_tiles.extend(sub_tuple_live_tiles)
-                    return (
-                        sub_input_types,
-                        sub_output_types,
-                        sub_arguments,
-                        sub_live_tiles,
-                        sub_tuple_code_length,
-                    )
-                elif isinstance(sample_seg, list):
-                    (
-                        sub_list_input_types,
-                        sub_list_output_types,
-                        sub_list_arguments,
-                        sub_list_live_tiles,
-                        sub_list_code_length,
-                    ) = visit_chained(
-                        sample_seg,
-                        base_offset,
-                        base_code_length,
-                    )
-                    for seg in code_tuple:
-                        visit_chained(
-                            seg,
-                            base_offset,
-                            base_code_length,
-                        )
-                    sub_input_types.extend(sub_list_input_types)
-                    sub_output_types.extend(sub_list_output_types)
-                    sub_arguments.extend(sub_list_arguments)
-                    sub_live_tiles.extend(sub_list_live_tiles)
-                    return (
-                        sub_input_types,
-                        sub_output_types,
-                        sub_arguments,
-                        sub_live_tiles,
-                        sub_list_code_length,
-                    )
-                raise ValueError("invalid element in code_list")
-
-            (
-                input_types,
-                output_types,
-                arguments,
-                _,
-                _,
-            ) = visit_chained(node.code_list, 0, 0)
-            with self.allo_module.context, allo_ir.ir.Location.unknown():
-                func_type = FunctionType.get(input_types, output_types)
-                new_function = func_d.FuncOp(
-                    name,
-                    func_type,
-                    ip=self.insert_point,
-                )
-                new_function.attributes["df.kernel"] = UnitAttr.get()
-                entry_block = new_function.add_entry_block()
-                for old, new in zip(arguments, new_function.arguments):
-                    old.replace_all_uses_with(new)
-
-                # build function body
-                with InsertionPoint(entry_block):
-                    pass
-                # TODO
-                raise ValueError("TODO!!!!")
-                # TODO: bufferized_stream
-
-        for func in self.allo_module.body.operations:
-            if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
-                func_name = func.attributes["sym_name"].value
-                if func_name not in self.intermediate_nodes:
-                    self.func_args.pop(func_name)
-                    func.erase()
-
-    # ------------------------------------------------------------
-    # Graph Information
-    # ------------------------------------------------------------
     def get_global_io(
         self,
     ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
-        if os.getenv("EXP") == "1":
-            nodes = self.collocated_nodes
-        else:
-            nodes = self.nodes
+        nodes = self.nodes
         global_tile_io: dict[str, dict[int, LiveDTensorTileGroup]] = {}
         arg_idx_to_interface: dict[str, dict[int, int]] = {}
         for name, node in nodes.items():
@@ -1147,7 +790,7 @@ class ComputationGraph:
                         break
                 if not changed:
                     raise ValueError(
-                        f"Invalide compute kernel {name}, port number exceeded."
+                        f"Invalid compute kernel {name}, port number exceeded."
                     )
 
             global_tile_io[name] = dict_
@@ -1155,14 +798,9 @@ class ComputationGraph:
         return global_tile_io, arg_idx_to_interface
 
     def get_node_dependencies(self) -> dict[str, set[str]]:
-        if os.getenv("EXP") == "1":
-            dependencies: dict[str, set[str]] = {
-                key: set() for key in self.collocated_nodes.keys()
-            }
-        else:
-            dependencies: dict[str, set[str]] = {
-                key: set() for key in self.nodes.keys()
-            }
+        dependencies: dict[str, set[str]] = {
+            key: set() for key in self.nodes.keys()
+        }
         for stream in self.edges.values():
             dependencies[stream.dst].add(stream.src)
         return dependencies
@@ -1170,16 +808,10 @@ class ComputationGraph:
     def get_connections(self) -> dict[tuple[str, str], int]:
         connections: dict[tuple[str, str], int] = {}
         for stream in self.edges.values():
-            if os.getenv("EXP") == "1":
-                id_1, id_2 = (
-                    self.collocated_nodes[stream.src].id,
-                    self.collocated_nodes[stream.dst].id,
-                )
-            else:
-                id_1, id_2 = (
-                    self.nodes[stream.src].meta_data.id,
-                    self.nodes[stream.dst].meta_data.id,
-                )
+            id_1, id_2 = (
+                self.nodes[stream.src].meta_data.id,
+                self.nodes[stream.dst].meta_data.id,
+            )
             if id_1 > id_2:
                 key = (stream.dst, stream.src)
             else:

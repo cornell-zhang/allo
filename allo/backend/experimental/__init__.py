@@ -403,14 +403,9 @@ class AIE_MLIRModule:
                 - some can be 'push out of the function' and done at transfer time (e.g. with dma)
                 - some contiguous inverse transformation can be safely removed.
             """
-            if os.getenv("EXP") == "1":
-                node = self.virtual_computation_graph.collocated_nodes[
-                    func.attributes["sym_name"].value
-                ]
-            else:
-                node = self.virtual_computation_graph.nodes[
-                    func.attributes["sym_name"].value
-                ]
+            node = self.virtual_computation_graph.nodes[
+                func.attributes["sym_name"].value
+            ]
             dead_ops = []
             op_stack_map: dict = {}
             # no need to transform if the result is unchanged
@@ -583,19 +578,9 @@ class AIE_MLIRModule:
                 arg_list = mapping[1]
                 if primitive == "chain":
                     assert len(arg_list) == 2
-                    if os.getenv("EXP") == "1":
-                        self.virtual_computation_graph.chain_exp(
-                            arg_list[0], arg_list[1]
-                        )
-                    else:
-                        self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    if os.getenv("EXP") == "1":
-                        self.virtual_computation_graph.bundle_exp(arg_list)
-                    else:
-                        self.virtual_computation_graph.bundle(arg_list)
-            if os.getenv("EXP") == "1":
-                self.virtual_computation_graph.finalize()
+                    self.virtual_computation_graph.bundle(arg_list)
         now = datetime.now()
         print(now, "Done")
 
