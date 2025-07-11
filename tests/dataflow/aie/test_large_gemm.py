@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16, int32
+from allo.ir.types import int16
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -32,10 +32,11 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk):
     return mapping_primitives
 
 
-def _test_pingpong_gemm_4x4x4(TyI, TyO):
+def _test_pingpong_gemm(TyI, TyO):
 
-    M, N, K = 128, 1024, 64
-    Pm, Pn, Pk = 4, 128, 4
+    # [NOTE]: Pm, Pn are safe to scale up. Pk can be scale up to 64.
+    M, N, K = 1024, 128, 64
+    Pm, Pn, Pk = 128, 4, 4
     Mt, Nt, Kt = M // Pm, N // Pn, K // Pk
 
     LyA = Layout("S1S2")
@@ -55,8 +56,6 @@ def _test_pingpong_gemm_4x4x4(TyI, TyO):
                 C_in: TyO[Mt, Nt] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in: TyO[Mt, Nt] = 0
-            # tmp_c: TyO[Mt, Nt] = allo.matmul(A, B)
-            # C_out: TyO[Mt, Nt] = allo.add(tmp_c, C_in)
             C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -81,4 +80,4 @@ def _test_pingpong_gemm_4x4x4(TyI, TyO):
 
 
 if __name__ == "__main__":
-    _test_pingpong_gemm_4x4x4(int16, int16)
+    _test_pingpong_gemm(int16, int16)
