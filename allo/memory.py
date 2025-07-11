@@ -47,7 +47,7 @@ class Layout:
     def get_placement(self, mesh_dims):
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
-
+        ! Unsafe!! (12,1) is same as (1,21) 
         Args:
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
 
@@ -89,6 +89,49 @@ class Layout:
 
         return result
 
+    def get_placement_exp(self, mesh_dims):
+        """
+        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
+
+        Args:
+            mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
+
+        Returns:
+            dict: A mapping from tensor tile IDs to corresponding PE tile coordinates
+        """
+        # Generate all possible PE coordinates
+        pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
+        # Initialize mapping
+        mapping = {}
+        # For each PE coordinate, determine its tensor tile ID
+        for pe_coord in pe_coords:
+            tensor_id_parts = []
+
+            for _, (op, dim) in enumerate(self.placement):
+                if op == "S":
+                    # For sharding, use the coordinate at the specified dimension
+                    # start from right to left
+                    mesh_dim = int(dim)
+                    tensor_id_parts.append(int(pe_coord[-mesh_dim - 1]))
+                elif op == "R":
+                    # For replication, use 'R'
+                    tensor_id_parts.append("R")
+
+            tensor_id = tuple(tensor_id_parts)
+
+            # Add this PE coordinate to the mapping for this tensor ID
+            if tensor_id not in mapping:
+                mapping[tensor_id] = []
+            mapping[tensor_id].append(pe_coord)
+
+        # Post-process the mapping to combine PE coordinates for replicated dimensions
+        result = {}
+        for tensor_id, coords in mapping.items():
+            # Convert to tuples for final output
+            result[tensor_id] = [tuple(coord) for coord in coords]
+
+        return result
+    
     def __repr__(self):
         result = ""
         for letter, number in self.placement:
@@ -112,7 +155,7 @@ class DTensor:
         self.name = name
         if layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
-            self.global_placement: dict[str, tuple] = layout.get_placement(mapping)
+            self.global_placement: dict[tuple, tuple] = layout.get_placement_exp(mapping)
         self.access_pattern_set = False
         self.global_id = None
         self.type_as_param: list = None
@@ -151,7 +194,7 @@ class DTensor:
             return
         self.access_pattern_set = True
         # tensor tile ID -> address offset
-        self.offset_map: dict[str, Offset4D] = {}
+        self.offset_map: dict[tuple, Offset4D] = {}
         partition_str = "".join([p[0] for p in self.layout.placement])
         partition_dim = [p[1] for p in self.layout.placement]
         if len(self.shape) == 1:
@@ -217,7 +260,7 @@ class DTensor:
             raise ValueError("Unsupported access pattern.")
         self.shared_dims, self.size, self.stride = device_dims, size, stride
 
-    def PE_tile_id_to_tensor_tile_id(self, pe_tile_id: tuple[int, ...]) -> str:
+    def PE_tile_id_to_tensor_tile_id(self, pe_tile_id: tuple[int, ...]) -> tuple:
         for tensor_tile_id, pe_tile_ids in self.global_placement.items():
             if pe_tile_id in pe_tile_ids:
                 return tensor_tile_id
@@ -254,32 +297,34 @@ class Offset4D:
     def get_offset(self, dim: int) -> int:
         if dim == 0:
             return self.offset_a
-        if dim == 1:
+        elif dim == 1:
             return self.offset_b
-        if dim == 2:
+        elif dim == 2:
             return self.offset_c
-        if dim == 3:
+        elif dim == 3:
             return self.offset_d
-        raise ValueError(f"Invalid dimension: {dim}")
+        else:
+            raise ValueError(f"Invalid dimension: {dim}")
 
     def get_next_offset(self, dim: int) -> "Offset4D":
         if dim == 0:
             return Offset4D(
                 self.offset_a + 1, self.offset_b, self.offset_c, self.offset_d
             )
-        if dim == 1:
+        elif dim == 1:
             return Offset4D(
                 self.offset_a, self.offset_b + 1, self.offset_c, self.offset_d
             )
-        if dim == 2:
+        elif dim == 2:
             return Offset4D(
                 self.offset_a, self.offset_b, self.offset_c + 1, self.offset_d
             )
-        if dim == 3:
+        elif dim == 3:
             return Offset4D(
                 self.offset_a, self.offset_b, self.offset_c, self.offset_d + 1
             )
-        raise ValueError(f"Invalid dimension: {dim}")
+        else:
+            raise ValueError(f"Invalid dimension: {dim}")
 
     def check_next_offset(self, next_: "Offset4D") -> bool:
         """
@@ -294,7 +339,8 @@ class Offset4D:
         if diffs.count(0) == 3 and diffs.count(1) == 1:
             indices = [i for i, diff in enumerate(diffs) if diff == 1]
             return indices[0]
-        return -1
+        else:
+            return -1
 
     def to_list(self) -> list[int]:
         return [self.offset_a, self.offset_b, self.offset_c, self.offset_d]
@@ -404,13 +450,14 @@ class Size4D:
     def get_dim_size(self, dim: int) -> int:
         if dim == 0:
             return self.size_a
-        if dim == 1:
+        elif dim == 1:
             return self.size_b
-        if dim == 2:
+        elif dim == 2:
             return self.size_c
-        if dim == 3:
+        elif dim == 3:
             return self.size_d
-        raise ValueError(f"Invalid dimension: {dim}")
+        else:
+            raise ValueError(f"Invalid dimension: {dim}")
 
     def set_dim_size(self, dim: int, size: int):
         if dim == 0:

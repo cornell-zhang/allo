@@ -86,9 +86,9 @@ class AIE_MLIRModule:
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
 
-        # index in top fucntion argument list -> DTensor
+        # index in top function argument list -> DTensor
         self.global_inputs: dict[int, DTensor] = None
         self.global_outputs: dict[int, DTensor] = None
         # function name -> (argument index -> (argument, is_input))
@@ -133,6 +133,32 @@ class AIE_MLIRModule:
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+        edge_map = {src: set() for src in stream_info.keys()}
+        for stream in self.streams.values():
+            edge_map[stream.src].add(stream.dst)
+        visited = set()
+        rec_stack = set()
+
+        def dfs(node):
+            if node in rec_stack:
+                return False  # found a cycle
+            if node in visited:
+                return True
+
+            visited.add(node)
+            rec_stack.add(node)
+
+            for neighbor in edge_map.get(node, set()):
+                if not dfs(neighbor):
+                    return False
+
+            rec_stack.remove(node)
+            return True
+
+        for node in edge_map.keys():
+            if not dfs(node):
+                return False
+        return True
 
     # ############################################################
     # Build
@@ -145,11 +171,46 @@ class AIE_MLIRModule:
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
-            self.allo_module, self.streams, self.core_func_args, use_external_kernels
+            self.allo_module,
+            self.top_func_name,
+            self.streams,
+            self.core_func_args,
+            use_external_kernels,
         )
 
+    def assign_tag_to_kernel(self):
+        """
+        Assign tag to df kernels (serve as some kind of rerolling)
+        """
+
+        class Tagger:
+            def __init__(self) -> None:
+                self.tag_map: dict[str, str] = {}
+                self.counter = 0
+
+            def get_tag(self, key: str) -> str:
+                """Return existing tag or assign a new one if not present."""
+                if key not in self.tag_map:
+                    tag = f"tag_{self.counter}"
+                    self.tag_map[key] = tag
+                    self.counter += 1
+                return self.tag_map[key]
+
+        tagger = Tagger()
+        df_kernels = get_df_kernels(self.allo_module)
+        for kernel in df_kernels:
+            tag_key = re.sub(
+                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
+            )
+            tag = tagger.get_tag(tag_key)
+            with kernel.context:
+                kernel.attributes["tag"] = StringAttr.get(tag)
+        return df_kernels
+
     def analyze_kernel_parameters(
-        self, injected_external_kernels: dict[str:ExternalModuleBase]
+        self,
+        df_kernels: list[allo_func_d.FuncOp],
+        injected_external_kernels: dict[str:ExternalModuleBase],
     ):
         """
         Analyze the parameters of each df.kernel.
@@ -159,19 +220,25 @@ class AIE_MLIRModule:
             - self.global_inputs: global input argument index -> DTensor
             - self.global_outputs: global output argument index -> DTensor
         """
+        tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
         self.global_inputs = {}
         self.global_outputs = {}
         # analyze
-        df_kernels = get_df_kernels(self.allo_module)
+        # df_kernels = get_df_kernels(self.allo_module)
         for kernel in df_kernels:
             kernel_name = kernel.attributes["sym_name"].value
             self.core_func_args[kernel_name] = {}
-            # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-            in_idx_list, out_idx_list = analyze_read_write_patterns(
-                kernel, injected_external_kernels
-            )
+            tag = kernel.attributes["tag"].value
+            if tag in tag_to_read_write_pattern:
+                in_idx_list, out_idx_list = tag_to_read_write_pattern[tag]
+            else:
+                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+                in_idx_list, out_idx_list = analyze_read_write_patterns(
+                    kernel, injected_external_kernels
+                )
+                tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
             for io_idx_list, io_type in (
                 (in_idx_list, "in"),
                 (out_idx_list, "out"),
@@ -280,7 +347,7 @@ class AIE_MLIRModule:
                     vectorized_kernel_name = call_matmul_op.attributes[
                         "lib"
                     ].value.replace("matmul_scalar_", "matmul_")
-                    allo_func_d.CallOp(
+                    call_op = allo_func_d.CallOp(
                         [],
                         FlatSymbolRefAttr.get(vectorized_kernel_name),
                         [new_input_0, new_input_1, new_output],
@@ -336,9 +403,14 @@ class AIE_MLIRModule:
                 - some can be 'push out of the function' and done at transfer time (e.g. with dma)
                 - some contiguous inverse transformation can be safely removed.
             """
-            node = self.virtual_computation_graph.nodes[
-                func.attributes["sym_name"].value
-            ]
+            if os.getenv("EXP") == "1":
+                node = self.virtual_computation_graph.collocated_nodes[
+                    func.attributes["sym_name"].value
+                ]
+            else:
+                node = self.virtual_computation_graph.nodes[
+                    func.attributes["sym_name"].value
+                ]
             dead_ops = []
             op_stack_map: dict = {}
             # no need to transform if the result is unchanged
@@ -428,7 +500,7 @@ class AIE_MLIRModule:
                 vectorize_matmul(func)
                 optimize_layout_transformation(func)
 
-        pipeline = "builtin.module(canonicalize)"
+        pipeline = f"builtin.module(canonicalize)"
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
@@ -442,18 +514,31 @@ class AIE_MLIRModule:
         self,
         device_type="npu1_4col",
         enable_virtual_mapping: bool = False,
-        mapping_primitives: list[tuple[str, list]] = None,
+        mapping_primitives: list[tuple[str, list]] = [],
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if not self.computation_is_dag:
+            if enable_virtual_mapping and len(mapping_primitives) > 0:
+                raise ValueError(
+                    "The input computation graph is not a DAG. Do not support virtual mapping now."
+                )
+            print(
+                "\033[34m[Warning] \033[0mThe input computation graph is not a DAG. Fallback to default build."
+            )
+            return self.build(
+                device_type=device_type,
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
         if "npu1" in device_type:
             self.device = "npu1"
         elif "npu2" in device_type:
             self.device = "npu2"
         else:
             raise ValueError("Unsupported device type.")
-
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -464,6 +549,10 @@ class AIE_MLIRModule:
 
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
+        from datetime import datetime
+
+        now = datetime.now()
+        print(now)
         use_external_kernels, self.injected_external_kernels, include_src = (
             inject_external_kernels(
                 self.allo_module,
@@ -472,18 +561,43 @@ class AIE_MLIRModule:
                 "aie2" if self.device == "npu1" else "aie2p",
             )
         )
-        self.analyze_kernel_parameters(self.injected_external_kernels)
+        # record original allo mlir
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+        now = datetime.now()
+        print(now, "start analyzing params")
+        self.analyze_kernel_parameters(
+            self.assign_tag_to_kernel(), self.injected_external_kernels
+        )
         # ------------------------- virtual mapping -------------------------
+        now = datetime.now()
+        print(now, "start init virtual graph")
         self._init_virtual_graph(use_external_kernels)
+        now = datetime.now()
+        print(now, f"start mapping {len(mapping_primitives)} primitives")
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
                 arg_list = mapping[1]
                 if primitive == "chain":
                     assert len(arg_list) == 2
-                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                    if os.getenv("EXP") == "1":
+                        self.virtual_computation_graph.chain_exp(
+                            arg_list[0], arg_list[1]
+                        )
+                    else:
+                        self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    if os.getenv("EXP") == "1":
+                        self.virtual_computation_graph.bundle_exp(arg_list)
+                    else:
+                        self.virtual_computation_graph.bundle(arg_list)
+            if os.getenv("EXP") == "1":
+                self.virtual_computation_graph.finalize()
+        now = datetime.now()
+        print(now, "Done")
 
         # record original allo mlir
         with open(
@@ -676,6 +790,12 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if "npu1" in device_type:
+            self.device = "npu1"
+        elif "npu2" in device_type:
+            self.device = "npu2"
+        else:
+            raise ValueError("Unsupported device type.")
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -714,7 +834,12 @@ class AIE_MLIRModule:
             self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs, top_func
+            device_type,
+            self.global_inputs,
+            self.global_outputs,
+            top_func,
+            self.core_func_args,
+            self.streams,
         )
         self.aie_module = code_generator.aie_codegen(
             core_func_groups,
@@ -722,8 +847,6 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
-            self.core_func_args,
-            self.streams,
         )
         self.post_codegen_build(injected_external_kernels, include_src)
         return self

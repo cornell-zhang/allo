@@ -6,6 +6,7 @@ import re
 import os
 from dataclasses import dataclass
 import numpy as np
+from dataclasses import dataclass
 
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -16,6 +17,7 @@ from ..._mlir.dialects import (
     allo as allo_d,
     arith as allo_arith_d,
     func as allo_func_d,
+    _memref_ops_gen as allo_memref_d,
 )
 
 from ..._mlir.ir import (
@@ -46,6 +48,10 @@ class Config:
     SHIM_MAX_RECV = 2
     # https://github.com/Xilinx/mlir-aie/blob/46bb8c25967f173eebe56056661be226b3933a14/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd
     DMA_MAX_BDS = 16
+
+    # https://github.com/Xilinx/mlir-aie/blob/v1.0/lib/Dialect/AIEX/IR/AIEXDialect.cpp#L233
+    SHIM_DMA_HARDWARE_MAX_SIZES = [64, -1, 1024, 1024]
+    # TODO: other dma size/stride constrain
 
     # fixme: some hyper-parameters, can be optimized
     IO_TILE_LOSE_FACTOR = 4
@@ -963,3 +969,8 @@ def merge_token_sets(token_sets: list) -> list:
             root = uf.find(token)
             groups.setdefault(root, set()).add(token)
     return list(groups.values())
+
+
+def string_sort_key(s: str):
+    nums = tuple(map(int, re.findall(r"\d+", s)))
+    return (len(nums), nums)
