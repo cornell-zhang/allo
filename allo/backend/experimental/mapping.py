@@ -1,3 +1,4 @@
+# pylint: disable=dangerous-default-value, consider-using-enumerate, too-many-branches, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -93,7 +94,7 @@ class FIFO:
         data_shape: list[int],
         dtype: str,
         depth: int = 2,
-        dimensions_to_stream: list = [],
+        dimensions_to_stream: list = None,
     ):
         self.name = name
         self.src = src
@@ -126,7 +127,7 @@ class FIFOManager:
         dst: list[str],
         data_shape: list[str],
         dtype: str,
-        dimensions_to_stream: list = [],
+        dimensions_to_stream: list = None,
     ) -> FIFO:
         fifo = FIFO(
             name=f"fifo_{len(self.fifos)}",
@@ -149,9 +150,13 @@ class FIFOManager:
 class SwitchNode:
     class Port:
         def __init__(
-            self, id: int, data_shape: list[int], dtype: str, connected_nodes: list[str]
+            self,
+            port_id: int,
+            data_shape: list[int],
+            dtype: str,
+            connected_nodes: list[str],
         ):
-            self.id = id
+            self.id = port_id
             self.data_shape = data_shape
             self.dtype = dtype
             self.connected_nodes = connected_nodes
@@ -329,14 +334,6 @@ class NodeMetaData:
         if out1 != out2:
             return False
         return True
-
-
-class CollocatedNode:
-    def __init__(self, node_id: int, use_external_kernel: bool):
-        self.id = node_id
-        self.use_external_kernel = use_external_kernel
-        self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
-        self.interface_layout: dict[int, tuple[list, list, list]] = {}
 
 
 class NodeBase:
@@ -691,9 +688,9 @@ class ComputationGraph:
                 deps.remove(node_name_b)
                 deps.add(chained_node.meta_data.name)
         for stream in self.edges.values():
-            if stream.src == node_name_a or stream.src == node_name_b:
+            if stream.src in (node_name_a, node_name_b):
                 stream.src = chained_node.meta_data.name
-            if stream.dst == node_name_a or stream.dst == node_name_b:
+            if stream.dst in (node_name_a, node_name_b):
                 stream.dst = chained_node.meta_data.name
         self.nodes[chained_node.meta_data.name] = chained_node
 
@@ -703,10 +700,9 @@ class ComputationGraph:
     def get_global_io(
         self,
     ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
-        nodes = self.nodes
         global_tile_io: dict[str, dict[int, LiveDTensorTileGroup]] = {}
         arg_idx_to_interface: dict[str, dict[int, int]] = {}
-        for name, node in nodes.items():
+        for name, node in self.nodes.items():
             input_interface, output_interface = 0, 0
             dict_: dict[int, LiveDTensorTileGroup] = {}
             idx_to_interface: dict[int, int] = {}

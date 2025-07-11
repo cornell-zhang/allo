@@ -166,7 +166,7 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
             lose_factor = size[device_dims[0]]
             inc_factor = size[device_dims[1]]
         else:
-            raise ValueError(f"Unsupported access pattern.")
+            raise ValueError("Unsupported access pattern.")
         remaining = tensor_tiles[:]
         start_idx = 0
         while remaining:
@@ -557,7 +557,6 @@ class CodeGenerator:
                             acquired = fifo.acquire(1 if is_input else 0, 1)
                             # incorrect
                             argument.replace_all_uses_with(acquired)
-                    pass
                 else:
                     stream: Stream = arg_info[0].stream
                     fifo = self.fifo_map[stream.name]
@@ -786,8 +785,7 @@ class CodeGenerator:
                         iter(other_global_tensor.dtensor_groups.values())
                     )
                     return sample_value == other_value
-                else:
-                    return False
+                return False
 
             def _contiguous_data_transfer(
                 self, other: "MulticastInterface", current_size: Size4D
@@ -845,8 +843,7 @@ class CodeGenerator:
                                     if shape is not None and shape != outer_shape:
                                         match_flag = False
                                         break
-                                    else:
-                                        shape = outer_shape
+                                    shape = outer_shape
                                     outer_stride = [1] * 4
                                     for i in reversed(range(3)):
                                         outer_stride[i] = (
@@ -995,7 +992,7 @@ class CodeGenerator:
                 send_ports, recv_ports = [], []
                 for i in range(send_need):
                     port = SwitchNode.Port(
-                        id=len(assigned_mem_tile.send_ports) + i,
+                        port_id=len(assigned_mem_tile.send_ports) + i,
                         data_shape=send_shape,
                         dtype=dtype,
                         connected_nodes=interface_list[i].get_pes() if is_input else [],
@@ -1004,7 +1001,7 @@ class CodeGenerator:
                 if is_input:
                     for i in range(recv_need):
                         port = SwitchNode.Port(
-                            id=len(assigned_mem_tile.recv_ports) + i,
+                            port_id=len(assigned_mem_tile.recv_ports) + i,
                             data_shape=recv_shape,
                             dtype=dtype,
                             connected_nodes=[],
@@ -1014,7 +1011,8 @@ class CodeGenerator:
                     for multicast_interface in interface_list:
                         for pe_interface in multicast_interface.interface_list:
                             port = SwitchNode.Port(
-                                id=len(assigned_mem_tile.recv_ports) + len(recv_ports),
+                                port_id=len(assigned_mem_tile.recv_ports)
+                                + len(recv_ports),
                                 data_shape=recv_shape,
                                 dtype=dtype,
                                 connected_nodes=[pe_interface.pe],
@@ -1092,7 +1090,7 @@ class CodeGenerator:
             if assigned_shim_tile is not None:
                 if is_input:
                     send_port = SwitchNode.Port(
-                        id=len(assigned_shim_tile.send_ports),
+                        port_id=len(assigned_shim_tile.send_ports),
                         data_shape=mem_port.data_shape,
                         dtype=mem_port.dtype,
                         connected_nodes=connected_mem,
@@ -1100,7 +1098,7 @@ class CodeGenerator:
                     assigned_shim_tile.send_ports.append(send_port)
                 else:
                     recv_port = SwitchNode.Port(
-                        id=len(assigned_shim_tile.recv_ports),
+                        port_id=len(assigned_shim_tile.recv_ports),
                         data_shape=mem_port.data_shape,
                         dtype=mem_port.dtype,
                         connected_nodes=connected_mem,
@@ -1258,7 +1256,7 @@ class CodeGenerator:
             return False
 
         mapped_interface: dict[str, dict[int, FIFO]] = {
-            i: dict() for i in global_tensors.keys()
+            i: {} for i in global_tensors.keys()
         }
         global_io_port: list[CodeGenerator.GlobalIODMAPort] = []
         for idx, dtensor_tile_group in global_tile_to_func.items():
@@ -1444,7 +1442,7 @@ class CodeGenerator:
                 print(ele)
             print()
         global_arg_idx_to_interface: dict[str, dict[int, FIFO]] = {
-            i: dict() for i in global_tensors.keys()
+            i: {} for i in global_tensors.keys()
         }
         for func_name, interface_map in mapped_interface.items():
             dict_: dict[int, FIFO] = {}
@@ -1563,8 +1561,7 @@ class CodeGenerator:
                     print(f"{node}: ({row}, {col})")
                 print()
             return core_fucn_mapping
-        else:
-            raise ValueError("To be implemented")
+        raise ValueError("To be implemented")
 
     # ############################################################
     # AIE Code Generation
@@ -1984,9 +1981,9 @@ class CodeGenerator:
                                 for tensor_tile in dma_tile.tensor_tile_labels:
                                     # distribute to placement[tensor_tile]
                                     compute_tiles = []
-                                    name_suffix = ""
-                                    for ele in tensor_tile:
-                                        name_suffix += f"_{ele}"
+                                    name_suffix = "".join(
+                                        f"_{ele}" for ele in tensor_tile
+                                    )
                                     name = f"{io}_mem_{dtensor.name}_{name_suffix}"
                                     for tile in placement[tensor_tile]:
                                         # some distributed tile do not have global output

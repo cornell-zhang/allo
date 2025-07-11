@@ -47,7 +47,7 @@ class Layout:
     def get_placement(self, mesh_dims):
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
-        ! Unsafe!! (12,1) is same as (1,21) 
+        ! Unsafe!! (12,1) is same as (1,21)
         Args:
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
 
@@ -131,7 +131,7 @@ class Layout:
             result[tensor_id] = [tuple(coord) for coord in coords]
 
         return result
-    
+
     def __repr__(self):
         result = ""
         for letter, number in self.placement:
@@ -155,7 +155,9 @@ class DTensor:
         self.name = name
         if layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
-            self.global_placement: dict[tuple, tuple] = layout.get_placement_exp(mapping)
+            self.global_placement: dict[tuple, tuple] = layout.get_placement_exp(
+                mapping
+            )
         self.access_pattern_set = False
         self.global_id = None
         self.type_as_param: list = None
@@ -297,34 +299,32 @@ class Offset4D:
     def get_offset(self, dim: int) -> int:
         if dim == 0:
             return self.offset_a
-        elif dim == 1:
+        if dim == 1:
             return self.offset_b
-        elif dim == 2:
+        if dim == 2:
             return self.offset_c
-        elif dim == 3:
+        if dim == 3:
             return self.offset_d
-        else:
-            raise ValueError(f"Invalid dimension: {dim}")
+        raise ValueError(f"Invalid dimension: {dim}")
 
     def get_next_offset(self, dim: int) -> "Offset4D":
         if dim == 0:
             return Offset4D(
                 self.offset_a + 1, self.offset_b, self.offset_c, self.offset_d
             )
-        elif dim == 1:
+        if dim == 1:
             return Offset4D(
                 self.offset_a, self.offset_b + 1, self.offset_c, self.offset_d
             )
-        elif dim == 2:
+        if dim == 2:
             return Offset4D(
                 self.offset_a, self.offset_b, self.offset_c + 1, self.offset_d
             )
-        elif dim == 3:
+        if dim == 3:
             return Offset4D(
                 self.offset_a, self.offset_b, self.offset_c, self.offset_d + 1
             )
-        else:
-            raise ValueError(f"Invalid dimension: {dim}")
+        raise ValueError(f"Invalid dimension: {dim}")
 
     def check_next_offset(self, next_: "Offset4D") -> bool:
         """
@@ -339,8 +339,7 @@ class Offset4D:
         if diffs.count(0) == 3 and diffs.count(1) == 1:
             indices = [i for i, diff in enumerate(diffs) if diff == 1]
             return indices[0]
-        else:
-            return -1
+        return -1
 
     def to_list(self) -> list[int]:
         return [self.offset_a, self.offset_b, self.offset_c, self.offset_d]
@@ -450,14 +449,13 @@ class Size4D:
     def get_dim_size(self, dim: int) -> int:
         if dim == 0:
             return self.size_a
-        elif dim == 1:
+        if dim == 1:
             return self.size_b
-        elif dim == 2:
+        if dim == 2:
             return self.size_c
-        elif dim == 3:
+        if dim == 3:
             return self.size_d
-        else:
-            raise ValueError(f"Invalid dimension: {dim}")
+        raise ValueError(f"Invalid dimension: {dim}")
 
     def set_dim_size(self, dim: int, size: int):
         if dim == 0:

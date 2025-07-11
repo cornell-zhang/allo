@@ -52,7 +52,7 @@ def test_producer_consumer():
             tmp: Ty[M, N] = 0
             for i, j in allo.grid(M, N):
                 # computation
-                tmp[i, j] = data[i, j] + B[i,j]
+                tmp[i, j] = data[i, j] + B[i, j]
             pipe_rev.put(tmp)
 
         @df.kernel(mapping=[1])
@@ -62,13 +62,12 @@ def test_producer_consumer():
             for i, j in allo.grid(M, N):
                 C[i, j] = data[i, j]
 
-
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.zeros((M, N), dtype=np.int32)
 
     mod = df.build(top, target="aie-mlir")
     mod(A, A, B)
-    np.testing.assert_allclose(A+A , B, atol=1e-5)
+    np.testing.assert_allclose(A + A, B, atol=1e-5)
     print("Passed!")
 
 

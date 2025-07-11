@@ -1,4 +1,4 @@
-# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, too-many-function-args, no-value-for-parameter
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -155,10 +155,7 @@ class AIE_MLIRModule:
             rec_stack.remove(node)
             return True
 
-        for node in edge_map.keys():
-            if not dfs(node):
-                return False
-        return True
+        return all(dfs(node) for node in edge_map.keys())
 
     # ############################################################
     # Build
