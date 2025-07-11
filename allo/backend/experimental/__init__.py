@@ -226,7 +226,6 @@ class AIE_MLIRModule:
         self.global_inputs = {}
         self.global_outputs = {}
         # analyze
-        # df_kernels = get_df_kernels(self.allo_module)
         for kernel in df_kernels:
             kernel_name = kernel.attributes["sym_name"].value
             self.core_func_args[kernel_name] = {}
@@ -347,7 +346,7 @@ class AIE_MLIRModule:
                     vectorized_kernel_name = call_matmul_op.attributes[
                         "lib"
                     ].value.replace("matmul_scalar_", "matmul_")
-                    call_op = allo_func_d.CallOp(
+                    allo_func_d.CallOp(
                         [],
                         FlatSymbolRefAttr.get(vectorized_kernel_name),
                         [new_input_0, new_input_1, new_output],
@@ -495,7 +494,7 @@ class AIE_MLIRModule:
                 vectorize_matmul(func)
                 optimize_layout_transformation(func)
 
-        pipeline = f"builtin.module(canonicalize)"
+        pipeline = "builtin.module(canonicalize)"
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
 
@@ -509,11 +508,12 @@ class AIE_MLIRModule:
         self,
         device_type="npu1_4col",
         enable_virtual_mapping: bool = False,
-        mapping_primitives: list[tuple[str, list]] = [],
+        mapping_primitives: list[tuple[str, list]] = None,
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        # virtual mapping can only be applied to DAG
         if not self.computation_is_dag:
             if enable_virtual_mapping and len(mapping_primitives) > 0:
                 raise ValueError(
@@ -544,10 +544,6 @@ class AIE_MLIRModule:
 
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
-        from datetime import datetime
-
-        now = datetime.now()
-        print(now)
         use_external_kernels, self.injected_external_kernels, include_src = (
             inject_external_kernels(
                 self.allo_module,
@@ -561,17 +557,11 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-        now = datetime.now()
-        print(now, "start analyzing params")
         self.analyze_kernel_parameters(
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        now = datetime.now()
-        print(now, "start init virtual graph")
         self._init_virtual_graph(use_external_kernels)
-        now = datetime.now()
-        print(now, f"start mapping {len(mapping_primitives)} primitives")
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -581,8 +571,6 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
-        now = datetime.now()
-        print(now, "Done")
 
         # record original allo mlir
         with open(

@@ -1,13 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-import re
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
-from ..._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr
-from ..._mlir.dialects import func as func_d, allo as allo_d
+from allo._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr
+from allo._mlir.dialects import func as func_d, allo as allo_d
 from .utils import (
     Argument,
     parse_kernel_name,
@@ -297,14 +295,6 @@ class LiveDTensorTileGroup:
         return self.__str__()
 
 
-@dataclass
-class BufferizedStream:
-    arg_idx_a: int
-    arg_idx_b: int
-    arg_a: Value
-    arg_b: Value
-
-
 # ------------------------------------------------------------
 class NodeMetaData:
     node_cnt = 0
@@ -339,36 +329,6 @@ class NodeMetaData:
         if out1 != out2:
             return False
         return True
-
-
-class IntermediateNode:
-    """
-    Intermediate node in the computation graph, make sure to 'finalize' which actually does 'collocation'.
-    """
-
-    def __init__(
-        self, name=None, use_external_kernel=False, tag=None, repeat=0, length=1
-    ):
-        self.meta_data: NodeMetaData = NodeMetaData(
-            name, use_external_kernel, tag, repeat, length
-        )
-        # nested list of name or tuple of name
-        self.code_list: list = []
-        self.bufferized_stream: list[Stream] = []
-
-    def is_isomorphic_to(self, other: "IntermediateNode") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
-        return self.meta_data.test_isomorphism(other.meta_data)
-
-
-class InitialIntermediateNode(IntermediateNode):
-    def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
-        super().__init__(func.attributes["sym_name"].value, use_external_kernel, tag, 1)
-        self.function = func
-        self.code_list.append(self.meta_data.name)
-        self.interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
 
 
 class CollocatedNode:
@@ -437,7 +397,7 @@ class InitialNode(NodeBase):
                 live_tile.last_use = 9
 
 
-class CoNode(NodeBase):
+class CollocatedNode(NodeBase):
     def __init__(
         self,
         tag: str,
@@ -468,8 +428,6 @@ class ComputationGraph:
         self.allo_module = allo_module
         self.insert_point: InsertionPoint = None
         self.nodes: dict[str, NodeBase] = {}
-        self.intermediate_nodes: dict[str, IntermediateNode] = {}
-        self.init_nodes: dict[str, InitialIntermediateNode] = {}
         self.collocated_nodes: dict[str, CollocatedNode] = {}
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
@@ -488,23 +446,14 @@ class ComputationGraph:
             func_name = func.attributes["sym_name"].value
             tag = func.attributes["tag"].value
             node = InitialNode(func, use_external_kernels[func_name], tag)
-            intermediate_node = InitialIntermediateNode(
-                func, use_external_kernels[func_name], tag
-            )
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
             for idx, (argument, is_input) in params.items():
                 if argument.stream is not None:
                     if is_input:
                         node.meta_data.input_streams.append(argument.stream)
-                        intermediate_node.meta_data.input_streams.append(
-                            argument.stream
-                        )
                     else:
                         node.meta_data.output_streams.append(argument.stream)
-                        intermediate_node.meta_data.output_streams.append(
-                            argument.stream
-                        )
                 if argument.dtensor is not None:
                     tensor_tile = DTensorTile(
                         argument.dtensor.global_id,
@@ -517,10 +466,7 @@ class ComputationGraph:
                     live_dtensor_tile.first_use = 0
                     live_dtensor_tile.last_use = 9
                     node.global_interfaces[idx].append(live_dtensor_tile)
-                    intermediate_node.interfaces[idx].append(live_dtensor_tile)
             self.nodes[func_name] = node
-            self.intermediate_nodes[func_name] = intermediate_node
-            self.init_nodes[func_name] = intermediate_node
             self.dependencies[func_name] = set()
         # initiate dependencies
         for stream in self.edges.values():
@@ -546,7 +492,7 @@ class ComputationGraph:
                 raise ValueError(
                     f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
                 )
-        bundled_node = CoNode(
+        bundled_node = CollocatedNode(
             tag=sample_node.meta_data.op_tag,
             name=sample_node.meta_data.name,
             func=sample_node.func,
@@ -581,6 +527,14 @@ class ComputationGraph:
         """
         [A] [B] => [[A]-[B]]
         """
+
+        @dataclass
+        class BufferedStream:
+            arg_idx_a: int
+            arg_idx_b: int
+            arg_a: Value
+            arg_b: Value
+
         node_a, node_b = self.nodes.pop(node_name_a), self.nodes.pop(node_name_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         assert node_a is not None and node_b is not None, "node not found"
@@ -593,7 +547,7 @@ class ComputationGraph:
             node_a.meta_data.repeat == node_b.meta_data.repeat == 1
         ), "Cannot chaining nodes with repeats currently"
         chained_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
-        chained_node = CoNode(
+        chained_node = CollocatedNode(
             chained_tag,
             name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
             repeat=1,
@@ -602,7 +556,7 @@ class ComputationGraph:
         chained_node.meta_data.use_external_kernel = (
             node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
         )
-        bufferized_stream: dict[Stream, BufferizedStream] = {}
+        buffered_stream: dict[Stream, BufferedStream] = {}
         node_a.meta_data.output_streams = [
             stream
             for stream in node_a.meta_data.output_streams
@@ -621,7 +575,7 @@ class ComputationGraph:
                         idx_b = idx
                         break
                 assert idx_a >= 0 and idx_b >= 0
-                bufferized_stream[stream] = BufferizedStream(idx_a, idx_b, None, None)
+                buffered_stream[stream] = BufferedStream(idx_a, idx_b, None, None)
             else:
                 kept_streams.append(stream)
         node_b.meta_data.input_streams = kept_streams
@@ -665,7 +619,7 @@ class ComputationGraph:
                 function_a.arguments + function_b.arguments, new_function.arguments
             ):
                 old.replace_all_uses_with(new)
-            for bufferized_stream_info in bufferized_stream.values():
+            for bufferized_stream_info in buffered_stream.values():
                 bufferized_stream_info.arg_a = new_function.arguments[
                     bufferized_stream_info.arg_idx_a
                 ]
@@ -689,7 +643,7 @@ class ComputationGraph:
                 function_a.erase()
                 function_b.erase()
             # bufferize streams
-            for stream, bufferized_stream_info in bufferized_stream.items():
+            for stream, bufferized_stream_info in buffered_stream.items():
                 stream_puts = [
                     use.owner
                     for use in bufferized_stream_info.arg_a.uses
@@ -798,9 +752,7 @@ class ComputationGraph:
         return global_tile_io, arg_idx_to_interface
 
     def get_node_dependencies(self) -> dict[str, set[str]]:
-        dependencies: dict[str, set[str]] = {
-            key: set() for key in self.nodes.keys()
-        }
+        dependencies: dict[str, set[str]] = {key: set() for key in self.nodes.keys()}
         for stream in self.edges.values():
             dependencies[stream.dst].add(stream.src)
         return dependencies
