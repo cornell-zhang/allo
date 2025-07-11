@@ -305,7 +305,7 @@ class AIE_MLIRModule:
                 _, N = MemRefType(input_b.type).shape
                 dtype = str(input_a.type.element_type)
                 out_dtype = str(output.type.element_type)
-                matmul_configs = matmul_externel_kernel_config_map[(dtype, out_dtype)]
+                matmul_configs = matmul_external_kernel_config_map[(dtype, out_dtype)]
                 if self.device == "npu1":
                     m, n, k = matmul_configs["aie2"]
                 else:

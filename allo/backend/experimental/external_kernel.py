@@ -82,11 +82,11 @@ class ExternalModule(ExternalModuleBase):
             extern_C_blocks = extract_extern_C_blocks(code)
             all_functions = []
             for block in extern_C_blocks:
-                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.name}\s*\([^)]*\)\s*{{"
+                func_pattern = rf"\b[\w\s\[\]<>,:*&]+?\b{self.top}\s*\([^)]*\)\s*{{"
                 functions = re.findall(func_pattern, block)
                 all_functions.extend(functions)
             assert len(all_functions) == 1, "invalid external function"
-            self.args = parse_cpp_function(all_functions[0], self.name)
+            self.args = parse_cpp_function(all_functions[0], self.top)
         assert (self.args is not None) or len(self.args) != len(self.input_idx) + len(
             self.output_idx
         ), f"Failed to parse {self.impl}"
