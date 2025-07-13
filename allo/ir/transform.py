@@ -106,28 +106,68 @@ def find_buffer(module, target, func_args):
             hasattr(dtensor, "name") and dtensor.name == target_name
         ) or dtensor == target_name:
             return target_func, idx, MockArg(op)
-    # Find inner intermediate buffers
-    for op in target_func.entry_block.operations:
-        if (
-            isinstance(op, memref_d.AllocOp)
-            and "name" in op.attributes
-            and StringAttr(op.attributes["name"]).value == target_name
-        ):
-            # verify if it is a return tensor
-            return_op = list(target_func.entry_block.operations)[-1]
-            if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
-                idx = len(target_func.arguments)
-            else:
-                idx = -1
-            return target_func, idx, op
-        if (
-            isinstance(op, func_d.CallOp)
-            and "name" in op.attributes
-            and StringAttr(op.attributes["name"]).value == target_name
-        ):
-            return target_func, -1, op
-        if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
-            return target_func, -1, op
+    
+    # Recursive helper function to search through all nested operations
+    def search_operations_recursive(operations):
+        for op in operations:
+            # Check for AllocOp
+            if (
+                isinstance(op, memref_d.AllocOp)
+                and "name" in op.attributes
+                and StringAttr(op.attributes["name"]).value == target_name
+            ):
+                # verify if it is a return tensor
+                return_op = list(target_func.entry_block.operations)[-1]
+                if len(return_op.operands) > 0 and return_op.operands[0] == op.result:
+                    idx = len(target_func.arguments)
+                else:
+                    idx = -1
+                return target_func, idx, op
+            
+            # Check for CallOp
+            if (
+                isinstance(op, func_d.CallOp)
+                and "name" in op.attributes
+                and StringAttr(op.attributes["name"]).value == target_name
+            ):
+                return target_func, -1, op
+            
+            # Check for GetGlobalOp
+            if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
+                return target_func, -1, op
+            
+            # Recursively search nested operations
+            if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+                result = search_operations_recursive(op.body.operations)
+                if result is not None:
+                    return result
+            elif isinstance(op, affine_d.AffineIfOp):
+                result = search_operations_recursive(op.thenRegion.blocks[0].operations)
+                if result is not None:
+                    return result
+                try:
+                    result = search_operations_recursive(op.elseRegion.blocks[0].operations)
+                    if result is not None:
+                        return result
+                except IndexError:
+                    pass
+            elif isinstance(op, scf_d.IfOp):
+                result = search_operations_recursive(op.then_block.operations)
+                if result is not None:
+                    return result
+                try:
+                    result = search_operations_recursive(op.else_block.operations)
+                    if result is not None:
+                        return result
+                except IndexError:
+                    pass
+        return None
+    
+    # Find inner intermediate buffers recursively
+    result = search_operations_recursive(target_func.entry_block.operations)
+    if result is not None:
+        return result
+    
     raise RuntimeError(f"Target {target} not found")
 
 
