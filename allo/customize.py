@@ -28,6 +28,7 @@ from ._mlir.ir import (
     FunctionType,
     AffineMap,
     AffineMapAttr,
+    BlockArgument,
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -360,6 +361,62 @@ class Schedule:
                                     call_op.attributes["name"].value,
                                 )
                                 recursive_partition(buffer)
+            
+            # Handle data flow: if we partitioned a value, find where it's used as an argument
+            # and ensure the receiving function parameters are also partitioned
+            if hasattr(mlir_target, 'result') and mlir_target.result is not None:
+                # Find all uses of this partitioned value
+                for use in mlir_target.result.uses:
+                    user_op = use.owner
+                    if isinstance(user_op, func_d.CallOp):
+                        # This partitioned value is passed as an argument to another function
+                        callee_name = FlatSymbolRefAttr(user_op.attributes["callee"]).value
+                        callee_func = self._find_function(callee_name, error=False)
+                        if callee_func is not None:
+                            # Find which parameter index this operand corresponds to
+                            for i, operand in enumerate(user_op.operands):
+                                if operand == mlir_target.result:
+                                    # The partitioned value is passed as the i-th argument
+                                    # We need to partition the i-th parameter of the callee function
+                                    if i < len(self.func_args.get(callee_name, [])):
+                                        if hasattr(self.func_args[callee_name][i], "name"):
+                                            param_name = self.func_args[callee_name][i].name
+                                        else:
+                                            param_name = self.func_args[callee_name][i]
+                                        param_buffer = MockBuffer(callee_name, param_name)
+                                        recursive_partition(param_buffer)
+                                    break
+            
+            # Also handle the case where this is a function parameter that gets used
+            # Find the function that contains this parameter
+            if isinstance(mlir_target, BlockArgument):
+                # This is a function parameter
+                parent_func = mlir_target.owner.parent_op
+                if isinstance(parent_func, func_d.FuncOp):
+                    func_name = parent_func.name.value
+                    param_index = mlir_target.arg_number
+                    
+                    # Find all uses of this parameter within the function
+                    for use in mlir_target.uses:
+                        user_op = use.owner
+                        if isinstance(user_op, func_d.CallOp):
+                            # This parameter is passed to another function call
+                            callee_name = FlatSymbolRefAttr(user_op.attributes["callee"]).value
+                            callee_func = self._find_function(callee_name, error=False)
+                            if callee_func is not None:
+                                # Find which parameter index this operand corresponds to
+                                for i, operand in enumerate(user_op.operands):
+                                    if operand == mlir_target:
+                                        # The partitioned parameter is passed as the i-th argument
+                                        # We need to partition the i-th parameter of the callee function
+                                        if i < len(self.func_args.get(callee_name, [])):
+                                            if hasattr(self.func_args[callee_name][i], "name"):
+                                                param_name = self.func_args[callee_name][i].name
+                                            else:
+                                                param_name = self.func_args[callee_name][i]
+                                            param_buffer = MockBuffer(callee_name, param_name)
+                                            recursive_partition(param_buffer)
+                                        break
 
         recursive_partition(target)
         for inner_target in visited_target_names:
