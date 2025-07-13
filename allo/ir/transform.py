@@ -106,7 +106,7 @@ def find_buffer(module, target, func_args):
             hasattr(dtensor, "name") and dtensor.name == target_name
         ) or dtensor == target_name:
             return target_func, idx, MockArg(op)
-    
+
     # Recursive helper function to search through all nested operations
     def search_operations_recursive(operations):
         for op in operations:
@@ -123,7 +123,7 @@ def find_buffer(module, target, func_args):
                 else:
                     idx = -1
                 return target_func, idx, op
-            
+
             # Check for CallOp
             if (
                 isinstance(op, func_d.CallOp)
@@ -131,11 +131,11 @@ def find_buffer(module, target, func_args):
                 and StringAttr(op.attributes["name"]).value == target_name
             ):
                 return target_func, -1, op
-            
+
             # Check for GetGlobalOp
             if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
                 return target_func, -1, op
-            
+
             # Recursively search nested operations
             if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
                 result = search_operations_recursive(op.body.operations)
@@ -146,7 +146,9 @@ def find_buffer(module, target, func_args):
                 if result is not None:
                     return result
                 try:
-                    result = search_operations_recursive(op.elseRegion.blocks[0].operations)
+                    result = search_operations_recursive(
+                        op.elseRegion.blocks[0].operations
+                    )
                     if result is not None:
                         return result
                 except IndexError:
@@ -162,12 +164,12 @@ def find_buffer(module, target, func_args):
                 except IndexError:
                     pass
         return None
-    
+
     # Find inner intermediate buffers recursively
     result = search_operations_recursive(target_func.entry_block.operations)
     if result is not None:
         return result
-    
+
     raise RuntimeError(f"Target {target} not found")
 
 

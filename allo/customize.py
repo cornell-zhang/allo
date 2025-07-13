@@ -259,6 +259,7 @@ class Schedule:
         allo_d.FuseOp(arg_results, ip=ip)
 
     @wrapped_apply
+    # pylint: disable=too-many-branches
     def partition(self, target, partition_type=Partition.Complete, dim=0, factor=0):
         """
         Partitions a given array, for example if the array is `B`, this would be `<schedule>.B`.
@@ -319,6 +320,7 @@ class Schedule:
         visited_target_names = []
         visited_func_calls = []
 
+        # pylint: disable=too-many-branches
         def recursive_partition(inner_target):
             name = f"{inner_target.func}:{inner_target.name}"
             if name in visited_target_names:
@@ -361,16 +363,19 @@ class Schedule:
                                     call_op.attributes["name"].value,
                                 )
                                 recursive_partition(buffer)
-            
+
             # Handle data flow: if we partitioned a value, find where it's used as an argument
             # and ensure the receiving function parameters are also partitioned
-            if hasattr(mlir_target, 'result') and mlir_target.result is not None:
+            # pylint: disable=too-many-nested-blocks
+            if hasattr(mlir_target, "result") and mlir_target.result is not None:
                 # Find all uses of this partitioned value
                 for use in mlir_target.result.uses:
                     user_op = use.owner
                     if isinstance(user_op, func_d.CallOp):
                         # This partitioned value is passed as an argument to another function
-                        callee_name = FlatSymbolRefAttr(user_op.attributes["callee"]).value
+                        callee_name = FlatSymbolRefAttr(
+                            user_op.attributes["callee"]
+                        ).value
                         callee_func = self._find_function(callee_name, error=False)
                         if callee_func is not None:
                             # Find which parameter index this operand corresponds to
@@ -379,29 +384,35 @@ class Schedule:
                                     # The partitioned value is passed as the i-th argument
                                     # We need to partition the i-th parameter of the callee function
                                     if i < len(self.func_args.get(callee_name, [])):
-                                        if hasattr(self.func_args[callee_name][i], "name"):
-                                            param_name = self.func_args[callee_name][i].name
+                                        if hasattr(
+                                            self.func_args[callee_name][i], "name"
+                                        ):
+                                            param_name = self.func_args[callee_name][
+                                                i
+                                            ].name
                                         else:
                                             param_name = self.func_args[callee_name][i]
-                                        param_buffer = MockBuffer(callee_name, param_name)
+                                        param_buffer = MockBuffer(
+                                            callee_name, param_name
+                                        )
                                         recursive_partition(param_buffer)
                                     break
-            
+
             # Also handle the case where this is a function parameter that gets used
             # Find the function that contains this parameter
+            # pylint: disable=too-many-nested-blocks
             if isinstance(mlir_target, BlockArgument):
                 # This is a function parameter
                 parent_func = mlir_target.owner.parent_op
                 if isinstance(parent_func, func_d.FuncOp):
-                    func_name = parent_func.name.value
-                    param_index = mlir_target.arg_number
-                    
                     # Find all uses of this parameter within the function
                     for use in mlir_target.uses:
                         user_op = use.owner
                         if isinstance(user_op, func_d.CallOp):
                             # This parameter is passed to another function call
-                            callee_name = FlatSymbolRefAttr(user_op.attributes["callee"]).value
+                            callee_name = FlatSymbolRefAttr(
+                                user_op.attributes["callee"]
+                            ).value
                             callee_func = self._find_function(callee_name, error=False)
                             if callee_func is not None:
                                 # Find which parameter index this operand corresponds to
@@ -410,11 +421,19 @@ class Schedule:
                                         # The partitioned parameter is passed as the i-th argument
                                         # We need to partition the i-th parameter of the callee function
                                         if i < len(self.func_args.get(callee_name, [])):
-                                            if hasattr(self.func_args[callee_name][i], "name"):
-                                                param_name = self.func_args[callee_name][i].name
+                                            if hasattr(
+                                                self.func_args[callee_name][i], "name"
+                                            ):
+                                                param_name = self.func_args[
+                                                    callee_name
+                                                ][i].name
                                             else:
-                                                param_name = self.func_args[callee_name][i]
-                                            param_buffer = MockBuffer(callee_name, param_name)
+                                                param_name = self.func_args[
+                                                    callee_name
+                                                ][i]
+                                            param_buffer = MockBuffer(
+                                                callee_name, param_name
+                                            )
                                             recursive_partition(param_buffer)
                                         break
 
@@ -438,60 +457,60 @@ class Schedule:
                 factor=IntegerAttr.get(ui32, factor),
                 ip=InsertionPoint.at_block_terminator(func.entry_block),
             )
-            
+
             # If the target is a function call, we need to update the function's return type
             # and recursively partition the buffer that the function actually returns
             if isinstance(mlir_target, func_d.CallOp):
                 # Find the function being called
                 callee_name = FlatSymbolRefAttr(mlir_target.attributes["callee"]).value
                 callee_func = self._find_function(callee_name)
-                
+
                 # Find the return operation in the callee function
                 return_op = None
                 for op in callee_func.entry_block.operations:
                     if isinstance(op, func_d.ReturnOp):
                         return_op = op
                         break
-                
+
                 if return_op is not None and len(return_op.operands) > 0:
                     # Find what buffer is being returned
                     returned_value = return_op.operands[0]
-                    
+
                     # Find the buffer operation (alloc, etc.) that produces this value
-                    if hasattr(returned_value, 'owner') and returned_value.owner is not None:
+                    if (
+                        hasattr(returned_value, "owner")
+                        and returned_value.owner is not None
+                    ):
                         returned_buffer_op = returned_value.owner
-                        
+
                         # If it's an alloc operation with a name, recursively partition it
-                        op_name = returned_buffer_op.operation.name if hasattr(returned_buffer_op, 'operation') else returned_buffer_op.name
-                        if (op_name == "memref.alloc" and 
-                            "name" in returned_buffer_op.attributes):
-                            buffer_name = StringAttr(returned_buffer_op.attributes["name"]).value
+                        op_name = (
+                            returned_buffer_op.operation.name
+                            if hasattr(returned_buffer_op, "operation")
+                            else returned_buffer_op.name
+                        )
+                        if (
+                            op_name == "memref.alloc"
+                            and "name" in returned_buffer_op.attributes
+                        ):
+                            buffer_name = StringAttr(
+                                returned_buffer_op.attributes["name"]
+                            ).value
                             # Recursively partition the buffer inside the function
                             recursive_partition(MockBuffer(callee_name, buffer_name))
-                
+
                 # Find all uses of this function call's result and recursively partition downstream calls
                 downstream_uses = []
                 for use in mlir_target.result.uses:
                     user_op = use.owner
                     # If the result is used as input to another function call, partition that call too
-                    if isinstance(user_op, func_d.CallOp) and "name" in user_op.attributes:
-                        downstream_call_name = StringAttr(user_op.attributes["name"]).value
-                        
-                        # Find which function contains this downstream call and recursively partition it
-                        for containing_func in self.module.body.operations:
-                            if isinstance(containing_func, func_d.FuncOp):
-                                for op in containing_func.entry_block.operations:
-                                    if op is user_op:
-                                        downstream_target = MockBuffer(
-                                            containing_func.name.value, 
-                                            downstream_call_name
-                                        )
-                                        recursive_partition(downstream_target)
-                                        break
-                        
+                    if (
+                        isinstance(user_op, func_d.CallOp)
+                        and "name" in user_op.attributes
+                    ):
                         # Store downstream calls for later processing
                         downstream_uses.append(user_op)
-                
+
                 # Calculate the new return type with partition layout
                 shape = mlir_target.result.type.shape
                 partition_idx = []
@@ -508,7 +527,9 @@ class Schedule:
                             # each block has shape[dim] / factor elements
                             block_factor = (shape[i] + factor - 1) // factor
                             partition_idx.append(
-                                AffineExpr.get_floor_div(AffineDimExpr.get(i), block_factor)
+                                AffineExpr.get_floor_div(
+                                    AffineDimExpr.get(i), block_factor
+                                )
                             )
                             address_idx.append(AffineDimExpr.get(i) % block_factor)
                         else:  # Partition.Complete
@@ -517,12 +538,14 @@ class Schedule:
                     else:
                         partition_idx.append(AffineExpr.get_constant(0))
                         address_idx.append(AffineDimExpr.get(i))
-                
+
                 affine_map = AffineMap.get(
-                    dim_count=len(shape), symbol_count=0, exprs=partition_idx + address_idx
+                    dim_count=len(shape),
+                    symbol_count=0,
+                    exprs=partition_idx + address_idx,
                 )
                 affine_attr = AffineMapAttr.get(affine_map)
-                
+
                 # Create new return type with partition layout
                 old_return_type = callee_func.type.results[0]
                 new_return_type = MemRefType.get(
@@ -531,45 +554,53 @@ class Schedule:
                     affine_attr,
                     old_return_type.memory_space,
                 )
-                
+
                 # Check if any input operands are partitioned and update input types accordingly
                 new_input_types = list(callee_func.type.inputs)
                 for i, operand in enumerate(mlir_target.operands):
-                    if hasattr(operand.type, 'layout') and operand.type.layout != callee_func.type.inputs[i].layout:
+                    if (
+                        hasattr(operand.type, "layout")
+                        and operand.type.layout != callee_func.type.inputs[i].layout
+                    ):
                         # Input operand has partitioned layout, update the function parameter type
                         new_input_types[i] = operand.type
                         # Also update the function argument type
                         callee_func.arguments[i].set_type(operand.type)
-                
+
                 # Update function type
-                new_func_type = FunctionType.get(
-                    new_input_types,
-                    [new_return_type]
-                )
+                new_func_type = FunctionType.get(new_input_types, [new_return_type])
                 callee_func.attributes["function_type"] = TypeAttr.get(new_func_type)
-                
+
                 # Update downstream function parameter types
                 for user_op in downstream_uses:
-                    downstream_callee_name = FlatSymbolRefAttr(user_op.attributes["callee"]).value
+                    downstream_callee_name = FlatSymbolRefAttr(
+                        user_op.attributes["callee"]
+                    ).value
                     downstream_callee_func = self._find_function(downstream_callee_name)
-                    
+
                     # Find which parameter index this operand corresponds to
                     for i, operand in enumerate(user_op.operands):
                         if operand == mlir_target.result:
                             # Update the parameter type to match the new partitioned type
-                            downstream_callee_func.arguments[i].set_type(new_return_type)
-                            
+                            downstream_callee_func.arguments[i].set_type(
+                                new_return_type
+                            )
+
                             # Update function signature
-                            new_downstream_input_types = list(downstream_callee_func.type.inputs)
+                            new_downstream_input_types = list(
+                                downstream_callee_func.type.inputs
+                            )
                             new_downstream_input_types[i] = new_return_type
-                            
+
                             new_downstream_func_type = FunctionType.get(
                                 new_downstream_input_types,
-                                downstream_callee_func.type.results
+                                downstream_callee_func.type.results,
                             )
-                            downstream_callee_func.attributes["function_type"] = TypeAttr.get(new_downstream_func_type)
+                            downstream_callee_func.attributes["function_type"] = (
+                                TypeAttr.get(new_downstream_func_type)
+                            )
                             break
-        
+
         # Calculate layout map
         # first N: partition index
         # last N : physical index
@@ -615,9 +646,6 @@ class Schedule:
                         op.attributes["type"].value.memory_space,
                     )
                 )
-        
-
-
 
     # @wrapped_apply
     def buffer_at_regular(self, target, axis):
