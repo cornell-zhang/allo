@@ -72,7 +72,7 @@ def test_sparse_row_wise():
     print("\n=== Running Simulator ===")
     s = allo.customize(row_wise_prod)
     print(s.module)
-    mod = s.build(target="llvm")
+    mod = s.build(target="llvm", project="rwp.prj")
     C = mod(A, Ain, B)
     
     print("\nFinal Result Matrix C:")

@@ -64,6 +64,8 @@ def test_systolic():
         s.partition("top:A", dim=1, factor=2)
         s.partition("top:B", dim=2, factor=2)
         s.partition("top:C", dim=0, factor=2)
+        # mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
+        # mod()
         mod = s.build(target="vitis_hls", mode="hw_emu", project="systolic.prj")
         C = np.zeros((M, N), dtype=np.float32)
         mod(A, B, C)

@@ -74,9 +74,9 @@ def test_sparse_row_wise():
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, Ain, B, C)
 
-    mod = df.build(top, target="vitis_hls", mode="hw_emu")
-    # mod = df.build(top, target="vitis_hls", mode="cysn", project="rwp.prj")
-    # mod()
+    mod = df.build(top, target="vitis_hls", mode="hw_emu", project="rwp_df.prj")
+    c_mod = df.build(top, target="vitis_hls", mode="cysn", project="rwp.prj")
+    c_mod()
     
     print("\nFinal Result Matrix C:")
     print(C)

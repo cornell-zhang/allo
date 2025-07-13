@@ -19,7 +19,7 @@ def top():
     fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
-    def gemm(A: float32[M, NZ], A_in: int32[M, NZ], B: float32[K, N], C: float32[M, N]):
+    def semm(A: float32[M, NZ], A_in: int32[M, NZ], B: float32[K, N], C: float32[M, N]):
         i, j = df.get_pid()
         # periperals kernels
         with allo.meta_if(i in {0, M + 1} and j in {0, N + 1}):
@@ -113,8 +113,19 @@ def test_sparse_systolic():
 
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
+        s = df.customize(top)
+
+        # s.partition("top:A", dim=1, factor=2)
+        # s.partition("top:A_in", dim=1, factor=2)
+        # s.partition("top:B", dim=2, factor=2)
+        # s.partition("top:C", dim=0, factor=2)
+        # s.pipeline("semm", initiation_interval=1)
+        # mod = s.build(target="vitis_hls", mode="csyn", project="ssemmscyn.prj")
+        # mod()
+        
+        mod = s.build(target="vitis_hls", mode="hw_emu", project="ssemmhw.prj")
         C = np.zeros((M, N), dtype=np.float32)
-        mod(A, B, C)
+        mod(A, Ain, B, C)
         np.testing.assert_allclose(C, np.dot(A_dense, B), atol=1e-5)
         print("Passed!")
 

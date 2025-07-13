@@ -79,13 +79,21 @@ def test_sparse_systolic():
     print("Dataflow Simulator Passed!")
 
     # mod = df.build(top)
-    mod = df.build(top, target="vitis_hls", mode="hw_emu")
+    # mod = df.build(top, target="vitis_hls", mode="csim", project="sssemm.prj")
+    # mod(A, B, C)
 
     
     if hls.is_available("vitis_hls"):
+        s = df.customize(top)
+        s.partition("top:A", dim=1, factor=2)
+        s.partition("top:B", dim=2, factor=2)
+        s.partition("top:C", dim=0, factor=2)
+        mod = s.build(target="vitis_hls", mode="hw_emu", project="sssemm.prj")
         C = np.zeros((M, N), dtype=np.float32)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+        # mod = s.build(target="vitis_hls", mode="csyn", project="ssemm.prj")
+        # mod()
         print("Passed!")
 
 
