@@ -635,7 +635,7 @@ class CodeGenerator:
             coalesced_size: list[int],
             connected_interfaces: list[list[PEInterface]],
             mem_ports_to_compute: list[SwitchNode.Port],
-            tokens: set,
+            tokens: set[str],
         ):
             self.dtype = dtype
             self.tile_shape = tile_shape
@@ -691,7 +691,7 @@ class CodeGenerator:
                 if size.get_dim_size(dim) > 1:
                     break
             if dim >= 3:
-                print(size)
+
                 raise ValueError("Fail to partition")
             size_part = size.copy()
             partition_size = size.get_dim_size(dim) - 1
@@ -1123,7 +1123,7 @@ class CodeGenerator:
             Return True if the assignment succeeded, otherwise return False.
             """
             coalesced_size = Size4D.coalesce(total_size, tile_size)
-            tokens = set()
+            tokens: set[str] = set()
             for multicast_interface in contiguous_interface:
                 for token_tuple in multicast_interface.tokens:
                     for token in token_tuple:

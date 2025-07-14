@@ -1,4 +1,4 @@
-# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, pointless-exception-statement
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -13,6 +13,7 @@ try:
 except ImportError:
     pass
 
+from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
     allo as allo_d,
@@ -516,8 +517,8 @@ class AIE_MLIRModule:
                 raise ValueError(
                     "The input computation graph is not a DAG. Do not support virtual mapping now."
                 )
-            print(
-                "\033[34m[Warning] \033[0mThe input computation graph is not a DAG. Fallback to default build."
+            APIWarning(
+                "The input computation graph is not a DAG. Fallback to default build."
             )
             return self.build(
                 device_type=device_type,

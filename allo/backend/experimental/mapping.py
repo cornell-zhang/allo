@@ -21,7 +21,7 @@ from .utils import (
 @dataclass
 class DTensorTile:
     dtensor_id: int
-    tensor_tile_label: tuple
+    tensor_tile_label: tuple[int | str, ...]
 
     def __hash__(self):
         return hash((self.dtensor_id, self.tensor_tile_label))
@@ -43,7 +43,7 @@ class DTensorTile:
 class PEInterface:
     pe: str
     interface_idx: int
-    layout: tuple[list, list, list]
+    layout: tuple[list[int], list[int], list[int]] | None
 
     def __hash__(self):
         return hash((self.pe, self.interface_idx))
@@ -74,7 +74,7 @@ class DTensorTileGroup:
         tile: DTensorTile,
         pe: str,
         interface_idx: int,
-        layout: tuple[list, list, list],
+        layout: tuple[list[int], list[int], list[int]] | None,
     ):
         self.dtensor_tile_to_pe_interfaces[tile].append(
             PEInterface(pe=pe, interface_idx=interface_idx, layout=layout)
@@ -94,7 +94,7 @@ class FIFO:
         data_shape: list[int],
         dtype: str,
         depth: int = 2,
-        dimensions_to_stream: list = None,
+        dimensions_to_stream: tuple[list[int], list[int], list[int]] | None = None,
     ):
         self.name = name
         self.src = src
@@ -127,7 +127,7 @@ class FIFOManager:
         dst: list[str],
         data_shape: list[str],
         dtype: str,
-        dimensions_to_stream: list = None,
+        dimensions_to_stream: tuple[list[int], list[int], list[int]] | None = None,
     ) -> FIFO:
         fifo = FIFO(
             name=f"fifo_{len(self.fifos)}",
@@ -248,9 +248,11 @@ class LiveDTensorTileGroup:
     """
 
     def __init__(
-        self, live_dtensor_tiles: list[LiveDTensorTile], layout: tuple[list, list, list]
+        self,
+        live_dtensor_tiles: list[LiveDTensorTile],
+        layout: tuple[list[int], list[int], list[int]] | None,
     ):
-        self.layout: tuple[list, list, list] = layout
+        self.layout: tuple[list[int], list[int], list[int]] | None = layout
         self.is_input = live_dtensor_tiles[0].is_input
         self.dtensor_groups: dict[str, list[LiveDTensorTile]] = defaultdict(list)
         self.compatible_dtensor_ids: set[int] = set()
@@ -352,7 +354,7 @@ class NodeBase:
         self.func: func_d.FuncOp = func
         # arg_idx -> tiling using arg as interface
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
-        self.interface_layout: dict[int, tuple[list, list, list]] = {}
+        self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
 
     def is_isomorphic_to(self, other: "NodeBase") -> bool:
         # TODO: check in a more robust way

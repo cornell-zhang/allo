@@ -125,7 +125,7 @@ class Layout:
             mapping[tensor_id].append(pe_coord)
 
         # Post-process the mapping to combine PE coordinates for replicated dimensions
-        result = {}
+        result: dict[tuple[int | str, ...], list[tuple[int, ...]]] = {}
         for tensor_id, coords in mapping.items():
             # Convert to tuples for final output
             result[tensor_id] = [tuple(coord) for coord in coords]
@@ -155,9 +155,9 @@ class DTensor:
         self.name = name
         if layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
-            self.global_placement: dict[tuple, tuple] = layout.get_placement_exp(
-                mapping
-            )
+            self.global_placement: dict[
+                tuple[int | str, ...], list[tuple[int, ...]]
+            ] = layout.get_placement_exp(mapping)
         self.access_pattern_set = False
         self.global_id = None
         self.type_as_param: list = None
@@ -196,7 +196,7 @@ class DTensor:
             return
         self.access_pattern_set = True
         # tensor tile ID -> address offset
-        self.offset_map: dict[tuple, Offset4D] = {}
+        self.offset_map: dict[tuple[int | str, ...], Offset4D] = {}
         partition_str = "".join([p[0] for p in self.layout.placement])
         partition_dim = [p[1] for p in self.layout.placement]
         if len(self.shape) == 1:
@@ -262,7 +262,9 @@ class DTensor:
             raise ValueError("Unsupported access pattern.")
         self.shared_dims, self.size, self.stride = device_dims, size, stride
 
-    def PE_tile_id_to_tensor_tile_id(self, pe_tile_id: tuple[int, ...]) -> tuple:
+    def PE_tile_id_to_tensor_tile_id(
+        self, pe_tile_id: tuple[int, ...]
+    ) -> tuple[int | str, ...]:
         for tensor_tile_id, pe_tile_ids in self.global_placement.items():
             if pe_tile_id in pe_tile_ids:
                 return tensor_tile_id
