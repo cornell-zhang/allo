@@ -1,8 +1,7 @@
-# pylint: disable=dangerous-default-value, consider-using-enumerate, too-many-branches, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items
+# pylint: disable=dangerous-default-value, consider-using-enumerate, too-many-branches, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items, unsupported-binary-operation
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import re
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
@@ -12,7 +11,6 @@ from .utils import (
     Argument,
     parse_kernel_name,
     Stream,
-    get_df_kernels,
     Config,
 )
 
@@ -23,7 +21,7 @@ from .utils import (
 @dataclass
 class DTensorTile:
     dtensor_id: int
-    tensor_tile_label: str
+    tensor_tile_label: tuple[int | str, ...]
 
     def __hash__(self):
         return hash((self.dtensor_id, self.tensor_tile_label))
@@ -45,7 +43,7 @@ class DTensorTile:
 class PEInterface:
     pe: str
     interface_idx: int
-    layout: tuple[list, list, list]
+    layout: tuple[list[int], list[int], list[int]] | None
 
     def __hash__(self):
         return hash((self.pe, self.interface_idx))
@@ -76,7 +74,7 @@ class DTensorTileGroup:
         tile: DTensorTile,
         pe: str,
         interface_idx: int,
-        layout: tuple[list, list, list],
+        layout: tuple[list[int], list[int], list[int]] | None,
     ):
         self.dtensor_tile_to_pe_interfaces[tile].append(
             PEInterface(pe=pe, interface_idx=interface_idx, layout=layout)
@@ -96,7 +94,7 @@ class FIFO:
         data_shape: list[int],
         dtype: str,
         depth: int = 2,
-        dimensions_to_stream: list = [],
+        dimensions_to_stream: tuple[list[int], list[int], list[int]] | None = None,
     ):
         self.name = name
         self.src = src
@@ -129,7 +127,7 @@ class FIFOManager:
         dst: list[str],
         data_shape: list[str],
         dtype: str,
-        dimensions_to_stream: list = [],
+        dimensions_to_stream: tuple[list[int], list[int], list[int]] | None = None,
     ) -> FIFO:
         fifo = FIFO(
             name=f"fifo_{len(self.fifos)}",
@@ -250,9 +248,11 @@ class LiveDTensorTileGroup:
     """
 
     def __init__(
-        self, live_dtensor_tiles: list[LiveDTensorTile], layout: tuple[list, list, list]
+        self,
+        live_dtensor_tiles: list[LiveDTensorTile],
+        layout: tuple[list[int], list[int], list[int]] | None,
     ):
-        self.layout: tuple[list, list, list] = layout
+        self.layout: tuple[list[int], list[int], list[int]] | None = layout
         self.is_input = live_dtensor_tiles[0].is_input
         self.dtensor_groups: dict[str, list[LiveDTensorTile]] = defaultdict(list)
         self.compatible_dtensor_ids: set[int] = set()
@@ -354,7 +354,7 @@ class NodeBase:
         self.func: func_d.FuncOp = func
         # arg_idx -> tiling using arg as interface
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
-        self.interface_layout: dict[int, tuple[list, list, list]] = {}
+        self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
 
     def is_isomorphic_to(self, other: "NodeBase") -> bool:
         # TODO: check in a more robust way
@@ -409,53 +409,42 @@ class CollocatedNode(NodeBase):
 
     def _init_for_bundle(self, sample_node: NodeBase):
         self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
-        self.meta_data.input_streams = list(sample_node.meta_data.input_streams)
-        self.meta_data.output_streams = list(sample_node.meta_data.output_streams)
+        self.meta_data.input_streams = sample_node.meta_data.input_streams
+        self.meta_data.output_streams = sample_node.meta_data.output_streams
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
 
 
 # ------------------------------------------------------------
 class ComputationGraph:
-    class OperationTagger:
-        def __init__(self) -> None:
-            self.tag_map: dict[str, tuple[str, func_d.FuncOp]] = {}
-            self.counter = 0
-
-        def get_tag(self, key: str, func: func_d.FuncOp) -> str:
-            """Return existing tag or assign a new one if not present."""
-            if key not in self.tag_map:
-                tag = f"tag_{self.counter}"
-                self.tag_map[key] = (tag, func)
-                self.counter += 1
-            return self.tag_map[key][0]
-
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
+        top_func_name: str,
         stream_map: dict[str, Stream],
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         use_external_kernels: dict[str, bool],
     ):
         self.allo_module = allo_module
+        self.insert_point: InsertionPoint = None
         self.nodes: dict[str, NodeBase] = {}
+        self.collocated_nodes: dict[str, CollocatedNode] = {}
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.tagger = ComputationGraph.OperationTagger()
-        self.dependencies: dict[str, set[str]] = {}
+        self.dependencies: dict[str, set[str]] = defaultdict(set)
 
-        df_kernels = get_df_kernels(allo_module)
+        df_kernels = []
+        for func in allo_module.body.operations:
+            if func.attributes["sym_name"].value == top_func_name:
+                self.insert_point = InsertionPoint(func)
+            elif isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+                df_kernels.append(func)
+
         # construct nodes
         for func in df_kernels:
             func_name = func.attributes["sym_name"].value
-            tag_key = re.sub(
-                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(func.operation)
-            )
-            node = InitialNode(
-                func,
-                use_external_kernels[func_name],
-                self.tagger.get_tag(tag_key, func),
-            )
+            tag = func.attributes["tag"].value
+            node = InitialNode(func, use_external_kernels[func_name], tag)
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
             for idx, (argument, is_input) in params.items():
@@ -469,10 +458,13 @@ class ComputationGraph:
                         argument.dtensor.global_id,
                         argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
                     )
-                    node.global_interfaces[idx].append(
-                        LiveDTensorTile(tensor_tile, func_name, is_input)
+                    live_dtensor_tile = LiveDTensorTile(
+                        tensor_tile, func_name, is_input
                     )
-            node.init_live_tile()
+                    # TODO: determine first_use and last_use with liveness analysis
+                    live_dtensor_tile.first_use = 0
+                    live_dtensor_tile.last_use = 9
+                    node.global_interfaces[idx].append(live_dtensor_tile)
             self.nodes[func_name] = node
             self.dependencies[func_name] = set()
         # initiate dependencies
@@ -536,13 +528,11 @@ class ComputationGraph:
         """
 
         @dataclass
-        class BufferizedStream:
+        class BufferedStream:
             arg_idx_a: int
             arg_idx_b: int
             arg_a: Value
             arg_b: Value
-            stream_input: list[Value]
-            stream_output: list[Value]
 
         node_a, node_b = self.nodes.pop(node_name_a), self.nodes.pop(node_name_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
@@ -555,9 +545,9 @@ class ComputationGraph:
         assert (
             node_a.meta_data.repeat == node_b.meta_data.repeat == 1
         ), "Cannot chaining nodes with repeats currently"
-        bundled_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
+        chained_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
         chained_node = CollocatedNode(
-            bundled_tag,
+            chained_tag,
             name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
@@ -565,7 +555,7 @@ class ComputationGraph:
         chained_node.meta_data.use_external_kernel = (
             node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
         )
-        bufferized_stream: dict[Stream, BufferizedStream] = {}
+        buffered_stream: dict[Stream, BufferedStream] = {}
         node_a.meta_data.output_streams = [
             stream
             for stream in node_a.meta_data.output_streams
@@ -584,9 +574,7 @@ class ComputationGraph:
                         idx_b = idx
                         break
                 assert idx_a >= 0 and idx_b >= 0
-                bufferized_stream[stream] = BufferizedStream(
-                    idx_a, idx_b, None, None, [], []
-                )
+                buffered_stream[stream] = BufferedStream(idx_a, idx_b, None, None)
             else:
                 kept_streams.append(stream)
         node_b.meta_data.input_streams = kept_streams
@@ -622,7 +610,7 @@ class ComputationGraph:
             new_function = func_d.FuncOp(
                 chained_node.meta_data.name,
                 func_type,
-                ip=InsertionPoint(function_a),
+                ip=self.insert_point,
             )
             new_function.attributes["df.kernel"] = UnitAttr.get()
             entry_block = new_function.add_entry_block()
@@ -630,7 +618,7 @@ class ComputationGraph:
                 function_a.arguments + function_b.arguments, new_function.arguments
             ):
                 old.replace_all_uses_with(new)
-            for bufferized_stream_info in bufferized_stream.values():
+            for bufferized_stream_info in buffered_stream.values():
                 bufferized_stream_info.arg_a = new_function.arguments[
                     bufferized_stream_info.arg_idx_a
                 ]
@@ -654,7 +642,7 @@ class ComputationGraph:
                 function_a.erase()
                 function_b.erase()
             # bufferize streams
-            for stream, bufferized_stream_info in bufferized_stream.items():
+            for stream, bufferized_stream_info in buffered_stream.items():
                 stream_puts = [
                     use.owner
                     for use in bufferized_stream_info.arg_a.uses
@@ -711,13 +699,6 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Graph Information
     # ------------------------------------------------------------
-    def finalize(self):
-        # TODO
-        pass
-
-    # ------------------------------------------------------------
-    # Graph Information
-    # ------------------------------------------------------------
     def get_global_io(
         self,
     ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
@@ -761,7 +742,7 @@ class ComputationGraph:
                         break
                 if not changed:
                     raise ValueError(
-                        f"Invalide compute kernel {name}, port number exceeded."
+                        f"Invalid compute kernel {name}, port number exceeded."
                     )
 
             global_tile_io[name] = dict_

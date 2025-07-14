@@ -1,4 +1,4 @@
-# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, too-many-function-args, no-value-for-parameter
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, pointless-exception-statement
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -13,6 +13,7 @@ try:
 except ImportError:
     pass
 
+from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
     allo as allo_d,
@@ -86,9 +87,9 @@ class AIE_MLIRModule:
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
 
-        # index in top fucntion argument list -> DTensor
+        # index in top function argument list -> DTensor
         self.global_inputs: dict[int, DTensor] = None
         self.global_outputs: dict[int, DTensor] = None
         # function name -> (argument index -> (argument, is_input))
@@ -133,6 +134,29 @@ class AIE_MLIRModule:
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+        edge_map = {src: set() for src in stream_info.keys()}
+        for stream in self.streams.values():
+            edge_map[stream.src].add(stream.dst)
+        visited = set()
+        rec_stack = set()
+
+        def dfs(node):
+            if node in rec_stack:
+                return False  # found a cycle
+            if node in visited:
+                return True
+
+            visited.add(node)
+            rec_stack.add(node)
+
+            for neighbor in edge_map.get(node, set()):
+                if not dfs(neighbor):
+                    return False
+
+            rec_stack.remove(node)
+            return True
+
+        return all(dfs(node) for node in edge_map.keys())
 
     # ############################################################
     # Build
@@ -145,11 +169,46 @@ class AIE_MLIRModule:
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
-            self.allo_module, self.streams, self.core_func_args, use_external_kernels
+            self.allo_module,
+            self.top_func_name,
+            self.streams,
+            self.core_func_args,
+            use_external_kernels,
         )
 
+    def assign_tag_to_kernel(self):
+        """
+        Assign tag to df kernels (serve as some kind of rerolling)
+        """
+
+        class Tagger:
+            def __init__(self) -> None:
+                self.tag_map: dict[str, str] = {}
+                self.counter = 0
+
+            def get_tag(self, key: str) -> str:
+                """Return existing tag or assign a new one if not present."""
+                if key not in self.tag_map:
+                    tag = f"tag_{self.counter}"
+                    self.tag_map[key] = tag
+                    self.counter += 1
+                return self.tag_map[key]
+
+        tagger = Tagger()
+        df_kernels = get_df_kernels(self.allo_module)
+        for kernel in df_kernels:
+            tag_key = re.sub(
+                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
+            )
+            tag = tagger.get_tag(tag_key)
+            with kernel.context:
+                kernel.attributes["tag"] = StringAttr.get(tag)
+        return df_kernels
+
     def analyze_kernel_parameters(
-        self, injected_external_kernels: dict[str:ExternalModuleBase]
+        self,
+        df_kernels: list[allo_func_d.FuncOp],
+        injected_external_kernels: dict[str:ExternalModuleBase],
     ):
         """
         Analyze the parameters of each df.kernel.
@@ -159,19 +218,24 @@ class AIE_MLIRModule:
             - self.global_inputs: global input argument index -> DTensor
             - self.global_outputs: global output argument index -> DTensor
         """
+        tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
         self.global_inputs = {}
         self.global_outputs = {}
         # analyze
-        df_kernels = get_df_kernels(self.allo_module)
         for kernel in df_kernels:
             kernel_name = kernel.attributes["sym_name"].value
             self.core_func_args[kernel_name] = {}
-            # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-            in_idx_list, out_idx_list = analyze_read_write_patterns(
-                kernel, injected_external_kernels
-            )
+            tag = kernel.attributes["tag"].value
+            if tag in tag_to_read_write_pattern:
+                in_idx_list, out_idx_list = tag_to_read_write_pattern[tag]
+            else:
+                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+                in_idx_list, out_idx_list = analyze_read_write_patterns(
+                    kernel, injected_external_kernels
+                )
+                tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
             for io_idx_list, io_type in (
                 (in_idx_list, "in"),
                 (out_idx_list, "out"),
@@ -447,13 +511,27 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        # virtual mapping can only be applied to DAG
+        if not self.computation_is_dag:
+            if enable_virtual_mapping and len(mapping_primitives) > 0:
+                raise ValueError(
+                    "The input computation graph is not a DAG. Do not support virtual mapping now."
+                )
+            APIWarning(
+                "The input computation graph is not a DAG. Fallback to default build."
+            )
+            return self.build(
+                device_type=device_type,
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
         if "npu1" in device_type:
             self.device = "npu1"
         elif "npu2" in device_type:
             self.device = "npu2"
         else:
             raise ValueError("Unsupported device type.")
-
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -472,7 +550,14 @@ class AIE_MLIRModule:
                 "aie2" if self.device == "npu1" else "aie2p",
             )
         )
-        self.analyze_kernel_parameters(self.injected_external_kernels)
+        # record original allo mlir
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
+        self.analyze_kernel_parameters(
+            self.assign_tag_to_kernel(), self.injected_external_kernels
+        )
         # ------------------------- virtual mapping -------------------------
         self._init_virtual_graph(use_external_kernels)
         if enable_virtual_mapping:
@@ -676,6 +761,12 @@ class AIE_MLIRModule:
         warmup: int = 20,
         num_iters: int = 100,
     ):
+        if "npu1" in device_type:
+            self.device = "npu1"
+        elif "npu2" in device_type:
+            self.device = "npu2"
+        else:
+            raise ValueError("Unsupported device type.")
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
@@ -714,7 +805,12 @@ class AIE_MLIRModule:
             self.allo_module, self.top_func_name
         )
         code_generator = CodeGenerator(
-            device_type, self.global_inputs, self.global_outputs, top_func
+            device_type,
+            self.global_inputs,
+            self.global_outputs,
+            top_func,
+            self.core_func_args,
+            self.streams,
         )
         self.aie_module = code_generator.aie_codegen(
             core_func_groups,
@@ -722,8 +818,6 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
-            self.core_func_args,
-            self.streams,
         )
         self.post_codegen_build(injected_external_kernels, include_src)
         return self

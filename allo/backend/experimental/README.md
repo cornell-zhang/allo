@@ -133,6 +133,13 @@ def downgrade_ir_for_peano(llvmir):
 
 To enable the experimental MLIR-AIE codegen, specify `"aie-mlir"` as the target in the `dataflow.build` function.
 
+Currently, the supported target platforms include `XDNA1` and `XDNA2`.
+By default, the target platform is set to `XDNA1`.
+To switch to `XDNA2`, please run:
+```bash
+export NPU2=1  
+```
+
 ### Example
 vector addition
 ```python

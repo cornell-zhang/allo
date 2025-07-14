@@ -1,4 +1,4 @@
-# pylint: disable=too-many-instance-attributes, redundant-returns-doc
+# pylint: disable=too-many-instance-attributes, redundant-returns-doc, unsupported-binary-operation
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -47,7 +47,7 @@ class Layout:
     def get_placement(self, mesh_dims):
         """
         Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
-
+        ! Unsafe!! (12,1) is same as (1,21)
         Args:
             mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
 
@@ -89,6 +89,49 @@ class Layout:
 
         return result
 
+    def get_placement_exp(self, mesh_dims):
+        """
+        Calculate mapping from tensor tile IDs to PE tile IDs based on the placement scheme.
+
+        Args:
+            mesh_dims (list): Dimensions of the device mesh (e.g., [4] for 1D, [2,2] for 2D)
+
+        Returns:
+            dict: A mapping from tensor tile IDs to corresponding PE tile coordinates
+        """
+        # Generate all possible PE coordinates
+        pe_coords = list(product(*[range(dim) for dim in mesh_dims]))
+        # Initialize mapping
+        mapping = {}
+        # For each PE coordinate, determine its tensor tile ID
+        for pe_coord in pe_coords:
+            tensor_id_parts = []
+
+            for _, (op, dim) in enumerate(self.placement):
+                if op == "S":
+                    # For sharding, use the coordinate at the specified dimension
+                    # start from right to left
+                    mesh_dim = int(dim)
+                    tensor_id_parts.append(int(pe_coord[-mesh_dim - 1]))
+                elif op == "R":
+                    # For replication, use 'R'
+                    tensor_id_parts.append("R")
+
+            tensor_id = tuple(tensor_id_parts)
+
+            # Add this PE coordinate to the mapping for this tensor ID
+            if tensor_id not in mapping:
+                mapping[tensor_id] = []
+            mapping[tensor_id].append(pe_coord)
+
+        # Post-process the mapping to combine PE coordinates for replicated dimensions
+        result: dict[tuple[int | str, ...], list[tuple[int, ...]]] = {}
+        for tensor_id, coords in mapping.items():
+            # Convert to tuples for final output
+            result[tensor_id] = [tuple(coord) for coord in coords]
+
+        return result
+
     def __repr__(self):
         result = ""
         for letter, number in self.placement:
@@ -112,7 +155,9 @@ class DTensor:
         self.name = name
         if layout is not None and mapping is not None:
             # tensor tile ID -> PE tile IDs
-            self.global_placement: dict[str, tuple] = layout.get_placement(mapping)
+            self.global_placement: dict[
+                tuple[int | str, ...], list[tuple[int, ...]]
+            ] = layout.get_placement_exp(mapping)
         self.access_pattern_set = False
         self.global_id = None
         self.type_as_param: list = None
@@ -151,7 +196,7 @@ class DTensor:
             return
         self.access_pattern_set = True
         # tensor tile ID -> address offset
-        self.offset_map: dict[str, Offset4D] = {}
+        self.offset_map: dict[tuple[int | str, ...], Offset4D] = {}
         partition_str = "".join([p[0] for p in self.layout.placement])
         partition_dim = [p[1] for p in self.layout.placement]
         if len(self.shape) == 1:
@@ -217,7 +262,9 @@ class DTensor:
             raise ValueError("Unsupported access pattern.")
         self.shared_dims, self.size, self.stride = device_dims, size, stride
 
-    def PE_tile_id_to_tensor_tile_id(self, pe_tile_id: tuple[int, ...]) -> str:
+    def PE_tile_id_to_tensor_tile_id(
+        self, pe_tile_id: tuple[int, ...]
+    ) -> tuple[int | str, ...]:
         for tensor_tile_id, pe_tile_ids in self.global_placement.items():
             if pe_tile_id in pe_tile_ids:
                 return tensor_tile_id
