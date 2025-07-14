@@ -1,4 +1,4 @@
-# pylint: disable=too-many-instance-attributes, redundant-returns-doc
+# pylint: disable=too-many-instance-attributes, redundant-returns-doc, unsupported-binary-operation
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
