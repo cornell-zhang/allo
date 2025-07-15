@@ -1029,4 +1029,52 @@ def StreamPutOp : Allo_Op<"stream_put"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Layout operations
+//===----------------------------------------------------------------------===//
+
+def TransformLayoutOp : Allo_Op<"transform_layout"> {
+  let summary = "Transform the layout of a memref as specified by offsets, sizes, and strides";
+  let description = [{
+    This operation takes a memref and three constant integer arrays representing
+    per-dimension `offsets`, `sizes`, and `strides`, and returns a new memref
+    with a layout transformation based on those arguments.
+    The result memref must have:
+        - The same element type as the source
+        - A total number of elements equal to the product of `sizes`. 
+        - A layout that matches the access pattern defined by `offsets`, `sizes`, and `strides`, and does not access out-of-bounds data in the source
+
+    Example: 
+        %1 = allo.transform_layout %0 offsets = [0, 0, 0, 0] sizes = [4, 4, 4, 4] strides = [64, 4, 16, 1] : memref<16x16xi16> -> memref<16x16xi16>
+
+        This creates a 4D logical view of the original 2D memref of shape [16, 16]. The interpretation is:
+        - The original 2D data is virtually reshaped into 4 dimensions: [4, 4, 4, 4]
+            - `offsets = [0, 0, 0, 0]`: starts at the origin
+            - `sizes = [4, 4, 4, 4]`: the result is a 4D (4x4x4x4) logical view
+            - `strides = [64, 4, 16, 1]`:
+                - moving 1 step in the first dimension jumps 64 elements in original memory
+                - second dimension jumps 4
+                - third dimension jumps 16
+                - fourth dimension is contiguous (stride 1)
+        Even though the logical shape is 4D, the result memref type is still `memref<16x16xi16>`, 
+        which is valid because the element number matches.
+  }];
+
+  let arguments = (ins
+    AnyStaticShapeMemRef:$source,
+    DenseI64ArrayAttr:$offsets,
+    DenseI64ArrayAttr:$sizes,
+    DenseI64ArrayAttr:$strides
+  );
+
+  let results = (outs AnyStaticShapeMemRef:$result);
+
+  let assemblyFormat = [{
+    $source `offsets` `=` $offsets
+            `sizes` `=` $sizes
+            `strides` `=` $strides
+            attr-dict `:` type($source) `->` type($result)
+  }];
+}
+
 #endif // ALLO_OPS

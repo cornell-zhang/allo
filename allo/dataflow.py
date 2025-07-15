@@ -1,9 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments
 
 import functools
-
+import os
 from ._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -12,15 +12,18 @@ from ._mlir.ir import (
     StringAttr,
     FunctionType,
     MemRefType,
+    Type,
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_df_kernels
-from .backend.aie import AIEModule
+from .backend.ai_engine import AIEModule
+
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
+from .backend import AIE_MLIRModule
 
 
 def get_pid():
@@ -41,10 +44,12 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s):
+def move_stream_to_interface(s, with_stream_type: bool = False):
     stream_info = {}
     funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
+    if with_stream_type:
+        stream_types_dict: dict[str, Type] = {}
 
     for func in funcs:
         func_name = func.attributes["sym_name"].value
@@ -61,6 +66,8 @@ def move_stream_to_interface(s):
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
                 stream_name = op.attributes["name"].value
+                if with_stream_type and stream_name not in stream_types_dict:
+                    stream_types_dict[stream_name] = op.result.type
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
@@ -113,6 +120,8 @@ def move_stream_to_interface(s):
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
     s.func_args = new_func_args
+    if with_stream_type:
+        return stream_info, stream_types_dict
     return stream_info
 
 
@@ -133,7 +142,7 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, target="vitis_hls"):
+def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = False):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
@@ -220,6 +229,8 @@ def _build_top(s, stream_info, target="vitis_hls"):
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
+    if get_parameter_list:
+        return used_args, s
     return s
 
 
@@ -297,7 +308,15 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
+    use_default_codegen: bool = False,
+    mapping_primitives: list[tuple[str, list]] = None,
+    profile=False,
+    warmup=20,
+    num_iters=100,
 ):
+    assert (
+        not profile or target == "aie-mlir"
+    ), "Profiling is only supported for AIE target"
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
@@ -312,6 +331,57 @@ def build(
         )
         mod.build()
         return mod
+
+    if target == "aie-mlir":
+        global_vars = get_global_vars(func)
+        s = _customize(func, global_vars=global_vars, enable_tensor=False)
+        stream_info, stream_types_dict = move_stream_to_interface(
+            s, with_stream_type=True
+        )
+        parameter_list, s = _build_top(
+            s, stream_info, target="aie", get_parameter_list=True
+        )
+        aie_mod = AIE_MLIRModule(
+            s.module,
+            s.top_func_name,
+            parameter_list,
+            s.func_args,
+            project,
+            stream_info,
+            stream_types_dict,
+            s.ext_libs,
+        )
+        if os.getenv("NPU2") == "1":
+            device_type = "npu2"
+        else:
+            device_type = "npu1_4col"
+        if use_default_codegen:
+            aie_mod.build(
+                device_type=device_type,
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
+        elif mapping_primitives is not None:
+            aie_mod.build_experimental(
+                device_type=device_type,
+                enable_virtual_mapping=True,
+                mapping_primitives=mapping_primitives,
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
+        else:
+            aie_mod.build_experimental(
+                device_type=device_type,
+                enable_virtual_mapping=True,
+                mapping_primitives=[],
+                profile=profile,
+                warmup=warmup,
+                num_iters=num_iters,
+            )
+        return aie_mod
+
     if target == "simulator":
         s = customize(func, opt_default)
         return LLVMOMPModule(s.module, s.top_func_name)

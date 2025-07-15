@@ -40,6 +40,7 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
+from ..backend.experimental.external_kernel import ExternalModule
 
 
 # pylint: disable=too-many-public-methods
@@ -859,6 +860,12 @@ class TypeInferer(ASTVisitor):
             new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # HLS IP, suppose it does not have return values
+                # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                node.shape = None
+                node.dtype = None
+                return node
+            if isinstance(obj, ExternalModule):
+                # AIE external kernel, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
                 node.shape = None
                 node.dtype = None

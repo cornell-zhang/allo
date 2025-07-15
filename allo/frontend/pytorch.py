@@ -63,6 +63,9 @@ def from_pytorch(
     for name, param in gm.named_parameters():
         new_name = "g_" + name.replace(".", "_")
         global_vars.update({new_name: param.detach().numpy()})
+    for name, buf in gm.named_buffers():
+        new_name = "gb_" + name.replace(".", "_")
+        global_vars.update({new_name: buf.detach().numpy()})
 
     builder = TorchBuilder(gm, example_inputs, leaf_modules)
     code = builder.build()
@@ -94,6 +97,7 @@ class TorchBuilder:
         self.leaf_modules = leaf_modules
         self.input_args = []
         self.named_params = dict(gm.named_parameters())
+        self.named_buffers = dict(gm.named_buffers())
         self.subfunctions = []
         self.output = []
         self.composition = []
@@ -137,6 +141,14 @@ class TorchBuilder:
             for name, param in self.named_params.items():
                 new_name = name.replace(".", "_")
                 res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+        if self.named_buffers:
+            for name, buf in self.named_buffers.items():
+                new_name = name.replace(".", "_")
+                if buf.shape:
+                    shape_str = ", ".join([str(s) for s in buf.shape])
+                    res += f"    {new_name}: float32[{shape_str}] = gb_{new_name}\n"
+                else:
+                    res += f"    {new_name}: float32 = gb_{new_name}\n"
         # function body
         for line in self.code:
             res += f"    {line}\n"
@@ -170,8 +182,13 @@ class TorchBuilder:
         op = {
             torch.nn.Linear: "linear",
             torch.nn.Dropout: "identity",
+            torch.nn.ReLU: "relu",
             torch.nn.GELU: "gelu",
             torch.nn.LayerNorm: "layernorm",
+            torch.nn.Conv2d: "conv2d",
+            torch.nn.MaxPool2d: "maxpool2d",
+            torch.nn.AvgPool2d: "avgpool2d",
+            torch.nn.BatchNorm2d: "batchnorm2d",
         }.get(type(module), None)
         if self.leaf_modules:
             for leaf_module in self.leaf_modules:
@@ -441,3 +458,138 @@ class TorchBuilder:
         if src not in self.subfunctions:
             self.subfunctions.append(src)
         return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
+
+    def build_conv2d(self, node):
+        # The current implementation only supports conv2d with bias, dialation=1, shape = 4
+        module = self.get_module(node.target)
+        target_name = node.target.replace(".", "_")
+        inp = get_var_name(node.args[0])
+        weight = get_var_name(target_name + "_weight")
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+
+        has_bias = hasattr(module, "bias") and module.bias is not None
+        bias = get_var_name(target_name + "_bias") if has_bias else None
+        padding = module.padding
+        stride = module.stride
+        dilation = module.dilation
+
+        out_shape = tuple(node.meta["tensor_meta"].shape)
+        weight_shape = tuple(self.named_params[f"{str(node.target)}.weight"].shape)
+
+        if len(input_shape) == 4:
+            B, Cin, H, W = input_shape  # (B, Cin, H, W)
+            B, Cout, Oh, Ow = out_shape  # (B, Cout, Oh, Ow)
+            _, Cin, Kh, Kw = weight_shape  # (Cout, Cin/groups, Kh, Kw)
+
+            name_id = self.get_unique_id("conv2d")
+
+            self.composition.append(
+                (
+                    "conv2d",
+                    name_id,
+                    [
+                        float32,
+                        B,
+                        Cin,
+                        Cout,
+                        H,
+                        W,
+                        Kh,
+                        Kw,
+                        Oh,
+                        Ow,
+                        stride[0],
+                        stride[1],
+                        padding[0],
+                        padding[1],
+                    ],
+                )
+            )
+            if dilation != (1, 1):
+                raise NotImplementedError(
+                    f"Unsupported conv2d with dilation: {dilation}"
+                )
+
+            if has_bias:
+                return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {stride[0]}, {stride[1]}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
+            raise NotImplementedError("Unsupported conv2d without bias")
+        raise NotImplementedError(f"Unsupported shape for conv: {input_shape}")
+
+    def build_maxpool2d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+
+        kernel_size = module.kernel_size
+        stride = module.stride
+        padding = module.padding
+
+        out_shape = tuple(node.meta["tensor_meta"].shape)
+
+        if len(input_shape) == 4:
+            B, C, H, W = input_shape
+            B, C, Oh, Ow = out_shape
+            K = kernel_size
+            name_id = self.get_unique_id("maxpool2d")
+
+            self.composition.append(
+                (
+                    "maxpool2d",
+                    name_id,
+                    [float32, B, C, H, W, K, Oh, Ow, stride, padding],
+                )
+            )
+
+            return f'{node.name} = nn.maxpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
+        raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
+
+    def build_avgpool2d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+
+        kernel_size = module.kernel_size
+        stride = module.stride
+        padding = module.padding
+
+        out_shape = tuple(node.meta["tensor_meta"].shape)
+
+        if len(input_shape) == 4:
+            B, C, H, W = input_shape
+            B, C, Oh, Ow = out_shape
+            K = kernel_size
+            name_id = self.get_unique_id("avgpool2d")
+
+            self.composition.append(
+                (
+                    "avgpool2d",
+                    name_id,
+                    [float32, B, C, H, W, K, Oh, Ow, stride, padding],
+                )
+            )
+
+            return f'{node.name} = nn.avgpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
+        raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
+
+    def build_batchnorm2d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+        target_name = node.target.replace(".", "_")
+
+        gamma = get_var_name(target_name + "_weight")
+        beta = get_var_name(target_name + "_bias")
+        eps = module.eps
+
+        running_mean = get_var_name(target_name + "_running_mean")
+        running_var = get_var_name(target_name + "_running_var")
+
+        if len(input_shape) == 4:
+            B, C, H, W = input_shape
+
+            name_id = self.get_unique_id("batchnorm2d")
+
+            self.composition.append(("batchnorm2d", name_id, [float32, B, C, H, W]))
+
+            return f'{node.name} = nn.batchnorm2d[float32, {B}, {C}, {H}, {W}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
+        raise NotImplementedError(f"Unsupported shape for batchnorm2d: {input_shape}")

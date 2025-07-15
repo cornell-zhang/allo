@@ -30,6 +30,14 @@ from .nn import (
     schedule_layernorm,
     GeLU,
     schedule_gelu,
+    conv2d,
+    schedule_conv2d,
+    maxpool2d,
+    schedule_maxpool2d,
+    avgpool2d,
+    schedule_avgpool2d,
+    batchnorm2d,
+    schedule_batchnorm2d,
 )
 
 KERNEL2SCHEDULE = {}
@@ -53,5 +61,9 @@ KERNEL2SCHEDULE.update(
         softmax: schedule_softmax,
         layer_norm: schedule_layernorm,
         GeLU: schedule_gelu,
+        conv2d: schedule_conv2d,
+        maxpool2d: schedule_maxpool2d,
+        avgpool2d: schedule_avgpool2d,
+        batchnorm2d: schedule_batchnorm2d,
     }
 )
