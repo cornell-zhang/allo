@@ -1283,7 +1283,7 @@ class Schedule:
                 use_memory=use_memory,
                 mode=mode,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls", "catapult"}:
             match target:
                 case "vitis_hls":
                     platform = "vitis_hls"
@@ -1293,6 +1293,8 @@ class Schedule:
                     platform = "intel_hls"
                 case "pynq":
                     platform = "pynq"
+                case "catapult":
+                    platform = "catapult"
                 case _:
                     platform = "vivado_hls"
             return HLSModule(

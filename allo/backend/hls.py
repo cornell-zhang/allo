@@ -238,6 +238,8 @@ class HLSModule:
                 success = allo_d.emit_thls(self.module, buf)
             case "intel_hls":
                 success = allo_d.emit_ihls(self.module, buf)
+            case "catapult":
+                success = allo_d.emit_catapult(self.module, buf)
             case _:
                 # wrap_io=True has already linearized array indexing in
                 # generate_input_output_buffers, so we don't need to do it again
@@ -258,7 +260,7 @@ class HLSModule:
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq", "catapult"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
@@ -337,6 +339,13 @@ class HLSModule:
                     self.module,
                     num_output_args=self.num_output_args,
                 )
+            elif self.platform == "catapult":
+                assert self.mode in {
+                    "csim",
+                    "csyn",
+                }, "Invalid mode for catapult"
+                self.args = []
+                self.host_code = ""
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
