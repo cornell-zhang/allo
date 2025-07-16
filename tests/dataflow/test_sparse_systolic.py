@@ -17,6 +17,7 @@ NZ = int(K // 2)
 def top():
     fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
     fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
+    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
     def semm(A: float32[M, NZ], A_in: int32[M, NZ], B: float32[K, N], C: float32[M, N]):
@@ -30,11 +31,14 @@ def top():
                 fifo_A[i, j + 1].put(A[i - 1, knz])
                 fifo_idx[i, j + 1].put(A_in[i - 1, knz])
         with allo.meta_elif(i == 0):
-            # j > 0
             pass
+            # for k in range(K):
+            #     fifo_B[i + 1, j].put(B[k, j - 1])
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             pass
+            # for k in range(K):
+            #     b: float32 = fifo_B[i, j].get()
         with allo.meta_elif(j == N + 1 and i > 0):
             for k in range(NZ):
                 a: float32 = fifo_A[i, j].get()
@@ -46,6 +50,7 @@ def top():
                 a: float32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
                 b: float32 = B[idx, j - 1]
+                # b: float32 = fifo_B[idx, j - 1].get()
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_idx[i, j + 1].put(idx)
@@ -115,10 +120,10 @@ def test_sparse_systolic():
     if hls.is_available("vitis_hls"):
         s = df.customize(top)
 
-        # s.partition("top:A", dim=1, factor=2)
-        # s.partition("top:A_in", dim=1, factor=2)
-        # s.partition("top:B", dim=2, factor=2)
-        # s.partition("top:C", dim=0, factor=2)
+        s.partition("top:A", dim=1, factor=2)
+        s.partition("top:A_in", dim=1, factor=2)
+        s.partition("top:B", dim=0, factor=2)
+        s.partition("top:C", dim=0, factor=2)
         # s.pipeline("semm", initiation_interval=1)
         # mod = s.build(target="vitis_hls", mode="csyn", project="ssemmscyn.prj")
         # mod()
