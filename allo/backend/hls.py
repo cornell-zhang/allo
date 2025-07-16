@@ -122,6 +122,47 @@ open_solution "solution1"
     return out_str
 
 
+def codegen_tcl_catapult(top, configs):
+    """Generate TCL script for Catapult HLS synthesis"""
+    frequency = configs["frequency"]
+    # Calculate clock period in nanoseconds
+    clock_period = 1000 / frequency  # MHz to ns
+    
+    out_str = f"""# Project root directory
+set sfd [file dir [info script]]
+set can_simulate 0
+
+# Create new solution
+solution new -state initial
+solution options defaults
+solution options set /Input/CppStandard c++11
+
+# Add source files
+solution file add "$sfd/kernel.cpp" -type C++
+
+# Set top-level design function
+directive set -DESIGN_HIERARCHY {top}
+
+# Set clock constraints
+directive set -CLOCKS {{clk {{-CLOCK_PERIOD {clock_period:.1f}}}}}
+
+# Set output language before extraction
+solution options set /Output/OutputVerilog true
+solution options set /Output/OutputVHDL false
+
+# Synthesis flow up to RTL generation
+go analyze
+go compile
+solution library add nangate-45nm_beh
+solution library add ccs_sample_mem
+go assembly
+go extract
+
+exit
+"""
+    return out_str
+
+
 def copy_ext_libs(ext_libs, project):
     for ext_lib in ext_libs:
         impl_path = ext_lib.impl
@@ -263,7 +304,10 @@ class HLSModule:
             if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq", "catapult"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
-                    outfile.write(codegen_tcl(top_func_name, configs))
+                    if platform == "catapult":
+                        outfile.write(codegen_tcl_catapult(top_func_name, configs))
+                    else:
+                        outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
             if self.platform == "vitis_hls":
                 assert self.mode in {
@@ -731,5 +775,25 @@ class HLSModule:
             )
             args[-1][:] = result
             return
+        elif self.platform == "catapult":
+            if self.mode == "csyn":
+                cmd = f"cd {self.project}; make catapult"
+                assert len(args) == 0, "csyn mode does not need to pass in arguments"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project with Catapult HLS ..."
+                )
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design with Catapult HLS")
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Catapult HLS synthesis completed successfully"
+                )
+                return
+            else:
+                raise RuntimeError(f"Catapult backend currently only supports 'csyn' mode, got '{self.mode}'")
         else:
             raise RuntimeError("Not implemented")
