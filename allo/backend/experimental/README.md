@@ -390,7 +390,6 @@ Trace-based profiling requires configuring the compute tile and routing the trac
 This places additional pressure on the DMA ports of the shim tile, making it unsuitable for large-scale computation tasks where DMA bandwidth is already a constrained resource. 
 As a result, trace support is currently provided only for builds targeting small-scale computations.
 
-
 To use trace, users can configure the options in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
 def build(
@@ -430,7 +429,7 @@ Some of the useful parsers can be found in the `mlir-aie` repository. For exampl
 > **Note:** the unit of timing reported in perfetto should be interpreted as cycle count (check [this issue](https://github.com/Xilinx/mlir-aie/issues/2214) for more information).
 
 ##### Example
-
+Tracing tile `(0, 0)` of the `allo.dataflow.kernel` named `gemm`.
 ```python
 TyI, TyO = int16, int32
 M, N, K = 32, 32, 32
@@ -460,6 +459,31 @@ np_C = A.astype(np.int32) @ B.astype(np.int32)
 np.testing.assert_allclose(C, np_C, atol=1e-5)
 print("PASSED!")
 ```
+##### Using Trace to Measure the Performance of External Kernels
+Trace is useful for evaluating the performance of an external kernel running on a single compute tile. 
+This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](./kernels/).
+
+In this case, due to the relatively small computation scale, the difference between the [vectorized](./kernels/conv_small_vector.cc) and [scalar](./kernels/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
+Instead, one can insert event markers, such as `event0();` and `event1();`, directly into the external C++ code and run the trace on the compute tile executing the external kernel. Sample code can be found in [`test_trace_conv.py`](../../../tests/dataflow/aie/test_trace_conv.py).
+
+Process the generated trace (in `top.prj/trace.txt`) with [`parse_trace.py`](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/parse_trace.py).
+```bash
+# sample processing cmds
+cd top.prj
+path/to/parse_trace.py --filename trace.txt --mlir top.mlir --colshift 1 > trace_scalar.json
+```
+And use [Perfetto](http://ui.perfetto.dev) to view the timeline.
+The timeline view reveals a clear performance difference between the two external kernel versions.
+
+- scalar version
+  <img src="plots/scalar_conv.png" style="zoom:60%;" />
+- vector version
+  <img src="plots/vector_conv.png" style="zoom:60%;" />
+
+From the timeline screenshot, you can observe a clear difference in the computation cycle count between the two kernels within the regions marked by the event markers. 
+Additionally, you can see that the vectorized version makes use of vector instructions, which are absent in the scalar version.
+
+If you need more precise cycle counts or additional profiling information, you can write your own processing script to analyze the generated JSON file, or directly parse the `trace.txt`.
 
 #### Support for user-defined external kernels
 
