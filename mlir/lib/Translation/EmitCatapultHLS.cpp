@@ -186,7 +186,21 @@ private:
 // Essential function implementations - simplified for Catapult HLS
 //===----------------------------------------------------------------------===//
 
-// Simplified implementations of essential functions
+void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
+  auto rank = emitNestedLoopHead(op->getResult(0));
+  indent();
+  Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result, rank);
+  os << " = ";
+  emitValue(op->getOperand(0), rank);
+  os << " " << syntax << " ";
+  emitValue(op->getOperand(1), rank);
+  os << ";";
+  emitInfoAndNewLine(op);
+  emitNestedLoopTail(rank);
+}
+
 void ModuleEmitter::emitBlock(Block &block) {
   for (auto &op : block) {
     if (auto forOp = dyn_cast<AffineForOp>(op)) {
@@ -194,34 +208,41 @@ void ModuleEmitter::emitBlock(Block &block) {
       if (!isDeclared(indVar)) {
         addName(indVar, false);
       }
+      indent();
       os << "for (int " << getName(indVar) << " = ";
       os << "0; " << getName(indVar) << " < ";
       os << "1024; " << getName(indVar) << "++) {\n";
       addIndent();
       emitBlock(*forOp.getBody());
       reduceIndent();
+      indent();
       os << "}\n";
     } else if (auto storeOp = dyn_cast<AffineStoreOp>(op)) {
-      os << getName(storeOp.getMemRef()) << "[";
-      os << getName(storeOp.getIndices()[0]) << "] = ";
-      os << getName(storeOp.getValueToStore()) << ";\n";
+      indent();
+      emitValue(storeOp.getMemRef());
+      os << "[";
+      emitValue(storeOp.getIndices()[0]);
+      os << "] = ";
+      emitValue(storeOp.getValueToStore());
+      os << ";";
+      emitInfoAndNewLine(&op);
     } else if (auto loadOp = dyn_cast<AffineLoadOp>(op)) {
-      auto result = loadOp.getResult();
-      if (!isDeclared(result)) {
-        addName(result, false);
-      }
-      os << "int " << getName(result) << " = ";
-      os << getName(loadOp.getMemRef()) << "[";
-      os << getName(loadOp.getIndices()[0]) << "];\n";
+      auto rank = emitNestedLoopHead(loadOp.getResult());
+      indent();
+      emitValue(loadOp.getResult(), rank);
+      os << " = ";
+      emitValue(loadOp.getMemRef(), rank);
+      os << "[";
+      emitValue(loadOp.getIndices()[0], rank);
+      os << "];";
+      emitInfoAndNewLine(&op);
+      emitNestedLoopTail(rank);
     } else if (auto addOp = dyn_cast<arith::AddIOp>(op)) {
-      auto result = addOp.getResult();
-      if (!isDeclared(result)) {
-        addName(result, false);
-      }
-      auto lhs = addOp.getLhs();
-      auto rhs = addOp.getRhs();
-      os << "int " << getName(result) << " = ";
-      os << getName(lhs) << " + " << getName(rhs) << ";\n";
+      emitBinary(&op, "+");
+    } else if (auto subOp = dyn_cast<arith::SubIOp>(op)) {
+      emitBinary(&op, "-");
+    } else if (auto mulOp = dyn_cast<arith::MulIOp>(op)) {
+      emitBinary(&op, "*");
     }
     // Add more operations as needed
   }
@@ -233,11 +254,25 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
 }
 
 void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr, std::string name) {
-  if (isPtr) os << "*";
-  if (name.empty()) {
-    os << getTypeName(val.getType()) << " " << addName(val, false);
+  assert(!(rank && isPtr) && "should be either an array or a pointer.");
+
+  // Value has been declared before or is a constant number.
+  if (isDeclared(val)) {
+    os << getName(val);
+    for (unsigned i = 0; i < rank; ++i)
+      os << "[iv" << i << "]";
+    return;
+  }
+
+  os << getTypeName(val.getType()) << " ";
+
+  if (name == "") {
+    // Add the new value to nameTable and emit its name.
+    os << addName(val, isPtr);
+    for (unsigned i = 0; i < rank; ++i)
+      os << "[iv" << i << "]";
   } else {
-    os << getTypeName(val.getType()) << " " << name;
+    os << addName(val, isPtr, name);
   }
 }
 
