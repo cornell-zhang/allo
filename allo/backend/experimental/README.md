@@ -368,6 +368,38 @@ C = np.zeros((M, N)).astype(np.int32)
 tmp_C = np.zeros((M, N)).astype(np.int32)
 mod(A, B, C)
 ```
+#### Profiling with Trace
+
+##### Example
+```python
+TyI, TyO = int16, int32
+M, N, K = 32, 32, 32
+P0, P1 = 2, 4
+
+@df.region()
+def top():
+    @df.kernel(mapping=[P0, P1])
+    def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+        C[:, :] = allo.matmul(A, B)
+
+# trace tile (0, 0) of gemm df.kernel
+mod = df.build(
+    top,
+    target="aie-mlir",
+    use_default_codegen=True,
+    trace=[
+        ("gemm", (0, 0)),
+    ],
+    trace_size=65536,
+)
+A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+C = np.zeros((M, N)).astype(np.int32)
+mod(A, B, C)
+np_C = A.astype(np.int32) @ B.astype(np.int32)
+np.testing.assert_allclose(C, np_C, atol=1e-5)
+print("PASSED!")
+```
 
 #### Support for user-defined external kernels
 

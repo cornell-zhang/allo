@@ -1864,6 +1864,8 @@ class CodeGenerator:
         inputs,
         outputs,
         use_external_kernels: bool,
+        trace: list[tuple[str, tuple[int, ...]]],
+        trace_size: int,
     ) -> aie_ir.Module:
         """
         Generate an AIE MLIR module.
@@ -1902,10 +1904,15 @@ class CodeGenerator:
                     break
             assert not end_op is None
 
+            available_shim_ports: dict[str, list[int]] = {}
             with aie_ir.InsertionPoint(end_op):
                 # shim tile
                 for shim_id in range(shim_tile_num):
                     self.tile_map[f"shim_{shim_id}"] = aie_d.TileOp(col=shim_id, row=0)
+                    available_shim_ports[f"shim_{shim_id}"] = [
+                        Config.SHIM_MAX_SEND,
+                        Config.SHIM_MAX_RECV,
+                    ]
                 # mem tiles
                 for mem_id in range(mem_tile_num):
                     self.tile_map[f"mem_{mem_id}"] = aie_d.TileOp(col=mem_id, row=1)
@@ -1946,6 +1953,14 @@ class CodeGenerator:
                                     if io == "in"
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
+                                if io == "in":
+                                    available_shim_ports[f"shim_{dma_tile.shim_id}"][
+                                        0
+                                    ] -= 1
+                                else:
+                                    available_shim_ports[f"shim_{dma_tile.shim_id}"][
+                                        1
+                                    ] -= 1
                                 idx_ = next(
                                     (
                                         i
@@ -2060,6 +2075,59 @@ class CodeGenerator:
                             func_core, func, self.core_func_args[func_name_w_id]
                         )
 
+                @dataclass
+                class TraceInfo:
+                    traced_tile_idx: tuple[int]
+                    shim_tile_idx: tuple[int]
+                    packet_id: int
+
+                total_transfer = 0
+                for tiles in io_mapping.values():
+                    total_transfer += len(tiles)
+                assert (
+                    total_transfer <= Config.DMA_MAX_BDS
+                ), "Exceed total buffer descriptor number."
+                enabled_trace: list[TraceInfo] = []
+                if trace is not None and total_transfer < Config.DMA_MAX_BDS:
+                    trace_transfer_shim_tile = None
+                    # find one available shim dma port:
+                    for shim_tile_name, ports_num in available_shim_ports.items():
+                        # fixme: can be relaxed
+                        if ports_num[1] == Config.SHIM_MAX_RECV:
+                            trace_transfer_shim_tile = self.tile_map[shim_tile_name]
+                            break
+                    packet_id = 0
+                    if trace_transfer_shim_tile is not None:
+                        for traced_tile in trace:
+                            packet_id += 1
+                            if packet_id + total_transfer > Config.DMA_MAX_BDS:
+                                break
+                            func_name = (
+                                traced_tile[0]
+                                + f"_{"_".join(map(str, traced_tile[1]))}"
+                            )
+                            compute_tile = self.tile_map[f"compute_{func_name}"]
+                            aie_d.packetflow(
+                                packet_id,
+                                compute_tile,
+                                9,  # WireBundle: Trace = 9
+                                0,
+                                trace_transfer_shim_tile,
+                                1,  # WireBundle: DMA = 1
+                                1,
+                                True,
+                            )
+                            enabled_trace.append(
+                                TraceInfo(
+                                    (compute_tile.col.value, compute_tile.row.value),
+                                    (
+                                        trace_transfer_shim_tile.col.value,
+                                        trace_transfer_shim_tile.row.value,
+                                    ),
+                                    packet_id,
+                                )
+                            )
+
                 # runtime sequence
                 runtime_seq = aiex_d.RuntimeSequenceOp()
                 runtime_args = []
@@ -2077,6 +2145,117 @@ class CodeGenerator:
 
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
+                    for trace_info in enabled_trace:
+                        aiex_d.npu_write32(
+                            213200,
+                            2038038528,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            213204,
+                            trace_info.packet_id,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            213216,
+                            1260724769,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            213220,
+                            439168079,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            261888,
+                            289,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            261892,
+                            0,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            212992,
+                            31232,
+                            column=trace_info.traced_tile_idx[0],
+                            row=trace_info.traced_tile_idx[1],
+                        )
+                        aiex_d.npu_writebd(
+                            bd_id=Config.DMA_MAX_BDS - trace_info.packet_id,
+                            buffer_length=trace_size,
+                            buffer_offset=0,
+                            enable_packet=1,
+                            out_of_order_id=0,
+                            packet_id=trace_info.packet_id,
+                            packet_type=0,
+                            column=trace_info.shim_tile_idx[0],
+                            d0_size=0,
+                            d0_stride=0,
+                            d0_zero_after=0,
+                            d0_zero_before=0,
+                            d1_size=0,
+                            d1_stride=0,
+                            d1_zero_after=0,
+                            d1_zero_before=0,
+                            d2_size=0,
+                            d2_stride=0,
+                            d2_zero_after=0,
+                            d2_zero_before=0,
+                            burst_length=64,
+                            iteration_current=0,
+                            iteration_size=0,
+                            iteration_stride=0,
+                            lock_acq_enable=0,
+                            lock_acq_id=0,
+                            lock_acq_val=0,
+                            lock_rel_id=0,
+                            lock_rel_val=0,
+                            next_bd=0,
+                            row=0,
+                            use_next_bd=0,
+                            valid_bd=1,
+                        )
+                        aiex_d.npu_address_patch(
+                            33554432 * trace_info.shim_tile_idx[0]
+                            + 119268
+                            - 32 * (trace_info.packet_id - 1),
+                            len(self.global_inputs) + len(self.global_outputs),
+                            0,
+                        )
+                        aiex_d.npu_write32(
+                            119308,
+                            Config.DMA_MAX_BDS - trace_info.packet_id,
+                            column=trace_info.shim_tile_idx[0],
+                            row=trace_info.shim_tile_idx[1],
+                        )
+                    if len(enabled_trace) > 0:
+                        aiex_d.npu_write32(
+                            212992,
+                            32512,
+                            column=enabled_trace[0].shim_tile_idx[0],
+                            row=enabled_trace[0].shim_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            213068,
+                            127,
+                            column=enabled_trace[0].shim_tile_idx[0],
+                            row=enabled_trace[0].shim_tile_idx[1],
+                        )
+                        aiex_d.npu_write32(
+                            213000,
+                            127,
+                            column=enabled_trace[0].shim_tile_idx[0],
+                            row=enabled_trace[0].shim_tile_idx[1],
+                        )
+
                     dma_tiles: list = []
                     bd_cnt = 0
                     for i in range(len(self.global_inputs) + len(self.global_outputs)):
