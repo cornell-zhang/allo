@@ -6,7 +6,8 @@ import allo.dataflow as df
 import numpy as np
 
 Ty = int16
-M, N= 32, 32
+M, N = 32, 32
+
 
 @df.region()
 def top():

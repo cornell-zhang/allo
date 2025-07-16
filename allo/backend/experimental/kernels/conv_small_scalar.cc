@@ -1,4 +1,7 @@
-//===- conv_small.cc ------------------------------------*- C++ -*-===//
+/*
+ * Copyright Allo authors. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #define NOCPP
 

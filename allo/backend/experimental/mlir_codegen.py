@@ -1951,7 +1951,9 @@ class CodeGenerator:
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
                                 if io == "out":
-                                    available_shim_for_trace.remove(f"shim_{dma_tile.shim_id}")
+                                    available_shim_for_trace.remove(
+                                        f"shim_{dma_tile.shim_id}"
+                                    )
                                 idx_ = next(
                                     (
                                         i
@@ -2080,8 +2082,14 @@ class CodeGenerator:
                 ), "Exceed total buffer descriptor number."
                 enabled_trace: list[TraceInfo] = []
                 # fixme: can be relaxed
-                if trace is not None and total_transfer < Config.DMA_MAX_BDS and len(available_shim_for_trace) > 0:
-                    trace_transfer_shim_tile = self.tile_map[next(iter(available_shim_for_trace))]
+                if (
+                    trace is not None
+                    and total_transfer < Config.DMA_MAX_BDS
+                    and len(available_shim_for_trace) > 0
+                ):
+                    trace_transfer_shim_tile = self.tile_map[
+                        next(iter(available_shim_for_trace))
+                    ]
                     packet_id = 0
                     for traced_tile in trace:
                         packet_id += 1
@@ -2089,7 +2097,7 @@ class CodeGenerator:
                             break
                         func_name = (
                             traced_tile[0]
-                            + f"_{"_".join(map(str, traced_tile[1]))}"
+                            + f"_{'_'.join([str(x) for x in traced_tile[1]])}"
                         )
                         compute_tile = self.tile_map[f"compute_{func_name}"]
                         aie_d.packetflow(
