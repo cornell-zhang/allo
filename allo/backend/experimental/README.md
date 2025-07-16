@@ -2,6 +2,14 @@
 <!--- SPDX-License-Identifier: Apache-2.0  -->
 
 # Experimental MLIR-AIE Codegen
+- [Environment Setup](#environment-setup)
+- [Usage](#usage)
+    - [Basic Examples](#example)
+    - [New Features](#new-feature)
+        - [Timing-based Profiling](#profiling)
+        - [Tracing-based Profiling](#profiling-with-trace)
+        - [Customized External Kernel](#support-for-user-defined-external-kernels)
+
 ## Environment Setup
 Please follow the [Getting Started](https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai-on-linux) guide to install MLIR-AIE.
 
@@ -408,6 +416,18 @@ Please ensure to set `use_default_codegen=True`. This flag use the default aie c
 **Related Parameters:**
 - `trace` is a list of tiles from the `allo.dataflow.kernel` users wishes to trace. Each element consists of the kernel’s name as a string and a tuple representing the tile index. Note that this index does not necessarily correspond to the final physical compute tile index in the 2D AIE array. Also note that due to resource constraints, tracing is enabled on a best-effort basis. If resources such as DMA ports or buffer descriptors are limited, tracing may not be applied to all specified tiles in the `trace` list.
 - `trace_size` specifies the size of the trace buffer. If a large amount of trace information is expected, users may increase trace_size accordingly.
+
+After `build`, running the generated module will produce a file named `trace.txt` under the `project` directory. 
+
+The `trace.txt` file should contain multiple lines of non-zero values.
+If all entries are zero, please first check whether the `top.mlir` file contains any `aie.packet_flow` operations.
+- If not, it indicates that tracing for the specified tiles was skipped due to resource constraints.
+- If such operations are present but entries in `trace.txt` are all zero, please submit a bug report.
+
+Users can use multiple tool to parse the `trace.txt` and convert it into a more human-readable format. 
+Some of the useful parsers can be found in the `mlir-aie` repository. For example, [`parse_trace.py`](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/parse_trace.py) parses it into a json file and users can use [Perfetto](http://ui.perfetto.dev) to view the timeline (check [this link](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/README.md#trace-parser-parse_tracepy) for more details).
+
+> **Note:** the unit of timing reported in perfetto should be interpreted as cycle count (check [this issue](https://github.com/Xilinx/mlir-aie/issues/2214) for more information).
 
 ##### Example
 
