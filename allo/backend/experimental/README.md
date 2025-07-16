@@ -307,7 +307,7 @@ print("PASSED!")
 
 ### New Feature
 #### Profiling
-A new profiling feature has been added to help measure the performance of the module during execution. 
+A new timing-based profiling feature has been added to help measure the performance of the module during execution. 
 
 To enable profiling, use the `do_profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
@@ -320,13 +320,17 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
+    use_default_codegen: bool = False,
+    mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
     warmup=20,
     num_iters=100,
-):
+    trace: list[tuple[str, tuple[int, ...]]] = None,
+    trace_size: int = 4096,
+)
 ```
 
-**New Parameters:**
+**Related Parameters:**
 
 - `profile` (`bool`): Set to `True` to enable profiling. When enabled, the module performs extra warm-up and test iterations.
 - `warmup` (`int`): Number of initial iterations to warm up the system. These iterations are **excluded** from the timing measurements. Default is `20`.
@@ -369,8 +373,44 @@ tmp_C = np.zeros((M, N)).astype(np.int32)
 mod(A, B, C)
 ```
 #### Profiling with Trace
+AIEs are equipped with tracing hardware that provides a cycle accurate view of hardware events. 
+This enables more precise profiling, especially for analyzing the performance of computation on each compute tile (AIE) and the associated data transfers.
+
+However, configuring the trace unit can be complex. This new feature simplifies the process, making trace-based profiling easier to use.
+
+Trace-based profiling requires configuring the compute tile and routing the trace data as packets through the shim tile to external memory. 
+This places additional pressure on the DMA ports of the shim tile, making it unsuitable for large-scale computation tasks where DMA bandwidth is already a constrained resource. 
+As a result, trace support is currently provided only for builds targeting small-scale computations.
+
+
+To use trace, users can configure the options in the `build` method in [`dataflow.py`](../../dataflow.py):
+```python
+def build(
+    func,
+    target="vitis_hls",
+    mode="csim",
+    project="top.prj",
+    configs=None,
+    wrap_io=True,
+    opt_default=True,
+    enable_tensor=False,
+    use_default_codegen: bool = False,
+    mapping_primitives: list[tuple[str, list]] = None,
+    profile=False,
+    warmup=20,
+    num_iters=100,
+    trace: list[tuple[str, tuple[int, ...]]] = None,
+    trace_size: int = 4096,
+):
+```
+Please ensure to set `use_default_codegen=True`. This flag use the default aie codegen for small computation tasks without virtual mapping.
+
+**Related Parameters:**
+- `trace` is a list of tiles from the `allo.dataflow.kernel` users wishes to trace. Each element consists of the kernel’s name as a string and a tuple representing the tile index. Note that this index does not necessarily correspond to the final physical compute tile index in the 2D AIE array. Also note that due to resource constraints, tracing is enabled on a best-effort basis. If resources such as DMA ports or buffer descriptors are limited, tracing may not be applied to all specified tiles in the `trace` list.
+- `trace_size` specifies the size of the trace buffer. If a large amount of trace information is expected, users may increase trace_size accordingly.
 
 ##### Example
+
 ```python
 TyI, TyO = int16, int32
 M, N, K = 32, 32, 32
@@ -467,7 +507,7 @@ extern "C" {
 ```
 > ⚠️ **Note:** External kernel function arguments must have fully specified constant shapes. Pointer types are not allowed.
 
-We can create an [ExternalModule](external_kernel.py) to wrap the kernel and use it in computation on AIE core.
+Users can create an [ExternalModule](external_kernel.py) to wrap the kernel and use it in computation on AIE core.
 
 Register the `ExternalModule` in the context.
 ```python

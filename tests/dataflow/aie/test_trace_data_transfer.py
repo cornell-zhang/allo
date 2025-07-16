@@ -21,7 +21,7 @@ def top():
         B[:, :] = pipe.get()
 
 
-def test_cooperative_gemm():
+def trace_data_transfer():
     mod = df.build(
         top,
         target="aie-mlir",
@@ -37,4 +37,4 @@ def test_cooperative_gemm():
 
 
 if __name__ == "__main__":
-    test_cooperative_gemm()
+    trace_data_transfer()

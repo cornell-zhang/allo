@@ -1904,15 +1904,12 @@ class CodeGenerator:
                     break
             assert not end_op is None
 
-            available_shim_ports: dict[str, list[int]] = {}
+            available_shim_for_trace: set[str] = set()
             with aie_ir.InsertionPoint(end_op):
                 # shim tile
                 for shim_id in range(shim_tile_num):
                     self.tile_map[f"shim_{shim_id}"] = aie_d.TileOp(col=shim_id, row=0)
-                    available_shim_ports[f"shim_{shim_id}"] = [
-                        Config.SHIM_MAX_SEND,
-                        Config.SHIM_MAX_RECV,
-                    ]
+                    available_shim_for_trace.add(f"shim_{shim_id}")
                 # mem tiles
                 for mem_id in range(mem_tile_num):
                     self.tile_map[f"mem_{mem_id}"] = aie_d.TileOp(col=mem_id, row=1)
@@ -1953,14 +1950,8 @@ class CodeGenerator:
                                     if io == "in"
                                     else [self.tile_map[f"shim_{dma_tile.shim_id}"]]
                                 )
-                                if io == "in":
-                                    available_shim_ports[f"shim_{dma_tile.shim_id}"][
-                                        0
-                                    ] -= 1
-                                else:
-                                    available_shim_ports[f"shim_{dma_tile.shim_id}"][
-                                        1
-                                    ] -= 1
+                                if io == "out":
+                                    available_shim_for_trace.remove(f"shim_{dma_tile.shim_id}")
                                 idx_ = next(
                                     (
                                         i
@@ -2088,45 +2079,39 @@ class CodeGenerator:
                     total_transfer <= Config.DMA_MAX_BDS
                 ), "Exceed total buffer descriptor number."
                 enabled_trace: list[TraceInfo] = []
-                if trace is not None and total_transfer < Config.DMA_MAX_BDS:
-                    trace_transfer_shim_tile = None
-                    # find one available shim dma port:
-                    for shim_tile_name, ports_num in available_shim_ports.items():
-                        # fixme: can be relaxed
-                        if ports_num[1] == Config.SHIM_MAX_RECV:
-                            trace_transfer_shim_tile = self.tile_map[shim_tile_name]
-                            break
+                # fixme: can be relaxed
+                if trace is not None and total_transfer < Config.DMA_MAX_BDS and len(available_shim_for_trace) > 0:
+                    trace_transfer_shim_tile = self.tile_map[next(iter(available_shim_for_trace))]
                     packet_id = 0
-                    if trace_transfer_shim_tile is not None:
-                        for traced_tile in trace:
-                            packet_id += 1
-                            if packet_id + total_transfer > Config.DMA_MAX_BDS:
-                                break
-                            func_name = (
-                                traced_tile[0]
-                                + f"_{"_".join(map(str, traced_tile[1]))}"
-                            )
-                            compute_tile = self.tile_map[f"compute_{func_name}"]
-                            aie_d.packetflow(
+                    for traced_tile in trace:
+                        packet_id += 1
+                        if packet_id + total_transfer > Config.DMA_MAX_BDS:
+                            break
+                        func_name = (
+                            traced_tile[0]
+                            + f"_{"_".join(map(str, traced_tile[1]))}"
+                        )
+                        compute_tile = self.tile_map[f"compute_{func_name}"]
+                        aie_d.packetflow(
+                            packet_id,
+                            compute_tile,
+                            9,  # WireBundle: Trace = 9
+                            0,
+                            trace_transfer_shim_tile,
+                            1,  # WireBundle: DMA = 1
+                            1,
+                            True,
+                        )
+                        enabled_trace.append(
+                            TraceInfo(
+                                (compute_tile.col.value, compute_tile.row.value),
+                                (
+                                    trace_transfer_shim_tile.col.value,
+                                    trace_transfer_shim_tile.row.value,
+                                ),
                                 packet_id,
-                                compute_tile,
-                                9,  # WireBundle: Trace = 9
-                                0,
-                                trace_transfer_shim_tile,
-                                1,  # WireBundle: DMA = 1
-                                1,
-                                True,
                             )
-                            enabled_trace.append(
-                                TraceInfo(
-                                    (compute_tile.col.value, compute_tile.row.value),
-                                    (
-                                        trace_transfer_shim_tile.col.value,
-                                        trace_transfer_shim_tile.row.value,
-                                    ),
-                                    packet_id,
-                                )
-                            )
+                        )
 
                 # runtime sequence
                 runtime_seq = aiex_d.RuntimeSequenceOp()
