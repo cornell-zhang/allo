@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32, int32, IndexType
+from allo.ir.types import float32, int32, index
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -50,8 +50,8 @@ def top():
                 a: float32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
                 # b: float32 = B[idx, j - 1]
-                # indx: IndexType = IndexType(idx)
-                b: float32 = fifo_B[idx, j - 1].get()
+                idx_index: index = idx
+                b: float32 = fifo_B[idx_index, j - 1].get()
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_idx[i, j + 1].put(idx)
