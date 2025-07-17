@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32, int32
+from allo.ir.types import float32, int32, IndexType
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -32,13 +32,13 @@ def top():
                 fifo_idx[i, j + 1].put(A_in[i - 1, knz])
         with allo.meta_elif(i == 0):
             pass
-            # for k in range(K):
-            #     fifo_B[i + 1, j].put(B[k, j - 1])
+            for k in range(K):
+                fifo_B[i + 1, j].put(B[k, j - 1])
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             pass
-            # for k in range(K):
-            #     b: float32 = fifo_B[i, j].get()
+            for k in range(K):
+                b: float32 = fifo_B[i, j].get()
         with allo.meta_elif(j == N + 1 and i > 0):
             for k in range(NZ):
                 a: float32 = fifo_A[i, j].get()
@@ -49,8 +49,9 @@ def top():
             for k in range(NZ):
                 a: float32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
-                b: float32 = B[idx, j - 1]
-                # b: float32 = fifo_B[idx, j - 1].get()
+                # b: float32 = B[idx, j - 1]
+                # indx: IndexType = IndexType(idx)
+                b: float32 = fifo_B[idx, j - 1].get()
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_idx[i, j + 1].put(idx)
