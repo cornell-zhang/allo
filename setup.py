@@ -89,7 +89,7 @@ if __name__ == "__main__":
         author="Allo Community",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        setup_requires=[],
+        setup_requires=["pybind11>=2.8.0"],
         install_requires=parse_requirements("requirements.txt"),
         packages=find_packages(),
         ext_modules=[CMakeExtension("mlir", sourcedir="mlir")],
