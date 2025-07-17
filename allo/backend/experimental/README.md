@@ -476,9 +476,10 @@ And use [Perfetto](http://ui.perfetto.dev) to view the timeline.
 The timeline view reveals a clear performance difference between the two external kernel versions.
 
 - scalar version
-  <img src="plots/scalar_conv.png" style="zoom:60%;" />
+    ![scalar_conv.png](https://github-production-user-asset-6210df.s3.amazonaws.com/119673518/467667993-e9cb6133-9f93-4ef9-ab48-2b5a0c96aede.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20250717%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250717T172243Z&X-Amz-Expires=300&X-Amz-Signature=47ea525b0bb5b799aaf01b9528f6ba902630806ea9c36be0d93c5f2cd3642a31&X-Amz-SignedHeaders=host)
+  
 - vector version
-  <img src="plots/vector_conv.png" style="zoom:60%;" />
+    ![vector_conv.png](https://github-production-user-asset-6210df.s3.amazonaws.com/119673518/467667992-c8bf5324-d55b-4eaa-bf6a-32bc1e9961e4.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20250717%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250717T172232Z&X-Amz-Expires=300&X-Amz-Signature=8329be523ed1e62d9db761d328feadd8fe2b091285e71f40c0d57793e2d40ec7&X-Amz-SignedHeaders=host)
 
 From the timeline screenshot, you can observe a clear difference in the computation cycle count between the two kernels within the regions marked by the event markers. 
 Additionally, you can see that the vectorized version makes use of vector instructions, which are absent in the scalar version.
