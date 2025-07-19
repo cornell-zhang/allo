@@ -1,4 +1,4 @@
-# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes, pointless-exception-statement
+# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -71,6 +71,7 @@ class AIE_MLIRModule:
             For example, launching the kernels in topological order.
         """
         # module metadata
+        self.trace_size = 0
         self.project_dir: str = project_dir
         self.allo_module: allo_ir.ir.Module = module
         self.top_func_name: str = top_func_name
@@ -517,9 +518,10 @@ class AIE_MLIRModule:
                 raise ValueError(
                     "The input computation graph is not a DAG. Do not support virtual mapping now."
                 )
-            APIWarning(
-                "The input computation graph is not a DAG. Fallback to default build."
-            )
+            # [NOTE]: This is non-fatal. Consider using a warning that doesn't terminate the program.
+            # raise APIWarning(
+            #     "The input computation graph is not a DAG. Fallback to default build."
+            # )
             return self.build(
                 device_type=device_type,
                 profile=profile,
@@ -760,6 +762,8 @@ class AIE_MLIRModule:
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
+        trace: list[tuple[str, tuple[int, ...]]] = None,
+        trace_size: int = 4096,
     ):
         if "npu1" in device_type:
             self.device = "npu1"
@@ -770,6 +774,8 @@ class AIE_MLIRModule:
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
+        if trace is not None:
+            self.trace_size = trace_size
         build_dir = os.path.join(self.project_dir, "build")
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
@@ -818,6 +824,8 @@ class AIE_MLIRModule:
             inputs,
             outputs,
             use_external_kernels,
+            trace,
+            trace_size,
         )
         self.post_codegen_build(injected_external_kernels, include_src)
         return self
@@ -832,7 +840,7 @@ class AIE_MLIRModule:
                 os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
             ) as f:
                 f.write("\n".join([str(i) for i in args[i].flatten()]))
-        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
+        cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {self.trace_size} {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:

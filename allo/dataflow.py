@@ -14,6 +14,7 @@ from ._mlir.ir import (
     MemRefType,
     Type,
 )
+from ._mlir.exceptions import APIWarning
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
@@ -313,10 +314,15 @@ def build(
     profile=False,
     warmup=20,
     num_iters=100,
+    trace: list[tuple[str, tuple[int, ...]]] = None,
+    trace_size: int = 4096,
 ):
     assert (
         not profile or target == "aie-mlir"
     ), "Profiling is only supported for AIE target"
+    assert (
+        trace is None or target == "aie-mlir"
+    ), "Trace profiling is only supported for AIE target"
     if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
@@ -355,12 +361,18 @@ def build(
             device_type = "npu2"
         else:
             device_type = "npu1_4col"
+        if trace is not None and not use_default_codegen:
+            raise APIWarning(
+                "Please set use_default_codegen = True if you want to use trace."
+            )
         if use_default_codegen:
             aie_mod.build(
                 device_type=device_type,
                 profile=profile,
                 warmup=warmup,
                 num_iters=num_iters,
+                trace=trace,
+                trace_size=trace_size,
             )
         elif mapping_primitives is not None:
             aie_mod.build_experimental(
