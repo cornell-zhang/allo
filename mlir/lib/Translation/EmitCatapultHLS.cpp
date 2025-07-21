@@ -193,9 +193,40 @@ void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
   fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = ";
-  emitValue(op->getOperand(0), rank);
+  
+  // For Catapult, handle type casting properly with parentheses around complex types
+  auto resultType = getTypeName(result.getType());
+  auto op0Type = getTypeName(op->getOperand(0).getType());
+  auto op1Type = getTypeName(op->getOperand(1).getType());
+  
+  // Cast first operand to result type if needed and emit with parentheses
+  if (op0Type != resultType) {
+    os << "(" << resultType << ") ";
+  }
+  // For operand 0 - use existing name if declared, otherwise just emit the name
+  if (isDeclared(op->getOperand(0))) {
+    os << getName(op->getOperand(0));
+  } else {
+    // Force add name if not declared and use it
+    addName(op->getOperand(0), false);
+    os << getName(op->getOperand(0));
+  }
+  
   os << " " << syntax << " ";
-  emitValue(op->getOperand(1), rank);
+  
+  // Cast second operand to result type if needed and emit with parentheses
+  if (op1Type != resultType) {
+    os << "(" << resultType << ") ";
+  }
+  // For operand 1 - use existing name if declared, otherwise just emit the name
+  if (isDeclared(op->getOperand(1))) {
+    os << getName(op->getOperand(1));
+  } else {
+    // Force add name if not declared and use it
+    addName(op->getOperand(1), false);
+    os << getName(op->getOperand(1));
+  }
+  
   os << ";";
   emitInfoAndNewLine(op);
   emitNestedLoopTail(rank);
@@ -280,21 +311,17 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
   if (auto shapedType = array.getType().dyn_cast<ShapedType>()) {
     if (name.empty()) {
       os << getTypeName(array.getType().cast<ShapedType>().getElementType());
-      if (isFunc) os << " *";
-      os << addName(array, false);
-      if (!isFunc) {
-        for (auto dim : shapedType.getShape()) {
-          os << "[" << dim << "]";
-        }
+      // For Catapult, use shaped arrays instead of pointers for function parameters
+      os << " " << addName(array, false);
+      for (auto dim : shapedType.getShape()) {
+        os << "[" << dim << "]";
       }
     } else {
       os << getTypeName(array.getType().cast<ShapedType>().getElementType());
-      if (isFunc) os << " *";
-      os << name;
-      if (!isFunc) {
-        for (auto dim : shapedType.getShape()) {
-          os << "[" << dim << "]";
-        }
+      // For Catapult, use shaped arrays instead of pointers for function parameters  
+      os << " " << name;
+      for (auto dim : shapedType.getShape()) {
+        os << "[" << dim << "]";
       }
     }
   }
@@ -475,6 +502,11 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
 
   // Emit function body.
   addIndent();
+
+  // Add #pragma hls_design top for Catapult HLS
+  indent();
+  os << "#pragma hls_design top";
+  emitInfoAndNewLine(func);
 
   // Emit Catapult-specific function directives
   emitFunctionDirectives(func, portList);
