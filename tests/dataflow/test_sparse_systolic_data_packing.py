@@ -2,25 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32, int32, index
+from allo.ir.types import float32, int32, uint128, index
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 import random
 
-M, N, K = 2, 2, 2
+M, N, K = 4, 4, 4
 P0, P1 = M + 2, N + 2
 
 NZ = int(K // 2)
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
     fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
-
+    fifo_B = df.array(df.pipe(dtype=uint128, shape=(), depth=4), shape=(P0, P1))
+    
     @df.kernel(mapping=[P0, P1])
-    def semm(A: float32[M, NZ], A_in: int32[M, NZ], B: float32[K, N], C: float32[M, N]):
+    def semm(A: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):
         i, j = df.get_pid()
         # periperals kernels
         with allo.meta_if(i in {0, M + 1} and j in {0, N + 1}):
@@ -31,27 +31,32 @@ def top():
                 fifo_A[i, j + 1].put(A[i - 1, knz])
                 fifo_idx[i, j + 1].put(A_in[i - 1, knz])
         with allo.meta_elif(i == 0):
-            pass
-            # for k in range(K):
-            #     fifo_B[i + 1, j].put(B[k, j - 1])
+            # pass
+            pack: uint128 = 0
+            for k in range(K):
+                msb: index = (k + 1) * 32 - 1
+                lsb: index = (k + 1) * 32 - 32
+                pack[lsb : msb] = B[k, j - 1]
+            fifo_B[i + 1, j].put(pack)
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             pass
-            # for k in range(K):
-            #     b: float32 = fifo_B[i, j].get()
         with allo.meta_elif(j == N + 1 and i > 0):
             for k in range(NZ):
-                a: float32 = fifo_A[i, j].get()
+                a: int32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
         # main body
         with allo.meta_else():
-            c: float32 = 0
+            c: int32 = 0
             for k in range(NZ):
-                a: float32 = fifo_A[i, j].get()
+                a: int32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
-                b: float32 = B[idx, j - 1]
-                # idx_index: index = idx
-                # b: float32 = fifo_B[idx_index, j - 1].get()
+                # unpacking
+                b_packed: uint128 = fifo_B[i, j].get()
+                msb: index = (idx + 1) * 32 - 1
+                lsb: index = (idx + 1) * 32 - 32
+
+                b: int32 = b_packed[lsb : msb]
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_idx[i, j + 1].put(idx)
@@ -60,7 +65,7 @@ def top():
 
 def create_sparse_matrix(m, k, sparsity_ratio):
     """Create a sparse matrix with the given sparsity ratio."""
-    A_dense = np.zeros((m, k), dtype=np.float32)
+    A_dense = np.zeros((m, k), dtype=np.int32)
     A = [] # nonzero values in A
     A_in = [] # indices for each row of nonzero values in A
     
@@ -70,7 +75,7 @@ def create_sparse_matrix(m, k, sparsity_ratio):
         row_vals = []
         row_inds = []
         for j in nnz_indices:
-            val = random.uniform(0.1, 1.0)
+            val = random.randint(1, 10)  # Changed to generate integers
             A_dense[i, j] = val
             row_vals.append(val)
             row_inds.append(j)
@@ -91,11 +96,11 @@ def test_sparse_systolic():
     # A_dense is 2:4 sparsity, A is the nonzero values, 
     # and Ain are the column indices indicating non-zero values
 
-    A = np.array(A, dtype=np.float32)
+    A = np.array(A, dtype=np.int32)
     Ain = np.array(Ain, dtype=np.int32)
 
-    B = np.random.rand(K, N).astype(np.float32)
-    C = np.zeros((M, N), dtype=np.float32)
+    B = np.random.randint(1, 10, size=(K, N)).astype(np.int32)  # Changed to generate integers
+    C = np.zeros((M, N), dtype=np.int32)
 
     # dense print statements
     print("\n=== Test Matrices ===")
@@ -130,7 +135,7 @@ def test_sparse_systolic():
         # mod()
         
         mod = s.build(target="vitis_hls", mode="hw_emu", project="ssemmhw.prj")
-        C = np.zeros((M, N), dtype=np.float32)
+        C = np.zeros((M, N), dtype=np.int32)
         mod(A, Ain, B, C)
         np.testing.assert_allclose(C, np.dot(A_dense, B), atol=1e-5)
         print("Passed!")
