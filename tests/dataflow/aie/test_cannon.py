@@ -11,6 +11,7 @@ LyA = Layout("S0S1")
 LyB = Layout("S0S1")
 LyC = Layout("S0S1")
 
+
 def _test_cannon():
     Ty = int32
     M, K, N = 32, 32, 32
@@ -57,14 +58,12 @@ def _test_cannon():
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
 
-    mod = df.build(
-        top,
-        target="aie-mlir"
-    )
+    mod = df.build(top, target="aie-mlir")
 
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
+
 
 if __name__ == "__main__":
     _test_cannon()
