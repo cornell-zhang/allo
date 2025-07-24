@@ -103,6 +103,8 @@ open_solution "solution1"
         out_str += "cosim_design\n"
     if "impl" in mode or "hw" in mode:
         out_str += "export_design -flow impl\n"
+    if device in ("ultra96v2", "pynqz2", "zedboard"):
+        out_str += "export_design -rtl verilog -format ip_catalog\n"
     out_str += "\nexit\n"
     return out_str
 
@@ -219,7 +221,7 @@ class HLSModule:
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
@@ -276,14 +278,7 @@ class HLSModule:
                 ), "kernel is a reserved keyword for vitis_hls"
                 path = os.path.dirname(__file__)
                 path = os.path.join(path, "../harness/")
-                dst_path = os.path.join(project, "description.json")
-                generate_description_file(
-                    self.top_func_name,
-                    path + "makefile_gen/description.json",
-                    dst_path,
-                    frequency=configs["frequency"],
-                )
-                generate_makefile(dst_path, project, self.platform)
+
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
@@ -512,56 +507,20 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to synthesize the design")
-                return
-            # Use Makefile (sw_emu, hw_emu, hw)
-            assert "XDEVICE" in os.environ, "Please set XDEVICE in your environment"
-            # prepare data
-            func = find_func_in_module(self.module, self.top_func_name)
-            inputs, outputs = get_func_inputs_outputs(func)
-            assert len(args) == len(inputs) + len(
-                outputs
-            ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
-            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
-                write_tensor_to_file(
-                    arg,
-                    in_shape,
-                    f"{self.project}/input{i}.data",
-                )
-            # check if the build folder exists
-            bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
-            if not os.path.exists(
-                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
-            ):
-                cmd = (
-                    f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
-                )
-                print(cmd)
+
+                # vivado block design
+                cmd = f"cd {self.project}; vivado -mode batch -source block_design.tcl"
+                print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ...")
                 if shell:
                     process = subprocess.Popen(cmd, shell=True)
                 else:
                     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
                 process.wait()
                 if process.returncode != 0:
-                    raise RuntimeError("Failed to build the project")
-            else:
-                print("Build folder exists, skip building")
-                # run the executable
-                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
-                prefix += f" cd {self.project};"
-                if not os.path.exists(f"{self.project}/{self.top_func_name}"):
-                    prefix += " make host PLATFORM=$XDEVICE;"
-                cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
-                print(cmd)
-                process = subprocess.Popen(cmd, shell=True)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError("Failed to run the executable")
-            # suppose the last argument is the output tensor
-            result = read_tensor_from_file(
-                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
-            )
-            args[-1][:] = result
-            return
+                    raise RuntimeError("Failed to create block design/generate bitstream")
+
+                return
+
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
             # Use Makefile (sw_emu, hw_emu, hw)
