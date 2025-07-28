@@ -679,10 +679,10 @@ class CodeGenerator:
         """
         Construct data transfer path from external memory to each (logical) compute tile.
 
-        TODO: may have influenc on DMA scheduling
+        TODO: may have influence on DMA scheduling
         """
 
-        def partition(size: Size4D) -> Size4D:
+        def partition(size: Size4D) -> tuple[int, Size4D]:
             """
             Partition the dma task into multiple sub-tasks.
             """
@@ -691,12 +691,11 @@ class CodeGenerator:
                 if size.get_dim_size(dim) > 1:
                     break
             if dim >= 3:
-
-                raise ValueError("Fail to partition")
+                raise ValueError(f"Fail to partition {size}")
             size_part = size.copy()
             partition_size = size.get_dim_size(dim) - 1
             size_part.set_dim_size(dim, partition_size)
-            return size_part
+            return dim, size_part
 
         # ------------------------------------------------------------
         MAX_MEM_TILES = self.device_config["mem_tile_num"]
@@ -1478,7 +1477,7 @@ class CodeGenerator:
             - careful with nodes with multiple inputs/outputs
               (if ports are exceeded, we should try to assign them to adjacent compute tiles to share local memory)
         """
-        core_fucn_mapping: dict[str, tuple[int, int]] = {}
+        core_func_mapping: dict[str, tuple[int, int]] = {}
         mesh_shape = self.device_config["mesh"]
         max_row, max_col = mesh_shape
         tile_used = np.zeros(mesh_shape, dtype=bool)
@@ -1551,7 +1550,7 @@ class CodeGenerator:
                         raise ValueError("Too many nodes")
                 col_idx = traverse_idx % max_col
                 row_idx = traverse_idx // max_col
-                core_fucn_mapping[head] = (row_idx, col_idx)
+                core_func_mapping[head] = (row_idx, col_idx)
                 tile_used[row_idx][col_idx] = True
                 reverse = False
                 for node in deque.nodes[1:]:
@@ -1568,14 +1567,14 @@ class CodeGenerator:
                                 row_idx = max_row - 1
                                 col_idx += 1
                                 reverse = not reverse
-                    core_fucn_mapping[node] = (row_idx, col_idx)
+                    core_func_mapping[node] = (row_idx, col_idx)
                     tile_used[row_idx][col_idx] = True
             if os.getenv("VERBOSE") == "1":
                 print("<<< Mapping >>>")
-                for node, (row, col) in core_fucn_mapping.items():
+                for node, (row, col) in core_func_mapping.items():
                     print(f"{node}: ({row}, {col})")
                 print()
-            return core_fucn_mapping
+            return core_func_mapping
         raise ValueError("To be implemented")
 
     # ############################################################
@@ -1763,14 +1762,14 @@ class CodeGenerator:
                                     right = left + 1
                                     while right < len(tasks):
                                         if tasks[left].dtensor == tasks[right].dtensor:
-                                            incomming_offset = Offset4D(
+                                            incoming_offset = Offset4D(
                                                 tasks[right].offset[0],
                                                 tasks[right].offset[1],
                                                 tasks[right].offset[2],
                                                 tasks[right].offset[3],
                                             )
                                             idx = current_offset.check_next_offset(
-                                                incomming_offset
+                                                incoming_offset
                                             )
                                             if idx >= 0 and (
                                                 inc_idx is None or inc_idx == idx
@@ -1790,7 +1789,7 @@ class CodeGenerator:
                                                     break
                                                 inc_idx = idx
                                                 base_size[idx] += 1
-                                                current_offset = incomming_offset
+                                                current_offset = incoming_offset
                                                 right += 1
                                             else:
                                                 break
