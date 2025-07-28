@@ -305,9 +305,9 @@ class AIE_MLIRModule:
                 out_dtype = str(output.type.element_type)
                 matmul_configs = matmul_external_kernel_config_map[(dtype, out_dtype)]
                 if self.device == "npu1":
-                    m, n, k = matmul_configs["aie2"]
+                    m, k, n = matmul_configs["aie2"]
                 else:
-                    m, n, k = matmul_configs["aie2p"]
+                    m, k, n = matmul_configs["aie2p"]
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
                         input_a.type,

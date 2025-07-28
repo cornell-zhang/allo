@@ -938,7 +938,15 @@ def codegen_host(inputs: dict[int, DTensor], outputs: dict[int, DTensor]):
             )
             code += format_str(f"{dtype} *bufOut{i} = bo_out{i}.map<{dtype} *>();")
             code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
-            code += format_str(f'  ofile << *(bufOut{i} + i) << "\\n";', strip=False)
+            if dtype == "int8_t":
+                code += format_str(
+                    f'  ofile <<  static_cast<int>(*(bufOut{i} + i)) << "\\n";',
+                    strip=False,
+                )
+            else:
+                code += format_str(
+                    f'  ofile << *(bufOut{i} + i) << "\\n";', strip=False
+                )
             code += format_str("}")
         code += format_str("\n// Close files", strip=False)
         for i in range(len(inputs)):
