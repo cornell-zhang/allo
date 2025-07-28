@@ -980,8 +980,8 @@ class CodeGenerator:
                     send_port_num=Config.MEM_MAX_SEND,
                     recv_port_num=Config.MEM_MAX_RECV,
                 )
-                self.mem_tile_idx = len(self.used_mem_tiles)
                 self.used_mem_tiles.append(assigned_mem_tile)
+                self.mem_tile_idx = len(self.used_mem_tiles)
             else:
                 # Attempt to use an existing memory tile
                 for offset in range(len(self.used_mem_tiles)):
@@ -993,7 +993,7 @@ class CodeGenerator:
                         and len(mem_tile.recv_ports) + recv_need <= Config.MEM_MAX_RECV
                     ):
                         assigned_mem_tile = mem_tile
-                        self.mem_tile_idx = (self.mem_tile_idx + offset) % len(
+                        self.mem_tile_idx = (self.mem_tile_idx + offset + 1) % len(
                             self.used_mem_tiles
                         )
                         break
@@ -1447,15 +1447,15 @@ class CodeGenerator:
                             dtensor.type_as_param,
                         ):
                             break
-                        print("mem")
-                        for tile in self.used_mem_tiles:
-                            print(tile.recv_ports)
-                            print(tile.send_ports)
-                        print("shim")
-                        for tile in self.used_shim_tiles:
-                            print(tile.recv_ports)
-                            print(tile.send_ports)
-                        print()
+                        # print("mem")
+                        # for tile in self.used_mem_tiles:
+                        #     print(tile.recv_ports)
+                        #     print(tile.send_ports)
+                        # print("shim")
+                        # for tile in self.used_shim_tiles:
+                        #     print(tile.recv_ports)
+                        #     print(tile.send_ports)
+                        # print()
                         size_cp = size_.copy()
                         # keep partitioning until success
                         while True:
