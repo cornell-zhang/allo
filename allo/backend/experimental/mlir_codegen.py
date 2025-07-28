@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type, consider-using-enumerate, too-many-instance-attributes, chained-comparison
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type, consider-using-enumerate, too-many-instance-attributes, chained-comparison, cell-var-from-loop
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -1367,30 +1367,45 @@ class CodeGenerator:
                 )
                 size = contiguous_interface.total_size
                 transfer_layout = contiguous_interface.layout
-                while size.get_total_size() != 0:
-                    if assign_tiles(
-                        interface_list, size, tile_size, is_input, tile_param_type
-                    ):
-                        break
-                    size_cp = size.copy()
-                    # keep partitioning until success
-                    while True:
-                        partitioned_size = partition(size_cp)
-                        partitioned_interface_list = interface_list[
-                            : partitioned_size.get_total_size()
-                        ]
+
+                def transfer(size_: Size4D, interface_list_: list[MulticastInterface]):
+                    dim_ = None
+                    while size_.get_total_size() != 0:
                         if assign_tiles(
-                            partitioned_interface_list,
-                            partitioned_size,
-                            tile_size,
-                            is_input,
-                            tile_param_type,
+                            interface_list_, size_, tile_size, is_input, tile_param_type
                         ):
                             break
-                        size_cp = partitioned_size
-                    size = Size4D.subtract(size, partitioned_size)
-                    inc = partitioned_size.get_total_size()
-                    interface_list = interface_list[inc:]
+                        size_cp = size_.copy()
+                        # keep partitioning until success
+                        while True:
+                            partitioned_dim, partitioned_size = partition(
+                                size_cp
+                            )  # partition too much, drop dim
+                            partitioned_interface_list = interface_list_[
+                                : partitioned_size.get_total_size()
+                            ]
+                            if dim_ is None:
+                                dim_ = partitioned_dim
+                            elif dim_ != partitioned_dim:
+                                transfer(
+                                    size_cp, interface_list_[: size_cp.get_total_size()]
+                                )
+                                partitioned_size = size_cp
+                                break
+                            if assign_tiles(
+                                partitioned_interface_list,
+                                partitioned_size,
+                                tile_size,
+                                is_input,
+                                tile_param_type,
+                            ):
+                                break
+                            size_cp = partitioned_size
+                        size_ = Size4D.subtract(size_, partitioned_size)
+                        inc = partitioned_size.get_total_size()
+                        interface_list_ = interface_list_[inc:]
+
+                transfer(size, interface_list)
 
         token_map: dict[str, str] = {}
         token_cnt = 0
