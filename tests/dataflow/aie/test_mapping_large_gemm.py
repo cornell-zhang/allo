@@ -112,7 +112,7 @@ if __name__ == "__main__":
         print("[NOTE]: int8 have accuracy issue")
 
     # - i16
-    _test_pingpong_gemm(128, 128, 256, 4, 4, 8, int16, int16)
+    _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int16, int16)
 
     # - bf16
     try:

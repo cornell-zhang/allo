@@ -251,6 +251,7 @@ class CodeGenerator:
         # ------------------------------------------------------------
         # Experimental
         # ------------------------------------------------------------
+        self.mem_tile_idx = 0
         self.used_mem_tiles: list[SwitchNode] = []
         self.used_shim_tiles: list[SwitchNode] = []
         self.paths: list[CodeGenerator.DMAPath] = []
@@ -909,19 +910,22 @@ class CodeGenerator:
             ContiguousInterface always acquire adjacent memory blocks in external memory
             """
 
-            def __init__(self, offset: Offset4D, interface: MulticastInterface):
-                self.layout = interface.sample_interface.layout
-                self.current_offset: Offset4D = offset
-                self.total_size: Size4D = Size4D(1, 1, 1, 1)
-                self.interface_list: list[MulticastInterface] = [interface]
+            def __init__(self, interface: MulticastInterface = None):
+                if interface is not None:
+                    self.layout = interface.sample_interface.layout
+                    self.total_size: Size4D = Size4D(1, 1, 1, 1)
+                    self.interface_list: list[MulticastInterface] = [interface]
+                else:
+                    self.layout = None
+                    self.total_size: Size4D = None
+                    self.interface_list: list[MulticastInterface] = []
 
-            def append(self, offset: Offset4D, other: MulticastInterface) -> bool:
+            def append(self, other: MulticastInterface) -> bool:
                 sample = self.interface_list[-1]
                 updated_size = sample._contiguous_data_transfer(other, self.total_size)
                 if updated_size is None:
                     return False
                 self.interface_list.append(other)
-                self.current_offset = offset
                 self.total_size = updated_size
                 return True
 
@@ -976,15 +980,22 @@ class CodeGenerator:
                     send_port_num=Config.MEM_MAX_SEND,
                     recv_port_num=Config.MEM_MAX_RECV,
                 )
+                self.mem_tile_idx = len(self.used_mem_tiles)
                 self.used_mem_tiles.append(assigned_mem_tile)
             else:
                 # Attempt to use an existing memory tile
-                for mem_tile in self.used_mem_tiles:
+                for offset in range(len(self.used_mem_tiles)):
+                    mem_tile = self.used_mem_tiles[
+                        (self.mem_tile_idx + offset) % len(self.used_mem_tiles)
+                    ]
                     if (
                         len(mem_tile.send_ports) + send_need <= Config.MEM_MAX_SEND
                         and len(mem_tile.recv_ports) + recv_need <= Config.MEM_MAX_RECV
                     ):
                         assigned_mem_tile = mem_tile
+                        self.mem_tile_idx = (self.mem_tile_idx + offset) % len(
+                            self.used_mem_tiles
+                        )
                         break
             # Use new ports
             if assigned_mem_tile is not None:
@@ -1115,6 +1126,7 @@ class CodeGenerator:
             total_size: Size4D,
             tile_size: Size4D,
             is_input: bool,
+            tile_dtype: str,
             tile_param_type: list,
         ) -> bool:
             """
@@ -1155,7 +1167,6 @@ class CodeGenerator:
                 if assigned_shim_tile is None:
                     # invalidate the intra_connect
                     assigned_mem_tile.intra_connect.pop()
-                    # raise ValueError("Fail to assign shim tile")
                 else:
                     assigned_mem_tile.send_ports.extend(send_ports)
                     assigned_mem_tile.recv_ports.extend(recv_ports)
@@ -1258,16 +1269,9 @@ class CodeGenerator:
             i: {} for i in global_tensors.keys()
         }
         global_io_port: list[CodeGenerator.GlobalIODMAPort] = []
+        global_dma_tasks: dict[int, list[ContiguousInterface]] = {}
         for idx, dtensor_tile_group in global_tile_to_func.items():
             dtensor = global_dtensor[idx]
-            # transfer tile meta data
-            is_input = idx in self.global_inputs
-            tile_dtype = dtensor.dtype
-            tile_param_type = dtensor.type_as_param
-            tile_shape = list(dtensor.size)
-            for i in dtensor.shared_dims:
-                tile_shape[i] = 1
-            tile_size = Size4D.from_list(tile_shape)
             # key: offset specific to dtensor
             unresolved_tile: dict[Offset4D, list[MulticastInterface]] = {}
             in_process: set[PEInterface] = set()
@@ -1333,7 +1337,7 @@ class CodeGenerator:
                         if multicast_interface is not None:
                             next_flag = False
                             contiguous: ContiguousInterface = ContiguousInterface(
-                                coalesce_info[start_offset][left], multicast_interface
+                                multicast_interface
                             )
                             coalesced_interfaces[left][left_i] = None
                             right = left + 1
@@ -1345,7 +1349,6 @@ class CodeGenerator:
                                 ):
                                     if next_interface is not None:
                                         if contiguous.append(
-                                            coalesce_info[start_offset][right],
                                             next_interface,
                                         ):
                                             continue_flag = True
@@ -1360,6 +1363,71 @@ class CodeGenerator:
                 for contiguous_interface in contiguous_interfaces:
                     print(contiguous_interface)
                 print("===== contiguous_interfaces =====\n")
+            global_dma_tasks[idx] = contiguous_interfaces
+
+        # ####################
+        # # HACK: an aggressive strategy to fully utilize interface ports (may be problematic)
+        # ####################
+        if os.getenv("HACK") == "1":
+            global_input_num, global_output_num = 0, 0
+            for idx, contiguous_interfaces in global_dma_tasks.items():
+                if idx in self.global_inputs:
+                    global_input_num += len(contiguous_interfaces)
+                else:
+                    global_output_num += len(contiguous_interfaces)
+            for idx, contiguous_interfaces in global_dma_tasks.items():
+                if len(contiguous_interfaces) == 1:
+                    factor = MAX_SHIM_TILES
+                    while factor > 1:
+                        if len(contiguous_interfaces[0].interface_list) % factor == 0:
+                            if (
+                                factor
+                                - len(contiguous_interfaces)
+                                + (
+                                    global_input_num
+                                    if idx in self.global_inputs
+                                    else global_output_num
+                                )
+                                <= 2 * MAX_SHIM_TILES
+                            ):
+                                break
+                        factor >>= 1
+                    if factor > 1:
+                        contiguous_interface: ContiguousInterface = (
+                            contiguous_interfaces[0]
+                        )
+                        contiguous_interfaces.clear()
+                        total_tile = contiguous_interface.total_size.get_total_size()
+                        slice_size = total_tile // factor
+                        for i in range(factor):
+                            new_contiguous_interface = ContiguousInterface()
+                            new_contiguous_interface.layout = (
+                                contiguous_interface.layout
+                            )
+                            new_contiguous_interface.total_size = (
+                                contiguous_interface.total_size.get_k_slice(slice_size)
+                            )
+                            new_contiguous_interface.interface_list.extend(
+                                contiguous_interface.interface_list[
+                                    i * slice_size : (i + 1) * slice_size
+                                ]
+                            )
+                            contiguous_interfaces.append(new_contiguous_interface)
+
+                        if idx in self.global_inputs:
+                            global_input_num -= 1
+                            global_input_num += len(contiguous_interfaces)
+                        else:
+                            global_output_num -= 1
+                            global_output_num += len(contiguous_interfaces)
+        # ####################
+
+        for idx, contiguous_interfaces in global_dma_tasks.items():
+            dtensor = global_dtensor[idx]
+            tile_shape = list(dtensor.size)
+            for i in dtensor.shared_dims:
+                tile_shape[i] = 1
+            tile_size = Size4D.from_list(tile_shape)
             for contiguous_interface in contiguous_interfaces:
                 interface_list: list[MulticastInterface] = (
                     contiguous_interface.interface_list
@@ -1371,9 +1439,23 @@ class CodeGenerator:
                     dim_ = None
                     while size_.get_total_size() != 0:
                         if assign_tiles(
-                            interface_list_, size_, tile_size, is_input, tile_param_type
+                            interface_list_,
+                            size_,
+                            tile_size,
+                            idx in self.global_inputs,
+                            dtensor.dtype,
+                            dtensor.type_as_param,
                         ):
                             break
+                        print("mem")
+                        for tile in self.used_mem_tiles:
+                            print(tile.recv_ports)
+                            print(tile.send_ports)
+                        print("shim")
+                        for tile in self.used_shim_tiles:
+                            print(tile.recv_ports)
+                            print(tile.send_ports)
+                        print()
                         size_cp = size_.copy()
                         # keep partitioning until success
                         while True:
@@ -1395,8 +1477,9 @@ class CodeGenerator:
                                 partitioned_interface_list,
                                 partitioned_size,
                                 tile_size,
-                                is_input,
-                                tile_param_type,
+                                idx in self.global_inputs,
+                                dtensor.dtype,
+                                dtensor.type_as_param,
                             ):
                                 break
                             size_cp = partitioned_size

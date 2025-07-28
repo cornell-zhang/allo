@@ -527,10 +527,10 @@ def coalesce_memory_access(offset_map: dict[Offset4D, list]):
             access.keys(),
             key=lambda x: (x.offset_a, x.offset_b, x.offset_c, x.offset_d),
         )
-        coalesed = set()
+        coalesced = set()
         base_offset, inc_offset, base_size = None, None, None
         for offset in sorted_offsets:
-            if offset in coalesed:
+            if offset in coalesced:
                 continue
             if base_offset is None:
                 base_offset, inc_offset, base_size = offset, offset, access[offset]
@@ -538,12 +538,12 @@ def coalesce_memory_access(offset_map: dict[Offset4D, list]):
                 inc_offset = inc_offset.get_next_offset(coalesce_dim)
                 if inc_offset in access:
                     base_size.inc_on_dim(coalesce_dim)
-                    coalesed.add(offset)
+                    coalesced.add(offset)
                     coalesce_info[base_offset].extend(coalesce_info[inc_offset])
                     connected_nodes[base_offset].extend(connected_nodes[inc_offset])
                 else:
                     base_offset, inc_offset, base_size = offset, offset, access[offset]
-        for offset in coalesed:
+        for offset in coalesced:
             access.pop(offset)
             coalesce_info.pop(offset)
             connected_nodes.pop(offset)
