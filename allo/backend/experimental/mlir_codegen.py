@@ -1423,6 +1423,7 @@ class CodeGenerator:
         # ####################
 
         for idx, contiguous_interfaces in global_dma_tasks.items():
+            self.mem_tile_idx =  0
             dtensor = global_dtensor[idx]
             tile_shape = list(dtensor.size)
             for i in dtensor.shared_dims:
