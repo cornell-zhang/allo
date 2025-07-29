@@ -368,7 +368,7 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
             # Add extra interfaces
             if pragma:
                 for i, arg in enumerate(func_args):
-                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem\n"
+                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
                 for i, arg in enumerate(func_args):
                     out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
                 out_str += f"  #pragma HLS interface s_axilite port=return bundle=control\n"
