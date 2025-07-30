@@ -195,7 +195,7 @@ class HLSModule:
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
-            if platform == "vitis_hls":
+            if platform == "vitis_hls" or platform == "pynq":
                 assert func_args is not None, "Need to specify func_args"
 
                 if wrap_io:
@@ -290,9 +290,18 @@ class HLSModule:
                 }, "Invalid mode"
                 assert (
                     self.top_func_name != "kernel"
-                ), "kernel is a reserved keyword for vitis_hls"
+                ), "kernel is a reserved keyword for pynq"
                 path = os.path.dirname(__file__)
                 path = os.path.join(path, "../harness/")
+
+
+                # if wrap_io:
+                #     generate_input_output_buffers(
+                #         self.module,
+                #         top_func_name,
+                #         flatten=True,
+                #         mappings=configs.get("mappings", None),
+                #     )
 
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
