@@ -38,11 +38,11 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
     if process.returncode != 0:
         raise RuntimeError("Failed to build AIE project.")
     # suppose the last argument is output
-    # for i, arg in enumerate(args[:-1]):
-    #     with open(os.path.join(project, f"input{i}.data"), "w", encoding="utf-8") as f:
-    #         f.write("\n".join([str(i) for i in arg.flatten()]))
-    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
-    # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
+    for i, arg in enumerate(args[:-1]):
+        with open(os.path.join(project, f"input{i}.data"), "w", encoding="utf-8") as f:
+            f.write("\n".join([str(i) for i in arg.flatten()]))
+    # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
+    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
     with subprocess.Popen(cmd, shell=True) as process:
         process.wait()
     if process.returncode != 0:
