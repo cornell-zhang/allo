@@ -188,7 +188,14 @@ class SwitchNode:
         def __repr__(self):
             return self.__str__()
 
-    def __init__(self, name: str, send_port_num: int, recv_port_num: int, col_id: int, row_id: int):
+    def __init__(
+        self,
+        name: str,
+        send_port_num: int,
+        recv_port_num: int,
+        col_id: int,
+        row_id: int,
+    ):
         self.name = name
         self.col_id = col_id
         self.row_id = row_id
