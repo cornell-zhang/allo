@@ -1333,7 +1333,7 @@ class CodeGenerator:
                         dtensor.offset_map[dtensor_tile.tensor_tile_label]
                     ] = multicast_list
             # coalesced access pattern on dtensor will give a hint
-            coalesced_access_pattern, coalesce_info, coalesced_multicast_interfaces = (
+            coalesced_access_pattern, _, coalesced_multicast_interfaces = (
                 coalesce_memory_access(unresolved_tile)
             )
             if os.getenv("VERBOSE") == "1":
@@ -1385,7 +1385,7 @@ class CodeGenerator:
         # ####################
         # # HACK: an aggressive strategy to fully utilize interface ports (may be problematic)
         # ####################
-        if os.getenv("HACK") == "1":
+        if os.getenv("ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH") == "1":
             global_input_num, global_output_num = 0, 0
             for idx, contiguous_interfaces in global_dma_tasks.items():
                 if idx in self.global_inputs:
@@ -1956,11 +1956,9 @@ class CodeGenerator:
                         for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks_list.append(coalesced_tasks)
-                        print(coalesced_tasks)
 
                     # ##################################################################
                     tasks_idx_left = 0
-                    
 
                     @dataclass
                     class DMAMemcpyGroup:
@@ -2012,7 +2010,7 @@ class CodeGenerator:
                                             )
                                             prev_task.diff = diff
                                             continue
-                                        elif prev_task.diff == diff:
+                                        if prev_task.diff == diff:
                                             prev_task.dma_tasks.append(
                                                 (offset, size, stride)
                                             )
@@ -2027,8 +2025,13 @@ class CodeGenerator:
                                     else global_dma.io_port.fifo.dst[0]
                                 )
                                 if (
-                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS 
-                                    or len(updated_fifo_dma_tasks[global_dma.io_port.fifo.name]) == 5 # fixme: seems that transferring with the same fifo is invalid
+                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS
+                                    or len(
+                                        updated_fifo_dma_tasks[
+                                            global_dma.io_port.fifo.name
+                                        ]
+                                    )
+                                    == 5  # fixme: seems that transferring with the same fifo is invalid
                                 ):
                                     overload_flag = True
                                     break
