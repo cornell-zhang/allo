@@ -42,7 +42,7 @@ def test_producer_consumer():
     print("Dataflow Simulator Passed!")
 
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie")
+        mod = df.build(top, target="aie-mlir")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)
         print("Passed!")

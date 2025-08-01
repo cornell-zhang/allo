@@ -39,11 +39,11 @@ def top():
 
 
 def test_cooperative_gemm():
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, A, B, C)
+    mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 

@@ -552,6 +552,9 @@ class AIE_MLIRModule:
                 "aie2" if self.device == "npu1" else "aie2p",
             )
         )
+        from datetime import datetime
+        now = datetime.now()
+        print("start analyze_kernel_parameters", now)
         # record original allo mlir
         with open(
             os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
@@ -561,6 +564,9 @@ class AIE_MLIRModule:
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
+        from datetime import datetime
+        now = datetime.now()
+        print("start virtual mapping", now)
         self._init_virtual_graph(use_external_kernels)
         if enable_virtual_mapping:
             for mapping in mapping_primitives:
@@ -577,7 +583,9 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-
+        from datetime import datetime
+        now = datetime.now()
+        print("start optimization", now)
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 

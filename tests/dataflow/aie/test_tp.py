@@ -45,7 +45,7 @@ def _test_tensor_parallelism():
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
     W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     Z = np.zeros((M, L)).astype(np.int32)
     mod(X, W1, W2, Z)
     np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
