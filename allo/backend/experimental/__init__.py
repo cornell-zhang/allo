@@ -662,7 +662,7 @@ class AIE_MLIRModule:
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-            raise RuntimeError("Failed to build AIE project.")
+                raise RuntimeError("Failed to build AIE project.")
 
     def collect_io(
         self,
@@ -827,7 +827,7 @@ class AIE_MLIRModule:
                 result = read_tensor_from_file(
                     dtensor.dtype,
                     args[idx].shape,
-                    f"{self.project_dir}/output.data",
+                    f"{self.project_dir}/output{idx}.data",
                 )
                 # suppose the last argument is output
                 args[idx][:] = result

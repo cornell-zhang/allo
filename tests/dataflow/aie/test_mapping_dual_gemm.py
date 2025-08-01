@@ -88,7 +88,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
-        
+
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemmb(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
@@ -103,12 +103,14 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 C[:, :] = C_out
 
     mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        Pm, Pn, Pk, 
+        Pm,
+        Pn,
+        Pk,
     )
 
     mod = df.build(
         top,
-        project ="gemm.prj",
+        project="gemm.prj",
         target="aie-mlir",
         mapping_primitives=mapping_primitives,
         profile=True,
@@ -152,6 +154,6 @@ if __name__ == "__main__":
 
     # - bf16
     # try:
-        # _test_pingpong_gemm(2048, 2048, 1024, 32, 32, 16, bfloat16, bfloat16)
+    # _test_pingpong_gemm(2048, 2048, 1024, 32, 32, 16, bfloat16, bfloat16)
     # except:
     #     print("[NOTE]: bfloat16 have accuracy issue")

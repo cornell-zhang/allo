@@ -767,22 +767,9 @@ int main(int argc, const char *argv[]) {
   auto bo_instr = xrt::bo(device, instr_v.size() * sizeof(int), XCL_BO_FLAGS_CACHEABLE, kernel.group_id(1));
   void *bufInstr = bo_instr.map<void *>();
   memcpy(bufInstr, instr_v.data(), instr_v.size() * sizeof(int));
-  // output
-  std::ofstream ofile("output.data");
-  if (!ofile.is_open()) {
-      std::cerr << "Error: Could not open output file.\\n";
-      return 1;
-  }
 
   // kernel arguments
   unsigned int opcode = 3;
-"""
-
-file_close_str = """  ofile.close();
-  if (verbosity >= 1)
-    std::cout << "Array has been written to output.data.\\n";
-  return 0;
-}
 """
 
 
@@ -946,17 +933,26 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                 code += format_str(
                     f"{dtype} *bufOut{idx} = bo_out{idx}.map<{dtype} *>();"
                 )
+                # write to output file
+                code += format_str(f'std::ofstream ofile{idx}("output{idx}.data");')
+                code += format_str(f"if (!ofile{idx}.is_open()) {{")
+                code += format_str(
+                    '    std::cerr << "Error: Could not open output file.\\n";'
+                )
+                code += format_str("    return 1;")
+                code += format_str("}")
                 code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
                 if dtype == "int8_t":
                     code += format_str(
-                        f'  ofile <<  static_cast<int>(*(bufOut{idx} + i)) << "\\n";',
+                        f'  ofile{idx} <<  static_cast<int>(*(bufOut{idx} + i)) << "\\n";',
                         strip=False,
                     )
                 else:
                     code += format_str(
-                        f'  ofile << *(bufOut{idx} + i) << "\\n";', strip=False
+                        f'  ofile{idx} << *(bufOut{idx} + i) << "\\n";', strip=False
                     )
                 code += format_str("}")
+                code += format_str(f"ofile{idx}.close();")
         code += format_str("if (trace_size > 0) {")
         code += format_str("  bo_trace.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
         code += format_str(
@@ -964,8 +960,8 @@ def codegen_host(global_tensors: dict[int, DTensor]):
             strip=False,
         )
         code += format_str("}")
-        code += file_close_str
-
+        code += format_str("return 0;")
+    code += format_str("}")
     return code
 
 

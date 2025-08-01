@@ -25,7 +25,14 @@ def read_tensor_from_file(dtype, shape, file_path):
     return arr.reshape(shape)
 
 
-def call_mlir(project: str, output_dtype, trace_size: int, *args):
+def call_mlir(
+    project: str,
+    dtype_list: list,
+    trace_size: int,
+    input_idx: list[int],
+    output_idx: list[int],
+    *args,
+):
     # generate insts.txt
     cmd = f"cd {project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
     with subprocess.Popen(cmd, shell=True) as process:
@@ -38,8 +45,11 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
     if process.returncode != 0:
         raise RuntimeError("Failed to build AIE project.")
     # suppose the last argument is output
-    for i, arg in enumerate(args[:-1]):
-        with open(os.path.join(project, f"input{i}.data"), "w", encoding="utf-8") as f:
+    for idx in input_idx:
+        arg = args[idx]
+        with open(
+            os.path.join(project, f"input{idx}.data"), "w", encoding="utf-8"
+        ) as f:
             f.write("\n".join([str(i) for i in arg.flatten()]))
     # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
     cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
@@ -47,12 +57,13 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
         process.wait()
     if process.returncode != 0:
         raise RuntimeError("Failed to execute AIE code.")
-    result = read_tensor_from_file(
-        output_dtype,
-        args[-1].shape,
-        f"{project}/output.data",
-    )
-    args[-1][:] = result
+    for idx in output_idx:
+        result = read_tensor_from_file(
+            dtype_list[idx],
+            args[idx].shape,
+            f"{project}/output{idx}.data",
+        )
+        args[idx][:] = result
 
 
 # fixme: update parameters as you need
@@ -74,7 +85,7 @@ C = np.zeros((M, N)).astype(np.int16)
 # A = np.random.random((M, K)).astype(np_bfloat16)
 # B = np.random.random((K, N)).astype(np_bfloat16)
 # C = np.zeros((M, N)).astype(np_bfloat16)
-call_mlir("gemm_.prj", int16, 4096*4096, A, B, C)
+call_mlir("gemm_.prj", [int16, int16, int16], 4096 * 4096, [0, 1], [2], A, B, C)
 
 np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")
