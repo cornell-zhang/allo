@@ -550,10 +550,16 @@ class CodeGenerator:
                         fifo = self.fifo_map[arg_to_fifo[i].name]
                         with aie_ir.InsertionPoint(first_use_op):
                             if arg_to_fifo[i].name in reused_fifo_name:
-                                fifo.release(1 if arg_info[0].dtensor.is_input else 0, 1)
+                                fifo.release(
+                                    1 if arg_info[0].dtensor.is_input else 0, 1
+                                )
                             else:
-                                reused_fifo_name[arg_to_fifo[i].name] = arg_info[0].dtensor.is_input
-                            acquired = fifo.acquire(1 if arg_info[0].dtensor.is_input else 0, 1)
+                                reused_fifo_name[arg_to_fifo[i].name] = arg_info[
+                                    0
+                                ].dtensor.is_input
+                            acquired = fifo.acquire(
+                                1 if arg_info[0].dtensor.is_input else 0, 1
+                            )
                             # incorrect
                             argument.replace_all_uses_with(acquired)
                 else:
@@ -1952,7 +1958,6 @@ class CodeGenerator:
 
                     # ##################################################################
                     tasks_idx_left = 0
-                    
 
                     @dataclass
                     class DMAMemcpyGroup:
@@ -2019,8 +2024,13 @@ class CodeGenerator:
                                     else global_dma.io_port.fifo.dst[0]
                                 )
                                 if (
-                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS 
-                                    or len(updated_fifo_dma_tasks[global_dma.io_port.fifo.name]) == 5 # fixme: seems that transferring with the same fifo is invalid
+                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS
+                                    or len(
+                                        updated_fifo_dma_tasks[
+                                            global_dma.io_port.fifo.name
+                                        ]
+                                    )
+                                    == 5  # fixme: seems that transferring with the same fifo is invalid
                                 ):
                                     overload_flag = True
                                     break
@@ -2068,7 +2078,9 @@ class CodeGenerator:
                                     strides=stride,
                                     issue_token=True,
                                 )
-                                if not self.global_tensors[fifo_info.dtensor_global_id].is_input:
+                                if not self.global_tensors[
+                                    fifo_info.dtensor_global_id
+                                ].is_input:
                                     launched_dma_to_external.append(
                                         self.fifo_map[fifo_name]
                                     )
