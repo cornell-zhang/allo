@@ -41,8 +41,8 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
     for i, arg in enumerate(args[:-1]):
         with open(os.path.join(project, f"input{i}.data"), "w", encoding="utf-8") as f:
             f.write("\n".join([str(i) for i in arg.flatten()]))
-    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
-    # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
+    # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
+    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
     with subprocess.Popen(cmd, shell=True) as process:
         process.wait()
     if process.returncode != 0:
@@ -58,7 +58,7 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
 # fixme: update parameters as you need
 from allo.ir.types import int8, int16, int32, bfloat16
 
-M, N, K = 512, 512, 512
+M, N, K = 2048, 2048, 1024
 
 # A = np.random.random((M, K)).astype(np_bfloat16)
 # B = np.random.random((K, N)).astype(np_bfloat16)
@@ -68,13 +68,13 @@ M, N, K = 512, 512, 512
 # print(C)
 # np.testing.assert_allclose(C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2)
 
-A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
-C = np.zeros((M, N)).astype(np.int16)
-# A = np.random.random((M, K)).astype(np_bfloat16)
-# B = np.random.random((K, N)).astype(np_bfloat16)
-# C = np.zeros((M, N)).astype(np_bfloat16)
-call_mlir("top.prj", int16, 4096*4096, A, B, C)
+# A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+# B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+# C = np.zeros((M, N)).astype(np.int16)
+A = np.random.random((M, K)).astype(np_bfloat16)
+B = np.random.random((K, N)).astype(np_bfloat16)
+C = np.zeros((M, N)).astype(np_bfloat16)
+call_mlir("gemm_.prj", int16, 4096*4096, A, B, C)
 
 np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")
