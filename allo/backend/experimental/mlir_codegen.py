@@ -225,8 +225,7 @@ class CodeGenerator:
     def __init__(
         self,
         device_type: str,
-        global_inputs: dict[int, DTensor],
-        global_outputs: dict[int, DTensor],
+        global_tensors: dict[int, DTensor],
         top_function: allo_func_d.FuncOp,
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         streams: dict[str, Stream],
@@ -236,8 +235,7 @@ class CodeGenerator:
         self.device_config = device_config_map[device_type]
         assert self.device_config is not None, "Unsupported device type"
 
-        self.global_inputs: dict[int, DTensor] = global_inputs
-        self.global_outputs: dict[int, DTensor] = global_outputs
+        self.global_tensors: dict[int, DTensor] = global_tensors
         self.top_function = top_function
         self.core_func_args = core_func_args
         self.streams = streams
@@ -550,13 +548,12 @@ class CodeGenerator:
                         while first_use_op.parent.name != "func.func":
                             first_use_op = first_use_op.parent
                         fifo = self.fifo_map[arg_to_fifo[i].name]
-                        is_input = arg_info[0].dtensor.global_id in self.global_inputs
                         with aie_ir.InsertionPoint(first_use_op):
                             if arg_to_fifo[i].name in reused_fifo_name:
-                                fifo.release(1 if is_input else 0, 1)
+                                fifo.release(1 if arg_info[0].dtensor.is_input else 0, 1)
                             else:
-                                reused_fifo_name[arg_to_fifo[i].name] = is_input
-                            acquired = fifo.acquire(1 if is_input else 0, 1)
+                                reused_fifo_name[arg_to_fifo[i].name] = arg_info[0].dtensor.is_input
+                            acquired = fifo.acquire(1 if arg_info[0].dtensor.is_input else 0, 1)
                             # incorrect
                             argument.replace_all_uses_with(acquired)
                 else:
@@ -746,10 +743,9 @@ class CodeGenerator:
                     print("\t", arg_idx)
                     print(tiles)
             print("#############- global_tensors -#############")
-        global_dtensor: dict[int, DTensor] = dict(self.global_inputs)
-        global_dtensor.update(self.global_outputs)
+        global_dtensor = self.global_tensors
         global_tile_to_func: dict[int, DTensorTileGroup] = {
-            i: DTensorTileGroup("") for i in global_dtensor.keys()
+            i: DTensorTileGroup("") for i in self.global_tensors.keys()
         }
         for func_name, io_info in global_tensors.items():
             for arg_idx, live_dtensor_tiles in io_info.items():
@@ -1288,7 +1284,7 @@ class CodeGenerator:
         global_io_port: list[CodeGenerator.GlobalIODMAPort] = []
         global_dma_tasks: dict[int, list[ContiguousInterface]] = {}
         for idx, dtensor_tile_group in global_tile_to_func.items():
-            dtensor = global_dtensor[idx]
+            dtensor = self.global_tensors[idx]
             # key: offset specific to dtensor
             unresolved_tile: dict[Offset4D, list[MulticastInterface]] = {}
             in_process: set[PEInterface] = set()
@@ -1388,7 +1384,7 @@ class CodeGenerator:
         if os.getenv("HACK") == "1":
             global_input_num, global_output_num = 0, 0
             for idx, contiguous_interfaces in global_dma_tasks.items():
-                if idx in self.global_inputs:
+                if self.global_tensors[idx].is_input:
                     global_input_num += len(contiguous_interfaces)
                 else:
                     global_output_num += len(contiguous_interfaces)
@@ -1402,7 +1398,7 @@ class CodeGenerator:
                                 - len(contiguous_interfaces)
                                 + (
                                     global_input_num
-                                    if idx in self.global_inputs
+                                    if self.global_tensors[idx].is_input
                                     else global_output_num
                                 )
                                 <= 2 * MAX_SHIM_TILES
@@ -1431,7 +1427,7 @@ class CodeGenerator:
                             )
                             contiguous_interfaces.append(new_contiguous_interface)
 
-                        if idx in self.global_inputs:
+                        if self.global_tensors[idx].is_input:
                             global_input_num -= 1
                             global_input_num += len(contiguous_interfaces)
                         else:
@@ -1441,7 +1437,7 @@ class CodeGenerator:
 
         for idx, contiguous_interfaces in global_dma_tasks.items():
             self.mem_tile_idx = 0
-            dtensor = global_dtensor[idx]
+            dtensor = self.global_tensors[idx]
             tile_shape = list(dtensor.size)
             for i in dtensor.shared_dims:
                 tile_shape[i] = 1
@@ -1460,7 +1456,7 @@ class CodeGenerator:
                             interface_list_,
                             size_,
                             tile_size,
-                            idx in self.global_inputs,
+                            dtensor.is_input,
                             dtensor.dtype,
                             dtensor.type_as_param,
                         ):
@@ -1486,7 +1482,7 @@ class CodeGenerator:
                                 partitioned_interface_list,
                                 partitioned_size,
                                 tile_size,
-                                idx in self.global_inputs,
+                                dtensor.is_input,
                                 dtensor.dtype,
                                 dtensor.type_as_param,
                             ):
@@ -1526,7 +1522,7 @@ class CodeGenerator:
             ]
             for live_tensor_tiles in tensor_tile_group.dtensor_groups.values():
                 for live_tensor_tile in live_tensor_tiles:
-                    dtensor_ = global_dtensor[live_tensor_tile.tile.dtensor_id]
+                    dtensor_ = self.global_tensors[live_tensor_tile.tile.dtensor_id]
                     self.global_dma_trough_port.append(
                         CodeGenerator.GlobalIODMATask(
                             token=token_map[live_tensor_tile.token],
@@ -1845,12 +1841,8 @@ class CodeGenerator:
                 # runtime sequence
                 runtime_seq = aiex_d.RuntimeSequenceOp()
                 runtime_args = []
-                for i in range(len(self.global_inputs) + len(self.global_outputs)):
-                    arg = (
-                        self.global_inputs[i]
-                        if i in self.global_inputs
-                        else self.global_outputs[i]
-                    )
+                for i in range(len(self.global_tensors)):
+                    arg = self.global_tensors[i]
                     runtime_args.append(
                         aie_ir.MemRefType.get(
                             arg.shape, get_element_type(str(arg.dtype))
@@ -2076,7 +2068,7 @@ class CodeGenerator:
                                     strides=stride,
                                     issue_token=True,
                                 )
-                                if fifo_info.dtensor_global_id in self.global_outputs:
+                                if not self.global_tensors[fifo_info.dtensor_global_id].is_input:
                                     launched_dma_to_external.append(
                                         self.fifo_map[fifo_name]
                                     )
@@ -2360,12 +2352,8 @@ class CodeGenerator:
                 # runtime sequence
                 runtime_seq = aiex_d.RuntimeSequenceOp()
                 runtime_args = []
-                for i in range(len(self.global_inputs) + len(self.global_outputs)):
-                    arg = (
-                        self.global_inputs[i]
-                        if i in self.global_inputs
-                        else self.global_outputs[i]
-                    )
+                for i in range(len(self.global_tensors)):
+                    arg = self.global_tensors[i]
                     runtime_args.append(
                         aie_ir.MemRefType.get(
                             arg.shape, get_element_type(str(arg.dtype))
@@ -2456,7 +2444,7 @@ class CodeGenerator:
                             33554432 * trace_info.shim_tile_idx[0]
                             + 119268
                             - 32 * (trace_info.packet_id - 1),
-                            len(self.global_inputs) + len(self.global_outputs),
+                            len(self.global_tensors),
                             0,
                         )
                         aiex_d.npu_write32(
@@ -2487,13 +2475,9 @@ class CodeGenerator:
 
                     dma_tiles: list = []
                     bd_cnt = 0
-                    for i in range(len(self.global_inputs) + len(self.global_outputs)):
-                        io = "in" if i in self.global_inputs else "out"
-                        dtensor = (
-                            self.global_inputs[i]
-                            if i in self.global_inputs
-                            else self.global_outputs[i]
-                        )
+                    for i in range(len(self.global_tensors)):
+                        dtensor = self.global_tensors[i]
+                        io = "in" if dtensor.is_input else "out"
 
                         for dma_tile in io_mapping[dtensor.name]:
                             dma_fifo = self.fifo_map[

@@ -100,7 +100,6 @@ class AIE_MLIRModule:
 
     def _init_func_args(self, func_args: dict):
         tmp_map: dict = {}
-        self.func_args: dict[str, list[Argument]] = {}
         for func_name, args in func_args.items():
             self.func_args[func_name] = []
             for arg in args:
@@ -253,7 +252,7 @@ class AIE_MLIRModule:
                             io_idx
                         ].type.shape
                         global_idx = self.func_args[self.top_func_name].index(argument)
-                        argument.dtensor.set_global_id(global_idx)
+                        argument.dtensor.set_global_info(global_idx, io_type == "in")
                         if io_type == "in":
                             self.global_inputs[global_idx] = argument.dtensor
                         else:
@@ -270,15 +269,6 @@ class AIE_MLIRModule:
                     func_arg,
                     self.stream_info[kernel_name][func_arg.stream.name],
                 )
-        # validity check
-        for i in range(len(self.global_inputs)):
-            assert (
-                i in self.global_inputs
-            ), "inputs should be the starting arguments of the function"
-        for i in range(len(self.global_outputs)):
-            assert (
-                i + len(self.global_inputs) in self.global_outputs
-            ), "outputs should be the ending arguments of the function"
 
     def allo_opt(self):
         """
@@ -599,10 +589,12 @@ class AIE_MLIRModule:
         top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
             self.allo_module, self.top_func_name
         )
+        global_tensors: dict[int, DTensor] =  dict(self.global_inputs)
+        global_tensors.update(self.global_outputs)
+        
         code_generator = CodeGenerator(
             device_type,
-            self.global_inputs,
-            self.global_outputs,
+            global_tensors,
             top_func,
             self.core_func_args,
             self.streams,
@@ -752,15 +744,6 @@ class AIE_MLIRModule:
                         func_arg,
                         self.stream_info[func_name_w_id][func_arg.stream.name],
                     )
-        # validity check
-        for i in range(len(self.global_inputs)):
-            assert (
-                i in self.global_inputs
-            ), "inputs should be the starting arguments of the function"
-        for i in range(len(self.global_outputs)):
-            assert (
-                i + len(self.global_inputs) in self.global_outputs
-            ), "outputs should be the ending arguments of the function"
 
         return inputs, outputs
 
@@ -818,10 +801,17 @@ class AIE_MLIRModule:
         top_func, core_func_groups, external_funcs = classify_aie_functions(
             self.allo_module, self.top_func_name
         )
+        global_tensors: dict[int, DTensor] =  {}
+        for idx, tensor in self.global_inputs.items():
+            tensor.set_global_info(idx, True)
+            global_tensors[idx] = tensor
+        for idx, tensor in self.global_outputs.items():
+            tensor.set_global_info(idx, False)
+            global_tensors[idx] = tensor
+
         code_generator = CodeGenerator(
             device_type,
-            self.global_inputs,
-            self.global_outputs,
+            global_tensors,
             top_func,
             self.core_func_args,
             self.streams,
