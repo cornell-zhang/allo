@@ -1873,9 +1873,6 @@ class CodeGenerator:
                         dma_task_groups.values()
                     )
                     task_groups.sort(key=lambda x: x.start_time)
-                    dma_bd_map: dict[str, int] = {
-                        shim_tile.name: 0 for shim_tile in self.used_shim_tiles
-                    }
                     launched_dma_to_external: list[aie_d.object_fifo] = []
                     coalesced_tasks_list: list[list[CodeGenerator.GlobalIODMATask]] = []
                     # launch a group of tasks with the same token
@@ -1959,12 +1956,11 @@ class CodeGenerator:
                         for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks_list.append(coalesced_tasks)
+                        print(coalesced_tasks)
 
                     # ##################################################################
                     tasks_idx_left = 0
-                    dma_bd_map: dict[str, int] = {
-                        shim_tile.name: 0 for shim_tile in self.used_shim_tiles
-                    }
+                    
 
                     @dataclass
                     class DMAMemcpyGroup:
@@ -2030,10 +2026,9 @@ class CodeGenerator:
                                     if global_dma.io_port.is_input
                                     else global_dma.io_port.fifo.dst[0]
                                 )
-                                dma_bd_workload[used_shim] += 1
                                 if (
-                                    dma_bd_workload[used_shim] + dma_bd_map[used_shim]
-                                    >= Config.DMA_MAX_BDS
+                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS 
+                                    or len(updated_fifo_dma_tasks[global_dma.io_port.fifo.name]) == 5 # fixme: seems that transferring with the same fifo is invalid
                                 ):
                                     overload_flag = True
                                     break
@@ -2043,11 +2038,11 @@ class CodeGenerator:
                                     DMAMemcpyGroup(
                                         [(offset, size, stride)],
                                         None,
-                                        dma_bd_workload[used_shim]
-                                        + dma_bd_map[used_shim],
+                                        dma_bd_workload[used_shim],
                                         global_dma.dtensor.global_id,
                                     )
                                 )
+                                dma_bd_workload[used_shim] += 1
                             if overload_flag:
                                 break
                             tasks_idx_right += 1

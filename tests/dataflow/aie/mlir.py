@@ -58,7 +58,7 @@ def call_mlir(project: str, output_dtype, trace_size: int, *args):
 # fixme: update parameters as you need
 from allo.ir.types import int8, int16, int32, bfloat16
 
-M, N, K = 2048, 2048, 1024
+M, N, K = 512, 512, 512
 
 # A = np.random.random((M, K)).astype(np_bfloat16)
 # B = np.random.random((K, N)).astype(np_bfloat16)
@@ -68,12 +68,12 @@ M, N, K = 2048, 2048, 1024
 # print(C)
 # np.testing.assert_allclose(C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2)
 
-# A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-# B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
-# C = np.zeros((M, N)).astype(np.int16)
-A = np.random.random((M, K)).astype(np_bfloat16)
-B = np.random.random((K, N)).astype(np_bfloat16)
-C = np.zeros((M, N)).astype(np_bfloat16)
+A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+C = np.zeros((M, N)).astype(np.int16)
+# A = np.random.random((M, K)).astype(np_bfloat16)
+# B = np.random.random((K, N)).astype(np_bfloat16)
+# C = np.zeros((M, N)).astype(np_bfloat16)
 call_mlir("gemm_.prj", int16, 4096*4096, A, B, C)
 
 np.testing.assert_allclose(C, A @ B, atol=1e-5)
