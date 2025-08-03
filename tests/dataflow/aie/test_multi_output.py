@@ -58,7 +58,7 @@ def _test_matmul():
     C = np.zeros((M, N)).astype(np.int16)
     D = np.random.randint(0, 64, (M, K)).astype(np.int16)
     E = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    
+
     F = np.zeros((M, N)).astype(np.int16)
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
