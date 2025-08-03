@@ -662,7 +662,7 @@ class AIE_MLIRModule:
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-                raise RuntimeError("Failed to build AIE project.")
+            raise RuntimeError("Failed to build AIE project.")
 
     def collect_io(
         self,

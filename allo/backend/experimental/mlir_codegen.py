@@ -668,12 +668,13 @@ class CodeGenerator:
         dtensor: DTensor
         size: list[int]
         offset: list[int]
+        stride: list[int]
 
         def transfer_pattern(self):
             offset, size, stride = (
                 list(self.offset),
                 list(self.size),
-                list(self.io_port.stride),
+                list(self.stride),
             )
             if size[0] > 1 and size[1] == 1:
                 offset[0], offset[1] = offset[1], offset[0]
@@ -803,14 +804,17 @@ class CodeGenerator:
                 return False
 
             def _contiguous_data_transfer(
-                self, other: "MulticastInterface", current_size: Size4D
-            ) -> Size4D:
+                self,
+                other: "MulticastInterface",
+                current_size: Size4D,
+                contiguous_dim: int,
+            ) -> tuple[Size4D, int]:
                 for interface in self.interface_list:
                     if interface in other.interface_list:
                         # TODO: can be relaxed
-                        return None
+                        return None, None
                 if self.sample_interface.layout != other.sample_interface.layout:
-                    return None
+                    return None, None
                 sample_global_tensors: LiveDTensorTileGroup = global_tensors[
                     self.sample_interface.pe
                 ][self.sample_interface.interface_idx]
@@ -831,6 +835,7 @@ class CodeGenerator:
                     new_token_list: list[str] = []
                     for sample_value in sample_value_list:
                         sample_matched_with_other_flag = False
+                        size_contiguous_dim = None
                         for (
                             other_token,
                             other_value,
@@ -878,7 +883,22 @@ class CodeGenerator:
                                         i * s
                                         for i, s in zip(other_offset, outer_stride)
                                     )
-                                    if other_flattened_idx - sample_flattened_idx != 1:
+                                    idx_diff = (
+                                        other_flattened_idx - sample_flattened_idx
+                                    )
+                                    for i in range(4):
+                                        if idx_diff >= outer_stride[i]:
+                                            if idx_diff % outer_stride[i] != 0:
+                                                match_flag = False
+                                                break
+                                            idx_diff //= outer_stride[i]
+                                            if idx_diff == 1:
+                                                size_contiguous_dim = i
+                                                break
+                                    if (
+                                        contiguous_dim is not None
+                                        and contiguous_dim != size_contiguous_dim
+                                    ):
                                         match_flag = False
                                         break
                                     new_size_list_ = current_size.to_list()
@@ -899,10 +919,10 @@ class CodeGenerator:
                                     sample_matched_with_other_flag = True
                                     break
                         if not sample_matched_with_other_flag:
-                            return None
+                            return None, None
                     self.tokens.add(tuple(new_token_list))
-                    return Size4D.from_list(new_size_list)
-                return None
+                    return Size4D.from_list(new_size_list), size_contiguous_dim
+                return None, None
 
             def get_pes(self) -> list[str]:
                 ret: list[str] = []
@@ -934,12 +954,21 @@ class CodeGenerator:
                     self.layout = None
                     self.total_size: Size4D = None
                     self.interface_list: list[MulticastInterface] = []
+                self.contiguous_dim = None
 
             def append(self, other: MulticastInterface) -> bool:
                 sample = self.interface_list[-1]
-                updated_size = sample._contiguous_data_transfer(other, self.total_size)
+                updated_size, contiguous_dim = sample._contiguous_data_transfer(
+                    other, self.total_size, self.contiguous_dim
+                )
                 if updated_size is None:
                     return False
+                if (
+                    self.contiguous_dim is not None
+                    and contiguous_dim != self.contiguous_dim
+                ):
+                    return False
+                self.contiguous_dim = contiguous_dim
                 self.interface_list.append(other)
                 self.total_size = updated_size
                 return True
@@ -1335,7 +1364,7 @@ class CodeGenerator:
                         dtensor.offset_map[dtensor_tile.tensor_tile_label]
                     ] = multicast_list
             # coalesced access pattern on dtensor will give a hint
-            coalesced_access_pattern, coalesce_info, coalesced_multicast_interfaces = (
+            coalesced_access_pattern, _, coalesced_multicast_interfaces = (
                 coalesce_memory_access(unresolved_tile)
             )
             if os.getenv("VERBOSE") == "1":
@@ -1420,6 +1449,9 @@ class CodeGenerator:
                         slice_size = total_tile // factor
                         for i in range(factor):
                             new_contiguous_interface = ContiguousInterface()
+                            new_contiguous_interface.contiguous_dim = (
+                                contiguous_interface.contiguous_dim
+                            )
                             new_contiguous_interface.layout = (
                                 contiguous_interface.layout
                             )
@@ -1529,6 +1561,16 @@ class CodeGenerator:
             for live_tensor_tiles in tensor_tile_group.dtensor_groups.values():
                 for live_tensor_tile in live_tensor_tiles:
                     dtensor_ = self.global_tensors[live_tensor_tile.tile.dtensor_id]
+                    size = list(io_port.size)
+                    offset = dtensor_.offset_map[
+                        live_tensor_tile.tile.tensor_tile_label
+                    ].to_list()
+                    stride = list(io_port.stride)
+                    # fixme: patch only, find a robust way for higher dimensions??
+                    if size[0] > 1 and size[1] == 1:
+                        size[0], size[1] = size[1], size[0]
+                        offset[0], offset[1] = offset[1], offset[0]
+                        stride[0], stride[1] = stride[1], stride[0]
                     self.global_dma_trough_port.append(
                         CodeGenerator.GlobalIODMATask(
                             token=token_map[live_tensor_tile.token],
@@ -1538,10 +1580,9 @@ class CodeGenerator:
                             + Config.GLOBAL_CODE_OFFSET * io_port.order_tag,
                             io_port=io_port,
                             dtensor=dtensor_,
-                            size=io_port.size,
-                            offset=dtensor_.offset_map[
-                                live_tensor_tile.tile.tensor_tile_label
-                            ].to_list(),
+                            size=size,
+                            offset=offset,
+                            stride=stride,
                         )
                     )
         if os.getenv("VERBOSE") == "1":
@@ -1946,6 +1987,7 @@ class CodeGenerator:
                                         tasks[left].dtensor,
                                         base_size,
                                         tasks[left].offset,
+                                        tasks[left].stride,
                                     )
                                     coalesced_fifo_to_tasks[fifo].append(coalesced_task)
                                     left = right
@@ -1954,7 +1996,7 @@ class CodeGenerator:
                         for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks_list.append(coalesced_tasks)
-                        print(coalesced_tasks)
+                        # print(coalesced_tasks)
 
                     # ##################################################################
                     tasks_idx_left = 0
