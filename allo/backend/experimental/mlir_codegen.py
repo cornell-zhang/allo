@@ -1416,7 +1416,7 @@ class CodeGenerator:
         # ####################
         # # HACK: an aggressive strategy to fully utilize interface ports (may be problematic)
         # ####################
-        if os.getenv("HACK") == "1":
+        if os.getenv("ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH") == "1":
             global_input_num, global_output_num = 0, 0
             for idx, contiguous_interfaces in global_dma_tasks.items():
                 if self.global_tensors[idx].is_input:
@@ -1996,7 +1996,6 @@ class CodeGenerator:
                         for tasks in fifo_to_tasks.values():
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks_list.append(coalesced_tasks)
-                        # print(coalesced_tasks)
 
                     # ##################################################################
                     tasks_idx_left = 0
@@ -2051,7 +2050,7 @@ class CodeGenerator:
                                             )
                                             prev_task.diff = diff
                                             continue
-                                        elif prev_task.diff == diff:
+                                        if prev_task.diff == diff:
                                             prev_task.dma_tasks.append(
                                                 (offset, size, stride)
                                             )

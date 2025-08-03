@@ -339,9 +339,6 @@ def build(
         return mod
 
     if target == "aie-mlir":
-        from datetime import datetime
-        now = datetime.now()
-        print("start compiling", now)
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
         stream_info, stream_types_dict = move_stream_to_interface(
@@ -368,9 +365,6 @@ def build(
             raise APIWarning(
                 "Please set use_default_codegen = True if you want to use trace."
             )
-        from datetime import datetime
-        now = datetime.now()
-        print("start building", now)
         if use_default_codegen:
             aie_mod.build(
                 device_type=device_type,
