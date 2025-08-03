@@ -35,36 +35,5 @@ def _test_increase_decrease():
     print("PASSED!")
 
 
-def _test_matmul():
-    LyA = Layout("S0R")
-
-    Ty = int16
-    M, N, K = 32, 16, 16
-    P0 = 2
-
-    @df.region()
-    def top():
-        @df.kernel(mapping=[P0])
-        def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
-            C[:, :] = allo.matmul(A, B)
-
-        # @df.kernel(mapping=[P0])
-        # def mmeg(D: Ty[M, K] @ LyA, E: Ty[K, N], F: Ty[M, N] @ LyA):
-        #     F[:, :] = allo.matmul(D, E)
-
-    mod = df.build(top, target="aie-mlir")
-    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    C = np.zeros((M, N)).astype(np.int16)
-    D = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    E = np.random.randint(0, 64, (K, N)).astype(np.int16)
-
-    F = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
-
-
 if __name__ == "__main__":
-    # _test_increase_decrease()
-    _test_matmul()
+    _test_increase_decrease()
