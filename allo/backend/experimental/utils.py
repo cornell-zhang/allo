@@ -961,7 +961,7 @@ def codegen_host(global_tensors: dict[int, DTensor]):
         )
         code += format_str("}")
         code += format_str("return 0;")
-    code += format_str("}")
+    code += format_str("}", indent=0)
     return code
 
 

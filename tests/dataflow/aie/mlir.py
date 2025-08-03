@@ -69,7 +69,7 @@ def call_mlir(
 # fixme: update parameters as you need
 from allo.ir.types import int8, int16, int32, bfloat16
 
-M, N, K = 512, 512, 512
+# M, N, K = 512, 512, 512
 
 # A = np.random.random((M, K)).astype(np_bfloat16)
 # B = np.random.random((K, N)).astype(np_bfloat16)
@@ -79,13 +79,20 @@ M, N, K = 512, 512, 512
 # print(C)
 # np.testing.assert_allclose(C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2)
 
-A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+# A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+# B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+# C = np.zeros((M, N)).astype(np.int16)
+
+M, N, K = 32, 16, 16
+A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+B = np.random.randint(0, 64, (K, N)).astype(np.int16)
 C = np.zeros((M, N)).astype(np.int16)
+F = np.zeros((M, N)).astype(np.int16)
+call_mlir("top.prj", [int16, int16, int16],0, [0, 1], [2], A, B, C)
 # A = np.random.random((M, K)).astype(np_bfloat16)
 # B = np.random.random((K, N)).astype(np_bfloat16)
 # C = np.zeros((M, N)).astype(np_bfloat16)
-call_mlir("gemm_.prj", [int16, int16, int16], 4096 * 4096, [0, 1], [2], A, B, C)
+# call_mlir("gemm_.prj", [int16, int16, int16], 4096 * 4096, [0, 1], [2], A, B, C)
 
 np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")
