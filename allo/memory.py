@@ -159,8 +159,8 @@ class DTensor:
                 tuple[int | str, ...], list[tuple[int, ...]]
             ] = layout.get_placement_exp(mapping)
         self.access_pattern_set = False
-        self.global_id:int = None
-        self.is_input:bool = None
+        self.global_id: int = None
+        self.is_input: bool = None
         self.type_as_param: list = None
 
     def get_local_shape(self):
@@ -179,7 +179,7 @@ class DTensor:
                 local_shape.append(s // self.mapping[-dim - 1])
         return tuple(local_shape)
 
-    def set_global_info(self, global_id: int, is_input:bool ):
+    def set_global_info(self, global_id: int, is_input: bool):
         self.global_id = global_id
         self.is_input = is_input
 
