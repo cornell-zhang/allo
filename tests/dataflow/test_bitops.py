@@ -124,7 +124,7 @@ def top_packed_bconv2D_nchw():
 def test_get_bit_dataflow():
     """Test get_bit operations in dataflow backend."""
     print("=== Testing GetBit Operations ===")
-    
+
     np_A = np.random.randint(10, size=(10,))
     np_B = np.zeros(10, dtype=np.int32)
     sim_mod = df.build(top_get_bit, target="simulator")
@@ -137,7 +137,7 @@ def test_get_bit_dataflow():
 def test_get_bit_slice_dataflow():
     """Test get_bit_slice operations in dataflow backend."""
     print("=== Testing GetBit Slice Operations ===")
-    
+
     np_A = np.random.randint(10, size=(10,))
     np_B = np.zeros(10, dtype=np.int32)
     sim_mod = df.build(top_get_bit_slice, target="simulator")
@@ -150,13 +150,13 @@ def test_get_bit_slice_dataflow():
 def test_reverse_dataflow():
     """Test bit reverse operations in dataflow backend."""
     print("=== Testing Bit Reverse Operations ===")
-    
+
     np_A = np.random.randint(10, size=(10,)).astype(np.uint8)
     np_B = np.zeros(10, dtype=np.uint8)
     golden = (np_A & 0xFF).astype(np.uint8)
     sim_mod = df.build(top_reverse, target="simulator")
     sim_mod(np_A, np_B)
-    
+
     for i in range(0, 10):
         x = np.unpackbits(golden[i])
         x = np.flip(x)
@@ -168,11 +168,11 @@ def test_reverse_dataflow():
 def test_set_bit_tensor1_dataflow():
     """Test set_bit tensor operations (method 1) in dataflow backend."""
     print("=== Testing SetBit Tensor Operations (Method 1) ===")
-    
+
     np_A = np.random.randint(2, size=(10,))
     np_B = np.random.randint(10, size=(10,))
     golden = np_B & 0b1110 | np_A
-    
+
     sim_mod = df.build(top_set_bit_tensor1, target="simulator")
     sim_mod(np_A, np_B)
     assert np.array_equal(golden, np_B)
@@ -182,11 +182,11 @@ def test_set_bit_tensor1_dataflow():
 def test_set_bit_tensor2_dataflow():
     """Test set_bit tensor operations (method 2) in dataflow backend."""
     print("=== Testing SetBit Tensor Operations (Method 2) ===")
-    
+
     np_A = np.random.randint(2, size=(10,))
     np_B = np.random.randint(10, size=(10,))
     golden = np_B & 0b1110 | np_A
-    
+
     sim_mod = df.build(top_set_bit_tensor2, target="simulator")
     sim_mod(np_A, np_B)
     assert np.array_equal(golden, np_B)
@@ -196,11 +196,11 @@ def test_set_bit_tensor2_dataflow():
 def test_set_slice_dataflow():
     """Test set_slice operations in dataflow backend."""
     print("=== Testing SetSlice Operations ===")
-    
+
     np_A = np.random.randint(2, size=(10,))
     np_B = np.random.randint(7, size=(10,))
     golden = (np_B & 0b1100) | np_A
-    
+
     sim_mod = df.build(top_set_slice, target="simulator")
     sim_mod(np_A, np_B)
     assert np.array_equal(golden, np_B)
@@ -210,7 +210,7 @@ def test_set_slice_dataflow():
 def test_dynamic_index_dataflow():
     """Test dynamic index operations in dataflow backend."""
     print("=== Testing Dynamic Index Operations ===")
-    
+
     np_B = np.zeros((11,), dtype=np.int32)
     sim_mod = df.build(top_dynamic_index, target="simulator")
     sim_mod(np.array([1234]), np_B)
@@ -221,7 +221,7 @@ def test_dynamic_index_dataflow():
 def test_dynamic_slice_dataflow():
     """Test dynamic slice operations in dataflow backend."""
     print("=== Testing Dynamic Slice Operations ===")
-    
+
     np_B = np.zeros((11,), dtype=np.int32)
     sim_mod = df.build(top_dynamic_slice, target="simulator")
     sim_mod(np.array([1234]), np_B)
@@ -232,7 +232,7 @@ def test_dynamic_slice_dataflow():
 def test_bitcast_uint2float32_dataflow():
     """Test bitcast uint32 to float32 operations in dataflow backend."""
     print("=== Testing Bitcast UInt32 to Float32 ===")
-    
+
     A_np = np.random.randint(100, size=(10, 10)).astype(np.uint32)
     B_np = np.zeros((10, 10), dtype=np.float32)
     sim_mod = df.build(top_bitcast_uint2float32, target="simulator")
@@ -245,12 +245,14 @@ def test_bitcast_uint2float32_dataflow():
 def test_bitcast_uint2float16_dataflow():
     """Test bitcast int32 to float16 operations in dataflow backend."""
     print("=== Testing Bitcast Int32 to Float16 ===")
-    
+
     A_np = np.random.randint(100, size=(10, 10)).astype(np.int32)
     B_np = np.zeros((10, 10), dtype=np.float16)
     sim_mod = df.build(top_bitcast_uint2float16, target="simulator")
     sim_mod(A_np, B_np)
-    answer = np.frombuffer(A_np.astype(np.int16).tobytes(), np.float16).reshape((10, 10))
+    answer = np.frombuffer(A_np.astype(np.int16).tobytes(), np.float16).reshape(
+        (10, 10)
+    )
     assert np.array_equal(B_np, answer)
     print("✓ Bitcast int32 to float16 passed!")
 
@@ -258,7 +260,7 @@ def test_bitcast_uint2float16_dataflow():
 def test_bitcast_float2uint_dataflow():
     """Test bitcast float32 to uint32 operations in dataflow backend."""
     print("=== Testing Bitcast Float32 to UInt32 ===")
-    
+
     A_np = np.random.rand(10, 10).astype(np.float32)
     B_np = np.zeros((10, 10), dtype=np.uint32)
     sim_mod = df.build(top_bitcast_float2uint, target="simulator")
@@ -271,7 +273,7 @@ def test_bitcast_float2uint_dataflow():
 def test_bitcast_float2int_dataflow():
     """Test bitcast float32 to int32 operations in dataflow backend."""
     print("=== Testing Bitcast Float32 to Int32 ===")
-    
+
     A_np = np.random.rand(10, 10).astype(np.float32)
     B_np = np.zeros((10, 10), dtype=np.int32)
     sim_mod = df.build(top_bitcast_float2int, target="simulator")
@@ -284,7 +286,7 @@ def test_bitcast_float2int_dataflow():
 def test_packed_bconv2D_nchw_dataflow():
     """Test packed binary convolution 2D operations in dataflow backend."""
     print("=== Testing Packed Binary Convolution 2D ===")
-    
+
     bs = 4
     ic, oc = 16, 32
     ih, iw = 8, 8
@@ -292,7 +294,7 @@ def test_packed_bconv2D_nchw_dataflow():
     oh, ow = ih - kh + 1, iw - kw + 1
     packing_factor = 16
     kc = ic // packing_factor
-    
+
     np_A = np.random.randint(0, 2, size=(bs, ic, ih, iw))
     np_B = np.random.randint(0, 2, size=(oc, ic, kh, kw))
     np_C = np.zeros((bs, oc, oh, ow), np.int32)
@@ -322,10 +324,12 @@ def test_packed_bconv2D_nchw_dataflow():
         .view(np.uint16)
         .transpose((0, 3, 1, 2))
     )
-    
+
     sim_mod = df.build(top_packed_bconv2D_nchw, target="simulator")
     sim_mod(packed_A, packed_B, np_C)
-    assert np.array_equal(np_C, np_C)  # This will always pass, but we can verify the computation worked
+    assert np.array_equal(
+        np_C, np_C
+    )  # This will always pass, but we can verify the computation worked
     print("✓ Packed binary convolution 2D passed!")
 
 
@@ -344,5 +348,5 @@ if __name__ == "__main__":
     test_bitcast_float2uint_dataflow()
     test_bitcast_float2int_dataflow()
     test_packed_bconv2D_nchw_dataflow()
-    
+
     print("\n=== All Bit Operations Tests Completed ===")
