@@ -162,12 +162,17 @@ class HLSModule:
         configs=None,
         func_args=None,
         wrap_io=True,
+        custom_bd_tcl=None
     ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
+        if custom_bd_tcl and not os.path.exists(custom_bd_tcl):
+            raise FileNotFoundError(f"Custom Tcl file not found: {custom_bd_tcl}")
+        self.custom_bd_tcl = custom_bd_tcl
+
         if configs is not None:
             new_configs = DEFAULT_CONFIG
             new_configs.update(configs)
@@ -182,7 +187,6 @@ class HLSModule:
             self.func = find_func_in_module(self.module, top_func_name)
             if platform == "vitis_hls" or platform == "pynq":
                 assert func_args is not None, "Need to specify func_args"
-
                 if wrap_io:
                     generate_input_output_buffers(
                         self.module,
@@ -223,6 +227,12 @@ class HLSModule:
             path = os.path.join(path, "../harness/")
             if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
+
+                if platform == "pynq" and self.custom_bd_tcl:
+                    default_bd = os.path.join(project, "block_design.tcl")
+                    if(os.path.exists(default_bd)):
+                        os.remove(default_bd)
+
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
@@ -276,19 +286,14 @@ class HLSModule:
                 assert (
                     self.top_func_name != "kernel"
                 ), "kernel is a reserved keyword for pynq"
-                path = os.path.dirname(__file__)
-                path = os.path.join(path, "../harness/")
-
-
-                # if wrap_io:
-                #     generate_input_output_buffers(
-                #         self.module,
-                #         top_func_name,
-                #         flatten=True,
-                #         mappings=configs.get("mappings", None),
-                #     )
 
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
+
+                if self.custom_bd_tcl:
+                    bd_dst = os.path.join(project, "custom_block_design.tcl")
+                    os.system(f"cp {self.custom_bd_tcl} {bd_dst}")
+                    self.custom_bd_tcl = "custom_block_design.tcl"
+
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
                 self.hls_code = postprocess_hls_code_pynq(self.hls_code, self.top_func_name)
@@ -518,7 +523,8 @@ class HLSModule:
                     raise RuntimeError("Failed to synthesize the design")
 
                 # vivado block design
-                cmd = f"cd {self.project}; vivado -mode batch -source block_design.tcl"
+                bd_script = self.custom_bd_tcl if self.custom_bd_tcl else "block_design.tcl"
+                cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
                 print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ...")
                 if shell:
                     process = subprocess.Popen(cmd, shell=True)

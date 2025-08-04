@@ -1,5 +1,4 @@
 # Block design for baseline (single kernel multiple master)
-
 # create project in build_vivado directory
 create_project project_1 ./build_vivado -part xczu3eg-sbva484-1-i
 
@@ -48,7 +47,6 @@ set ctrl_axi_smc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 c
 set data_axi_smc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 data_axi_smc]
 
 # CONNECT AXI SYSTEM
-
 # get number of master interfaces
 set data_num_si 0
 
@@ -123,23 +121,19 @@ add_files -norecurse -fileset [get_filesets sources_1] $wrapper_file
 set_property top project_1_bd_wrapper [get_filesets sources_1]
 update_compile_order -fileset sources_1
 
-# SETUP SYNTHESIS & IMPLEMENTATION RUNS
-# synthesis run "synth_1"
+# SYNTHESIS & IMPLEMENTATION RUNS
 if {[string equal [get_runs -quiet synth_1] ""]} {
     create_run -flow "Vivado Synthesis 2023" -name synth_1 -part xczu3eg-sbva484-1-i
 }
 set_property strategy "Vivado Synthesis Defaults" [get_runs synth_1]
 set_property report_strategy "Vivado Synthesis Default Reports" [get_runs synth_1]
 
-# implementation run "impl_1"
-# it's a child run of "synth_1" since implementation depends on synthesis
 if {[string equal [get_runs -quiet impl_1] ""]} {
     create_run -flow "Vivado Implementation 2023" -name impl_1 -part xczu3eg-sbva484-1-i -parent_run [get_runs synth_1]
 }
 set_property strategy "Vivado Implementation Defaults" [get_runs impl_1]
 set_property report_strategy "Vivado Implementation Default Reports" [get_runs impl_1]
 
-# LAUNCH SYNTHESIS & IMPLEMENTATION RUNS
 launch_runs impl_1 -to_step write_bitstream
 wait_on_run impl_1
 
