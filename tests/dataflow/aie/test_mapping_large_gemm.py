@@ -111,7 +111,7 @@ if __name__ == "__main__":
     # [NOTE]: int8 and bfloat16 have accuracy issue (compared with cpu reference)
     # - i8
     try:
-        _test_pingpong_gemm(128, 128, 256, 4, 4, 8, int8, int8)
+        _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int8, int8)
     except:
         print("[NOTE]: int8 have accuracy issue")
 
@@ -120,6 +120,6 @@ if __name__ == "__main__":
 
     # - bf16
     try:
-        _test_pingpong_gemm(2048, 2048, 1024, 32, 32, 16, bfloat16, bfloat16)
+        _test_pingpong_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")
