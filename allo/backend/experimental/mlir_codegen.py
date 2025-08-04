@@ -2080,7 +2080,7 @@ class CodeGenerator:
                                             global_dma.io_port.fifo.name
                                         ]
                                     )
-                                    == 5  # fixme: seems that transferring too much with the same fifo is invalid
+                                    == 5  # fixme: seems that transferring too much with the same fifo is invalid (magic number)
                                 ):
                                     overload_flag = True
                                     break

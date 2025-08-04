@@ -361,7 +361,6 @@ def build(
             device_type = "npu2"
         else:
             device_type = "npu1_4col"
-        device_type = "npu1_1col"
         if trace is not None and not use_default_codegen:
             raise APIWarning(
                 "Please set use_default_codegen = True if you want to use trace."
