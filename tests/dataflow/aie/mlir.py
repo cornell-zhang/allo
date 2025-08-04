@@ -83,7 +83,7 @@ from allo.ir.types import int8, int16, int32, bfloat16
 # B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
 # C = np.zeros((M, N)).astype(np.int16)
 
-M, N, K = 32, 16, 16
+M, N, K = 512, 512, 512
 A = np.random.randint(0, 64, (M, K)).astype(np.int16)
 B = np.random.randint(0, 64, (K, N)).astype(np.int16)
 C = np.zeros((M, N)).astype(np.int16)
