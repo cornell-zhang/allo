@@ -4,7 +4,7 @@
 
 import os
 import copy
-from collections import defaultdict, deque
+from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 
