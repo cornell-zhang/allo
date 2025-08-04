@@ -4,7 +4,7 @@
 
 import os
 import copy
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 import numpy as np
 
@@ -1912,7 +1912,6 @@ class CodeGenerator:
                         dma_task_groups.values()
                     )
                     task_groups.sort(key=lambda x: x.start_time)
-                    launched_dma_to_external: list[aie_d.object_fifo] = []
                     coalesced_tasks_list: list[list[CodeGenerator.GlobalIODMATask]] = []
                     # launch a group of tasks with the same token
                     for task_group in task_groups:
@@ -1997,7 +1996,6 @@ class CodeGenerator:
                             coalesced_tasks.extend(tasks)
                         coalesced_tasks_list.append(coalesced_tasks)
 
-                    # ##################################################################
                     tasks_idx_left = 0
 
                     @dataclass
@@ -2006,11 +2004,16 @@ class CodeGenerator:
                         diff: list[int]
                         bd_id: int
                         dtensor_global_id: bool
+                        used_shim: str
+                        max_task_id: int
 
+                    guards = {}
+                    async_dma_tasks: list[DMAMemcpyGroup] = []
+                    dma_bd_workload: dict[str, set[int]] = {
+                        shim_tile.name: set(range(Config.DMA_MAX_BDS))
+                        for shim_tile in self.used_shim_tiles
+                    }
                     while tasks_idx_left < len(coalesced_tasks_list):
-                        dma_bd_workload: dict[str, int] = {
-                            shim_tile.name: 0 for shim_tile in self.used_shim_tiles
-                        }
                         overload_flag = False
                         fifo_dma_tasks: dict[str, list[DMAMemcpyGroup]] = {}
                         tasks_idx_right = tasks_idx_left
@@ -2018,6 +2021,10 @@ class CodeGenerator:
                             updated_fifo_dma_tasks: dict[str, list[DMAMemcpyGroup]] = (
                                 copy.deepcopy(fifo_dma_tasks)
                             )
+                            occupied_bd_id = {
+                                shim_tile.name: set()
+                                for shim_tile in self.used_shim_tiles
+                            }
                             for global_dma in coalesced_tasks_list[tasks_idx_right]:
                                 offset, size, stride = global_dma.transfer_pattern()
                                 if (
@@ -2049,11 +2056,13 @@ class CodeGenerator:
                                                 (offset, size, stride)
                                             )
                                             prev_task.diff = diff
+                                            prev_task.max_task_id = tasks_idx_right
                                             continue
                                         if prev_task.diff == diff:
                                             prev_task.dma_tasks.append(
                                                 (offset, size, stride)
                                             )
+                                            prev_task.max_task_id = tasks_idx_right
                                             continue
                                 else:
                                     updated_fifo_dma_tasks[
@@ -2065,28 +2074,36 @@ class CodeGenerator:
                                     else global_dma.io_port.fifo.dst[0]
                                 )
                                 if (
-                                    dma_bd_workload[used_shim] >= Config.DMA_MAX_BDS
+                                    len(dma_bd_workload[used_shim]) == 0
                                     or len(
                                         updated_fifo_dma_tasks[
                                             global_dma.io_port.fifo.name
                                         ]
                                     )
-                                    == 5  # fixme: seems that transferring with the same fifo is invalid
+                                    == 5  # fixme: seems that transferring too much with the same fifo is invalid (magic number)
                                 ):
                                     overload_flag = True
                                     break
+                                bd_id = dma_bd_workload[used_shim].pop()
+                                occupied_bd_id[used_shim].add(bd_id)
                                 updated_fifo_dma_tasks[
                                     global_dma.io_port.fifo.name
                                 ].append(
                                     DMAMemcpyGroup(
                                         [(offset, size, stride)],
                                         None,
-                                        dma_bd_workload[used_shim],
+                                        bd_id,
                                         global_dma.dtensor.global_id,
+                                        used_shim,
+                                        tasks_idx_right,
                                     )
                                 )
-                                dma_bd_workload[used_shim] += 1
                             if overload_flag:
+                                for (
+                                    shim_name,
+                                    occupied_bd_ids,
+                                ) in occupied_bd_id.items():
+                                    dma_bd_workload[shim_name].update(occupied_bd_ids)
                                 break
                             tasks_idx_right += 1
                             fifo_dma_tasks = updated_fifo_dma_tasks
@@ -2122,18 +2139,29 @@ class CodeGenerator:
                                 if not self.global_tensors[
                                     fifo_info.dtensor_global_id
                                 ].is_input:
-                                    launched_dma_to_external.append(
+                                    if fifo_info.max_task_id not in guards:
+                                        guards[fifo_info.max_task_id] = []
+                                    guards[fifo_info.max_task_id].append(
                                         self.fifo_map[fifo_name]
                                     )
+                            async_dma_tasks.extend(fifo_infos)
                         tasks_idx_left = tasks_idx_right
-                        for launched_fifo in launched_dma_to_external:
+                        output_dma_tasks_id = min(guards.keys())
+                        output_dma_tasks = guards.pop(output_dma_tasks_id)
+                        for launched_fifo in output_dma_tasks:
                             aiex_d.dma_wait(launched_fifo)
-                        launched_dma_to_external.clear()
-                    # ##################################################################
-
-                    for launched_fifo in launched_dma_to_external:
-                        aiex_d.dma_wait(launched_fifo)
-
+                        updated_async_dma_tasks = []
+                        for async_dma_task in async_dma_tasks:
+                            if async_dma_task.max_task_id <= output_dma_tasks_id:
+                                dma_bd_workload[async_dma_task.used_shim].add(
+                                    async_dma_task.bd_id
+                                )
+                            else:
+                                updated_async_dma_tasks.append(async_dma_task)
+                        async_dma_tasks = updated_async_dma_tasks
+                    for output_dma_tasks in guards.values():
+                        for launched_fifo in output_dma_tasks:
+                            aiex_d.dma_wait(launched_fifo)
                     aie_d.EndOp()
 
         return self.aie_module
