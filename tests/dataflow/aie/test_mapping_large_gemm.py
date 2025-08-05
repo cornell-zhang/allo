@@ -117,6 +117,6 @@ if __name__ == "__main__":
 
     # - bf16
     # try:
-    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, bfloat16, bfloat16)
+    _test_pingpong_gemm(2048, 2048, 1024, 32, 32, 16, bfloat16, bfloat16)
 # except:
 #     print("[NOTE]: bfloat16 have accuracy issue")
