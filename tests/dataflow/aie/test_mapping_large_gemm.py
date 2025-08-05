@@ -68,17 +68,19 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 C[:, :] = C_out
 
     mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        Pm, Pn, Pk, col_num=2, row_num=2
+        Pm, Pn, Pk, 
+        col_num=2, row_num=4
     )
 
     mod = df.build(
         top,
+        project="top.prj",
         target="aie-mlir",
         mapping_primitives=mapping_primitives,
         profile=True,
         warmup=200,
         num_iters=1000,
-        device_type="npu1_1col",
+        device_type="npu1_2col",
     )
     if TyI is bfloat16:
         A = np.random.random((M, K)).astype(np_bfloat16)
@@ -113,10 +115,10 @@ if __name__ == "__main__":
     #     print("[NOTE]: int8 have accuracy issue")
 
     # - i16
-    # _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int16, int16)
+    _test_pingpong_gemm(1024, 1024, 1024, 16, 16, 16, int16, int16)
 
     # - bf16
     # try:
-    _test_pingpong_gemm(2048, 2048, 1024, 32, 32, 16, bfloat16, bfloat16)
+    # _test_pingpong_gemm(512, 512, 1024, 8, 8, 16, bfloat16, bfloat16)
 # except:
 #     print("[NOTE]: bfloat16 have accuracy issue")

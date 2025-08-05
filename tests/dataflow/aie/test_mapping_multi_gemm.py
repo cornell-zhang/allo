@@ -2,11 +2,39 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int8, int16, bfloat16
+from allo.ir.types import int16
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
+
+
+def gen_pingpong_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
+    # chain on k dimension
+    mapping_primitives = []
+    bases: list[list[str]] = []
+    for i in range(Pm):
+        bases.append([])
+        for j in range(Pn):
+            base = f"{prefix}_0_{i}_{j}"
+            for k in range(1, Pk):
+                mapping_primitives.append(("chain", [base, f"{prefix}_{k}_{i}_{j}"]))
+                base += f"-{prefix}_{k}_{i}_{j}"
+            bases[i].append(base)
+
+    if Pn // col_num < 1 or Pm // row_num < 1:
+        col_num, row_num = row_num, col_num
+
+    if Pn // col_num > 1 or Pm // row_num > 1:
+        for i in range(row_num):
+            for j in range(col_num):
+                bundle_list = []
+                for p in range(Pm // row_num):
+                    for q in range(Pn // col_num):
+                        bundle_list.append(bases[i + row_num * p][j + col_num * q])
+                mapping_primitives.append(("bundle", bundle_list))
+
+    return mapping_primitives
 
 
 def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
@@ -53,9 +81,17 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 F[:, :] = F_out
 
+    mapping_primitives = gen_pingpong_gemm_mapping_primitive(
+        "gemma", Pm, Pn, Pk, col_num=2, row_num=4
+    )
+    mapping_primitives.extend(
+        gen_pingpong_gemm_mapping_primitive("gemmb", Pm, Pn, Pk, col_num=2, row_num=2)
+    )
     mod = df.build(
         top,
+        project="gemm.prj",
         target="aie-mlir",
+        mapping_primitives=mapping_primitives,
         profile=True,
         warmup=200,
         num_iters=1000,
@@ -74,4 +110,4 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
-    _test_batched_gemm(64, 64, 64, 2, 2, 1, int16, int16)
+    _test_batched_gemm(1024, 1024, 1024, 16, 16, 16, int16, int16)

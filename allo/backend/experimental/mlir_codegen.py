@@ -685,16 +685,39 @@ class CodeGenerator:
                 stride[0], stride[1] = stride[1], stride[0]
             return offset, size, stride
 
+        def print(self):
+            print(
+                self.token,
+                f"[{self.start_time, self.end_time}]",
+                self.dtensor.global_id,
+                self.offset,
+                self.size,
+            )
+
     class DMATaskWithSameToken:
         def __init__(self, task: "CodeGenerator.GlobalIODMATask"):
             self.start_time: int = task.start_time
             self.end_time: int = task.end_time
             self.tasks: list[CodeGenerator.GlobalIODMATask] = [task]
+            self.related_pes: set[str] = set()
+            for interfaces in task.io_port.connect_interface:
+                for interface in interfaces.interface_list:
+                    self.related_pes.add(interface.pe)
 
         def add(self, task: "CodeGenerator.GlobalIODMATask"):
             self.start_time = min(self.start_time, task.start_time)
             self.end_time = max(self.end_time, task.end_time)
             self.tasks.append(task)
+            for interfaces in task.io_port.connect_interface:
+                for interface in interfaces.interface_list:
+                    self.related_pes.add(interface.pe)
+
+        def print(self):
+            print("-+-")
+            print(self.related_pes)
+            for task in self.tasks:
+                task.print()
+            print("---")
 
     def map_data_transfer(self) -> dict[str, dict[int, FIFO]]:
         """
@@ -1931,14 +1954,6 @@ class CodeGenerator:
 
                 runtime_seq = aiex_d.RuntimeSequenceOp()
                 runtime_args = []
-                # for i in range(len(self.global_tensors)):
-                #     arg = self.global_tensors[i]
-                #     runtime_args.append(
-                #         aie_ir.MemRefType.get(
-                #             arg.shape, get_element_type(str(arg.dtype))
-                #         )
-                #     )
-
                 for runtime_arg in self.module_runtime_args:
                     if len(runtime_arg.global_tensors) == 0:
                         continue
@@ -1958,22 +1973,44 @@ class CodeGenerator:
                     else:
                         group = dma_task_groups[global_dma.token]
                         group.add(global_dma)
+                independent_dma_task_groups: list[
+                    tuple[set[int], list[CodeGenerator.DMATaskWithSameToken]]
+                ] = []
+                for task_group in dma_task_groups.values():
+                    inserted = False
+                    for independent_dma_task_group in independent_dma_task_groups:
+                        if not independent_dma_task_group[0].isdisjoint(
+                            task_group.related_pes
+                        ):
+                            independent_dma_task_group[0].update(task_group.related_pes)
+                            independent_dma_task_group[1].append(task_group)
+                            inserted = True
+                            break
+                    if not inserted:
+                        independent_dma_task_groups.append(
+                            (set(task_group.related_pes), [task_group])
+                        )
                 runtime_seq_entry_block = runtime_seq.body.blocks.append(*runtime_args)
                 with aie_ir.InsertionPoint(runtime_seq_entry_block):
                     # data with same token should be transferred together
                     # fixme: if execution fails with runtime_error, possibly because the transfer order leads to 'deadlock'
-                    task_groups: list[CodeGenerator.DMATaskWithSameToken] = list(
-                        dma_task_groups.values()
-                    )
-                    task_groups.sort(key=lambda x: x.start_time)
+                    max_dma_task_group_size = 0
+                    for independent_dma_task_group in independent_dma_task_groups:
+                        independent_dma_task_group[1].sort(key=lambda x: x.start_time)
+                        max_dma_task_group_size = max(
+                            max_dma_task_group_size, len(independent_dma_task_group[1])
+                        )
                     coalesced_tasks_list: list[list[CodeGenerator.GlobalIODMATask]] = []
-                    # launch a group of tasks with the same token
-                    for task_group in task_groups:
-                        task_group.tasks.sort(key=lambda x: x.start_time)
+                    for i in range(max_dma_task_group_size):
+                        tasks = []
+                        for independent_dma_task_group in independent_dma_task_groups:
+                            if i < len(independent_dma_task_group[1]):
+                                tasks.extend(independent_dma_task_group[1][i].tasks)
+                        tasks.sort(key=lambda x: x.start_time)
                         fifo_to_tasks: dict[
                             str, list[CodeGenerator.GlobalIODMATask]
                         ] = defaultdict(list)
-                        for global_dma in task_group.tasks:
+                        for global_dma in tasks:
                             fifo_to_tasks[global_dma.io_port.fifo.name].append(
                                 global_dma
                             )
@@ -2186,16 +2223,6 @@ class CodeGenerator:
                                         fifo_info.dtensor_global_id
                                     ][1]
                                 )
-                                print(self.fifo_map[fifo_name])
-                                print(fifo_info.bd_id)
-                                print(
-                                    runtime_seq_entry_block.arguments[
-                                        self.arg_slots_in_runtime_args[
-                                            fifo_info.dtensor_global_id
-                                        ][0]
-                                    ]
-                                )
-                                print(offsets, size, stride)
                                 aiex_d.NpuDmaMemcpyNd(
                                     metadata=self.fifo_map[fifo_name],
                                     bd_id=fifo_info.bd_id,
