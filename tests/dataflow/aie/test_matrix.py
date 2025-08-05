@@ -27,7 +27,7 @@ def _test_matrix_scalar_add():
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
 
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie")
+        mod = df.build(top, target="aie-mlir")
         B = np.zeros((M, N)).astype(np.int32)
         mod(A, B)
         np.testing.assert_allclose(B, A + 1)
@@ -56,7 +56,7 @@ def _test_matrix_matrix_add():
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.random.randint(0, 100, (M, N)).astype(np.int32)
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie")
+        mod = df.build(top, target="aie-mlir")
         C = np.zeros((M, N)).astype(np.int32)
         mod(A, B, C)
         np.testing.assert_allclose(C, A + B)
@@ -81,7 +81,7 @@ def _test_gemm_1D():
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int16)
@@ -101,7 +101,7 @@ def _test_gemm_2D():
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int32)

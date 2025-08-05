@@ -49,7 +49,7 @@ def _test_summa_2x2():
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     mod(A, B, C)
 
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
@@ -90,7 +90,7 @@ def _test_summa():
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top, target="aie-mlir")
     mod(B, A, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")

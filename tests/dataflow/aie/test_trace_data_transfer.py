@@ -25,10 +25,11 @@ def top():
 def trace_data_transfer():
     mod = df.build(
         top,
+        project="transfer.prj",
         target="aie-mlir",
         use_default_codegen=True,
         trace=[("producer", (0,)), ("consumer", (0,))],
-        trace_size=65536,
+        trace_size=4096 * 4096,
     )
     A = np.random.randint(0, 64, (M, N)).astype(np.int16)
     B = np.zeros((M, N)).astype(np.int16)

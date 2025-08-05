@@ -188,8 +188,17 @@ class SwitchNode:
         def __repr__(self):
             return self.__str__()
 
-    def __init__(self, name: str, send_port_num: int, recv_port_num: int):
+    def __init__(
+        self,
+        name: str,
+        send_port_num: int,
+        recv_port_num: int,
+        col_id: int,
+        row_id: int,
+    ):
         self.name = name
+        self.col_id = col_id
+        self.row_id = row_id
         self.max_send = send_port_num
         self.max_recv = recv_port_num
         self.send_ports: list[SwitchNode.Port] = []
@@ -204,7 +213,7 @@ class SwitchNode:
         return self.name == other.name
 
     def print(self):
-        print(f"\n<<<<< Switch {self.name} >>>>>")
+        print(f"\n<<<<< Switch {self.name} ({self.col_id}, {self.row_id}) >>>>>")
         print(f"send ports: {self.send_ports}")
         print(f"recv ports: {self.recv_ports}")
         print(f"intra connect: {self.intra_connect}")

@@ -91,8 +91,7 @@ class AIE_MLIRModule:
         self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
 
         # index in top function argument list -> DTensor
-        self.global_inputs: dict[int, DTensor] = None
-        self.global_outputs: dict[int, DTensor] = None
+        self.global_tensors: dict[int, DTensor] = None
         # function name -> (argument index -> (argument, is_input))
         self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = None
 
@@ -100,7 +99,6 @@ class AIE_MLIRModule:
 
     def _init_func_args(self, func_args: dict):
         tmp_map: dict = {}
-        self.func_args: dict[str, list[Argument]] = {}
         for func_name, args in func_args.items():
             self.func_args[func_name] = []
             for arg in args:
@@ -164,9 +162,7 @@ class AIE_MLIRModule:
     # ############################################################
     def _init_virtual_graph(self, use_external_kernels: dict[str, bool]):
         assert (
-            self.core_func_args is not None
-            and self.global_inputs is not None
-            and self.global_outputs is not None
+            self.core_func_args is not None and self.global_tensors is not None
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
@@ -216,14 +212,12 @@ class AIE_MLIRModule:
 
         Collected information:
             - self.core_func_args: function name -> (argument index -> (argument, is_input))
-            - self.global_inputs: global input argument index -> DTensor
-            - self.global_outputs: global output argument index -> DTensor
+            - self.global_tensors: global argument index -> DTensor
         """
         tag_to_read_write_pattern: dict[str, tuple[list, list]] = {}
         # init
         self.core_func_args = {}
-        self.global_inputs = {}
-        self.global_outputs = {}
+        self.global_tensors = {}
         # analyze
         for kernel in df_kernels:
             kernel_name = kernel.attributes["sym_name"].value
@@ -253,11 +247,8 @@ class AIE_MLIRModule:
                             io_idx
                         ].type.shape
                         global_idx = self.func_args[self.top_func_name].index(argument)
-                        argument.dtensor.set_global_id(global_idx)
-                        if io_type == "in":
-                            self.global_inputs[global_idx] = argument.dtensor
-                        else:
-                            self.global_outputs[global_idx] = argument.dtensor
+                        argument.dtensor.set_global_info(global_idx, io_type == "in")
+                        self.global_tensors[global_idx] = argument.dtensor
             # streams
             for i, _ in enumerate(kernel.arguments):
                 func_arg = self.func_args[kernel_name][i]
@@ -270,15 +261,6 @@ class AIE_MLIRModule:
                     func_arg,
                     self.stream_info[kernel_name][func_arg.stream.name],
                 )
-        # validity check
-        for i in range(len(self.global_inputs)):
-            assert (
-                i in self.global_inputs
-            ), "inputs should be the starting arguments of the function"
-        for i in range(len(self.global_outputs)):
-            assert (
-                i + len(self.global_inputs) in self.global_outputs
-            ), "outputs should be the ending arguments of the function"
 
     def allo_opt(self):
         """
@@ -305,9 +287,9 @@ class AIE_MLIRModule:
                 out_dtype = str(output.type.element_type)
                 matmul_configs = matmul_external_kernel_config_map[(dtype, out_dtype)]
                 if self.device == "npu1":
-                    m, n, k = matmul_configs["aie2"]
+                    m, k, n = matmul_configs["aie2"]
                 else:
-                    m, n, k = matmul_configs["aie2p"]
+                    m, k, n = matmul_configs["aie2p"]
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
                         input_a.type,
@@ -577,7 +559,6 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 
@@ -591,10 +572,10 @@ class AIE_MLIRModule:
         top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
             self.allo_module, self.top_func_name
         )
+
         code_generator = CodeGenerator(
             device_type,
-            self.global_inputs,
-            self.global_outputs,
+            self.global_tensors,
             top_func,
             self.core_func_args,
             self.streams,
@@ -660,7 +641,7 @@ class AIE_MLIRModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
         os.system(f"cp -r {path}/* {self.project_dir}")
-        host_code = codegen_host(self.global_inputs, self.global_outputs)
+        host_code = codegen_host(self.global_tensors)
         with open(
             os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
         ) as f:
@@ -681,8 +662,7 @@ class AIE_MLIRModule:
         """
         # init
         self.core_func_args = {}
-        self.global_inputs = {}
-        self.global_outputs = {}
+        self.global_tensors = {}
         inputs = {}
         outputs = {}
         for func_name, funcs in func_groups.items():
@@ -719,18 +699,9 @@ class AIE_MLIRModule:
                             ].type.shape
                             if argument.dtensor not in io_lst[func_name]["_global"]:
                                 io_lst[func_name]["_global"].append(argument.dtensor)
-                                if io == "in":
-                                    self.global_inputs[
-                                        self.func_args[self.top_func_name].index(
-                                            argument
-                                        )
-                                    ] = argument.dtensor
-                                else:
-                                    self.global_outputs[
-                                        self.func_args[self.top_func_name].index(
-                                            argument
-                                        )
-                                    ] = argument.dtensor
+                                idx = self.func_args[self.top_func_name].index(argument)
+                                argument.dtensor.set_global_info(idx, io == "in")
+                                self.global_tensors[idx] = argument.dtensor
                             io_lst[func_name][func_id].append(argument.dtensor)
                 # streams
                 for i, _ in enumerate(func.arguments):
@@ -744,15 +715,6 @@ class AIE_MLIRModule:
                         func_arg,
                         self.stream_info[func_name_w_id][func_arg.stream.name],
                     )
-        # validity check
-        for i in range(len(self.global_inputs)):
-            assert (
-                i in self.global_inputs
-            ), "inputs should be the starting arguments of the function"
-        for i in range(len(self.global_outputs)):
-            assert (
-                i + len(self.global_inputs) in self.global_outputs
-            ), "outputs should be the ending arguments of the function"
 
         return inputs, outputs
 
@@ -812,8 +774,7 @@ class AIE_MLIRModule:
         )
         code_generator = CodeGenerator(
             device_type,
-            self.global_inputs,
-            self.global_outputs,
+            self.global_tensors,
             top_func,
             self.core_func_args,
             self.streams,
@@ -835,21 +796,26 @@ class AIE_MLIRModule:
         print("Parameter reference:", self.module_parameter_list)
 
     def __call__(self, *args):
-        for i in range(len(self.global_inputs)):
-            with open(
-                os.path.join(self.project_dir, f"input{i}.data"), "w", encoding="utf-8"
-            ) as f:
-                f.write("\n".join([str(i) for i in args[i].flatten()]))
+        for idx, dtensor in self.global_tensors.items():
+            if dtensor.is_input:
+                with open(
+                    os.path.join(self.project_dir, f"input{idx}.data"),
+                    "w",
+                    encoding="utf-8",
+                ) as f:
+                    f.write("\n".join([str(i) for i in args[idx].flatten()]))
         cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {self.trace_size} {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
         # TODO: need to complete multiple outputs rules
-        result = read_tensor_from_file(
-            self.global_outputs[len(args) - 1].dtype,
-            args[-1].shape,
-            f"{self.project_dir}/output.data",
-        )
-        # suppose the last argument is output
-        args[-1][:] = result
+        for idx, dtensor in self.global_tensors.items():
+            if not dtensor.is_input:
+                result = read_tensor_from_file(
+                    dtensor.dtype,
+                    args[idx].shape,
+                    f"{self.project_dir}/output{idx}.data",
+                )
+                # suppose the last argument is output
+                args[idx][:] = result
