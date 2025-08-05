@@ -4,7 +4,7 @@
 
 import os
 import copy
-from collections import defaultdict, deque
+from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 
@@ -44,6 +44,7 @@ from .utils import (
     Stream,
     Config,
     string_sort_key,
+    RuntimeArgs,
 )
 from ..ai_engine import map_kernels_to_device_mesh
 from .mapping import (
@@ -236,6 +237,8 @@ class CodeGenerator:
         assert self.device_config is not None, "Unsupported device type"
 
         self.global_tensors: dict[int, DTensor] = global_tensors
+        self.arg_slots_in_runtime_args: dict[int, tuple[int, int]] = {}
+        self.module_runtime_args: list[RuntimeArgs] = []
         self.top_function = top_function
         self.core_func_args = core_func_args
         self.streams = streams
@@ -1886,15 +1889,66 @@ class CodeGenerator:
                     )
 
                 # runtime sequence
-                runtime_seq = aiex_d.RuntimeSequenceOp()
-                runtime_args = []
+                global_tensor_types: dict[
+                    tuple[str, bool], tuple[RuntimeArgs, list[int]]
+                ] = {}
                 for i in range(len(self.global_tensors)):
                     arg = self.global_tensors[i]
-                    runtime_args.append(
-                        aie_ir.MemRefType.get(
-                            arg.shape, get_element_type(str(arg.dtype))
+                    tensor_type = (arg.dtype, arg.is_input)
+                    if tensor_type not in global_tensor_types:
+                        global_tensor_types[tensor_type] = (
+                            RuntimeArgs(arg.dtype, arg.is_input),
+                            [],
+                        )
+                    global_tensor_types[tensor_type][0].global_tensors.append(i)
+                assert (
+                    len(global_tensor_types) <= Config.MAX_IO_BUFFER
+                ), "unable to construct buffers for arguments"
+                original_runtime_args = list(global_tensor_types.values())
+                for i in range(Config.MAX_IO_BUFFER):
+                    self.module_runtime_args.append(
+                        RuntimeArgs(
+                            original_runtime_args[i % len(original_runtime_args)][
+                                0
+                            ].dtype,
+                            original_runtime_args[i % len(original_runtime_args)][
+                                0
+                            ].is_input,
                         )
                     )
+                    original_runtime_args[i % len(original_runtime_args)][1].append(i)
+                for runtime_arg_idxs, arg_slots in original_runtime_args:
+                    for i, arg_idx in enumerate(runtime_arg_idxs.global_tensors):
+                        runtime_arg = self.module_runtime_args[
+                            arg_slots[i % len(arg_slots)]
+                        ]
+                        runtime_arg.global_tensors.append(arg_idx)
+                        self.arg_slots_in_runtime_args[arg_idx] = (
+                            arg_slots[i % len(arg_slots)],
+                            runtime_arg.current_size,
+                        )
+                        runtime_arg.inc_size(self.global_tensors[arg_idx].shape)
+
+                runtime_seq = aiex_d.RuntimeSequenceOp()
+                runtime_args = []
+                # for i in range(len(self.global_tensors)):
+                #     arg = self.global_tensors[i]
+                #     runtime_args.append(
+                #         aie_ir.MemRefType.get(
+                #             arg.shape, get_element_type(str(arg.dtype))
+                #         )
+                #     )
+
+                for runtime_arg in self.module_runtime_args:
+                    if len(runtime_arg.global_tensors) == 0:
+                        continue
+                    runtime_args.append(
+                        aie_ir.MemRefType.get(
+                            [runtime_arg.current_size],
+                            get_element_type(str(runtime_arg.dtype)),
+                        )
+                    )
+
                 # TODO: need more robust and smart DMA scheduling
                 dma_task_groups: dict[str, CodeGenerator.DMATaskWithSameToken] = {}
                 for global_dma in self.global_dma_trough_port:
@@ -2029,45 +2083,46 @@ class CodeGenerator:
                                 offset, size, stride = global_dma.transfer_pattern()
                                 if (
                                     global_dma.io_port.fifo.name
-                                    in updated_fifo_dma_tasks
+                                    not in updated_fifo_dma_tasks
                                 ):
-                                    prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
-                                        global_dma.io_port.fifo.name
-                                    ][-1]
-                                    # the same global tensor must be tiled in the same way
-                                    if (
-                                        global_dma.dtensor.global_id
-                                        == prev_task.dtensor_global_id
-                                        and size[0] == 1
-                                    ):
-                                        diff = [
-                                            x - y
-                                            for x, y in zip(
-                                                offset,
-                                                prev_task.dma_tasks[-1][0],
-                                            )
-                                        ]
-                                        # fixme: can be relaxed
-                                        if prev_task.diff is None and (
-                                            all(x >= 0 for x in diff)
-                                            and sum(1 for x in diff if x != 0) <= 1
-                                        ):
-                                            prev_task.dma_tasks.append(
-                                                (offset, size, stride)
-                                            )
-                                            prev_task.diff = diff
-                                            prev_task.max_task_id = tasks_idx_right
-                                            continue
-                                        if prev_task.diff == diff:
-                                            prev_task.dma_tasks.append(
-                                                (offset, size, stride)
-                                            )
-                                            prev_task.max_task_id = tasks_idx_right
-                                            continue
-                                else:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
+                                # else:
+                                #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
+                                #         global_dma.io_port.fifo.name
+                                #     ][-1]
+                                # the same global tensor must be tiled in the same way
+                                # if (
+                                #     global_dma.dtensor.global_id
+                                #     == prev_task.dtensor_global_id
+                                #     and size[0] == 1
+                                # ):
+                                #     diff = [
+                                #         x - y
+                                #         for x, y in zip(
+                                #             offset,
+                                #             prev_task.dma_tasks[-1][0],
+                                #         )
+                                #     ]
+                                #     # fixme: can be relaxed
+                                #     if prev_task.diff is None and (
+                                #         all(x >= 0 for x in diff)
+                                #         and sum(1 for x in diff if x != 0) <= 1
+                                #     ):
+                                #         prev_task.dma_tasks.append(
+                                #             (offset, size, stride)
+                                #         )
+                                #         prev_task.diff = diff
+                                #         prev_task.max_task_id = tasks_idx_right
+                                #         continue
+                                #     if prev_task.diff == diff:
+                                #         prev_task.dma_tasks.append(
+                                #             (offset, size, stride)
+                                #         )
+                                #         prev_task.max_task_id = tasks_idx_right
+                                #         continue
+
                                 used_shim = (
                                     global_dma.io_port.fifo.src
                                     if global_dma.io_port.is_input
@@ -2080,7 +2135,7 @@ class CodeGenerator:
                                             global_dma.io_port.fifo.name
                                         ]
                                     )
-                                    == 5  # fixme: seems that transferring too much with the same fifo is invalid (magic number)
+                                    == 4  # fixme: seems that transferring too much with the same fifo is invalid (magic number)
                                 ):
                                     overload_flag = True
                                     break
@@ -2121,17 +2176,35 @@ class CodeGenerator:
                                     for i in range(4):
                                         stride_0 += fifo_info.diff[i] * stride[i]
                                     stride[0] = stride_0
+                                offsets = (
+                                    [0, 0, 0, total_offset]
+                                    if fifo_info.diff is not None
+                                    else offset
+                                )
+                                offsets[-1] += int(
+                                    self.arg_slots_in_runtime_args[
+                                        fifo_info.dtensor_global_id
+                                    ][1]
+                                )
+                                print(self.fifo_map[fifo_name])
+                                print(fifo_info.bd_id)
+                                print(
+                                    runtime_seq_entry_block.arguments[
+                                        self.arg_slots_in_runtime_args[
+                                            fifo_info.dtensor_global_id
+                                        ][0]
+                                    ]
+                                )
+                                print(offsets, size, stride)
                                 aiex_d.NpuDmaMemcpyNd(
                                     metadata=self.fifo_map[fifo_name],
                                     bd_id=fifo_info.bd_id,
                                     mem=runtime_seq_entry_block.arguments[
-                                        fifo_info.dtensor_global_id
+                                        self.arg_slots_in_runtime_args[
+                                            fifo_info.dtensor_global_id
+                                        ][0]
                                     ],
-                                    offsets=(
-                                        [0, 0, 0, total_offset]
-                                        if fifo_info.diff is not None
-                                        else offset
-                                    ),
+                                    offsets=offsets,
                                     sizes=size,
                                     strides=stride,
                                     issue_token=True,
@@ -2164,7 +2237,7 @@ class CodeGenerator:
                             aiex_d.dma_wait(launched_fifo)
                     aie_d.EndOp()
 
-        return self.aie_module
+        return self.aie_module, self.module_runtime_args
 
     def aie_codegen(
         self,

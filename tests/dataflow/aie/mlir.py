@@ -69,7 +69,7 @@ def call_mlir(
 # fixme: update parameters as you need
 from allo.ir.types import int8, int16, int32, bfloat16
 
-M, N, K = 2048, 2048, 1024
+M, N, K = 1024, 1024, 2048
 
 A = np.random.random((M, K)).astype(np_bfloat16)
 B = np.random.random((K, N)).astype(np_bfloat16)

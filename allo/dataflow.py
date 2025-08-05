@@ -316,6 +316,7 @@ def build(
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
+    device_type: str = None,
 ):
     assert (
         not profile or target == "aie-mlir"
@@ -357,10 +358,11 @@ def build(
             stream_types_dict,
             s.ext_libs,
         )
-        if os.getenv("NPU2") == "1":
-            device_type = "npu2"
-        else:
-            device_type = "npu1_4col"
+        if device_type is None:
+            if os.getenv("NPU2") == "1":
+                device_type = "npu2"
+            else:
+                device_type = "npu1_4col"
         if trace is not None and not use_default_codegen:
             raise APIWarning(
                 "Please set use_default_codegen = True if you want to use trace."

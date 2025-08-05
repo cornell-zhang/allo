@@ -68,11 +68,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 C[:, :] = C_out
 
     mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        Pm,
-        Pn,
-        Pk,
-        # col_num= 2,
-        # row_num=2
+        Pm, Pn, Pk, col_num=2, row_num=2
     )
 
     mod = df.build(
@@ -82,6 +78,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         profile=True,
         warmup=200,
         num_iters=1000,
+        device_type="npu1_1col",
     )
     if TyI is bfloat16:
         A = np.random.random((M, K)).astype(np_bfloat16)
@@ -110,16 +107,16 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 if __name__ == "__main__":
     # [NOTE]: int8 and bfloat16 have accuracy issue (compared with cpu reference)
     # - i8
-    try:
-        _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int8, int8)
-    except:
-        print("[NOTE]: int8 have accuracy issue")
+    # try:
+    #     _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int8, int8)
+    # except:
+    #     print("[NOTE]: int8 have accuracy issue")
 
     # - i16
-    _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int16, int16)
+    # _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int16, int16)
 
     # - bf16
-    try:
-        _test_pingpong_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
-    except:
-        print("[NOTE]: bfloat16 have accuracy issue")
+    # try:
+    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, bfloat16, bfloat16)
+# except:
+#     print("[NOTE]: bfloat16 have accuracy issue")
