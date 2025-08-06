@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16
+from allo.ir.types import int8, int16, bfloat16
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -82,7 +82,7 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 F[:, :] = F_out
 
     mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        "gemma", Pm, Pn, Pk, col_num=2, row_num=4
+        "gemma", Pm, Pn, Pk, col_num=2, row_num=2
     )
     mapping_primitives.extend(
         gen_pingpong_gemm_mapping_primitive("gemmb", Pm, Pn, Pk, col_num=2, row_num=2)
@@ -95,8 +95,19 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         profile=True,
         warmup=200,
         num_iters=1000,
+        device_type="npu1_2col",
     )
-    if TyI is int16:
+    if TyI is bfloat16:
+        A = np.random.random((M, K)).astype(np_bfloat16)
+        B = np.random.random((K, N)).astype(np_bfloat16)
+        C = np.zeros((M, N)).astype(np_bfloat16)
+        D = np.zeros((M, N)).astype(np_bfloat16)
+    elif TyI is int8:
+        A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
+        B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+        D = np.zeros((M, N)).astype(np.int8)
+    elif TyI is int16:
         A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
         B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
         C = np.zeros((M, N)).astype(np.int16)
@@ -104,10 +115,19 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     else:
         raise ValueError(f"unsupported data type {TyI}")
     mod(A, B, C, A, B, D)
-
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    np.testing.assert_allclose(D, A @ B, atol=1e-5)
+    if TyI is bfloat16:
+        np.testing.assert_allclose(
+            C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+        )
+        np.testing.assert_allclose(
+            D.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+        )
+    else:
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        np.testing.assert_allclose(D, A @ B, atol=1e-5)
 
 
 if __name__ == "__main__":
-    _test_batched_gemm(1024, 1024, 1024, 16, 16, 16, int16, int16)
+    # _test_batched_gemm(1024, 1024, 1024, 16, 16, 16, int16, int16)
+    _test_batched_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
+    # _test_batched_gemm(512, 512, 1024, 8, 8, 16, int16, int16)

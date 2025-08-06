@@ -1450,8 +1450,10 @@ class CodeGenerator:
                 else:
                     global_output_num += len(contiguous_interfaces)
             for idx, contiguous_interfaces in global_dma_tasks.items():
+                # fixme: MAX_SHIM_TILES (how to select better factor?) adjust base on independent workload?
+                FACTOR = int(os.getenv("FACTOR", MAX_SHIM_TILES))
                 if len(contiguous_interfaces) == 1:
-                    factor = MAX_SHIM_TILES
+                    factor = FACTOR
                     while factor > 1:
                         if len(contiguous_interfaces[0].interface_list) % factor == 0:
                             if (
@@ -1462,7 +1464,7 @@ class CodeGenerator:
                                     if self.global_tensors[idx].is_input
                                     else global_output_num
                                 )
-                                <= 2 * MAX_SHIM_TILES
+                                <= 2 * FACTOR
                             ):
                                 break
                         factor >>= 1
