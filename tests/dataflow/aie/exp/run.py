@@ -45,7 +45,7 @@ def call_mlir(
             os.path.join(project, f"input{idx}.data"), "w", encoding="utf-8"
         ) as f:
             f.write("\n".join([str(i) for i in arg.flatten()]))
-    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 10 --test_iter 40"
+    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 10 --test_iter 400"
     with subprocess.Popen(cmd, shell=True) as process:
         process.wait()
     if process.returncode != 0:
@@ -53,29 +53,53 @@ def call_mlir(
 
 
 # fixme: update parameters as you need
-from allo.ir.types import bfloat16
+from allo.ir.types import bfloat16, int16, int8
+
+
+def run(M, N, K, dtype):
+    if dtype is bfloat16:
+        A = np.random.random((M, K)).astype(np_bfloat16)
+        B = np.random.random((K, N)).astype(np_bfloat16)
+        C = np.zeros((M, N)).astype(np_bfloat16)
+    elif dtype is int8:
+        A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
+        B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+        C = np.zeros((M, N)).astype(np.int8)
+    elif dtype is int16:
+        A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+        B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+        C = np.zeros((M, N)).astype(np.int16)
+    else:
+        raise ValueError(f"unsupported data type {dtype}")
+    try:
+        if dtype is bfloat16:
+            call_mlir(
+                f"gemm_{M}x{N}x{K}.prj",
+                [dtype, dtype, dtype],
+                [0, 1],
+                [2],
+                A,
+                B,
+                C,
+            )
+        else:
+            call_mlir(
+                f"gemm_{M}x{N}x{K}_{dtype}.prj",
+                [dtype, dtype, dtype],
+                [0, 1],
+                [2],
+                A,
+                B,
+                C,
+            )
+    except:
+        print(f"M={M},N={N},K={K} exe failed")
+
 
 K_list = [256, 512, 1024, 2048]
-# M_list = [256, 512, 1024, 2048]
-M_list = [2048]
+M_list = [256, 512, 1024, 2048]
 N_list = [256, 512, 1024, 2048]
 for M_ in M_list:
     for N_ in N_list:
         for K_ in K_list:
-            A = np.random.random((M_, K_)).astype(np_bfloat16)
-            B = np.random.random((K_, N_)).astype(np_bfloat16)
-            C = np.zeros((M_, N_)).astype(np_bfloat16)
-            try:
-                print(f"<<<<<<<<<<<<< M={M_},N={N_},K={K_} >>>>>>>>>>>>>>")
-                call_mlir(
-                    f"gemm_{M_}x{N_}x{K_}.prj",
-                    [bfloat16, bfloat16, bfloat16],
-                    [0, 1],
-                    [2],
-                    A,
-                    B,
-                    C,
-                )
-                print()
-            except:
-                print(f"M={M_},N={N_},K={K_} exe failed")
+            run(M_, N_, K_, int8)

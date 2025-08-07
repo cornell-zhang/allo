@@ -76,7 +76,11 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
     mod = df.build(
         top,
-        project=f"gemm_{M}x{N}x{K}_{TyI}.prj",
+        project=(
+            f"gemm_{M}x{N}x{K}_{TyI}.prj"
+            if TyI is not bfloat16
+            else f"gemm_{M}x{N}x{K}.prj"
+        ),
         target="aie-mlir",
         mapping_primitives=mapping_primitives,
         profile=False,
@@ -107,20 +111,9 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
-    # [NOTE]: int8 and bfloat16 have accuracy issue (compared with cpu reference)
-    # - i8
-    # try:
-    #     _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int8, int8)
-    # except:
-    #     print("[NOTE]: int8 have accuracy issue")
-
-    # - i16
-    # _test_pingpong_gemm(1024, 1024, 1024, 16, 16, 16, int16, int16)
-
-    # - bf16
-    K_list = [256, 512, 1024, 2048]
-    M_list = [256, 512, 1024, 2048]
-    N_list = [256, 512, 1024, 2048]
+    K_list = [2048]
+    M_list = [2048]
+    N_list = [2048]
 
     for M_ in M_list:
         for N_ in N_list:
@@ -128,7 +121,7 @@ if __name__ == "__main__":
                 try:
                     print(f"M={M_},N={N_},K={K_}")
                     _test_pingpong_gemm(
-                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, int8, int8
+                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, int16, int16
                     )
                 except:
-                    print("[NOTE]: bfloat16 have accuracy issue")
+                    print("[NOTE]: have accuracy issue")
