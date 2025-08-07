@@ -25,6 +25,7 @@ from .vitis import (
 )
 from .pynq import (
     postprocess_hls_code_pynq,
+    codegen_pynq_host,
 )
 from .tapa import (
     codegen_tapa_host,
@@ -46,6 +47,8 @@ def is_available(backend="vivado_hls"):
         return os.system("which vivado_hls >> /dev/null") == 0
     if backend == "tapa":
         return os.system("which tapa >> /dev/null") == 0
+    if backend == "pynq":
+        return True
     return os.system("which vitis_hls >> /dev/null") == 0
 
 
@@ -307,10 +310,8 @@ class HLSModule:
                         f"{project}/{cpp_file}", "w", encoding="utf-8"
                     ) as outfile:
                         outfile.write(new_code)
-                self.host_code = codegen_host(
-                    self.top_func_name,
-                    self.module,
-                )
+
+                
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
@@ -347,8 +348,8 @@ class HLSModule:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.host_code)
+            # with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+            #     outfile.write(self.host_code)
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp
@@ -534,6 +535,32 @@ class HLSModule:
                 if process.returncode != 0:
                     raise RuntimeError("Failed to create block design/generate bitstream")
 
+                # produce host code
+                host_code = codegen_pynq_host(
+                    self.top_func_name,
+                    self.module,
+                    self.project,
+                )
+
+                with open(f"{self.project}/host.py", "w", encoding="utf-8") as outfile:
+                    outfile.write(host_code)
+
+                # group .bit, .hwh, host.py -> deploy folder
+                cmd = f"mkdir -p deploy; " \
+                    f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit deploy/{self.top_func_name}.bit; " \
+                    f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh deploy/{self.top_func_name}.hwh;" \
+                    f"cp {self.project}/host.py deploy/host.py"
+
+                print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ...")
+                if shell:
+                    process = subprocess.Popen(cmd, shell=True)
+                else:
+                    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to collect files")
+
+                print(f"Files for deployment located in deploy folder")
                 return
 
         elif self.platform == "tapa":
