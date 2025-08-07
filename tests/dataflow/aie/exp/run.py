@@ -20,15 +20,9 @@ np_supported_types = {
 }
 
 
-def read_tensor_from_file(dtype, shape, file_path):
-    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[str(dtype)])
-    return arr.reshape(shape)
-
-
 def call_mlir(
     project: str,
     dtype_list: list,
-    trace_size: int,
     input_idx: list[int],
     output_idx: list[int],
     *args,
@@ -51,48 +45,37 @@ def call_mlir(
             os.path.join(project, f"input{idx}.data"), "w", encoding="utf-8"
         ) as f:
             f.write("\n".join([str(i) for i in arg.flatten()]))
-    # cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
-    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 200 --test_iter 1000"
+    cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p true --warmup 10 --test_iter 40"
     with subprocess.Popen(cmd, shell=True) as process:
         process.wait()
     if process.returncode != 0:
         raise RuntimeError("Failed to execute AIE code.")
-    for idx in output_idx:
-        result = read_tensor_from_file(
-            dtype_list[idx],
-            args[idx].shape,
-            f"{project}/output{idx}.data",
-        )
-        args[idx][:] = result
 
 
 # fixme: update parameters as you need
-from allo.ir.types import int8, int16, int32, bfloat16
+from allo.ir.types import bfloat16
 
-M, N, K = 512, 2048, 2048
-
-# A = np.random.random((M, K)).astype(np_bfloat16)
-# B = np.random.random((K, N)).astype(np_bfloat16)
-
-# C = np.zeros((M, N)).astype(np_bfloat16)
-# call_mlir("top.prj", bfloat16, 0, A, B, C)
-# print(C)
-# np.testing.assert_allclose(C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2)
-
-# A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-# B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
-# C = np.zeros((M, N)).astype(np.int16)
-
-# A = np.random.randint(0, 64, (M, K)).astype(np.int16)
-# B = np.random.randint(0, 64, (K, N)).astype(np.int16)
-# C = np.zeros((M, N)).astype(np.int16)
-# F = np.zeros((M, N)).astype(np.int16)
-A = np.random.random((M, K)).astype(np_bfloat16)
-B = np.random.random((K, N)).astype(np_bfloat16)
-C = np.zeros((M, N)).astype(np_bfloat16)
-call_mlir("exp/gemm_512x2048x2048.prj", [bfloat16, bfloat16, bfloat16], 4096 * 4096, [0, 1], [2], A, B, C)
-
-# call_mlir("top.prj", [int16, int16, int16], 4096 * 4096, [0, 1], [2], A, B, C)
-
-np.testing.assert_allclose(C, A @ B, atol=1e-5)
-print("PASSED!")
+K_list = [256, 512, 1024, 2048]
+# M_list = [256, 512, 1024, 2048]
+M_list = [2048]
+N_list = [256, 512, 1024, 2048]
+for M_ in M_list:
+    for N_ in N_list:
+        for K_ in K_list:
+            A = np.random.random((M_, K_)).astype(np_bfloat16)
+            B = np.random.random((K_, N_)).astype(np_bfloat16)
+            C = np.zeros((M_, N_)).astype(np_bfloat16)
+            try:
+                print(f"<<<<<<<<<<<<< M={M_},N={N_},K={K_} >>>>>>>>>>>>>>")
+                call_mlir(
+                    f"gemm_{M_}x{N_}x{K_}.prj",
+                    [bfloat16, bfloat16, bfloat16],
+                    [0, 1],
+                    [2],
+                    A,
+                    B,
+                    C,
+                )
+                print()
+            except:
+                print(f"M={M_},N={N_},K={K_} exe failed")

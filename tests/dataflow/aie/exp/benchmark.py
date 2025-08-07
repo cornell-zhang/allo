@@ -76,12 +76,10 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
     mod = df.build(
         top,
-        project=f"gemm_{M}x{N}x{K}.prj",
+        project=f"gemm_{M}x{N}x{K}_{TyI}.prj",
         target="aie-mlir",
         mapping_primitives=mapping_primitives,
-        profile=True,
-        warmup=200,
-        num_iters=1000,
+        profile=False,
         device_type="npu1_4col",
     )
     if TyI is bfloat16:
@@ -130,7 +128,7 @@ if __name__ == "__main__":
                 try:
                     print(f"M={M_},N={N_},K={K_}")
                     _test_pingpong_gemm(
-                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, bfloat16, bfloat16
+                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, int8, int8
                     )
                 except:
                     print("[NOTE]: bfloat16 have accuracy issue")
