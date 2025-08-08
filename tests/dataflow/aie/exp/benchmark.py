@@ -111,17 +111,25 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
-    K_list = [2048]
-    M_list = [2048]
-    N_list = [2048]
-
+    enable_skipping = True
+    K_list = [256, 512, 1024, 2048]
+    M_list = [256, 512, 1024, 2048, 4096]
+    N_list = [256, 512, 1024, 2048, 4096]
+    TyI = bfloat16
     for M_ in M_list:
         for N_ in N_list:
             for K_ in K_list:
+                project_dir = (
+                    f"gemm_{M_}x{N_}x{K_}_{TyI}.prj"
+                    if TyI is not bfloat16
+                    else f"gemm_{M_}x{N_}x{K_}.prj"
+                )
+                if enable_skipping and os.path.isdir(project_dir):
+                    continue
                 try:
                     print(f"M={M_},N={N_},K={K_}")
                     _test_pingpong_gemm(
-                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, int16, int16
+                        M_, N_, K_, M_ // 64, N_ // 64, K_ // 64, TyI, TyI
                     )
                 except:
                     print("[NOTE]: have accuracy issue")

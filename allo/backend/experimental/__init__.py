@@ -526,7 +526,10 @@ class AIE_MLIRModule:
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
-
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
         use_external_kernels, self.injected_external_kernels, include_src = (
@@ -538,10 +541,10 @@ class AIE_MLIRModule:
             )
         )
         # record original allo mlir
-        with open(
-            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
-        ) as f:
-            f.write(str(self.allo_module))
+        # with open(
+        #     os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        # ) as f:
+        #     f.write(str(self.allo_module))
         self.analyze_kernel_parameters(
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
