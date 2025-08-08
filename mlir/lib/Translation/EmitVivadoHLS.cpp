@@ -1822,18 +1822,16 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
 
 void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
-  if (op.getCallee().str().substr(0, 8) != "softmax_") {
-    // softmax result is also its last argument
-    // TODO: better handling mechanism
-    for (auto result : op.getResults()) {
-      if (!isDeclared(result)) {
-        indent();
-        if (result.getType().isa<ShapedType>())
-          emitArrayDecl(result);
-        else
-          emitValue(result);
-        os << ";\n";
-      }
+  // For HLS C++, any function with return values needs those values 
+  // declared as variables and passed as pointer arguments.
+  for (auto result : op.getResults()) {
+    if (!isDeclared(result)) {
+      indent();
+      if (result.getType().isa<ShapedType>())
+        emitArrayDecl(result);
+      else
+        emitValue(result);
+      os << ";\n";
     }
   }
 
@@ -1851,18 +1849,15 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   }
 
   // Handle output arguments.
-  if (op.getCallee().str().substr(0, 8) != "softmax_") {
-    // softmax result is also its last argument
-    // TODO: better handling mechanism
-    for (auto result : op.getResults()) {
-      // The address should be passed in for scalar result arguments.
-      if (result.getType().isa<ShapedType>())
-        os << ", ";
-      else
-        os << ", &";
+  // For HLS C++, return values are passed as pointer arguments.
+  for (auto result : op.getResults()) {
+    // The address should be passed in for scalar result arguments.
+    if (result.getType().isa<ShapedType>())
+      os << ", ";
+    else
+      os << ", &";
 
-      emitValue(result);
-    }
+    emitValue(result);
   }
 
   os << ");";
