@@ -68,7 +68,9 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
                 C[:, :] = C_out
 
     mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        Pm, Pn, Pk, 
+        Pm,
+        Pn,
+        Pk,
         # col_num=2, row_num=2
     )
 

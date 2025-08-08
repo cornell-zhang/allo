@@ -90,7 +90,16 @@ M, N, K = 512, 2048, 2048
 A = np.random.random((M, K)).astype(np_bfloat16)
 B = np.random.random((K, N)).astype(np_bfloat16)
 C = np.zeros((M, N)).astype(np_bfloat16)
-call_mlir("exp/gemm_512x2048x2048.prj", [bfloat16, bfloat16, bfloat16], 4096 * 4096, [0, 1], [2], A, B, C)
+call_mlir(
+    "exp/gemm_512x2048x2048.prj",
+    [bfloat16, bfloat16, bfloat16],
+    4096 * 4096,
+    [0, 1],
+    [2],
+    A,
+    B,
+    C,
+)
 
 # call_mlir("top.prj", [int16, int16, int16], 4096 * 4096, [0, 1], [2], A, B, C)
 

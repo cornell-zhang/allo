@@ -7,6 +7,7 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
+
 def _test_matrix_matrix_add():
     Ty_A, Ty_B = int16, int32
     M, N = 64, 64
@@ -52,6 +53,7 @@ def _test_gemm_2D():
     np.testing.assert_allclose(C, np_C, atol=1e-5)
     print("PASSED!")
 
+
 def test_cooperative_gemm():
     Ty_A = int16
     Ty_B = int16
@@ -64,10 +66,11 @@ def test_cooperative_gemm():
     LyB = Layout("S2S0")
     LyC = Layout("S1S0")
 
-
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty_C, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
+        pipe = df.array(
+            df.pipe(dtype=Ty_C, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
+        )
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty_A[M, K] @ LyA, B: Ty_B[K, N] @ LyB, C: Ty_C[M, N] @ LyC):
@@ -76,7 +79,7 @@ def test_cooperative_gemm():
                 C_in: Ty_C[Mt, Nt] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in: Ty_C[Mt, Nt] = 0
-            C_out: Ty_C[Mt, Nt] = (allo.matmul(A, B) + C_in)
+            C_out: Ty_C[Mt, Nt] = allo.matmul(A, B) + C_in
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
