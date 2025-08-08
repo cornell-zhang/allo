@@ -1822,7 +1822,7 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
 
 void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
-  // For HLS C++, any function with return values needs those values 
+  // For HLS C++, any function with return values needs those values
   // declared as variables and passed as pointer arguments.
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
