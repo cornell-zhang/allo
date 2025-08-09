@@ -90,7 +90,7 @@ def _test_masked_softmax_tiled():
         )
         output_allo = np.zeros((SEQ_LEN_TILED, SEQ_LEN * HEAD_TILE)).astype(np.float32)
         output = output.view(SEQ_LEN_TILED, HEAD_TILE * SEQ_LEN)
-        mod(input_tensor.cpu().numpy(), np.array([0, 32]), output_allo)
+        mod(input_tensor.cpu().numpy(), np.array([0, 32]).astype(np.int32), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)
         print("PASS!")
     else:
