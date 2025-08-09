@@ -73,8 +73,15 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
         output_idx=[3, 4, 5],
     )
 
+    scale_attn_output = ExternalModule(
+        top="scale_attn_output",
+        impl_path=KERNEL_LIB_PATH + "fa_components.cc",
+        input_idx=[0, 1],
+        output_idx=[2],
+    )
+
     Ty = float32
-    Ly = Layout("S0")
+    Ly = Layout("S0R")
 
     @df.region()
     def top():
@@ -93,13 +100,12 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
             shape=(SEQ_LEN // chunk_size,),
         )
 
-
         o_pipe = df.array(
             df.pipe(dtype=Ty, shape=(chunk_size, HEAD_DIM), depth=2),
             shape=(SEQ_LEN // chunk_size,),
         )
 
-        exp_sum_pipe = df.pipe(dtype=Ty, shape=(chunk_size), depth=2)
+        exp_sum_pipe = df.pipe(dtype=Ty, shape=(chunk_size,), depth=2)
 
         @df.kernel(mapping=[1])
         def send_q(Q: Ty[chunk_size, HEAD_DIM]):
@@ -121,23 +127,28 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
             # softmax
             with allo.meta_for(SEQ_LEN // chunk_size) as i:
                 attn_weight: Ty[chunk_size, chunk_size]
-                online_softmax(score_pipe[i].get(), max_logit, sum_exp, attn_weight, max_logit, sum_exp)
+                online_softmax(
+                    score_pipe[i].get(),
+                    max_logit,
+                    sum_exp,
+                    attn_weight,
+                    max_logit,
+                    sum_exp,
+                )
                 weight_pipe[i].put(attn_weight)
             exp_sum_pipe.put(sum_exp)
-        
+
         @df.kernel(mapping=[SEQ_LEN // chunk_size])
         def attn(V: Ty[SEQ_LEN, HEAD_DIM] @ Ly):
             pi = df.get_pid()
-            o_pipe[pi].put(allo.matmul(weight_pipe.get(), V))
+            o_pipe[pi].put(allo.matmul(weight_pipe[pi].get(), V))
 
         @df.kernel(mapping=[1])
         def acc(O: Ty[chunk_size, HEAD_DIM]):
             attn_output: Ty[chunk_size, HEAD_DIM] = 0
             with allo.meta_for(SEQ_LEN // chunk_size) as i:
-                attn_output = allo.add(attn_output, o_pipe[i].get())
-            # TODO div sum_exp
-            O[:] = attn_output
-
+                attn_output[:, :] = allo.add(attn_output, o_pipe[i].get())
+            scale_attn_output(attn_output, exp_sum_pipe.get(), O)
 
     mod = df.build(
         top,
@@ -147,8 +158,9 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
         num_iters=100,  # ! executing only once may get undefined result.
     )
 
+
 N, D = 128, 64  # Sequence Length, Embedding Dim = 64
-chunk_size=32
+chunk_size = 32
 # Q = np.random.randn(N, D).astype(np.float32)
 # K = np.random.randn(N, D).astype(np.float32)
 # V = np.random.randn(N, D).astype(np.float32)

@@ -119,32 +119,24 @@ void init_softmax(T *__restrict max_logit, T *__restrict sum_exp) {
   }
 }
 
-template <int L, int CHUNK>
-void online_softmax_float(float *__restrict attention_score,
-                          float *prev_max_logit, float *prev_sum_exp,
-                          float *__restrict attention_weight,
-                          float *new_max_logit, float *new_sum_exp) {
+template <typename T_in, typename T_out, int M, int N>
+void row_scale(T_in *__restrict tensor_in, T_in *__restrict scale_factors,
+               T_out *__restrict tensor_out) {
   constexpr int vec_factor = 256 / (sizeof(float) * 8);
-  const int F = CHUNK / vec_factor;
-  for (int r = 0; r < L; ++r) {
-    float *score_row_ptr = &attention_score[r][0];
-    // row max
-    float row_max = prev_max_logit[r];
+  const int F = N / vec_factor;
+  for (int outer_iter = 0; outer_iter < M; outer_iter++) {
+    T_in *input_ptr = tensor_in + outer_iter * N;
+    T_out *output_ptr = tensor_out + outer_iter * N;
+    T_in scale_factor = 1.0f / scale_factors[outer_iter];
     for (int i = 0; i < F; i++) {
-      aie::vector<float, vec_factor> scores =
-          aie::load_v<vec_factor>(score_row_ptr);
-      row_max = std::max(row_max, aie::reduce_max(scores));
-      score_row_ptr += vec_factor;
+      aie::vector<T_in, vec_factor> input_vec =
+          aie::load_v<vec_factor>(input_ptr);
+      aie::vector<T_out, vec_factor> scaled_vec =
+          aie::mul(input_vec, scale_factor);
+      aie::store_v(output_ptr, scaled_vec);
+      input_ptr += vec_factor;
+      output_ptr += vec_factor;
     }
-    prev_max_logit[r] = row_max;
-    // exp logit
-    float exp_sum = 0.0f;
-    for (int i = 0; i < CHUNK; i++) {
-      float exp_result = get_exp(attention_score[r][i] - row_max);
-      attention_weight[r][i] = exp_result;
-      exp_sum += exp_result;
-    }
-    new_sum_exp[r] = prev_sum_exp[r] + exp_sum;
   }
 }
 
@@ -157,15 +149,39 @@ void transpose_matmul_with_scale(float A_in[32][64], float B_in[32][64],
 }
 
 void init_softmax(float max_logit[32], float sum_exp[32]) {
-  init_softmax<float, 32>(max_logit, sum_exp)
+  init_softmax<float, 32>(max_logit, sum_exp);
 }
 
 void online_softmax(float attention_score[32][32], float prev_max_logit[32],
                     float prev_sum_exp[32], float attention_weight[32][32],
-                    float new_max_logit[32], float new_sum_exp[32], ) {
-  online_softmax_float<32, 32>(&attention_score[0][0], prev_max_logit,
-                               prev_sum_exp, &attention_weight[0][0],
-                               new_max_logit, new_sum_exp)
+                    float new_max_logit[32], float new_sum_exp[32]) {
+  constexpr int vec_factor = 256 / (sizeof(float) * 8);
+  const int F = 32 / vec_factor;
+  for (int r = 0; r < 32; ++r) {
+    float *score_row_ptr = &attention_score[r][0];
+    // row max
+    float row_max = prev_max_logit[r];
+    for (int i = 0; i < F; i++) {
+      aie::vector<float, vec_factor> scores =
+          aie::load_v<vec_factor>(score_row_ptr);
+      row_max = std::max(row_max, aie::reduce_max(scores));
+      score_row_ptr += vec_factor;
+    }
+    new_max_logit[r] = row_max;
+    // exp logit
+    float exp_sum = 0.0f;
+    for (int i = 0; i < 32; i++) {
+      float exp_result = get_exp(attention_score[r][i] - row_max);
+      attention_weight[r][i] = exp_result;
+      exp_sum += exp_result;
+    }
+    new_sum_exp[r] = prev_sum_exp[r] + exp_sum;
+  }
+}
+
+void scale_attn_output(float tensor_in[32][64], float sum_exp[32],
+                       float tensor_out[32][64]) {
+  row_scale<float, float, 32, 64>(&tensor_in[0][0], sum_exp, &tensor_out[0][0]);
 }
 
 } // extern "C"

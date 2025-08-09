@@ -1682,10 +1682,11 @@ class CodeGenerator:
             grouped_nodes: dict[str, NodeDeque] = {
                 name: NodeDeque(name) for name in names
             }
+            print(grouped_nodes.keys())
             for connection in connection_info:
                 grouped_a, grouped_b = (
-                    grouped_nodes[connection[1]],
-                    grouped_nodes[connection[2]],
+                    grouped_nodes.get(connection[1]),
+                    grouped_nodes.get(connection[2]),
                 )
                 if grouped_a is None or grouped_b is None:
                     continue
