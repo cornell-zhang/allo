@@ -96,11 +96,11 @@ def run(M, N, K, dtype):
         print(f"M={M},N={N},K={K} exe failed")
 
 
-# K_list = [256, 512, 1024, 2048]
-# M_list = [256, 512, 1024, 2048]
-# N_list = [256, 512, 1024, 2048]
-# for M_ in M_list:
-#     for N_ in N_list:
-#         for K_ in K_list:
-#             run(M_, N_, K_, int8)
-run(2048, 2048, 2048, int16)
+K_list = [256, 512, 1024, 2048]
+M_list = [256, 512, 1024, 2048]
+N_list = [256, 512, 1024, 2048]
+for M_ in M_list:
+    for N_ in N_list:
+        for K_ in K_list:
+            run(M_, N_, K_, bfloat16)
+# run(256, 256, 256, int16)

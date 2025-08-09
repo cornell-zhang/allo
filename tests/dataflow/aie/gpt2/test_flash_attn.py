@@ -52,11 +52,25 @@ def flash_attention(Q, K, V, chunk_size=32):
 
 
 def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
-    operand_qk = ExternalModule(
-        top="operand_qk",
+    attn_score = ExternalModule(
+        top="transpose_matmul_with_scale",
         impl_path=KERNEL_LIB_PATH + "fa_components.cc",
         input_idx=[0, 1],
         output_idx=[2],
+    )
+
+    init_softmax = ExternalModule(
+        top="init_softmax",
+        impl_path=KERNEL_LIB_PATH + "fa_components.cc",
+        input_idx=[],
+        output_idx=[0, 1],
+    )
+
+    online_softmax = ExternalModule(
+        top="online_softmax",
+        impl_path=KERNEL_LIB_PATH + "fa_components.cc",
+        input_idx=[0, 1, 2],
+        output_idx=[3, 4, 5],
     )
 
     Ty = float32
@@ -64,49 +78,83 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, chunk_size):
 
     @df.region()
     def top():
-        k_pipe = df.array(
+        q_pipe = df.array(
             df.pipe(dtype=Ty, shape=(chunk_size, HEAD_DIM), depth=2),
             shape=(SEQ_LEN // chunk_size,),
         )
-        v_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(chunk_size, HEAD_DIM), depth=2),
+
+        score_pipe = df.array(
+            df.pipe(dtype=Ty, shape=(chunk_size, chunk_size), depth=2),
             shape=(SEQ_LEN // chunk_size,),
         )
+
+        weight_pipe = df.array(
+            df.pipe(dtype=Ty, shape=(chunk_size, chunk_size), depth=2),
+            shape=(SEQ_LEN // chunk_size,),
+        )
+
+
         o_pipe = df.array(
             df.pipe(dtype=Ty, shape=(chunk_size, HEAD_DIM), depth=2),
             shape=(SEQ_LEN // chunk_size,),
         )
 
+        exp_sum_pipe = df.pipe(dtype=Ty, shape=(chunk_size), depth=2)
+
         @df.kernel(mapping=[1])
-        def flash_attn_block(Q: Ty[chunk_size, HEAD_DIM]):
-            max_logit: Ty[chunk_size] = 0
+        def send_q(Q: Ty[chunk_size, HEAD_DIM]):
             with allo.meta_for(SEQ_LEN // chunk_size) as i:
-                # TODO: attn score
-                logits: Ty[chunk_size, chunk_size] = 0
-                operand_qk(Q, k_pipe.get(), max_logit, logits, max_logit)
+                q_pipe[i].put(Q)
 
         @df.kernel(mapping=[SEQ_LEN // chunk_size])
-        def send_k(K: Ty[SEQ_LEN, HEAD_DIM] @ Ly):
-            k_pipe.put(K)
-
-        @df.kernel(mapping=[SEQ_LEN // chunk_size])
-        def send_v(V: Ty[SEQ_LEN, HEAD_DIM] @ Ly):
-            v_pipe.put(V)
+        def cal_attn_score(K: Ty[SEQ_LEN, HEAD_DIM] @ Ly):
+            score: Ty[chunk_size, chunk_size]
+            pi = df.get_pid()
+            attn_score(q_pipe[pi].get(), K, score)
+            score_pipe[pi].put(score)
 
         @df.kernel(mapping=[1])
-        def flash_attn_acc(O: Ty[chunk_size, HEAD_DIM]):
-            sum_exp: Ty[chunk_size] = 0
-            attn_output: Ty[chunk_size, HEAD_DIM] = 0
-            # TODO
+        def cal_softmax():
+            max_logit: Ty[chunk_size]
+            sum_exp: Ty[chunk_size]
+            init_softmax(max_logit, sum_exp)
+            # softmax
+            with allo.meta_for(SEQ_LEN // chunk_size) as i:
+                attn_weight: Ty[chunk_size, chunk_size]
+                online_softmax(score_pipe[i].get(), max_logit, sum_exp, attn_weight, max_logit, sum_exp)
+                weight_pipe[i].put(attn_weight)
+            exp_sum_pipe.put(sum_exp)
+        
+        @df.kernel(mapping=[SEQ_LEN // chunk_size])
+        def attn(V: Ty[SEQ_LEN, HEAD_DIM] @ Ly):
+            pi = df.get_pid()
+            o_pipe[pi].put(allo.matmul(weight_pipe.get(), V))
 
+        @df.kernel(mapping=[1])
+        def acc(O: Ty[chunk_size, HEAD_DIM]):
+            attn_output: Ty[chunk_size, HEAD_DIM] = 0
+            with allo.meta_for(SEQ_LEN // chunk_size) as i:
+                attn_output = allo.add(attn_output, o_pipe[i].get())
+            # TODO div sum_exp
             O[:] = attn_output
 
 
-N, D = 128, 64  # Sequence Length, Embedding Dim = 64
-Q = np.random.randn(N, D).astype(np.float32)
-K = np.random.randn(N, D).astype(np.float32)
-V = np.random.randn(N, D).astype(np.float32)
+    mod = df.build(
+        top,
+        target="aie-mlir",
+        profile=True,
+        warmup=20,
+        num_iters=100,  # ! executing only once may get undefined result.
+    )
 
-out = flash_attention(Q, K, V, chunk_size=32)
-print(out.shape)
-print(out)
+N, D = 128, 64  # Sequence Length, Embedding Dim = 64
+chunk_size=32
+# Q = np.random.randn(N, D).astype(np.float32)
+# K = np.random.randn(N, D).astype(np.float32)
+# V = np.random.randn(N, D).astype(np.float32)
+
+# out = flash_attention(Q, K, V, chunk_size=32)
+# print(out.shape)
+# print(out)
+
+test_flash_attention(N, D, chunk_size)

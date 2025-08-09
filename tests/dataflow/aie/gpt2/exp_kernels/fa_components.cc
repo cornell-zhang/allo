@@ -11,6 +11,9 @@
 
 #define NOCPP
 
+// Constants for exp(x) = 2^(x * log2(e))
+// log2(e) = 1 / ln(2) = 1.4426950408889634
+// ln(2) = 0.6931471805599453
 constexpr float LOG2E_F = 1.4426950408889634f;
 constexpr float LN2_F = 0.6931471805599453f;
 
@@ -68,12 +71,12 @@ float get_exp(float x) {
 
 template <typename T_in, typename T_out, const int M, const int N, const int K,
           const float scale>
-void for_qk(T_in *tensor_a, T_in *tensor_b, T_in *max_logit,
-            T_out *output_tensor, T_out *new_max_logit) {
+void transpose_matmul_with_scale(T_in *__restrict tensor_a,
+                                 T_in *__restrict tensor_b,
+                                 T_out *__restrict output_tensor) {
   constexpr int vec_factor = 16;
   using vec_t = aie::vector<T_in, vec_factor>;
   T_in *__restrict tensor_a_ptr = tensor_a;
-  // logits = Q_chunk @ K_chunk.T / np.sqrt(D)
   for (int outer_iter = 0; outer_iter < M; outer_iter++) {
     T_in *__restrict tensor_b_ptr = tensor_b;
     for (int inner_iter = 0; inner_iter < N; ++inner_iter) {
@@ -95,48 +98,74 @@ void for_qk(T_in *tensor_a, T_in *tensor_b, T_in *max_logit,
     }
     tensor_a_ptr += K;
   }
-  // local_max = np.max(logits, axis=1, keepdims=True)
-  // max_logit = np.maximum(max_logit, local_max)
-  for (int outer_iter = 0; outer_iter < M; outer_iter++) {
-    T_in row_max = max_logit[outer_iter];
-    T_in *__restrict logits_ptr = output_tensor + outer_iter * N;
-    const int F = N / vec_factor;
-    for (int i = 0; i < F; i++) {
-      vec_t logits_vec = aie::load_v<vec_factor>(logits_ptr);
-      row_max = std::max(row_max, aie::reduce_max(logits_vec));
-      logits_ptr += vec_factor;
-    }
-    new_max_logit[outer_iter] = row_max;
-    // logits - max_logit
-    logits_ptr = output_tensor + outer_iter * N;
-    for (int i = 0; i < F; i++) {
-      vec_t logits_vec = aie::load_v<vec_factor>(logits_ptr);
-      logits_vec = aie::add(logits_vec, -row_max);
-      aie::store_v(logits_ptr, logits_vec);
-      logits_ptr += vec_factor;
-    }
+}
+
+template <typename T, int L>
+void init_softmax(T *__restrict max_logit, T *__restrict sum_exp) {
+  // max_logit = np.full((L, 1), -np.inf)
+  // sum_exp = np.zeros((L, 1))
+  constexpr int vec_factor = 256 / (sizeof(T) * 8); // one 256 bit store unit
+  static_assert(L % vec_factor == 0);
+  // fixme: T == float?
+  const float neg_inf = -std::numeric_limits<float>::infinity();
+  const aie::vector<T, vec_factor> neg_infs =
+      aie::broadcast<T, vec_factor>(neg_inf);
+  const aie::vector<T, vec_factor> zeros = aie::zeros<T, vec_factor>();
+  for (int iter = 0; iter < L; iter += vec_factor) {
+    aie::store_v(max_logit, neg_infs);
+    max_logit += vec_factor;
+    aie::store_v(sum_exp, zeros);
+    sum_exp += vec_factor;
   }
 }
 
-template <typename T_in, typename T_out, const int M, const int N, const int K>
-void for_v(T_in *tensor_a, T_in *tensor_b, T_out *output_tensor,
-           T_out *sum_exp) {
-  // exp_logits = np.exp(tensor_a)
-
+template <int L, int CHUNK>
+void online_softmax_float(float *__restrict attention_score,
+                          float *prev_max_logit, float *prev_sum_exp,
+                          float *__restrict attention_weight,
+                          float *new_max_logit, float *new_sum_exp) {
+  constexpr int vec_factor = 256 / (sizeof(float) * 8);
+  const int F = CHUNK / vec_factor;
+  for (int r = 0; r < L; ++r) {
+    float *score_row_ptr = &attention_score[r][0];
+    // row max
+    float row_max = prev_max_logit[r];
+    for (int i = 0; i < F; i++) {
+      aie::vector<float, vec_factor> scores =
+          aie::load_v<vec_factor>(score_row_ptr);
+      row_max = std::max(row_max, aie::reduce_max(scores));
+      score_row_ptr += vec_factor;
+    }
+    prev_max_logit[r] = row_max;
+    // exp logit
+    float exp_sum = 0.0f;
+    for (int i = 0; i < CHUNK; i++) {
+      float exp_result = get_exp(attention_score[r][i] - row_max);
+      attention_weight[r][i] = exp_result;
+      exp_sum += exp_result;
+    }
+    new_sum_exp[r] = prev_sum_exp[r] + exp_sum;
+  }
 }
 
 extern "C" {
 
-void operand_qk(float A_in[32][64], float B_in[32][64], float max_logit[32],
-                float C_out[32][32], float new_max_logit[32]) {
-  for_qk<float, float, 32, 32, 64, 0.125f>(&A_in[0][0], &B_in[0][0], max_logit,
-                                           &C_out[0][0], new_max_logit);
+void transpose_matmul_with_scale(float A_in[32][64], float B_in[32][64],
+                                 float C_out[32][32]) {
+  transpose_matmul_with_scale<float, float, 32, 32, 64, 0.125f>(
+      &A_in[0][0], &B_in[0][0], &C_out[0][0]);
 }
 
-void operand_v(float A_in[32][32], float B_in[32][64], float C_out[32][64],
-               float sum_exp[32]) {
-  for_qk<float, float, 32, 32, 64>(&A_in[0][0], &B_in[0][0], &C_out[0][0],
-                                   sum_exp);
+void init_softmax(float max_logit[32], float sum_exp[32]) {
+  init_softmax<float, 32>(max_logit, sum_exp)
+}
+
+void online_softmax(float attention_score[32][32], float prev_max_logit[32],
+                    float prev_sum_exp[32], float attention_weight[32][32],
+                    float new_max_logit[32], float new_sum_exp[32], ) {
+  online_softmax_float<32, 32>(&attention_score[0][0], prev_max_logit,
+                               prev_sum_exp, &attention_weight[0][0],
+                               new_max_logit, new_sum_exp)
 }
 
 } // extern "C"
