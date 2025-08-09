@@ -120,6 +120,29 @@ class TorchBuilder:
                 return name
         return None
 
+    def _literal_for_allotype(self, t: AlloType) -> str:
+        cls = t.__class__.__name__
+        # Handle known constructors by their signatures
+        if cls in ("Fixed", "UFixed"):
+            return f"{cls}({t.bits}, {t.fracs})"
+        if cls in ("Int", "UInt"):
+            return f"{cls}({t.bits})"
+        if cls == "Float":
+            if t.bits == 16:
+                return "float16"
+            if t.bits == 32:
+                return "float32"
+            if t.bits == 64:
+                return "float64"
+            raise NotImplementedError(f"Unsupported float bits: {t.bits}")
+        if cls == "Index":
+            return "Index()"
+        # Fallback to class(bits, fracs)
+        try:
+            return f"{cls}({t.bits}, {t.fracs})"
+        except Exception:
+            return repr(t)
+
     def _resolve_value_to_name_obj(self, value, kind_hint):
         # Accept string or AlloType; return (name, obj)
         if isinstance(value, str):
@@ -128,11 +151,12 @@ class TorchBuilder:
                 return value, obj
             except Exception:
                 # invalid string -> fallback to kind hint
-                return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(kind_hint)
+                return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(
+                    kind_hint
+                )
         if isinstance(value, AlloType):
-            symbol = self._find_types_module_symbol(value)
-            assert symbol is not None, f"Could not find symbol for {value}"
-            return symbol, value
+            # Use exact constructor literal like Fixed(16, 10)
+            return self._literal_for_allotype(value), value
         # fallback
         return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(kind_hint)
 
@@ -168,21 +192,9 @@ class TorchBuilder:
                 return candidate
             except Exception:
                 return "float32"
-        # If user passed an AlloType, try to resolve to a known symbol; else create one
+        # If user passed an AlloType, emit constructor literal (e.g., Fixed(16, 10))
         if isinstance(candidate, AlloType):
-            symbol = self._find_types_module_symbol(candidate)
-            if symbol is not None:
-                return symbol
-            # create a synthetic symbol for this dtype
-            symbol = f"__dtype_{op_kind}"
-            # ensure uniqueness if reused by multiple ops with different objects
-            suffix = 0
-            unique_symbol = symbol
-            while unique_symbol in self.extra_types and self.extra_types[unique_symbol] is not candidate:
-                suffix += 1
-                unique_symbol = f"{symbol}_{suffix}"
-            self.extra_types[unique_symbol] = candidate
-            return unique_symbol
+            return self._literal_for_allotype(candidate)
         # Fallback
         return "float32"
 
@@ -242,15 +254,21 @@ class TorchBuilder:
         if self.named_params:
             for name, param in self.named_params.items():
                 new_name = name.replace(".", "_")
-                dtype_name = self.param_dtypes.get(new_name, self._resolve_dtype_name("default"))
+                dtype_name = self.param_dtypes.get(
+                    new_name, self._resolve_dtype_name("default")
+                )
                 res += f"    {new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
         if self.named_buffers:
             for name, buf in self.named_buffers.items():
                 new_name = name.replace(".", "_")
-                dtype_name = self.param_dtypes.get(new_name, self._resolve_dtype_name("default"))
+                dtype_name = self.param_dtypes.get(
+                    new_name, self._resolve_dtype_name("default")
+                )
                 if buf.shape:
                     shape_str = ", ".join([str(s) for s in buf.shape])
-                    res += f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
+                    res += (
+                        f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
+                    )
                 else:
                     res += f"    {new_name}: {dtype_name} = gb_{new_name}\n"
         # function body
@@ -436,7 +454,9 @@ class TorchBuilder:
         if len(shape) == 2:
             n, d = shape
             self.composition.append(("relu2d", name_id, [dtype_obj, n, d]))
-            return f'{node.name} = nn.relu2d[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
+            return (
+                f'{node.name} = nn.relu2d[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
+            )
         if len(shape) == 4:
             n, c, h, w = shape
             self.composition.append(("relu4d", name_id, [dtype_obj, n, c, h, w]))
@@ -452,7 +472,14 @@ class TorchBuilder:
             shape = tuple(node.meta["tensor_meta"].shape)
             name_id = self.get_unique_id("linear")
             # resolve per-module dtype triplet or fall back to global op keys
-            dtype_X_name, dtype_W_name, dtype_O_name, dtype_X_obj, dtype_W_obj, dtype_O_obj = self._get_linear_dtype_triplet(node.target)
+            (
+                dtype_X_name,
+                dtype_W_name,
+                dtype_O_name,
+                dtype_X_obj,
+                dtype_W_obj,
+                dtype_O_obj,
+            ) = self._get_linear_dtype_triplet(node.target)
             # record parameter dtypes
             self.param_dtypes[f"{target_name}_weight"] = dtype_W_name
             self.param_dtypes[f"{target_name}_bias"] = dtype_O_name
@@ -460,7 +487,13 @@ class TorchBuilder:
                 n, d = shape
                 _, m = self.named_params[f"{str(node.target)}.weight"].shape
                 # instantiate TyX, TyW, TyO, M, N, K
-                self.composition.append(("linear2d", name_id, [dtype_X_obj, dtype_W_obj, dtype_O_obj, n, d, m]))
+                self.composition.append(
+                    (
+                        "linear2d",
+                        name_id,
+                        [dtype_X_obj, dtype_W_obj, dtype_O_obj, n, d, m],
+                    )
+                )
                 return f'{node.name} = nn.linear2d[{dtype_X_name}, {dtype_W_name}, {dtype_O_name}, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
             if len(shape) == 3:
                 bs, l, m = shape
