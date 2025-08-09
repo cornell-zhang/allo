@@ -122,22 +122,22 @@ void init_softmax(T *__restrict max_logit, T *__restrict sum_exp) {
 template <typename T_in, typename T_out, int M, int N>
 void row_scale(T_in *__restrict tensor_in, T_in *__restrict scale_factors,
                T_out *__restrict tensor_out) {
-  constexpr int vec_factor = 256 / (sizeof(float) * 8);
-  const int F = N / vec_factor;
-  for (int outer_iter = 0; outer_iter < M; outer_iter++) {
-    T_in *input_ptr = tensor_in + outer_iter * N;
-    T_out *output_ptr = tensor_out + outer_iter * N;
-    T_in scale_factor = 1.0f / scale_factors[outer_iter];
-    for (int i = 0; i < F; i++) {
-      aie::vector<T_in, vec_factor> input_vec =
-          aie::load_v<vec_factor>(input_ptr);
-      aie::vector<T_out, vec_factor> scaled_vec =
-          aie::mul(input_vec, scale_factor);
-      aie::store_v(output_ptr, scaled_vec);
-      input_ptr += vec_factor;
-      output_ptr += vec_factor;
-    }
-  }
+  // constexpr int vec_factor = 256 / (sizeof(float) * 8);
+  // const int F = N / vec_factor;
+  // for (int outer_iter = 0; outer_iter < M; outer_iter++) {
+  //   T_in *input_ptr = tensor_in + outer_iter * N;
+  //   T_out *output_ptr = tensor_out + outer_iter * N;
+  //   T_in scale_factor = 1.0f / scale_factors[outer_iter];
+  //   for (int i = 0; i < F; i++) {
+  //     aie::vector<T_in, vec_factor> input_vec =
+  //         aie::load_v<vec_factor>(input_ptr);
+  //     aie::vector<T_out, vec_factor> scaled_vec =
+  //         aie::mul(input_vec, scale_factor);
+  //     aie::store_v(output_ptr, scaled_vec);
+  //     input_ptr += vec_factor;
+  //     output_ptr += vec_factor;
+  //   }
+  // }
 }
 
 extern "C" {
