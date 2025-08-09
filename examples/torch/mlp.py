@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import allo
+from allo.ir.types import int8
 
 
 class MLP(nn.Module):
@@ -24,7 +25,13 @@ model = MLP()
 model.eval()
 example_inputs = [torch.rand(8, 16)]
 llvm_mod = allo.frontend.from_pytorch(
-    model, example_inputs=example_inputs, verbose=True
+    model, example_inputs=example_inputs, verbose=True, op_dtypes={
+        "default": int8,   # global fallback
+        "linear": int8,       # per-op override
+        "relu": int8,
+        "inputs": int8,    # optional input arg annotation
+        "outputs": int8,   # optional outputs annotation
+    },
 )
 golden = model(*example_inputs)
 np_inputs = [x.detach().numpy() for x in example_inputs]
