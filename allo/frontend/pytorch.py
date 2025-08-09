@@ -120,6 +120,39 @@ class TorchBuilder:
                 return name
         return None
 
+    def _resolve_value_to_name_obj(self, value, kind_hint):
+        # Accept string or AlloType; return (name, obj)
+        if isinstance(value, str):
+            try:
+                obj = getattr(types, value)
+                return value, obj
+            except Exception:
+                # invalid string -> fallback to kind hint
+                return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(kind_hint)
+        if isinstance(value, AlloType):
+            symbol = self._find_types_module_symbol(value)
+            assert symbol is not None, f"Could not find symbol for {value}"
+            return symbol, value
+        # fallback
+        return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(kind_hint)
+
+    def _get_linear_dtype_triplet(self, module_key):
+        # Prefer module-specific list [TyX, TyW, TyO]
+        spec = self.op_dtypes.get(module_key)
+        if isinstance(spec, (list, tuple)) and len(spec) == 3:
+            x_name, x_obj = self._resolve_value_to_name_obj(spec[0], "linear_input")
+            w_name, w_obj = self._resolve_value_to_name_obj(spec[1], "linear_weight")
+            o_name, o_obj = self._resolve_value_to_name_obj(spec[2], "linear")
+            return (x_name, w_name, o_name, x_obj, w_obj, o_obj)
+        # Fallback to global per-op keys
+        x_name = self._resolve_dtype_name("linear_input")
+        w_name = self._resolve_dtype_name("linear_weight")
+        o_name = self._resolve_dtype_name("linear")
+        x_obj = self._resolve_dtype_obj("linear_input")
+        w_obj = self._resolve_dtype_obj("linear_weight")
+        o_obj = self._resolve_dtype_obj("linear")
+        return (x_name, w_name, o_name, x_obj, w_obj, o_obj)
+
     def _resolve_dtype_name(self, op_kind):
         # prefer exact op kind, then a global default, otherwise float32
         candidate = self.op_dtypes.get(op_kind, None)
@@ -418,28 +451,29 @@ class TorchBuilder:
             bias = get_var_name(target_name + "_bias")
             shape = tuple(node.meta["tensor_meta"].shape)
             name_id = self.get_unique_id("linear")
-            dtype_name = self._resolve_dtype_name("linear")
-            dtype_obj = self._resolve_dtype_obj("linear")
+            # resolve per-module dtype triplet or fall back to global op keys
+            dtype_X_name, dtype_W_name, dtype_O_name, dtype_X_obj, dtype_W_obj, dtype_O_obj = self._get_linear_dtype_triplet(node.target)
             # record parameter dtypes
-            self._record_param_dtype(f"{target_name}_weight", "linear")
-            self._record_param_dtype(f"{target_name}_bias", "linear")
+            self.param_dtypes[f"{target_name}_weight"] = dtype_W_name
+            self.param_dtypes[f"{target_name}_bias"] = dtype_O_name
             if len(shape) == 2:
                 n, d = shape
                 _, m = self.named_params[f"{str(node.target)}.weight"].shape
-                # n*m x (m*d)^T + (n*1) = n*d
-                self.composition.append(("linear2d", name_id, [dtype_obj, n, d, m]))
-                return f'{node.name} = nn.linear2d[{dtype_name}, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+                # instantiate TyX, TyW, TyO, M, N, K
+                self.composition.append(("linear2d", name_id, [dtype_X_obj, dtype_W_obj, dtype_O_obj, n, d, m]))
+                return f'{node.name} = nn.linear2d[{dtype_X_name}, {dtype_W_name}, {dtype_O_name}, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
             if len(shape) == 3:
                 bs, l, m = shape
                 _, d = self.named_params[f"{str(node.target)}.weight"].shape
+                # instantiate TyX, TyW, TyO, B, L, D, M
                 self.composition.append(
                     (
                         "linear3d",
                         name_id,
-                        [dtype_obj, bs, l, d, m],
+                        [dtype_X_obj, dtype_W_obj, dtype_O_obj, bs, l, d, m],
                     )
                 )
-                return f'{node.name} = nn.linear3d[{dtype_name}, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+                return f'{node.name} = nn.linear3d[{dtype_X_name}, {dtype_W_name}, {dtype_O_name}, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
             raise NotImplementedError("Unsupported shape for linear")
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
