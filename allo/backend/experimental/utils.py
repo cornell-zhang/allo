@@ -648,7 +648,7 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
 # Run-time Utils
 # ############################################################
 np_supported_types = {
-    "bf16": np.float32,  # numpy does not support bf16
+    "bf16": np.uint16,  # numpy does not support bf16
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -665,7 +665,10 @@ np_supported_types = {
 
 
 def read_tensor_from_file(dtype, shape, file_path):
-    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[str(dtype)])
+    arr = np.fromfile(file_path, dtype=np_supported_types[str(dtype)])
+    if str(dtype) == "bf16":
+        f32_arr = (arr.astype(np.uint32) << 16).view(np.float32)
+        return f32_arr.reshape(shape)
     return arr.reshape(shape)
 
 
@@ -805,13 +808,10 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                 code += format_str(
                     f"{dtype} *bufIn{idx} = bo_in{idx}.map<{dtype} *>();"
                 )
-                code += format_str(f"std::vector<{dtype}> srcVec{idx};")
-                code += format_str(f"for (int i = 0; i < {size}; i++) {{")
-                with format_code(indent=4):
-                    code += format_str(f"{dtype} num;")
-                    code += format_str(f"ifile{idx} >> num;")
-                    code += format_str(f"srcVec{idx}.push_back(num);")
-                code += format_str("}")
+                code += format_str(f"std::vector<{dtype}> srcVec{idx}({size});")
+                code += format_str(
+                    f"ifile{idx}.read(reinterpret_cast<char*>(srcVec{idx}.data()), {size} * sizeof({dtype}));"
+                )
                 code += format_str(
                     f"memcpy(bufIn{idx}, srcVec{idx}.data(), (srcVec{idx}.size() * sizeof({dtype})));"
                 )
@@ -934,24 +934,12 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                     f"{dtype} *bufOut{idx} = bo_out{idx}.map<{dtype} *>();"
                 )
                 # write to output file
-                code += format_str(f'std::ofstream ofile{idx}("output{idx}.data");')
-                code += format_str(f"if (!ofile{idx}.is_open()) {{")
                 code += format_str(
-                    '    std::cerr << "Error: Could not open output file.\\n";'
+                    f'std::ofstream ofile{idx}("output{idx}.data", std::ios::binary);'
                 )
-                code += format_str("    return 1;")
-                code += format_str("}")
-                code += format_str(f"for (uint32_t i = 0; i < {out_size}; i++) {{")
-                if dtype == "int8_t":
-                    code += format_str(
-                        f'  ofile{idx} <<  static_cast<int>(*(bufOut{idx} + i)) << "\\n";',
-                        strip=False,
-                    )
-                else:
-                    code += format_str(
-                        f'  ofile{idx} << *(bufOut{idx} + i) << "\\n";', strip=False
-                    )
-                code += format_str("}")
+                code += format_str(
+                    f"ofile{idx}.write(reinterpret_cast<const char*>(bufOut{idx} ), {out_size} * sizeof({dtype}));"
+                )
                 code += format_str(f"ofile{idx}.close();")
         code += format_str("if (trace_size > 0) {")
         code += format_str("  bo_trace.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)

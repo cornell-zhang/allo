@@ -799,11 +799,9 @@ class AIE_MLIRModule:
         for idx, dtensor in self.global_tensors.items():
             if dtensor.is_input:
                 with open(
-                    os.path.join(self.project_dir, f"input{idx}.data"),
-                    "w",
-                    encoding="utf-8",
+                    os.path.join(self.project_dir, f"input{idx}.data"), "wb"
                 ) as f:
-                    f.write("\n".join([str(i) for i in args[idx].flatten()]))
+                    f.write(args[idx].tobytes())
         cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {self.trace_size} {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
