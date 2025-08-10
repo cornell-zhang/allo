@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import allo
-from allo.ir.types import float32
+from allo.ir.types import float32, Fixed
 
 
 class MLP(nn.Module):
@@ -31,8 +31,8 @@ llvm_mod = allo.frontend.from_pytorch(
     weights_as_args=True,
     op_dtypes={
         "inputs": float32,
-        "linear1": [float32, float32, float32],  # X, W, O for first linear
-        "linear2": [float32, float32, float32],  # X, W, O for second linear
+        "linear1": [float32, Fixed(64, 30), float32],  # X, W, O for first linear
+        "linear2": [float32, Fixed(64, 30), float32],  # X, W, O for second linear
         "relu": float32,
         "outputs": float32,  # optional outputs annotation
     },
