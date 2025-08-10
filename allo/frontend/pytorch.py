@@ -33,6 +33,7 @@ def from_pytorch(
     mode="csim",
     project="top.prj",
     op_dtypes=None,
+    weights_as_args=False,
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -61,14 +62,17 @@ def from_pytorch(
     for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
     global_vars.update({"dsl": dsl, "nn": nn})
-    for name, param in gm.named_parameters():
-        new_name = "g_" + name.replace(".", "_")
-        global_vars.update({new_name: param.detach().numpy()})
-    for name, buf in gm.named_buffers():
-        new_name = "gb_" + name.replace(".", "_")
-        global_vars.update({new_name: buf.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs, leaf_modules, op_dtypes)
+    # Only add weights to global_vars if not passing as arguments
+    if not weights_as_args:
+        for name, param in gm.named_parameters():
+            new_name = "g_" + name.replace(".", "_")
+            global_vars.update({new_name: param.detach().numpy()})
+        for name, buf in gm.named_buffers():
+            new_name = "gb_" + name.replace(".", "_")
+            global_vars.update({new_name: buf.detach().numpy()})
+
+    builder = TorchBuilder(gm, example_inputs, leaf_modules, op_dtypes, weights_as_args)
     code = builder.build()
     if verbose:
         print(code)
@@ -84,6 +88,33 @@ def from_pytorch(
     if target == "mlir":
         return s
     mod = s.build(target=target, mode=mode, project=project)
+
+    # If weights are passed as arguments, create a wrapper function
+    if weights_as_args:
+        # Store weight data for easy access
+        weight_data = []
+        for name, param in gm.named_parameters():
+            weight_data.append(param.detach().numpy())
+        for name, buf in gm.named_buffers():
+            weight_data.append(buf.detach().numpy())
+
+        # Create a wrapper that accepts inputs and weights
+        def wrapped_forward(*args):
+            # If only inputs are provided, automatically add weights
+            if len(args) == len(example_inputs):
+                # User only passed inputs, automatically add weights
+                return mod(*args, *weight_data)
+            else:
+                # User passed both inputs and weights
+                num_inputs = len(example_inputs)
+                inputs = args[:num_inputs]
+                weights = args[num_inputs:]
+                return mod(*inputs, *weights)
+
+        # Attach weight data to the wrapper for convenience
+        wrapped_forward.weight_data = weight_data
+        return wrapped_forward
+
     return mod
 
 
@@ -92,7 +123,14 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm, example_inputs, leaf_modules=None, op_dtypes=None):
+    def __init__(
+        self,
+        gm,
+        example_inputs,
+        leaf_modules=None,
+        op_dtypes=None,
+        weights_as_args=False,
+    ):
         self.gm = gm
         self.code = []
         self.input_names = []
@@ -112,6 +150,8 @@ class TorchBuilder:
         self.param_dtypes = {}
         # synthetic dtype symbols to inject into global_vars: name -> AlloType
         self.extra_types = {}
+        # whether to pass weights as function arguments instead of global constants
+        self.weights_as_args = weights_as_args
 
     def _find_types_module_symbol(self, dtype_obj):
         # Try to find a public symbol name in allo.ir.types that references this object
@@ -243,34 +283,64 @@ class TorchBuilder:
             )
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
+
+        # Add weight parameters to function signature if weights_as_args is True
+        weight_args = []
+        if self.weights_as_args:
+            if self.named_params:
+                for name, param in self.named_params.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    weight_args.append(
+                        f"{new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}]"
+                    )
+
+            if self.named_buffers:
+                for name, buf in self.named_buffers.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    if buf.shape:
+                        shape_str = ", ".join([str(s) for s in buf.shape])
+                        weight_args.append(f"{new_name}: {dtype_name}[{shape_str}]")
+                    else:
+                        weight_args.append(f"{new_name}: {dtype_name}")
+
+        # Combine input args and weight args
+        all_args = args + weight_args
+
         res = ""
         # top-level function
-        res += f"def forward({', '.join(args)})".format()
+        res += f"def forward({', '.join(all_args)})".format()
         # outputs
         res += f" -> ({', '.join(self.output)}):\n"
         # subfunctions
         if self.subfunctions:
             res += "\n".join(self.subfunctions) + "\n"
-        if self.named_params:
-            for name, param in self.named_params.items():
-                new_name = name.replace(".", "_")
-                dtype_name = self.param_dtypes.get(
-                    new_name, self._resolve_dtype_name("default")
-                )
-                res += f"    {new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
-        if self.named_buffers:
-            for name, buf in self.named_buffers.items():
-                new_name = name.replace(".", "_")
-                dtype_name = self.param_dtypes.get(
-                    new_name, self._resolve_dtype_name("default")
-                )
-                if buf.shape:
-                    shape_str = ", ".join([str(s) for s in buf.shape])
-                    res += (
-                        f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
+
+        # Declare weights as local variables (either from arguments or global constants)
+        if not self.weights_as_args:
+            if self.named_params:
+                for name, param in self.named_params.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
                     )
-                else:
-                    res += f"    {new_name}: {dtype_name} = gb_{new_name}\n"
+                    res += f"    {new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+            if self.named_buffers:
+                for name, buf in self.named_buffers.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    if buf.shape:
+                        shape_str = ", ".join([str(s) for s in buf.shape])
+                        res += f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
+                    else:
+                        res += f"    {new_name}: {dtype_name} = gb_{new_name}\n"
         # function body
         for line in self.code:
             res += f"    {line}\n"
