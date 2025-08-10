@@ -157,6 +157,7 @@ class ASTResolver:
             # Construct the type instance using the resolved function object
             try:
                 return func_obj(*args)
+            # pylint: disable=broad-exception-caught
             except Exception:
                 return None
         else:

@@ -6,9 +6,9 @@ from .. import dsl
 from .systolic import systolic
 
 
-def linear2d[TyX, TyW, TyO, M, N, K](
-    X: "TyX[M, K]", W: "TyW[N, K]", b: "TyO[N]"
-) -> "TyO[M, N]":
+def linear2d[
+    TyX, TyW, TyO, M, N, K
+](X: "TyX[M, K]", W: "TyW[N, K]", b: "TyO[N]") -> "TyO[M, N]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
     Z: TyO[M, N]
     buf: TyO[N]
@@ -32,9 +32,9 @@ def schedule_linear2d(s):
     return s
 
 
-def linear3d[TyX, TyW, TyO, B, L, D, M](
-    X: "TyX[B, L, D]", W: "TyW[M, D]", bias: "TyO[M]"
-) -> "TyO[B, L, M]":
+def linear3d[
+    TyX, TyW, TyO, B, L, D, M
+](X: "TyX[B, L, D]", W: "TyW[M, D]", bias: "TyO[M]") -> "TyO[B, L, M]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
     Z: TyO[B, L, M]
     buf: TyO[M]
@@ -170,9 +170,9 @@ def residual_add[Ty, L, D](X1: "Ty[L, D]", X2: "Ty[L, D]") -> "Ty[L, D]":
     return Z
 
 
-def scaled_dot_product_attention[Ty, H, L, D, M0, M1](
-    Q: "Ty[L, D]", K: "Ty[L, D]", V: "Ty[L, D]"
-) -> "Ty[L, D]":
+def scaled_dot_product_attention[
+    Ty, H, L, D, M0, M1
+](Q: "Ty[L, D]", K: "Ty[L, D]", V: "Ty[L, D]") -> "Ty[L, D]":
     # softmax(QK^T/sqrt(D // H))
     Z: Ty[L, D]
 
@@ -203,7 +203,9 @@ def scaled_dot_product_attention[Ty, H, L, D, M0, M1](
     return Z
 
 
-def conv2d[Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1](
+def conv2d[
+    Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1
+](
     inp: "Ty[B, Cin, H, W]", kernel: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
 ) -> "Ty[B, Cout, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
@@ -229,9 +231,9 @@ def schedule_conv2d(s):
     return s
 
 
-def maxpool2d[Ty, B, C, H, W, K, Oh, Ow, S, Pd](
-    inp: "Ty[B, C, H, W]",
-) -> "Ty[B, C, Oh, Ow]":
+def maxpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
     Z: Ty[B, C, Oh, Ow]
     for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
@@ -252,9 +254,9 @@ def schedule_maxpool2d(s):
     return s
 
 
-def avgpool2d[Ty, B, C, H, W, K, Oh, Ow, S, Pd](
-    inp: "Ty[B, C, H, W]",
-) -> "Ty[B, C, Oh, Ow]":
+def avgpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
     Z: Ty[B, C, Oh, Ow]
     for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
@@ -274,7 +276,9 @@ def schedule_avgpool2d(s):
     return s
 
 
-def batchnorm2d[Ty, B, C, H, W](
+def batchnorm2d[
+    Ty, B, C, H, W
+](
     X: "Ty[B, C, H, W]",
     gamma: "Ty[C]",
     beta: "Ty[C]",

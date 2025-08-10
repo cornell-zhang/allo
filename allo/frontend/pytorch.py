@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=too-many-public-methods, too-many-instance-attributes
+# pylint: disable=too-many-public-methods, too-many-instance-attributes, broad-exception-caught
 
 import operator
 import inspect
@@ -104,12 +104,11 @@ def from_pytorch(
             if len(args) == len(example_inputs):
                 # User only passed inputs, automatically add weights
                 return mod(*args, *weight_data)
-            else:
-                # User passed both inputs and weights
-                num_inputs = len(example_inputs)
-                inputs = args[:num_inputs]
-                weights = args[num_inputs:]
-                return mod(*inputs, *weights)
+            # User passed both inputs and weights
+            num_inputs = len(example_inputs)
+            inputs = args[:num_inputs]
+            weights = args[num_inputs:]
+            return mod(*inputs, *weights)
 
         # Attach weight data to the wrapper for convenience
         wrapped_forward.weight_data = weight_data
@@ -163,9 +162,9 @@ class TorchBuilder:
     def _literal_for_allotype(self, t: AlloType) -> str:
         cls = t.__class__.__name__
         # Handle known constructors by their signatures
-        if cls in ("Fixed", "UFixed"):
+        if cls in {"Fixed", "UFixed"}:
             return f"{cls}({t.bits}, {t.fracs})"
-        if cls in ("Int", "UInt"):
+        if cls in {"Int", "UInt"}:
             return f"{cls}({t.bits})"
         if cls == "Float":
             if t.bits == 16:
@@ -177,11 +176,8 @@ class TorchBuilder:
             raise NotImplementedError(f"Unsupported float bits: {t.bits}")
         if cls == "Index":
             return "Index()"
-        # Fallback to class(bits, fracs)
-        try:
-            return f"{cls}({t.bits}, {t.fracs})"
-        except Exception:
-            return repr(t)
+        # Fallback
+        return f"{cls}({t.bits}, {t.fracs})"
 
     def _resolve_value_to_name_obj(self, value, kind_hint):
         # Accept string or AlloType; return (name, obj)
