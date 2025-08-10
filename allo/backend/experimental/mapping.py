@@ -340,8 +340,8 @@ class NodeMetaData:
         in2 = Counter((s.src, s.type_str) for s in other.input_streams)
         if in1 != in2:
             return False
-        out1 = Counter((s.src, s.type_str) for s in self.output_streams)
-        out2 = Counter((s.src, s.type_str) for s in other.output_streams)
+        out1 = Counter((s.dst, s.type_str) for s in self.output_streams)
+        out2 = Counter((s.dst, s.type_str) for s in other.output_streams)
         if out1 != out2:
             return False
         return True
@@ -516,7 +516,7 @@ class ComputationGraph:
         # update stream
         for name, stream in self.edges.items():
             if stream.src in node_name_list:
-                self.dependencies[stream.dst].pop(stream.src)
+                self.dependencies[stream.dst].remove(stream.src)
                 stream.src = bundled_node.meta_data.name
                 self.dependencies[stream.dst].add(bundled_node.meta_data.name)
             if stream.dst in node_name_list:

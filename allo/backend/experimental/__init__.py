@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import shutil
+import numpy as np
 
 try:
     import aie.ir as aie_ir
@@ -46,6 +47,7 @@ from .utils import (
     collect_lib_func_call,
     read_tensor_from_file,
     codegen_host,
+    RuntimeArgs,
 )
 from .mapping import ComputationGraph
 
@@ -92,6 +94,7 @@ class AIE_MLIRModule:
 
         # index in top function argument list -> DTensor
         self.global_tensors: dict[int, DTensor] = None
+        self.module_runtime_args: list[RuntimeArgs] = None
         # function name -> (argument index -> (argument, is_input))
         self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = None
 
@@ -523,7 +526,10 @@ class AIE_MLIRModule:
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
-
+        with open(
+            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(self.allo_module))
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
         use_external_kernels, self.injected_external_kernels, include_src = (
@@ -535,10 +541,10 @@ class AIE_MLIRModule:
             )
         )
         # record original allo mlir
-        with open(
-            os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
-        ) as f:
-            f.write(str(self.allo_module))
+        # with open(
+        #     os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
+        # ) as f:
+        #     f.write(str(self.allo_module))
         self.analyze_kernel_parameters(
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
@@ -581,7 +587,10 @@ class AIE_MLIRModule:
             self.streams,
             self.virtual_computation_graph,
         )
-        self.aie_module = code_generator.aie_codegen_experimental(
+        (
+            self.aie_module,
+            self.module_runtime_args,
+        ) = code_generator.aie_codegen_experimental(
             core_funcs,
             external_funcs,
         )
@@ -641,7 +650,15 @@ class AIE_MLIRModule:
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
         os.system(f"cp -r {path}/* {self.project_dir}")
-        host_code = codegen_host(self.global_tensors)
+        if self.module_runtime_args is None:
+            self.module_runtime_args = []
+            for idx in range(len(self.global_tensors)):
+                dtensor = self.global_tensors[idx]
+                runtime_arg = RuntimeArgs(dtensor.dtype, dtensor.is_input)
+                runtime_arg.global_tensors.append(idx)
+                runtime_arg.current_size += np.prod(dtensor.shape)
+                self.module_runtime_args.append(runtime_arg)
+        host_code = codegen_host(self.global_tensors, self.module_runtime_args)
         with open(
             os.path.join(self.project_dir, "test.cpp"), "w", encoding="utf-8"
         ) as f:
@@ -802,12 +819,12 @@ class AIE_MLIRModule:
                     os.path.join(self.project_dir, f"input{idx}.data"), "wb"
                 ) as f:
                     f.write(args[idx].tobytes())
+
         cmd = f"cd {self.project_dir} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {self.trace_size} {f'-p true --warmup {self.warmup} --test_iter {self.num_iters}' if self.profile else ''}"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to execute AIE code.")
-        # TODO: need to complete multiple outputs rules
         for idx, dtensor in self.global_tensors.items():
             if not dtensor.is_input:
                 result = read_tensor_from_file(
@@ -815,5 +832,4 @@ class AIE_MLIRModule:
                     args[idx].shape,
                     f"{self.project_dir}/output{idx}.data",
                 )
-                # suppose the last argument is output
                 args[idx][:] = result
