@@ -6,16 +6,18 @@ from .. import dsl
 from .systolic import systolic
 
 
-def linear2d[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
+def linear2d[
+    TyX, TyW, TyO, M, N, K
+](X: "TyX[M, K]", W: "TyW[N, K]", b: "TyO[N]") -> "TyO[M, N]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
-    Z: Ty[M, N]
-    buf: Ty[N]
+    Z: TyO[M, N]
+    buf: TyO[N]
     for i in range(M):
         for j_init in range(N):
             buf[j_init] = 0
         for k in range(K):
             # reorder reduction loop outside, and pipeline
-            x: Ty = X[i, k]
+            x: TyX = X[i, k]
             for j in range(N):
                 buf[j] += x * W[j, k]
         for j_back in range(N):
@@ -31,18 +33,18 @@ def schedule_linear2d(s):
 
 
 def linear3d[
-    Ty, B, L, D, M
-](X: "Ty[B, L, D]", W: "Ty[M, D]", bias: "Ty[M]") -> "Ty[B, L, M]":
+    TyX, TyW, TyO, B, L, D, M
+](X: "TyX[B, L, D]", W: "TyW[M, D]", bias: "TyO[M]") -> "TyO[B, L, M]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
-    Z: Ty[B, L, M]
-    buf: Ty[M]
+    Z: TyO[B, L, M]
+    buf: TyO[M]
     for b in range(B):
         for i in range(L):
             for j_init in range(M):
                 buf[j_init] = 0
             for k in range(D):
                 # reorder reduction loop outside, and pipeline
-                x: Ty = X[b, i, k]
+                x: TyX = X[b, i, k]
                 for j in range(M):
                     buf[j] += x * W[j, k]
             for j_back in range(M):
@@ -231,7 +233,7 @@ def schedule_conv2d(s):
 
 def maxpool2d[
     Ty, B, C, H, W, K, Oh, Ow, S, Pd
-](inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
     Z: Ty[B, C, Oh, Ow]
     for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
@@ -254,7 +256,7 @@ def schedule_maxpool2d(s):
 
 def avgpool2d[
     Ty, B, C, H, W, K, Oh, Ow, S, Pd
-](inp: "Ty[B, C, H, W]") -> "Ty[B, C, Oh, Ow]":
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
     # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
     Z: Ty[B, C, Oh, Ow]
     for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):

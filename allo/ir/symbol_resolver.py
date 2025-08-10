@@ -106,7 +106,60 @@ class ASTResolver:
     @staticmethod
     def resolve_param_types(node, global_vars):
         if isinstance(node, ast.Tuple):
-            return list(ASTResolver.resolve(n, global_vars) for n in node.elts)
+            return list(
+                ASTResolver.resolve_param_type(n, global_vars) for n in node.elts
+            )
         if isinstance(node, ast.Name):
-            return [ASTResolver.resolve(node, global_vars)]
+            return [ASTResolver.resolve_param_type(node, global_vars)]
         raise RuntimeError(f"Unsupported node type: {type(node)}")
+
+    @staticmethod
+    def resolve_param_type(node, global_vars):
+        """Resolve a single parameter type, handling both symbols and constructor calls."""
+        if isinstance(node, ast.Call):
+            # Handle type constructor calls like Fixed(16, 10)
+            func_obj = ASTResolver.resolve(node.func, global_vars)
+            if func_obj is None:
+                # Try to resolve the function name as a string
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                    func_obj = global_vars.get(func_name)
+                elif isinstance(node.func, ast.Attribute):
+                    # Handle cases like types.Fixed
+                    if (
+                        isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "types"
+                    ):
+                        func_name = node.func.attr
+                        func_obj = global_vars.get(func_name)
+                    else:
+                        return None
+                else:
+                    return None
+
+            if func_obj is None:
+                return None
+
+            # Get the arguments
+            args = []
+            for arg in node.args:
+                if isinstance(arg, ast.Constant):
+                    args.append(arg.value)
+                else:
+                    # Try to resolve the argument
+                    resolved_arg = ASTResolver.resolve_constant(
+                        arg, type("Context", (), {"global_vars": global_vars})()
+                    )
+                    if resolved_arg is None:
+                        return None
+                    args.append(resolved_arg)
+
+            # Construct the type instance using the resolved function object
+            try:
+                return func_obj(*args)
+            # pylint: disable=broad-exception-caught
+            except Exception:
+                return None
+        else:
+            # Handle simple symbol resolution
+            return ASTResolver.resolve(node, global_vars)

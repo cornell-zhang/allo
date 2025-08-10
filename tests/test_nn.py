@@ -36,7 +36,7 @@ def test_builtin_linear():
     b = np.random.randn(
         N,
     ).astype(np.float32)
-    s = allo.customize(nn.linear2d, instantiate=[float32, M, N, K])
+    s = allo.customize(nn.linear2d, instantiate=[float32, float32, float32, M, N, K])
     mod = s.build(target="llvm")
     Z = mod(X, W, b)
     np.testing.assert_allclose(Z, np.dot(X, W.T) + b, atol=1e-5)
@@ -63,13 +63,13 @@ def test_cascaded_linear():
         b0: float32[M1],
         b1: float32[M2],
     ) -> float32[BS, M2]:
-        Z0 = nn.linear2d[float32, BS, M1, M0](X, W0, b0)
-        Z1 = nn.linear2d[float32, BS, M2, M1](Z0, W1, b1)
+        Z0 = nn.linear2d[float32, float32, float32, BS, M1, M0](X, W0, b0)
+        Z1 = nn.linear2d[float32, float32, float32, BS, M2, M1](Z0, W1, b1)
         return Z1
 
     s = allo.customize(cascaded_linear)
-    s.compose(nn.linear2d, instantiate=[float32, BS, M1, M0])
-    s.compose(nn.linear2d, id="1", instantiate=[float32, BS, M2, M1])
+    s.compose(nn.linear2d, instantiate=[float32, float32, float32, BS, M1, M0])
+    s.compose(nn.linear2d, id="1", instantiate=[float32, float32, float32, BS, M2, M1])
     print(s.module)
     mod = s.build(target="llvm")
     Z = mod(X, W0, W1, b0, b1)
