@@ -652,7 +652,8 @@ class AIE_MLIRModule:
         os.system(f"cp -r {path}/* {self.project_dir}")
         if self.module_runtime_args is None:
             self.module_runtime_args = []
-            for idx in range(len(self.global_tensors)):
+            total_tensors = len(self.global_tensors)
+            for idx in range(total_tensors):
                 dtensor = self.global_tensors[idx]
                 runtime_arg = RuntimeArgs(dtensor.dtype, dtensor.is_input)
                 runtime_arg.global_tensors.append(idx)
