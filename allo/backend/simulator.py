@@ -511,6 +511,8 @@ class LLVMOMPModule(LLVMModule):
             pm.run(self.module.operation)
             # Lower StructType
             allo_d.lower_composite_type(self.module)
+            # Lower bit ops
+            allo_d.lower_bit_ops(self.module)
             # Reference: https://discourse.llvm.org/t/help-lowering-affine-loop-to-openmp/72441/9
             pm = PassManager.parse(
                 "builtin.module("

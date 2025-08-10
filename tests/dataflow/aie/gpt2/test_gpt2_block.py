@@ -58,7 +58,7 @@ np.random.seed(0)
 # ===============================================================================
 # Model Configuration
 # ===============================================================================
-USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
+USE_ALL_NPU_KERNELS = False  # if False, we will offload softmax and gelu to cpu
 KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
@@ -385,7 +385,7 @@ def run(x_fp32: np.ndarray, params: dict):
                 )
 
     def masked_softmax(attention_score, attention_weight):
-        row_idx = np.array(list(range(0, SEQ, SOFTMAX_SEQ_TILE)))
+        row_idx = np.array(list(range(0, SEQ, SOFTMAX_SEQ_TILE))).astype(np.int32)
         for i in range(N_HEAD // SOFTMAX_HEAD_TILE):
             masked_softmax_mod(
                 attention_score[

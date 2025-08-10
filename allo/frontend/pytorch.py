@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=too-many-public-methods, too-many-instance-attributes
+# pylint: disable=too-many-public-methods, too-many-instance-attributes, broad-exception-caught
 
 import operator
 import inspect
@@ -20,7 +20,7 @@ from .. import dsl
 from ..library import nn
 from ..ir import types
 from ..customize import customize
-from ..ir.types import float32
+from ..ir.types import float32, AlloType
 
 
 def from_pytorch(
@@ -32,6 +32,8 @@ def from_pytorch(
     target="llvm",
     mode="csim",
     project="top.prj",
+    op_dtypes=None,
+    weights_as_args=False,
 ):
     sig = inspect.signature(model.forward)
     input_names = [
@@ -60,17 +62,23 @@ def from_pytorch(
     for pymod in (types,):
         global_vars.update({item[0]: item[1] for item in inspect.getmembers(pymod)})
     global_vars.update({"dsl": dsl, "nn": nn})
-    for name, param in gm.named_parameters():
-        new_name = "g_" + name.replace(".", "_")
-        global_vars.update({new_name: param.detach().numpy()})
-    for name, buf in gm.named_buffers():
-        new_name = "gb_" + name.replace(".", "_")
-        global_vars.update({new_name: buf.detach().numpy()})
 
-    builder = TorchBuilder(gm, example_inputs, leaf_modules)
+    # Only add weights to global_vars if not passing as arguments
+    if not weights_as_args:
+        for name, param in gm.named_parameters():
+            new_name = "g_" + name.replace(".", "_")
+            global_vars.update({new_name: param.detach().numpy()})
+        for name, buf in gm.named_buffers():
+            new_name = "gb_" + name.replace(".", "_")
+            global_vars.update({new_name: buf.detach().numpy()})
+
+    builder = TorchBuilder(gm, example_inputs, leaf_modules, op_dtypes, weights_as_args)
     code = builder.build()
     if verbose:
         print(code)
+    # register any synthetic dtype symbols required by the builder
+    if getattr(builder, "extra_types", None):
+        global_vars.update(builder.extra_types)
     s = customize(code, global_vars=global_vars, enable_tensor=enable_tensor)
     # composition
     for func, idx, inst in builder.composition:
@@ -80,6 +88,32 @@ def from_pytorch(
     if target == "mlir":
         return s
     mod = s.build(target=target, mode=mode, project=project)
+
+    # If weights are passed as arguments, create a wrapper function
+    if weights_as_args:
+        # Store weight data for easy access
+        weight_data = []
+        for name, param in gm.named_parameters():
+            weight_data.append(param.detach().numpy())
+        for name, buf in gm.named_buffers():
+            weight_data.append(buf.detach().numpy())
+
+        # Create a wrapper that accepts inputs and weights
+        def wrapped_forward(*args):
+            # If only inputs are provided, automatically add weights
+            if len(args) == len(example_inputs):
+                # User only passed inputs, automatically add weights
+                return mod(*args, *weight_data)
+            # User passed both inputs and weights
+            num_inputs = len(example_inputs)
+            inputs = args[:num_inputs]
+            weights = args[num_inputs:]
+            return mod(*inputs, *weights)
+
+        # Attach weight data to the wrapper for convenience
+        wrapped_forward.weight_data = weight_data
+        return wrapped_forward
+
     return mod
 
 
@@ -88,7 +122,14 @@ def get_var_name(node):
 
 
 class TorchBuilder:
-    def __init__(self, gm, example_inputs, leaf_modules=None):
+    def __init__(
+        self,
+        gm,
+        example_inputs,
+        leaf_modules=None,
+        op_dtypes=None,
+        weights_as_args=False,
+    ):
         self.gm = gm
         self.code = []
         self.input_names = []
@@ -102,6 +143,114 @@ class TorchBuilder:
         self.output = []
         self.composition = []
         self.unique_id = {}
+        # operator dtype preferences; values can be strings (e.g., "float16") or AlloType objects (e.g., types.int8)
+        self.op_dtypes = op_dtypes or {}
+        # mapping from parameter/buffer var name (underscored) to dtype name string used in code
+        self.param_dtypes = {}
+        # synthetic dtype symbols to inject into global_vars: name -> AlloType
+        self.extra_types = {}
+        # whether to pass weights as function arguments instead of global constants
+        self.weights_as_args = weights_as_args
+
+    def _find_types_module_symbol(self, dtype_obj):
+        # Try to find a public symbol name in allo.ir.types that references this object
+        for name, val in inspect.getmembers(types):
+            if isinstance(val, AlloType) and val is dtype_obj:
+                return name
+        return None
+
+    def _literal_for_allotype(self, t: AlloType) -> str:
+        cls = t.__class__.__name__
+        # Handle known constructors by their signatures
+        if cls in {"Fixed", "UFixed"}:
+            return f"{cls}({t.bits}, {t.fracs})"
+        if cls in {"Int", "UInt"}:
+            return f"{cls}({t.bits})"
+        if cls == "Float":
+            if t.bits == 16:
+                return "float16"
+            if t.bits == 32:
+                return "float32"
+            if t.bits == 64:
+                return "float64"
+            raise NotImplementedError(f"Unsupported float bits: {t.bits}")
+        if cls == "Index":
+            return "Index()"
+        # Fallback
+        return f"{cls}({t.bits}, {t.fracs})"
+
+    def _resolve_value_to_name_obj(self, value, kind_hint):
+        # Accept string or AlloType; return (name, obj)
+        if isinstance(value, str):
+            try:
+                obj = getattr(types, value)
+                return value, obj
+            except Exception:
+                # invalid string -> fallback to kind hint
+                return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(
+                    kind_hint
+                )
+        if isinstance(value, AlloType):
+            # Use exact constructor literal like Fixed(16, 10)
+            return self._literal_for_allotype(value), value
+        # fallback
+        return self._resolve_dtype_name(kind_hint), self._resolve_dtype_obj(kind_hint)
+
+    def _get_linear_dtype_triplet(self, module_key):
+        # Prefer module-specific list [TyX, TyW, TyO]
+        spec = self.op_dtypes.get(module_key)
+        if isinstance(spec, (list, tuple)) and len(spec) == 3:
+            x_name, x_obj = self._resolve_value_to_name_obj(spec[0], "linear_input")
+            w_name, w_obj = self._resolve_value_to_name_obj(spec[1], "linear_weight")
+            o_name, o_obj = self._resolve_value_to_name_obj(spec[2], "linear")
+            return (x_name, w_name, o_name, x_obj, w_obj, o_obj)
+        # Fallback to global per-op keys
+        x_name = self._resolve_dtype_name("linear_input")
+        w_name = self._resolve_dtype_name("linear_weight")
+        o_name = self._resolve_dtype_name("linear")
+        x_obj = self._resolve_dtype_obj("linear_input")
+        w_obj = self._resolve_dtype_obj("linear_weight")
+        o_obj = self._resolve_dtype_obj("linear")
+        return (x_name, w_name, o_name, x_obj, w_obj, o_obj)
+
+    def _resolve_dtype_name(self, op_kind):
+        # prefer exact op kind, then a global default, otherwise float32
+        candidate = self.op_dtypes.get(op_kind, None)
+        if candidate is None:
+            candidate = self.op_dtypes.get("default", None)
+        # If still None, default to float32
+        if candidate is None:
+            return "float32"
+        # If user passed a string name, validate it against types module
+        if isinstance(candidate, str):
+            try:
+                getattr(types, candidate)
+                return candidate
+            except Exception:
+                return "float32"
+        # If user passed an AlloType, emit constructor literal (e.g., Fixed(16, 10))
+        if isinstance(candidate, AlloType):
+            return self._literal_for_allotype(candidate)
+        # Fallback
+        return "float32"
+
+    def _resolve_dtype_obj(self, op_kind):
+        candidate = self.op_dtypes.get(op_kind, None)
+        if candidate is None:
+            candidate = self.op_dtypes.get("default", None)
+        if isinstance(candidate, AlloType):
+            return candidate
+        if isinstance(candidate, str):
+            try:
+                return getattr(types, candidate)
+            except Exception:
+                return float32
+        return float32
+
+    def _record_param_dtype(self, var_name_underscored, op_kind):
+        # only set if not already set
+        if var_name_underscored not in self.param_dtypes:
+            self.param_dtypes[var_name_underscored] = self._resolve_dtype_name(op_kind)
 
     def build(self):
         for node in self.gm.graph.nodes:
@@ -121,34 +270,73 @@ class TorchBuilder:
             elif isinstance(x, int):
                 self.input_shapes.append(None)
                 self.input_args.append(self.input_names[i])
+        input_dtype_name = self._resolve_dtype_name("inputs")
         args = [
             (
-                f"{name}: float32[{', '.join([str(s) for s in shape])}]"
+                f"{name}: {input_dtype_name}[{', '.join([str(s) for s in shape])}]"
                 if shape
                 else f"{name}: int32"
             )
             for name, shape in zip(self.input_args, self.input_shapes)
         ]
+
+        # Add weight parameters to function signature if weights_as_args is True
+        weight_args = []
+        if self.weights_as_args:
+            if self.named_params:
+                for name, param in self.named_params.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    weight_args.append(
+                        f"{new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}]"
+                    )
+
+            if self.named_buffers:
+                for name, buf in self.named_buffers.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    if buf.shape:
+                        shape_str = ", ".join([str(s) for s in buf.shape])
+                        weight_args.append(f"{new_name}: {dtype_name}[{shape_str}]")
+                    else:
+                        weight_args.append(f"{new_name}: {dtype_name}")
+
+        # Combine input args and weight args
+        all_args = args + weight_args
+
         res = ""
         # top-level function
-        res += f"def forward({', '.join(args)})".format()
+        res += f"def forward({', '.join(all_args)})".format()
         # outputs
         res += f" -> ({', '.join(self.output)}):\n"
         # subfunctions
         if self.subfunctions:
             res += "\n".join(self.subfunctions) + "\n"
-        if self.named_params:
-            for name, param in self.named_params.items():
-                new_name = name.replace(".", "_")
-                res += f"    {new_name}: float32[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
-        if self.named_buffers:
-            for name, buf in self.named_buffers.items():
-                new_name = name.replace(".", "_")
-                if buf.shape:
-                    shape_str = ", ".join([str(s) for s in buf.shape])
-                    res += f"    {new_name}: float32[{shape_str}] = gb_{new_name}\n"
-                else:
-                    res += f"    {new_name}: float32 = gb_{new_name}\n"
+
+        # Declare weights as local variables (either from arguments or global constants)
+        if not self.weights_as_args:
+            if self.named_params:
+                for name, param in self.named_params.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    res += f"    {new_name}: {dtype_name}[{', '.join([str(s) for s in param.shape])}] = g_{new_name}\n"
+            if self.named_buffers:
+                for name, buf in self.named_buffers.items():
+                    new_name = name.replace(".", "_")
+                    dtype_name = self.param_dtypes.get(
+                        new_name, self._resolve_dtype_name("default")
+                    )
+                    if buf.shape:
+                        shape_str = ", ".join([str(s) for s in buf.shape])
+                        res += f"    {new_name}: {dtype_name}[{shape_str}] = gb_{new_name}\n"
+                    else:
+                        res += f"    {new_name}: {dtype_name} = gb_{new_name}\n"
         # function body
         for line in self.code:
             res += f"    {line}\n"
@@ -245,8 +433,11 @@ class TorchBuilder:
 
     def append_output(self, output):
         shape = str(list(output.shape))
-        dtype = str(output.dtype)[6:]
-        self.output.append(dtype + shape)
+        # Prefer user-specified outputs dtype, then global default, then tensor meta dtype
+        dtype_name = self._resolve_dtype_name("outputs")
+        if dtype_name is None:
+            dtype_name = str(output.dtype)[6:]
+        self.output.append(dtype_name + shape)
 
     def build_output(self, node):
         if isinstance(node.meta["tensor_meta"], TensorMetadata):
@@ -324,14 +515,18 @@ class TorchBuilder:
         inp = get_var_name(node.args[0])
         shape = tuple(node.meta["tensor_meta"].shape)
         name_id = self.get_unique_id("relu")
+        dtype_name = self._resolve_dtype_name("relu")
+        dtype_obj = self._resolve_dtype_obj("relu")
         if len(shape) == 2:
             n, d = shape
-            self.composition.append(("relu2d", name_id, [float32, n, d]))
-            return f'{node.name} = nn.relu2d[float32, {n}, {d}, "{name_id}"]({inp})'
+            self.composition.append(("relu2d", name_id, [dtype_obj, n, d]))
+            return (
+                f'{node.name} = nn.relu2d[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
+            )
         if len(shape) == 4:
             n, c, h, w = shape
-            self.composition.append(("relu4d", name_id, [float32, n, c, h, w]))
-            return f'{node.name} = nn.relu4d[float32, {n}, {c}, {h}, {w}, "{name_id}"]({inp})'
+            self.composition.append(("relu4d", name_id, [dtype_obj, n, c, h, w]))
+            return f'{node.name} = nn.relu4d[{dtype_name}, {n}, {c}, {h}, {w}, "{name_id}"]({inp})'
         raise NotImplementedError("Unsupported shape for relu")
 
     def build_linear(self, node, bias):
@@ -342,23 +537,42 @@ class TorchBuilder:
             bias = get_var_name(target_name + "_bias")
             shape = tuple(node.meta["tensor_meta"].shape)
             name_id = self.get_unique_id("linear")
+            # resolve per-module dtype triplet or fall back to global op keys
+            (
+                dtype_X_name,
+                dtype_W_name,
+                dtype_O_name,
+                dtype_X_obj,
+                dtype_W_obj,
+                dtype_O_obj,
+            ) = self._get_linear_dtype_triplet(node.target)
+            # record parameter dtypes
+            self.param_dtypes[f"{target_name}_weight"] = dtype_W_name
+            self.param_dtypes[f"{target_name}_bias"] = dtype_O_name
             if len(shape) == 2:
                 n, d = shape
                 _, m = self.named_params[f"{str(node.target)}.weight"].shape
-                # n*m x (m*d)^T + (n*1) = n*d
-                self.composition.append(("linear2d", name_id, [float32, n, d, m]))
-                return f'{node.name} = nn.linear2d[float32, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+                # instantiate TyX, TyW, TyO, M, N, K
+                self.composition.append(
+                    (
+                        "linear2d",
+                        name_id,
+                        [dtype_X_obj, dtype_W_obj, dtype_O_obj, n, d, m],
+                    )
+                )
+                return f'{node.name} = nn.linear2d[{dtype_X_name}, {dtype_W_name}, {dtype_O_name}, {n}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
             if len(shape) == 3:
                 bs, l, m = shape
                 _, d = self.named_params[f"{str(node.target)}.weight"].shape
+                # instantiate TyX, TyW, TyO, B, L, D, M
                 self.composition.append(
                     (
                         "linear3d",
                         name_id,
-                        [float32, bs, l, d, m],
+                        [dtype_X_obj, dtype_W_obj, dtype_O_obj, bs, l, d, m],
                     )
                 )
-                return f'{node.name} = nn.linear3d[float32, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
+                return f'{node.name} = nn.linear3d[{dtype_X_name}, {dtype_W_name}, {dtype_O_name}, {bs}, {l}, {d}, {m}, "{name_id}"]({inp}, {weight}, {bias})'
             raise NotImplementedError("Unsupported shape for linear")
         return f"{node.name} = dsl.linear({inp}, {weight})"
 
@@ -482,13 +696,19 @@ class TorchBuilder:
             _, Cin, Kh, Kw = weight_shape  # (Cout, Cin/groups, Kh, Kw)
 
             name_id = self.get_unique_id("conv2d")
+            dtype_name = self._resolve_dtype_name("conv2d")
+            dtype_obj = self._resolve_dtype_obj("conv2d")
+            # record parameter dtypes
+            self._record_param_dtype(f"{target_name}_weight", "conv2d")
+            if has_bias:
+                self._record_param_dtype(f"{target_name}_bias", "conv2d")
 
             self.composition.append(
                 (
                     "conv2d",
                     name_id,
                     [
-                        float32,
+                        dtype_obj,
                         B,
                         Cin,
                         Cout,
@@ -511,7 +731,7 @@ class TorchBuilder:
                 )
 
             if has_bias:
-                return f'{node.name} = nn.conv2d[float32, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {stride[0]}, {stride[1]}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
+                return f'{node.name} = nn.conv2d[{dtype_name}, {B}, {Cin}, {Cout}, {H}, {W}, {Kh}, {Kw}, {Oh}, {Ow}, {stride[0]}, {stride[1]}, {padding[0]}, {padding[1]}, "{name_id}"]({inp}, {weight}, {bias})'
             raise NotImplementedError("Unsupported conv2d without bias")
         raise NotImplementedError(f"Unsupported shape for conv: {input_shape}")
 
@@ -531,16 +751,18 @@ class TorchBuilder:
             B, C, Oh, Ow = out_shape
             K = kernel_size
             name_id = self.get_unique_id("maxpool2d")
+            dtype_name = self._resolve_dtype_name("maxpool2d")
+            dtype_obj = self._resolve_dtype_obj("maxpool2d")
 
             self.composition.append(
                 (
                     "maxpool2d",
                     name_id,
-                    [float32, B, C, H, W, K, Oh, Ow, stride, padding],
+                    [dtype_obj, B, C, H, W, K, Oh, Ow, stride, padding],
                 )
             )
 
-            return f'{node.name} = nn.maxpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
+            return f'{node.name} = nn.maxpool2d[{dtype_name}, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
         raise NotImplementedError(f"Unsupported shape for maxpool2d: {input_shape}")
 
     def build_avgpool2d(self, node):
@@ -559,16 +781,18 @@ class TorchBuilder:
             B, C, Oh, Ow = out_shape
             K = kernel_size
             name_id = self.get_unique_id("avgpool2d")
+            dtype_name = self._resolve_dtype_name("avgpool2d")
+            dtype_obj = self._resolve_dtype_obj("avgpool2d")
 
             self.composition.append(
                 (
                     "avgpool2d",
                     name_id,
-                    [float32, B, C, H, W, K, Oh, Ow, stride, padding],
+                    [dtype_obj, B, C, H, W, K, Oh, Ow, stride, padding],
                 )
             )
 
-            return f'{node.name} = nn.avgpool2d[float32, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
+            return f'{node.name} = nn.avgpool2d[{dtype_name}, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
         raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
 
     def build_batchnorm2d(self, node):
@@ -588,8 +812,15 @@ class TorchBuilder:
             B, C, H, W = input_shape
 
             name_id = self.get_unique_id("batchnorm2d")
+            dtype_name = self._resolve_dtype_name("batchnorm2d")
+            dtype_obj = self._resolve_dtype_obj("batchnorm2d")
+            # record parameter/buffer dtypes
+            self._record_param_dtype(f"{target_name}_weight", "batchnorm2d")
+            self._record_param_dtype(f"{target_name}_bias", "batchnorm2d")
+            self._record_param_dtype(f"{target_name}_running_mean", "batchnorm2d")
+            self._record_param_dtype(f"{target_name}_running_var", "batchnorm2d")
 
-            self.composition.append(("batchnorm2d", name_id, [float32, B, C, H, W]))
+            self.composition.append(("batchnorm2d", name_id, [dtype_obj, B, C, H, W]))
 
-            return f'{node.name} = nn.batchnorm2d[float32, {B}, {C}, {H}, {W}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
+            return f'{node.name} = nn.batchnorm2d[{dtype_name}, {B}, {C}, {H}, {W}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
         raise NotImplementedError(f"Unsupported shape for batchnorm2d: {input_shape}")

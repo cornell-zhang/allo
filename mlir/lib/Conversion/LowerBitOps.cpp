@@ -19,6 +19,7 @@
 #include "allo/Dialect/AlloTypes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -164,11 +165,163 @@ void lowerSetSliceOps(func::FuncOp &func) {
   }
 }
 
+void lowerSetBitOps(func::FuncOp &func) {
+  SmallVector<Operation *, 8> setBitOps;
+  func.walk([&](Operation *op) {
+    if (auto setBitOp = dyn_cast<SetIntBitOp>(op)) {
+      setBitOps.push_back(setBitOp);
+    }
+  });
+
+  for (auto op : setBitOps) {
+    auto setBitOp = dyn_cast<SetIntBitOp>(op);
+    Value input = setBitOp.getOperand(0);
+    Value index = setBitOp.getOperand(1);
+    Value val = setBitOp.getOperand(2);
+    Location loc = op->getLoc();
+    OpBuilder rewriter(op);
+
+    // Cast val to the same width as input
+    unsigned width = input.getType().getIntOrFloatBitWidth();
+    Value const_1 = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, width);
+
+    // Cast index to i32
+    Type itype = rewriter.getIntegerType(width);
+    Value idx_casted =
+        rewriter.create<mlir::arith::IndexCastOp>(loc, itype, index);
+    Value bitmask =
+        rewriter.create<mlir::arith::ShLIOp>(loc, const_1, idx_casted);
+
+    // take the inverse of bitmask
+    Value one_bit = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 1);
+    Value all_one_mask =
+        rewriter.create<mlir::arith::ExtSIOp>(loc, itype, one_bit);
+    Value inversed_mask =
+        rewriter.create<mlir::arith::XOrIOp>(loc, all_one_mask, bitmask);
+
+    // If val == 1, SetBit should be input OR bitmask (e.g. input || 000010000)
+    Value Val1Res = rewriter.create<mlir::arith::OrIOp>(loc, input, bitmask);
+
+    // If val == 0, SetBit should be input AND inversed bitmask
+    // (e.g. input && 111101111)
+    Value Val0Res =
+        rewriter.create<mlir::arith::AndIOp>(loc, input, inversed_mask);
+    Value trueRes =
+        rewriter.create<arith::SelectOp>(loc, val, Val1Res, Val0Res);
+
+    op->getResult(0).replaceAllUsesWith(trueRes);
+  }
+
+  // remove the setBitOps
+  std::reverse(setBitOps.begin(), setBitOps.end());
+  for (auto op : setBitOps) {
+    auto v = op->getResult(0);
+    if (v.use_empty()) {
+      op->erase();
+    }
+  }
+}
+
+void lowerGetBitOps(func::FuncOp &func) {
+  SmallVector<Operation *, 8> getBitOps;
+  func.walk([&](Operation *op) {
+    if (auto getBitOp = dyn_cast<GetIntBitOp>(op)) {
+      getBitOps.push_back(getBitOp);
+    }
+  });
+
+  for (auto op : getBitOps) {
+    auto getBitOp = dyn_cast<GetIntBitOp>(op);
+    Value input = getBitOp.getOperand(0);
+    Value idx = getBitOp.getOperand(1);
+    Location loc = op->getLoc();
+    OpBuilder rewriter(op);
+
+    unsigned iwidth = input.getType().getIntOrFloatBitWidth();
+    Type itype = rewriter.getIntegerType(iwidth);
+    Type i1 = rewriter.getI1Type();
+    Value idx_casted =
+        rewriter.create<mlir::arith::IndexCastOp>(loc, itype, idx);
+    Value shifted =
+        rewriter.create<mlir::arith::ShRSIOp>(loc, input, idx_casted);
+    Value singleBit = rewriter.create<mlir::arith::TruncIOp>(loc, i1, shifted);
+
+    op->getResult(0).replaceAllUsesWith(singleBit);
+  }
+
+  // remove the getBitOps
+  std::reverse(getBitOps.begin(), getBitOps.end());
+  for (auto op : getBitOps) {
+    auto v = op->getResult(0);
+    if (v.use_empty()) {
+      op->erase();
+    }
+  }
+}
+
+void lowerGetSliceOps(func::FuncOp &func) {
+  SmallVector<Operation *, 8> getSliceOps;
+  func.walk([&](Operation *op) {
+    if (auto getSliceOp = dyn_cast<GetIntSliceOp>(op)) {
+      getSliceOps.push_back(getSliceOp);
+    }
+  });
+
+  for (auto op : getSliceOps) {
+    auto getSliceOp = dyn_cast<GetIntSliceOp>(op);
+    Value input = getSliceOp.getOperand(0);
+    Value hi = getSliceOp.getOperand(1);
+    Value lo = getSliceOp.getOperand(2);
+    Location loc = op->getLoc();
+    OpBuilder rewriter(op);
+
+    // cast low and high index to itype
+    unsigned iwidth = input.getType().getIntOrFloatBitWidth();
+    Type itype = rewriter.getIntegerType(iwidth);
+
+    Value lo_casted = rewriter.create<mlir::arith::IndexCastOp>(loc, itype, lo);
+    Value hi_casted = rewriter.create<mlir::arith::IndexCastOp>(loc, itype, hi);
+    Value width = rewriter.create<mlir::arith::ConstantIntOp>(
+        loc, input.getType().getIntOrFloatBitWidth() - 1, iwidth);
+    Value lshift_width =
+        rewriter.create<mlir::arith::SubIOp>(loc, width, hi_casted);
+
+    // We do three shifts to extract the target bit slices
+    Value shift1 =
+        rewriter.create<mlir::arith::ShLIOp>(loc, input, lshift_width);
+    Value shift2 =
+        rewriter.create<mlir::arith::ShRUIOp>(loc, shift1, lshift_width);
+    Value shift3 =
+        rewriter.create<mlir::arith::ShRUIOp>(loc, shift2, lo_casted);
+    Type otype = op->getResult(0).getType();
+    Value truncated =
+        rewriter.create<mlir::arith::TruncIOp>(loc, otype, shift3);
+
+    op->getResult(0).replaceAllUsesWith(truncated);
+  }
+
+  // remove the getSliceOps
+  std::reverse(getSliceOps.begin(), getSliceOps.end());
+  for (auto op : getSliceOps) {
+    auto v = op->getResult(0);
+    if (v.use_empty()) {
+      op->erase();
+    }
+  }
+}
+
 /// Pass entry point
 bool applyLowerBitOps(ModuleOp &mod) {
+  // First pass: lower bit reverse and set slice
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
     lowerBitReverseOps(func);
     lowerSetSliceOps(func);
+  }
+  // second pass: lower get, set bit, and get slice
+  for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
+    lowerGetBitOps(func);
+    lowerSetBitOps(func);
+    lowerGetSliceOps(func);
   }
   return true;
 }

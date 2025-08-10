@@ -685,15 +685,6 @@ class CodeGenerator:
                 stride[0], stride[1] = stride[1], stride[0]
             return offset, size, stride
 
-        def print(self):
-            print(
-                self.token,
-                f"[{self.start_time, self.end_time}]",
-                self.dtensor.global_id,
-                self.offset,
-                self.size,
-            )
-
     class DMATaskWithSameToken:
         def __init__(self, task: "CodeGenerator.GlobalIODMATask"):
             self.start_time: int = task.start_time
@@ -1454,6 +1445,7 @@ class CodeGenerator:
                 FACTOR = int(os.getenv("FACTOR", MAX_SHIM_TILES))
                 if len(contiguous_interfaces) == 1:
                     factor = FACTOR
+
                     while factor > 1:
                         if len(contiguous_interfaces[0].interface_list) % factor == 0:
                             if (
@@ -2010,6 +2002,7 @@ class CodeGenerator:
                             if i < len(independent_dma_task_group[1]):
                                 tasks.extend(independent_dma_task_group[1][i].tasks)
                         tasks.sort(key=lambda x: x.start_time)
+
                         fifo_to_tasks: dict[
                             str, list[CodeGenerator.GlobalIODMATask]
                         ] = defaultdict(list)
