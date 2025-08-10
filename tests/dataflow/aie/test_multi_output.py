@@ -34,6 +34,7 @@ def _test_increase_decrease():
     np.testing.assert_allclose(F, A - 1, atol=1e-5)
     print("PASSED!")
 
+
 def _test_increase_decrease_more_arg():
     LyA = Layout("S0R")
 
@@ -76,4 +77,3 @@ def _test_increase_decrease_more_arg():
 if __name__ == "__main__":
     _test_increase_decrease()
     _test_increase_decrease_more_arg()
-

@@ -1674,7 +1674,6 @@ class CodeGenerator:
             grouped_nodes: dict[str, NodeDeque] = {
                 name: NodeDeque(name) for name in names
             }
-            print(grouped_nodes.keys())
             for connection in connection_info:
                 grouped_a, grouped_b = (
                     grouped_nodes.get(connection[1]),
@@ -2121,6 +2120,7 @@ class CodeGenerator:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
+                                # [NOTE]: Temporarily commented out to achieve better DMA task pipelining
                                 # else:
                                 #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
                                 #         global_dma.io_port.fifo.name

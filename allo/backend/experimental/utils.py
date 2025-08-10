@@ -814,7 +814,9 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 )
                 code += format_str(f"std::vector<{dtype}> srcVec{idx};")
                 for dtensor_idx in arg.global_tensors:
-                    code += format_str(f'std::ifstream ifile{dtensor_idx}("input{dtensor_idx}.data");')
+                    code += format_str(
+                        f'std::ifstream ifile{dtensor_idx}("input{dtensor_idx}.data");'
+                    )
                     code += format_str(f"if (!ifile{dtensor_idx}.is_open()) {{")
                     code += format_str(
                         '  std::cerr << "Error: Could not open input file.\\n";',
@@ -823,11 +825,15 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                     code += format_str("  return 1;", strip=False)
                     code += format_str("}")
                     size = np.prod(global_tensors[dtensor_idx].shape)
-                    code += format_str(f"std::vector<{dtype}> vec{dtensor_idx}({size});")
+                    code += format_str(
+                        f"std::vector<{dtype}> vec{dtensor_idx}({size});"
+                    )
                     code += format_str(
                         f"ifile{dtensor_idx}.read(reinterpret_cast<char*>(vec{dtensor_idx}.data()), {size} * sizeof({dtype}));"
                     )
-                    code += format_str(f"srcVec{idx}.insert(srcVec{idx}.end(), vec{dtensor_idx}.begin(), vec{dtensor_idx}.end());")
+                    code += format_str(
+                        f"srcVec{idx}.insert(srcVec{idx}.end(), vec{dtensor_idx}.begin(), vec{dtensor_idx}.end());"
+                    )
                 code += format_str(
                     f"memcpy(bufIn{idx}, srcVec{idx}.data(), (srcVec{idx}.size() * sizeof({dtype})));"
                 )
@@ -959,11 +965,12 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 )
                 offset = 0
                 for dtensor_idx in arg.global_tensors:
+                    out_size = np.prod(global_tensors[dtensor_idx].shape)
                     code += format_str(
                         f'std::ofstream ofile{dtensor_idx}("output{dtensor_idx}.data", std::ios::binary);'
                     )
                     code += format_str(
-                      f"ofile{dtensor_idx}.write(reinterpret_cast<const char*>(bufOut{dtensor_idx} ), {out_size} * sizeof({dtype}));"
+                        f"ofile{dtensor_idx}.write(reinterpret_cast<const char*>(bufOut{idx} + {offset}), {out_size} * sizeof({dtype}));"
                     )
                     code += format_str(f"ofile{dtensor_idx}.close();")
                     offset += out_size

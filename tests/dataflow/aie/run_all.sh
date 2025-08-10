@@ -16,10 +16,12 @@ FILES=(
     test_producer_consumer.py  
     # test_trace_conv.py
     test_gemm_temporal_reduction.py  
-    # test_mapping_large_gemm.py  
+    test_mapping_large_gemm.py  
     test_norm.py        
     test_summa.py              
     test_trace_data_transfer.py
+    test_multi_output.py
+    test_mapping_multi_gemm.py
 )
 
 echo "Running ${#FILES[@]} Python scripts..."
