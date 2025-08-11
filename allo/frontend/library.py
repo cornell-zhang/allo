@@ -47,8 +47,8 @@ def CoreAttention_lib(s_0, s_1, s_2, s_3):
     return CoreAttention
 
 
-def SliceFirstDim_lib(s_0, s_1, s_2):
-    def SliceFirstDim(
+def SliceClsToken_lib(s_0, s_1, s_2):
+    def SliceClsToken(
         inp: float32[s_0, s_1, s_2],
     ) -> float32[s_0, s_2]:
         out: float32[s_0, s_2] = 0.0
@@ -56,4 +56,4 @@ def SliceFirstDim_lib(s_0, s_1, s_2):
             out[i, k] = inp[i, 0, k]
         return out
 
-    return SliceFirstDim
+    return SliceClsToken

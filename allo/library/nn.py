@@ -343,6 +343,7 @@ def schedule_batchnorm2d(s):
 def batchnorm1d_2d[Ty, B, C](
     X: "Ty[B, C]", gamma: "Ty[C]", beta: "Ty[C]", eps: "Ty", mean: "Ty[C]", var: "Ty[C]"
 ) -> "Ty[B, C]":
+    # https://docs.pytorch.org/docs/stable/generated/torch.nn.BatchNorm1d.html
     Z: Ty[B, C]
     for b, c in dsl.grid(B, C):
         Z[b, c] = gamma[c] * (X[b, c] - mean[c]) / dsl.sqrt(var[c] + eps) + beta[c]
@@ -362,6 +363,7 @@ def batchnorm1d_3d[Ty, B, C, L](
     mean: "Ty[C]",
     var: "Ty[C]",
 ) -> "Ty[B, C, L]":
+    # https://docs.pytorch.org/docs/stable/generated/torch.nn.BatchNorm1d.html
     Z: Ty[B, C, L]
     for b, c, l in dsl.grid(B, C, L):
         Z[b, c, l] = (

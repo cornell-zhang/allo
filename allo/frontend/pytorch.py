@@ -15,7 +15,7 @@ try:
     from .tracer import AlloTracer
 except ImportError:
     pass
-from .library import CoreAttention_lib, KVCache_lib, SliceFirstDim_lib
+from .library import CoreAttention_lib, KVCache_lib, SliceClsToken_lib
 from .. import dsl
 from ..library import nn
 from ..ir import types
@@ -343,7 +343,6 @@ class TorchBuilder:
         return res
 
     def __call__(self, node):
-        print(f"[DEBUG] node: {node}, node.op: {node.op}")
         method = getattr(self, "build_" + node.op)
 
         ret = method(node)
@@ -379,10 +378,12 @@ class TorchBuilder:
             B, L, C = input_shape
             repeat_factor = output_shape[0] // B
             name_id = self.get_unique_id("repeat_batch3d")
+            dtype_name = self._resolve_dtype_name("repeat_batch3d")
+            dtype_obj = self._resolve_dtype_obj("repeat_batch3d")
             self.composition.append(
-                ("repeat_batch3d", name_id, [float32, B, L, C, repeat_factor])
+                ("repeat_batch3d", name_id, [dtype_obj, B, L, C, repeat_factor])
             )
-            return f'{node.name} = nn.repeat_batch3d[float32, {B}, {L}, {C}, {repeat_factor}, "{name_id}"]({inp})'
+            return f'{node.name} = nn.repeat_batch3d[{dtype_name}, {B}, {L}, {C}, {repeat_factor}, "{name_id}"]({inp})'
         raise NotImplementedError("Unsupported shape for repeat")
 
     def build_call_module(self, node):
@@ -540,13 +541,13 @@ class TorchBuilder:
 
         shape = tuple(node.meta["tensor_meta"].shape)
         name_id = self.get_unique_id("log_softmax")
+        dtype_name = self._resolve_dtype_name("log_softmax")
+        dtype_obj = self._resolve_dtype_obj("log_softmax")
 
         if len(shape) == 2:
             n, d = shape
-            self.composition.append(("log_softmax", name_id, [float32, n, d]))
-            return (
-                f'{node.name} = nn.log_softmax[float32, {n}, {d}, "{name_id}"]({inp})'
-            )
+            self.composition.append(("log_softmax", name_id, [dtype_obj, n, d]))
+            return f'{node.name} = nn.log_softmax[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
         else:
             raise NotImplementedError(f"Unsupported shape for log_softmax: {shape}")
         # return f"{node.name} = dsl.log_softmax({inp})"
@@ -566,10 +567,8 @@ class TorchBuilder:
         if len(shape) == 3:
             n, l, c = shape
             name_id = self.get_unique_id("relu3d")
-            self.composition.append(("relu3d", name_id, [float32, n, l, c]))
-            return (
-                f'{node.name} = nn.relu3d[float32, {n}, {l}, {c}, "{name_id}"]({inp})'
-            )
+            self.composition.append(("relu3d", name_id, [dtype_obj, n, l, c]))
+            return f'{node.name} = nn.relu3d[{dtype_name}, {n}, {l}, {c}, "{name_id}"]({inp})'
         if len(shape) == 4:
             n, c, h, w = shape
             self.composition.append(("relu4d", name_id, [dtype_obj, n, c, h, w]))
@@ -692,20 +691,19 @@ class TorchBuilder:
         shape_a = tuple(node.args[0][0].meta["tensor_meta"].shape)
         shape_b = tuple(node.args[0][1].meta["tensor_meta"].shape)
         dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
-        # return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
+        if dim != 1:
+            return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
 
         # Not use dsl.concat to avoid memref.copy, which is not supported in HLS
         # Only for dim=1 (concat cls_token)
-        if dim != 1:
-            raise NotImplementedError("Unsupported concat dimension")
-
         # (B, N1, C) and (B, N2, C)
         B, N1, C = shape_a
         N2 = shape_b[1]
         name_id = self.get_unique_id("concat")
-        self.composition.append(("concat", name_id, [float32, B, N1, N2, C]))
-
-        return f'{node.name} = nn.concat[float32, {B}, {N1}, {N2}, {C}, "{name_id}"]({tensor_A}, {tensor_B})'
+        dtype_name = self._resolve_dtype_name("repeat_batch3d")
+        dtype_obj = self._resolve_dtype_obj("repeat_batch3d")
+        self.composition.append(("concat", name_id, [dtype_obj, B, N1, N2, C]))
+        return f'{node.name} = nn.concat[{dtype_name}, {B}, {N1}, {N2}, {C}, "{name_id}"]({tensor_A}, {tensor_B})'
 
     def build_CoreAttention(self, node):
         shape = tuple(self.example_inputs[1][0].shape)
@@ -735,9 +733,9 @@ class TorchBuilder:
             self.subfunctions.append(src)
         return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
 
-    def build_SliceFirstDim(self, node):
+    def build_SliceClsToken(self, node):
         shape = tuple(node.args[0].meta["tensor_meta"].shape)
-        src = inspect.getsource(SliceFirstDim_lib(*shape))
+        src = inspect.getsource(SliceClsToken_lib(*shape))
         src = (
             src.replace("s_0", str(shape[0]))
             .replace("s_1", str(shape[1]))
@@ -746,7 +744,7 @@ class TorchBuilder:
         if src not in self.subfunctions:
             self.subfunctions.append(src)
 
-        return f"{node.name} = SliceFirstDim({get_var_name(node.args[0])})"
+        return f"{node.name} = SliceClsToken({get_var_name(node.args[0])})"
 
     def build_conv2d(self, node):
         # The current implementation only supports conv2d with bias, dialation=1, shape = 4
@@ -882,22 +880,30 @@ class TorchBuilder:
         running_mean = get_var_name(target_name + "_running_mean")
         running_var = get_var_name(target_name + "_running_var")
 
-        # Input: (N,C) or (N,C,L)
+        # Input: (N,C)
         if len(input_shape) == 2:
             B, C = input_shape
             name_id = self.get_unique_id("batchnorm1d_2d")
-            self.composition.append(("batchnorm1d_2d", name_id, [float32, B, C]))
+            dtype_name = self._resolve_dtype_name("batchnorm1d_2d")
+            dtype_obj = self._resolve_dtype_obj("batchnorm1d_2d")
 
-            return (
-                f'{node.name} = nn.batchnorm1d_2d[float32, {B}, {C}, "{name_id}"]'
-                f"({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})"
-            )
+            self._record_param_dtype(f"{target_name}_weight", "batchnorm1d_2d")
+            self._record_param_dtype(f"{target_name}_bias", "batchnorm1d_2d")
+            self._record_param_dtype(f"{target_name}_running_mean", "batchnorm1d_2d")
+            self._record_param_dtype(f"{target_name}_running_var", "batchnorm1d_2d")
+
+            self.composition.append(("batchnorm1d_2d", name_id, [dtype_obj, B, C]))
+            return f'{node.name} = nn.batchnorm1d_2d[{dtype_name}, {B}, {C}, "{name_id}"]({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})'
+        # Input: (N,C,L)
         if len(input_shape) == 3:
             B, C, L = input_shape
             name_id = self.get_unique_id("batchnorm1d_3d")
-            self.composition.append(("batchnorm1d_3d", name_id, [float32, B, C, L]))
+            dtype_name = self._resolve_dtype_name("batchnorm1d_3d")
+            dtype_obj = self._resolve_dtype_obj("batchnorm1d_3d")
+
+            self.composition.append(("batchnorm1d_3d", name_id, [dtype_obj, B, C, L]))
             return (
-                f'{node.name} = nn.batchnorm1d_3d[float32, {B}, {C}, {L}, "{name_id}"]'
+                f'{node.name} = nn.batchnorm1d_3d[{dtype_name}, {B}, {C}, {L}, "{name_id}"]'
                 f"({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})"
             )
         raise NotImplementedError(f"Unsupported shape for batchnorm1d: {input_shape}")
