@@ -388,11 +388,6 @@ def schedule_batchnorm1d_3d(s):
 def repeat_batch3d[Ty, B, L, C, N](X: "Ty[B, L, C]") -> "Ty[N*B, L, C]":
     """
     Repeat X along batch dimension N times for cls_token.
-    Args:
-        X: Input tensor of shape (B, L, C)
-        N: Repeat times (int)
-    Returns:
-        Y: Output tensor of shape (N*B, L, C)
     """
     Y: Ty[N * B, L, C]
     for r, b, l, c in dsl.grid(N, B, L, C):

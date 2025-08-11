@@ -548,9 +548,7 @@ class TorchBuilder:
             n, d = shape
             self.composition.append(("log_softmax", name_id, [dtype_obj, n, d]))
             return f'{node.name} = nn.log_softmax[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
-        else:
-            raise NotImplementedError(f"Unsupported shape for log_softmax: {shape}")
-        # return f"{node.name} = dsl.log_softmax({inp})"
+        raise NotImplementedError(f"Unsupported shape for log_softmax: {shape}")
 
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
