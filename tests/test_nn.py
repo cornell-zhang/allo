@@ -204,7 +204,9 @@ def test_bert():
     H, L, D, Dffn = 2, 8, 8, 16
     M0, M1 = 2, 2
 
-    def BertLayer[Ty, H, L, D, Dffn, M0, M1](
+    def BertLayer[
+        Ty, H, L, D, Dffn, M0, M1
+    ](
         X: "Ty[L, D]",
         Wq: "Ty[D, D]",
         Wk: "Ty[D, D]",
