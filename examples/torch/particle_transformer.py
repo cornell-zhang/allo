@@ -12,18 +12,11 @@ class ConstituentNet(nn.Module):
         self.norm = nn.BatchNorm1d(embbed_dim)
         self.linear = nn.Linear(embbed_dim, num_classes)
         self.cls_token = nn.Parameter(torch.randn(1, 1, embbed_dim))
-
         self.transformers = nn.ModuleList(
-            [
-                Transformer(
-                    embbed_dim,
-                    num_heads=num_heads,
-                )
-                for _ in range(num_transformers)
-            ]
+            [Transformer(embbed_dim, num_heads) for _ in range(num_transformers)]
         )
-
-        self.slicer = SliceFirstDim()
+        # For cls_token extraction
+        self.slicer = SliceClsToken()
 
     def forward(self, x):
         m_batch, _, _ = x.size()
@@ -43,31 +36,17 @@ class ConstituentNet(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, in_dim, num_heads):
         super(Transformer, self).__init__()
-        self.latent_dim = in_dim
-
-        self.self_attention = SelfAttention(
-            in_dim=in_dim,
-            num_heads=num_heads,
-        )
-
-        self.norm_0 = nn.BatchNorm1d(in_dim)
-        self.activ_0 = nn.ReLU()
-
-        self.linear_0 = nn.Linear(in_dim, in_dim * 2, bias=False)
-        self.norm_1 = nn.BatchNorm1d(in_dim * 2)
-        self.activ_1 = nn.ReLU()
-
-        self.linear_1 = nn.Linear(in_dim * 2, in_dim, bias=False)
+        self.self_attention = SelfAttention(in_dim, num_heads)
+        self.norm = nn.BatchNorm1d(in_dim)
+        self.activ = nn.ReLU()
+        self.ffn = nn.Linear(in_dim, in_dim, bias=False)
 
     def forward(self, x):
         x = self.self_attention(x)
-        out0 = self.norm_0(x.transpose(1, 2)).transpose(1, 2)
-        out1 = self.activ_0(out0)
-        out2 = self.linear_0(out1)
-        out3 = self.norm_1(out2.transpose(1, 2)).transpose(1, 2)
-        out4 = self.activ_1(out3)
-        out5 = self.linear_1(out4)
-        out = x + out5
+        out = self.norm(x.transpose(1, 2)).transpose(1, 2)
+        out = self.activ(out)
+        out = self.ffn(out)
+        out = x + out
         return out
 
 
@@ -83,9 +62,6 @@ class SelfAttention(nn.Module):
         self.k = nn.Linear(in_dim, in_dim, bias=False)
         self.v = nn.Linear(in_dim, in_dim, bias=False)
         self.out = nn.Linear(in_dim, in_dim)
-
-        assert (in_dim // num_heads) * num_heads == in_dim
-        assert self.head_dim * num_heads == self.latent_dim
 
     def forward(self, x):
         B, L, _ = x.size()
@@ -106,15 +82,13 @@ class SelfAttention(nn.Module):
         return out + x
 
 
-class SliceFirstDim(nn.Module):
+class SliceClsToken(nn.Module):
     def forward(self, inp):
         # inp: (B, L, C), take CLS at position 0 -> (B, C)
         return inp[:, 0, :]
 
 
 if __name__ == "__main__":
-    torch.manual_seed(0)
-
     batch_size = 2
     num_particles = 8
     in_dim = 3
@@ -133,7 +107,7 @@ if __name__ == "__main__":
     mod = allo.frontend.from_pytorch(
         model,
         example_inputs=example_inputs,
-        leaf_modules=(SliceFirstDim,),
+        leaf_modules=(SliceClsToken,),
         verbose=False,
     )
 
