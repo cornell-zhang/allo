@@ -53,6 +53,7 @@ def test_cooperative_gemm(Ty):
         A = np.random.random((M, K)).astype(np.float32)
         B = np.random.random((K, N)).astype(np.float32)
         C = np.zeros((M, N)).astype(np.float32)
+
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")

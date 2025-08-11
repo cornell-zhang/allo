@@ -49,6 +49,7 @@ class Config:
 
     # https://github.com/Xilinx/mlir-aie/blob/v1.0/lib/Dialect/AIEX/IR/AIEXDialect.cpp#L233
     SHIM_DMA_HARDWARE_MAX_SIZES = [64, -1, 1024, 1024]
+    MAX_IO_BUFFER = 4  # leave one for trace (https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_guide/section-3/README.md#host-code)
     # TODO: other dma size/stride constrain
 
     # fixme: some hyper-parameters, can be optimized
@@ -664,6 +665,17 @@ np_supported_types = {
 }
 
 
+class RuntimeArgs:
+    def __init__(self, dtype: str, is_input: bool):
+        self.dtype: str = dtype
+        self.is_input: bool = is_input
+        self.global_tensors: list[int] = []
+        self.current_size: int = 0
+
+    def inc_size(self, tensor_shape: list[int]):
+        self.current_size += np.prod(tensor_shape)
+
+
 def read_tensor_from_file(dtype, shape, file_path):
     arr = np.fromfile(file_path, dtype=np_supported_types[str(dtype)])
     if str(dtype) == "bf16":
@@ -776,30 +788,22 @@ int main(int argc, const char *argv[]) {
 """
 
 
-def codegen_host(global_tensors: dict[int, DTensor]):
+def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeArgs]):
     """
     Generate the C++ code for external kernels for host CPU.
     """
     code = host_header
     with format_code(indent=2):
         buffer_list = []
-        for idx in range(len(global_tensors)):
-            dtensor = global_tensors[idx]
-            if dtensor.is_input:
-                shape = dtensor.shape
-                dtype = aie_ctype_map[str(dtensor.dtype)]
-                code += format_str(f'std::ifstream ifile{idx}("input{idx}.data");')
-                code += format_str(f"if (!ifile{idx}.is_open()) {{")
+        for idx, arg in enumerate(runtime_args):
+            if len(arg.global_tensors) == 0:
+                continue
+            if arg.is_input:
+                dtype = aie_ctype_map[str(arg.dtype)]
                 code += format_str(
-                    '  std::cerr << "Error: Could not open input file.\\n";',
-                    strip=False,
+                    f"auto bo_in{idx} = xrt::bo(device, {arg.current_size} * sizeof({dtype}),"
                 )
-                code += format_str("  return 1;", strip=False)
-                code += format_str("}")
-                size = np.prod(shape)
-                code += format_str(
-                    f"auto bo_in{idx} = xrt::bo(device, {size} * sizeof({dtype}),"
-                )
+
                 buffer_list.append(f"bo_in{idx}")
                 with format_code(indent=24):
                     code += format_str(
@@ -808,19 +812,34 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                 code += format_str(
                     f"{dtype} *bufIn{idx} = bo_in{idx}.map<{dtype} *>();"
                 )
-                code += format_str(f"std::vector<{dtype}> srcVec{idx}({size});")
-                code += format_str(
-                    f"ifile{idx}.read(reinterpret_cast<char*>(srcVec{idx}.data()), {size} * sizeof({dtype}));"
-                )
+                code += format_str(f"std::vector<{dtype}> srcVec{idx};")
+                for dtensor_idx in arg.global_tensors:
+                    code += format_str(
+                        f'std::ifstream ifile{dtensor_idx}("input{dtensor_idx}.data");'
+                    )
+                    code += format_str(f"if (!ifile{dtensor_idx}.is_open()) {{")
+                    code += format_str(
+                        '  std::cerr << "Error: Could not open input file.\\n";',
+                        strip=False,
+                    )
+                    code += format_str("  return 1;", strip=False)
+                    code += format_str("}")
+                    size = np.prod(global_tensors[dtensor_idx].shape)
+                    code += format_str(
+                        f"std::vector<{dtype}> vec{dtensor_idx}({size});"
+                    )
+                    code += format_str(
+                        f"ifile{dtensor_idx}.read(reinterpret_cast<char*>(vec{dtensor_idx}.data()), {size} * sizeof({dtype}));"
+                    )
+                    code += format_str(
+                        f"srcVec{idx}.insert(srcVec{idx}.end(), vec{dtensor_idx}.begin(), vec{dtensor_idx}.end());"
+                    )
                 code += format_str(
                     f"memcpy(bufIn{idx}, srcVec{idx}.data(), (srcVec{idx}.size() * sizeof({dtype})));"
                 )
             else:
-                shape = dtensor.shape
-                dtype = aie_ctype_map[str(dtensor.dtype)]
-                out_size = np.prod(shape)
                 code += format_str(
-                    f"\nauto bo_out{idx} = xrt::bo(device, {out_size} * sizeof({dtype}),",
+                    f"\nauto bo_out{idx} = xrt::bo(device, {arg.current_size} * sizeof({aie_ctype_map[str(arg.dtype)]}),",
                     strip=False,
                 )
                 buffer_list.append(f"bo_out{idx}")
@@ -833,7 +852,7 @@ def codegen_host(global_tensors: dict[int, DTensor]):
             "int tmp_trace_size = (trace_size > 0) ? trace_size : 1;", strip=False
         )
         code += format_str(
-            f"auto bo_trace = xrt::bo(device, tmp_trace_size * 4, XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(global_tensors) + 3}));"
+            f"auto bo_trace = xrt::bo(device, tmp_trace_size * 4, XRT_BO_FLAGS_HOST_ONLY, kernel.group_id({len(runtime_args) + 3}));"
         )
         code += format_str("if (verbosity >= 1)")
         code += format_str(
@@ -844,8 +863,10 @@ def codegen_host(global_tensors: dict[int, DTensor]):
         code += format_str("  memset(bufTrace, 0, trace_size);", strip=False)
 
         code += format_str("\nbo_instr.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
-        for idx, dtensor in global_tensors.items():
-            if dtensor.is_input:
+        for idx, arg in enumerate(runtime_args):
+            if len(arg.global_tensors) == 0:
+                continue
+            if arg.is_input:
                 code += format_str(f"bo_in{idx}.sync(XCL_BO_SYNC_BO_TO_DEVICE);")
         code += format_str("if (trace_size > 0)")
         code += format_str("  bo_trace.sync(XCL_BO_SYNC_BO_TO_DEVICE);", strip=False)
@@ -896,6 +917,7 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                 code += format_str("}")
             code += format_str("}")
             code += format_str("float total_npu_time = 0;")
+            code += format_str("float npu_time_min = 9999999;")
             code += format_str("for (size_t i = 0; i < n_test_iterations; i++) {")
             with format_code(indent=8):
                 code += format_str(
@@ -914,33 +936,45 @@ def codegen_host(global_tensors: dict[int, DTensor]):
                     "float npu_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();"
                 )
                 code += format_str("total_npu_time += npu_time;")
+                code += format_str(
+                    "npu_time_min = (npu_time < npu_time_min) ? npu_time : npu_time_min;"
+                )
             code += format_str("}")
             code += format_str(
                 'std::cout << "Avg NPU execution time: " << total_npu_time / n_test_iterations << "us\\n";'
             )
+            code += format_str(
+                'std::cout << "Min NPU execution time: " << npu_time_min << "us\\n";'
+            )
         code += format_str("}")
         # get results
-        for idx, dtensor in global_tensors.items():
-            if dtensor.is_input:
-                code += format_str(f"ifile{idx}.close();")
+        for idx, arg in enumerate(runtime_args):
+            if len(arg.global_tensors) == 0:
+                continue
+            if arg.is_input:
+                for dtensor_idx in arg.global_tensors:
+                    code += format_str(f"ifile{dtensor_idx}.close();")
             else:
-                shape = dtensor.shape
-                dtype = aie_ctype_map[str(dtensor.dtype)]
-                out_size = np.prod(shape)
+                dtype = aie_ctype_map[str(arg.dtype)]
+
                 code += format_str(
                     f"\nbo_out{idx}.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False
                 )
                 code += format_str(
                     f"{dtype} *bufOut{idx} = bo_out{idx}.map<{dtype} *>();"
                 )
-                # write to output file
-                code += format_str(
-                    f'std::ofstream ofile{idx}("output{idx}.data", std::ios::binary);'
-                )
-                code += format_str(
-                    f"ofile{idx}.write(reinterpret_cast<const char*>(bufOut{idx} ), {out_size} * sizeof({dtype}));"
-                )
-                code += format_str(f"ofile{idx}.close();")
+                offset = 0
+                for dtensor_idx in arg.global_tensors:
+                    out_size = np.prod(global_tensors[dtensor_idx].shape)
+                    code += format_str(
+                        f'std::ofstream ofile{dtensor_idx}("output{dtensor_idx}.data", std::ios::binary);'
+                    )
+                    code += format_str(
+                        f"ofile{dtensor_idx}.write(reinterpret_cast<const char*>(bufOut{idx} + {offset}), {out_size} * sizeof({dtype}));"
+                    )
+                    code += format_str(f"ofile{dtensor_idx}.close();")
+                    offset += out_size
+
         code += format_str("if (trace_size > 0) {")
         code += format_str("  bo_trace.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False)
         code += format_str(
