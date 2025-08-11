@@ -38,6 +38,18 @@ from .nn import (
     schedule_avgpool2d,
     batchnorm2d,
     schedule_batchnorm2d,
+    relu3d,
+    schedule_relu3d,
+    repeat_batch3d,
+    schedule_repeat_batch3d,
+    batchnorm1d_2d,
+    schedule_batchnorm1d_2d,
+    batchnorm1d_3d,
+    schedule_batchnorm1d_3d,
+    log_softmax,
+    schedule_log_softmax,
+    concat,
+    schedule_concat,
 )
 
 KERNEL2SCHEDULE = {}
@@ -65,5 +77,11 @@ KERNEL2SCHEDULE.update(
         maxpool2d: schedule_maxpool2d,
         avgpool2d: schedule_avgpool2d,
         batchnorm2d: schedule_batchnorm2d,
+        relu3d: schedule_relu3d,
+        repeat_batch3d: schedule_repeat_batch3d,
+        batchnorm1d_2d: schedule_batchnorm1d_2d,
+        batchnorm1d_3d: schedule_batchnorm1d_3d,
+        log_softmax: schedule_log_softmax,
+        concat: schedule_concat,
     }
 )
