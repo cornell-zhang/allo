@@ -15,7 +15,7 @@ try:
     from .tracer import AlloTracer
 except ImportError:
     pass
-from .library import CoreAttention_lib, KVCache_lib
+from .library import CoreAttention_lib, KVCache_lib, SliceFirstDim_lib
 from .. import dsl
 from ..library import nn
 from ..ir import types
@@ -343,7 +343,9 @@ class TorchBuilder:
         return res
 
     def __call__(self, node):
+        print(f"[DEBUG] node: {node}, node.op: {node.op}")
         method = getattr(self, "build_" + node.op)
+
         ret = method(node)
         if ret:
             self.code.append(ret)
@@ -365,6 +367,24 @@ class TorchBuilder:
     def build_getattr(self, node):
         pass
 
+    def build_get_attr(self, node):
+        # For cls_token
+        pass
+
+    def build_repeat(self, node):
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+        output_shape = tuple(node.meta["tensor_meta"].shape)
+        if len(input_shape) == 3:
+            B, L, C = input_shape
+            repeat_factor = output_shape[0] // B
+            name_id = self.get_unique_id("repeat_batch3d")
+            self.composition.append(
+                ("repeat_batch3d", name_id, [float32, B, L, C, repeat_factor])
+            )
+            return f'{node.name} = nn.repeat_batch3d[float32, {B}, {L}, {C}, {repeat_factor}, "{name_id}"]({inp})'
+        raise NotImplementedError("Unsupported shape for repeat")
+
     def build_call_module(self, node):
         module = self.get_module(node.target)
         op = {
@@ -377,6 +397,7 @@ class TorchBuilder:
             torch.nn.MaxPool2d: "maxpool2d",
             torch.nn.AvgPool2d: "avgpool2d",
             torch.nn.BatchNorm2d: "batchnorm2d",
+            torch.nn.BatchNorm1d: "batchnorm1d",
         }.get(type(module), None)
         if self.leaf_modules:
             for leaf_module in self.leaf_modules:
@@ -406,6 +427,7 @@ class TorchBuilder:
             torch.zeros: "zeros",
             math.sqrt: "sqrt",
             F.softmax: "softmax",
+            F.log_softmax: "log_softmax",
             F.linear: "linear",
             F.gelu: "gelu",
             F.relu: "relu",
@@ -511,6 +533,24 @@ class TorchBuilder:
         inp = get_var_name(node.args[0])
         return f"{node.name} = dsl.softmax({inp})"
 
+    def build_log_softmax(self, node):
+        if node.kwargs.get("dim") != -1:
+            raise NotImplementedError("Only support log_softmax on the last dimension")
+        inp = get_var_name(node.args[0])
+
+        shape = tuple(node.meta["tensor_meta"].shape)
+        name_id = self.get_unique_id("log_softmax")
+
+        if len(shape) == 2:
+            n, d = shape
+            self.composition.append(("log_softmax", name_id, [float32, n, d]))
+            return (
+                f'{node.name} = nn.log_softmax[float32, {n}, {d}, "{name_id}"]({inp})'
+            )
+        else:
+            raise NotImplementedError(f"Unsupported shape for log_softmax: {shape}")
+        # return f"{node.name} = dsl.log_softmax({inp})"
+
     def build_relu(self, node):
         inp = get_var_name(node.args[0])
         shape = tuple(node.meta["tensor_meta"].shape)
@@ -522,6 +562,13 @@ class TorchBuilder:
             self.composition.append(("relu2d", name_id, [dtype_obj, n, d]))
             return (
                 f'{node.name} = nn.relu2d[{dtype_name}, {n}, {d}, "{name_id}"]({inp})'
+            )
+        if len(shape) == 3:
+            n, l, c = shape
+            name_id = self.get_unique_id("relu3d")
+            self.composition.append(("relu3d", name_id, [float32, n, l, c]))
+            return (
+                f'{node.name} = nn.relu3d[float32, {n}, {l}, {c}, "{name_id}"]({inp})'
             )
         if len(shape) == 4:
             n, c, h, w = shape
@@ -642,8 +689,23 @@ class TorchBuilder:
         shape_len = len(node.meta["tensor_meta"].shape)
         tensor_A = get_var_name(node.args[0][0])
         tensor_B = get_var_name(node.args[0][1])
+        shape_a = tuple(node.args[0][0].meta["tensor_meta"].shape)
+        shape_b = tuple(node.args[0][1].meta["tensor_meta"].shape)
         dim = node.kwargs["dim"] + (node.kwargs["dim"] < 0) * shape_len
-        return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
+        # return f"{node.name} = dsl.concat({tensor_A}, {tensor_B}, axis={dim})"
+
+        # Not use dsl.concat to avoid memref.copy, which is not supported in HLS
+        # Only for dim=1 (concat cls_token)
+        if dim != 1:
+            raise NotImplementedError("Unsupported concat dimension")
+
+        # (B, N1, C) and (B, N2, C)
+        B, N1, C = shape_a
+        N2 = shape_b[1]
+        name_id = self.get_unique_id("concat")
+        self.composition.append(("concat", name_id, [float32, B, N1, N2, C]))
+
+        return f'{node.name} = nn.concat[float32, {B}, {N1}, {N2}, {C}, "{name_id}"]({tensor_A}, {tensor_B})'
 
     def build_CoreAttention(self, node):
         shape = tuple(self.example_inputs[1][0].shape)
@@ -672,6 +734,19 @@ class TorchBuilder:
         if src not in self.subfunctions:
             self.subfunctions.append(src)
         return f"{node.name} = KVCache({', '.join([get_var_name(arg) for arg in node.args])})"
+
+    def build_SliceFirstDim(self, node):
+        shape = tuple(node.args[0].meta["tensor_meta"].shape)
+        src = inspect.getsource(SliceFirstDim_lib(*shape))
+        src = (
+            src.replace("s_0", str(shape[0]))
+            .replace("s_1", str(shape[1]))
+            .replace("s_2", str(shape[2]))
+        )
+        if src not in self.subfunctions:
+            self.subfunctions.append(src)
+
+        return f"{node.name} = SliceFirstDim({get_var_name(node.args[0])})"
 
     def build_conv2d(self, node):
         # The current implementation only supports conv2d with bias, dialation=1, shape = 4
@@ -794,6 +869,38 @@ class TorchBuilder:
 
             return f'{node.name} = nn.avgpool2d[{dtype_name}, {B}, {C}, {H}, {W}, {K}, {Oh}, {Ow}, {stride}, {padding}, "{name_id}"]({inp})'
         raise NotImplementedError(f"Unsupported shape for avgpool2d: {input_shape}")
+
+    def build_batchnorm1d(self, node):
+        module = self.get_module(node.target)
+        inp = get_var_name(node.args[0])
+        input_shape = tuple(node.args[0].meta["tensor_meta"].shape)
+        target_name = node.target.replace(".", "_")
+
+        gamma = get_var_name(target_name + "_weight")
+        beta = get_var_name(target_name + "_bias")
+        eps = module.eps
+        running_mean = get_var_name(target_name + "_running_mean")
+        running_var = get_var_name(target_name + "_running_var")
+
+        # Input: (N,C) or (N,C,L)
+        if len(input_shape) == 2:
+            B, C = input_shape
+            name_id = self.get_unique_id("batchnorm1d_2d")
+            self.composition.append(("batchnorm1d_2d", name_id, [float32, B, C]))
+
+            return (
+                f'{node.name} = nn.batchnorm1d_2d[float32, {B}, {C}, "{name_id}"]'
+                f"({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})"
+            )
+        if len(input_shape) == 3:
+            B, C, L = input_shape
+            name_id = self.get_unique_id("batchnorm1d_3d")
+            self.composition.append(("batchnorm1d_3d", name_id, [float32, B, C, L]))
+            return (
+                f'{node.name} = nn.batchnorm1d_3d[float32, {B}, {C}, {L}, "{name_id}"]'
+                f"({inp}, {gamma}, {beta}, {eps}, {running_mean}, {running_var})"
+            )
+        raise NotImplementedError(f"Unsupported shape for batchnorm1d: {input_shape}")
 
     def build_batchnorm2d(self, node):
         module = self.get_module(node.target)
