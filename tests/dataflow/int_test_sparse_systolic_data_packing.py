@@ -111,18 +111,18 @@ def test_sparse_systolic():
     print("\nInitial Matrix C:")
     print(C)
 
-    # print("\n=== Running Simulator ===")
-    # sim_mod = df.build(top, target="simulator")
-    # sim_mod(A, Ain, B, C)
+    print("\n=== Running Simulator ===")
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, Ain, B, C)
     
-    # print("\nFinal Result Matrix C:")
-    # print(C)
+    print("\nFinal Result Matrix C:")
+    print(C)
     print("\nExpected Result (numpy.dot):")
     expected = np.dot(A_dense, B)
     print(expected)
 
-    # np.testing.assert_allclose(C, np.dot(A_dense, B), atol=1e-5)
-    # print("Dataflow Simulator Passed!")
+    np.testing.assert_allclose(C, np.dot(A_dense, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
 
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
