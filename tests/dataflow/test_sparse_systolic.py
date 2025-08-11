@@ -32,13 +32,9 @@ def top():
                 fifo_idx[i, j + 1].put(A_in[i - 1, knz])
         with allo.meta_elif(i == 0):
             pass
-            # for k in range(K):
-            #     fifo_B[i + 1, j].put(B[k, j - 1])
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             pass
-            # for k in range(K):
-            #     b: float32 = fifo_B[i, j].get()
         with allo.meta_elif(j == N + 1 and i > 0):
             for k in range(NZ):
                 a: float32 = fifo_A[i, j].get()
@@ -50,8 +46,6 @@ def top():
                 a: float32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
                 b: float32 = B[idx, j - 1]
-                # idx_index: index = idx
-                # b: float32 = fifo_B[idx_index, j - 1].get()
                 c += a * b
                 fifo_A[i, j + 1].put(a)
                 fifo_idx[i, j + 1].put(idx)
