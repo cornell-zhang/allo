@@ -48,6 +48,29 @@ def CoreAttention_lib(s_0, s_1, s_2, s_3):
 
 
 def SliceClsToken_lib(s_0, s_1, s_2):
+    """
+    Extracts the [CLS] token embedding from a 3D input tensor.
+
+    This function is used in Transformer-based models where a
+    special classification token ([CLS]) is prepended to the sequence
+    dimension. It selects the first token (index 0 along s_1) from each sequence in
+    the batch.
+
+    Args:
+        s_0 (int): Batch size.
+        s_1 (int): Sequence length ([CLS] token at position 0).
+        s_2 (int): Feature dimension.
+
+    Returns:
+        Callable: A function that takes a tensor of shape (s_0, s_1, s_2)
+        and returns a tensor of shape (s_0, s_2) containing only the [CLS]
+        token embeddings.
+
+    Reference:
+        Original BERT implementation (Google) extracts the [CLS] token via:
+        https://github.com/google-research/bert/blob/master/modeling.py#L227
+    """
+
     def SliceClsToken(
         inp: float32[s_0, s_1, s_2],
     ) -> float32[s_0, s_2]:
