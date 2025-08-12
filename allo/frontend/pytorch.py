@@ -344,7 +344,6 @@ class TorchBuilder:
 
     def __call__(self, node):
         method = getattr(self, "build_" + node.op)
-
         ret = method(node)
         if ret:
             self.code.append(ret)
