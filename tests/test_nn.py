@@ -430,5 +430,163 @@ def test_batchnorm2d():
     print(s.build(target="vhls"))
 
 
+def np_log_softmax(x, axis=-1):
+    x_max = np.max(x, axis=axis, keepdims=True)
+    y = x - x_max
+    return y - np.log(np.sum(np.exp(y), axis=axis, keepdims=True))
+
+
+def test_log_softmax():
+    from allo.library.nn import log_softmax
+
+    # log_softmax[Ty, B, C]
+    s = allo.customize(log_softmax, instantiate=[float32, 8, 8])
+    mod = s.build()
+    inp = np.random.randn(8, 8).astype(np.float32)
+    inp = 1000 * inp
+    allo_out = mod(inp)
+    np_out = np_log_softmax(inp).astype(np.float32)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-5, rtol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_batchnorm1d_2d():
+    from allo.library.nn import batchnorm1d_2d
+
+    B, C = 4, 8
+    inp = np.random.randn(B, C).astype(np.float32)
+    gamma = np.random.randn(C).astype(np.float32)
+    beta = np.random.randn(C).astype(np.float32)
+
+    # Simulating running mean and variance
+    running_mean = np.random.randn(C).astype(np.float32)
+    running_var = np.abs(np.random.randn(C)).astype(np.float32)
+
+    s = allo.customize(batchnorm1d_2d, instantiate=[float32, B, C])
+    mod = s.build()
+    allo_out = mod(inp, gamma, beta, 1e-5, running_mean, running_var)
+
+    np_out = (inp - running_mean.reshape(1, C)) / np.sqrt(
+        running_var.reshape(1, C) + 1e-5
+    ) * gamma.reshape(1, C) + beta.reshape(1, C)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_batchnorm1d_3d():
+    from allo.library.nn import batchnorm1d_3d
+
+    B, C, L = 2, 6, 5
+    inp = np.random.randn(B, C, L).astype(np.float32)
+    gamma = np.random.randn(C).astype(np.float32)
+    beta = np.random.randn(C).astype(np.float32)
+
+    running_mean = np.random.randn(C).astype(np.float32)
+    running_var = np.abs(np.random.randn(C)).astype(np.float32)
+
+    s = allo.customize(batchnorm1d_3d, instantiate=[float32, B, C, L])
+    mod = s.build()
+    allo_out = mod(inp, gamma, beta, 1e-5, running_mean, running_var)
+
+    np_out = (inp - running_mean.reshape(1, C, 1)) / np.sqrt(
+        running_var.reshape(1, C, 1) + 1e-5
+    ) * gamma.reshape(1, C, 1) + beta.reshape(1, C, 1)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_repeat_batch3d():
+    from allo.library.nn import repeat_batch3d
+
+    B, L, C, N = 3, 4, 5, 2  # Output (N*B, L, C)
+    inp = np.random.randn(B, L, C).astype(np.float32)
+
+    s = allo.customize(repeat_batch3d, instantiate=[float32, B, L, C, N])
+    mod = s.build()
+
+    allo_out = mod(inp)
+    # Copy inp N times along the batch dimension
+    np_out = np.tile(inp, (N, 1, 1)).astype(np.float32)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_concat():
+    from allo.library.nn import concat
+
+    B, N1, N2, C = 2, 3, 4, 5
+    x1 = np.random.randn(B, N1, C).astype(np.float32)
+    x2 = np.random.randn(B, N2, C).astype(np.float32)
+
+    s = allo.customize(concat, instantiate=[float32, B, N1, N2, C])
+    mod = s.build()
+
+    allo_out = mod(x1, x2)
+    # Concatenate along dim 1 (N1 + N2, C)
+    np_out = np.concatenate([x1, x2], axis=1).astype(np.float32)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_relu2d():
+    from allo.library.nn import relu2d
+
+    H, W = 8, 10
+    x = (np.random.randn(H, W)).astype(np.float32)
+
+    s = allo.customize(relu2d, instantiate=[float32, H, W])
+    mod = s.build()
+
+    allo_out = mod(x)
+    np_out = np.maximum(x, 0.0).astype(np.float32)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_relu3d():
+    from allo.library.nn import relu3d
+
+    N, L, C = 3, 5, 7
+    x = (np.random.randn(N, L, C)).astype(np.float32)
+
+    s = allo.customize(relu3d, instantiate=[float32, N, L, C])
+    mod = s.build()
+
+    allo_out = mod(x)
+    np_out = np.maximum(x, 0.0).astype(np.float32)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
+def test_relu4d():
+    from allo.library.nn import relu4d
+
+    N, C, H, W = 2, 4, 6, 8
+    x = (np.random.randn(N, C, H, W)).astype(np.float32)
+
+    s = allo.customize(relu4d, instantiate=[float32, N, C, H, W])
+    mod = s.build()
+
+    allo_out = mod(x)
+    np_out = np.maximum(x, 0.0).astype(np.float32)
+
+    np.testing.assert_allclose(allo_out, np_out, rtol=1e-5, atol=1e-5)
+    print("Passed!")
+    print(s.build(target="vhls"))
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
