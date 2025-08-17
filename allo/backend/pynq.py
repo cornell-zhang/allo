@@ -152,7 +152,6 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
-            # Add external function declaration
             out_str += '\nextern "C" {\n\n'
             extern_decl = True
         elif line.startswith(f"void {top}"):
@@ -164,26 +163,31 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
-            # Add extra interfaces
+            # Generate pragmas for all arguments
             if pragma:
-                for i, arg in enumerate(func_args):
-                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
-                for i, arg in enumerate(func_args):
-                    out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
-                out_str += f"  #pragma HLS interface s_axilite port=return bundle=control\n"
-
+                gmem_idx = 0
+                for arg, argtype in func_args:
+                    if argtype == 'pointer':
+                        out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{gmem_idx}\n"
+                        out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
+                        gmem_idx += 1
+                    elif argtype == 'scalar':
+                        out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
         elif func_decl:
             if pragma:
                 dtype, var = line.strip().rsplit(" ", 1)
-                comma = "," if var[-1] == "," else ""
-                if "[" in var:  # array
-                    var = var.split("[")[0]
-                    out_str += "  " + dtype + " *" + var + f"{comma}\n"
-                    # only add array to interface
-                    func_args.append(var)
-                else:  # scalar
-                    var = var.split(",")[0]
-                    out_str += "  " + dtype + " " + var + f"{comma}\n"
+                var_clean = var.rstrip(",")
+                # Pointer/array detection
+                is_pointer = ("[" in var_clean) or ("*" in dtype) or ("*" in var_clean)
+                if is_pointer:
+                    # Remove all pointer/array symbols to get the variable name
+                    arg_name = var_clean.replace("*", "").replace("&", "").replace("[", "").replace("]", "").replace(",", "").strip()
+                    out_str += f"  {dtype} {var_clean},\n"
+                    func_args.append((arg_name, 'pointer'))
+                else:
+                    arg_name = var_clean.replace("&", "").strip()
+                    out_str += f"  {dtype} {var_clean},\n"
+                    func_args.append((arg_name, 'scalar'))
             else:
                 out_str += line + "\n"
         elif line.startswith("#endif"):
@@ -192,6 +196,8 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
             has_endif = True
         else:
             out_str += line + "\n"
+    # Remove the last comma in the argument list if present
+    out_str = out_str.replace(",\n) {", "\n) {")
     if not has_endif:
         out_str += '} // extern "C"\n'
     return out_str
