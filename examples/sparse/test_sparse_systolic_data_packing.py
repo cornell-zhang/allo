@@ -8,23 +8,24 @@ import allo.backend.hls as hls
 import numpy as np
 import random
 
-M, N, K = 4, 4, 4 # feel free to change the dimensions of the matrices!
+M, N, K = 4, 4, 4  # feel free to change the dimensions of the matrices!
 P0, P1 = M + 2, N + 2
 
 NZ = int(K // 2)
+
 
 @df.region()
 def top():
     fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
     fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
     fifo_B = df.array(df.pipe(dtype=int128, shape=(), depth=4), shape=(P0, P1))
-    
+
     @df.kernel(mapping=[P0, P1])
     def semm(A_nz: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):
         """
         This kernel `semm` takes in the original sparse matrix A in a compressed format, with
         `A_nz` being only the nonzero values, and `A_in` being the column indices of the nonzero values.
-        B is the dense matrix, and C is the desired solution of A * B, initialized to zeros. 
+        B is the dense matrix, and C is the desired solution of A * B, initialized to zeros.
 
         We do a row-wise multiply accumulate across the tiles of the systolic array, and modify and return C.
         """
@@ -44,7 +45,7 @@ def top():
                 msb: index = (k + 1) * 32 - 1
                 lsb: index = k * 32
                 b: int32 = B[k, j - 1]
-                pack[lsb : msb] = b
+                pack[lsb:msb] = b
             fifo_B[i + 1, j].put(pack)
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
@@ -63,11 +64,11 @@ def top():
             for k in range(NZ):
                 a: int32 = fifo_A[i, j].get()
                 idx: int32 = fifo_idx[i, j].get()
-                # unpacking column B to get 
+                # unpacking column B to get
                 # corresponding values to the sparse matrix
                 msb: index = (idx + 1) * 32 - 1
                 lsb: index = idx * 32
-                b: int32 = b_packed[lsb : msb]
+                b: int32 = b_packed[lsb:msb]
                 c += a * b
                 # forward A data
                 fifo_A[i, j + 1].put(a)
@@ -79,17 +80,17 @@ def top():
 
 def create_sparse_matrix(m, k, sparsity_ratio):
     """Create a sparse matrix with the given sparsity ratio."""
-    A = np.zeros((m, k), dtype=np.int32) # original sparse matrix
-    A_nz = [] # nonzero values in A
-    A_in = [] # indices for each row of nonzero values in A
-    
+    A = np.zeros((m, k), dtype=np.int32)  # original sparse matrix
+    A_nz = []  # nonzero values in A
+    A_in = []  # indices for each row of nonzero values in A
+
     for i in range(m):
         # randomly select indices for non-zeros
         nnz_indices = random.sample(range(k), int(k * sparsity_ratio))
         row_vals = []
         row_inds = []
         for j in nnz_indices:
-            val = random.randint(1, 10)  
+            val = random.randint(1, 10)
             A[i, j] = val
             row_vals.append(val)
             row_inds.append(j)
@@ -105,15 +106,16 @@ def create_sparse_matrix(m, k, sparsity_ratio):
 
     return A, A_nz, A_in
 
+
 def test_sparse_systolic():
-    # A is 2:4 sparsity, A_nz is the nonzero values, 
+    # A is 2:4 sparsity, A_nz is the nonzero values,
     # and A_in are the column indices indicating non-zero values
     A, A_nz, A_in = create_sparse_matrix(M, K, 0.5)
 
     A_nz = np.array(A_nz, dtype=np.int32)
     A_in = np.array(A_in, dtype=np.int32)
 
-    B = np.random.randint(1, 10, size=(K, N)).astype(np.int32) 
+    B = np.random.randint(1, 10, size=(K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
 
     # dataflow print statements
@@ -126,7 +128,7 @@ def test_sparse_systolic():
     print("\n=== Running Simulator ===")
     sim_mod = df.build(top, target="simulator")
     sim_mod(A_nz, A_in, B, C)
-    
+
     print("\nFinal Result Matrix C:")
     print(C)
     print("\nExpected Result (numpy.dot):")
@@ -144,7 +146,7 @@ def test_sparse_systolic():
         s.partition("top:A_in", dim=1, factor=2)
         s.partition("top:B", dim=2, factor=2)
         s.partition("top:C", dim=0, factor=2)
-        
+
         mod = s.build(target="vitis_hls", mode="hw_emu", project="systolic_rw_semm.prj")
         C = np.zeros((M, N), dtype=np.int32)
         mod(A_nz, A_in, B, C)
