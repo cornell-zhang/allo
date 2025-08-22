@@ -463,22 +463,21 @@ def inject_external_kernels(
                             )
                             for use in op.outputs[0].uses:
                                 use.owner.erase()
-                else:
-                    if dtype_a == "i8" and dtype_b == "i4":
-                        include_src.add('#include "mmi4.cc"\n')
-                        use_external_kernels[df_function_name] = True
-                        kernel_header += f"#define DIM_M {M}\n"
-                        kernel_header += f"#define DIM_N {N}\n"
-                        kernel_header += f"#define DIM_K {K}\n"
-                        input_idx.extend([0, 1])
-                        output_idx.append(2)
-                        kernel_name = f"matmul_scalar_{dtype_a}x{dtype_b}_{out_dtype}"
-                        call_builtin = True
-                        operands = [
-                            op.inputs[0],
-                            op.inputs[1],
-                            op.outputs[0],
-                        ]
+                elif dtype_a == "i8" and dtype_b == "i4":
+                    include_src.add('#include "mmi4.cc"\n')
+                    use_external_kernels[df_function_name] = True
+                    kernel_header += f"#define DIM_M {M}\n"
+                    kernel_header += f"#define DIM_N {N}\n"
+                    kernel_header += f"#define DIM_K {K}\n"
+                    input_idx.extend([0, 1])
+                    output_idx.append(2)
+                    kernel_name = f"matmul_scalar_{dtype_a}x{dtype_b}_{out_dtype}"
+                    call_builtin = True
+                    operands = [
+                        op.inputs[0],
+                        op.inputs[1],
+                        op.outputs[0],
+                    ]
             if call_builtin:
                 if replace_op:
                     # replace operation
@@ -661,7 +660,7 @@ def codegen_external_kernels(
                 kernel_file_code += mm_kernel
         elif "mmi4.cc" in src:
             with open(
-                os.path.expandvars(f"$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
+                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
                 "r",
                 encoding="utf-8",
             ) as f:

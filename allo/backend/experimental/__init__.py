@@ -593,16 +593,15 @@ class AIE_MLIRModule:
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
         # ------------------------- mlir-aie code generation -------------------------
-        with allo_ir.ir.Context() as ctx, allo_ir.ir.Location.unknown():
+        with allo_ir.ir.Context(), allo_ir.ir.Location.unknown():
             pattern = re.compile(r"memref<([\dx]+)xi4>")
             module_str = str(self.allo_module)
 
             def repl(match):
                 dims_str = match.group(1)
-                dims = list(map(int, dims_str.split("x")))
+                dims = [int(d) for d in dims_str.split("x")]
                 dims[-1] //= 2
-
-                new_dims_str = "x".join(map(str, dims))
+                new_dims_str = "x".join(str(d) for d in dims)
                 return f"memref<{new_dims_str}xi8>"
 
             module_str = pattern.sub(repl, module_str)
