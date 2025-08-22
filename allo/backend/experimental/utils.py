@@ -226,6 +226,8 @@ aie_external_kernel_ctype_map = {
 #   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
 #   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
 matmul_external_kernel_config_map = {
+    ("i4", "i8"): {"aie2": (4, 16, 8)},
+    ("i8", "i4", "i8"): {"aie2": (4, 16, 8)},  # i8xi4 -> i8
     ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
@@ -381,7 +383,10 @@ def inject_external_kernels(
                         replace_casting = True
                 if dtype_a == dtype_b:
                     if (dtype_a, out_dtype) in matmul_external_kernel_config_map:
-                        include_src.add('#include "mm.cc"\n')
+                        if dtype_a == "i4":
+                            include_src.add('#include "mmi4.cc"\n')
+                        else:
+                            include_src.add('#include "mm.cc"\n')
                         use_external_kernels[df_function_name] = True
                         kernel_header += f"#define DIM_M {M}\n"
                         kernel_header += f"#define DIM_N {N}\n"
@@ -428,9 +433,8 @@ def inject_external_kernels(
                                         "",
                                     )
                                 )
-                                operand_types = [cast_op.outputs[0].type]
                                 func_type = allo_func_d.FunctionType.get(
-                                    operand_types,
+                                    [cast_op.outputs[0].type],
                                     [],
                                 )
                                 kernel = allo_func_d.FuncOp(
@@ -460,9 +464,21 @@ def inject_external_kernels(
                             for use in op.outputs[0].uses:
                                 use.owner.erase()
                 else:
-                    for use in op.outputs[0].uses:
-                        print(use.owner)
-                    print("---")
+                    if dtype_a == "i8" and dtype_b == "i4":
+                        include_src.add('#include "mmi4.cc"\n')
+                        use_external_kernels[df_function_name] = True
+                        kernel_header += f"#define DIM_M {M}\n"
+                        kernel_header += f"#define DIM_N {N}\n"
+                        kernel_header += f"#define DIM_K {K}\n"
+                        input_idx.extend([0, 1])
+                        output_idx.append(2)
+                        kernel_name = f"matmul_scalar_{dtype_a}x{dtype_b}_{out_dtype}"
+                        call_builtin = True
+                        operands = [
+                            op.inputs[0],
+                            op.inputs[1],
+                            op.outputs[0],
+                        ]
             if call_builtin:
                 if replace_op:
                     # replace operation
@@ -643,6 +659,14 @@ def codegen_external_kernels(
                 pattern = r'#include\s+"zero\.cc"'
                 mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
                 kernel_file_code += mm_kernel
+        if "mmi4.cc" in src:
+            with open(
+                os.path.expandvars(f"$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                mm_kernel = f.read()
+                kernel_file_code += mm_kernel
         else:
             code += src
 
@@ -753,13 +777,44 @@ np_supported_types = {
 
 class RuntimeArgs:
     def __init__(self, dtype: str, is_input: bool):
+        self.raw_dtype: str = dtype
         self.dtype: str = dtype
+        if self.raw_dtype == "i4":
+            self.dtype = "i8"
         self.is_input: bool = is_input
         self.global_tensors: list[int] = []
         self.current_size: int = 0
 
     def inc_size(self, tensor_shape: list[int]):
-        self.current_size += np.prod(tensor_shape)
+        if self.raw_dtype == "i4":
+            self.current_size += np.prod(tensor_shape) // 2
+        else:
+            self.current_size += np.prod(tensor_shape)
+
+
+def pack_int4(arr: np.ndarray) -> np.ndarray:
+    arr = arr.flatten()
+    arr_clipped = np.clip(arr, -8, 7).astype(np.int8)
+    arr_u4 = (arr_clipped.astype(np.int8) & 0x0F).astype(np.uint8)
+    if arr_u4.size % 2 != 0:
+        arr_u4 = np.append(arr_u4, 0)
+    low = arr_u4[0::2]
+    high = arr_u4[1::2] << 4
+    packed = (low | high).astype(np.uint8)
+    return packed
+
+
+def unpack_int4(packed: np.ndarray) -> np.ndarray:
+    p = packed.astype(np.uint8)
+    low = (p & 0x0F).astype(np.int8)
+    high = ((p >> 4) & 0x0F).astype(np.int8)
+    low = (low + 128) % 16 - 8
+    high = (high + 128) % 16 - 8
+    unpacked = np.empty(p.size * 2, dtype=np.int8)
+    unpacked[0::2] = low
+    unpacked[1::2] = high
+
+    return unpacked
 
 
 def read_tensor_from_file(dtype, shape, file_path):
@@ -911,6 +966,8 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                     code += format_str("  return 1;", strip=False)
                     code += format_str("}")
                     size = np.prod(global_tensors[dtensor_idx].shape)
+                    if str(global_tensors[dtensor_idx].dtype) == "i4":
+                        size //= 2
                     code += format_str(
                         f"std::vector<{dtype}> vec{dtensor_idx}({size});"
                     )
@@ -1052,6 +1109,8 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 offset = 0
                 for dtensor_idx in arg.global_tensors:
                     out_size = np.prod(global_tensors[dtensor_idx].shape)
+                    if str(global_tensors[dtensor_idx].dtype) == "i4":
+                        out_size //= 2
                     code += format_str(
                         f'std::ofstream ofile{dtensor_idx}("output{dtensor_idx}.data", std::ios::binary);'
                     )
@@ -1076,8 +1135,6 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
 # ############################################################
 # Tools
 # ############################################################
-
-
 class UnionFind:
     def __init__(self):
         self.parent = {}

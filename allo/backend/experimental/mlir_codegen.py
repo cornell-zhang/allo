@@ -996,7 +996,8 @@ class CodeGenerator:
             def __repr__(self):
                 return self.__str__()
 
-        def assign_mem_tile(
+        def 
+        (
             dtype: str,
             interface_list: list[MulticastInterface],
             is_input: bool,
@@ -1914,7 +1915,7 @@ class CodeGenerator:
                     tensor_type = (arg.dtype, arg.is_input)
                     if tensor_type not in global_tensor_types:
                         global_tensor_types[tensor_type] = (
-                            RuntimeArgs(arg.dtype, arg.is_input),
+                            RuntimeArgs(str(arg.dtype), arg.is_input),
                             [],
                         )
                     global_tensor_types[tensor_type][0].global_tensors.append(i)
@@ -1925,9 +1926,11 @@ class CodeGenerator:
                 for i in range(Config.MAX_IO_BUFFER):
                     self.module_runtime_args.append(
                         RuntimeArgs(
-                            original_runtime_args[i % len(original_runtime_args)][
-                                0
-                            ].dtype,
+                            str(
+                                original_runtime_args[i % len(original_runtime_args)][
+                                    0
+                                ].raw_dtype
+                            ),
                             original_runtime_args[i % len(original_runtime_args)][
                                 0
                             ].is_input,
@@ -2219,6 +2222,18 @@ class CodeGenerator:
                                         fifo_info.dtensor_global_id
                                     ][1]
                                 )
+                                if (
+                                    str(
+                                        self.global_tensors[
+                                            fifo_info.dtensor_global_id
+                                        ].dtype
+                                    )
+                                    == "i4"
+                                ):
+                                    offsets[-1] //= 2
+                                    size[-1] //= 2
+                                    for i in range(3):
+                                        stride[i] //= 2
                                 aiex_d.NpuDmaMemcpyNd(
                                     metadata=self.fifo_map[fifo_name],
                                     bd_id=fifo_info.bd_id,

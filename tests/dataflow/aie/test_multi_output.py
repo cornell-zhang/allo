@@ -35,6 +35,7 @@ def _test_increase_decrease():
     print("PASSED!")
 
 
+# [NOTE] export ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=0
 def _test_increase_decrease_more_arg():
     LyA = Layout("S0R")
 
