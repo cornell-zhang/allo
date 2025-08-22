@@ -17,6 +17,7 @@ FILES=(
     test_matrix.py      
     test_producer_consumer.py  
     # test_trace_conv.py
+    test_low_bit_gemm.py
     test_gemm_temporal_reduction.py  
     test_mapping_large_gemm.py  
     test_norm.py        

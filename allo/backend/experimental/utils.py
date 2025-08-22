@@ -367,7 +367,7 @@ def inject_external_kernels(
                 dtype_b = str(op.inputs[1].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
                 replace_casting = False
-                # output quickly consumed by type casting?
+                # check whether the output is quickly consumed by type casting
                 cast_op, init_op = None, None
                 if len(list(op.outputs[0].uses)) == 3:
                     for use in op.outputs[0].uses:
@@ -659,7 +659,7 @@ def codegen_external_kernels(
                 pattern = r'#include\s+"zero\.cc"'
                 mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
                 kernel_file_code += mm_kernel
-        if "mmi4.cc" in src:
+        elif "mmi4.cc" in src:
             with open(
                 os.path.expandvars(f"$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
                 "r",

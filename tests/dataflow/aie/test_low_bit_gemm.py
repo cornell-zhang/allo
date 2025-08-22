@@ -9,11 +9,62 @@ import allo.dataflow as df
 from allo.memory import Layout
 
 
+# [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/backend/experimental/kernels/
 def _test_gemm_1D():
+    TyI = int4
+    TyO = int8
+    M, N, K = 64, 64, 64
+    P0 = 2
+
+    LyA = Layout("S0R")
+    LyB = Layout("RS1")
+    LyC = Layout("S0S1")
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
+            C[:, :] = allo.matmul(A, B)
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
+    B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
+    C = np.zeros((M, N)).astype(np.int8)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
+
+
+def _test_gemm_2D():
+    TyI = int4
+    TyO = int8
+    M, N, K = 64, 64, 64
+    P0, P1 = 2, 2
+    LyA = Layout("S0R")
+    LyB = Layout("RS1")
+    LyC = Layout("S0S1")
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0, P1])
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+            C[:, :] = allo.matmul(A, B)
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
+    B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
+    C = np.zeros((M, N)).astype(np.int8)
+    mod(A, B, C)
+    np_C = A.astype(np.int8) @ B.astype(np.int8)
+    np.testing.assert_allclose(C, np_C, atol=1e-5)
+    print("PASSED!")
+
+
+def _test_mixed_gemm_1D():
     Ty = int8
     Ty_l = int4
-    M, N, K = 16, 16, 16
-    P0 = 1
+    M, N, K = 64, 64, 64
+    P0 = 2
 
     LyA = Layout("S0R")
     LyB = Layout("RS1")
@@ -34,7 +85,7 @@ def _test_gemm_1D():
     print("PASSED!")
 
 
-def _test_gemm_2D():
+def _test_mixed_gemm_2D():
     Ty = int8
     Ty_l = int4
     M, N, K = 64, 64, 64
@@ -90,7 +141,7 @@ def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
-def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk):
+def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
     TyI = int8
     TyI_l = int4
     TyO = int8
@@ -119,12 +170,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mapping_primitives = gen_pingpong_gemm_mapping_primitive(
-        Pm,
-        Pn,
-        Pk,
-        # 2,2
-    )
+    mapping_primitives = gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk)
 
     mod = df.build(
         top,
@@ -133,17 +179,18 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk):
         profile=False,
         warmup=200,
         num_iters=1000,
-        # device_type="npu1_2col",
     )
     A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
     B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
     C = np.zeros((M, N)).astype(np.int8)
     mod(A, B, C)
-    # np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    # print("PASSED!")
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
 
 
 if __name__ == "__main__":
     _test_gemm_1D()
     _test_gemm_2D()
-    _test_pingpong_gemm(512, 512, 512, 8, 4, 4)
+    _test_mixed_gemm_1D()
+    _test_mixed_gemm_2D()
+    _test_pingpong_mixed_gemm(512, 512, 512, 8, 4, 4)
