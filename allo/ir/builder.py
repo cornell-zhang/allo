@@ -561,6 +561,8 @@ class ASTTransformer(ASTBuilder):
                     ),
                     iterator_types=iterator_types_attr,
                 )
+                cast_op.attributes["cast_from"] = StringAttr.get(str(src_type))
+                cast_op.attributes["cast_to"] = StringAttr.get(str(res_type))
                 # create block
                 block_arg_types = [src_type.build(), mlir_type]
                 block = cast_op.regions[0].blocks.append(*block_arg_types)

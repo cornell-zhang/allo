@@ -308,6 +308,7 @@ def inject_external_kernels(
             input_idx, output_idx = [], []
             kernel_code, kernel_header = "", ""
             call_builtin = False
+            replace_op = True
             # fill with zero
             if op.operation.name == "linalg.fill" and isinstance(
                 op.inputs[0].owner.opview, allo_arith_d.ConstantOp
@@ -360,34 +361,119 @@ def inject_external_kernels(
             elif op.operation.name == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape
                 _, N = MemRefType(op.inputs[1].type).shape
-                dtype = str(op.inputs[0].type.element_type)
+                dtype_a = str(op.inputs[0].type.element_type)
+                dtype_b = str(op.inputs[1].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
-                if (dtype, out_dtype) in matmul_external_kernel_config_map:
-                    include_src.add('#include "mm.cc"\n')
-                    use_external_kernels[df_function_name] = True
-                    kernel_header += f"#define DIM_M {M}\n"
-                    kernel_header += f"#define DIM_N {N}\n"
-                    kernel_header += f"#define DIM_K {K}\n"
-                    kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
-                    input_idx.extend([0, 1])
-                    output_idx.append(2)
-                    call_builtin = True
-                    kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
-                    operands = [
-                        op.inputs[0],
-                        op.inputs[1],
-                        op.outputs[0],
-                    ]
+                replace_casting = False
+                # output quickly consumed by type casting?
+                cast_op, init_op = None, None
+                if len(list(op.outputs[0].uses)) == 3:
+                    for use in op.outputs[0].uses:
+                        if (
+                            "lib" in use.owner.attributes
+                            and "fill_zeros" in use.owner.attributes["lib"].value
+                        ):
+                            init_op = use.owner
+                        elif "cast_from" in use.owner.attributes:
+                            cast_op = use.owner
+                    if cast_op is not None and init_op is not None:
+                        out_dtype = cast_op.attributes["cast_to"].value
+                        replace_casting = True
+                if dtype_a == dtype_b:
+                    if (dtype_a, out_dtype) in matmul_external_kernel_config_map:
+                        include_src.add('#include "mm.cc"\n')
+                        use_external_kernels[df_function_name] = True
+                        kernel_header += f"#define DIM_M {M}\n"
+                        kernel_header += f"#define DIM_N {N}\n"
+                        kernel_header += f"#define DIM_K {K}\n"
+                        kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
+                        input_idx.extend([0, 1])
+                        output_idx.append(2)
+                        kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        call_builtin = True
+                        if not replace_casting:
+                            operands = [
+                                op.inputs[0],
+                                op.inputs[1],
+                                op.outputs[0],
+                            ]
+                        else:
+                            replace_op = False
+                            operands = [
+                                op.inputs[0],
+                                op.inputs[1],
+                                cast_op.outputs[0],
+                            ]
+                            parts = init_op.attributes["lib"].value.split("_")
+                            init_M, init_N = parts[3], parts[4]
+                            ctype = aie_external_kernel_ctype_map[out_dtype]
+                            include_src.add(f'#include "{lib_dir}/zero.cc"\n')
+                            init_kernel_name = (
+                                f"fill_zeros_{out_dtype}_{init_M}_{init_N}_vector"
+                            )
+                            init_kernel_code = f"void {init_kernel_name}({ctype} *A)"
+                            init_kernel_code += " {\n"
+                            init_kernel_code += (
+                                f"  zero_vectorized<{ctype}, {init_M}, {init_N}>(A);\n"
+                            )
+                            init_kernel_code += "}\n\n"
+                            # register external kernel
+                            if init_kernel_name not in injected_external_kernels:
+                                injected_external_kernels[init_kernel_name] = (
+                                    ExternalModuleBase(
+                                        init_kernel_name,
+                                        [],
+                                        [0],
+                                        init_kernel_code,
+                                        "",
+                                    )
+                                )
+                                operand_types = [cast_op.outputs[0].type]
+                                func_type = allo_func_d.FunctionType.get(
+                                    operand_types,
+                                    [],
+                                )
+                                kernel = allo_func_d.FuncOp(
+                                    init_kernel_name,
+                                    func_type,
+                                    ip=InsertionPoint(func),
+                                )
+                                kernel.attributes["sym_visibility"] = StringAttr.get(
+                                    "private"
+                                )
+                            call_op = allo_func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(kernel_name),
+                                operands,
+                                ip=InsertionPoint(cast_op),
+                            )
+                            call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                            init_z_op = allo_func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(init_kernel_name),
+                                [cast_op.outputs[0]],
+                                ip=InsertionPoint(call_op),
+                            )
+                            init_z_op.attributes["lib"] = StringAttr.get(
+                                init_kernel_name
+                            )
+                            for use in op.outputs[0].uses:
+                                use.owner.erase()
+                else:
+                    for use in op.outputs[0].uses:
+                        print(use.owner)
+                    print("---")
             if call_builtin:
-                # replace operation
-                call_op = allo_func_d.CallOp(
-                    [],
-                    FlatSymbolRefAttr.get(kernel_name),
-                    operands,
-                    ip=InsertionPoint(op),
-                )
-                call_op.attributes["lib"] = StringAttr.get(kernel_name)
-                op.erase()
+                if replace_op:
+                    # replace operation
+                    call_op = allo_func_d.CallOp(
+                        [],
+                        FlatSymbolRefAttr.get(kernel_name),
+                        operands,
+                        ip=InsertionPoint(op),
+                    )
+                    call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                    op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:
                     continue
