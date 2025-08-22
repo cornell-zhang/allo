@@ -13,6 +13,12 @@ python3 polybench/gemm.py
 
 For comparison between Allo and other baseline systems, please refer to our [PLDI'24 artifact repository](https://github.com/cornell-zhang/allo-pldi24-artifact) for more details.
 
+## Sparse Dense Matrix Multiplication
+
+We provide a row-wise systolic array sparse dense matrix multiplication Allo implementations under the [`sparse`](sparse/) folder. For example, you can directly run the SEMM kernel using the CPU backend by typing the following command:
+```bash
+python3 sparse/test_sparse_systolic_data_packing.py
+```
 
 ## Transformer Models
 We propose an analytical framework to predict the performance of FPGA-based spatial accelerators for large language model (LLM) inference. Please refer to our [FCCM'24 paper](https://arxiv.org/abs/2312.15159) for more details.

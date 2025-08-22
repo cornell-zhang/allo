@@ -2,22 +2,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32
+from allo.ir.types import int32
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-M, N, K = 2, 2, 2
+M, N, K = 4, 4, 4 # feel free to change the dimensions of the matrices!
 P0, P1 = M + 2, N + 2
 
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
+    fifo_B = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
 
     @df.kernel(mapping=[P0, P1])
-    def semm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):
+    def semm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
+        """
+        This kernel `semm` is a gemm implemented with a systolic array with an additional `if`
+        check before multiply accumulating.
+        """
         i, j = df.get_pid()
         # periperals kernels
         with allo.meta_if(i in {0, M + 1} and j in {0, N + 1}):
@@ -33,16 +37,16 @@ def top():
         # drain
         with allo.meta_elif(i == M + 1 and j > 0):
             for k in range(K):
-                b: float32 = fifo_B[i, j].get()
+                b: int32 = fifo_B[i, j].get()
         with allo.meta_elif(j == N + 1 and i > 0):
             for k in range(K):
-                a: float32 = fifo_A[i, j].get()
+                a: int32 = fifo_A[i, j].get()
         # main body
         with allo.meta_else():
-            c: float32 = 0
+            c: int32 = 0
             for k in range(K):
-                a: float32 = fifo_A[i, j].get()
-                b: float32 = fifo_B[i, j].get()
+                a: int32 = fifo_A[i, j].get()
+                b: int32 = fifo_B[i, j].get()
                 if a != 0:
                     c += a * b
                 fifo_A[i, j + 1].put(a)
@@ -51,18 +55,18 @@ def top():
 
 
 def test_sparse_systolic():
-    A_dense = np.random.rand(M, K).astype(np.float32)
+    A_dense = np.random.rand(M, K).astype(np.int32)
 
-    # Create sparse pattern mask for A (2:4 sparsity)
-    # For each block of 4 elements, randomly select 2 positions to be zero
+    # create sparse pattern mask for A (2:4 sparsity)
+    # for each block of 4 elements, randomly select 2 positions to be zero
     A = A_dense.copy()
     total_elements = M * K
     for block_start in range(0, total_elements, 4):
-        # Get the indices for current block
+        # get the indices for current block
         block_indices = np.array([(i // K, i % K) 
                                 for i in range(block_start, 
                                              min(block_start + 4, total_elements))])
-        # Randomly select 2 positions to set to zero
+        # r select 2 positions to set to zero
         zero_positions = np.random.choice(len(block_indices), 
                                         size=min(2, len(block_indices) // 2), 
                                         replace=False)
@@ -70,30 +74,24 @@ def test_sparse_systolic():
             i, j = block_indices[pos]
             A[i, j] = 0
 
-    B = np.random.rand(K, N).astype(np.float32)
-    C = np.zeros((M, N), dtype=np.float32)
+    B = np.random.rand(K, N).astype(np.int32)
+    C = np.zeros((M, N), dtype=np.int32)
 
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, B, C)
     np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
     print("Dataflow Simulator Passed!")
-
-    # mod = df.build(top)
-    # mod = df.build(top, target="vitis_hls", mode="csim", project="sssemm.prj")
-    # mod(A, B, C)
-
     
     if hls.is_available("vitis_hls"):
         s = df.customize(top)
         s.partition("top:A", dim=1, factor=2)
         s.partition("top:B", dim=2, factor=2)
         s.partition("top:C", dim=0, factor=2)
-        mod = s.build(target="vitis_hls", mode="hw_emu", project="sssemm.prj")
-        C = np.zeros((M, N), dtype=np.float32)
+
+        mod = s.build(target="vitis_hls", mode="hw_emu", project="simple_semm.prj")
+        C = np.zeros((M, N), dtype=np.int32)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
-        # mod = s.build(target="vitis_hls", mode="csyn", project="ssemm.prj")
-        # mod()
         print("Passed!")
 
 
