@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass, too-many-branches
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -342,23 +342,22 @@ def inject_external_kernels(
                 op_name = op.operation.name.split(".")[1]
                 include_src.add(f'#include "aie2/{op_name}.cc"\n')
                 dtype = str(op.inputs[0].type.element_type)
-                ctype = aie_external_kernel_ctype_map[dtype]
-                kernel_name = f"{op_name}_{dtype}_vector"
-                use_external_kernels[df_function_name] = True
-                kernel_code += (
-                    f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-                )
-                kernel_code += " {\n"
-                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
-                kernel_code += "}\n\n"
-                input_idx.extend([0, 1])
-                output_idx.append(2)
-                call_builtin = True
-                operands = [
-                    op.inputs[0],
-                    op.inputs[1],
-                    op.outputs[0],
-                ]
+                if dtype in aie_external_kernel_ctype_map:
+                    ctype = aie_external_kernel_ctype_map[dtype]
+                    kernel_name = f"{op_name}_{dtype}_vector"
+                    use_external_kernels[df_function_name] = True
+                    kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                    kernel_code += " {\n"
+                    kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
+                    kernel_code += "}\n\n"
+                    input_idx.extend([0, 1])
+                    output_idx.append(2)
+                    call_builtin = True
+                    operands = [
+                        op.inputs[0],
+                        op.inputs[1],
+                        op.outputs[0],
+                    ]
             # matmul
             elif op.operation.name == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape

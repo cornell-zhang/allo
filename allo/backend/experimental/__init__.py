@@ -14,7 +14,6 @@ try:
 except ImportError:
     pass
 
-import allo
 from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
@@ -310,7 +309,7 @@ class AIE_MLIRModule:
                             (dtype_a, dtype_b, out_dtype)
                         ]["aie2"]
                 else:
-                    raise ValueError("Fail to vectorize matmul")
+                    continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
                         input_a.type,
@@ -593,7 +592,8 @@ class AIE_MLIRModule:
         with self.allo_module.context:
             mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
         # ------------------------- mlir-aie code generation -------------------------
-        with allo_ir.ir.Context(), allo_ir.ir.Location.unknown():
+        with allo_ir.ir.Context() as ctx, allo_ir.ir.Location.unknown():
+            allo_d.register_dialect(ctx)
             pattern = re.compile(r"memref<([\dx]+)xi4>")
             module_str = str(self.allo_module)
 
@@ -605,7 +605,7 @@ class AIE_MLIRModule:
                 return f"memref<{new_dims_str}xi8>"
 
             module_str = pattern.sub(repl, module_str)
-            self.allo_module = allo.invoke_mlir_parser(module_str)
+            self.allo_module = allo_ir.ir.Module.parse(module_str)
 
         top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
             self.allo_module, self.top_func_name
