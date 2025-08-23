@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass, too-many-branches
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -226,6 +226,8 @@ aie_external_kernel_ctype_map = {
 #   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
 #   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
 matmul_external_kernel_config_map = {
+    ("i4", "i8"): {"aie2": (4, 16, 8)},
+    ("i8", "i4", "i8"): {"aie2": (4, 16, 8)},  # i8xi4 -> i8
     ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
     ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
@@ -308,6 +310,7 @@ def inject_external_kernels(
             input_idx, output_idx = [], []
             kernel_code, kernel_header = "", ""
             call_builtin = False
+            replace_op = True
             # fill with zero
             if op.operation.name == "linalg.fill" and isinstance(
                 op.inputs[0].owner.opview, allo_arith_d.ConstantOp
@@ -339,55 +342,152 @@ def inject_external_kernels(
                 op_name = op.operation.name.split(".")[1]
                 include_src.add(f'#include "aie2/{op_name}.cc"\n')
                 dtype = str(op.inputs[0].type.element_type)
-                ctype = aie_external_kernel_ctype_map[dtype]
-                kernel_name = f"{op_name}_{dtype}_vector"
-                use_external_kernels[df_function_name] = True
-                kernel_code += (
-                    f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
-                )
-                kernel_code += " {\n"
-                kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
-                kernel_code += "}\n\n"
-                input_idx.extend([0, 1])
-                output_idx.append(2)
-                call_builtin = True
-                operands = [
-                    op.inputs[0],
-                    op.inputs[1],
-                    op.outputs[0],
-                ]
+                if dtype in aie_external_kernel_ctype_map:
+                    ctype = aie_external_kernel_ctype_map[dtype]
+                    kernel_name = f"{op_name}_{dtype}_vector"
+                    use_external_kernels[df_function_name] = True
+                    kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
+                    kernel_code += " {\n"
+                    kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
+                    kernel_code += "}\n\n"
+                    input_idx.extend([0, 1])
+                    output_idx.append(2)
+                    call_builtin = True
+                    operands = [
+                        op.inputs[0],
+                        op.inputs[1],
+                        op.outputs[0],
+                    ]
             # matmul
             elif op.operation.name == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape
                 _, N = MemRefType(op.inputs[1].type).shape
-                dtype = str(op.inputs[0].type.element_type)
+                dtype_a = str(op.inputs[0].type.element_type)
+                dtype_b = str(op.inputs[1].type.element_type)
                 out_dtype = str(op.outputs[0].type.element_type)
-                if (dtype, out_dtype) in matmul_external_kernel_config_map:
-                    include_src.add('#include "mm.cc"\n')
+                replace_casting = False
+                # check whether the output is quickly consumed by type casting
+                cast_op, init_op = None, None
+                if len(list(op.outputs[0].uses)) == 3:
+                    for use in op.outputs[0].uses:
+                        if (
+                            "lib" in use.owner.attributes
+                            and "fill_zeros" in use.owner.attributes["lib"].value
+                        ):
+                            init_op = use.owner
+                        elif "cast_from" in use.owner.attributes:
+                            cast_op = use.owner
+                    if cast_op is not None and init_op is not None:
+                        out_dtype = cast_op.attributes["cast_to"].value
+                        replace_casting = True
+                if dtype_a == dtype_b:
+                    if (dtype_a, out_dtype) in matmul_external_kernel_config_map:
+                        if dtype_a == "i4":
+                            include_src.add('#include "mmi4.cc"\n')
+                        else:
+                            include_src.add('#include "mm.cc"\n')
+                        use_external_kernels[df_function_name] = True
+                        kernel_header += f"#define DIM_M {M}\n"
+                        kernel_header += f"#define DIM_N {N}\n"
+                        kernel_header += f"#define DIM_K {K}\n"
+                        kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
+                        input_idx.extend([0, 1])
+                        output_idx.append(2)
+                        kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        call_builtin = True
+                        if not replace_casting:
+                            operands = [
+                                op.inputs[0],
+                                op.inputs[1],
+                                op.outputs[0],
+                            ]
+                        else:
+                            replace_op = False
+                            operands = [
+                                op.inputs[0],
+                                op.inputs[1],
+                                cast_op.outputs[0],
+                            ]
+                            parts = init_op.attributes["lib"].value.split("_")
+                            init_M, init_N = parts[3], parts[4]
+                            ctype = aie_external_kernel_ctype_map[out_dtype]
+                            include_src.add(f'#include "{lib_dir}/zero.cc"\n')
+                            init_kernel_name = (
+                                f"fill_zeros_{out_dtype}_{init_M}_{init_N}_vector"
+                            )
+                            init_kernel_code = f"void {init_kernel_name}({ctype} *A)"
+                            init_kernel_code += " {\n"
+                            init_kernel_code += (
+                                f"  zero_vectorized<{ctype}, {init_M}, {init_N}>(A);\n"
+                            )
+                            init_kernel_code += "}\n\n"
+                            # register external kernel
+                            if init_kernel_name not in injected_external_kernels:
+                                injected_external_kernels[init_kernel_name] = (
+                                    ExternalModuleBase(
+                                        init_kernel_name,
+                                        [],
+                                        [0],
+                                        init_kernel_code,
+                                        "",
+                                    )
+                                )
+                                func_type = allo_func_d.FunctionType.get(
+                                    [cast_op.outputs[0].type],
+                                    [],
+                                )
+                                kernel = allo_func_d.FuncOp(
+                                    init_kernel_name,
+                                    func_type,
+                                    ip=InsertionPoint(func),
+                                )
+                                kernel.attributes["sym_visibility"] = StringAttr.get(
+                                    "private"
+                                )
+                            call_op = allo_func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(kernel_name),
+                                operands,
+                                ip=InsertionPoint(cast_op),
+                            )
+                            call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                            init_z_op = allo_func_d.CallOp(
+                                [],
+                                FlatSymbolRefAttr.get(init_kernel_name),
+                                [cast_op.outputs[0]],
+                                ip=InsertionPoint(call_op),
+                            )
+                            init_z_op.attributes["lib"] = StringAttr.get(
+                                init_kernel_name
+                            )
+                            for use in op.outputs[0].uses:
+                                use.owner.erase()
+                elif dtype_a == "i8" and dtype_b == "i4":
+                    include_src.add('#include "mmi4.cc"\n')
                     use_external_kernels[df_function_name] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
                     kernel_header += f"#define DIM_K {K}\n"
-                    kernel_header += f"#define {dtype}_{out_dtype}_ONLY\n"
                     input_idx.extend([0, 1])
                     output_idx.append(2)
+                    kernel_name = f"matmul_scalar_{dtype_a}x{dtype_b}_{out_dtype}"
                     call_builtin = True
-                    kernel_name = f"matmul_scalar_{dtype}_{out_dtype}"
                     operands = [
                         op.inputs[0],
                         op.inputs[1],
                         op.outputs[0],
                     ]
             if call_builtin:
-                # replace operation
-                call_op = allo_func_d.CallOp(
-                    [],
-                    FlatSymbolRefAttr.get(kernel_name),
-                    operands,
-                    ip=InsertionPoint(op),
-                )
-                call_op.attributes["lib"] = StringAttr.get(kernel_name)
-                op.erase()
+                if replace_op:
+                    # replace operation
+                    call_op = allo_func_d.CallOp(
+                        [],
+                        FlatSymbolRefAttr.get(kernel_name),
+                        operands,
+                        ip=InsertionPoint(op),
+                    )
+                    call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                    op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:
                     continue
@@ -557,6 +657,14 @@ def codegen_external_kernels(
                 pattern = r'#include\s+"zero\.cc"'
                 mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
                 kernel_file_code += mm_kernel
+        elif "mmi4.cc" in src:
+            with open(
+                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                mm_kernel = f.read()
+                kernel_file_code += mm_kernel
         else:
             code += src
 
@@ -667,13 +775,44 @@ np_supported_types = {
 
 class RuntimeArgs:
     def __init__(self, dtype: str, is_input: bool):
+        self.raw_dtype: str = dtype
         self.dtype: str = dtype
+        if self.raw_dtype == "i4":
+            self.dtype = "i8"
         self.is_input: bool = is_input
         self.global_tensors: list[int] = []
         self.current_size: int = 0
 
     def inc_size(self, tensor_shape: list[int]):
-        self.current_size += np.prod(tensor_shape)
+        if self.raw_dtype == "i4":
+            self.current_size += np.prod(tensor_shape) // 2
+        else:
+            self.current_size += np.prod(tensor_shape)
+
+
+def pack_int4(arr: np.ndarray) -> np.ndarray:
+    arr = arr.flatten()
+    arr_clipped = np.clip(arr, -8, 7).astype(np.int8)
+    arr_u4 = (arr_clipped.astype(np.int8) & 0x0F).astype(np.uint8)
+    if arr_u4.size % 2 != 0:
+        arr_u4 = np.append(arr_u4, 0)
+    low = arr_u4[0::2]
+    high = arr_u4[1::2] << 4
+    packed = (low | high).astype(np.uint8)
+    return packed
+
+
+def unpack_int4(packed: np.ndarray) -> np.ndarray:
+    p = packed.astype(np.uint8)
+    low = (p & 0x0F).astype(np.int8)
+    high = ((p >> 4) & 0x0F).astype(np.int8)
+    low = (low + 128) % 16 - 8
+    high = (high + 128) % 16 - 8
+    unpacked = np.empty(p.size * 2, dtype=np.int8)
+    unpacked[0::2] = low
+    unpacked[1::2] = high
+
+    return unpacked
 
 
 def read_tensor_from_file(dtype, shape, file_path):
@@ -825,6 +964,8 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                     code += format_str("  return 1;", strip=False)
                     code += format_str("}")
                     size = np.prod(global_tensors[dtensor_idx].shape)
+                    if str(global_tensors[dtensor_idx].dtype) == "i4":
+                        size //= 2
                     code += format_str(
                         f"std::vector<{dtype}> vec{dtensor_idx}({size});"
                     )
@@ -966,6 +1107,8 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 offset = 0
                 for dtensor_idx in arg.global_tensors:
                     out_size = np.prod(global_tensors[dtensor_idx].shape)
+                    if str(global_tensors[dtensor_idx].dtype) == "i4":
+                        out_size //= 2
                     code += format_str(
                         f'std::ofstream ofile{dtensor_idx}("output{dtensor_idx}.data", std::ios::binary);'
                     )
@@ -990,8 +1133,6 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
 # ############################################################
 # Tools
 # ############################################################
-
-
 class UnionFind:
     def __init__(self):
         self.parent = {}

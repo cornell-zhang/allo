@@ -90,6 +90,28 @@ def _test_gemm_1D():
     print("PASSED!")
 
 
+def _test_gemm_1D_mixed():
+    TyI = int16
+    TyO = int32
+    M, N, K = 16, 16, 16
+    P0 = 2
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
+            C_part: TyO[M // P0, N] = allo.matmul(A, B)
+            C[:, :] = C_part
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
+
+
 def _test_gemm_2D():
     TyI, TyO = int16, int32
     M, N, K = 32, 32, 32
@@ -111,8 +133,32 @@ def _test_gemm_2D():
     print("PASSED!")
 
 
+def _test_gemm_2D_mixed():
+    TyI = int16
+    TyO = int32
+    M, N, K = 64, 64, 64
+    P0, P1 = 4, 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0, P1])
+        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+            C_part: TyO[M // P0, N // P1] = allo.matmul(A, B)
+            C[:, :] = C_part
+
+    mod = df.build(top, target="aie-mlir")
+    A = np.random.randint(-16, 16, (M, K)).astype(np.int16)
+    B = np.random.randint(-16, 16, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
     _test_matrix_scalar_add()
     _test_matrix_matrix_add()
+    _test_gemm_1D_mixed()
+    _test_gemm_2D_mixed()
     _test_gemm_1D()
     _test_gemm_2D()

@@ -9,6 +9,7 @@ from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
 
 
+# [NOTE]: export FACTOR=2
 def gen_pingpong_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     # chain on k dimension
     mapping_primitives = []

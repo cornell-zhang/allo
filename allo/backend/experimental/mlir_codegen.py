@@ -685,6 +685,15 @@ class CodeGenerator:
                 stride[0], stride[1] = stride[1], stride[0]
             return offset, size, stride
 
+        def print(self):
+            print(
+                self.token,
+                f"[{self.start_time, self.end_time}]",
+                self.dtensor.global_id,
+                self.offset,
+                self.size,
+            )
+
     class DMATaskWithSameToken:
         def __init__(self, task: "CodeGenerator.GlobalIODMATask"):
             self.start_time: int = task.start_time
@@ -1018,6 +1027,8 @@ class CodeGenerator:
             send_shape: list[int] = tile_shape if is_input else coalesced_size.to_list()
             recv_shape: list[int] = coalesced_size.to_list() if is_input else tile_shape
             tile_total_size = tile_size.get_total_size()
+            if str(dtype) == "i4":
+                tile_total_size //= 2
             connected_interfaces: list[list[PEInterface]] = []
             for multicast_interface in interface_list:
                 if is_input:
@@ -1445,7 +1456,6 @@ class CodeGenerator:
                 FACTOR = int(os.getenv("FACTOR", MAX_SHIM_TILES))
                 if len(contiguous_interfaces) == 1:
                     factor = FACTOR
-
                     while factor > 1:
                         if len(contiguous_interfaces[0].interface_list) % factor == 0:
                             if (
@@ -1914,7 +1924,7 @@ class CodeGenerator:
                     tensor_type = (arg.dtype, arg.is_input)
                     if tensor_type not in global_tensor_types:
                         global_tensor_types[tensor_type] = (
-                            RuntimeArgs(arg.dtype, arg.is_input),
+                            RuntimeArgs(str(arg.dtype), arg.is_input),
                             [],
                         )
                     global_tensor_types[tensor_type][0].global_tensors.append(i)
@@ -1925,9 +1935,11 @@ class CodeGenerator:
                 for i in range(Config.MAX_IO_BUFFER):
                     self.module_runtime_args.append(
                         RuntimeArgs(
-                            original_runtime_args[i % len(original_runtime_args)][
-                                0
-                            ].dtype,
+                            str(
+                                original_runtime_args[i % len(original_runtime_args)][
+                                    0
+                                ].raw_dtype
+                            ),
                             original_runtime_args[i % len(original_runtime_args)][
                                 0
                             ].is_input,
@@ -2001,7 +2013,6 @@ class CodeGenerator:
                             if i < len(independent_dma_task_group[1]):
                                 tasks.extend(independent_dma_task_group[1][i].tasks)
                         tasks.sort(key=lambda x: x.start_time)
-
                         fifo_to_tasks: dict[
                             str, list[CodeGenerator.GlobalIODMATask]
                         ] = defaultdict(list)
@@ -2120,7 +2131,6 @@ class CodeGenerator:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
-                                # [NOTE]: Temporarily commented out to achieve better DMA task pipelining
                                 # else:
                                 #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
                                 #         global_dma.io_port.fifo.name
@@ -2219,6 +2229,18 @@ class CodeGenerator:
                                         fifo_info.dtensor_global_id
                                     ][1]
                                 )
+                                if (
+                                    str(
+                                        self.global_tensors[
+                                            fifo_info.dtensor_global_id
+                                        ].dtype
+                                    )
+                                    == "i4"
+                                ):
+                                    offsets[-1] //= 2
+                                    size[-1] //= 2
+                                    for i in range(3):
+                                        stride[i] //= 2
                                 aiex_d.NpuDmaMemcpyNd(
                                     metadata=self.fifo_map[fifo_name],
                                     bd_id=fifo_info.bd_id,
