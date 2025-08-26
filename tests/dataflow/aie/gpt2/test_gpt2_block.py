@@ -59,7 +59,7 @@ np.random.seed(0)
 # Model Configuration
 # ===============================================================================
 USE_ALL_NPU_KERNELS = False  # if False, we will offload softmax and gelu to cpu
-KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../../allo/library/aie/"
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
 EMBD = 768  # 64 * 12

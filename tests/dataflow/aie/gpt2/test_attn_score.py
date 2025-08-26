@@ -11,7 +11,7 @@ from allo.memory import Layout
 from allo.backend.experimental.external_kernel import ExternalModule
 from allo.ir.types import float32
 
-KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../../allo/library/aie/"
 
 LyA = Layout("S0R")
 LyB = Layout("S1R")

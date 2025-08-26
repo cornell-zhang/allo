@@ -11,7 +11,7 @@ import numpy as np
 from allo.memory import Layout
 from allo.backend.experimental.external_kernel import ExternalModule
 
-KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../../allo/library/aie/"
 
 Ly = Layout("S1S0")
 Ly_1 = Layout("S1")

@@ -9,7 +9,7 @@ import allo.dataflow as df
 from allo.memory import Layout
 
 
-# [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/backend/experimental/kernels/
+# [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/
 def _test_gemm_1D():
     TyI = int4
     TyO = int8

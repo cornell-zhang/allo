@@ -308,7 +308,7 @@ def build(
     opt_default=True,
     enable_tensor=False,
     use_default_codegen: bool = False,
-    mapping_primitives: list[tuple[str, list]] = None,
+    mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
     num_iters=100,
@@ -350,7 +350,7 @@ def build(
                 "Please set use_default_codegen = True if you want to use trace."
             )
         if use_default_codegen:
-            aie_mod.build(
+            aie_mod.build_default(
                 device_type=device_type,
                 profile=profile,
                 warmup=warmup,
@@ -358,20 +358,10 @@ def build(
                 trace=trace,
                 trace_size=trace_size,
             )
-        elif mapping_primitives is not None:
-            aie_mod.build_experimental(
-                device_type=device_type,
-                enable_virtual_mapping=True,
-                mapping_primitives=mapping_primitives,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-            )
         else:
-            aie_mod.build_experimental(
+            aie_mod.build(
                 device_type=device_type,
-                enable_virtual_mapping=True,
-                mapping_primitives=[],
+                mapping_primitives=mapping_primitives,
                 profile=profile,
                 warmup=warmup,
                 num_iters=num_iters,

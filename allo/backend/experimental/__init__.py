@@ -505,31 +505,21 @@ class AIE_MLIRModule:
         ) as f:
             f.write(str(self.allo_module))
 
-    def build_experimental(
+    def build(
         self,
         device_type="npu1_4col",
-        enable_virtual_mapping: bool = False,
-        mapping_primitives: list[tuple[str, list]] = None,
+        mapping_primitives: list[tuple[str, list]] = [],
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
     ):
         # virtual mapping can only be applied to DAG
         if not self.computation_is_dag:
-            if enable_virtual_mapping and len(mapping_primitives) > 0:
+            if len(mapping_primitives) > 0:
                 raise ValueError(
                     "The input computation graph is not a DAG. Do not support virtual mapping now."
                 )
-            # [NOTE]: This is non-fatal. Consider using a warning that doesn't terminate the program.
-            # raise APIWarning(
-            #     "The input computation graph is not a DAG. Fallback to default build."
-            # )
-            return self.build(
-                device_type=device_type,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-            )
+
         if "npu1" in device_type:
             self.device = "npu1"
         elif "npu2" in device_type:
@@ -563,15 +553,14 @@ class AIE_MLIRModule:
         )
         # ------------------------- virtual mapping -------------------------
         self._init_virtual_graph(use_external_kernels)
-        if enable_virtual_mapping:
-            for mapping in mapping_primitives:
-                primitive = mapping[0]
-                arg_list = mapping[1]
-                if primitive == "chain":
-                    assert len(arg_list) == 2
-                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
-                if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+        for mapping in mapping_primitives:
+            primitive = mapping[0]
+            arg_list = mapping[1]
+            if primitive == "chain":
+                assert len(arg_list) == 2
+                self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+            if primitive == "bundle":
+                self.virtual_computation_graph.bundle(arg_list)
 
         # record original allo mlir
         with open(
@@ -764,7 +753,7 @@ class AIE_MLIRModule:
 
         return inputs, outputs
 
-    def build(
+    def build_default(
         self,
         device_type="npu1_4col",
         profile: bool = False,

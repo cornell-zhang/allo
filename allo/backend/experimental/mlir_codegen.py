@@ -890,6 +890,11 @@ class CodeGenerator:
                     node_order_tag[node] = tag
                     tagged_nodes.append(node)
             ordered_nodes.extend(tagged_nodes)
+            # cyclic graph
+            if len(tagged_nodes) == 0:
+                for node in dependencies.keys():
+                    node_order_tag[node] = tag
+                break
             for node in tagged_nodes:
                 del dependencies[node]
                 for _, deps in dependencies.items():
