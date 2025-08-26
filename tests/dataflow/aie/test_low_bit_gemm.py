@@ -110,7 +110,7 @@ def _test_mixed_gemm_2D():
     print("PASSED!")
 
 
-def gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
+def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     # chain on k dimension
     mapping_primitives = []
     bases: list[list[str]] = []
@@ -170,7 +170,7 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mapping_primitives = gen_pingpong_gemm_mapping_primitive(Pm, Pn, Pk)
+    mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
     mod = df.build(
         top,

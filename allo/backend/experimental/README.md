@@ -317,7 +317,7 @@ print("PASSED!")
 #### Profiling
 A new timing-based profiling feature has been added to help measure the performance of the module during execution. 
 
-To enable profiling, use the `do_profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
+To enable profiling, use the `profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
 def build(
     func,
@@ -328,13 +328,13 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
-    mapping_primitives: list[tuple[str, list]] = None,
+    mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
+    device_type: str = None,
 )
 ```
 
@@ -388,7 +388,7 @@ However, configuring the trace unit can be complex. This new feature simplifies 
 
 Trace-based profiling requires configuring the compute tile and routing the trace data as packets through the shim tile to external memory. 
 This places additional pressure on the DMA ports of the shim tile, making it unsuitable for large-scale computation tasks where DMA bandwidth is already a constrained resource. 
-As a result, trace support is currently provided only for builds targeting small-scale computations.
+As a result, trace support is currently provided mainly for small-scale computations.
 
 To use trace, users can configure the options in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
@@ -401,16 +401,15 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
-    mapping_primitives: list[tuple[str, list]] = None,
+    mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
+    device_type: str = None,
 ):
 ```
-Please ensure to set `use_default_codegen=True`. This flag use the default aie codegen for small computation tasks without virtual mapping.
 
 **Related Parameters:**
 - `trace` is a list of tiles from the `allo.dataflow.kernel` users wishes to trace. Each element consists of the kernel’s name as a string and a tuple representing the tile index. Note that this index does not necessarily correspond to the final physical compute tile index in the 2D AIE array. Also note that due to resource constraints, tracing is enabled on a best-effort basis. If resources such as DMA ports or buffer descriptors are limited, tracing may not be applied to all specified tiles in the `trace` list.
@@ -445,7 +444,6 @@ def top():
 mod = df.build(
     top,
     target="aie",
-    use_default_codegen=True,
     trace=[
         ("gemm", (0, 0)),
     ],
