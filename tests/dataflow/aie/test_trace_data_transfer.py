@@ -26,7 +26,7 @@ def trace_data_transfer():
     mod = df.build(
         top,
         project="transfer.prj",
-        target="aie-mlir",
+        target="aie",
         use_default_codegen=True,
         trace=[("producer", (0,)), ("consumer", (0,))],
         trace_size=4096 * 4096,

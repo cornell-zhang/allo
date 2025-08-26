@@ -25,7 +25,7 @@ def _test_gemm_2D_v1():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("bundle", ["gemm_0_0", "gemm_0_1"]),
             ("bundle", ["gemm_1_0", "gemm_1_1"]),
@@ -56,7 +56,7 @@ def _test_gemm_2D_v2():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0", "gemm_0_1"]),
             ("chain", ["gemm_1_0", "gemm_1_1"]),
@@ -103,7 +103,7 @@ def _test_pingpong_gemm_2x2x2():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
             ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
@@ -151,7 +151,7 @@ def _test_pingpong_gemm_2x2x2_partial_chain():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
             ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
@@ -197,7 +197,7 @@ def _test_pingpong_gemm_1x1x4():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
             ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
@@ -244,7 +244,7 @@ def _test_pingpong_gemm_2x2x4():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
             ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
@@ -300,7 +300,7 @@ def _test_pingpong_gemm_4x4x4():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
             ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),

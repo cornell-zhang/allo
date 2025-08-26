@@ -36,7 +36,7 @@ def test_cooperative_gemm(Ty):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     if Ty == int8:
         A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
         B = np.random.randint(-2, 2, (K, N)).astype(np.int8)

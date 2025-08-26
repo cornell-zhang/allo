@@ -47,7 +47,7 @@ def _test_tp_v1():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm1_1", "acc_0"]),
         ],
@@ -92,7 +92,7 @@ def _test_tp_v2():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("chain", ["gemm1_1", "acc_0"]),
             ("chain", ["gemm1_0", "gemm1_1-acc_0"]),

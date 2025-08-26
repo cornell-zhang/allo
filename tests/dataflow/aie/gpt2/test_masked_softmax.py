@@ -83,7 +83,7 @@ def _test_masked_softmax_tiled():
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
         mod = df.build(
             top,
-            target="aie-mlir",
+            target="aie",
             profile=True,
             warmup=20,
             num_iters=100,  # ! executing only once may get undefined result.

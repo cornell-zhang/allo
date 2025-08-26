@@ -31,8 +31,8 @@ def top2():
         C[:, :] = allo.add(A, B)
 
 
-mod1 = df.build(top1, target="aie-mlir", project="top1.prj")
-mod2 = df.build(top2, target="aie-mlir", project="top2.prj")
+mod1 = df.build(top1, target="aie", project="top1.prj")
+mod2 = df.build(top2, target="aie", project="top2.prj")
 
 A = np.random.randint(0, 8, (total_M, total_K)).astype(np.float32)
 B = np.random.randint(0, 8, (total_K, total_N)).astype(np.float32)

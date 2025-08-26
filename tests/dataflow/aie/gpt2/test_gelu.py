@@ -41,7 +41,7 @@ def _test_gelu():
     input_tensor = torch.randn(seq_tile, feature_dim, dtype=torch.float32)
     output = gelu_model(input_tensor)
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_tile, feature_dim)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)

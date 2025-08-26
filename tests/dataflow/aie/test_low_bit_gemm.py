@@ -26,7 +26,7 @@ def _test_gemm_1D():
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N], C: TyO[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
     B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
     C = np.zeros((M, N)).astype(np.int8)
@@ -50,7 +50,7 @@ def _test_gemm_2D():
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
     B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
     C = np.zeros((M, N)).astype(np.int8)
@@ -76,7 +76,7 @@ def _test_mixed_gemm_1D():
         def gemm(A: Ty_l[M, K] @ LyA, B: Ty_l[K, N], C: Ty[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(-2, 2, (M, K)).astype(np.int8)
     B = np.random.randint(-2, 2, (K, N)).astype(np.int8)
     C = np.zeros((M, N)).astype(np.int8)
@@ -100,7 +100,7 @@ def _test_mixed_gemm_2D():
         def gemm(A: Ty[M, K] @ LyA, B: Ty_l[K, N] @ LyB, C: Ty[M, N] @ LyC):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
     B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
     C = np.zeros((M, N)).astype(np.int8)
@@ -174,7 +174,7 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=mapping_primitives,
         profile=False,
         warmup=200,

@@ -543,6 +543,7 @@ class AIE_MLIRModule:
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
         os.makedirs(build_dir)
+        # record original allo mlir
         with open(
             os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
         ) as f:
@@ -557,11 +558,6 @@ class AIE_MLIRModule:
                 "aie2" if self.device == "npu1" else "aie2p",
             )
         )
-        # record original allo mlir
-        # with open(
-        #     os.path.join(self.project_dir, "raw.mlir"), "w", encoding="utf-8"
-        # ) as f:
-        #     f.write(str(self.allo_module))
         self.analyze_kernel_parameters(
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )

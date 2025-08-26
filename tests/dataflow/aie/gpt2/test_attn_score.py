@@ -55,7 +55,7 @@ def _test_attn_score():
     input_tensor_b = torch.randn(seq_len, head_dim, dtype=torch.float32)
     output = (input_tensor_a @ input_tensor_b.T) * 0.125
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_len, seq_len)).astype(np.float32)
         mod(input_tensor_a.cpu().numpy(), input_tensor_b.cpu().numpy(), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)

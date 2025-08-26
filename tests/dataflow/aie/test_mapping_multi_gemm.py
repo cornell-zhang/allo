@@ -91,7 +91,7 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     mod = df.build(
         top,
         project="gemm.prj",
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=mapping_primitives,
         profile=True,
         warmup=200,

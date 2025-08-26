@@ -46,7 +46,6 @@ from .utils import (
     string_sort_key,
     RuntimeArgs,
 )
-from ..ai_engine import map_kernels_to_device_mesh
 from .mapping import (
     SwitchNode,
     PEInterface,
@@ -213,6 +212,140 @@ def map_global_io(inputs, outputs) -> tuple[dict[str, list[DMATensorTile]], int,
                 )
 
     return tile_map, len(used_tiles), len(used_tiles)
+
+
+def map_kernels_to_device_mesh(kernel_shapes, device_shape):
+    """
+    Maps multiple kernels to a device mesh without overlapping.
+
+    Args:
+        kernel_shapes (dict): A dictionary mapping kernel names to their shapes.
+                             For 3D kernels: [dim1, dim2, dim3]
+                             For 2D kernels: [rows, cols]
+                             For 1D kernels: [length]
+        device_shape (list): The shape of the device mesh [rows, cols].
+
+    Returns:
+        dict: A dictionary mapping kernel names to their occupied device indices.
+    """
+    # Initialize the device mesh with 0s (unoccupied)
+    rows, cols = device_shape
+    device_mesh = [[0 for _ in range(cols)] for _ in range(rows)]
+
+    # Dictionary to store the mapping of kernels to device indices
+    kernel_to_indices = {}
+
+    # Process each kernel
+    for kernel_name, kernel_shape in kernel_shapes.items():
+        # If kernel shape is 3D (e.g., [2, 2, 2])
+        if len(kernel_shape) == 3:
+            # Try both flattening options (e.g., 2x2x2 -> 4x2 or 2x4)
+            option1 = [
+                kernel_shape[0],
+                kernel_shape[1] * kernel_shape[2],
+            ]  # dim1 x (dim2*dim3)
+            option2 = [
+                kernel_shape[0] * kernel_shape[1],
+                kernel_shape[2],
+            ]  # (dim1*dim2) x dim3
+
+            flattening_options = [option1, option2]
+
+            # Try each flattening option
+            placed = False
+            for flat_kernel in flattening_options:
+                kernel_rows, kernel_cols = flat_kernel
+
+                # Skip if kernel doesn't fit in the mesh with this flattening
+                if kernel_rows > rows or kernel_cols > cols:
+                    continue
+
+                # Try to place the flattened kernel
+                for i in range(rows - kernel_rows + 1):
+                    for j in range(cols - kernel_cols + 1):
+                        # Check if the region is available
+                        available = True
+                        for di in range(kernel_rows):
+                            for dj in range(kernel_cols):
+                                if device_mesh[i + di][j + dj] == 1:
+                                    available = False
+                                    break
+                            if not available:
+                                break
+
+                        if available:
+                            # Place the kernel
+                            indices = []
+                            for di in range(kernel_rows):
+                                for dj in range(kernel_cols):
+                                    device_mesh[i + di][j + dj] = 1  # Mark as occupied
+                                    indices.append((i + di, j + dj))
+                            kernel_to_indices[kernel_name] = indices
+                            placed = True
+                            break
+                    if placed:
+                        break
+
+                if placed:
+                    break
+
+        # If kernel shape is 1D (e.g., [4])
+        elif len(kernel_shape) == 1:
+            kernel_length = kernel_shape[0]
+
+            # Skip if kernel doesn't fit in the mesh
+            if kernel_length > rows:
+                continue
+
+            # Try to place it as a column
+            placed = False
+            for j in range(cols):
+                if all(device_mesh[i][j] == 0 for i in range(kernel_length)):
+                    # Place kernel as a column
+                    indices = []
+                    for i in range(kernel_length):
+                        device_mesh[i][j] = 1  # Mark as occupied
+                        indices.append((i, j))
+                    kernel_to_indices[kernel_name] = indices
+                    placed = True
+                    break
+
+        # If kernel shape is 2D (e.g., [2, 2])
+        elif len(kernel_shape) == 2:
+            kernel_rows, kernel_cols = kernel_shape
+
+            # Skip if kernel doesn't fit in the mesh
+            if kernel_rows > rows or kernel_cols > cols:
+                continue
+
+            # Try to place the kernel
+            placed = False
+            for i in range(rows - kernel_rows + 1):
+                for j in range(cols - kernel_cols + 1):
+                    # Check if the region is available
+                    available = True
+                    for di in range(kernel_rows):
+                        for dj in range(kernel_cols):
+                            if device_mesh[i + di][j + dj] == 1:
+                                available = False
+                                break
+                        if not available:
+                            break
+
+                    if available:
+                        # Place the kernel
+                        indices = []
+                        for di in range(kernel_rows):
+                            for dj in range(kernel_cols):
+                                device_mesh[i + di][j + dj] = 1  # Mark as occupied
+                                indices.append((i + di, j + dj))
+                        kernel_to_indices[kernel_name] = indices
+                        placed = True
+                        break
+                if placed:
+                    break
+
+    return kernel_to_indices
 
 
 class CodeGenerator:

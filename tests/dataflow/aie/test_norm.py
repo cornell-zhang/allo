@@ -56,13 +56,13 @@ def _test_layer_norm(enable_trace: bool = False):
         if enable_trace:
             mod = df.build(
                 top,
-                target="aie-mlir",
+                target="aie",
                 use_default_codegen=True,
                 trace=[("core", (0,)), ("core", (1,))],
                 trace_size=65536,
             )
         else:
-            mod = df.build(top, target="aie-mlir")
+            mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_len, hidden_size)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)
@@ -106,7 +106,7 @@ def _test_rms_norm():
     output = rms_norm(input_tensor, weight)
 
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_len, hidden_size)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)

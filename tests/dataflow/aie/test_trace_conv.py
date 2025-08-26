@@ -80,7 +80,7 @@ def _trace_conv2d(kernel_path: str):
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
         mod = df.build(
             top,
-            target="aie-mlir",
+            target="aie",
             profile=True,
             warmup=100,
             num_iters=1000,
