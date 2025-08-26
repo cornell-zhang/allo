@@ -84,7 +84,6 @@ def _trace_conv2d(kernel_path: str):
             profile=True,
             warmup=100,
             num_iters=1000,
-            use_default_codegen=True,  # enable tracing
             trace=[("core", (0,))],
             trace_size=65536,
         )

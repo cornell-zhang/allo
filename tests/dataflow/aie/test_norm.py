@@ -57,7 +57,6 @@ def _test_layer_norm(enable_trace: bool = False):
             mod = df.build(
                 top,
                 target="aie",
-                use_default_codegen=True,
                 trace=[("core", (0,)), ("core", (1,))],
                 trace_size=65536,
             )

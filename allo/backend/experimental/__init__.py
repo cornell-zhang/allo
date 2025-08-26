@@ -41,7 +41,6 @@ from .utils import (
     matmul_external_kernel_config_map,
     get_df_kernels,
     classify_aie_functions,
-    classify_aie_functions_experimental,
     codegen_external_kernels,
     simplify_matmul_accumulate,
     collect_lib_func_call,
@@ -512,6 +511,8 @@ class AIE_MLIRModule:
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
+        trace: list[tuple[str, tuple[int, ...]]] = None,
+        trace_size: int = 4096,
     ):
         # virtual mapping can only be applied to DAG
         if not self.computation_is_dag:
@@ -529,6 +530,8 @@ class AIE_MLIRModule:
         self.profile = profile
         self.warmup = warmup
         self.num_iters = num_iters
+        if trace is not None:
+            self.trace_size = trace_size
         build_dir = os.path.join(self.project_dir, "build")
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir)
@@ -592,7 +595,7 @@ class AIE_MLIRModule:
             module_str = pattern.sub(repl, module_str)
             self.allo_module = allo_ir.ir.Module.parse(module_str)
 
-        top_func, core_funcs, external_funcs = classify_aie_functions_experimental(
+        top_func, core_funcs, external_funcs = classify_aie_functions(
             self.allo_module, self.top_func_name
         )
 
@@ -607,9 +610,11 @@ class AIE_MLIRModule:
         (
             self.aie_module,
             self.module_runtime_args,
-        ) = code_generator.aie_codegen_experimental(
+        ) = code_generator.aie_codegen(
             core_funcs,
             external_funcs,
+            trace,
+            trace_size,
         )
 
         # TODO: opt passes on aie-mlir
@@ -686,145 +691,6 @@ class AIE_MLIRModule:
             process.wait()
         if process.returncode != 0:
             raise RuntimeError("Failed to build AIE project.")
-
-    def collect_io(
-        self,
-        func_groups: dict[str, list[allo_func_d.FuncOp]],
-    ) -> tuple[dict, dict]:
-        """
-        Analyze input/output tensors of each function in the groups.
-        Returns dictionaries of input/output DTensors for each function group and core.
-        """
-        # init
-        self.core_func_args = {}
-        self.global_tensors = {}
-        inputs = {}
-        outputs = {}
-        for func_name, funcs in func_groups.items():
-            inputs[func_name] = {}
-            outputs[func_name] = {}
-            inputs[func_name]["_global"] = []
-            outputs[func_name]["_global"] = []
-            for func in funcs:
-                func_name_w_id = func.attributes["sym_name"].value
-                self.core_func_args[func_name_w_id] = {}
-                # [NOTE]: function name implies some kind of mapping from io tensor to 'core's
-                func_id = tuple(
-                    int(x) for x in func_name_w_id.split(func_name + "_")[-1].split("_")
-                )
-                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
-                in_idx, out_idx = analyze_read_write_patterns(
-                    func, self.external_kernel_lib
-                )
-                for io_lst, io_idx, io in (
-                    (inputs, in_idx, "in"),
-                    (outputs, out_idx, "out"),
-                ):
-                    io_lst[func_name][func_id] = []
-                    for idx in io_idx:
-                        argument: Argument = self.func_args[func_name_w_id][idx]
-                        self.core_func_args[func_name_w_id][idx] = (
-                            argument,
-                            io == "in",
-                        )
-                        if not argument.dtensor is None:
-                            argument.dtensor.set_access_pattern()
-                            argument.dtensor.type_as_param = func.arguments[
-                                idx
-                            ].type.shape
-                            if argument.dtensor not in io_lst[func_name]["_global"]:
-                                io_lst[func_name]["_global"].append(argument.dtensor)
-                                idx = self.func_args[self.top_func_name].index(argument)
-                                argument.dtensor.set_global_info(idx, io == "in")
-                                self.global_tensors[idx] = argument.dtensor
-                            io_lst[func_name][func_id].append(argument.dtensor)
-                # streams
-                for i, _ in enumerate(func.arguments):
-                    func_arg = self.func_args[func_name_w_id][i]
-                    if (
-                        i in self.core_func_args[func_name_w_id]
-                        or func_arg.stream is None  # unused
-                    ):
-                        continue
-                    self.core_func_args[func_name_w_id][i] = (
-                        func_arg,
-                        self.stream_info[func_name_w_id][func_arg.stream.name],
-                    )
-
-        return inputs, outputs
-
-    def build_default(
-        self,
-        device_type="npu1_4col",
-        profile: bool = False,
-        warmup: int = 20,
-        num_iters: int = 100,
-        trace: list[tuple[str, tuple[int, ...]]] = None,
-        trace_size: int = 4096,
-    ):
-        if "npu1" in device_type:
-            self.device = "npu1"
-        elif "npu2" in device_type:
-            self.device = "npu2"
-        else:
-            raise ValueError("Unsupported device type.")
-        self.profile = profile
-        self.warmup = warmup
-        self.num_iters = num_iters
-        if trace is not None:
-            self.trace_size = trace_size
-        build_dir = os.path.join(self.project_dir, "build")
-        if os.path.exists(build_dir):
-            shutil.rmtree(build_dir)
-        os.makedirs(build_dir)
-        # TODO: maybe use other ways to capture the relationship between DTensor, function group
-        _, core_func_groups, _ = classify_aie_functions(
-            self.allo_module, self.top_func_name
-        )
-        inputs, outputs = self.collect_io(core_func_groups)
-
-        # - extract external kernels
-        use_external_kernels, injected_external_kernels, include_src = (
-            inject_external_kernels(
-                self.allo_module,
-                self.top_func_name,
-                self.external_kernel_lib,
-                "aie2" if self.device == "npu1" else "aie2p",
-            )
-        )
-        # record original allo mlir
-        with open(
-            os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
-        ) as f:
-            f.write(str(self.allo_module))
-        # - lower tensor to memref with registered pass
-        passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-affine",
-        ]
-        pipeline = f'builtin.module({",".join(passes)})'
-        with self.allo_module.context:
-            mlir_pass_manager.parse(pipeline).run(self.allo_module.operation)
-        top_func, core_func_groups, external_funcs = classify_aie_functions(
-            self.allo_module, self.top_func_name
-        )
-        code_generator = CodeGenerator(
-            device_type,
-            self.global_tensors,
-            top_func,
-            self.core_func_args,
-            self.streams,
-        )
-        self.aie_module = code_generator.aie_codegen(
-            core_func_groups,
-            external_funcs,
-            inputs,
-            outputs,
-            use_external_kernels,
-            trace,
-            trace_size,
-        )
-        self.post_codegen_build(injected_external_kernels, include_src)
-        return self
 
     def help(self):
         # print the parameter list of the module

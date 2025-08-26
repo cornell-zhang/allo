@@ -27,9 +27,8 @@ def trace_data_transfer():
         top,
         project="transfer.prj",
         target="aie",
-        use_default_codegen=True,
         trace=[("producer", (0,)), ("consumer", (0,))],
-        trace_size=4096 * 4096,
+        trace_size=32768,
     )
     A = np.random.randint(0, 64, (M, N)).astype(np.int16)
     B = np.zeros((M, N)).astype(np.int16)

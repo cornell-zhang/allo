@@ -58,6 +58,8 @@ class Config:
     LOCAL_CODE_OFFSET = 100
     GLOBAL_CODE_OFFSET = 10000
 
+    TRACE_MAX_NUM = 4
+
 
 # reference: https://github.com/Xilinx/mlir-aie/blob/v1.0/docs/Devices.md
 device_config_map = {
@@ -246,22 +248,6 @@ def parse_kernel_name(name: str):
     prefix = match.group(1).rstrip("_")
     indexs = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, indexs
-
-
-def collect_op_by_name(root, target: str) -> list:
-    collected_op = []
-
-    def collect(op):
-        if op.name == target:
-            collected_op.append(op.operation)
-            return
-        for region in op.regions:
-            for block in region.blocks:
-                for inner_op in block.operations:
-                    collect(inner_op)
-
-    collect(root)
-    return collected_op
 
 
 def inject_external_kernels(
@@ -542,7 +528,7 @@ def get_df_kernels(module: allo_ir.ir.Module) -> list[allo_func_d.FuncOp]:
     return df_kernels
 
 
-def classify_aie_functions_experimental(
+def classify_aie_functions(
     module: allo_ir.ir.Module, top_function_name: str
 ) -> tuple[allo_func_d.FuncOp, list[allo_func_d.FuncOp], list[allo_func_d.FuncOp]]:
     """
@@ -571,42 +557,6 @@ def classify_aie_functions_experimental(
                         f"Unknown function type: {func.attributes['sym_name'].value}"
                     )
     return top_func, core_funcs, external_funcs
-
-
-def classify_aie_functions(
-    module: allo_ir.ir.Module, top_function_name: str
-) -> tuple[
-    allo_func_d.FuncOp, dict[str, list[allo_func_d.FuncOp]], list[allo_func_d.FuncOp]
-]:
-    """
-    Classify the functions in allo module as
-        - top
-        - compute core functions
-        - external kernel functions
-    """
-    # top function
-    top_func: allo_func_d.FuncOp = None
-    # core functions
-    core_func_groups: dict[str, list[allo_func_d.FuncOp]] = {}
-    # external functions
-    external_funcs: list[allo_func_d.FuncOp] = []
-    with module.context, allo_ir.ir.Location.unknown():
-        for func in module.body.operations:
-            if isinstance(func, allo_func_d.FuncOp):
-                if (
-                    "sym_visibility" in func.attributes
-                    and func.attributes["sym_visibility"].value == "private"
-                ):
-                    external_funcs.append(func)
-                elif func.attributes["sym_name"].value == top_function_name:
-                    top_func = func
-                else:
-                    func_name_w_id = func.attributes["sym_name"].value
-                    func_name = re.match(r"^(.*?)_\d", func_name_w_id).group(1)
-                    if func_name not in core_func_groups:
-                        core_func_groups[func_name] = []
-                    core_func_groups[func_name].append(func)
-    return top_func, core_func_groups, external_funcs
 
 
 def get_element_type(dtype_str: str) -> aie_ir.Type:

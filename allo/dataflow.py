@@ -307,7 +307,6 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
     mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
@@ -345,27 +344,15 @@ def build(
                 device_type = "npu2"
             else:
                 device_type = "npu1_4col"
-        if trace is not None and not use_default_codegen:
-            raise APIWarning(
-                "Please set use_default_codegen = True if you want to use trace."
-            )
-        if use_default_codegen:
-            aie_mod.build_default(
-                device_type=device_type,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-                trace=trace,
-                trace_size=trace_size,
-            )
-        else:
-            aie_mod.build(
-                device_type=device_type,
-                mapping_primitives=mapping_primitives,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-            )
+        aie_mod.build(
+            device_type=device_type,
+            mapping_primitives=mapping_primitives,
+            profile=profile,
+            warmup=warmup,
+            num_iters=num_iters,
+            trace=trace,
+            trace_size=trace_size,
+        )
         return aie_mod
 
     if target == "simulator":
