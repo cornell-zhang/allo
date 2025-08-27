@@ -507,7 +507,7 @@ class AIE_MLIRModule:
     def build(
         self,
         device_type="npu1_4col",
-        mapping_primitives: list[tuple[str, list]] = [],
+        mapping_primitives: list[tuple[str, list]] = None,
         profile: bool = False,
         warmup: int = 20,
         num_iters: int = 100,
@@ -516,7 +516,7 @@ class AIE_MLIRModule:
     ):
         # virtual mapping can only be applied to DAG
         if not self.computation_is_dag:
-            if len(mapping_primitives) > 0:
+            if mapping_primitives is not None and len(mapping_primitives) > 0:
                 raise ValueError(
                     "The input computation graph is not a DAG. Do not support virtual mapping now."
                 )
@@ -556,14 +556,15 @@ class AIE_MLIRModule:
         )
         # ------------------------- virtual mapping -------------------------
         self._init_virtual_graph(use_external_kernels)
-        for mapping in mapping_primitives:
-            primitive = mapping[0]
-            arg_list = mapping[1]
-            if primitive == "chain":
-                assert len(arg_list) == 2
-                self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
-            if primitive == "bundle":
-                self.virtual_computation_graph.bundle(arg_list)
+        if mapping_primitives is not None:
+            for mapping in mapping_primitives:
+                primitive = mapping[0]
+                arg_list = mapping[1]
+                if primitive == "chain":
+                    assert len(arg_list) == 2
+                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                if primitive == "bundle":
+                    self.virtual_computation_graph.bundle(arg_list)
 
         # record original allo mlir
         with open(

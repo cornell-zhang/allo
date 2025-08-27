@@ -8,7 +8,7 @@ from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
-from allo.backend.experimental.external_kernel import ExternalModule
+from allo.backend.aie.external_kernel import ExternalModule
 from allo.ir.types import float32
 
 Ly = Layout("R")

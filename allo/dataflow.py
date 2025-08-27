@@ -14,7 +14,6 @@ from ._mlir.ir import (
     MemRefType,
     Type,
 )
-from ._mlir.exceptions import APIWarning
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
@@ -307,7 +306,7 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    mapping_primitives: list[tuple[str, list]] = [],
+    mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
     warmup=20,
     num_iters=100,

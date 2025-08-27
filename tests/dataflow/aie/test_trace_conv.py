@@ -9,7 +9,7 @@ from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
-from allo.backend.experimental.external_kernel import ExternalModule
+from allo.backend.aie.external_kernel import ExternalModule
 
 KERNEL_LIB_PATH = "../../../allo/library/aie/"
 

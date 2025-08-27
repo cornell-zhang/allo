@@ -50,7 +50,7 @@ import allo
 import allo.dataflow as df
 from allo.ir.types import float32, bfloat16, int32
 from allo.memory import Layout
-from allo.backend.experimental import ExternalModule
+from allo.backend.aie import ExternalModule
 
 torch.manual_seed(0)
 np.random.seed(0)
