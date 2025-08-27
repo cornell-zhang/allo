@@ -25,7 +25,7 @@ def _test_increase_decrease():
         def dec(D: Ty[M, N] @ LyA, F: Ty[M, N] @ LyA):
             F[:, :] = allo.add(D, -1)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int16)
     F = np.zeros((M, N)).astype(np.int16)
@@ -61,7 +61,7 @@ def _test_increase_decrease_more_arg():
         def decdec(G: Ty[M, N] @ LyA, H: Ty[M, N] @ LyA):
             H[:, :] = allo.add(G, -2)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, N)).astype(np.int16)
     B = np.zeros((M, N)).astype(np.int16)
     D = np.zeros((M, N)).astype(np.int16)

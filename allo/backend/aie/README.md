@@ -139,7 +139,7 @@ def downgrade_ir_for_peano(llvmir):
 
 ## Usage
 
-To enable the experimental MLIR-AIE codegen, specify `"aie-mlir"` as the target in the `dataflow.build` function.
+To enable the experimental MLIR-AIE codegen, specify `"aie"` as the target in the `dataflow.build` function.
 
 Currently, the supported target platforms include `XDNA1` and `XDNA2`.
 By default, the target platform is set to `XDNA1`.
@@ -174,7 +174,7 @@ def _test_vector_scalar_add():
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.int32)
         mod(A, B)
         np.testing.assert_allclose(B, A + 1)
@@ -207,7 +207,7 @@ def _test_gemm_1D():
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N], C: Ty[M, N] @ LyA):
             C[:, :] = allo.matmul(A, B)
 
-    mod = df.build(top, target="aie-mlir")
+    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
@@ -254,7 +254,7 @@ def test_producer_consumer():
     B = np.zeros((M, N), dtype=np.int32)
 
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)
         print("Passed!")
@@ -295,8 +295,8 @@ def top2():
         C[:, :] = allo.add(A, B)
 
 
-mod1 = df.build(top1, target="aie-mlir", project="top1.prj")
-mod2 = df.build(top2, target="aie-mlir", project="top2.prj")
+mod1 = df.build(top1, target="aie", project="top1.prj")
+mod2 = df.build(top2, target="aie", project="top2.prj")
 
 A = np.random.randint(0, 8, (total_M, total_K)).astype(np.int16)
 B = np.random.randint(0, 8, (total_K, total_N)).astype(np.int16)
@@ -317,7 +317,7 @@ print("PASSED!")
 #### Profiling
 A new timing-based profiling feature has been added to help measure the performance of the module during execution. 
 
-To enable profiling, use the `do_profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
+To enable profiling, use the `profile` flag in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
 def build(
     func,
@@ -328,13 +328,13 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
-    mapping_primitives: list[tuple[str, list]] = None,
+    mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
+    device_type: str = None,
 )
 ```
 
@@ -369,7 +369,7 @@ def top1():
 
 mod = df.build(
     top1,
-    target="aie-mlir",
+    target="aie",
     profile=True,
     warmup=200,
     num_iters=1000,
@@ -388,7 +388,7 @@ However, configuring the trace unit can be complex. This new feature simplifies 
 
 Trace-based profiling requires configuring the compute tile and routing the trace data as packets through the shim tile to external memory. 
 This places additional pressure on the DMA ports of the shim tile, making it unsuitable for large-scale computation tasks where DMA bandwidth is already a constrained resource. 
-As a result, trace support is currently provided only for builds targeting small-scale computations.
+As a result, trace support is currently provided mainly for small-scale computations.
 
 To use trace, users can configure the options in the `build` method in [`dataflow.py`](../../dataflow.py):
 ```python
@@ -401,16 +401,15 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
-    mapping_primitives: list[tuple[str, list]] = None,
+    mapping_primitives: list[tuple[str, list]] = [],
     profile=False,
     warmup=20,
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
+    device_type: str = None,
 ):
 ```
-Please ensure to set `use_default_codegen=True`. This flag use the default aie codegen for small computation tasks without virtual mapping.
 
 **Related Parameters:**
 - `trace` is a list of tiles from the `allo.dataflow.kernel` users wishes to trace. Each element consists of the kernel’s name as a string and a tuple representing the tile index. Note that this index does not necessarily correspond to the final physical compute tile index in the 2D AIE array. Also note that due to resource constraints, tracing is enabled on a best-effort basis. If resources such as DMA ports or buffer descriptors are limited, tracing may not be applied to all specified tiles in the `trace` list.
@@ -444,8 +443,7 @@ def top():
 # trace tile (0, 0) of gemm df.kernel
 mod = df.build(
     top,
-    target="aie-mlir",
-    use_default_codegen=True,
+    target="aie",
     trace=[
         ("gemm", (0, 0)),
     ],
@@ -577,27 +575,3 @@ An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/da
 ##### Allo External Kernel Library 
 The [`kernels`](./kernels) directory contains several external kernels used in the GPT-2 block.
 Corresponding tests can be found in [`tests/dataflow/aie/gpt2`](../../../tests/dataflow/aie/gpt2/).
-
-### ⚠️ Note
-Code that previously used `"aie"` as the target in the `dataflow.build` function may no longer work correctly in this environment.
-
-This is mainly due to recent **syntax changes in `mlir-aie`**. For example, running:
-
-```
-tests/dataflow/aie/test_vector.py
-```
-
-may result in the following error:
-
-```
-Unable to parse module assembly: 
-error: "-":44:30: expected SSA operand
-```
-
-This happens because the syntax of operations like the following has changed:
-
-```
-aiex.npu.dma_memcpy_nd(0, 0, %arg0[0, 0, 0, 0][1, 1, 1, 1024][0, 0, 0, 1]) {
-  id = 0 : i64, issue_token = true, metadata = @in_shim_A
-} : memref<1024xi32>
-```

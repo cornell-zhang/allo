@@ -50,7 +50,7 @@ import allo
 import allo.dataflow as df
 from allo.ir.types import float32, bfloat16, int32
 from allo.memory import Layout
-from allo.backend.experimental import ExternalModule
+from allo.backend.aie import ExternalModule
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -59,7 +59,7 @@ np.random.seed(0)
 # Model Configuration
 # ===============================================================================
 USE_ALL_NPU_KERNELS = False  # if False, we will offload softmax and gelu to cpu
-KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../../allo/library/aie/"
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
 EMBD = 768  # 64 * 12
@@ -308,20 +308,18 @@ def run(x_fp32: np.ndarray, params: dict):
     # ##############################################################
     # BUILD
     # ##############################################################
-    layer_norm_mod = df.build(layer_norm_kernel, target="aie-mlir", project="norm.prj")
+    layer_norm_mod = df.build(layer_norm_kernel, target="aie", project="norm.prj")
     linear_matmul_mod = df.build(
-        linear_matmul_kernel, target="aie-mlir", project="linear_matmul.prj"
+        linear_matmul_kernel, target="aie", project="linear_matmul.prj"
     )
     linear_accumulate_mod = df.build(
-        linear_accumulate_kernel, target="aie-mlir", project="linear_accumulate.prj"
+        linear_accumulate_kernel, target="aie", project="linear_accumulate.prj"
     )
-    attn_score_mod = df.build(
-        attn_score_kernel, target="aie-mlir", project="attn_score.prj"
-    )
+    attn_score_mod = df.build(attn_score_kernel, target="aie", project="attn_score.prj")
     masked_softmax_mod = df.build(
-        masked_softmax_kernel, target="aie-mlir", project="masked_softmax.prj"
+        masked_softmax_kernel, target="aie", project="masked_softmax.prj"
     )
-    gelu_mod = df.build(gelu_kernel, target="aie-mlir", project="gelu.prj")
+    gelu_mod = df.build(gelu_kernel, target="aie", project="gelu.prj")
 
     # ##############################################################
     # TOOL

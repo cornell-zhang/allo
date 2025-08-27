@@ -9,9 +9,9 @@ from allo.ir.types import int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
-from allo.backend.experimental.external_kernel import ExternalModule
+from allo.backend.aie.external_kernel import ExternalModule
 
-KERNEL_LIB_PATH = "../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../allo/library/aie/"
 
 Ly = Layout("RR")
 
@@ -80,11 +80,10 @@ def _trace_conv2d(kernel_path: str):
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
         mod = df.build(
             top,
-            target="aie-mlir",
+            target="aie",
             profile=True,
             warmup=100,
             num_iters=1000,
-            use_default_codegen=True,  # enable tracing
             trace=[("core", (0,))],
             trace_size=65536,
         )

@@ -40,7 +40,7 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
-from ..backend.experimental.external_kernel import ExternalModule
+from ..backend.aie.external_kernel import ExternalModule
 
 
 # pylint: disable=too-many-public-methods

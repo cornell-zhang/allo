@@ -10,7 +10,7 @@ from ml_dtypes import bfloat16 as np_bfloat16
 
 
 # [NOTE]: export FACTOR=2
-def gen_pingpong_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
+def gen_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     # chain on k dimension
     mapping_primitives = []
     bases: list[list[str]] = []
@@ -25,7 +25,10 @@ def gen_pingpong_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4
 
     if Pn // col_num < 1 or Pm // row_num < 1:
         col_num, row_num = row_num, col_num
-
+    if Pn < col_num:
+        col_num = Pn
+    if Pm < row_num:
+        row_num = Pm
     if Pn // col_num > 1 or Pm // row_num > 1:
         for i in range(row_num):
             for j in range(col_num):
@@ -82,16 +85,16 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 F[:, :] = F_out
 
-    mapping_primitives = gen_pingpong_gemm_mapping_primitive(
+    mapping_primitives = gen_gemm_mapping_primitive(
         "gemma", Pm, Pn, Pk, col_num=2, row_num=2
     )
     mapping_primitives.extend(
-        gen_pingpong_gemm_mapping_primitive("gemmb", Pm, Pn, Pk, col_num=2, row_num=2)
+        gen_gemm_mapping_primitive("gemmb", Pm, Pn, Pk, col_num=2, row_num=2)
     )
     mod = df.build(
         top,
         project="gemm.prj",
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=mapping_primitives,
         profile=True,
         warmup=200,

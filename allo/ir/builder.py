@@ -63,7 +63,7 @@ from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule, c2allo_type
 from ..utils import get_mlir_dtype_from_str
 from ..logging import print_error_message
-from ..backend.experimental.external_kernel import ExternalModule
+from ..backend.aie.external_kernel import ExternalModule
 
 
 class ASTBuilder(ASTVisitor):

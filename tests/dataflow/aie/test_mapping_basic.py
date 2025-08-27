@@ -23,7 +23,7 @@ def _test_vector_scalar_add_v1():
     A = np.random.randint(0, 100, M).astype(np.int32)
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[("bundle", ["core_0", "core_1", "core_2", "core_3"])],
     )
     B = np.zeros(M).astype(np.int32)
@@ -47,7 +47,7 @@ def _test_vector_scalar_add_v2():
     A = np.random.randint(0, 100, M).astype(np.int32)
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("bundle", ["core_0", "core_1"]),
             ("bundle", ["core_2", "core_3"]),
@@ -74,7 +74,7 @@ def _test_vector_scalar_add_v3():
     A = np.random.randint(0, 100, M).astype(np.int32)
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[
             ("bundle", ["core_0", "core_1"]),  # -> bundled_node_name: core_0
             ("bundle", ["core_2", "core_3"]),  # -> bundled_node_name: core_2
@@ -111,7 +111,7 @@ def _test_producer_consumer():
 
     mod = df.build(
         top,
-        target="aie-mlir",
+        target="aie",
         mapping_primitives=[("chain", ["producer_0", "consumer_0"])],
     )
     mod(A, B)

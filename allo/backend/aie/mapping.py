@@ -335,6 +335,7 @@ class NodeMetaData:
         self.name = name if name is not None else f"function_{self.id}"
         self.use_external_kernel = use_external_kernel
         self.op_tag: str = tag
+        self.df_kernels: set[str] = set()
         self.repeat: int = repeat  # repeat count after bundling
         self.length: int = length
         self.input_streams: list[Stream] = []
@@ -397,9 +398,9 @@ class NodeBase:
 
 class InitialNode(NodeBase):
     def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
-        super().__init__(
-            func.attributes["sym_name"].value, func, use_external_kernel, tag, 1
-        )
+        func_name = func.attributes["sym_name"].value
+        super().__init__(func_name, func, use_external_kernel, tag, 1)
+        self.meta_data.df_kernels.add(func_name)
 
     def init_live_tile(self):
         """
@@ -515,6 +516,7 @@ class ComputationGraph:
         )
         bundled_node._init_for_bundle(sample_node)
         for node in node_list:
+            bundled_node.meta_data.df_kernels.update(node.meta_data.df_kernels)
             bundled_node.meta_data.repeat += node.meta_data.repeat
             for key, value in node.global_interfaces.items():
                 assert key in bundled_node.global_interfaces
@@ -568,6 +570,8 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
+        chained_node.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
+        chained_node.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
         chained_node.meta_data.use_external_kernel = (
             node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
         )

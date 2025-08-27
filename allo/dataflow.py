@@ -14,13 +14,10 @@ from ._mlir.ir import (
     MemRefType,
     Type,
 )
-from ._mlir.exceptions import APIWarning
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .customize import customize as _customize
 from .ir.utils import get_global_vars, get_all_df_kernels
-from .backend.ai_engine import AIEModule
-
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
@@ -309,7 +306,6 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
-    use_default_codegen: bool = False,
     mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
     warmup=20,
@@ -318,35 +314,19 @@ def build(
     trace_size: int = 4096,
     device_type: str = None,
 ):
+    assert not profile or target == "aie", "Profiling is only supported for AIE target"
     assert (
-        not profile or target == "aie-mlir"
-    ), "Profiling is only supported for AIE target"
-    assert (
-        trace is None or target == "aie-mlir"
+        trace is None or target == "aie"
     ), "Trace profiling is only supported for AIE target"
-    if target == "aie":
-        global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=False)
-        stream_info = move_stream_to_interface(s)
-        s = _build_top(s, stream_info, target=target)
-        mod = AIEModule(
-            s.module,
-            s.top_func_name,
-            s.func_args,
-            project,
-            stream_info,
-        )
-        mod.build()
-        return mod
 
-    if target == "aie-mlir":
+    if target == "aie":
         global_vars = get_global_vars(func)
         s = _customize(func, global_vars=global_vars, enable_tensor=False)
         stream_info, stream_types_dict = move_stream_to_interface(
             s, with_stream_type=True
         )
         parameter_list, s = _build_top(
-            s, stream_info, target="aie", get_parameter_list=True
+            s, stream_info, target=target, get_parameter_list=True
         )
         aie_mod = AIE_MLIRModule(
             s.module,
@@ -363,37 +343,15 @@ def build(
                 device_type = "npu2"
             else:
                 device_type = "npu1_4col"
-        if trace is not None and not use_default_codegen:
-            raise APIWarning(
-                "Please set use_default_codegen = True if you want to use trace."
-            )
-        if use_default_codegen:
-            aie_mod.build(
-                device_type=device_type,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-                trace=trace,
-                trace_size=trace_size,
-            )
-        elif mapping_primitives is not None:
-            aie_mod.build_experimental(
-                device_type=device_type,
-                enable_virtual_mapping=True,
-                mapping_primitives=mapping_primitives,
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-            )
-        else:
-            aie_mod.build_experimental(
-                device_type=device_type,
-                enable_virtual_mapping=True,
-                mapping_primitives=[],
-                profile=profile,
-                warmup=warmup,
-                num_iters=num_iters,
-            )
+        aie_mod.build(
+            device_type=device_type,
+            mapping_primitives=mapping_primitives,
+            profile=profile,
+            warmup=warmup,
+            num_iters=num_iters,
+            trace=trace,
+            trace_size=trace_size,
+        )
         return aie_mod
 
     if target == "simulator":

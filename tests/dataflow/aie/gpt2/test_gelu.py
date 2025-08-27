@@ -8,10 +8,10 @@ from allo.ir.types import float32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
-from allo.backend.experimental.external_kernel import ExternalModule
+from allo.backend.aie.external_kernel import ExternalModule
 from allo.ir.types import float32
 
-KERNEL_LIB_PATH = "../../../../allo/backend/experimental/kernels/"
+KERNEL_LIB_PATH = "../../../../allo/library/aie/"
 
 Ly = Layout("S0S1")
 Ty = float32
@@ -41,7 +41,7 @@ def _test_gelu():
     input_tensor = torch.randn(seq_tile, feature_dim, dtype=torch.float32)
     output = gelu_model(input_tensor)
     if "MLIR_AIE_INSTALL_DIR" in os.environ:
-        mod = df.build(top, target="aie-mlir")
+        mod = df.build(top, target="aie")
         output_allo = np.zeros((seq_tile, feature_dim)).astype(np.float32)
         mod(input_tensor.cpu().numpy(), output_allo)
         np.testing.assert_allclose(output_allo, output, rtol=1e-2)
