@@ -1,5 +1,11 @@
 <!--- Copyright Allo authors. All Rights Reserved. -->
 <!--- SPDX-License-Identifier: Apache-2.0  -->
+## Sparse Dense Matrix Multiplication
+
+We provide a row-wise systolic array sparse dense matrix multiplication Allo implementations under the [`sparse`](sparse/) folder. For example, you can directly run the SEMM kernel using the CPU backend by typing the following command:
+```bash
+python3 test_sparse_systolic_data_packing.py
+```
 
 # Examples - Sparse Dense Matrix Multiplication
 
