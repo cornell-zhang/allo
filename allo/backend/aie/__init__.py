@@ -48,7 +48,7 @@ from .utils import (
     codegen_host,
     RuntimeArgs,
 )
-from .mapping import LegacyComputationGraph, ComputationGraph
+from .mapping import ComputationGraph
 
 
 class AIE_MLIRModule:
@@ -162,18 +162,6 @@ class AIE_MLIRModule:
     # ############################################################
     # Build
     # ############################################################
-    def _init_virtual_graph(self, use_external_kernels: dict[str, bool]):
-        assert (
-            self.core_func_args is not None and self.global_tensors is not None
-        ), "Analysis of kernel parameters should be done before initializing virtual graph"
-        self.virtual_computation_graph: LegacyComputationGraph = LegacyComputationGraph(
-            self.allo_module,
-            self.top_func_name,
-            self.streams,
-            self.core_func_args,
-            use_external_kernels,
-        )
-
     def init_virtual_graph(self, use_external_kernels: dict[str, bool]):
         assert (
             self.core_func_args is not None and self.global_tensors is not None
