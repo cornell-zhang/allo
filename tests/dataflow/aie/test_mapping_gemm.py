@@ -360,7 +360,7 @@ def _test_pingpong_gemm_4x4x4():
     print("PASSED!")
 
 
-def _test_split_k_gemm_v1():
+def _test_split_k_gemm_1x1x4():
 
     Ty = int16
     M, N, K = 32, 32, 128
@@ -407,29 +407,34 @@ def _test_split_k_gemm_v1():
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
-def _test_split_k_gemm_v2():
+
+def _test_split_k_gemm_2x2x4():
 
     Ty = int16
-    M, N, K = 32, 32, 128
+    M, N, K = 64, 64, 128
+    Pm, Pn = 2, 2
     Pk = 4
+    Mt, Nt = M // Pm, N // Pn
 
-    LyA = Layout("RS0")
-    LyB = Layout("S0R")
+    LyA = Layout("S1S2")
+    LyB = Layout("S2S0")
+    LyC = Layout("S1S0")
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=2), shape=(Pk,))
+        pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk, Pm, Pn))
 
-        @df.kernel(mapping=[Pk])
+        @df.kernel(mapping=[Pk, Pm, Pn])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
-            pk = df.get_pid()
-            pipe[pk].put(allo.matmul(A, B))
+            pk, pm, pn = df.get_pid()
+            pipe[pk, pm, pn].put(allo.matmul(A, B))
 
-        @df.kernel(mapping=[1])
-        def acc(C: Ty[M, N]):
-            C_: Ty[M, N] = 0
+        @df.kernel(mapping=[1, Pm, Pn])
+        def acc(C: Ty[M, N] @ LyC):
+            _, pm, pn = df.get_pid()
+            C_: Ty[Mt, Nt] = 0
             with allo.meta_for(Pk) as i:
-                C_[:, :] += pipe[i].get()
+                C_[:, :] += pipe[i, pm, pn].get()
             C[:, :] = C_
 
     mod = df.build(
@@ -439,13 +444,39 @@ def _test_split_k_gemm_v2():
             (
                 "bundle",
                 [
-                    "partial_gemm_0",
-                    "partial_gemm_1",
-                    "partial_gemm_2",
-                    "partial_gemm_3",
+                    "partial_gemm_0_0_0",
+                    "partial_gemm_1_0_0",
+                    "partial_gemm_2_0_0",
+                    "partial_gemm_3_0_0",
                 ],
             ),
-            ("chain",["partial_gemm_0x4", "acc_0"])
+            (
+                "bundle",
+                [
+                    "partial_gemm_0_0_1",
+                    "partial_gemm_1_0_1",
+                    "partial_gemm_2_0_1",
+                    "partial_gemm_3_0_1",
+                ],
+            ),
+            (
+                "bundle",
+                [
+                    "partial_gemm_0_1_0",
+                    "partial_gemm_1_1_0",
+                    "partial_gemm_2_1_0",
+                    "partial_gemm_3_1_0",
+                ],
+            ),
+            (
+                "bundle",
+                [
+                    "partial_gemm_0_1_1",
+                    "partial_gemm_1_1_1",
+                    "partial_gemm_2_1_1",
+                    "partial_gemm_3_1_1",
+                ],
+            ),
         ],
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
@@ -454,6 +485,7 @@ def _test_split_k_gemm_v2():
     mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
+
 
 if __name__ == "__main__":
     _test_gemm_2D_v1()
@@ -463,5 +495,5 @@ if __name__ == "__main__":
     _test_pingpong_gemm_1x1x4()
     _test_pingpong_gemm_2x2x4()
     _test_pingpong_gemm_4x4x4()
-    _test_split_k_gemm_v1()
-    # _test_split_k_gemm_v2()
+    _test_split_k_gemm_1x1x4()
+    _test_split_k_gemm_2x2x4()
