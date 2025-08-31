@@ -319,23 +319,35 @@ class LiveDTensorTileGroup:
 
 
 # ------------------------------------------------------------
+@dataclass
+class BufferedStream:
+    arg_idx_a: int
+    arg_idx_b: int
+    arg_a: Value
+    arg_b: Value
+
+
 class NodeMetaData:
     node_cnt = 0
 
     def __init__(
         self,
-        name: str = None,
-        use_external_kernel: bool = False,
-        tag: str = None,
+        name: str,
+        use_external_kernel: bool,
+        tag: str,
+        in_types: list,
+        out_types: list,
         repeat: int = 0,
         length: int = 1,
     ):
         self.id = NodeMetaData.node_cnt
         NodeMetaData.node_cnt += 1
-        self.name = name if name is not None else f"function_{self.id}"
+        self.name = name
         self.use_external_kernel = use_external_kernel
         self.op_tag: str = tag
         self.df_kernels: set[str] = set()
+        self.in_types: list = in_types
+        self.out_types: list = out_types
         self.repeat: int = repeat  # repeat count after bundling
         self.length: int = length
         self.input_streams: list[Stream] = []
@@ -366,12 +378,28 @@ class NodeBase:
         length: int = 1,
     ):
         self.meta_data: NodeMetaData = NodeMetaData(
-            name, use_external_kernel, tag, repeat, length
+            name,
+            use_external_kernel,
+            tag,
+            in_types=(
+                func.attributes["function_type"].value.inputs
+                if func is not None
+                else None
+            ),
+            out_types=(
+                func.attributes["function_type"].value.results
+                if func is not None
+                else None
+            ),
+            repeat=repeat,
+            length=length,
         )
+        self.org_tags = []
         self.func: func_d.FuncOp = func
         # arg_idx -> tiling using arg as interface
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
+        self.buffered_stream: dict[Stream, BufferedStream] = {}
 
     def is_isomorphic_to(self, other: "NodeBase") -> bool:
         # TODO: check in a more robust way
@@ -400,6 +428,7 @@ class InitialNode(NodeBase):
     def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
         func_name = func.attributes["sym_name"].value
         super().__init__(func_name, func, use_external_kernel, tag, 1)
+        self.org_tags.append(tag)
         self.meta_data.df_kernels.add(func_name)
 
     def init_live_tile(self):
@@ -424,8 +453,11 @@ class CollocatedNode(NodeBase):
     ):
         super().__init__(name=name, func=func, tag=tag, repeat=repeat, length=length)
 
-    def _init_for_bundle(self, sample_node: NodeBase):
+    def init_for_bundle(self, sample_node: NodeBase, org_tags):
         self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
+        self.meta_data.in_types = sample_node.meta_data.in_types
+        self.meta_data.out_types = sample_node.meta_data.out_types
+        self.org_tags.append(tuple(org_tags))
         self.meta_data.input_streams = sample_node.meta_data.input_streams
         self.meta_data.output_streams = sample_node.meta_data.output_streams
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
@@ -441,7 +473,6 @@ class ComputationGraph:
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         use_external_kernels: dict[str, bool],
     ):
-        self.allo_module = allo_module
         self.insert_point: InsertionPoint = None
         self.nodes: dict[str, NodeBase] = {}
         self.collocated_nodes: dict[str, CollocatedNode] = {}
@@ -502,8 +533,10 @@ class ComputationGraph:
         for name in node_name_list:
             assert name in self.nodes, f"Node({name}) not found"
             node_list.append(self.nodes[name])
+        org_tags = []
         sample_node: NodeBase = node_list[0]
         for node in node_list:
+            org_tags.append(node.org_tags)
             if not sample_node.is_isomorphic_to(node):
                 raise ValueError(
                     f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
@@ -514,7 +547,7 @@ class ComputationGraph:
             func=sample_node.func,
             length=sample_node.meta_data.length,
         )
-        bundled_node._init_for_bundle(sample_node)
+        bundled_node.init_for_bundle(sample_node, org_tags)
         for node in node_list:
             bundled_node.meta_data.df_kernels.update(node.meta_data.df_kernels)
             bundled_node.meta_data.repeat += node.meta_data.repeat
@@ -539,19 +572,12 @@ class ComputationGraph:
                 self.func_args.pop(name)
                 self.dependencies.pop(name)
         self.nodes[bundled_node.meta_data.name] = bundled_node
+        return bundled_node.meta_data.name
 
     def chain(self, node_name_a: str, node_name_b: str):
         """
         [A] [B] => [[A]-[B]]
         """
-
-        @dataclass
-        class BufferedStream:
-            arg_idx_a: int
-            arg_idx_b: int
-            arg_a: Value
-            arg_b: Value
-
         node_a, node_b = self.nodes.pop(node_name_a), self.nodes.pop(node_name_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         assert node_a is not None and node_b is not None, "node not found"
@@ -570,6 +596,8 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
+        chained_node.org_tags.extend(node_a.org_tags)
+        chained_node.org_tags.extend(node_b.org_tags)
         chained_node.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
         chained_node.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
         chained_node.meta_data.use_external_kernel = (
@@ -606,12 +634,14 @@ class ComputationGraph:
         function_a: func_d.FuncOp = node_a.func
         function_b: func_d.FuncOp = node_b.func
         # - function parameters
-        in_types_a: list = function_a.attributes["function_type"].value.inputs
+        in_types_a: list = node_a.meta_data.in_types
         arg_idx_offset = len(in_types_a)
-        in_types_b: list = function_b.attributes["function_type"].value.inputs
-        out_types_a = function_a.attributes["function_type"].value.results
-        out_types_b = function_b.attributes["function_type"].value.results
+        in_types_b: list = node_b.meta_data.in_types
+        out_types_a = node_a.meta_data.out_types
+        out_types_b = node_b.meta_data.out_types
         chained_node.global_interfaces.update(node_a.global_interfaces)
+        chained_node.meta_data.in_types = in_types_a + in_types_b
+        chained_node.meta_data.out_types = out_types_a + out_types_b
         for key, value in node_b.global_interfaces.items():
             for live_tile in value:
                 live_tile.first_use += (
@@ -625,7 +655,7 @@ class ComputationGraph:
                 live_tile.token = new_token
         with function_a.context, allo_ir.ir.Location.unknown():
             func_type = FunctionType.get(
-                in_types_a + in_types_b, out_types_a + out_types_b
+                chained_node.meta_data.in_types, chained_node.meta_data.out_types
             )
             new_function = func_d.FuncOp(
                 chained_node.meta_data.name,
@@ -715,6 +745,7 @@ class ComputationGraph:
             if stream.dst in (node_name_a, node_name_b):
                 stream.dst = chained_node.meta_data.name
         self.nodes[chained_node.meta_data.name] = chained_node
+        return chained_node.meta_data.name
 
     # ------------------------------------------------------------
     # Graph Information
@@ -794,3 +825,215 @@ class ComputationGraph:
         for (name_1, name_2), count in connections.items():
             connection_info.append((count, name_1, name_2))
         return connection_info
+
+
+class ExpComputationGraph:
+    def __init__(
+        self,
+        allo_module: allo_ir.ir.Module,
+        top_func_name: str,
+        stream_map: dict[str, Stream],
+        core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
+        use_external_kernels: dict[str, bool],
+    ):
+        self.insert_point: InsertionPoint = None
+        self.nodes: dict[str, NodeBase] = {}
+        self.collocated_nodes: dict[str, CollocatedNode] = {}
+        self.edges: dict[str, Stream] = stream_map
+        self.func_args = core_func_args
+
+        self.dependencies: dict[str, set[str]] = defaultdict(set)
+        self.tag_to_func: dict[str, func_d.FuncOp] = {}
+
+        df_kernels = []
+        for func in allo_module.body.operations:
+            if func.attributes["sym_name"].value == top_func_name:
+                self.insert_point = InsertionPoint(func)
+            elif isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+                df_kernels.append(func)
+
+        # construct nodes
+        for func in df_kernels:
+            func_name = func.attributes["sym_name"].value
+            tag = func.attributes["tag"].value
+            if tag not in self.tag_to_func:
+                self.tag_to_func[tag] = func
+            node = InitialNode(None, use_external_kernels[func_name], tag)
+            _, indexes = parse_kernel_name(func_name)
+            params = core_func_args[func_name]
+            for idx, (argument, is_input) in params.items():
+                if argument.stream is not None:
+                    if is_input:
+                        node.meta_data.input_streams.append(argument.stream)
+                    else:
+                        node.meta_data.output_streams.append(argument.stream)
+                if argument.dtensor is not None:
+                    tensor_tile = DTensorTile(
+                        argument.dtensor.global_id,
+                        argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
+                    )
+                    live_dtensor_tile = LiveDTensorTile(
+                        tensor_tile, func_name, is_input
+                    )
+                    # TODO: determine first_use and last_use with liveness analysis
+                    live_dtensor_tile.first_use = 0
+                    live_dtensor_tile.last_use = 9
+                    node.global_interfaces[idx].append(live_dtensor_tile)
+            self.nodes[func_name] = node
+            self.dependencies[func_name] = set()
+        # initiate dependencies
+        for stream in self.edges.values():
+            self.dependencies[stream.dst].add(stream.src)
+
+    # ------------------------------------------------------------
+    # Transformation Primitives
+    # ------------------------------------------------------------
+    def bundle(self, node_name_list: list[str]):
+        """
+        [A] [B] [C] [D]  => [A] x 4
+
+        TODO: bundled nodes can be safely reordered
+        """
+        assert len(node_name_list) >= 2, "bundle at least two nodes"
+        node_list: list[NodeBase] = []
+        for name in node_name_list:
+            assert name in self.nodes, f"Node({name}) not found"
+            node_list.append(self.nodes[name])
+        org_tags = []
+        sample_node: NodeBase = node_list[0]
+        for node in node_list:
+            org_tags.append(node.org_tags)
+            if not sample_node.is_isomorphic_to(node):
+                raise ValueError(
+                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
+                )
+        bundled_node = CollocatedNode(
+            tag=sample_node.meta_data.op_tag,
+            name=sample_node.meta_data.name,
+            length=sample_node.meta_data.length,
+        )
+        bundled_node.init_for_bundle(sample_node, org_tags)
+        for node in node_list:
+            bundled_node.meta_data.df_kernels.update(node.meta_data.df_kernels)
+            bundled_node.buffered_stream.update(node.buffered_stream)
+            for key, value in node.global_interfaces.items():
+                assert key in bundled_node.global_interfaces
+                bundled_node.global_interfaces[key].extend(value)
+        # update stream
+        for name, stream in self.edges.items():
+            if stream.src in node_name_list:
+                self.dependencies[stream.dst].remove(stream.src)
+                stream.src = bundled_node.meta_data.name
+                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
+            if stream.dst in node_name_list:
+                stream.dst = bundled_node.meta_data.name
+                self.dependencies[bundled_node.meta_data.name].add(stream.src)
+        # update nodes and remove bundled function
+        for name in node_name_list:
+            removed = self.nodes.pop(name)
+            if not name == bundled_node.meta_data.name:
+                removed.func.erase()
+                self.func_args.pop(name)
+                self.dependencies.pop(name)
+        self.nodes[bundled_node.meta_data.name] = bundled_node
+        return bundled_node.meta_data.name
+
+    def chain(self, node_name_a: str, node_name_b: str):
+        """
+        [A] [B] => [[A]-[B]]
+        """
+        node_a, node_b = self.nodes.pop(node_name_a), self.nodes.pop(node_name_b)
+        assert node_a is not None and node_b is not None, "node not found"
+        if node_name_b in self.dependencies[node_name_a]:
+            raise ValueError(
+                f"Cannot chain Node({node_name_a}) and Node({node_name_b})"
+            )
+        chained_tag = f"({node_a.meta_data.op_tag})x{node_a.meta_data.repeat}-({node_b.meta_data.op_tag})x{node_b.meta_data.repeat}"
+        chained_node = CollocatedNode(
+            chained_tag,
+            name=f"{node_a.meta_data.name}-{node_b.meta_data.name}",
+            repeat=1,
+            length=node_a.meta_data.length + node_b.meta_data.length,
+        )
+        chained_node.org_tags.extend(node_a.org_tags)
+        chained_node.org_tags.extend(node_b.org_tags)
+        chained_node.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
+        chained_node.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
+        chained_node.meta_data.use_external_kernel = (
+            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
+        )
+        chained_node.buffered_stream.update(node_a.buffered_stream)
+        for stream_info in node_b.buffered_stream.values():
+            stream_info.arg_idx_a += len(node_a.meta_data.in_types)
+            stream_info.arg_idx_b += len(node_a.meta_data.in_types)
+        chained_node.buffered_stream.update(node_b.buffered_stream)
+        param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
+        node_a.meta_data.output_streams = [
+            stream
+            for stream in node_a.meta_data.output_streams
+            if stream.dst != node_name_b
+        ]
+        kept_streams = []
+        for stream in node_b.meta_data.input_streams:
+            if stream.src == node_name_a:
+                idx_a, idx_b = -1, -1
+                for idx, arg_info in param_a.items():
+                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                        idx_a = idx
+                        break
+                for idx, arg_info in param_b.items():
+                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                        idx_b = idx
+                        break
+                assert idx_a >= 0 and idx_b >= 0
+                chained_node.buffered_stream[stream] = BufferedStream(
+                    idx_a, idx_b, None, None
+                )
+            else:
+                kept_streams.append(stream)
+        node_b.meta_data.input_streams = kept_streams
+        chained_node.meta_data.input_streams.extend(node_a.meta_data.input_streams)
+        chained_node.meta_data.input_streams.extend(node_b.meta_data.input_streams)
+        chained_node.meta_data.output_streams.extend(node_a.meta_data.output_streams)
+        chained_node.meta_data.output_streams.extend(node_b.meta_data.output_streams)
+        in_types_a: list = node_a.meta_data.in_types
+        arg_idx_offset = len(in_types_a)
+        in_types_b: list = node_b.meta_data.in_types
+        out_types_a = node_a.meta_data.out_types
+        out_types_b = node_b.meta_data.out_types
+        chained_node.global_interfaces.update(node_a.global_interfaces)
+        chained_node.meta_data.in_types = in_types_a + in_types_b
+        chained_node.meta_data.out_types = out_types_a + out_types_b
+        for key, value in node_b.global_interfaces.items():
+            for live_tile in value:
+                live_tile.first_use += (
+                    Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
+                )
+                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
+            chained_node.global_interfaces[arg_idx_offset + key] = value
+        new_token = node_a.meta_data.name + "-" + node_b.meta_data.name
+        for live_tile_list in chained_node.global_interfaces.values():
+            for live_tile in live_tile_list:
+                live_tile.token = new_token
+        self.func_args.pop(node_name_a)
+        self.func_args.pop(node_name_b)
+        self.func_args[chained_node.meta_data.name] = param_a
+        for key, value in param_b.items():
+            self.func_args[chained_node.meta_data.name][arg_idx_offset + key] = value
+        dep = self.dependencies.pop(node_name_a)
+        dep.update(self.dependencies.pop(node_name_b))
+        self.dependencies[chained_node.meta_data.name] = dep
+        for deps in self.dependencies.values():
+            if node_name_a in deps:
+                deps.remove(node_name_a)
+                deps.add(chained_node.meta_data.name)
+            if node_name_b in deps:
+                deps.remove(node_name_b)
+                deps.add(chained_node.meta_data.name)
+        for stream in self.edges.values():
+            if stream.src in (node_name_a, node_name_b):
+                stream.src = chained_node.meta_data.name
+            if stream.dst in (node_name_a, node_name_b):
+                stream.dst = chained_node.meta_data.name
+        self.nodes[chained_node.meta_data.name] = chained_node
+        return chained_node.meta_data.name
