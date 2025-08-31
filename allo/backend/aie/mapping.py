@@ -612,6 +612,12 @@ class ComputationGraph:
                 stream.dst = bundled_node.meta_data.name
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
+        for idx, arg in self.func_args[sample_node.meta_data.name].items():
+            if arg[0].stream is not None:
+                for name in node_name_list:
+                    if name != sample_node.meta_data.name:
+                        self.edges.pop(self.func_args[name][idx][0].stream.name)
+                    self.func_args[name][idx][0].stream.name = arg[0].stream.name
         self.func_args[bundled_node.meta_data.name] = self.func_args[
             sample_node.meta_data.name
         ]
@@ -792,16 +798,12 @@ class ComputationGraph:
                             stream_put: allo_d.StreamPutOp = stream_puts[i]
                             stream_get: allo_d.StreamGetOp = stream_gets[i]
                             # TODO: support bufferize stream in branches or even loops
-                            assert isinstance(
-                                stream_put.parent.opview, func_d.FuncOp
-                            ) and isinstance(
-                                stream_get.parent.opview, func_d.FuncOp
-                            ), "Only support bufferize stream in the main body"
-                            put_value = stream_put.operands[-1]
-                            get_result = stream_get.result
-                            get_result.replace_all_uses_with(put_value)
-                            stream_put.erase()
-                            stream_get.erase()
+                            if stream_put.parent is stream_get.parent:
+                                put_value = stream_put.operands[-1]
+                                get_result = stream_get.result
+                                get_result.replace_all_uses_with(put_value)
+                                stream_put.erase()
+                                stream_get.erase()
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
                 if func.attributes["sym_name"].value not in self.nodes:

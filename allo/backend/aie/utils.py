@@ -180,6 +180,9 @@ class Stream:
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
 
+    def __repr__(self):
+        return self.__str__()
+
 
 @dataclass
 class Argument:

@@ -17,7 +17,7 @@ FILES=(
     # test_low_bit_gemm.py
     # test_trace_conv.py
     test_gemm_temporal_reduction.py  
-    # test_mapping_large_gemm.py  
+    test_mapping_large_gemm.py  
     test_multi_output.py
     test_norm.py        
     test_summa.py              
