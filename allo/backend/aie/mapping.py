@@ -5,8 +5,13 @@
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr
-from allo._mlir.dialects import func as func_d, allo as allo_d
+from allo._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr, IndexType
+from allo._mlir.dialects import (
+    func as func_d,
+    allo as allo_d,
+    arith as arith_d,
+    scf as scf_d,
+)
 from .utils import (
     Argument,
     parse_kernel_name,
@@ -899,7 +904,7 @@ class ExpComputationGraph:
         node_list: list[NodeBase] = []
         for name in node_name_list:
             assert name in self.nodes, f"Node({name}) not found"
-            node_list.append(self.nodes[name])
+            node_list.append(self.nodes.pop(name))
         org_tags = []
         sample_node: NodeBase = node_list[0]
         for node in node_list:
@@ -910,7 +915,7 @@ class ExpComputationGraph:
                 )
         bundled_node = CollocatedNode(
             tag=sample_node.meta_data.op_tag,
-            name=sample_node.meta_data.name,
+            name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
             length=sample_node.meta_data.length,
         )
         bundled_node.init_for_bundle(sample_node, org_tags)
@@ -930,10 +935,15 @@ class ExpComputationGraph:
                 stream.dst = bundled_node.meta_data.name
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
+        self.func_args[bundled_node.meta_data.name] = self.func_args[
+            sample_node.meta_data.name
+        ]
+        self.dependencies[bundled_node.meta_data.name] = self.dependencies[
+            sample_node.meta_data.name
+        ]
         for name in node_name_list:
-            if not name == bundled_node.meta_data.name:
-                self.func_args.pop(name)
-                self.dependencies.pop(name)
+            self.func_args.pop(name)
+            self.dependencies.pop(name)
         self.nodes[bundled_node.meta_data.name] = bundled_node
         return bundled_node.meta_data.name
 
@@ -1071,8 +1081,18 @@ class ExpComputationGraph:
                             if len(ele_tag) == 1:
                                 construct(ele_tag[0])
                             else:
-                                # TODO
-                                pass
+                                index_type = IndexType.get()
+                                c0 = arith_d.ConstantOp(value=0, result=index_type)
+                                c1 = arith_d.ConstantOp(value=1, result=index_type)
+                                cmax = arith_d.ConstantOp(
+                                    value=len(ele_tag), result=index_type
+                                )
+                                loop = scf_d.ForOp(
+                                    lower_bound=c0, upper_bound=cmax, step=c1
+                                )
+                                with InsertionPoint(loop.body):
+                                    construct(ele_tag[0])
+                                    scf_d.YieldOp([])
                         elif isinstance(ele_tag, str):
                             with self.insert_point:
                                 org_func = self.tag_to_func[ele_tag].clone()
