@@ -464,14 +464,56 @@ class CollocatedNode(NodeBase):
     ):
         super().__init__(name=name, func=func, tag=tag, repeat=repeat, length=length)
 
-    def init_for_bundle(self, sample_node: NodeBase, org_tags):
+    def init_for_bundle(self, node_list: list[NodeBase]):
+        sample_node: NodeBase = node_list[0]
         self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
         self.meta_data.in_types = sample_node.meta_data.in_types
         self.meta_data.out_types = sample_node.meta_data.out_types
-        self.org_tags.append(tuple(org_tags))
         self.meta_data.input_streams = sample_node.meta_data.input_streams
         self.meta_data.output_streams = sample_node.meta_data.output_streams
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
+        org_tags = []
+        for node in node_list:
+            org_tags.append(node.org_tags)
+            self.meta_data.df_kernels.update(node.meta_data.df_kernels)
+            self.buffered_stream.update(node.buffered_stream)
+            for key, value in node.global_interfaces.items():
+                assert key in self.global_interfaces
+                self.global_interfaces[key].extend(value)
+        self.org_tags.append(tuple(org_tags))
+
+    def init_for_chain(self, node_a: NodeBase, node_b: NodeBase):
+        self.meta_data.use_external_kernel = (
+            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
+        )
+        in_types_a: list = node_a.meta_data.in_types
+        arg_idx_offset = len(in_types_a)
+        in_types_b: list = node_b.meta_data.in_types
+        out_types_a = node_a.meta_data.out_types
+        out_types_b = node_b.meta_data.out_types
+        self.meta_data.in_types = in_types_a + in_types_b
+        self.meta_data.out_types = out_types_a + out_types_b
+        self.buffered_stream.update(node_a.buffered_stream)
+        for stream_info in node_b.buffered_stream.values():
+            stream_info.arg_idx_a += arg_idx_offset
+            stream_info.arg_idx_b += arg_idx_offset
+        self.buffered_stream.update(node_b.buffered_stream)
+        self.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
+        self.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
+        self.org_tags.extend(node_a.org_tags)
+        self.org_tags.extend(node_b.org_tags)
+        self.global_interfaces.update(node_a.global_interfaces)
+        for key, value in node_b.global_interfaces.items():
+            for live_tile in value:
+                live_tile.first_use += (
+                    Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
+                )
+                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
+            self.global_interfaces[arg_idx_offset + key] = value
+        new_token = node_a.meta_data.name + "-" + node_b.meta_data.name
+        for live_tile_list in self.global_interfaces.values():
+            for live_tile in live_tile_list:
+                live_tile.token = new_token
 
 
 # ------------------------------------------------------------
@@ -548,10 +590,8 @@ class ComputationGraph:
         for name in node_name_list:
             assert name in self.nodes, f"Node({name}) not found"
             node_list.append(self.nodes.pop(name))
-        org_tags = []
         sample_node: NodeBase = node_list[0]
         for node in node_list:
-            org_tags.append(node.org_tags)
             if not sample_node.is_isomorphic_to(node):
                 raise ValueError(
                     f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
@@ -561,13 +601,7 @@ class ComputationGraph:
             name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
             length=sample_node.meta_data.length,
         )
-        bundled_node.init_for_bundle(sample_node, org_tags)
-        for node in node_list:
-            bundled_node.meta_data.df_kernels.update(node.meta_data.df_kernels)
-            bundled_node.buffered_stream.update(node.buffered_stream)
-            for key, value in node.global_interfaces.items():
-                assert key in bundled_node.global_interfaces
-                bundled_node.global_interfaces[key].extend(value)
+        bundled_node.init_for_bundle(node_list)
         # update stream
         for name, stream in self.edges.items():
             if stream.src in node_name_list:
@@ -607,23 +641,7 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
-        chained_node.org_tags.extend(node_a.org_tags)
-        chained_node.org_tags.extend(node_b.org_tags)
-        chained_node.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
-        chained_node.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
-        chained_node.meta_data.use_external_kernel = (
-            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
-        )
-        in_types_a: list = node_a.meta_data.in_types
-        arg_idx_offset = len(in_types_a)
-        in_types_b: list = node_b.meta_data.in_types
-        out_types_a = node_a.meta_data.out_types
-        out_types_b = node_b.meta_data.out_types
-        chained_node.buffered_stream.update(node_a.buffered_stream)
-        for stream_info in node_b.buffered_stream.values():
-            stream_info.arg_idx_a += arg_idx_offset
-            stream_info.arg_idx_b += arg_idx_offset
-        chained_node.buffered_stream.update(node_b.buffered_stream)
+        chained_node.init_for_chain(node_a, node_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         node_a.meta_data.output_streams = [
             stream
@@ -631,6 +649,7 @@ class ComputationGraph:
             if stream.dst != node_name_b
         ]
         kept_streams = []
+        arg_idx_offset = len(node_a.meta_data.in_types)
         for stream in node_b.meta_data.input_streams:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
@@ -656,20 +675,6 @@ class ComputationGraph:
         chained_node.meta_data.input_streams.extend(node_b.meta_data.input_streams)
         chained_node.meta_data.output_streams.extend(node_a.meta_data.output_streams)
         chained_node.meta_data.output_streams.extend(node_b.meta_data.output_streams)
-        chained_node.global_interfaces.update(node_a.global_interfaces)
-        chained_node.meta_data.in_types = in_types_a + in_types_b
-        chained_node.meta_data.out_types = out_types_a + out_types_b
-        for key, value in node_b.global_interfaces.items():
-            for live_tile in value:
-                live_tile.first_use += (
-                    Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
-                )
-                live_tile.last_use += Config.LOCAL_CODE_OFFSET * node_a.meta_data.length
-            chained_node.global_interfaces[arg_idx_offset + key] = value
-        new_token = node_a.meta_data.name + "-" + node_b.meta_data.name
-        for live_tile_list in chained_node.global_interfaces.values():
-            for live_tile in live_tile_list:
-                live_tile.token = new_token
         self.func_args.pop(node_name_a)
         self.func_args.pop(node_name_b)
         self.func_args[chained_node.meta_data.name] = param_a
@@ -771,7 +776,7 @@ class ComputationGraph:
                         for ele in node.org_tags:
                             construct(ele)
                     func_d.ReturnOp([])
-                    for stream, bufferized_stream_info in node.buffered_stream.items():
+                    for bufferized_stream_info in node.buffered_stream.values():
                         stream_puts = [
                             use.owner
                             for use in bufferized_stream_info.arg_a.uses
