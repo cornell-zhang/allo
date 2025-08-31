@@ -836,6 +836,7 @@ class ExpComputationGraph:
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         use_external_kernels: dict[str, bool],
     ):
+        self.allo_module = allo_module
         self.insert_point: InsertionPoint = None
         self.nodes: dict[str, NodeBase] = {}
         self.collocated_nodes: dict[str, CollocatedNode] = {}
@@ -858,7 +859,7 @@ class ExpComputationGraph:
             tag = func.attributes["tag"].value
             if tag not in self.tag_to_func:
                 self.tag_to_func[tag] = func
-            node = InitialNode(None, use_external_kernels[func_name], tag)
+            node = InitialNode(func, use_external_kernels[func_name], tag)
             _, indexes = parse_kernel_name(func_name)
             params = core_func_args[func_name]
             for idx, (argument, is_input) in params.items():
@@ -930,9 +931,7 @@ class ExpComputationGraph:
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
         for name in node_name_list:
-            removed = self.nodes.pop(name)
             if not name == bundled_node.meta_data.name:
-                removed.func.erase()
                 self.func_args.pop(name)
                 self.dependencies.pop(name)
         self.nodes[bundled_node.meta_data.name] = bundled_node
@@ -962,10 +961,15 @@ class ExpComputationGraph:
         chained_node.meta_data.use_external_kernel = (
             node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
         )
+        in_types_a: list = node_a.meta_data.in_types
+        arg_idx_offset = len(in_types_a)
+        in_types_b: list = node_b.meta_data.in_types
+        out_types_a = node_a.meta_data.out_types
+        out_types_b = node_b.meta_data.out_types
         chained_node.buffered_stream.update(node_a.buffered_stream)
         for stream_info in node_b.buffered_stream.values():
-            stream_info.arg_idx_a += len(node_a.meta_data.in_types)
-            stream_info.arg_idx_b += len(node_a.meta_data.in_types)
+            stream_info.arg_idx_a += arg_idx_offset
+            stream_info.arg_idx_b += arg_idx_offset
         chained_node.buffered_stream.update(node_b.buffered_stream)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         node_a.meta_data.output_streams = [
@@ -987,8 +991,10 @@ class ExpComputationGraph:
                         break
                 assert idx_a >= 0 and idx_b >= 0
                 chained_node.buffered_stream[stream] = BufferedStream(
-                    idx_a, idx_b, None, None
+                    idx_a, idx_b + arg_idx_offset, None, None
                 )
+                param_a.pop(idx_a)
+                param_b.pop(idx_b)
             else:
                 kept_streams.append(stream)
         node_b.meta_data.input_streams = kept_streams
@@ -996,11 +1002,6 @@ class ExpComputationGraph:
         chained_node.meta_data.input_streams.extend(node_b.meta_data.input_streams)
         chained_node.meta_data.output_streams.extend(node_a.meta_data.output_streams)
         chained_node.meta_data.output_streams.extend(node_b.meta_data.output_streams)
-        in_types_a: list = node_a.meta_data.in_types
-        arg_idx_offset = len(in_types_a)
-        in_types_b: list = node_b.meta_data.in_types
-        out_types_a = node_a.meta_data.out_types
-        out_types_b = node_b.meta_data.out_types
         chained_node.global_interfaces.update(node_a.global_interfaces)
         chained_node.meta_data.in_types = in_types_a + in_types_b
         chained_node.meta_data.out_types = out_types_a + out_types_b
@@ -1037,3 +1038,173 @@ class ExpComputationGraph:
                 stream.dst = chained_node.meta_data.name
         self.nodes[chained_node.meta_data.name] = chained_node
         return chained_node.meta_data.name
+
+    def refactor(self):
+        with self.allo_module.context, allo_ir.ir.Location.unknown():
+            for node in self.nodes.values():
+                func_type = FunctionType.get(
+                    node.meta_data.in_types, node.meta_data.out_types
+                )
+                new_function = func_d.FuncOp(
+                    node.meta_data.name,
+                    func_type,
+                    ip=self.insert_point,
+                )
+                new_function.attributes["df.kernel"] = UnitAttr.get()
+                entry_block = new_function.add_entry_block()
+                for bufferized_stream_info in node.buffered_stream.values():
+                    bufferized_stream_info.arg_a = new_function.arguments[
+                        bufferized_stream_info.arg_idx_a
+                    ]
+                    bufferized_stream_info.arg_b = new_function.arguments[
+                        bufferized_stream_info.arg_idx_b
+                    ]
+                arg_offset = 0
+                with InsertionPoint(entry_block):
+
+                    def construct(ele_tag):
+                        nonlocal arg_offset
+                        if isinstance(ele_tag, list):
+                            for ele in ele_tag:
+                                construct(ele)
+                        elif isinstance(ele_tag, tuple):
+                            if len(ele_tag) == 1:
+                                construct(ele_tag[0])
+                            else:
+                                # TODO
+                                pass
+                        elif isinstance(ele_tag, str):
+                            with self.insert_point:
+                                org_func = self.tag_to_func[ele_tag].clone()
+                            for old, new in zip(
+                                org_func.arguments,
+                                new_function.arguments[
+                                    arg_offset : arg_offset + len(org_func.arguments)
+                                ],
+                            ):
+                                old.replace_all_uses_with(new)
+                            for func_block in org_func.body:
+                                for op in func_block.operations:
+                                    if isinstance(op, func_d.ReturnOp):
+                                        assert len(op.operands_) == 0
+                                        continue
+                                    new_op = op.clone()
+                                    for old, new in zip(op.results, new_op.results):
+                                        old.replace_all_uses_with(new)
+                            arg_offset += len(org_func.arguments)
+                        else:
+                            raise ValueError("Unexpected nested structure")
+
+                    for ele in node.org_tags:
+                        construct(ele)
+                    func_d.ReturnOp([])
+                    for stream, bufferized_stream_info in node.buffered_stream.items():
+                        stream_puts = [
+                            use.owner
+                            for use in bufferized_stream_info.arg_a.uses
+                            if isinstance(use.owner, allo_d.StreamPutOp)
+                        ]
+                        stream_gets = [
+                            use.owner
+                            for use in bufferized_stream_info.arg_b.uses
+                            if isinstance(use.owner, allo_d.StreamGetOp)
+                        ]
+                        assert len(stream_puts) == len(stream_gets)
+                        for i in range(len(stream_puts)):
+                            stream_put: allo_d.StreamPutOp = stream_puts[i]
+                            stream_get: allo_d.StreamGetOp = stream_gets[i]
+                            # TODO: support bufferize stream in branches or even loops
+                            assert isinstance(
+                                stream_put.parent.opview, func_d.FuncOp
+                            ) and isinstance(
+                                stream_get.parent.opview, func_d.FuncOp
+                            ), "Only support bufferize stream in the main body"
+                            put_value = stream_put.operands[-1]
+                            get_result = stream_get.result
+                            get_result.replace_all_uses_with(put_value)
+                            stream_put.erase()
+                            stream_get.erase()
+                        self.edges.pop(stream.name)
+        for func in self.allo_module.body.operations:
+            if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
+                if func.attributes["sym_name"].value not in self.nodes:
+                    func.erase()
+
+    # ------------------------------------------------------------
+    # Graph Information
+    # ------------------------------------------------------------
+    def get_global_io(
+        self,
+    ) -> tuple[dict[str, dict[int, LiveDTensorTileGroup]], dict[str, dict[int, int]]]:
+        global_tile_io: dict[str, dict[int, LiveDTensorTileGroup]] = {}
+        arg_idx_to_interface: dict[str, dict[int, int]] = {}
+        for name, node in self.nodes.items():
+            input_interface, output_interface = 0, 0
+            dict_: dict[int, LiveDTensorTileGroup] = {}
+            idx_to_interface: dict[int, int] = {}
+            for idx, interfaces in node.global_interfaces.items():
+                layout = node.interface_layout.get(idx)
+                dict_[idx] = LiveDTensorTileGroup(interfaces, layout)
+                idx_to_interface[idx] = idx
+                if interfaces[0].is_input:
+                    input_interface += 1
+                else:
+                    output_interface += 1
+            # try to satisfy compute tile port resource constraint
+            while (
+                input_interface > Config.COMPUTE_MAX_RECV
+                or output_interface > Config.COMPUTE_MAX_SEND
+            ):
+                changed = False
+                keys = list(dict_.keys())
+                for i in range(len(keys)):
+                    for j in range(i + 1, len(keys)):
+                        key_1, key_2 = keys[i], keys[j]
+                        value_1, value_2 = dict_[key_1], dict_[key_2]
+                        if value_1.grouping(value_2):
+                            changed = True
+                            if value_1.is_input:
+                                input_interface -= 1
+                            else:
+                                output_interface -= 1
+                            del dict_[key_2]
+                            for idx in idx_to_interface.keys():
+                                if idx_to_interface[idx] == key_2:
+                                    idx_to_interface[idx] = key_1
+                            break
+                    if changed:
+                        break
+                if not changed:
+                    raise ValueError(
+                        f"Invalid compute kernel {name}, port number exceeded."
+                    )
+
+            global_tile_io[name] = dict_
+            arg_idx_to_interface[name] = idx_to_interface
+        return global_tile_io, arg_idx_to_interface
+
+    def get_node_dependencies(self) -> dict[str, set[str]]:
+        dependencies: dict[str, set[str]] = {key: set() for key in self.nodes.keys()}
+        for stream in self.edges.values():
+            dependencies[stream.dst].add(stream.src)
+        return dependencies
+
+    def get_connections(self) -> dict[tuple[str, str], int]:
+        connections: dict[tuple[str, str], int] = {}
+        for stream in self.edges.values():
+            id_1, id_2 = (
+                self.nodes[stream.src].meta_data.id,
+                self.nodes[stream.dst].meta_data.id,
+            )
+            if id_1 > id_2:
+                key = (stream.dst, stream.src)
+            else:
+                key = (stream.src, stream.dst)
+            if key in connections:
+                connections[key] += 1
+            else:
+                connections[key] = 1
+        connection_info: list[tuple[int, str, str]] = []
+        for (name_1, name_2), count in connections.items():
+            connection_info.append((count, name_1, name_2))
+        return connection_info

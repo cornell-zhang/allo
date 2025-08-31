@@ -14,7 +14,6 @@ try:
 except ImportError:
     pass
 
-from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
     allo as allo_d,
@@ -49,7 +48,7 @@ from .utils import (
     codegen_host,
     RuntimeArgs,
 )
-from .mapping import ComputationGraph
+from .mapping import ComputationGraph, ExpComputationGraph
 
 
 class AIE_MLIRModule:
@@ -169,6 +168,18 @@ class AIE_MLIRModule:
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
 
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
+            self.allo_module,
+            self.top_func_name,
+            self.streams,
+            self.core_func_args,
+            use_external_kernels,
+        )
+
+    def exp_init_virtual_graph(self, use_external_kernels: dict[str, bool]):
+        assert (
+            self.core_func_args is not None and self.global_tensors is not None
+        ), "Analysis of kernel parameters should be done before initializing virtual graph"
+        self.exp_virtual_computation_graph: ExpComputationGraph = ExpComputationGraph(
             self.allo_module,
             self.top_func_name,
             self.streams,
@@ -402,7 +413,7 @@ class AIE_MLIRModule:
                 - some can be 'push out of the function' and done at transfer time (e.g. with dma)
                 - some contiguous inverse transformation can be safely removed.
             """
-            node = self.virtual_computation_graph.nodes[
+            node = self.exp_virtual_computation_graph.nodes[
                 func.attributes["sym_name"].value
             ]
             dead_ops = []
@@ -555,22 +566,37 @@ class AIE_MLIRModule:
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        self._init_virtual_graph(use_external_kernels)
+        # self._init_virtual_graph(use_external_kernels)
+        # if mapping_primitives is not None:
+        #     for mapping in mapping_primitives:
+        #         primitive = mapping[0]
+        #         arg_list = mapping[1]
+        #         if primitive == "chain":
+        #             assert len(arg_list) == 2
+        #             self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+        #         if primitive == "bundle":
+        #             self.virtual_computation_graph.bundle(arg_list)
+
+        self.exp_init_virtual_graph(use_external_kernels)
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
                 arg_list = mapping[1]
                 if primitive == "chain":
                     assert len(arg_list) == 2
-                    self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
+                    self.exp_virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    self.exp_virtual_computation_graph.bundle(arg_list)
+            self.exp_virtual_computation_graph.refactor()
 
         # record original allo mlir
         with open(
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
+        import sys
+
+        # sys.exit(1)
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 
@@ -606,7 +632,7 @@ class AIE_MLIRModule:
             top_func,
             self.core_func_args,
             self.streams,
-            self.virtual_computation_graph,
+            self.exp_virtual_computation_graph,
         )
         (
             self.aie_module,
