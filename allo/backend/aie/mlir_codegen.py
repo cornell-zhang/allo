@@ -50,7 +50,7 @@ from .mapping import (
     PEInterface,
     LiveDTensorTileGroup,
     DTensorTileGroup,
-    ComputationGraph,
+    LegacyComputationGraph,
     FIFO,
     FIFOManager,
 )
@@ -82,7 +82,7 @@ class CodeGenerator:
         top_function: allo_func_d.FuncOp,
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         streams: dict[str, Stream],
-        virtual_computation_graph: ComputationGraph = None,
+        virtual_computation_graph: LegacyComputationGraph = None,
     ):
         self.device_type = device_type
         self.device_config = device_config_map[device_type]
@@ -94,7 +94,9 @@ class CodeGenerator:
         self.top_function = top_function
         self.core_func_args = core_func_args
         self.streams = streams
-        self.virtual_computation_graph: ComputationGraph = virtual_computation_graph
+        self.virtual_computation_graph: LegacyComputationGraph = (
+            virtual_computation_graph
+        )
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
         self.fifo_map: dict[str, aie_d.object_fifo] = {}

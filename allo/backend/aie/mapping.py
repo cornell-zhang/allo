@@ -5,7 +5,14 @@
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.ir import InsertionPoint, FunctionType, Value, UnitAttr, IndexType
+from allo._mlir.ir import (
+    InsertionPoint,
+    FunctionType,
+    Value,
+    UnitAttr,
+    IndexType,
+    StringAttr,
+)
 from allo._mlir.dialects import (
     func as func_d,
     allo as allo_d,
@@ -469,7 +476,7 @@ class CollocatedNode(NodeBase):
 
 
 # ------------------------------------------------------------
-class ComputationGraph:
+class LegacyComputationGraph:
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
@@ -832,7 +839,7 @@ class ComputationGraph:
         return connection_info
 
 
-class ExpComputationGraph:
+class ComputationGraph:
     def __init__(
         self,
         allo_module: allo_ir.ir.Module,
@@ -1005,6 +1012,7 @@ class ExpComputationGraph:
                 )
                 param_a.pop(idx_a)
                 param_b.pop(idx_b)
+                self.edges.pop(stream.name)
             else:
                 kept_streams.append(stream)
         node_b.meta_data.input_streams = kept_streams
@@ -1052,6 +1060,9 @@ class ExpComputationGraph:
     def refactor(self):
         with self.allo_module.context, allo_ir.ir.Location.unknown():
             for node in self.nodes.values():
+                # df function not changed
+                if len(node.org_tags) == 1 and isinstance(node.org_tags[0], str):
+                    continue
                 func_type = FunctionType.get(
                     node.meta_data.in_types, node.meta_data.out_types
                 )
@@ -1096,6 +1107,9 @@ class ExpComputationGraph:
                         elif isinstance(ele_tag, str):
                             with self.insert_point:
                                 org_func = self.tag_to_func[ele_tag].clone()
+                                org_func.attributes["sym_name"] = StringAttr.get(
+                                    f"{org_func.attributes["sym_name"].value}-"
+                                )
                             for old, new in zip(
                                 org_func.arguments,
                                 new_function.arguments[
@@ -1115,8 +1129,11 @@ class ExpComputationGraph:
                         else:
                             raise ValueError("Unexpected nested structure")
 
-                    for ele in node.org_tags:
-                        construct(ele)
+                    if len(node.org_tags) == 1 and isinstance(node.org_tags[0], tuple):
+                        construct(node.org_tags[0][0])
+                    else:
+                        for ele in node.org_tags:
+                            construct(ele)
                     func_d.ReturnOp([])
                     for stream, bufferized_stream_info in node.buffered_stream.items():
                         stream_puts = [
@@ -1144,7 +1161,6 @@ class ExpComputationGraph:
                             get_result.replace_all_uses_with(put_value)
                             stream_put.erase()
                             stream_get.erase()
-                        self.edges.pop(stream.name)
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
                 if func.attributes["sym_name"].value not in self.nodes:
