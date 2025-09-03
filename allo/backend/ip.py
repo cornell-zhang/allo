@@ -9,30 +9,6 @@ import subprocess
 import traceback
 import time
 
-# https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
-allo2c_type = {
-    "float32": "float",
-    "float64": "double",
-    "int1": "bool",
-    "int8": "int8_t",
-    "int16": "int16_t",
-    "int32": "int",
-    "int64": "int64_t",
-    "int128": "ap_int<128>",
-    # bitwidth larger than 64 is not supported by numpy+pybind11
-    "uint1": "bool",
-    "uint8": "uint8_t",
-    "uint16": "uint16_t",
-    "uint32": "unsigned int",
-    "uint64": "uint64_t",
-    "uint128": "ap_uint<128>",
-}
-
-c2allo_type = {v: k for k, v in allo2c_type.items()}
-c2allo_type["int32_t"] = "int32"
-c2allo_type["uint32_t"] = "uint32"
-
-
 def parse_cpp_function(code, target_function):
     """
     Parse a C++ file to find a specific function and extract its parameter types and shapes.

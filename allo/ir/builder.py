@@ -60,8 +60,8 @@ from .utils import (
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor
 from .symbol_resolver import ASTResolver
-from ..backend.ip import IPModule, c2allo_type
-from ..utils import get_mlir_dtype_from_str
+from ..backend.ip import IPModule
+from ..utils import get_mlir_dtype_from_str, c2allo_type
 from ..logging import print_error_message
 from ..backend.aie.external_kernel import ExternalModule
 
