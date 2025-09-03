@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from math import log2
 
 import allo
