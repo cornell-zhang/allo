@@ -14,7 +14,6 @@ try:
 except ImportError:
     pass
 
-from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
     allo as allo_d,
@@ -163,11 +162,10 @@ class AIE_MLIRModule:
     # ############################################################
     # Build
     # ############################################################
-    def _init_virtual_graph(self, use_external_kernels: dict[str, bool]):
+    def init_virtual_graph(self, use_external_kernels: dict[str, bool]):
         assert (
             self.core_func_args is not None and self.global_tensors is not None
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
-
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
             self.allo_module,
             self.top_func_name,
@@ -555,7 +553,7 @@ class AIE_MLIRModule:
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        self._init_virtual_graph(use_external_kernels)
+        self.init_virtual_graph(use_external_kernels)
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -565,6 +563,7 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
+            self.virtual_computation_graph.refactor()
 
         # record original allo mlir
         with open(
