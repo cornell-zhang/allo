@@ -553,17 +553,6 @@ class AIE_MLIRModule:
             self.assign_tag_to_kernel(), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        # self._init_virtual_graph(use_external_kernels)
-        # if mapping_primitives is not None:
-        #     for mapping in mapping_primitives:
-        #         primitive = mapping[0]
-        #         arg_list = mapping[1]
-        #         if primitive == "chain":
-        #             assert len(arg_list) == 2
-        #             self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
-        #         if primitive == "bundle":
-        #             self.virtual_computation_graph.bundle(arg_list)
-
         self.init_virtual_graph(use_external_kernels)
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
@@ -581,9 +570,6 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
-        import sys
-
-        # sys.exit(1)
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 

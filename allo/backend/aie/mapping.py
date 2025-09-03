@@ -729,15 +729,15 @@ class ComputationGraph:
                     ]
                 arg_offset = 0
                 with InsertionPoint(entry_block):
-
-                    def construct(ele_tag):
+                    # pylint: disable=cell-var-from-loop
+                    def construct_kernel(ele_tag):
                         nonlocal arg_offset
                         if isinstance(ele_tag, list):
                             for ele in ele_tag:
-                                construct(ele)
+                                construct_kernel(ele)
                         elif isinstance(ele_tag, tuple):
                             if len(ele_tag) == 1:
-                                construct(ele_tag[0])
+                                construct_kernel(ele_tag[0])
                             else:
                                 index_type = IndexType.get()
                                 c0 = arith_d.ConstantOp(value=0, result=index_type)
@@ -749,7 +749,7 @@ class ComputationGraph:
                                     lower_bound=c0, upper_bound=cmax, step=c1
                                 )
                                 with InsertionPoint(loop.body):
-                                    construct(ele_tag[0])
+                                    construct_kernel(ele_tag[0])
                                     scf_d.YieldOp([])
                         elif isinstance(ele_tag, str):
                             with self.insert_point:
@@ -777,10 +777,10 @@ class ComputationGraph:
                             raise ValueError("Unexpected nested structure")
 
                     if len(node.org_tags) == 1 and isinstance(node.org_tags[0], tuple):
-                        construct(node.org_tags[0][0])
+                        construct_kernel(node.org_tags[0][0])
                     else:
                         for ele in node.org_tags:
-                            construct(ele)
+                            construct_kernel(ele)
                     func_d.ReturnOp([])
                     for bufferized_stream_info in node.buffered_stream.values():
                         stream_puts = [
