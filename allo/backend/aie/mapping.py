@@ -729,7 +729,7 @@ class ComputationGraph:
                     ]
                 arg_offset = 0
                 with InsertionPoint(entry_block):
-                    # pylint: disable=cell-var-from-loop
+                    # pylint: disable=cell-var-from-loop, no-value-for-parameter,unexpected-keyword-arg
                     def construct_kernel(ele_tag):
                         nonlocal arg_offset
                         if isinstance(ele_tag, list):
