@@ -28,7 +28,7 @@ class ExternalModuleBase:
         self.output_idx = output_idx
         self.kernel_code = kernel_code
         self.kernel_header = kernel_header
-        # TODO: data layout at tranfer time?
+        # TODO: data layout at transfer time?
         self.arg_layout = arg_layout
 
 
