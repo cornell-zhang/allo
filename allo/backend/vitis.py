@@ -69,6 +69,7 @@ ctype_map = {
 }
 
 
+# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
@@ -114,7 +115,15 @@ def codegen_host(top, module):
         if len(in_shape) == 0:
             # scalar
             out_str += format_str(f"{in_dtype} source_in{i};")
-            out_str += format_str(f"ifile{i} >> source_in{i};")
+            # Handle 8-bit types by reading as int first and casting
+            if in_dtype in {"int8_t", "uint8_t"}:
+                out_str += format_str(f"int temp_in{i};")
+                out_str += format_str(f"ifile{i} >> temp_in{i};")
+                out_str += format_str(
+                    f"source_in{i} = static_cast<{in_dtype}>(temp_in{i});"
+                )
+            else:
+                out_str += format_str(f"ifile{i} >> source_in{i};")
         else:
             out_str += format_str(
                 f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
@@ -122,7 +131,15 @@ def codegen_host(top, module):
             out_str += format_str(
                 f"for (unsigned i = 0; i < {'*'.join(map(str, in_shape))}; i++) {{"
             )
-            out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
+            # Handle 8-bit types by reading as int first and casting
+            if in_dtype in {"int8_t", "uint8_t"}:
+                out_str += format_str("  int c;", strip=False)
+                out_str += format_str(f"  ifile{i} >> c;", strip=False)
+                out_str += format_str(
+                    f"  in_data_{i}[i] = static_cast<{in_dtype}>(c);", strip=False
+                )
+            else:
+                out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
             out_str += format_str("}")
             out_str += format_str(
                 f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};",
