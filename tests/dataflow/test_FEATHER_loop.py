@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from math import log2
+import argparse, sys
 
 import allo
 from allo.ir.types import float32, int8
@@ -9,11 +10,26 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
-AH = 16  # PE array height (NEST)
-AW = 16  # PE array width (NEST), must be a power of 2
+parser = argparse.ArgumentParser()
+help_AH = """
+PE array height of NEST. This also controls sizes of iActs and weight for simplicity. Default to 8.
+"""
+parser.add_argument("--AH", type=int, default=8, required=False, help=help_AH)
+help_AW = """PE array width of NEST. 
+This also determines size of BIRRD and must be power of 2. 
+Each value needs a corresponding size of BIRRD instruction array. 
+Choose within [4, 8, 16] (preset instruction provided). Default to 8."""
+parser.add_argument(
+    "--AW", type=int, default=8, choices=[4, 8, 16], required=False, help=help_AW
+)
+
+args = parser.parse_args()
+
+AH = args.AH
+AW = args.AW
+
 LOG2_AW = int(log2(AW))
-P0 = 2 * LOG2_AW  # Number of stages (AW > 4)
-# P0 = 2 * LOG2_AW - 1 # Number of stages (AW == 4)
+P0 = 2 * LOG2_AW if AW > 4 else 2 * LOG2_AW - 1  # Number of stages
 P1 = AW // 2  # Number of switches in a stage
 
 PS = 0  # Pass
@@ -171,36 +187,34 @@ def oAct_make_layout(oActs_raw: np.ndarray):
 
 
 def test_FEATHER_GEMM():
-    # AW == 16
-    inst_8x8 = np.array(
-        [
-            [PS, SW, PS, SW, PS, SW, PS, SW],
-            [PS, PS, SW, PS, PS, PS, SW, PS],
-            [PS, PS, PS, PS, PS, PS, PS, PS],
-            [AL, AL, AL, AL, AR, AR, AR, AR],
-            [SW, SW, SW, SW, SW, SW, SW, SW],
-            [PS, PS, PS, PS, PS, PS, PS, PS],
-            [PS, PS, PS, PS, PS, PS, PS, PS],
-            [PS, PS, PS, PS, PS, PS, PS, PS],
-        ],
-        dtype=np.int8,
-    )
-
-    # Uncomment this for AW == 8
-    # inst_6x4 = np.array(
-    #     [
-    #         [PS, PS, PS, PS],
-    #         [PS, PS, PS, PS],
-    #         [AR, AR, AL, AL],
-    #         [SW, SW, SW, SW],
-    #         [SW, PS, PS, SW],
-    #         [PS, PS, PS, PS],
-    #     ],
-    #     dtype=np.int8,
-    # )
-
-    # Uncomment this for AW == 4
-    # inst_3x2 = np.array([[PS, PS], [AR, AL], [SW, PS]], dtype=np.int8)
+    if AW == 16:
+        inst = np.array(
+            [
+                [PS, SW, PS, SW, PS, SW, PS, SW],
+                [PS, PS, SW, PS, PS, PS, SW, PS],
+                [PS, PS, PS, PS, PS, PS, PS, PS],
+                [AL, AL, AL, AL, AR, AR, AR, AR],
+                [SW, SW, SW, SW, SW, SW, SW, SW],
+                [PS, PS, PS, PS, PS, PS, PS, PS],
+                [PS, PS, PS, PS, PS, PS, PS, PS],
+                [PS, PS, PS, PS, PS, PS, PS, PS],
+            ],
+            dtype=np.int8,
+        )
+    elif AW == 8:
+        inst = np.array(
+            [
+                [PS, PS, PS, PS],
+                [PS, PS, PS, PS],
+                [AR, AR, AL, AL],
+                [SW, SW, SW, SW],
+                [SW, PS, PS, SW],
+                [PS, PS, PS, PS],
+            ],
+            dtype=np.int8,
+        )
+    elif AW == 4:
+        inst = np.array([[PS, PS], [AR, AL], [SW, PS]], dtype=np.int8)
 
     iActs_no_layout = np.random.rand(M, K).astype(np.float32)
     iActs = iAct_make_layout(iActs_no_layout)
@@ -208,41 +222,11 @@ def test_FEATHER_GEMM():
 
     sim_mod = df.build(top, target="simulator")
     oActs = np.zeros((AW, OD), dtype=np.float32)
-    sim_mod(iActs, weights, inst_8x8, oActs)
-    # sim_mod(iActs, weights, inst_6x4, oActs)
-    # sim_mod(iActs, weights, inst_3x2, oActs)
+    sim_mod(iActs, weights, inst, oActs)
     oActs_no_layout = np.dot(iActs_no_layout, weights)
     ref = oAct_make_layout(oActs_no_layout)
 
-    # AW == 16
-    np.testing.assert_allclose(ref[0], oActs[8], atol=1e-5)
-    np.testing.assert_allclose(ref[1], oActs[10], atol=1e-5)
-    np.testing.assert_allclose(ref[2], oActs[11], atol=1e-5)
-    np.testing.assert_allclose(ref[3], oActs[9], atol=1e-5)
-    np.testing.assert_allclose(ref[4], oActs[5], atol=1e-5)
-    np.testing.assert_allclose(ref[5], oActs[6], atol=1e-5)
-    np.testing.assert_allclose(ref[6], oActs[7], atol=1e-5)
-    np.testing.assert_allclose(ref[7], oActs[4], atol=1e-5)
-
-    # Uncomment for AW == 8
-    # np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
-    # np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
-    # np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
-    # np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
-
-    # Uncomment for AW == 4
-    # np.testing.assert_allclose(ref[0], oActs[2], atol=1e-5)
-    # np.testing.assert_allclose(ref[1], oActs[0], atol=1e-5)
-    print("Dataflow Simulator Passed!")
-
-    if hls.is_available("vitis_hls"):
-        mod_csim = df.build(top)
-        oActs = np.zeros((AW, OD), dtype=np.float32)
-        mod_csim(iActs, weights, inst_8x8, oActs)
-        # mod_csim(iActs, weights, inst_6x4, oActs)
-        # mod_csim(iActs, weights, inst_3x2, oActs)
-
-        # AW == 16
+    if AW == 16:
         np.testing.assert_allclose(ref[0], oActs[8], atol=1e-5)
         np.testing.assert_allclose(ref[1], oActs[10], atol=1e-5)
         np.testing.assert_allclose(ref[2], oActs[11], atol=1e-5)
@@ -251,16 +235,38 @@ def test_FEATHER_GEMM():
         np.testing.assert_allclose(ref[5], oActs[6], atol=1e-5)
         np.testing.assert_allclose(ref[6], oActs[7], atol=1e-5)
         np.testing.assert_allclose(ref[7], oActs[4], atol=1e-5)
+    elif AW == 8:
+        np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
+        np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
+        np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
+        np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
+    elif AW == 4:
+        np.testing.assert_allclose(ref[0], oActs[2], atol=1e-5)
+        np.testing.assert_allclose(ref[1], oActs[0], atol=1e-5)
+    print("Dataflow Simulator Passed!")
 
-        # Uncomment for AW == 8
-        # np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
-        # np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
-        # np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
-        # np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
+    if hls.is_available("vitis_hls"):
+        csim_mod = df.build(top)
+        oActs = np.zeros((AW, OD), dtype=np.float32)
+        csim_mod(iActs, weights, inst, oActs)
 
-        # Uncomment for AW == 4
-        # np.testing.assert_allclose(ref[0], oActs[2], atol=1e-5)
-        # np.testing.assert_allclose(ref[1], oActs[0], atol=1e-5)
+        if AW == 16:
+            np.testing.assert_allclose(ref[0], oActs[8], atol=1e-5)
+            np.testing.assert_allclose(ref[1], oActs[10], atol=1e-5)
+            np.testing.assert_allclose(ref[2], oActs[11], atol=1e-5)
+            np.testing.assert_allclose(ref[3], oActs[9], atol=1e-5)
+            np.testing.assert_allclose(ref[4], oActs[5], atol=1e-5)
+            np.testing.assert_allclose(ref[5], oActs[6], atol=1e-5)
+            np.testing.assert_allclose(ref[6], oActs[7], atol=1e-5)
+            np.testing.assert_allclose(ref[7], oActs[4], atol=1e-5)
+        elif AW == 8:
+            np.testing.assert_allclose(ref[0], oActs[6], atol=1e-5)
+            np.testing.assert_allclose(ref[1], oActs[5], atol=1e-5)
+            np.testing.assert_allclose(ref[2], oActs[2], atol=1e-5)
+            np.testing.assert_allclose(ref[3], oActs[1], atol=1e-5)
+        elif AW == 4:
+            np.testing.assert_allclose(ref[0], oActs[2], atol=1e-5)
+            np.testing.assert_allclose(ref[1], oActs[0], atol=1e-5)
 
 
 if __name__ == "__main__":
