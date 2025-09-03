@@ -8,7 +8,6 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.ir import (
     InsertionPoint,
     FunctionType,
-    Value,
     UnitAttr,
     IndexType,
     StringAttr,
@@ -333,10 +332,16 @@ class LiveDTensorTileGroup:
 # ------------------------------------------------------------
 @dataclass
 class BufferedStream:
-    arg_idx_a: int
-    arg_idx_b: int
-    arg_a: Value
-    arg_b: Value
+    """
+    record information of stream that needs to be converted into
+    a local buffer after applying the virtual mapping primitive.
+
+        - src_arg_idx: Index of the source value in the function's argument list.
+        - dst_arg_idx: Index of the destination value in the function's argument list.
+    """
+
+    src_arg_idx: int
+    dst_arg_idx: int
 
 
 class NodeMetaData:
@@ -495,8 +500,8 @@ class CollocatedNode(NodeBase):
         self.meta_data.out_types = out_types_a + out_types_b
         self.buffered_stream.update(node_a.buffered_stream)
         for stream_info in node_b.buffered_stream.values():
-            stream_info.arg_idx_a += arg_idx_offset
-            stream_info.arg_idx_b += arg_idx_offset
+            stream_info.src_arg_idx += arg_idx_offset
+            stream_info.dst_arg_idx += arg_idx_offset
         self.buffered_stream.update(node_b.buffered_stream)
         self.meta_data.df_kernels.update(node_a.meta_data.df_kernels)
         self.meta_data.df_kernels.update(node_b.meta_data.df_kernels)
@@ -669,7 +674,7 @@ class ComputationGraph:
                         break
                 assert idx_a >= 0 and idx_b >= 0
                 chained_node.buffered_stream[stream] = BufferedStream(
-                    idx_a, idx_b + arg_idx_offset, None, None
+                    idx_a, idx_b + arg_idx_offset
                 )
                 param_a.pop(idx_a)
                 param_b.pop(idx_b)
@@ -705,11 +710,19 @@ class ComputationGraph:
         return chained_node.meta_data.name
 
     def refactor(self):
+        """
+        After applying all the primitives, walk through all the nodes in the virtual graph,
+        and reconstructs a new FuncOp for each node.
+        When doing the reconstruction, it resolve the streams that are converted into local buffers
+        and clean up unused FuncOps.
+        """
         with self.allo_module.context, allo_ir.ir.Location.unknown():
+            # reconstruct for each node
             for node in self.nodes.values():
-                # df function not changed
+                # df function not changed -> skip
                 if len(node.org_tags) == 1 and isinstance(node.org_tags[0], str):
                     continue
+                # Step1: Create new function with proper input/output types
                 func_type = FunctionType.get(
                     node.meta_data.in_types, node.meta_data.out_types
                 )
@@ -720,17 +733,25 @@ class ComputationGraph:
                 )
                 new_function.attributes["df.kernel"] = UnitAttr.get()
                 entry_block = new_function.add_entry_block()
-                for bufferized_stream_info in node.buffered_stream.values():
-                    bufferized_stream_info.arg_a = new_function.arguments[
-                        bufferized_stream_info.arg_idx_a
-                    ]
-                    bufferized_stream_info.arg_b = new_function.arguments[
-                        bufferized_stream_info.arg_idx_b
-                    ]
                 arg_offset = 0
                 with InsertionPoint(entry_block):
                     # pylint: disable=cell-var-from-loop, no-value-for-parameter,unexpected-keyword-arg
                     def construct_kernel(ele_tag):
+                        """
+                        Recursively construct the function body.
+
+                        Each node corresponds to a function encoded in a nested structure of 'tags'.
+                        By recursively traversing this nested structure, the function body is reconstructed by
+                        cloning the code segments associated with each tag into the new function.
+
+                        Supported structures:
+                        - list: inline each element in order
+                        - tuple:
+                            * (x,) → unwrap and construct x
+                            * (x1, x2, ...) → build a loop that repeats the first element
+                        - str: clone the code segment corresponding to this tag
+                        - others: raise error (unsupported)
+                        """
                         nonlocal arg_offset
                         if isinstance(ele_tag, list):
                             for ele in ele_tag:
@@ -776,21 +797,27 @@ class ComputationGraph:
                         else:
                             raise ValueError("Unexpected nested structure")
 
+                    # Step2: Recursive construction
                     if len(node.org_tags) == 1 and isinstance(node.org_tags[0], tuple):
                         construct_kernel(node.org_tags[0][0])
                     else:
                         for ele in node.org_tags:
                             construct_kernel(ele)
                     func_d.ReturnOp([])
+                    # Step3: Convert some streams to local buffers
                     for bufferized_stream_info in node.buffered_stream.values():
                         stream_puts = [
                             use.owner
-                            for use in bufferized_stream_info.arg_a.uses
+                            for use in new_function.arguments[
+                                bufferized_stream_info.src_arg_idx
+                            ].uses
                             if isinstance(use.owner, allo_d.StreamPutOp)
                         ]
                         stream_gets = [
                             use.owner
-                            for use in bufferized_stream_info.arg_b.uses
+                            for use in new_function.arguments[
+                                bufferized_stream_info.dst_arg_idx
+                            ].uses
                             if isinstance(use.owner, allo_d.StreamGetOp)
                         ]
                         assert len(stream_puts) == len(stream_gets)
@@ -804,6 +831,7 @@ class ComputationGraph:
                                 get_result.replace_all_uses_with(put_value)
                                 stream_put.erase()
                                 stream_get.erase()
+        # Step4: Clean up unused functions
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
                 if func.attributes["sym_name"].value not in self.nodes:
