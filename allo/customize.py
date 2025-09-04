@@ -62,6 +62,7 @@ from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
     analyze_use_def,
+    unroll_df_kernel_instances
 )
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
@@ -1237,6 +1238,7 @@ def customize(
     global_vars: dict = None,
     instantiate: list = None,
     context: Context = None,
+    unroll: bool = True
 ):
     # Get Python AST
     if isinstance(fn, str):
@@ -1262,20 +1264,25 @@ def customize(
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
-    ctx_type_inf = None
+    # ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
         tree=tree,
         global_vars=global_vars,
         mlir_ctx=Context() if context is None else context,
         inst=instantiate,
+        func_predicate_tags=ctx_type_inf.func_predicate_tags,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
+    print(ctx.func_predicate_tags)
     module = ASTTransformer()(ctx, tree, file_name)
+    if unroll:
+        unroll_df_kernel_instances(module, ctx)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
         ctx.top_func = find_func_in_module(module, fn.__name__)
+    print(ctx.func_args)
     sch = Schedule(
         module,
         ctx.top_func,

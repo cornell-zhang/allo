@@ -39,6 +39,7 @@ class ASTContext:
         mlir_ctx,
         inst=None,
         func_args=None,
+        func_predicate_tags=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -75,6 +76,16 @@ class ASTContext:
         # metaprogramming
         self.with_scope_level = 0
         self.meta_if_stack = []
+        # df.kernel name -> {dim ids -> predicate tag},
+        #   predicate tag indicates the control flow in the kernel instance
+        self.func_predicate_tags = (
+            {} if func_predicate_tags is None else func_predicate_tags
+        )
+        # df.kernel name -> {predicate tag -> kernel instance},
+        self.func_tag2instance = None
+        # a nested list of (list for True | None for False)
+        self.predicate_list = []  # at least the function body will be executed (True)
+        self.predicate_stack = [self.predicate_list]
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
@@ -87,11 +98,13 @@ class ASTContext:
             self.mlir_ctx,
             self.inst,
             self.func_args,
-            self.enable_tensor,
-            self.verbose,
+            self.func_predicate_tags,
+            enable_tensor=self.enable_tensor,
+            verbose=self.verbose,
         )
         ctx.func_id = self.func_id
         ctx.func_name2id = self.func_name2id
+        ctx.func_tag2instance = self.func_tag2instance
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose
         ctx.ext_libs = self.ext_libs

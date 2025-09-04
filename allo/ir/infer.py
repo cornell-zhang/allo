@@ -593,6 +593,7 @@ class TypeInferer(ASTVisitor):
                             )
                             old_ctx.mapping = mapping
                             orig_name = node.name
+                            old_ctx.func_predicate_tags[orig_name] = {} 
                             for dim in np.ndindex(*mapping):
                                 new_ctx = old_ctx.copy()
                                 new_ctx.rank = dim
@@ -604,7 +605,9 @@ class TypeInferer(ASTVisitor):
                                     )
                                 concated_name = "_".join(map(str, dim))
                                 node.name = orig_name + f"_{concated_name}"
+                                # check on a specific df.kernel instance
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
+                                old_ctx.func_predicate_tags[orig_name][dim] = new_ctx.predicate_list
                                 node.name = orig_name
                             return node
         else:
@@ -1069,6 +1072,9 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_With(ctx: ASTContext, node):
+        """
+        Generate 'predicate tag' here to classigfy kernel instances with different control flow
+        """
         assert len(node.items) == 1, "Only support one context manager"
         assert isinstance(
             node.items[0].context_expr, ast.Call
@@ -1084,6 +1090,7 @@ class TypeInferer(ASTVisitor):
                 if len(ctx.meta_if_stack) > ctx.with_scope_level:
                     ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
                 else:
+                    # create a new nested list
                     ctx.meta_if_stack.append([final_cond])
             else:  # meta_elif
                 assert (
@@ -1119,9 +1126,13 @@ class TypeInferer(ASTVisitor):
             return node
         else:
             raise RuntimeError("Unsupported meta function")
+        assert ctx.predicate_stack[-1] is not None
+        ctx.predicate_stack[-1].append([] if final_cond else None)
         if final_cond:
             ctx.with_scope_level += 1
+            ctx.predicate_stack.append(ctx.predicate_stack[-1][-1])
             visit_stmts(ctx, node.body)
+            ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
             # clear inner context
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1

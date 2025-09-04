@@ -35,10 +35,11 @@ from ._mlir.dialects import (
 )
 from ._mlir.ir import StringAttr
 from ._mlir.passmanager import PassManager as mlir_pass_manager
+from .ir.visitor import ASTContext
 from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
-from .utils import get_mlir_dtype_from_str
+from .utils import get_mlir_dtype_from_str, freeze_list
 from .backend.ip import c2allo_type
 
 
@@ -916,3 +917,21 @@ def df_pipeline(module, initiation_interval=1, rewind=False):
                 for op_ in func.entry_block.operations:
                     if isinstance(op_, (scf_d.ForOp, affine_d.AffineForOp)):
                         pipe_loop_innermost(op_, ii, rewind)
+
+
+def unroll_df_kernel_instances(module, ctx: ASTContext):
+    with module.context, Location.unknown():
+        for orig_name, kernel_instance_info in ctx.func_predicate_tags.items():
+            for dim, predicate_tag in kernel_instance_info.items():
+                func_name = f"{orig_name}_{"_".join(map(str, dim))}"
+                if func_name in ctx.func_args:
+                    continue
+                frozen_tag = freeze_list(predicate_tag)
+                func_op = ctx.func_tag2instance[orig_name][frozen_tag]
+                ctx.func_args[func_name] = ctx.func_args[
+                    func_op.attributes["sym_name"].value
+                ]
+                # copy the func_op to create a new instance
+                with InsertionPoint(module.body):
+                    new_func_op = func_op.clone()
+                new_func_op.attributes["sym_name"] = StringAttr.get(func_name)

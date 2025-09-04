@@ -455,3 +455,8 @@ def get_element_type_from_str(element_type_str, context):
         bits = int(element_type_str[1:])
         return IntegerType.get_signless(bits, context)
     raise ValueError(f"unknown element_type_str: {element_type_str}")
+
+def freeze_list(x):
+    if isinstance(x, list):
+        return tuple(freeze_list(i) for i in x)
+    return x

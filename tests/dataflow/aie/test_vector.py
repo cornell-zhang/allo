@@ -37,6 +37,33 @@ def _test_vector_scalar_add():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
+def _test_vector_scalar_conditional_add():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
+    Ty = int32
+    M = 1024
+    P = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            pi = df.get_pid()
+            with allo.meta_if(pi < P//2):
+                B[:] = allo.add(A, 1)
+            with allo.meta_else():
+                B[:] = allo.add(A, -1)
+
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        B = np.zeros(M).astype(np.int32)
+        mod(A, B)
+        A[:M//2] += 1
+        A[M//2:] -= 1
+        np.testing.assert_allclose(B, A)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 def _test_vector_scalar_mul():
     # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_mul
@@ -204,10 +231,11 @@ def _test_vector_vector_add_p0():
 
 
 if __name__ == "__main__":
-    _test_vector_scalar_add()
-    _test_vector_scalar_mul()
-    _test_vector_vector_add()
-    _test_vector_vector_bf16_add()
-    _test_vector_vector_mul()
-    _test_vector_scalar_add_p0()
-    _test_vector_vector_add_p0()
+    _test_vector_scalar_conditional_add()
+    # _test_vector_scalar_add()
+    # _test_vector_scalar_mul()
+    # _test_vector_vector_add()
+    # _test_vector_vector_bf16_add()
+    # _test_vector_vector_mul()
+    # _test_vector_scalar_add_p0()
+    # _test_vector_vector_add_p0()
