@@ -45,16 +45,16 @@ ATTN_SCORE_LyB = Layout("S1R")
 ATTN_SCORE_LyC = Layout("S0S1")
 
 
-
 Mt, Nt = 64, 64
 Pk, Pm, Pn = D // 64, N // 64, N // 64
 LyA = Layout("S1S2")
 LyB = Layout("S2S0")
 LyC = Layout("S1S0")
 
+
 def gen_attn_score_primitives():
-    col_num=4
-    row_num=4
+    col_num = 4
+    row_num = 4
     # chain on k dimension
     mapping_primitives = []
     bases: list[list[str]] = []
@@ -81,6 +81,7 @@ def gen_attn_score_primitives():
 
     return mapping_primitives
 
+
 @df.region()
 def attn_score_kernel():
     pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
@@ -97,6 +98,7 @@ def attn_score_kernel():
             pipe[pk, pm, pn].put(C_out)
         with allo.meta_elif(pk == Pk - 1):
             C[:, :] = C_out
+
 
 attn_score_mod = df.build(
     attn_score_kernel,

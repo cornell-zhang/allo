@@ -31,7 +31,7 @@ from .ir.types import (
 )
 
 np_supported_types = {
-    "bf16": ml_dtypes.bfloat16,
+    "bf16": np.uint16,
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -193,8 +193,8 @@ def get_mlir_dtype_from_str(dtype):
         bitwidth = get_bitwidth_from_type("i" + dtype[3:])
         return IntegerType.get_signless(bitwidth)
     if dtype.startswith("ui"):
-        bitwidth = get_bitwidth_from_type("ui" + dtype[3:])
-        return IntegerType.get_unsigned(bitwidth)
+        bitwidth = get_bitwidth_from_type("ui" + dtype[4:])
+        return IntegerType.get_signless(bitwidth)
     if dtype.startswith("fixed"):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
         return allo_d.FixedType.get(bitwidth, frac)

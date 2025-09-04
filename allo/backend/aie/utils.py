@@ -10,6 +10,7 @@ import numpy as np
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..utils import format_str, format_code
+from ...utils import np_supported_types
 from ...memory import DTensor
 from .external_kernel import ExternalModule, ExternalModuleBase
 from ..._mlir.dialects import (
@@ -191,7 +192,7 @@ class Argument:
     stream: Stream
 
 
-aie_ctype_map = {
+host_aie2c_type = {
     "bf16": "std::bfloat16_t",
     "f32": "float",
     "f64": "double",
@@ -207,7 +208,7 @@ aie_ctype_map = {
     "ui64": "unsigned long",
 }
 
-aie_external_kernel_ctype_map = {
+external_kernel_aie2c_type = {
     "bf16": "bfloat16",
     "f32": "float",
     "f64": "double",
@@ -312,7 +313,7 @@ def inject_external_kernels(
                     )
                     N = op.outputs[0].type.shape[-1]
                     dtype = str(op.outputs[0].type.element_type)
-                    ctype = aie_external_kernel_ctype_map[dtype]
+                    ctype = external_kernel_aie2c_type[dtype]
                     include_src.add(f'#include "{lib_dir}/zero.cc"\n')
                     use_external_kernels[df_function_name] = True
                     kernel_name = f"fill_zeros_{dtype}_{M}_{N}_vector"
@@ -328,8 +329,8 @@ def inject_external_kernels(
                 op_name = op.operation.name.split(".")[1]
                 include_src.add(f'#include "aie2/{op_name}.cc"\n')
                 dtype = str(op.inputs[0].type.element_type)
-                if dtype in aie_external_kernel_ctype_map:
-                    ctype = aie_external_kernel_ctype_map[dtype]
+                if dtype in external_kernel_aie2c_type:
+                    ctype = external_kernel_aie2c_type[dtype]
                     kernel_name = f"{op_name}_{dtype}_vector"
                     use_external_kernels[df_function_name] = True
                     kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
@@ -396,7 +397,7 @@ def inject_external_kernels(
                             ]
                             parts = init_op.attributes["lib"].value.split("_")
                             init_M, init_N = parts[3], parts[4]
-                            ctype = aie_external_kernel_ctype_map[out_dtype]
+                            ctype = external_kernel_aie2c_type[out_dtype]
                             include_src.add(f'#include "{lib_dir}/zero.cc"\n')
                             init_kernel_name = (
                                 f"fill_zeros_{out_dtype}_{init_M}_{init_N}_vector"
@@ -559,15 +560,15 @@ def classify_aie_functions(
     return top_func, core_funcs, external_funcs
 
 
-def get_element_type(dtype_str: str) -> aie_ir.Type:
+def get_aie_mlir_dtype_from_str(dtype_str: str) -> aie_ir.Type:
     """
     Convert a string representing a data type into the corresponding AIE IR type.
     """
-    if dtype_str == "i32":
+    if dtype_str == "i32" or dtype_str == "ui32":
         return aie_ir.IntegerType.get_signless(32)
-    if dtype_str == "i16":
+    if dtype_str == "i16" or dtype_str == "ui16":
         return aie_ir.IntegerType.get_signless(16)
-    if dtype_str == "i8":
+    if dtype_str == "i8" or dtype_str == "ui8":
         return aie_ir.IntegerType.get_signless(8)
     if dtype_str == "f32":
         return aie_ir.F32Type.get()
@@ -706,21 +707,21 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
 # ############################################################
 # Run-time Utils
 # ############################################################
-np_supported_types = {
-    "bf16": np.uint16,  # numpy does not support bf16
-    "f16": np.float16,
-    "f32": np.float32,
-    "f64": np.float64,
-    "i8": np.int8,
-    "i16": np.int16,
-    "i32": np.int32,
-    "i64": np.int64,
-    "ui1": np.bool_,
-    "ui8": np.uint8,
-    "ui16": np.uint16,
-    "ui32": np.uint32,
-    "ui64": np.uint64,
-}
+# np_supported_types = {
+#     "bf16": np.uint16,  # numpy does not support bf16
+#     "f16": np.float16,
+#     "f32": np.float32,
+#     "f64": np.float64,
+#     "i8": np.int8,
+#     "i16": np.int16,
+#     "i32": np.int32,
+#     "i64": np.int64,
+#     "ui1": np.bool_,
+#     "ui8": np.uint8,
+#     "ui16": np.uint16,
+#     "ui32": np.uint32,
+#     "ui64": np.uint64,
+# }
 
 
 class RuntimeArgs:
@@ -888,7 +889,7 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
             if len(arg.global_tensors) == 0:
                 continue
             if arg.is_input:
-                dtype = aie_ctype_map[str(arg.dtype)]
+                dtype = host_aie2c_type[str(arg.dtype)]
                 code += format_str(
                     f"auto bo_in{idx} = xrt::bo(device, {arg.current_size} * sizeof({dtype}),"
                 )
@@ -930,7 +931,7 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 )
             else:
                 code += format_str(
-                    f"\nauto bo_out{idx} = xrt::bo(device, {arg.current_size} * sizeof({aie_ctype_map[str(arg.dtype)]}),",
+                    f"\nauto bo_out{idx} = xrt::bo(device, {arg.current_size} * sizeof({host_aie2c_type[str(arg.dtype)]}),",
                     strip=False,
                 )
                 buffer_list.append(f"bo_out{idx}")
@@ -1046,7 +1047,7 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                 for dtensor_idx in arg.global_tensors:
                     code += format_str(f"ifile{dtensor_idx}.close();")
             else:
-                dtype = aie_ctype_map[str(arg.dtype)]
+                dtype = host_aie2c_type[str(arg.dtype)]
 
                 code += format_str(
                     f"\nbo_out{idx}.sync(XCL_BO_SYNC_BO_FROM_DEVICE);", strip=False
