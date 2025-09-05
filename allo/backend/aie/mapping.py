@@ -550,19 +550,21 @@ class ComputationGraph:
         self.tag_to_func: dict[str, func_d.FuncOp] = {}
 
         df_kernels = []
+        self.samples = set()
         for func in allo_module.body.operations:
             if func.attributes["sym_name"].value == top_func_name:
                 self.insert_point = InsertionPoint(func)
             elif isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
                 df_kernels.append(func)
+                self.samples.add(func.attributes["sym_name"].value)
 
-        # construct nodes
+        # record df_kernel sample copies
         for func in df_kernels:
-            func_name = func.attributes["sym_name"].value
             tag = func.attributes["tag"].value
             if tag not in self.tag_to_func:
                 self.tag_to_func[tag] = func
 
+        # construct nodes
         for orig_name, kernel_instance_info in func_instances.items():
             for dim, predicate_tag in kernel_instance_info.items():
                 func_name = construct_kernel_name(orig_name, dim)
@@ -609,7 +611,6 @@ class ComputationGraph:
 
         TODO: bundled nodes can be safely reordered
         """
-        print(node_name_list)
         assert len(node_name_list) >= 2, "bundle at least two nodes"
         node_list: list[NodeBase] = []
         for name in node_name_list:
@@ -739,8 +740,8 @@ class ComputationGraph:
         with self.allo_module.context, allo_ir.ir.Location.unknown():
             # reconstruct for each node
             for node in self.nodes.values():
-                # df function not changed -> skip
-                if len(node.org_tags) == 1 and isinstance(node.org_tags[0], str):
+                # df function already exist -> skip
+                if node.meta_data.name in self.samples:
                     continue
                 # Step1: Create new function with proper input/output types
                 func_type = FunctionType.get(

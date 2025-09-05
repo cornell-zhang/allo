@@ -31,6 +31,7 @@ from allo._mlir.ir import (
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
+from ...utils import construct_kernel_name
 from .external_kernel import ExternalModule, ExternalModuleBase
 from .mlir_codegen import CodeGenerator
 from .utils import (
@@ -194,48 +195,56 @@ class AIE_MLIRModule:
         self.core_func_args = {}
         self.global_tensors = {}
         # analyze
-        for kernel in df_kernels:
-            kernel_name = kernel.attributes["sym_name"].value
-            self.core_func_args[kernel_name] = {}
-            tag = kernel.attributes["tag"].value
-            if tag in tag_to_read_write_pattern:
-                in_idx_list, out_idx_list = tag_to_read_write_pattern[tag]
-            else:
-                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+        tag_to_func: dict[str, allo_func_d.FuncOp] = {}
+        for func in df_kernels:
+            tag = func.attributes["tag"].value
+            if tag not in tag_to_func:
+                tag_to_func[tag] = func
                 in_idx_list, out_idx_list = analyze_read_write_patterns(
-                    kernel, injected_external_kernels
+                    func, injected_external_kernels
                 )
                 tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
-            for io_idx_list, io_type in (
-                (in_idx_list, "in"),
-                (out_idx_list, "out"),
-            ):
-                for io_idx in io_idx_list:
-                    argument: Argument = self.func_args[kernel_name][io_idx]
-                    self.core_func_args[kernel_name][io_idx] = (
-                        argument,
-                        io_type == "in",
-                    )
-                    if not argument.dtensor is None:
-                        argument.dtensor.set_access_pattern()
-                        argument.dtensor.type_as_param = kernel.arguments[
-                            io_idx
-                        ].type.shape
-                        global_idx = self.func_args[self.top_func_name].index(argument)
-                        argument.dtensor.set_global_info(global_idx, io_type == "in")
-                        self.global_tensors[global_idx] = argument.dtensor
-            # streams
-            for i, _ in enumerate(kernel.arguments):
-                func_arg = self.func_args[kernel_name][i]
-                if (
-                    i in self.core_func_args[kernel_name]
-                    or func_arg.stream is None  # unused
+
+        for orig_name, kernel_instance_info in self.func_instances.items():
+            for dim, predicate_tag in kernel_instance_info.items():
+                kernel_name = construct_kernel_name(orig_name, dim)
+                kernel = tag_to_func[predicate_tag]
+                self.core_func_args[kernel_name] = {}
+                in_idx_list, out_idx_list = tag_to_read_write_pattern[predicate_tag]
+                for io_idx_list, io_type in (
+                    (in_idx_list, "in"),
+                    (out_idx_list, "out"),
                 ):
-                    continue
-                self.core_func_args[kernel_name][i] = (
-                    func_arg,
-                    self.stream_info[kernel_name][func_arg.stream.name],
-                )
+                    for io_idx in io_idx_list:
+                        argument: Argument = self.func_args[kernel_name][io_idx]
+                        self.core_func_args[kernel_name][io_idx] = (
+                            argument,
+                            io_type == "in",
+                        )
+                        if not argument.dtensor is None:
+                            argument.dtensor.set_access_pattern()
+                            argument.dtensor.type_as_param = kernel.arguments[
+                                io_idx
+                            ].type.shape
+                            global_idx = self.func_args[self.top_func_name].index(
+                                argument
+                            )
+                            argument.dtensor.set_global_info(
+                                global_idx, io_type == "in"
+                            )
+                            self.global_tensors[global_idx] = argument.dtensor
+                # streams
+                for i, _ in enumerate(kernel.arguments):
+                    func_arg = self.func_args[kernel_name][i]
+                    if (
+                        i in self.core_func_args[kernel_name]
+                        or func_arg.stream is None  # unused
+                    ):
+                        continue
+                    self.core_func_args[kernel_name][i] = (
+                        func_arg,
+                        self.stream_info[kernel_name][func_arg.stream.name],
+                    )
 
     def allo_opt(self):
         """

@@ -65,9 +65,13 @@ def move_stream_to_interface(
         if not unrolled:
             assert s.func_instances is not None and prefix in s.func_instances
             assert ids in s.func_instances[prefix].keys()
-            for ids_ in s.func_instances[prefix].keys():
-                func_name_ = construct_kernel_name(prefix, ids)
-                if func_name != func_name:
+            for ids_, predicate_tag in s.func_instances[prefix].items():
+                func_name_ = construct_kernel_name(prefix, ids_)
+                if (
+                    func_name_ != func_name
+                    and predicate_tag == s.func_instances[prefix][ids]
+                ):
+                    stream_info[func_name_] = []
                     new_func_args[func_name_] = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
@@ -91,9 +95,9 @@ def move_stream_to_interface(
                 if not unrolled and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
                     for ids_, predicate_tag in s.func_instances[prefix].items():
-                        func_name_ = construct_kernel_name(prefix, ids)
+                        func_name_ = construct_kernel_name(prefix, ids_)
                         if (
-                            func_name != func_name
+                            func_name_ != func_name
                             and predicate_tag == s.func_instances[prefix][ids]
                         ):
                             pid_map = {
@@ -155,7 +159,6 @@ def move_stream_to_interface(
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
     s.func_args = new_func_args
-    print(stream_info)
     if with_stream_type:
         return stream_info, stream_types_dict
     return stream_info
@@ -359,11 +362,13 @@ def build(
 
     if target == "aie":
         global_vars = get_global_vars(func)
+        # [NOTE]: please set UNROLL = False to improve compilation efficiency
+        UNROLL = True
         s: Schedule = _customize(
-            func, global_vars=global_vars, enable_tensor=False, unroll=True
+            func, global_vars=global_vars, enable_tensor=False, unroll=UNROLL
         )
         stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True, unrolled=True
+            s, with_stream_type=True, unrolled=UNROLL
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
