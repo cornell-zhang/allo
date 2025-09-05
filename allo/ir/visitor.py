@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, too-many-instance-attributes
+# pylint: disable=no-name-in-module, too-many-instance-attributes, too-many-arguments
 
 import ast
 from .._mlir import InsertionPoint

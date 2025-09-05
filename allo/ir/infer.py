@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin, cell-var-from-loop
 
 import ast
 import copy
