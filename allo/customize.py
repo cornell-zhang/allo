@@ -62,7 +62,6 @@ from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
     analyze_use_def,
-    unroll_df_kernel_instances,
 )
 from .utils import freeze_list
 from .backend.llvm import LLVMModule
@@ -1280,8 +1279,6 @@ def customize(
         verbose=verbose,
     )
     module = ASTTransformer()(ctx, tree, file_name)
-    if unroll:
-        unroll_df_kernel_instances(module, ctx)
     func_instances = {
         orig_name: {
             dim: f"{orig_name}_{str(freeze_list(predicate_tag))}"
