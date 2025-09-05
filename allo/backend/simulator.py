@@ -488,8 +488,6 @@ class LLVMOMPModule(LLVMModule):
             # Get input/output types
             self.in_types, self.out_types = get_func_inputs_outputs(func)
             self.module = decompose_library_function(self.module)
-            print(self.module)
-
             build_dataflow_simulator(self.module, self.top_func_name)
             # Attach necessary attributes
             func = find_func_in_module(self.module, top_func_name)

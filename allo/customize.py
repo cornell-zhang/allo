@@ -1263,6 +1263,7 @@ def customize(
         global_vars=global_vars.copy(),
         mlir_ctx=Context() if context is None else context,
         inst=instantiate,
+        unroll=unroll,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
@@ -1274,6 +1275,7 @@ def customize(
         mlir_ctx=Context() if context is None else context,
         inst=instantiate,
         func_predicate_tags=ctx_type_inf.func_predicate_tags,
+        unroll=unroll,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )

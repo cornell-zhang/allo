@@ -556,11 +556,11 @@ def get_element_type(dtype_str: str) -> aie_ir.Type:
     """
     Convert a string representing a data type into the corresponding AIE IR type.
     """
-    if dtype_str in ('i32', 'ui32'):
+    if dtype_str in ("i32", "ui32"):
         return aie_ir.IntegerType.get_signless(32)
-    if dtype_str in ('i16', 'ui16'):
+    if dtype_str in ("i16", "ui16"):
         return aie_ir.IntegerType.get_signless(16)
-    if dtype_str in ('i8', 'ui8'):
+    if dtype_str in ("i8", "ui8"):
         return aie_ir.IntegerType.get_signless(8)
     if dtype_str == "f32":
         return aie_ir.F32Type.get()

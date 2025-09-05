@@ -59,7 +59,7 @@ from .utils import (
     resolve_generic_types,
 )
 from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule, c2allo_type
 from ..utils import get_mlir_dtype_from_str, freeze_list, construct_kernel_name
@@ -87,27 +87,6 @@ class ASTBuilder(ASTVisitor):
             with ctx.mlir_ctx, Location.unknown():
                 res = method(ctx, node, **kwargs)
                 return res
-
-
-class ReplaceNames(ast.NodeTransformer):
-    def __init__(self, symbolic_mapping, var_map):
-        super().__init__()
-        self.symbolic_mapping = symbolic_mapping
-        self.var_map = var_map
-
-    def visit_Name(self, node):
-        if node.id in self.symbolic_mapping:
-            new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
-            return new_node
-        if node.id in self.var_map:
-            return ast.Constant(self.var_map[node.id])
-        return node
-
-
-def get_symbolic_expr(expr_node, mapping, var_map):
-    new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
-    ast.fix_missing_locations(new_tree)
-    return ast.unparse(new_tree)
 
 
 # pylint: disable=too-many-public-methods
@@ -1545,11 +1524,15 @@ class ASTTransformer(ASTBuilder):
                             if orig_name not in ctx.func_tag2instance:
                                 ctx.func_tag2instance[orig_name] = {}
                             for dim in np.ndindex(*mapping):
-                                predicate_tag = freeze_list(
-                                    ctx.func_predicate_tags[orig_name][dim]
-                                )
-                                if predicate_tag in ctx.func_tag2instance[orig_name]:
-                                    continue
+                                if not ctx.unroll:
+                                    predicate_tag = freeze_list(
+                                        ctx.func_predicate_tags[orig_name][dim]
+                                    )
+                                    if (
+                                        predicate_tag
+                                        in ctx.func_tag2instance[orig_name]
+                                    ):
+                                        continue
                                 new_ctx = old_ctx.copy()
                                 new_ctx.set_ip(old_ctx.top_func)
                                 new_ctx.top_func_tree = node
@@ -1564,12 +1547,13 @@ class ASTTransformer(ASTBuilder):
                                     new_ctx, node
                                 )
                                 func_op.attributes["df.kernel"] = UnitAttr.get()
-                                func_op.attributes["tag"] = StringAttr.get(
-                                    f"{orig_name}_{str(predicate_tag)}"
-                                )
-                                ctx.func_tag2instance[orig_name][
-                                    predicate_tag
-                                ] = func_op
+                                if not ctx.unroll:
+                                    func_op.attributes["tag"] = StringAttr.get(
+                                        f"{orig_name}_{str(predicate_tag)}"
+                                    )
+                                    ctx.func_tag2instance[orig_name][
+                                        predicate_tag
+                                    ] = func_op
                             return
         else:
             old_ctx = None

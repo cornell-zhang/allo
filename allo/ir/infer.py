@@ -3,6 +3,7 @@
 # pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin
 
 import ast
+import copy
 import sys
 import traceback
 import inspect
@@ -11,7 +12,7 @@ import warnings
 import sympy
 import numpy as np
 
-from .visitor import ASTVisitor, ASTContext
+from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from .types import (
     AlloType,
@@ -339,6 +340,7 @@ class TypeInferer(ASTVisitor):
                         ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
                             f"df.p{i}"
                         ]
+                        ctx.symbolic[ast.unparse(target)] = f"p{i}"
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -595,22 +597,63 @@ class TypeInferer(ASTVisitor):
                             old_ctx.mapping = mapping
                             orig_name = node.name
                             old_ctx.func_predicate_tags[orig_name] = {}
-                            for dim in np.ndindex(*mapping):
+                            if ctx.unroll:
+                                for dim in np.ndindex(*mapping):
+                                    new_ctx = old_ctx.copy()
+                                    new_ctx.rank = dim
+                                    new_ctx.buffers = old_ctx.buffers.copy()
+                                    new_ctx.global_vars = old_ctx.global_vars.copy()
+                                    for axis, val in enumerate(dim):
+                                        new_ctx.global_vars.update(
+                                            {"df.p" + str(axis): val}
+                                        )
+                                    node.name = construct_kernel_name(orig_name, dim)
+                                    # check on a specific df.kernel instance
+                                    TypeInferer.visit_FunctionDef(new_ctx, node)
+                                    node.name = orig_name
+                            else:
+
+                                def get_predicate_list(predicate_raw, pid_map):
+                                    _, cond_list = predicate_raw
+                                    results = []
+                                    for cond, val in cond_list:
+                                        if eval(cond, pid_map):
+                                            assert all(
+                                                isinstance(v, tuple) and len(v) == 2
+                                                for v in val
+                                            )
+                                            results.append(
+                                                get_predicate_list(
+                                                    ("True", val), pid_map
+                                                )
+                                            )
+                                        else:
+                                            results.append(None)
+                                    return results
+
+                                sample_dim = (0,) * len(mapping)
                                 new_ctx = old_ctx.copy()
-                                new_ctx.rank = dim
+                                new_ctx.rank = sample_dim
                                 new_ctx.buffers = old_ctx.buffers.copy()
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
-                                for axis, val in enumerate(dim):
+                                for axis, val in enumerate(sample_dim):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}
                                     )
-                                node.name = construct_kernel_name(orig_name, dim)
+                                node.name = construct_kernel_name(orig_name, sample_dim)
                                 # check on a specific df.kernel instance
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
-                                old_ctx.func_predicate_tags[orig_name][
-                                    dim
-                                ] = new_ctx.predicate_list
                                 node.name = orig_name
+                                for dim in np.ndindex(*mapping):
+                                    pid_map = {
+                                        f"p{idx}": value
+                                        for idx, value in enumerate(dim)
+                                    }
+                                    old_ctx.func_predicate_tags[orig_name][dim] = (
+                                        get_predicate_list(
+                                            new_ctx.predicate_raw_list, pid_map
+                                        )
+                                    )
                             return node
         else:
             old_ctx = None
@@ -1087,17 +1130,32 @@ class TypeInferer(ASTVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            symbolic_cond = get_symbolic_expr(
+                copy.deepcopy(node.items[0].context_expr.args[0]),
+                ctx.symbolic,
+                ctx.global_vars,
+            )
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
                 if len(ctx.meta_if_stack) > ctx.with_scope_level:
                     ctx.meta_if_stack[ctx.with_scope_level].append(final_cond)
+                    if not ctx.unroll:
+                        ctx.raw_meta_if_stack[ctx.with_scope_level].append(
+                            symbolic_cond
+                        )
                 else:
                     # create a new nested list
                     ctx.meta_if_stack.append([final_cond])
+                    if not ctx.unroll:
+                        ctx.raw_meta_if_stack.append([symbolic_cond])
             else:  # meta_elif
                 assert (
                     len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
                 ), "Unmatched allo.meta_elif()"
+                if not ctx.unroll:
+                    prev_cond = ctx.raw_meta_if_stack[ctx.with_scope_level][-1]
+                    symbolic_cond = f"(not ({prev_cond})) and {symbolic_cond}"
+                    ctx.raw_meta_if_stack[ctx.with_scope_level].append(symbolic_cond)
                 if ctx.meta_if_stack[ctx.with_scope_level][
                     -1
                 ]:  # previous `if` has already satisfied
@@ -1113,6 +1171,10 @@ class TypeInferer(ASTVisitor):
                 len(ctx.meta_if_stack[ctx.with_scope_level]) > 0
             ), "Unmatched allo.meta_else()"
             final_cond = not ctx.meta_if_stack[ctx.with_scope_level][-1]
+            if not ctx.unroll:
+                symbolic_cond = (
+                    f"(not ({ctx.raw_meta_if_stack[ctx.with_scope_level][-1]}))"
+                )
             ctx.meta_if_stack[ctx.with_scope_level].pop()
         elif node.items[0].context_expr.func.attr == "meta_for":
             assert (
@@ -1128,15 +1190,20 @@ class TypeInferer(ASTVisitor):
             return node
         else:
             raise RuntimeError("Unsupported meta function")
-        assert ctx.predicate_stack[-1] is not None
-        ctx.predicate_stack[-1].append([] if final_cond else None)
-        if final_cond:
+        if ctx.unroll and final_cond:
             ctx.with_scope_level += 1
-            ctx.predicate_stack.append(ctx.predicate_stack[-1][-1])
             visit_stmts(ctx, node.body)
-            ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
             # clear inner context
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
+            ctx.with_scope_level -= 1
+        elif not ctx.unroll:
+            assert ctx.predicate_raw_stack[-1] is not None
+            ctx.predicate_raw_stack[-1].append(tuple((symbolic_cond, [])))
+            ctx.with_scope_level += 1
+            ctx.predicate_raw_stack.append(ctx.predicate_raw_stack[-1][-1][1])
+            visit_stmts(ctx, node.body)
+            ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
+            ctx.predicate_raw_stack = ctx.predicate_raw_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
         node.dtype = None
         node.shape = None

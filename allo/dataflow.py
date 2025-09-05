@@ -363,12 +363,11 @@ def build(
     if target == "aie":
         global_vars = get_global_vars(func)
         # [NOTE]: please set UNROLL = False to improve compilation efficiency
-        UNROLL = True
         s: Schedule = _customize(
-            func, global_vars=global_vars, enable_tensor=False, unroll=UNROLL
+            func, global_vars=global_vars, enable_tensor=False, unroll=False
         )
         stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True, unrolled=UNROLL
+            s, with_stream_type=True, unrolled=False
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
@@ -402,7 +401,6 @@ def build(
 
     if target == "simulator":
         s = customize(func, opt_default)
-        print(s.module)
         return LLVMOMPModule(s.module, s.top_func_name)
     # FPGA backend
     s = customize(func, opt_default, enable_tensor=enable_tensor)
