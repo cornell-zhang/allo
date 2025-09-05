@@ -62,8 +62,9 @@ from .passes import (
     _mlir_lower_pipeline,
     lower_linalg_and_attach_names,
     analyze_use_def,
-    unroll_df_kernel_instances
+    unroll_df_kernel_instances,
 )
+from .utils import freeze_list
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 from .library import KERNEL2SCHEDULE
@@ -119,6 +120,7 @@ class Schedule:
         ip,
         ext_libs=None,
         inst_list=None,
+        func_instances=None,
     ):
         self.module = module
         self.top_func = top_func
@@ -136,6 +138,7 @@ class Schedule:
             for func_name, _ in func_args.items():
                 if func_name not in self.func_args:
                     self.func_args[func_name] = []
+        self.func_instances = func_instances
         self.systolic = check_systolic(self)
 
     def get_loops(self, func=None):
@@ -1238,8 +1241,8 @@ def customize(
     global_vars: dict = None,
     instantiate: list = None,
     context: Context = None,
-    unroll: bool = True
-):
+    unroll: bool = True,
+) -> Schedule:
     # Get Python AST
     if isinstance(fn, str):
         src, starting_line_no = fn, 1
@@ -1264,7 +1267,6 @@ def customize(
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
-    # ctx_type_inf = None
     # Start building IR
     ctx = ASTContext(
         tree=tree,
@@ -1278,6 +1280,13 @@ def customize(
     module = ASTTransformer()(ctx, tree, file_name)
     if unroll:
         unroll_df_kernel_instances(module, ctx)
+    func_instances = {
+        orig_name: {
+            dim: f"{orig_name}_{str(freeze_list(predicate_tag))}"
+            for dim, predicate_tag in kernel_instance_info.items()
+        }
+        for orig_name, kernel_instance_info in ctx.func_predicate_tags.items()
+    }
     if lower_linalg:
         lower_linalg_and_attach_names(module)
         ctx.top_func = find_func_in_module(module, fn.__name__)
@@ -1288,6 +1297,7 @@ def customize(
         InsertionPoint.at_block_terminator(ctx.top_func.entry_block),
         ext_libs=ctx.ext_libs,
         inst_list=instantiate,
+        func_instances=func_instances,
     )
     # Attach buffers to schedule:
     # The reason why we do not attach buffers to function is that

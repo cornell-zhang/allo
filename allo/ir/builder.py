@@ -62,7 +62,7 @@ from .types import Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor, ASTContext
 from .symbol_resolver import ASTResolver
 from ..backend.ip import IPModule, c2allo_type
-from ..utils import get_mlir_dtype_from_str, freeze_list
+from ..utils import get_mlir_dtype_from_str, freeze_list, construct_kernel_name
 from ..logging import print_error_message
 from ..backend.aie.external_kernel import ExternalModule
 
@@ -1559,8 +1559,7 @@ class ASTTransformer(ASTBuilder):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}
                                     )
-                                concated_name = "_".join(map(str, dim))
-                                node.name = orig_name + f"_{concated_name}"
+                                node.name = construct_kernel_name(orig_name, dim)
                                 func_op = ASTTransformer.build_FunctionDef(
                                     new_ctx, node
                                 )

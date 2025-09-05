@@ -39,7 +39,7 @@ from .ir.visitor import ASTContext
 from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
-from .utils import get_mlir_dtype_from_str, freeze_list
+from .utils import get_mlir_dtype_from_str, freeze_list, construct_kernel_name
 from .backend.ip import c2allo_type
 
 
@@ -924,7 +924,7 @@ def unroll_df_kernel_instances(module, ctx: ASTContext):
         for orig_name, kernel_instance_info in ctx.func_predicate_tags.items():
             for dim, predicate_tag in kernel_instance_info.items():
                 pid_map = {f"p{idx}": value for idx, value in enumerate(dim)}
-                func_name = f"{orig_name}_{"_".join(map(str, dim))}"
+                func_name = construct_kernel_name(orig_name, dim)
                 if func_name in ctx.func_args:
                     continue
                 frozen_tag = freeze_list(predicate_tag)

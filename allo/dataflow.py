@@ -16,7 +16,8 @@ from ._mlir.ir import (
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize as _customize
+from .customize import customize as _customize, Schedule
+from .utils import parse_kernel_name, construct_kernel_name
 from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
@@ -42,13 +43,14 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s, with_stream_type: bool = False):
+def move_stream_to_interface(
+    s: Schedule, with_stream_type: bool = False, unrolled=True
+):
     stream_info = {}
     funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
     if with_stream_type:
         stream_types_dict: dict[str, Type] = {}
-
     for func in funcs:
         func_name = func.attributes["sym_name"].value
         stream_ops = []
@@ -59,6 +61,14 @@ def move_stream_to_interface(s, with_stream_type: bool = False):
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
         new_args = new_func_args[func_name].copy()
+        prefix, ids = parse_kernel_name(func_name)
+        if not unrolled:
+            assert s.func_instances is not None and prefix in s.func_instances
+            assert ids in s.func_instances[prefix].keys()
+            for ids_ in s.func_instances[prefix].keys():
+                func_name_ = construct_kernel_name(prefix, ids)
+                if func_name != func_name:
+                    new_func_args[func_name_] = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_ops.append(op)
@@ -78,6 +88,29 @@ def move_stream_to_interface(s, with_stream_type: bool = False):
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
                 new_args.append(stream_name)
+                if not unrolled and "symbolic_slice" in op.attributes:
+                    symbolic_name = op.attributes["symbolic_slice"].value
+                    for ids_, predicate_tag in s.func_instances[prefix].items():
+                        func_name_ = construct_kernel_name(prefix, ids)
+                        if (
+                            func_name != func_name
+                            and predicate_tag == s.func_instances[prefix][ids]
+                        ):
+                            pid_map = {
+                                f"p{idx}": value for idx, value in enumerate(ids_)
+                            }
+                            slice_ = eval(symbolic_name, pid_map)
+                            if isinstance(slice_, int):
+                                slice_ = tuple([slice_])
+                            parts = stream_name.rsplit("_", len(slice_))[: -len(slice_)]
+                            stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
+                            if (
+                                with_stream_type
+                                and stream_name_ not in stream_types_dict
+                            ):
+                                stream_types_dict[stream_name_] = op.result.type
+                            stream_info[func_name_].append((stream_name_, direction))
+                            new_func_args[func_name_].append(stream_name_)
         # create new func to update arguments
         in_types += stream_types
         new_func_args[func_name] = new_args
@@ -102,7 +135,9 @@ def move_stream_to_interface(s, with_stream_type: bool = False):
             if "df.kernel" in func.attributes:
                 new_func.attributes["df.kernel"] = UnitAttr.get()
             if "tag" in func.attributes:
-                new_func.attributes["tag"] = StringAttr.get(func.attributes["tag"].value)
+                new_func.attributes["tag"] = StringAttr.get(
+                    func.attributes["tag"].value
+                )
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:
@@ -120,6 +155,7 @@ def move_stream_to_interface(s, with_stream_type: bool = False):
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
     s.func_args = new_func_args
+    print(stream_info)
     if with_stream_type:
         return stream_info, stream_types_dict
     return stream_info
@@ -323,9 +359,11 @@ def build(
 
     if target == "aie":
         global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=False)
+        s: Schedule = _customize(
+            func, global_vars=global_vars, enable_tensor=False, unroll=True
+        )
         stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True
+            s, with_stream_type=True, unrolled=True
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
@@ -339,6 +377,7 @@ def build(
             stream_info,
             stream_types_dict,
             s.ext_libs,
+            s.func_instances,
         )
         if device_type is None:
             if os.getenv("NPU2") == "1":

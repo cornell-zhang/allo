@@ -2011,6 +2011,7 @@ class CodeGenerator:
                         coalesced_tasks_list.append(coalesced_tasks)
 
                     tasks_idx_left = 0
+
                     @dataclass
                     class DMAMemcpyGroup:
                         dma_tasks: list[tuple[list[int], list[int], list[int]]]

@@ -65,6 +65,7 @@ class AIE_MLIRModule:
         stream_info: dict,
         stream_types_dict: dict[str, Type],
         ext_libs: list = None,
+        func_instances: dict = None,
     ):
         """
         Note: the module is data-driven,
@@ -79,6 +80,7 @@ class AIE_MLIRModule:
         self.module_parameter_list = [
             k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
         ]
+        self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
         for ext_kernel in ext_libs:
@@ -172,6 +174,7 @@ class AIE_MLIRModule:
             self.streams,
             self.core_func_args,
             use_external_kernels,
+            self.func_instances,
         )
 
     def analyze_kernel_parameters(
@@ -534,7 +537,7 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
-            self.virtual_computation_graph.refactor()
+        self.virtual_computation_graph.refactor()
 
         # record original allo mlir
         with open(

@@ -36,6 +36,7 @@ from ..utils import (
     handle_overflow,
     make_anywidth_numpy_array,
     np_supported_types,
+    construct_kernel_name
 )
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
@@ -603,8 +604,7 @@ class TypeInferer(ASTVisitor):
                                     new_ctx.global_vars.update(
                                         {"df.p" + str(axis): val}
                                     )
-                                concated_name = "_".join(map(str, dim))
-                                node.name = orig_name + f"_{concated_name}"
+                                node.name = construct_kernel_name(orig_name, dim)
                                 # check on a specific df.kernel instance
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
                                 old_ctx.func_predicate_tags[orig_name][dim] = new_ctx.predicate_list
