@@ -6,6 +6,7 @@
 import gc
 import ast
 import sys
+import copy
 import traceback
 import numpy as np
 from .._mlir.ir import (
@@ -76,9 +77,6 @@ class ASTBuilder(ASTVisitor):
         if method is None:
             error_msg = f'Unsupported node "{node.__class__.__name__}"'
             raise RuntimeError(error_msg)
-        ctx.func_tag2instance = {
-            orig_name: {} for orig_name in ctx.func_predicate_tags.keys()
-        }
         if ctx.file_name and hasattr(node, "lineno") and hasattr(node, "col_offset"):
             with ctx.mlir_ctx, Location.file(
                 ctx.file_name, node.lineno, node.col_offset
@@ -89,6 +87,24 @@ class ASTBuilder(ASTVisitor):
             with ctx.mlir_ctx, Location.unknown():
                 res = method(ctx, node, **kwargs)
                 return res
+
+
+class ReplaceNames(ast.NodeTransformer):
+    def __init__(self, symbolic_mapping):
+        super().__init__()
+        self.symbolic_mapping = symbolic_mapping
+
+    def visit_Name(self, node):
+        if node.id in self.symbolic_mapping:
+            new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            return new_node
+        return node
+
+
+def get_symbolic_expr(expr_node, mapping):
+    new_tree = ReplaceNames(mapping).visit(expr_node)
+    ast.fix_missing_locations(new_tree)
+    return ast.unparse(new_tree)
 
 
 # pylint: disable=too-many-public-methods
@@ -891,6 +907,7 @@ class ASTTransformer(ASTBuilder):
                         ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
                             f"df.p{idx}"
                         ]
+                        ctx.symbolic[ast.unparse(target)] = f"p{idx}"
                 else:
                     store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
@@ -1522,6 +1539,8 @@ class ASTTransformer(ASTBuilder):
                                 ctx.global_vars,
                             )
                             orig_name = node.name
+                            if orig_name not in ctx.func_tag2instance:
+                                ctx.func_tag2instance[orig_name] = {}
                             for dim in np.ndindex(*mapping):
                                 predicate_tag = freeze_list(
                                     ctx.func_predicate_tags[orig_name][dim]
@@ -1543,6 +1562,9 @@ class ASTTransformer(ASTBuilder):
                                     new_ctx, node
                                 )
                                 func_op.attributes["df.kernel"] = UnitAttr.get()
+                                func_op.attributes["tag"] = StringAttr.get(
+                                    str(predicate_tag)
+                                )
                                 ctx.func_tag2instance[orig_name][
                                     predicate_tag
                                 ] = func_op
@@ -1903,10 +1925,14 @@ class ASTTransformer(ASTBuilder):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    symbolic_slice = None
                     if isinstance(node.func.value, ast.Subscript):
                         # pylint: disable=redefined-builtin
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        symbolic_slice = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice), ctx.symbolic
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])
@@ -1931,6 +1957,10 @@ class ASTTransformer(ASTBuilder):
                         else InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
                     stream = ctx.buffers[new_name].clone(ip=ip)
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
                     put_op = allo_d.StreamPutOp(
                         stream.result,
                         [],
@@ -1946,9 +1976,13 @@ class ASTTransformer(ASTBuilder):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    symbolic_slice = None
                     if isinstance(node.func.value, ast.Subscript):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
+                        )
+                        symbolic_slice = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice), ctx.symbolic
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])
@@ -1973,6 +2007,10 @@ class ASTTransformer(ASTBuilder):
                         else InsertionPoint.at_block_begin(ctx.top_func.entry_block)
                     )
                     stream = ctx.buffers[new_name].clone(ip=ip)
+                    if symbolic_slice is not None:
+                        stream.attributes["symbolic_slice"] = StringAttr.get(
+                            symbolic_slice
+                        )
                     get_op = allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,

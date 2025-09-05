@@ -38,7 +38,6 @@ def _test_vector_scalar_add():
     print("Dataflow Simulator Passed!")
 
 def _test_vector_scalar_conditional_add():
-    # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_scalar_add
     Ty = int32
     M = 1024
     P = 4
@@ -232,10 +231,10 @@ def _test_vector_vector_add_p0():
 
 if __name__ == "__main__":
     _test_vector_scalar_conditional_add()
-    # _test_vector_scalar_add()
-    # _test_vector_scalar_mul()
-    # _test_vector_vector_add()
-    # _test_vector_vector_bf16_add()
-    # _test_vector_vector_mul()
-    # _test_vector_scalar_add_p0()
-    # _test_vector_vector_add_p0()
+    _test_vector_scalar_add()
+    _test_vector_scalar_mul()
+    _test_vector_vector_add()
+    _test_vector_vector_bf16_add()
+    _test_vector_vector_mul()
+    _test_vector_scalar_add_p0()
+    _test_vector_vector_add_p0()

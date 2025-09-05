@@ -101,6 +101,8 @@ def move_stream_to_interface(s, with_stream_type: bool = False):
             new_func.attributes["stypes"] = StringAttr.get(s_type_str)
             if "df.kernel" in func.attributes:
                 new_func.attributes["df.kernel"] = UnitAttr.get()
+            if "tag" in func.attributes:
+                new_func.attributes["tag"] = StringAttr.get(func.attributes["tag"].value)
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:

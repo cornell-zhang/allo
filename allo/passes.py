@@ -923,6 +923,7 @@ def unroll_df_kernel_instances(module, ctx: ASTContext):
     with module.context, Location.unknown():
         for orig_name, kernel_instance_info in ctx.func_predicate_tags.items():
             for dim, predicate_tag in kernel_instance_info.items():
+                pid_map = {f"p{idx}": value for idx, value in enumerate(dim)}
                 func_name = f"{orig_name}_{"_".join(map(str, dim))}"
                 if func_name in ctx.func_args:
                     continue
@@ -935,3 +936,19 @@ def unroll_df_kernel_instances(module, ctx: ASTContext):
                 with InsertionPoint(module.body):
                     new_func_op = func_op.clone()
                 new_func_op.attributes["sym_name"] = StringAttr.get(func_name)
+                for func_block in new_func_op.body:
+                    for op in func_block.operations:
+                        if isinstance(op, allo_d.StreamConstructOp):
+                            if "symbolic_slice" in op.attributes:
+                                symbolic_name = op.attributes["symbolic_slice"].value
+                                ids = eval(symbolic_name, pid_map)
+                                if isinstance(ids, int):
+                                    ids = tuple([ids])
+                                parts = op.attributes["name"].value.rsplit(
+                                    "_", len(ids)
+                                )[: -len(ids)]
+                                op.attributes["name"] = StringAttr.get(
+                                    "_".join(map(str, parts))
+                                    + "_"
+                                    + "_".join(map(str, ids))
+                                )

@@ -1275,14 +1275,12 @@ def customize(
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
-    print(ctx.func_predicate_tags)
     module = ASTTransformer()(ctx, tree, file_name)
     if unroll:
         unroll_df_kernel_instances(module, ctx)
     if lower_linalg:
         lower_linalg_and_attach_names(module)
         ctx.top_func = find_func_in_module(module, fn.__name__)
-    print(ctx.func_args)
     sch = Schedule(
         module,
         ctx.top_func,

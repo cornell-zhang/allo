@@ -195,12 +195,13 @@ class AIE_MLIRModule:
         tagger = Tagger()
         df_kernels = get_df_kernels(self.allo_module)
         for kernel in df_kernels:
-            tag_key = re.sub(
-                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
-            )
-            tag = tagger.get_tag(tag_key)
-            with kernel.context:
-                kernel.attributes["tag"] = StringAttr.get(tag)
+            if "tag" not in kernel.attributes:
+                tag_key = re.sub(
+                    r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
+                )
+                tag = tagger.get_tag(tag_key)
+                with kernel.context:
+                    kernel.attributes["tag"] = StringAttr.get(tag)
         return df_kernels
 
     def analyze_kernel_parameters(

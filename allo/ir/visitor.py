@@ -40,6 +40,7 @@ class ASTContext:
         inst=None,
         func_args=None,
         func_predicate_tags=None,
+        func_tag2instance=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -82,10 +83,11 @@ class ASTContext:
             {} if func_predicate_tags is None else func_predicate_tags
         )
         # df.kernel name -> {predicate tag -> kernel instance},
-        self.func_tag2instance = None
+        self.func_tag2instance = {} if func_tag2instance is None else func_tag2instance
         # a nested list of (list for True | None for False)
         self.predicate_list = []  # at least the function body will be executed (True)
         self.predicate_stack = [self.predicate_list]
+        self.symbolic = {}
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
@@ -99,12 +101,12 @@ class ASTContext:
             self.inst,
             self.func_args,
             self.func_predicate_tags,
+            self.func_tag2instance,
             enable_tensor=self.enable_tensor,
             verbose=self.verbose,
         )
         ctx.func_id = self.func_id
         ctx.func_name2id = self.func_name2id
-        ctx.func_tag2instance = self.func_tag2instance
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose
         ctx.ext_libs = self.ext_libs
