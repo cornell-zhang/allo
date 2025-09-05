@@ -174,36 +174,6 @@ class AIE_MLIRModule:
             use_external_kernels,
         )
 
-    def assign_tag_to_kernel(self):
-        """
-        Assign tag to df kernels (serve as some kind of rerolling)
-        """
-
-        class Tagger:
-            def __init__(self) -> None:
-                self.tag_map: dict[str, str] = {}
-                self.counter = 0
-
-            def get_tag(self, key: str) -> str:
-                """Return existing tag or assign a new one if not present."""
-                if key not in self.tag_map:
-                    tag = f"tag_{self.counter}"
-                    self.tag_map[key] = tag
-                    self.counter += 1
-                return self.tag_map[key]
-
-        tagger = Tagger()
-        df_kernels = get_df_kernels(self.allo_module)
-        for kernel in df_kernels:
-            if "tag" not in kernel.attributes:
-                tag_key = re.sub(
-                    r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
-                )
-                tag = tagger.get_tag(tag_key)
-                with kernel.context:
-                    kernel.attributes["tag"] = StringAttr.get(tag)
-        return df_kernels
-
     def analyze_kernel_parameters(
         self,
         df_kernels: list[allo_func_d.FuncOp],
@@ -551,7 +521,7 @@ class AIE_MLIRModule:
             )
         )
         self.analyze_kernel_parameters(
-            self.assign_tag_to_kernel(), self.injected_external_kernels
+            get_df_kernels(self.allo_module), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
         self.init_virtual_graph(use_external_kernels)

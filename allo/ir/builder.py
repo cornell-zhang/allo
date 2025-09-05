@@ -90,19 +90,22 @@ class ASTBuilder(ASTVisitor):
 
 
 class ReplaceNames(ast.NodeTransformer):
-    def __init__(self, symbolic_mapping):
+    def __init__(self, symbolic_mapping, var_map):
         super().__init__()
         self.symbolic_mapping = symbolic_mapping
+        self.var_map = var_map
 
     def visit_Name(self, node):
         if node.id in self.symbolic_mapping:
             new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
             return new_node
+        if node.id in self.var_map:
+            return ast.Constant(self.var_map[node.id])
         return node
 
 
-def get_symbolic_expr(expr_node, mapping):
-    new_tree = ReplaceNames(mapping).visit(expr_node)
+def get_symbolic_expr(expr_node, mapping, var_map):
+    new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
     ast.fix_missing_locations(new_tree)
     return ast.unparse(new_tree)
 
@@ -1563,7 +1566,7 @@ class ASTTransformer(ASTBuilder):
                                 )
                                 func_op.attributes["df.kernel"] = UnitAttr.get()
                                 func_op.attributes["tag"] = StringAttr.get(
-                                    str(predicate_tag)
+                                    f"{orig_name}_{str(predicate_tag)}"
                                 )
                                 ctx.func_tag2instance[orig_name][
                                     predicate_tag
@@ -1932,7 +1935,9 @@ class ASTTransformer(ASTBuilder):
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
                         symbolic_slice = get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice), ctx.symbolic
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])
@@ -1982,7 +1987,9 @@ class ASTTransformer(ASTBuilder):
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
                         symbolic_slice = get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice), ctx.symbolic
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])
