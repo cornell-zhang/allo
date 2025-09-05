@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, bad-builtin
 
+import re
 import ctypes
 import numpy as np
 import ml_dtypes
@@ -455,3 +456,23 @@ def get_element_type_from_str(element_type_str, context):
         bits = int(element_type_str[1:])
         return IntegerType.get_signless(bits, context)
     raise ValueError(f"unknown element_type_str: {element_type_str}")
+
+
+def freeze_list(x):
+    if isinstance(x, list):
+        return tuple(freeze_list(i) for i in x)
+    return x
+
+
+def construct_kernel_name(prefix: str, ids: tuple[int]):
+    return f"{prefix}_{"_".join(map(str, ids))}"
+
+
+def parse_kernel_name(name: str):
+    match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
+    if not match:
+        raise ValueError(f"Invalid format: {name}")
+
+    prefix = match.group(1).rstrip("_")
+    ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
+    return prefix, ids
