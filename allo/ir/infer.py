@@ -36,7 +36,7 @@ from ..utils import (
     handle_overflow,
     make_anywidth_numpy_array,
     np_supported_types,
-    construct_kernel_name
+    construct_kernel_name,
 )
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
@@ -594,7 +594,7 @@ class TypeInferer(ASTVisitor):
                             )
                             old_ctx.mapping = mapping
                             orig_name = node.name
-                            old_ctx.func_predicate_tags[orig_name] = {} 
+                            old_ctx.func_predicate_tags[orig_name] = {}
                             for dim in np.ndindex(*mapping):
                                 new_ctx = old_ctx.copy()
                                 new_ctx.rank = dim
@@ -607,7 +607,9 @@ class TypeInferer(ASTVisitor):
                                 node.name = construct_kernel_name(orig_name, dim)
                                 # check on a specific df.kernel instance
                                 TypeInferer.visit_FunctionDef(new_ctx, node)
-                                old_ctx.func_predicate_tags[orig_name][dim] = new_ctx.predicate_list
+                                old_ctx.func_predicate_tags[orig_name][
+                                    dim
+                                ] = new_ctx.predicate_list
                                 node.name = orig_name
                             return node
         else:

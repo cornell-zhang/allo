@@ -18,7 +18,7 @@ from allo._mlir.dialects import (
     arith as arith_d,
     scf as scf_d,
 )
-from allo.utils import parse_kernel_name, construct_kernel_name, freeze_list
+from allo.utils import parse_kernel_name, construct_kernel_name
 from .utils import (
     Argument,
     Stream,

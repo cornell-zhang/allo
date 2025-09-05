@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks
 
 import functools
 import os
@@ -402,6 +402,7 @@ def build(
 
     if target == "simulator":
         s = customize(func, opt_default)
+        print(s.module)
         return LLVMOMPModule(s.module, s.top_func_name)
     # FPGA backend
     s = customize(func, opt_default, enable_tensor=enable_tensor)

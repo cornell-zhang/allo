@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, bad-builtin
 
 import re
 import ctypes
