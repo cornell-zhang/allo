@@ -70,13 +70,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-    mapping_primitives = gen_gemm_mapping_primitive(
-        Pm,
-        Pn,
-        Pk,
-        # col_num= 2,
-        # row_num=2
-    )
+    mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
     mod = df.build(
         top,
