@@ -362,7 +362,7 @@ def build(
 
     if target == "aie":
         global_vars = get_global_vars(func)
-        # [NOTE]: please set UNROLL = False to improve compilation efficiency
+        # [NOTE]: set unroll/unrolled = False to improve compilation efficiency
         s: Schedule = _customize(
             func, global_vars=global_vars, enable_tensor=False, unroll=False
         )

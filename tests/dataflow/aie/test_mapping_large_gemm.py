@@ -114,13 +114,13 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 if __name__ == "__main__":
     # - i8
-    _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int8, int8)
+    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, int8, int8)
 
     # - i16
-    _test_pingpong_gemm(512, 512, 512, 8, 8, 8, int16, int16)
+    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, int16, int16)
 
     # - bf16
     try:
-        _test_pingpong_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
+        _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")

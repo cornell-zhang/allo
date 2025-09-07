@@ -1525,6 +1525,8 @@ class ASTTransformer(ASTBuilder):
                                 ctx.func_tag2instance[orig_name] = {}
                             for dim in np.ndindex(*mapping):
                                 if not ctx.unroll:
+                                    # If not unrolled, assign tag to each instance.
+                                    # Different tags indeicate different execution (control flow only)
                                     predicate_tag = freeze_list(
                                         ctx.func_predicate_tags[orig_name][dim]
                                     )

@@ -612,8 +612,15 @@ class TypeInferer(ASTVisitor):
                                     TypeInferer.visit_FunctionDef(new_ctx, node)
                                     node.name = orig_name
                             else:
+                                # If not unroll, only visit one 'sample' to get the execution predicates
 
                                 def get_predicate_list(predicate_raw, pid_map):
+                                    """
+                                    Recursively expand `predicate` based on conditions and pid_map.
+                                    Returns a list of results, converted from cond_list:
+                                    - If condition evaluates True, recurse into its values.
+                                    - If False, put None.
+                                    """
                                     _, cond_list = predicate_raw
                                     results = []
                                     for cond, val in cond_list:
@@ -651,7 +658,7 @@ class TypeInferer(ASTVisitor):
                                     }
                                     old_ctx.func_predicate_tags[orig_name][dim] = (
                                         get_predicate_list(
-                                            new_ctx.predicate_raw_list, pid_map
+                                            new_ctx.predicate_list, pid_map
                                         )
                                     )
                             return node
@@ -1197,13 +1204,14 @@ class TypeInferer(ASTVisitor):
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
         elif not ctx.unroll:
-            assert ctx.predicate_raw_stack[-1] is not None
-            ctx.predicate_raw_stack[-1].append(tuple((symbolic_cond, [])))
+            # if not unroll, walk into every branch unconditionally
+            assert ctx.predicate_stack[-1] is not None
+            ctx.predicate_stack[-1].append(tuple((symbolic_cond, [])))
             ctx.with_scope_level += 1
-            ctx.predicate_raw_stack.append(ctx.predicate_raw_stack[-1][-1][1])
+            ctx.predicate_stack.append(ctx.predicate_stack[-1][-1][1])
             visit_stmts(ctx, node.body)
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
-            ctx.predicate_raw_stack = ctx.predicate_raw_stack[: ctx.with_scope_level]
+            ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
         node.dtype = None
         node.shape = None

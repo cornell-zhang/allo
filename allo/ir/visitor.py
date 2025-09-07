@@ -72,6 +72,7 @@ class ASTContext:
         self.dim_count = 0
         self.unnamed_linalg_op_count = 0
         self.affine_vars = []
+        # whether the instances are unrolled at ir build time
         self.unroll = unroll
         self.enable_tensor = enable_tensor
         self.verbose = verbose
@@ -88,9 +89,11 @@ class ASTContext:
         )
         # df.kernel name -> {predicate tag -> kernel instance},
         self.func_tag2instance = {} if func_tag2instance is None else func_tag2instance
-        # a nested list of (list for True | None for False)
-        self.predicate_raw_list = tuple(("True", []))
-        self.predicate_raw_stack = [self.predicate_raw_list[1]]
+        # a nested structure of (predicate, []),
+        #  the predicate will be used to eval with specific pid to decide the control flow
+        self.predicate_list = tuple(("True", []))
+        self.predicate_stack = [self.predicate_list[1]]
+        # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
         self.has_return = False
         # used for tensor mapping
