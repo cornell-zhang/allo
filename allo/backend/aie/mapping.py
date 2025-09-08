@@ -18,9 +18,9 @@ from allo._mlir.dialects import (
     arith as arith_d,
     scf as scf_d,
 )
+from allo.utils import parse_kernel_name, construct_kernel_name
 from .utils import (
     Argument,
-    parse_kernel_name,
     Stream,
     Config,
 )
@@ -388,7 +388,7 @@ class NodeBase:
     def __init__(
         self,
         name: str = None,
-        func: func_d.FuncOp = None,
+        func_sample: func_d.FuncOp = None,
         use_external_kernel: bool = False,
         tag: str = None,
         repeat: int = 0,
@@ -399,13 +399,13 @@ class NodeBase:
             use_external_kernel,
             tag,
             in_types=(
-                func.attributes["function_type"].value.inputs
-                if func is not None
+                func_sample.attributes["function_type"].value.inputs
+                if func_sample is not None
                 else None
             ),
             out_types=(
-                func.attributes["function_type"].value.results
-                if func is not None
+                func_sample.attributes["function_type"].value.results
+                if func_sample is not None
                 else None
             ),
             repeat=repeat,
@@ -441,9 +441,14 @@ class NodeBase:
 
 
 class InitialNode(NodeBase):
-    def __init__(self, func: func_d.FuncOp, use_external_kernel: bool, tag: str):
-        func_name = func.attributes["sym_name"].value
-        super().__init__(func_name, func, use_external_kernel, tag, 1)
+    def __init__(
+        self,
+        func_sample: func_d.FuncOp,
+        func_name: str,
+        use_external_kernel: bool,
+        tag: str,
+    ):
+        super().__init__(func_name, func_sample, use_external_kernel, tag, 1)
         self.org_tags.append(tag)
         self.meta_data.df_kernels.add(func_name)
 
@@ -467,7 +472,9 @@ class CollocatedNode(NodeBase):
         repeat: int = 0,
         length: int = 0,
     ):
-        super().__init__(name=name, func=func, tag=tag, repeat=repeat, length=length)
+        super().__init__(
+            name=name, func_sample=func, tag=tag, repeat=repeat, length=length
+        )
 
     def init_for_bundle(self, node_list: list[NodeBase]):
         sample_node: NodeBase = node_list[0]
@@ -530,6 +537,7 @@ class ComputationGraph:
         stream_map: dict[str, Stream],
         core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
         use_external_kernels: dict[str, bool],
+        func_instances: dict = None,
     ):
         self.allo_module = allo_module
         self.insert_point: InsertionPoint = None
@@ -542,41 +550,54 @@ class ComputationGraph:
         self.tag_to_func: dict[str, func_d.FuncOp] = {}
 
         df_kernels = []
+        self.samples = set()
         for func in allo_module.body.operations:
             if func.attributes["sym_name"].value == top_func_name:
                 self.insert_point = InsertionPoint(func)
             elif isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
                 df_kernels.append(func)
+                self.samples.add(func.attributes["sym_name"].value)
 
-        # construct nodes
+        # record df_kernel sample copies
         for func in df_kernels:
-            func_name = func.attributes["sym_name"].value
             tag = func.attributes["tag"].value
             if tag not in self.tag_to_func:
                 self.tag_to_func[tag] = func
-            node = InitialNode(func, use_external_kernels[func_name], tag)
-            _, indexes = parse_kernel_name(func_name)
-            params = core_func_args[func_name]
-            for idx, (argument, is_input) in params.items():
-                if argument.stream is not None:
-                    if is_input:
-                        node.meta_data.input_streams.append(argument.stream)
-                    else:
-                        node.meta_data.output_streams.append(argument.stream)
-                if argument.dtensor is not None:
-                    tensor_tile = DTensorTile(
-                        argument.dtensor.global_id,
-                        argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
-                    )
-                    live_dtensor_tile = LiveDTensorTile(
-                        tensor_tile, func_name, is_input
-                    )
-                    # TODO: determine first_use and last_use with liveness analysis
-                    live_dtensor_tile.first_use = 0
-                    live_dtensor_tile.last_use = 9
-                    node.global_interfaces[idx].append(live_dtensor_tile)
-            self.nodes[func_name] = node
-            self.dependencies[func_name] = set()
+
+        # construct nodes
+        for orig_name, kernel_instance_info in func_instances.items():
+            for dim, predicate_tag in kernel_instance_info.items():
+                func_name = construct_kernel_name(orig_name, dim)
+                assert predicate_tag in self.tag_to_func
+                func_sample = self.tag_to_func[predicate_tag]
+                node = InitialNode(
+                    func_sample,
+                    func_name,
+                    use_external_kernels[predicate_tag],
+                    predicate_tag,
+                )
+                _, indexes = parse_kernel_name(func_name)
+                params = core_func_args[func_name]
+                for idx, (argument, is_input) in params.items():
+                    if argument.stream is not None:
+                        if is_input:
+                            node.meta_data.input_streams.append(argument.stream)
+                        else:
+                            node.meta_data.output_streams.append(argument.stream)
+                    if argument.dtensor is not None:
+                        tensor_tile = DTensorTile(
+                            argument.dtensor.global_id,
+                            argument.dtensor.PE_tile_id_to_tensor_tile_id(indexes),
+                        )
+                        live_dtensor_tile = LiveDTensorTile(
+                            tensor_tile, func_name, is_input
+                        )
+                        # TODO: determine first_use and last_use with liveness analysis
+                        live_dtensor_tile.first_use = 0
+                        live_dtensor_tile.last_use = 9
+                        node.global_interfaces[idx].append(live_dtensor_tile)
+                self.nodes[func_name] = node
+                self.dependencies[func_name] = set()
         # initiate dependencies
         for stream in self.edges.values():
             self.dependencies[stream.dst].add(stream.src)
@@ -719,8 +740,8 @@ class ComputationGraph:
         with self.allo_module.context, allo_ir.ir.Location.unknown():
             # reconstruct for each node
             for node in self.nodes.values():
-                # df function not changed -> skip
-                if len(node.org_tags) == 1 and isinstance(node.org_tags[0], str):
+                # df function already exist -> skip
+                if node.meta_data.name in self.samples:
                     continue
                 # Step1: Create new function with proper input/output types
                 func_type = FunctionType.get(
