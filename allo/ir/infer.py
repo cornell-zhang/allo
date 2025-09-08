@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=unused-argument, eval-used, redefined-variable-type, bad-builtin, cell-var-from-loop
+# pylint: disable=unused-argument, eval-used, redefined-variable-type, cell-var-from-loop
 
 import ast
 import copy
@@ -47,14 +47,14 @@ from ..backend.aie.external_kernel import ExternalModule
 
 # pylint: disable=too-many-public-methods
 class TypeInferer(ASTVisitor):
-    def print_verbose(self, ctx, node):
+    def print_verbose(self, ctx: ASTContext, node: ast.AST):
         if isinstance(node, ast.Name):
             print("Name:", node.id, node.dtype, node.shape)
         else:
             print(node.__class__.__name__, node.dtype, node.shape)
 
     @staticmethod
-    def visit_call_type(ctx: ASTContext, node):
+    def visit_call_type(ctx: ASTContext, node: ast.expr):
         ty_cls = ASTResolver.resolve(node.func, ctx.global_vars)
         args = node.args
 
@@ -72,7 +72,7 @@ class TypeInferer(ASTVisitor):
         return dtype
 
     @staticmethod
-    def visit_type_hint(ctx: ASTContext, node):
+    def visit_type_hint(ctx: ASTContext, node: ast.AST):
         if isinstance(node, ast.Subscript):
             if isinstance(node.value, ast.Call):
                 dtype = TypeInferer.visit_call_type(ctx, node.value)
@@ -113,7 +113,7 @@ class TypeInferer(ASTVisitor):
         raise RuntimeError("Unsupported function argument type")
 
     @staticmethod
-    def visit_Name(ctx: ASTContext, node):
+    def visit_Name(ctx: ASTContext, node: ast.Name):
         if node.id in ctx.buffers:
             var = ctx.buffers[node.id]
             node.dtype = var.dtype
@@ -136,7 +136,7 @@ class TypeInferer(ASTVisitor):
         raise RuntimeError(f"Unsupported Name `{node.id}`")
 
     @staticmethod
-    def visit_Constant(ctx: ASTContext, node):
+    def visit_Constant(ctx: ASTContext, node: ast.Constant):
         node.shape = tuple()
         if isinstance(node.value, int):
             node.dtype = int32
@@ -151,14 +151,14 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Tuple(ctx: ASTContext, node):
+    def visit_Tuple(ctx: ASTContext, node: ast.Tuple):
         visit_stmts(ctx, node.elts)
         node.shape = [elt.shape for elt in node.elts]
         node.dtype = [elt.dtype for elt in node.elts]
         return node
 
     @staticmethod
-    def visit_Dict(ctx: ASTContext, node):
+    def visit_Dict(ctx: ASTContext, node: ast.Dict):
         # Visit all keys and values
         visit_stmts(ctx, node.keys)
         visit_stmts(ctx, node.values)
@@ -169,14 +169,14 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Index(ctx: ASTContext, node):
+    def visit_Index(ctx: ASTContext, node: ast.Index):
         value = visit_stmt(ctx, node.value)
         node.shape = value.shape
         node.dtype = value.dtype
         return node
 
     @staticmethod
-    def visit_Attribute(ctx: ASTContext, node):
+    def visit_Attribute(ctx: ASTContext, node: ast.Attribute):
         res = visit_stmt(ctx, node.value)
         if node.attr == "T":
             node.dtype = res.dtype
@@ -199,7 +199,7 @@ class TypeInferer(ASTVisitor):
         raise RuntimeError(f"Unsupported attribute `{node.attr}`")
 
     @staticmethod
-    def visit_all_for(ctx: ASTContext, node):
+    def visit_all_for(ctx: ASTContext, node: ast.For):
         # Set loop induction variables
         if isinstance(node.target, ast.Tuple):
             ivs = list(node.target.elts)
@@ -216,7 +216,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_For(ctx: ASTContext, node):
+    def visit_For(ctx: ASTContext, node: ast.For):
         if node.orelse:
             raise RuntimeError("'else' clause for 'for' not supported in Allo kernels")
         with ctx.loop_scope_guard():
@@ -231,7 +231,9 @@ class TypeInferer(ASTVisitor):
             raise RuntimeError("Unsupported for loop")
 
     @staticmethod
-    def visit_broadcast(ctx: ASTContext, lhs, rhs, match_lhs=False):
+    def visit_broadcast(
+        ctx: ASTContext, lhs: ast.expr, rhs: ast.expr, match_lhs: bool = False
+    ):
         # See the broadcasting rules in NumPy
         # https://numpy.org/doc/stable/user/basics.broadcasting.html
         # When operating on two arrays, NumPy compares their shapes element-wise.
@@ -278,7 +280,9 @@ class TypeInferer(ASTVisitor):
         return tuple(tmp_lhs_shape), list(lhs_dims), list(rhs_dims)
 
     @staticmethod
-    def visit_general_binop(ctx: ASTContext, node, lhs, rhs):
+    def visit_general_binop(
+        ctx: ASTContext, node: ast.AugAssign | ast.BinOp, lhs: ast.expr, rhs: ast.expr
+    ):
         typing_rule = get_typing_rule(type(node.op))
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
@@ -292,7 +296,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_UnaryOp(ctx: ASTContext, node):
+    def visit_UnaryOp(ctx: ASTContext, node: ast.UnaryOp):
         operand = visit_stmt(ctx, node.operand)
         node.shape = operand.shape
         if isinstance(operand.dtype, UInt):
@@ -303,13 +307,13 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_BinOp(ctx: ASTContext, node):
+    def visit_BinOp(ctx: ASTContext, node: ast.BinOp):
         lhs = visit_stmt(ctx, node.left)
         rhs = visit_stmt(ctx, node.right)
         return TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
-    def visit_Assign(ctx: ASTContext, node):
+    def visit_Assign(ctx: ASTContext, node: ast.Assign):
         # Compute RHS
         rhs = visit_stmt(ctx, node.value)
         if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and not isinstance(
@@ -360,7 +364,9 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_constant_tensor(ctx: ASTContext, node, np_values, dtype):
+    def visit_constant_tensor(
+        ctx: ASTContext, node: ast.AnnAssign, np_values: np.array, dtype: AlloType
+    ):
         dtype = str(dtype)
         if is_anywidth_int_type_and_not_np(dtype):
             bitwidth = get_bitwidth_from_type(dtype)
@@ -379,7 +385,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_AugAssign(ctx: ASTContext, node):
+    def visit_AugAssign(ctx: ASTContext, node: ast.AugAssign):
         # visit RHS
         rhs = visit_stmt(ctx, node.value)
         # load LHS
@@ -397,7 +403,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_symbol(ctx: ASTContext, node):
+    def visit_symbol(ctx: ASTContext, node: ast.expr):
         if isinstance(node, ast.Name):
             return sympy.symbols(node.id)
         if isinstance(node, ast.Constant):
@@ -431,7 +437,7 @@ class TypeInferer(ASTVisitor):
         raise None
 
     @staticmethod
-    def visit_Subscript(ctx: ASTContext, node):
+    def visit_Subscript(ctx: ASTContext, node: ast.Subscript):
         value = visit_stmt(ctx, node.value)
         # Handle struct field access
         if len(value.shape) == 0 and isinstance(value.dtype, Struct):
@@ -515,14 +521,14 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_ExtSlice(ctx: ASTContext, node):
+    def visit_ExtSlice(ctx: ASTContext, node: ast.ExtSlice):
         stmts = visit_stmts(ctx, node.dims)
         node.shape = tuple()
         node.dtype = [stmt.dtype for stmt in stmts]
         return node
 
     @staticmethod
-    def visit_Slice(ctx: ASTContext, node):
+    def visit_Slice(ctx: ASTContext, node: ast.Slice):
         if node.lower is not None:
             visit_stmt(ctx, node.lower)
         if node.upper is not None:
@@ -534,7 +540,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_AnnAssign(ctx: ASTContext, node):
+    def visit_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
         target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
             ctx, node.annotation
         )
@@ -577,7 +583,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_FunctionDef(ctx: ASTContext, node):
+    def visit_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
         # pylint: disable=too-many-nested-blocks
         if ctx.top_func is not None:
             # Nested function def
@@ -734,7 +740,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Compare(ctx: ASTContext, node):
+    def visit_Compare(ctx: ASTContext, node: ast.Compare):
         lhs = visit_stmt(ctx, node.left)
         assert len(node.comparators) == 1, "Only support one comparator for now"
         rhs = visit_stmt(ctx, node.comparators[0])
@@ -745,14 +751,14 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_BoolOp(ctx: ASTContext, node):
+    def visit_BoolOp(ctx: ASTContext, node: ast.BoolOp):
         visit_stmts(ctx, node.values)
         node.dtype = uint1
         node.shape = tuple()
         return node
 
     @staticmethod
-    def visit_IfExp(ctx: ASTContext, node):
+    def visit_IfExp(ctx: ASTContext, node: ast.IfExp):
         visit_stmt(ctx, node.test)
         visit_stmt(ctx, node.body)
         visit_stmt(ctx, node.orelse)
@@ -763,7 +769,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_If(ctx: ASTContext, node):
+    def visit_If(ctx: ASTContext, node: ast.If):
         visit_stmt(ctx, node.test)
         visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
@@ -773,7 +779,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_While(ctx: ASTContext, node):
+    def visit_While(ctx: ASTContext, node: ast.While):
         visit_stmt(ctx, node.test)
         visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
@@ -785,7 +791,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Module(ctx: ASTContext, node):
+    def visit_Module(ctx: ASTContext, node: ast.Module):
         for stmt in node.body:
             visit_stmt(ctx, stmt)
         node.dtype = None
@@ -794,7 +800,7 @@ class TypeInferer(ASTVisitor):
 
     # pylint: disable=too-many-branches
     @staticmethod
-    def visit_Call(ctx: ASTContext, node):
+    def visit_Call(ctx: ASTContext, node: ast.Call):
         original_func_id = ctx.func_id
         if isinstance(node.func, ast.Name):
             obj = ASTResolver.resolve(node.func, ctx.global_vars)
@@ -980,7 +986,9 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_library_op(ctx: ASTContext, node, op_name, new_args):
+    def visit_library_op(
+        ctx: ASTContext, node: ast.Call, op_name: str, new_args: list[ast.AST]
+    ):
         if op_name in {
             "exp",
             "softmax",
@@ -1116,14 +1124,14 @@ class TypeInferer(ASTVisitor):
         raise RuntimeError(f"Unsupported linalg operation {op_name}")
 
     @staticmethod
-    def visit_Return(ctx: ASTContext, node):
+    def visit_Return(ctx: ASTContext, node: ast.Return):
         res = visit_stmt(ctx, node.value)
         node.dtype = res.dtype if res is not None else None
         node.shape = res.shape if res is not None else None
         return node
 
     @staticmethod
-    def visit_With(ctx: ASTContext, node):
+    def visit_With(ctx: ASTContext, node: ast.With):
         """
         Generate 'predicate tag' here to classigfy kernel instances with different control flow
         """
@@ -1218,7 +1226,7 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
-    def visit_Expr(ctx: ASTContext, node):
+    def visit_Expr(ctx: ASTContext, node: ast.Expr):
         if isinstance(node.value, ast.Constant):
             # Python comments
             node.dtype = None
@@ -1232,7 +1240,7 @@ class TypeInferer(ASTVisitor):
         raise RuntimeError(f"Unsupported expression: {node.value}")
 
     @staticmethod
-    def visit_Pass(ctx: ASTContext, node):
+    def visit_Pass(ctx: ASTContext, node: ast.Pass):
         node.dtype = None
         node.shape = None
         return node
@@ -1241,7 +1249,7 @@ class TypeInferer(ASTVisitor):
 visit_stmt = TypeInferer()
 
 
-def visit_stmts(ctx: ASTContext, stmts):
+def visit_stmts(ctx: ASTContext, stmts: list[ast.expr]):
     results = []
     for stmt in stmts:
         try:

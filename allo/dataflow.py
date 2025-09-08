@@ -43,9 +43,7 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(
-    s: Schedule, with_stream_type: bool = False, unrolled=True
-):
+def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll=True):
     stream_info = {}
     funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
@@ -62,7 +60,7 @@ def move_stream_to_interface(
         s_type_str = "_" * len(in_types)
         new_args = new_func_args[func_name].copy()
         prefix, ids = parse_kernel_name(func_name)
-        if not unrolled:
+        if not unroll:
             assert s.func_instances is not None and prefix in s.func_instances
             assert ids in s.func_instances[prefix].keys()
             for ids_, predicate_tag in s.func_instances[prefix].items():
@@ -92,7 +90,7 @@ def move_stream_to_interface(
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
                 new_args.append(stream_name)
-                if not unrolled and "symbolic_slice" in op.attributes:
+                if not unroll and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
                     for ids_, predicate_tag in s.func_instances[prefix].items():
                         func_name_ = construct_kernel_name(prefix, ids_)
@@ -362,12 +360,12 @@ def build(
 
     if target == "aie":
         global_vars = get_global_vars(func)
-        # [NOTE]: set unroll/unrolled = False to improve compilation efficiency
+        # [NOTE]: set unroll = False to improve compilation efficiency
         s: Schedule = _customize(
             func, global_vars=global_vars, enable_tensor=False, unroll=False
         )
         stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True, unrolled=False
+            s, with_stream_type=True, unroll=False
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True

@@ -292,7 +292,17 @@ def visit_stmts(ctx, stmts):
 
 
 class ReplaceNames(ast.NodeTransformer):
+    """
+    AST transformer that replaces variable names with either:
+    - a symbolic expression (from symbolic_mapping), or
+    - a constant value (from var_map).
+    """
+
     def __init__(self, symbolic_mapping, var_map):
+        """
+        - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
+        - var_map: name in AST -> value
+        """
         super().__init__()
         self.symbolic_mapping = symbolic_mapping
         self.var_map = var_map
@@ -306,7 +316,15 @@ class ReplaceNames(ast.NodeTransformer):
         return node
 
 
-def get_symbolic_expr(expr_node, mapping, var_map):
+def get_symbolic_expr(expr_node, mapping, var_map) -> str:
+    """
+    Transform the AST expression into symbolic version.
+    (an expression consist of pid symbols and constants)
+
+        - expr_node: ast.expr, the original AST expr
+        - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
+        - var_map: name in AST -> value
+    """
     new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
     ast.fix_missing_locations(new_tree)
     return ast.unparse(new_tree)
