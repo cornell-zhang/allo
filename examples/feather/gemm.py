@@ -243,10 +243,6 @@ def correctness_check(oActs: np.ndarray, ref: np.ndarray):
             np.testing.assert_allclose(
                 ref[m * Mt + 1], oActs[m * 2 * Mt + 0], atol=1e-5
             )
-            # print("oActs:")
-            # print(oActs)
-            # print("ref:")
-            # print(ref)
 
 
 def test_FEATHER_GEMM():
