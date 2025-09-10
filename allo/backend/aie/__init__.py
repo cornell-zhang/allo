@@ -1,4 +1,4 @@
-# pylint: disable=import-error, c-extension-no-member, too-many-nested-blocks, too-many-instance-attributes
+# pylint: disable=import-error, c-extension-no-member, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -14,7 +14,6 @@ try:
 except ImportError:
     pass
 
-from allo._mlir.exceptions import APIWarning
 import allo._mlir._mlir_libs._mlir as allo_ir
 from allo._mlir.dialects import (
     allo as allo_d,
@@ -32,6 +31,7 @@ from allo._mlir.ir import (
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
+from ...utils import construct_kernel_name
 from .external_kernel import ExternalModule, ExternalModuleBase
 from .mlir_codegen import CodeGenerator
 from .utils import (
@@ -66,6 +66,7 @@ class AIE_MLIRModule:
         stream_info: dict,
         stream_types_dict: dict[str, Type],
         ext_libs: list = None,
+        func_instances: dict = None,
     ):
         """
         Note: the module is data-driven,
@@ -80,6 +81,7 @@ class AIE_MLIRModule:
         self.module_parameter_list = [
             k for k, _ in sorted(parameter_list.items(), key=lambda item: item[1])
         ]
+        self.func_instances = func_instances
 
         self.external_kernel_lib: dict[str, ExternalModule] = {}
         for ext_kernel in ext_libs:
@@ -163,47 +165,18 @@ class AIE_MLIRModule:
     # ############################################################
     # Build
     # ############################################################
-    def _init_virtual_graph(self, use_external_kernels: dict[str, bool]):
+    def init_virtual_graph(self, use_external_kernels: dict[str, bool]):
         assert (
             self.core_func_args is not None and self.global_tensors is not None
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
-
         self.virtual_computation_graph: ComputationGraph = ComputationGraph(
             self.allo_module,
             self.top_func_name,
             self.streams,
             self.core_func_args,
             use_external_kernels,
+            self.func_instances,
         )
-
-    def assign_tag_to_kernel(self):
-        """
-        Assign tag to df kernels (serve as some kind of rerolling)
-        """
-
-        class Tagger:
-            def __init__(self) -> None:
-                self.tag_map: dict[str, str] = {}
-                self.counter = 0
-
-            def get_tag(self, key: str) -> str:
-                """Return existing tag or assign a new one if not present."""
-                if key not in self.tag_map:
-                    tag = f"tag_{self.counter}"
-                    self.tag_map[key] = tag
-                    self.counter += 1
-                return self.tag_map[key]
-
-        tagger = Tagger()
-        df_kernels = get_df_kernels(self.allo_module)
-        for kernel in df_kernels:
-            tag_key = re.sub(
-                r"func\.func\s+@[\w\d_]+(\s*\()", r"func.func\1", str(kernel.operation)
-            )
-            tag = tagger.get_tag(tag_key)
-            with kernel.context:
-                kernel.attributes["tag"] = StringAttr.get(tag)
-        return df_kernels
 
     def analyze_kernel_parameters(
         self,
@@ -222,48 +195,56 @@ class AIE_MLIRModule:
         self.core_func_args = {}
         self.global_tensors = {}
         # analyze
-        for kernel in df_kernels:
-            kernel_name = kernel.attributes["sym_name"].value
-            self.core_func_args[kernel_name] = {}
-            tag = kernel.attributes["tag"].value
-            if tag in tag_to_read_write_pattern:
-                in_idx_list, out_idx_list = tag_to_read_write_pattern[tag]
-            else:
-                # fixme: `analyze_read_write_patterns` considers parameters that are both read and written as outputs
+        tag_to_func: dict[str, allo_func_d.FuncOp] = {}
+        for func in df_kernels:
+            tag = func.attributes["tag"].value
+            if tag not in tag_to_func:
+                tag_to_func[tag] = func
                 in_idx_list, out_idx_list = analyze_read_write_patterns(
-                    kernel, injected_external_kernels
+                    func, injected_external_kernels
                 )
                 tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
-            for io_idx_list, io_type in (
-                (in_idx_list, "in"),
-                (out_idx_list, "out"),
-            ):
-                for io_idx in io_idx_list:
-                    argument: Argument = self.func_args[kernel_name][io_idx]
-                    self.core_func_args[kernel_name][io_idx] = (
-                        argument,
-                        io_type == "in",
-                    )
-                    if not argument.dtensor is None:
-                        argument.dtensor.set_access_pattern()
-                        argument.dtensor.type_as_param = kernel.arguments[
-                            io_idx
-                        ].type.shape
-                        global_idx = self.func_args[self.top_func_name].index(argument)
-                        argument.dtensor.set_global_info(global_idx, io_type == "in")
-                        self.global_tensors[global_idx] = argument.dtensor
-            # streams
-            for i, _ in enumerate(kernel.arguments):
-                func_arg = self.func_args[kernel_name][i]
-                if (
-                    i in self.core_func_args[kernel_name]
-                    or func_arg.stream is None  # unused
+
+        for orig_name, kernel_instance_info in self.func_instances.items():
+            for dim, predicate_tag in kernel_instance_info.items():
+                kernel_name = construct_kernel_name(orig_name, dim)
+                kernel = tag_to_func[predicate_tag]
+                self.core_func_args[kernel_name] = {}
+                in_idx_list, out_idx_list = tag_to_read_write_pattern[predicate_tag]
+                for io_idx_list, io_type in (
+                    (in_idx_list, "in"),
+                    (out_idx_list, "out"),
                 ):
-                    continue
-                self.core_func_args[kernel_name][i] = (
-                    func_arg,
-                    self.stream_info[kernel_name][func_arg.stream.name],
-                )
+                    for io_idx in io_idx_list:
+                        argument: Argument = self.func_args[kernel_name][io_idx]
+                        self.core_func_args[kernel_name][io_idx] = (
+                            argument,
+                            io_type == "in",
+                        )
+                        if not argument.dtensor is None:
+                            argument.dtensor.set_access_pattern()
+                            argument.dtensor.type_as_param = kernel.arguments[
+                                io_idx
+                            ].type.shape
+                            global_idx = self.func_args[self.top_func_name].index(
+                                argument
+                            )
+                            argument.dtensor.set_global_info(
+                                global_idx, io_type == "in"
+                            )
+                            self.global_tensors[global_idx] = argument.dtensor
+                # streams
+                for i, _ in enumerate(kernel.arguments):
+                    func_arg = self.func_args[kernel_name][i]
+                    if (
+                        i in self.core_func_args[kernel_name]
+                        or func_arg.stream is None  # unused
+                    ):
+                        continue
+                    self.core_func_args[kernel_name][i] = (
+                        func_arg,
+                        self.stream_info[kernel_name][func_arg.stream.name],
+                    )
 
     def allo_opt(self):
         """
@@ -552,10 +533,10 @@ class AIE_MLIRModule:
             )
         )
         self.analyze_kernel_parameters(
-            self.assign_tag_to_kernel(), self.injected_external_kernels
+            get_df_kernels(self.allo_module), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        self._init_virtual_graph(use_external_kernels)
+        self.init_virtual_graph(use_external_kernels)
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -565,6 +546,7 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
+        self.virtual_computation_graph.refactor()
 
         # record original allo mlir
         with open(

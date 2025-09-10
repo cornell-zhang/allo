@@ -181,6 +181,9 @@ class Stream:
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
 
+    def __repr__(self):
+        return self.__str__()
+
 
 @dataclass
 class Argument:
@@ -241,16 +244,6 @@ matmul_external_kernel_config_map = {
 }
 
 
-def parse_kernel_name(name: str):
-    match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
-    if not match:
-        raise ValueError(f"Invalid format: {name}")
-
-    prefix = match.group(1).rstrip("_")
-    indexs = tuple(int(n) for n in match.group(2).split("_") if n != "")
-    return prefix, indexs
-
-
 def inject_external_kernels(
     module: allo_ir.ir.Module,
     top_function_name,
@@ -279,11 +272,11 @@ def inject_external_kernels(
     injected_external_kernels: dict[str, ExternalModuleBase] = {}
     include_src: set[str] = set()
 
-    def inject_external_kernels_recursive(operations, df_function_name: str):
+    def inject_external_kernels_recursive(operations, df_function_tag: str):
         for op in operations:
             # 1. customized external kernel
             if isinstance(op, allo_func_d.CallOp):
-                use_external_kernels[df_function_name] = True
+                use_external_kernels[df_function_tag] = True
                 callee_name = op.callee.value
                 # register external kernel
                 if callee_name in injected_external_kernels:
@@ -315,7 +308,7 @@ def inject_external_kernels(
                     dtype = str(op.outputs[0].type.element_type)
                     ctype = external_kernel_aie2c_type[dtype]
                     include_src.add(f'#include "{lib_dir}/zero.cc"\n')
-                    use_external_kernels[df_function_name] = True
+                    use_external_kernels[df_function_tag] = True
                     kernel_name = f"fill_zeros_{dtype}_{M}_{N}_vector"
                     kernel_code += f"void {kernel_name}({ctype} *A)"
                     kernel_code += " {\n"
@@ -332,7 +325,7 @@ def inject_external_kernels(
                 if dtype in external_kernel_aie2c_type:
                     ctype = external_kernel_aie2c_type[dtype]
                     kernel_name = f"{op_name}_{dtype}_vector"
-                    use_external_kernels[df_function_name] = True
+                    use_external_kernels[df_function_tag] = True
                     kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
                     kernel_code += " {\n"
                     kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
@@ -373,7 +366,7 @@ def inject_external_kernels(
                             include_src.add('#include "mmi4.cc"\n')
                         else:
                             include_src.add('#include "mm.cc"\n')
-                        use_external_kernels[df_function_name] = True
+                        use_external_kernels[df_function_tag] = True
                         kernel_header += f"#define DIM_M {M}\n"
                         kernel_header += f"#define DIM_N {N}\n"
                         kernel_header += f"#define DIM_K {K}\n"
@@ -451,7 +444,7 @@ def inject_external_kernels(
                                 use.owner.erase()
                 elif dtype_a == "i8" and dtype_b == "i4":
                     include_src.add('#include "mmi4.cc"\n')
-                    use_external_kernels[df_function_name] = True
+                    use_external_kernels[df_function_tag] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
                     kernel_header += f"#define DIM_K {K}\n"
@@ -500,7 +493,7 @@ def inject_external_kernels(
                 for region in op.regions:
                     for block in region.blocks:
                         inject_external_kernels_recursive(
-                            block.operations, df_function_name
+                            block.operations, df_function_tag
                         )
 
     with module.context, allo_ir.ir.Location.unknown():
@@ -510,10 +503,10 @@ def inject_external_kernels(
                 or func.attributes["sym_visibility"].value != "private"
             ):
                 if func.attributes["sym_name"].value != top_function_name:
-                    func_name: str = func.attributes["sym_name"].value
-                    use_external_kernels[func_name] = False
+                    func_tag: str = func.attributes["tag"].value
+                    use_external_kernels[func_tag] = False
                     for block in func.regions[0].blocks:
-                        inject_external_kernels_recursive(block.operations, func_name)
+                        inject_external_kernels_recursive(block.operations, func_tag)
     return (
         use_external_kernels,
         injected_external_kernels,
@@ -564,11 +557,11 @@ def get_aie_mlir_dtype_from_str(dtype_str: str) -> aie_ir.Type:
     """
     Convert a string representing a data type into the corresponding AIE IR type.
     """
-    if dtype_str == "i32" or dtype_str == "ui32":
+    if dtype_str in {"i32", "ui32"}:
         return aie_ir.IntegerType.get_signless(32)
-    if dtype_str == "i16" or dtype_str == "ui16":
+    if dtype_str in {"i16", "ui16"}:
         return aie_ir.IntegerType.get_signless(16)
-    if dtype_str == "i8" or dtype_str == "ui8":
+    if dtype_str in {"i8", "ui8"}:
         return aie_ir.IntegerType.get_signless(8)
     if dtype_str == "f32":
         return aie_ir.F32Type.get()
