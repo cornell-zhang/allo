@@ -910,6 +910,17 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                     size = np.prod(global_tensors[dtensor_idx].shape)
                     if str(global_tensors[dtensor_idx].dtype) == "i4":
                         size //= 2
+                    # check if the input file has expected bytes
+                    code += format_str(f"ifile{dtensor_idx}.seekg(0, std::ios::end);")
+                    code += format_str(f"auto ifile{dtensor_idx}_size = ifile{dtensor_idx}.tellg();")
+                    code += format_str(f"ifile{dtensor_idx}.seekg(0, std::ios::beg);")
+                    code += format_str(f"if (ifile{dtensor_idx}_size != {size} * sizeof({dtype})) {{")
+                    code += format_str(
+                        '  std::cerr << "Error: Invalid input file, byte number mismatch.\\n";',
+                        strip=False,
+                    )
+                    code += format_str("  return 1;", strip=False)
+                    code += format_str("}")
                     code += format_str(
                         f"std::vector<{dtype}> vec{dtensor_idx}({size});"
                     )
