@@ -91,6 +91,9 @@ c2allo_type["int32_t"] = "int32"
 c2allo_type["uint32_t"] = "uint32"
 
 def np_type_to_str(dtype):
+    # special case: bfloat16
+    if dtype == ml_dtypes.bfloat16:
+        return "bf16"
     return list(np_supported_types.keys())[
         list(np_supported_types.values()).index(dtype)
     ]

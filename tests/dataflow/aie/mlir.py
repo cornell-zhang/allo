@@ -91,5 +91,7 @@ if __name__ == "__main__":
     C = np.zeros((M, N)).astype(np_bfloat16)
 
     call_mlir("top.prj", [bfloat16, bfloat16, bfloat16], 0, [0, 1], [2], A, B, C)
-    np.testing.assert_allclose(C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2)
+    np.testing.assert_allclose(
+        C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+    )
     print("PASSED!")

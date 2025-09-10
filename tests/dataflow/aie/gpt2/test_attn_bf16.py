@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import torch
 import torch.nn.functional as F
 import allo
@@ -12,6 +13,7 @@ from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
 np.random.seed(42)
+os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
 
 # ===============================================================================
 # Model Configuration
@@ -245,3 +247,4 @@ np.testing.assert_allclose(
     x.astype(np.float32), output.to(torch.float32).numpy(), atol=1e-1
 )
 print("Allo bfloat16 attn matches PyTorch bfloat16 reference within tolerance ✔️")
+del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
