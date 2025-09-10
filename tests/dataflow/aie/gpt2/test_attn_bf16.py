@@ -1,6 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+import torch
+import torch.nn.functional as F
 import allo
 from allo.ir.types import bfloat16
 import allo.dataflow as df
@@ -21,6 +24,17 @@ Q = np.random.randn(N, D).astype(np_bfloat16)
 K = np.random.randn(N, D).astype(np_bfloat16)
 V = np.random.randn(N, D).astype(np_bfloat16)
 O = np.zeros(N * D).astype(np_bfloat16)
+
+
+def scaled_dot_product_attention(q, k, v):
+    d_k = q.size(-1)
+    scores = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(
+        torch.tensor(d_k, dtype=torch.float32)
+    )
+    attn = F.softmax(scores, dim=-1)
+    output = torch.matmul(attn, v)
+    return output
+
 
 attn_score = ExternalModule(
     top="transpose_matmul_with_scale_bfloat16",
@@ -217,3 +231,11 @@ attn_weight = np.zeros((N, N)).astype(np_bfloat16)
 softmax_mod(attention_score, attn_weight)
 x = np.zeros((N, D)).astype(np_bfloat16)
 gemm2_mod(attn_weight, V, x)
+
+q = torch.from_numpy(Q.astype(np.float32)).to(dtype=torch.bfloat16)
+k = torch.from_numpy(K.astype(np.float32)).to(dtype=torch.bfloat16)
+v = torch.from_numpy(V.astype(np.float32)).to(dtype=torch.bfloat16)
+output = scaled_dot_product_attention(q, k, v)
+
+print(output)
+print(x.astype(np.float32))
