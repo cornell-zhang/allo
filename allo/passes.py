@@ -760,7 +760,13 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
     # Dictionary of common linalg operations and their input/output patterns
     # Pattern format: (number_of_inputs, number_of_outputs)
     linalg_op_patterns = {
+        "linalg.broadcast": (1, 1),  # 1 inputs, 1 output
+        "linalg.transpose": (1, 1),  # 1 inputs, 1 output
         "linalg.matmul": (2, 1),  # 2 inputs, 1 output
+        "linalg.batch_matmul": (2, 1),  # 2 inputs, 1 output
+        "linalg.conv_2d_nchw_fchw": (2, 1),  # 2 inputs, 1 output
+        "linalg.pooling_nchw_max": (2, 1),  # 2 inputs, 1 output
+        "linalg.pooling_nchw_sum": (2, 1),  # 2 inputs, 1 output
         "linalg.add": (2, 1),  # 2 inputs, 1 output
         "linalg.mul": (2, 1),  # 2 inputs, 1 output
         "linalg.div": (2, 1),  # 2 inputs, 1 output
@@ -768,9 +774,13 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
         "linalg.max": (2, 1),  # 2 inputs, 1 output
         "linalg.min": (2, 1),  # 2 inputs, 1 output
         "linalg.fill": (1, 1),  # 1 input (value), 1 output (buffer)
+        "linalg.exp": (1, 1),  # 1 inputs, 1 output
+        "linalg.log": (1, 1),  # 1 inputs, 1 output
+        "linalg.abs": (1, 1),  # 1 inputs, 1 output
         "linalg.copy": (1, 1),  # 1 input, 1 output
         "linalg.conv_2d": (2, 1),  # 2 inputs (input, kernel), 1 output
         "linalg.pooling": (1, 1),  # 1 input, 1 output
+        "linalg.softmax": (1, 1),  # 1 input, 1 output
         "linalg.generic": None,  # Special handling required
         "linalg.indexed_generic": None,  # Special handling required
     }

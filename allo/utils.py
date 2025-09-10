@@ -32,7 +32,7 @@ from .ir.types import (
 )
 
 np_supported_types = {
-    "bf16": np.uint16,
+    "bf16": ml_dtypes.bfloat16,
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -47,6 +47,8 @@ np_supported_types = {
     "ui64": np.uint64,
 }
 
+np_read_file_types = dict(np_supported_types)
+np_read_file_types["bf16"] = np.uint16
 
 ctype_map = {
     # ctypes.c_float16 does not exist
@@ -90,10 +92,8 @@ c2allo_type = {v: k for k, v in allo2c_type.items()}
 c2allo_type["int32_t"] = "int32"
 c2allo_type["uint32_t"] = "uint32"
 
+
 def np_type_to_str(dtype):
-    # special case: bfloat16
-    if dtype == ml_dtypes.bfloat16:
-        return "bf16"
     return list(np_supported_types.keys())[
         list(np_supported_types.values()).index(dtype)
     ]

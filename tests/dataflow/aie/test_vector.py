@@ -232,9 +232,9 @@ def _test_vector_vector_add_p0():
 
 
 if __name__ == "__main__":
-    # _test_vector_scalar_conditional_add()
-    # _test_vector_scalar_add()
-    # _test_vector_scalar_mul()
+    _test_vector_scalar_conditional_add()
+    _test_vector_scalar_add()
+    _test_vector_scalar_mul()
     _test_vector_vector_add()
     _test_vector_vector_bf16_add()
     _test_vector_vector_mul()

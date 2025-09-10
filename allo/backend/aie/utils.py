@@ -10,7 +10,7 @@ import numpy as np
 import aie.ir as aie_ir
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..utils import format_str, format_code
-from ...utils import np_supported_types
+from ...utils import np_read_file_types
 from ...memory import DTensor
 from .external_kernel import ExternalModule, ExternalModuleBase
 from ..._mlir.dialects import (
@@ -700,23 +700,6 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
 # ############################################################
 # Run-time Utils
 # ############################################################
-# np_supported_types = {
-#     "bf16": np.uint16,  # numpy does not support bf16
-#     "f16": np.float16,
-#     "f32": np.float32,
-#     "f64": np.float64,
-#     "i8": np.int8,
-#     "i16": np.int16,
-#     "i32": np.int32,
-#     "i64": np.int64,
-#     "ui1": np.bool_,
-#     "ui8": np.uint8,
-#     "ui16": np.uint16,
-#     "ui32": np.uint32,
-#     "ui64": np.uint64,
-# }
-
-
 class RuntimeArgs:
     def __init__(self, dtype: str, is_input: bool):
         self.raw_dtype: str = dtype
@@ -760,7 +743,7 @@ def unpack_int4(packed: np.ndarray) -> np.ndarray:
 
 
 def read_tensor_from_file(dtype, shape, file_path):
-    arr = np.fromfile(file_path, dtype=np_supported_types[str(dtype)])
+    arr = np.fromfile(file_path, dtype=np_read_file_types[str(dtype)])
     if str(dtype) == "bf16":
         f32_arr = (arr.astype(np.uint32) << 16).view(np.float32)
         return f32_arr.reshape(shape)
@@ -912,9 +895,13 @@ def codegen_host(global_tensors: dict[int, DTensor], runtime_args: list[RuntimeA
                         size //= 2
                     # check if the input file has expected bytes
                     code += format_str(f"ifile{dtensor_idx}.seekg(0, std::ios::end);")
-                    code += format_str(f"auto ifile{dtensor_idx}_size = ifile{dtensor_idx}.tellg();")
+                    code += format_str(
+                        f"auto ifile{dtensor_idx}_size = ifile{dtensor_idx}.tellg();"
+                    )
                     code += format_str(f"ifile{dtensor_idx}.seekg(0, std::ios::beg);")
-                    code += format_str(f"if (ifile{dtensor_idx}_size != {size} * sizeof({dtype})) {{")
+                    code += format_str(
+                        f"if (ifile{dtensor_idx}_size != {size} * sizeof({dtype})) {{"
+                    )
                     code += format_str(
                         '  std::cerr << "Error: Invalid input file, byte number mismatch.\\n";',
                         strip=False,
