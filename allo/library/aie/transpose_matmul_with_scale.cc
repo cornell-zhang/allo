@@ -49,4 +49,10 @@ void transpose_matmul_with_scale(float A_in[32][64], float B_in[32][64],
       &A_in[0][0], &B_in[0][0], &C_out[0][0]);
 }
 
+void transpose_matmul_with_scale_bfloat16(bfloat16 A_in[32][64], bfloat16 B_in[32][64],
+                                 bfloat16 C_out[32][32]) {
+  transpose_matmul_with_scale<bfloat16, bfloat16, 32, 32, 64, 0.125f>(
+      &A_in[0][0], &B_in[0][0], &C_out[0][0]);
+}
+
 } // extern "C"

@@ -38,8 +38,7 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
-from .utils import get_mlir_dtype_from_str
-from .backend.ip import c2allo_type
+from .utils import get_mlir_dtype_from_str, c2allo_type
 
 
 def _mlir_lower_pipeline(module, **kwargs):

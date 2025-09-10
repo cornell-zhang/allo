@@ -36,7 +36,7 @@ from ...memory import (
 )
 
 from .utils import (
-    get_element_type,
+    get_aie_mlir_dtype_from_str,
     merge_token_sets,
     device_config_map,
     Argument,
@@ -1613,7 +1613,7 @@ class CodeGenerator:
                         depth=stream.type.depth,
                         datatype=aie_ir.MemRefType.get(
                             stream.type.shape,
-                            get_element_type(str(stream.type.dtype)),
+                            get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
                         ),
                     )
                 # - io fifos: shim <-> mem <-> compute
@@ -1625,7 +1625,7 @@ class CodeGenerator:
                         depth=dma_fifo.depth,
                         datatype=aie_ir.MemRefType.get(
                             dma_fifo.data_shape,
-                            get_element_type(str(dma_fifo.dtype)),
+                            get_aie_mlir_dtype_from_str(str(dma_fifo.dtype)),
                         ),
                         dimensionsToStream=dma_fifo.dimensions_to_stream,
                     )
@@ -1772,7 +1772,7 @@ class CodeGenerator:
                     runtime_args.append(
                         aie_ir.MemRefType.get(
                             [runtime_arg.current_size],
-                            get_element_type(str(runtime_arg.dtype)),
+                            get_aie_mlir_dtype_from_str(str(runtime_arg.dtype)),
                         )
                     )
 

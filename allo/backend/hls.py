@@ -26,7 +26,7 @@ from .vitis import (
 from .tapa import (
     codegen_tapa_host,
 )
-from .ip import IPModule, c2allo_type
+from .ip import IPModule
 from .report import parse_xml
 from ..passes import (
     _mlir_lower_pipeline,
@@ -35,7 +35,7 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs
+from ..utils import get_func_inputs_outputs, c2allo_type
 
 
 def is_available(backend="vivado_hls"):
