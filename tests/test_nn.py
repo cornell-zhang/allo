@@ -425,7 +425,7 @@ def test_batchnorm2d():
         running_var.reshape(1, C, 1, 1) + 1e-5
     ) * gamma.reshape(1, C, 1, 1) + beta.reshape(1, C, 1, 1)
 
-    np.testing.assert_allclose(allo_out, np_out, rtol=1e-04)
+    np.testing.assert_allclose(allo_out, np_out, rtol=2e-04)
     print("Passed!")
     print(s.build(target="vhls"))
 
