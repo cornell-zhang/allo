@@ -33,8 +33,7 @@ void transpose_matmul_with_scale(T_in *tensor_a, T_in *tensor_b,
         vec_t mul_vec = aie::mul(input_vec_a, input_vec_b);
         sum += aie::reduce_add(mul_vec);
       }
-      output_tensor[outer_iter * N + inner_iter] =
-          static_cast<T_out>(sum * scale);
+      output_tensor[outer_iter * N + inner_iter] = T_out(sum * scale);
       tensor_b_ptr += K;
     }
     tensor_a_ptr += K;
@@ -44,8 +43,15 @@ void transpose_matmul_with_scale(T_in *tensor_a, T_in *tensor_b,
 extern "C" {
 
 void transpose_matmul_with_scale(float A_in[32][64], float B_in[32][64],
-                        float C_out[32][32]) {
+                                 float C_out[32][32]) {
   transpose_matmul_with_scale<float, float, 32, 32, 64, 0.125f>(
+      &A_in[0][0], &B_in[0][0], &C_out[0][0]);
+}
+
+void transpose_matmul_with_scale_bfloat16(bfloat16 A_in[32][64],
+                                          bfloat16 B_in[32][64],
+                                          bfloat16 C_out[32][32]) {
+  transpose_matmul_with_scale<bfloat16, bfloat16, 32, 32, 64, 0.125f>(
       &A_in[0][0], &B_in[0][0], &C_out[0][0]);
 }
 

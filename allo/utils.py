@@ -47,6 +47,8 @@ np_supported_types = {
     "ui64": np.uint64,
 }
 
+np_read_file_types = dict(np_supported_types)
+np_read_file_types["bf16"] = np.uint16
 
 ctype_map = {
     # ctypes.c_float16 does not exist
@@ -65,6 +67,30 @@ ctype_map = {
     "ui32": ctypes.c_uint32,
     "ui64": ctypes.c_uint64,
 }
+
+# https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
+allo2c_type = {
+    "bfloat16": "bfloat16",
+    "float32": "float",
+    "float64": "double",
+    "int1": "bool",
+    "int8": "int8_t",
+    "int16": "int16_t",
+    "int32": "int",
+    "int64": "int64_t",
+    "int128": "ap_int<128>",
+    # bitwidth larger than 64 is not supported by numpy+pybind11
+    "uint1": "bool",
+    "uint8": "uint8_t",
+    "uint16": "uint16_t",
+    "uint32": "unsigned int",
+    "uint64": "uint64_t",
+    "uint128": "ap_uint<128>",
+}
+
+c2allo_type = {v: k for k, v in allo2c_type.items()}
+c2allo_type["int32_t"] = "int32"
+c2allo_type["uint32_t"] = "uint32"
 
 
 def np_type_to_str(dtype):
@@ -171,8 +197,8 @@ def get_mlir_dtype_from_str(dtype):
         bitwidth = get_bitwidth_from_type("i" + dtype[3:])
         return IntegerType.get_signless(bitwidth)
     if dtype.startswith("ui"):
-        bitwidth = get_bitwidth_from_type("ui" + dtype[3:])
-        return IntegerType.get_unsigned(bitwidth)
+        bitwidth = get_bitwidth_from_type("ui" + dtype[4:])
+        return IntegerType.get_signless(bitwidth)
     if dtype.startswith("fixed"):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
         return allo_d.FixedType.get(bitwidth, frac)
@@ -186,6 +212,8 @@ def get_mlir_dtype_from_str(dtype):
         if bitwidth == 64:
             return F64Type.get()
         raise RuntimeError("Unsupported type")
+    if dtype.startswith("bf"):
+        return BF16Type.get()
     raise RuntimeError("Unsupported type")
 
 

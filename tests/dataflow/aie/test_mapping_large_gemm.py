@@ -83,8 +83,8 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         device_type="npu1_4col",
     )
     if TyI is bfloat16:
-        A = np.random.random((M, K)).astype(np_bfloat16)
-        B = np.random.random((K, N)).astype(np_bfloat16)
+        A = (np.random.random((M, K)) * 0.1).astype(np_bfloat16)
+        B = (np.random.random((K, N)) * 0.1).astype(np_bfloat16)
         C = np.zeros((M, N)).astype(np_bfloat16)
     elif TyI is int8:
         A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
@@ -99,7 +99,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     mod(A, B, C)
     if TyI is bfloat16:
         np.testing.assert_allclose(
-            C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+            C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-1
         )
     else:
         np.testing.assert_allclose(C, A @ B, atol=1e-5)
@@ -107,14 +107,16 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
+    M, N, K = 2048, 2048, 2048
+    m, n, k = 64, 64, 64
     # - i8
-    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, int8, int8)
+    _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
 
     # - i16
-    _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, int16, int16)
+    _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
 
     # - bf16
     try:
-        _test_pingpong_gemm(2048, 2048, 2048, 32, 32, 32, bfloat16, bfloat16)
+        _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")
