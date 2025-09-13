@@ -9,6 +9,51 @@ from allo.utils import get_np_struct_type
 import allo.backend.hls as hls
 
 
+def test_single_systolic():
+    from allo.library.systolic import systolic
+
+    MODE = "csyn"
+    # L, D = 512, 768
+    # M0, M1 = 16, 16
+    L, D = 8, 8
+    M0, M1 = 2, 2
+    # L, D = 512, 512
+    # M0, M1 = 16, 16
+    # L, D = 1024, 1024
+    # M0, M1 = 16, 16
+    W_A = np.random.randint(-4, 4, size=(D, D)).astype(np.int8)
+    allo_C = np.zeros((L, D), dtype=np.int8)
+
+    def top(X: int8[L, D], W_A: int8[D, D]) -> int8[L, D]:
+        Z: int8[L, D]
+        systolic[int8, int8, int8, L, D, D, M0, M1](X, W_A, Z)
+        return Z
+
+    s = allo.customize(top)
+    # CPU testing
+    mod = s.build()
+    X = np.random.randint(-4, 4, size=(L, D)).astype(np.int8)
+    allo_C = mod(X, W_A)
+    np_C = X @ W_A
+    np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+    print("Passed!")
+    s.compose(systolic, instantiate=[int8, int8, int8, L, D, D, M0, M1])
+    s.dataflow("top")
+    hls_mod = s.build(
+        target="vitis_hls",
+        mode=MODE,
+        project=f"single_{L}x{D}_tile_{M0}x{M1}.prj",
+    )
+    if MODE == "csyn":
+        hls_mod()
+        print("Passed!")
+    else:
+        hls_mod(X, W_A, allo_C)
+        np_C = X @ W_A
+        np.testing.assert_allclose(allo_C, np_C, atol=1e-3)
+        print("Passed!")
+
+
 def test_cascaded_int8_gemm():
     from allo.library.systolic import systolic
 
@@ -213,6 +258,7 @@ def test_int8_gemm_dsp_packing():
 
 
 if __name__ == "__main__":
+    test_single_systolic()
     test_cascaded_int8_gemm()
     test_int8_gemm()
     test_int8_gemm_dsp_packing()
