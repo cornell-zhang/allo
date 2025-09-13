@@ -252,14 +252,18 @@ class Schedule:
         ip = InsertionPoint.at_block_terminator(func.entry_block)
         op_hdl = allo_d.CreateOpHandleOp(band_name, ip=ip)
         loop_hdls = []
+        axes = []
         for arg in args:
             func, axis = self._get_func_and_axis(args)
             band_name, axis = find_loop_in_bands(func, arg)
             loop_hdls.append(
                 allo_d.CreateLoopHandleOp(op_hdl.result, StringAttr.get(axis), ip=ip)
             )
+            axes.append(axis)
         arg_results = [arg.result for arg in loop_hdls]
         allo_d.FuseOp(arg_results, ip=ip)
+        name = "_".join(axes) + "_fused"
+        return LoopWrapper(f"{args[0].func}:{band_name}.{name}", None)
 
     @wrapped_apply
     # pylint: disable=too-many-branches
