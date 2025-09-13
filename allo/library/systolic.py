@@ -61,7 +61,7 @@ def PE_kernel_packed_int4xint8[
     j: index,
 ):
     v: int32 = 0
-    for k in range(K):
+    for k in dsl.grid(K, name="reduction"):
         a: int8 = A_in[k]
         b_packed: int8 = B_in[k]
         b0: int4 = b_packed[0:4]
@@ -100,7 +100,7 @@ def PE_kernel_packed_int8xint8[
     j: index,
 ):
     v: int32 = 0
-    for k in range(K):
+    for k in dsl.grid(K, name="reduction"):
         a: int8 = A_in[k]
         b_packed: int16 = B_in[k]
         b0: int8 = b_packed[0:8]
@@ -289,14 +289,17 @@ def schedule_systolic(s):
         assert len(s.inst_list) == 8
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-2], s.inst_list[-1]
+        kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
     elif s.top_func_name == "packed_systolic":
         assert len(s.inst_list) == 9
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
+        kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
+        kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
     else:
         raise ValueError(
             f"Cannot apply `schedule_systolic` to function: {s.top_func_name}"
@@ -314,7 +317,6 @@ def schedule_systolic(s):
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
     s.dataflow(tile_loop)
-    kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
     s.pipeline(kernel_loop)
     pe = s.unfold(f"{tile_name}:PE", [0, 1])  # specify which are spatial loops
     s.to(MockBuffer(tile_name, "A_fifo"), pe, axis=1, depth=M0 + 1)

@@ -262,8 +262,11 @@ class Schedule:
             axes.append(axis)
         arg_results = [arg.result for arg in loop_hdls]
         allo_d.FuseOp(arg_results, ip=ip)
-        name = "_".join(axes) + "_fused"
-        return LoopWrapper(f"{args[0].func}:{band_name}.{name}", None)
+        if isinstance(args[0], LoopWrapper):
+            name = "_".join(axes) + "_fused"
+            return LoopWrapper(f"{args[0].func}:{band_name}.{name}", None)
+        else:
+            return LoopWrapper(f"{func.name.value}:{band_name}", None)
 
     @wrapped_apply
     # pylint: disable=too-many-branches
