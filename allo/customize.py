@@ -265,8 +265,7 @@ class Schedule:
         if isinstance(args[0], LoopWrapper):
             name = "_".join(axes) + "_fused"
             return LoopWrapper(f"{args[0].func}:{band_name}.{name}", None)
-        else:
-            return LoopWrapper(f"{func.name.value}:{band_name}", None)
+        return LoopWrapper(f"{func.name.value}:{band_name}", None)
 
     @wrapped_apply
     # pylint: disable=too-many-branches
