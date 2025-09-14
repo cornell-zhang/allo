@@ -18,7 +18,7 @@ from math import log2
 import argparse
 
 import allo
-from allo.ir.types import float32, int8
+from allo.ir.types import int8
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -35,9 +35,16 @@ Choose within [4, 8, 16] (preset instruction provided). Default to 8."""
 parser.add_argument(
     "--AW", type=int, default=8, choices=[4, 8, 16], required=False, help=help_AW
 )
+help_M = """M dimension (rows of A/output). Requirement: M % Mt == 0. Default to 16."""
+help_N = """N dimension (cols of B/output). Requirement: N % Nt == 0. Default to 32."""
+help_K = """K dimension (shared inner). Requirement: K % Kt == 0. Default to 16."""
+parser.add_argument("--M", type=int, default=16, required=False, help=help_M)
+parser.add_argument("--N", type=int, default=32, required=False, help=help_N)
+parser.add_argument("--K", type=int, default=16, required=False, help=help_K)
 
 args = parser.parse_args()
 
+Ty = int8
 AH = args.AH
 AW = args.AW
 
@@ -54,10 +61,7 @@ SW = 3  # Swap
 # Tile size, irrelevant with input size
 # Requirement: Kt % 2 == 0
 Mt, Nt, Kt = AW // 2, AH, 8
-
-# Requirements:
-# M % Mt == 0, N % Nt == 0, K % Kt == 0
-M, N, K = 16, 32, 16
+M, N, K = args.M, args.N, args.K
 
 
 def reverse_bits(data: int, bit_range: int) -> int:
@@ -71,31 +75,29 @@ def reverse_bits(data: int, bit_range: int) -> int:
 
 @df.region()
 def top():
-    nest_out = df.pipe(dtype=float32, shape=(AW,), depth=AH)
+    nest_out = df.pipe(dtype=Ty, shape=(AW,), depth=AH)
 
     @df.kernel(mapping=[1])
-    def NEST(iActs: float32[Mt * 2, Kt // 2], weights: float32[Kt, Nt]):
+    def NEST(iActs: Ty[Mt * 2, Kt // 2], weights: Ty[Kt, Nt]):
         for i in range(AH):  # Rows, can be pipelined
-            local_result: float32[AW] = 0
+            local_result: Ty[AW] = 0
             for j in range(AW):  # Cols, can be fully parallelized
                 for k in range(Kt // 2):  # Iterations of a local reduction
-                    last_res: float32 = 0.0 if k == 0 else local_result[j]
-                    iAct: float32 = iActs[j, k]
-                    weight: float32 = (
+                    last_res: Ty = 0.0 if k == 0 else local_result[j]
+                    iAct: Ty = iActs[j, k]
+                    weight: Ty = (
                         weights[k, i] if j < AW // 2 else weights[Kt // 2 + k, i]
                     )
-                    result: float32 = last_res + iAct * weight
+                    result: Ty = last_res + iAct * weight
                     local_result[j] = result
             nest_out.put(local_result)
 
-    connection = df.array(
-        df.pipe(dtype=float32, shape=(), depth=1), shape=(P0 + 1, P1 * 2)
-    )
+    connection = df.array(df.pipe(dtype=Ty, shape=(), depth=1), shape=(P0 + 1, P1 * 2))
 
     @df.kernel(mapping=[1])
     def bus():
         for _ in range(Nt):
-            array: float32[AW] = nest_out.get()
+            array: Ty[AW] = nest_out.get()
             with allo.meta_for(AW) as i:
                 connection[0, i].put(array[i])
 
@@ -114,10 +116,10 @@ def top():
         for _ in range(AH):
             # The first stage
             with allo.meta_if(i == 0):
-                in_left: float32 = connection[0, 2 * j].get()
-                in_right: float32 = connection[0, 2 * j + 1].get()
-                out_left: float32 = 0.0
-                out_right: float32 = 0.0
+                in_left: Ty = connection[0, 2 * j].get()
+                in_right: Ty = connection[0, 2 * j + 1].get()
+                out_left: Ty = 0.0
+                out_right: Ty = 0.0
                 if inst == 0:  # Pass
                     out_left = in_left
                     out_right = in_right
@@ -135,8 +137,8 @@ def top():
 
             # The last stage
             with allo.meta_elif(i == P0 - 1):
-                in_left: float32 = connection[P0 - 1, 2 * j].get()
-                in_right: float32 = connection[P0 - 1, 2 * j + 1].get()
+                in_left: Ty = connection[P0 - 1, 2 * j].get()
+                in_right: Ty = connection[P0 - 1, 2 * j + 1].get()
                 if inst == 0:  # Pass
                     connection[P0, 2 * j].put(in_left)
                     connection[P0, 2 * j + 1].put(in_right)
@@ -152,10 +154,10 @@ def top():
 
             # Stages in the middle
             with allo.meta_else():
-                in_left: float32 = connection[i, 2 * j].get()
-                in_right: float32 = connection[i, 2 * j + 1].get()
-                out_left: float32 = 0.0
-                out_right: float32 = 0.0
+                in_left: Ty = connection[i, 2 * j].get()
+                in_right: Ty = connection[i, 2 * j + 1].get()
+                out_left: Ty = 0.0
+                out_right: Ty = 0.0
                 if inst == 0:  # Pass
                     out_left = in_left
                     out_right = in_right
@@ -176,7 +178,7 @@ def top():
                 ].put(out_right)
 
     @df.kernel(mapping=[1])
-    def output(output_buffer: float32[AW, AH]):
+    def output(output_buffer: Ty[AW, AH]):
         for d in range(AH):
             with allo.meta_for(AW) as i:
                 output_buffer[i, d] += connection[P0, i].get()
@@ -275,14 +277,14 @@ def test_FEATHER_GEMM():
     elif AW == 4:
         inst = np.array([[PS, PS], [AR, AL], [SW, PS]], dtype=np.int8)
 
-    iActs_no_layout = np.random.rand(M, K).astype(np.float32)
-    weights = np.random.rand(K, N).astype(np.float32)
-    oActs = np.zeros((2 * M, N), dtype=np.float32)
+    iActs_no_layout = np.random.rand(M, K).astype(np.int8)
+    weights = np.random.rand(K, N).astype(np.int8)
+    oActs = np.zeros((2 * M, N), dtype=np.int8)
 
     sim_mod = df.build(top, target="simulator")
     for n in range(N // Nt):
         for m in range(M // Mt):
-            output_buffer = np.zeros((AW, Nt), dtype=np.float32)
+            output_buffer = np.zeros((AW, Nt), dtype=np.int8)
             for k in range(K // Kt):
                 weights_tile = np.ascontiguousarray(
                     weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
@@ -302,11 +304,16 @@ def test_FEATHER_GEMM():
     print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
-        csim_mod = df.build(top)
-        oActs = np.zeros((2 * M, N), dtype=np.float32)
+        csyn_mod = df.build(
+            top,
+            target="vitis_hls",
+            mode="hw_emu",
+            project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}.prj",
+        )
+        oActs = np.zeros((2 * M, N), dtype=np.int8)
         for n in range(N // Nt):
             for m in range(M // Mt):
-                output_buffer = np.zeros((AW, Nt), dtype=np.float32)
+                output_buffer = np.zeros((AW, Nt), dtype=np.int8)
                 for k in range(K // Kt):
                     weights_tile = np.ascontiguousarray(
                         weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
@@ -315,7 +322,7 @@ def test_FEATHER_GEMM():
                         m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
                     ]
                     iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                    csim_mod(iActs_tile, weights_tile, inst, output_buffer)
+                    csyn_mod(iActs_tile, weights_tile, inst, output_buffer)
                 np.copyto(
                     dst=oActs[m * 2 * Mt : (m + 1) * 2 * Mt, n * Nt : (n + 1) * Nt],
                     src=output_buffer,
