@@ -35,6 +35,12 @@ Choose within [4, 8, 16] (preset instruction provided). Default to 8."""
 parser.add_argument(
     "--AW", type=int, default=8, choices=[4, 8, 16], required=False, help=help_AW
 )
+help_M = """M dimension (rows of A/output). Requirement: M % Mt == 0. Default to 16."""
+help_N = """N dimension (cols of B/output). Requirement: N % Nt == 0. Default to 32."""
+help_K = """K dimension (shared inner). Requirement: K % Kt == 0. Default to 16."""
+parser.add_argument("--M", type=int, default=16, required=False, help=help_M)
+parser.add_argument("--N", type=int, default=32, required=False, help=help_N)
+parser.add_argument("--K", type=int, default=16, required=False, help=help_K)
 
 args = parser.parse_args()
 
@@ -54,10 +60,7 @@ SW = 3  # Swap
 # Tile size, irrelevant with input size
 # Requirement: Kt % 2 == 0
 Mt, Nt, Kt = AW // 2, AH, 8
-
-# Requirements:
-# M % Mt == 0, N % Nt == 0, K % Kt == 0
-M, N, K = 16, 32, 16
+M, N, K = args.M, args.N, args.K
 
 
 def reverse_bits(data: int, bit_range: int) -> int:
@@ -302,7 +305,12 @@ def test_FEATHER_GEMM():
     print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
-        csim_mod = df.build(top)
+        csyn_mod = df.build(
+            top,
+            target="vitis_hls",
+            mode="hw_emu",
+            project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}.prj",
+        )
         oActs = np.zeros((2 * M, N), dtype=np.float32)
         for n in range(N // Nt):
             for m in range(M // Mt):
@@ -315,7 +323,7 @@ def test_FEATHER_GEMM():
                         m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
                     ]
                     iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                    csim_mod(iActs_tile, weights_tile, inst, output_buffer)
+                    csyn_mod(iActs_tile, weights_tile, inst, output_buffer)
                 np.copyto(
                     dst=oActs[m * 2 * Mt : (m + 1) * 2 * Mt, n * Nt : (n + 1) * Nt],
                     src=output_buffer,

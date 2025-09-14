@@ -328,8 +328,29 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         for ip in for_ips:
                             affine_d.AffineYieldOp([], ip=ip)
                     else:  # Scalar
+                        # Ensure data type matches the memref element type
+                        fifo_element_type = stream_type.element_type
+                        store_value = data
+                        if data.type != fifo_element_type:
+                            # Cast the data to match the expected element type
+                            if isinstance(data.type, IntegerType) and isinstance(
+                                fifo_element_type, IntegerType
+                            ):
+                                if data.type.width > fifo_element_type.width:
+                                    store_value = arith_d.TruncIOp(
+                                        fifo_element_type, data, ip=replace_ip
+                                    )
+                                elif data.type.width < fifo_element_type.width:
+                                    if data.type.is_signed:
+                                        store_value = arith_d.ExtSIOp(
+                                            fifo_element_type, data, ip=replace_ip
+                                        )
+                                    else:
+                                        store_value = arith_d.ExtUIOp(
+                                            fifo_element_type, data, ip=replace_ip
+                                        )
                         memref_d.StoreOp(
-                            value=data,
+                            value=store_value,
                             memref=fifo_ptr,
                             indices=[tail_index_op],
                             ip=replace_ip,
@@ -408,7 +429,28 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         new_get_op = memref_d.LoadOp(
                             memref=fifo_ptr, indices=[head_index_op], ip=replace_ip
                         )
-                        orig_got_val.replace_all_uses_with(new_get_op.result)
+                        # Ensure loaded type matches the expected result type
+                        loaded_value = new_get_op.result
+                        expected_type = orig_got_val.type
+                        if loaded_value.type != expected_type:
+                            # Cast the loaded value to match the expected type
+                            if isinstance(
+                                loaded_value.type, IntegerType
+                            ) and isinstance(expected_type, IntegerType):
+                                if loaded_value.type.width < expected_type.width:
+                                    if loaded_value.type.is_signed:
+                                        loaded_value = arith_d.ExtSIOp(
+                                            expected_type, loaded_value, ip=replace_ip
+                                        )
+                                    else:
+                                        loaded_value = arith_d.ExtUIOp(
+                                            expected_type, loaded_value, ip=replace_ip
+                                        )
+                                elif loaded_value.type.width > expected_type.width:
+                                    loaded_value = arith_d.TruncIOp(
+                                        expected_type, loaded_value, ip=replace_ip
+                                    )
+                        orig_got_val.replace_all_uses_with(loaded_value)
                     critical_op = openmp_d.CriticalOp(ip=replace_ip)
                     critical_ip = InsertionPoint(
                         Block.create_at_start(critical_op.region)
