@@ -391,6 +391,27 @@ class AIE_MLIRModule:
             excuse_operands = set()
 
             def optimize_layout_transformation_recursive(op):
+                def is_inverse_transform_layout(op1, op2):
+                    # TODO: better checking
+                    if (
+                        "layout_hint" in op1.attributes
+                        and "layout_hint" in op2.attributes
+                    ):
+                        parts_1 = re.findall(
+                            r"[^_]+", op1.attributes["layout_hint"].value
+                        )
+                        parts_2 = re.findall(
+                            r"[^_]+", op2.attributes["layout_hint"].value
+                        )
+                        return (
+                            len(parts_1) == len(parts_2) == 4
+                            and parts_1[1] == "from"
+                            and parts_2[1] == "to"
+                            and parts_1[0] + parts_1[2] + parts_1[3]
+                            == parts_2[0] + parts_2[2] + parts_2[3]
+                        )
+                    return False
+
                 # op.operands[0] is whole zero
                 if (
                     "lib" in op.attributes
@@ -414,22 +435,10 @@ class AIE_MLIRModule:
                             if next_use_op is not None:
                                 # transform_layout
                                 if "layout_hint" in next_use_op.attributes:
-                                    layout_hint_ = next_use_op.attributes[
-                                        "layout_hint"
-                                    ].value
-                                    parts_ = re.findall(r"[^_]+", layout_hint_)
-                                    if (
-                                        len(parts_) == 4
-                                        and parts_[1] == "to"
-                                        and parts[0] + parts[2] + parts[3]
-                                        == parts_[0] + parts_[2] + parts_[3]
-                                    ):
+                                    if is_inverse_transform_layout(op, next_use_op):
                                         next_use_op.result.replace_all_uses_with(
                                             op.operands[0]
                                         )
-                                        if next_use_op in dead_ops or op in dead_ops:
-                                            print(next_use_op in dead_ops)
-                                            print(op in dead_ops)
                                         dead_ops.append(op)
                                         dead_ops.append(next_use_op)
                                 # memcpy to another memref
@@ -446,16 +455,7 @@ class AIE_MLIRModule:
                                         next_use_op is not None
                                         and "layout_hint" in next_use_op.attributes
                                     ):
-                                        layout_hint_ = next_use_op.attributes[
-                                            "layout_hint"
-                                        ].value
-                                        parts_ = re.findall(r"[^_]+", layout_hint_)
-                                        if (
-                                            len(parts_) == 4
-                                            and parts_[1] == "to"
-                                            and parts[0] + parts[2] + parts[3]
-                                            == parts_[0] + parts_[2] + parts_[3]
-                                        ):
+                                        if is_inverse_transform_layout(op, next_use_op):
                                             if (
                                                 allo_d.get_next_use_in_function(
                                                     memcpy_op.operands[1],
@@ -467,14 +467,6 @@ class AIE_MLIRModule:
                                                 next_use_op.result.replace_all_uses_with(
                                                     op.operands[0]
                                                 )
-                                                if (
-                                                    next_use_op in dead_ops
-                                                    or memcpy_op in dead_ops
-                                                    or op in dead_ops
-                                                ):
-                                                    print(next_use_op in dead_ops)
-                                                    print(memcpy_op in dead_ops)
-                                                    print(op in dead_ops)
                                                 dead_ops.append(next_use_op)
                                                 dead_ops.append(memcpy_op)
                                                 dead_ops.append(op)
@@ -487,19 +479,32 @@ class AIE_MLIRModule:
                         for inner_op in block.operations:
                             optimize_layout_transformation_recursive(inner_op)
 
-            def transform_with_dma(op):
-                if (
-                    op.name == "allo.transform_layout"
-                    and op.operands[0] in func.arguments
-                ):
-                    arg = BlockArgument(op.operands[0])
-                    if arg.arg_number in node.global_interfaces:
-                        # only transformed once
-                        transform_layout_cnt = 0
+            def transform_with_dma():
+                arg_info = self.core_func_args[function.name.value]
+                for arg in func.arguments:
+                    if arg.arg_number not in node.global_interfaces:
+                        continue
+                    # input: transform to the same layout before every 'use'
+                    if arg_info[arg.arg_number][1]:
+                        op = None
                         for use in arg.uses:
                             if use.owner.name == "allo.transform_layout":
-                                transform_layout_cnt += 1
-                        if transform_layout_cnt == 1:
+                                if op is not None:
+                                    if (
+                                        op.attributes["offsets"]
+                                        != use.owner.attributes["offsets"]
+                                        or op.attributes["sizes"]
+                                        != use.owner.attributes["sizes"]
+                                        or op.attributes["strides"]
+                                        != use.owner.attributes["strides"]
+                                    ):
+                                        op = None
+                                        break
+                                op = use.owner
+                            else:
+                                op = None
+                                break
+                        if op is not None:
                             node.interface_layout[arg.arg_number] = (
                                 list(op.attributes["offsets"]),
                                 list(op.attributes["sizes"]),
@@ -507,17 +512,27 @@ class AIE_MLIRModule:
                             )
                             op.result.replace_all_uses_with(arg)
                             op.erase()
-                            return
-
-                for region in op.regions:
-                    for block in region.blocks:
-                        for inner_op in block.operations:
-                            transform_with_dma(inner_op)
+                    # output: typical transform before transfer pattern
+                    else:
+                        op = allo_d.get_last_use_in_function(arg, function)
+                        if (
+                            op.name == "memref.copy"
+                            and op.operands[0].owner.name == "allo.transform_layout"
+                        ):
+                            transform_layout_op = op.operands[0].owner
+                            if transform_layout_op.operands[0] == arg:
+                                node.interface_layout[arg.arg_number] = (
+                                    list(transform_layout_op.attributes["offsets"]),
+                                    list(transform_layout_op.attributes["sizes"]),
+                                    list(transform_layout_op.attributes["strides"]),
+                                )
+                                op.erase()
+                                transform_layout_op.erase()
 
             optimize_layout_transformation_recursive(function)
             for op in dead_ops:
                 op.erase()
-            transform_with_dma(function)
+            transform_with_dma()
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
