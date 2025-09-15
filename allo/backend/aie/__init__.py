@@ -387,7 +387,6 @@ class AIE_MLIRModule:
                 func.attributes["sym_name"].value
             ]
             dead_ops = []
-            op_stack_map: dict = {}
             # no need to transform if the result is unchanged
             excuse_operands = set()
 
@@ -405,68 +404,120 @@ class AIE_MLIRModule:
                         excuse_operands.remove(op.operands[0])
                         dead_ops.append(op)
                         return
-                    if op.operands[0] in func.arguments:
-                        arg = BlockArgument(op.operands[0])
-                        if arg.arg_number in node.global_interfaces:
-                            # only used once
-                            transform_layout_cnt = 0
-                            for use in arg.uses:
-                                if (
-                                    use.owner.name == "allo.transform_layout"
-                                    and use.owner not in dead_ops
-                                ):
-                                    transform_layout_cnt += 1
-                            if transform_layout_cnt == 1:
-                                node.interface_layout[arg.arg_number] = (
-                                    list(op.attributes["offsets"]),
-                                    list(op.attributes["sizes"]),
-                                    list(op.attributes["strides"]),
-                                )
-                                op.result.replace_all_uses_with(arg)
-                                dead_ops.append(op)
-                                return
                     if "layout_hint" in op.attributes:
                         layout_hint = op.attributes["layout_hint"].value
                         parts = re.findall(r"[^_]+", layout_hint)
                         if len(parts) == 4 and parts[1] == "from":
-                            result_uses = list(op.result.uses)
-                            if (
-                                len(result_uses) == 1
-                                and result_uses[0].owner.name == "memref.copy"
-                                and result_uses[0].owner.operands[1] == op.operands[0]
-                            ):
-                                op_stack_map[op.operands[0]] = (
-                                    parts[0] + parts[2] + parts[3],
-                                    op,
-                                    result_uses[0].owner,
-                                )
-                        if (
-                            len(parts) == 4
-                            and parts[1] == "to"
-                            and op.operands[0] in op_stack_map
-                        ):
-                            if (
-                                parts[0] + parts[2] + parts[3]
-                                == op_stack_map[op.operands[0]][0]
-                            ):
-                                op.result.replace_all_uses_with(op.operands[0])
-                                dead_ops.append(op)
-                                dead_ops.append(op_stack_map[op.operands[0]][2])
-                                dead_ops.append(op_stack_map[op.operands[0]][1])
-                                op_stack_map.pop(op.operands[0])
-                                return
+                            next_use_op = allo_d.get_next_use_in_function(
+                                op.result, op, function
+                            )
+                            if next_use_op is not None:
+                                # transform_layout
+                                if "layout_hint" in next_use_op.attributes:
+                                    layout_hint_ = next_use_op.attributes[
+                                        "layout_hint"
+                                    ].value
+                                    parts_ = re.findall(r"[^_]+", layout_hint_)
+                                    if (
+                                        len(parts_) == 4
+                                        and parts_[1] == "to"
+                                        and parts[0] + parts[2] + parts[3]
+                                        == parts_[0] + parts_[2] + parts_[3]
+                                    ):
+                                        next_use_op.result.replace_all_uses_with(
+                                            op.operands[0]
+                                        )
+                                        if next_use_op in dead_ops or op in dead_ops:
+                                            print(next_use_op in dead_ops)
+                                            print(op in dead_ops)
+                                        dead_ops.append(op)
+                                        dead_ops.append(next_use_op)
+                                # memcpy to another memref
+                                elif (
+                                    next_use_op.name == "memref.copy"
+                                    and op.result == next_use_op.operands[0]
+                                ):
+                                    memcpy_op = next_use_op
+                                    next_use_op = allo_d.get_next_use_in_function(
+                                        memcpy_op.operands[1], next_use_op, function
+                                    )
+                                    # cpy result used in transform_layout
+                                    if (
+                                        next_use_op is not None
+                                        and "layout_hint" in next_use_op.attributes
+                                    ):
+                                        layout_hint_ = next_use_op.attributes[
+                                            "layout_hint"
+                                        ].value
+                                        parts_ = re.findall(r"[^_]+", layout_hint_)
+                                        if (
+                                            len(parts_) == 4
+                                            and parts_[1] == "to"
+                                            and parts[0] + parts[2] + parts[3]
+                                            == parts_[0] + parts_[2] + parts_[3]
+                                        ):
+                                            if (
+                                                allo_d.get_next_use_in_function(
+                                                    memcpy_op.operands[1],
+                                                    next_use_op,
+                                                    function,
+                                                ).name
+                                                == "memref.copy"
+                                            ):
+                                                next_use_op.result.replace_all_uses_with(
+                                                    op.operands[0]
+                                                )
+                                                if (
+                                                    next_use_op in dead_ops
+                                                    or memcpy_op in dead_ops
+                                                    or op in dead_ops
+                                                ):
+                                                    print(next_use_op in dead_ops)
+                                                    print(memcpy_op in dead_ops)
+                                                    print(op in dead_ops)
+                                                dead_ops.append(next_use_op)
+                                                dead_ops.append(memcpy_op)
+                                                dead_ops.append(op)
+                                                return
 
                 for region in op.regions:
                     for block in region.blocks:
                         # fixme: using 'stack' for nested blocks can be better
                         excuse_operands.clear()
-                        op_stack_map.clear()
                         for inner_op in block.operations:
                             optimize_layout_transformation_recursive(inner_op)
+
+            def transform_with_dma(op):
+                if (
+                    op.name == "allo.transform_layout"
+                    and op.operands[0] in func.arguments
+                ):
+                    arg = BlockArgument(op.operands[0])
+                    if arg.arg_number in node.global_interfaces:
+                        # only transformed once
+                        transform_layout_cnt = 0
+                        for use in arg.uses:
+                            if use.owner.name == "allo.transform_layout":
+                                transform_layout_cnt += 1
+                        if transform_layout_cnt == 1:
+                            node.interface_layout[arg.arg_number] = (
+                                list(op.attributes["offsets"]),
+                                list(op.attributes["sizes"]),
+                                list(op.attributes["strides"]),
+                            )
+                            op.result.replace_all_uses_with(arg)
+                            op.erase()
+                            return
+
+                for region in op.regions:
+                    for block in region.blocks:
+                        for inner_op in block.operations:
+                            transform_with_dma(inner_op)
 
             optimize_layout_transformation_recursive(function)
             for op in dead_ops:
                 op.erase()
+            transform_with_dma(function)
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
@@ -545,7 +596,12 @@ class AIE_MLIRModule:
                     assert len(arg_list) == 2
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    if isinstance(arg_list[0], str):
+                        self.virtual_computation_graph.bundle(arg_list)
+                    elif isinstance(arg_list[0], tuple[str]):
+                        self.virtual_computation_graph.bundle_subgraph(arg_list)
+                    else:
+                        raise ValueError("Invalid bundle primitive")
         self.virtual_computation_graph.refactor()
 
         # record original allo mlir

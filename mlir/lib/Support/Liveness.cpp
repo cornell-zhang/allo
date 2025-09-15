@@ -49,5 +49,25 @@ Operation *getLastUse(Value value, Operation &func) {
     return lastUse->getOwner();
   }
 }
+
+Operation *getNextUse(Value value, Operation *curUse, Operation &func) {
+  func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  DominanceInfo domInfo(&func);
+  OpOperand *nextUse = nullptr;
+  for (auto &use : value.getUses()) {
+    Operation *useOp = use.getOwner();
+    if (useOp != curUse && domInfo.properlyDominates(curUse, useOp)) {
+      if (!nextUse || domInfo.properlyDominates(useOp, nextUse->getOwner())) {
+        nextUse = &use;
+      }
+    }
+  }
+  if (!nextUse) {
+    return nullptr;
+  } else {
+    return nextUse->getOwner();
+  }
+}
+
 } // namespace allo
 } // namespace mlir
