@@ -29,6 +29,8 @@ In this document, we target the `AMD Ryzen 7040 <https://www.amd.com/en/products
    :alt: AMD Ryzen AI Engine Array
    :align: center
 
+Environment Setup
+=================
 
 Prerequisites
 -------------
@@ -41,83 +43,190 @@ Install from Source
 
 Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project and enable the ``allo`` conda environment.
 
-We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to compile the Allo IR to AIE, but since we are using a specific LLVM-19 version that is not compatible with the latest MLIR-AIE project, we cannot follow the offical instructions but build the MLIR-AIE project from source.
+Below are the exact commands to set up the environment:
 
-First, clone the MLIR-AIE project and checkout to the specific commit.
+Step 1
+~~~~~~
+Activate the ``allo`` conda environment
 
-.. code-block:: console
+   .. code-block:: bash
 
-  $ git clone --recursive https://github.com/Xilinx/mlir-aie.git
-  $ cd mlir-aie && git checkout fd89c9
-  $ export MLIR_AIE_ROOT_DIR=$(pwd)
+      conda activate allo
 
-Then, build the MLIR-AIE project. The second command will install the PEANO backend compiler for AIE. Please make sure the current Python environment is Python 3.12 and you have already set up the Vitis and XRT environment. You can check by running ``which vitis``.
+Step 2
+~~~~~~
+We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to compile the Allo IR to AIE. Install release 1.0
 
-.. code-block:: console
+   .. code-block:: bash
 
-  $ ./utils/build-mlir-aie.sh $LLVM_BUILD_DIR
-  $ source env_setup.sh $MLIR_AIE_ROOT_DIR/install $LLVM_BUILD_DIR
+      # Install IRON library and mlir-aie from a wheel
+      python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
+      # Install Peano from a llvm-aie wheel
+      python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 
-As the above setup script will append additional environment variables to your current shell, you need to relaunch a new shell for the following steps.
 
-.. code-block:: console
+   The ``mlir_aie`` wheel requires ``manylinux_2_35``, and some systems (e.g., those with glibc 2.34, confirmed by ``ldd --version``) do not meet this requirement.  
+   This results in an installation failure such as:
 
-  $ export PATH=$MLIR_AIE_ROOT_DIR/install/bin:$PATH
-  $ export PYTHONPATH=$MLIR_AIE_ROOT_DIR/install/python:$PYTHONPATH
-  $ export MLIR_AIE_INSTALL_DIR=$MLIR_AIE_ROOT_DIR/install
-  $ export PEANO_INSTALL_DIR=$MLIR_AIE_ROOT_DIR/utils/my_install/llvm-aie
-  $ # install python packages under the allo conda environment
-  $ python3 -m pip install -r $MLIR_AIE_ROOT_DIR/python/requirements.txt
-  $ HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r $MLIR_AIE_ROOT_DIR/requirements_extras.txt
+   ``ERROR: mlir_aie-0.0.1.2025042204+24208c0-cp312-cp312-manylinux_2_35_x86_64.whl is not a supported wheel on this platform.``
+
+Step 3
+~~~~~~
+Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
+
+   .. code-block:: bash
+
+      git clone https://github.com/Xilinx/mlir-aie.git
+      cd mlir-aie
+      git checkout 07320d6
+
+Then, install python requirements, setup environment and add tools to PATHs (under ``mlir-aie``)
+
+   .. code-block:: bash
+
+      # Install basic Python requirements 
+      python3 -m pip install -r python/requirements.txt
+      # Install the pre-commit hooks defined in .pre-commit-config.yaml
+      pre-commit install
+      # Install MLIR Python Extras 
+      HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
+      # Install Torch for ML examples
+      python3 -m pip install -r python/requirements_ml.txt
+
+      source utils/env_setup.sh
+
+.. _step4:
+
+Step 4
+~~~~~~
+Clone the allo repository and install.
+
+   You may want to set up environment variables first to use a custom CMake and LLVM build. For example:
+
+   .. code-block:: bash
+
+      export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH
+      export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
+
+   Then clone the allo repository and install by running the following commands
+
+   .. code-block:: bash
+
+      git clone https://github.com/cornell-zhang/allo.git
+      cd allo
+      python3 -m pip install -v -e .
+
+**Note:** See :ref:`internal_install` for Zhang Group students.
+
+.. _step5:
+
+Step 5
+~~~~~~
+Setup Vitis and XRT.
+
+**Note:** See :ref:`internal_install` for Zhang Group students.
 
 Lastly, you can verify the AIE backend by running the following command under the ``allo`` folder.
 
 .. code-block:: console
 
-  $ python3 tests/dataflow/aie/test_vector.py
+    python3 tests/dataflow/aie/test_vector.py
 
+
+Patches and Configuration
+-------------------------
+
+To use components from the `MLIR-AIE toolchain <https://github.com/Xilinx/mlir-aie>`_ as libraries:
+
+.. note::
+
+   The instructions below are based on `MLIR-AIE release v1.0 <https://github.com/Xilinx/mlir-aie/releases/tag/v1.0>`_, which corresponds to commit `07320d6 <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd>`_.
+   For compatibility, make sure to use this commit when copying the following components.
+
+Clone and checkout the specific commit:
+
+.. code-block:: bash
+
+   git clone https://github.com/Xilinx/mlir-aie.git
+   cd mlir-aie
+   git checkout 07320d6
+
+- To use `external kernels <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/aie_kernels>`_ as an AIE kernel library:
+
+  .. code-block:: bash
+
+     export MLIR_AIE_EXTERNAL_KERNEL_DIR=/your/copied/path/aie_kernels
+
+- To use `runtime_lib <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/runtime_lib>`_ for the host:
+
+  .. code-block:: bash
+
+     export RUNTIME_LIB_DIR=/your/copied/path/runtime_lib
+
+If you run into issues when using ``aiecc.py`` such as:
+
+.. code-block:: text
+
+   error: expected ')' at end of argument list
+   declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+                                                             ^
+
+You can fix this by modifying ``downgrade_ir_for_peano`` in:
+
+.. code-block:: text
+
+   $MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py
+
+Update the function as follows:
+
+**Before:**
+
+.. code-block:: python
+
+   def downgrade_ir_for_peano(llvmir):
+       llvmir = llvmir.replace("getelementptr inbounds nuw", "getelementptr inbounds")
+       return llvmir
+
+**After:**
+
+.. code-block:: python
+
+   def downgrade_ir_for_peano(llvmir):
+       llvmir = llvmir.replace("getelementptr inbounds nuw", "getelementptr inbounds")
+       llvmir = llvmir.replace("captures(none)", "")
+       return llvmir
+
+.. _internal_install:
 
 Internal Installation (Cornell)
 -------------------------------
 
-For Zhang Group students, we have already set up the environment for LLVM and MLIR-AIE, so you do not need to build everything from source. Firstly, you need to create a new conda environment with Python 3.12 and activate it.
+For Zhang Group students, please set up environment variables in :ref:`step4` with the following commands.
 
 .. code-block:: console
 
-  $ conda create -n allo python=3.12
-  $ conda activate allo
+      export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH  
+      export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
 
-To set up the environment, all you need to do is to source the following script.
-
-.. code-block:: console
-
-  $ source /opt/common/setup.sh
-
-Then, go through the normal steps to install Allo:
+And set up Vitis and XRT in :ref:`step5`  by running the following commands.
 
 .. code-block:: console
 
-  $ git clone https://github.com/cornell-zhang/allo.git && cd allo
-  $ python3 -m pip install -v -e .
+      source /opt/common/setupVitis.sh
+      source /opt/common/setupXRT.sh
 
-Some additional packages are required to run the MLIR-AIE compiler. You can install them by running the following commands:
-
-.. code-block:: console
-
-  $ python3 -m pip install -r /opt/mlir-aie/python/requirements.txt
-  $ HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r /opt/mlir-aie/python/requirements_extras.txt
 
 Lastly, to verify the installation, you can run the following command:
 
 .. code-block:: console
 
-  $ python3 tests/dataflow/aie/test_vector.py
+      python3 tests/dataflow/aie/test_vector.py
 
 If the unit tests pass, then the installation is successful. Otherwise, please contact us for help.
 
 
 Learning Materials
-------------------
+==================
 
 - `IRON AIE Programming Guide <https://github.com/Xilinx/mlir-aie/tree/main/programming_guide>`_
 - `MLIR-AIE Programming Examples <https://github.com/Xilinx/mlir-aie/tree/main/programming_examples>`_
