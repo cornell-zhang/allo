@@ -114,8 +114,8 @@ class Stream:
         self.dst: str = None  # destination tile of the stream
 
         # layout transform on stream
-        self.src_layout_transform: allo_d.TransformLayoutOp = None
-        self.dst_layout_transform: allo_d.TransformLayoutOp = None
+        self.src_layout_transform = None
+        self.dst_layout_transform = None
 
     def set_element_type(self, type_str: str, context: Context):
         """
@@ -187,8 +187,8 @@ class Stream:
             self.src_layout_transform is not None
             and self.dst_layout_transform is not None
         ):
-            if is_inverse_transform_layout(
-                self.src_layout_transform, self.dst_layout_transform
+            if is_inverse_transform_layout_from_hint(
+                self.src_layout_transform[3], self.dst_layout_transform[3]
             ):
                 self.src_layout_transform = None
                 self.dst_layout_transform = None
@@ -1129,16 +1129,21 @@ def string_sort_key(s: str):
     return (len(nums), nums)
 
 
+def is_inverse_transform_layout_from_hint(op1_hint, op2_hint):
+    parts_1 = re.findall(r"[^_]+", op1_hint)
+    parts_2 = re.findall(r"[^_]+", op2_hint)
+    return (
+        len(parts_1) == len(parts_2) == 4
+        and parts_1[1] == "from"
+        and parts_2[1] == "to"
+        and parts_1[0] + parts_1[2] + parts_1[3] == parts_2[0] + parts_2[2] + parts_2[3]
+    )
+
+
 def is_inverse_transform_layout(op1, op2):
     # TODO: better checking
     if "layout_hint" in op1.attributes and "layout_hint" in op2.attributes:
-        parts_1 = re.findall(r"[^_]+", op1.attributes["layout_hint"].value)
-        parts_2 = re.findall(r"[^_]+", op2.attributes["layout_hint"].value)
-        return (
-            len(parts_1) == len(parts_2) == 4
-            and parts_1[1] == "from"
-            and parts_2[1] == "to"
-            and parts_1[0] + parts_1[2] + parts_1[3]
-            == parts_2[0] + parts_2[2] + parts_2[3]
+        return is_inverse_transform_layout_from_hint(
+            op1.attributes["layout_hint"].value, op2.attributes["layout_hint"].value
         )
     return False

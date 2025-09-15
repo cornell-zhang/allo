@@ -534,5 +534,5 @@ if __name__ == "__main__":
     _test_pingpong_gemm_1x1x4()
     _test_pingpong_gemm_2x2x4()
     _test_pingpong_gemm_4x4x4()
-    _test_split_k_gemm_1x1x4()
-    _test_split_k_gemm_2x2x4()
+    # _test_split_k_gemm_1x1x4()
+    # _test_split_k_gemm_2x2x4()

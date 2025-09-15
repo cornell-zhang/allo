@@ -462,14 +462,14 @@ class AIE_MLIRModule:
             def transform_with_dma():
                 arg_info = self.core_func_args[function.name.value]
                 for arg in func.arguments:
-                    if arg.arg_number not in node.global_interfaces:
+                    if arg.arg_number not in arg_info:
                         continue
                     # input: transform to the same layout before every 'use'
                     if arg_info[arg.arg_number][1]:
                         var = arg
                         if (
                             arg_info[arg.arg_number][0].stream is not None
-                            and len(list(arg.uses)) == 1
+                            and len(list(arg.uses)) == 1  # allo.stream_get
                         ):
                             var = list(arg.uses)[0].owner.result
                         op = None
@@ -496,23 +496,74 @@ class AIE_MLIRModule:
                                 list(op.attributes["sizes"]),
                                 list(op.attributes["strides"]),
                             )
+                            if arg_info[arg.arg_number][0].stream is not None:
+                                arg_info[arg.arg_number][
+                                    0
+                                ].stream.dst_layout_transform = (
+                                    list(op.attributes["offsets"]),
+                                    list(op.attributes["sizes"]),
+                                    list(op.attributes["strides"]),
+                                    (
+                                        None
+                                        if "layout_hint" not in op.attributes
+                                        else op.attributes["layout_hint"].value
+                                    ),
+                                )
                             op.result.replace_all_uses_with(var)
                             op.erase()
                     # output: typical transform before transfer pattern
                     else:
                         op = allo_d.get_last_use_in_function(arg, function)
+                        is_dtensor = arg_info[arg.arg_number][0].stream is None
+                        operand_idx = 0 if is_dtensor else 1
                         if (
-                            op.name == "memref.copy"
-                            and op.operands[0].owner.name == "allo.transform_layout"
+                            (
+                                op.name == "memref.copy"
+                                if is_dtensor
+                                else op.name == "allo.stream_put"
+                            )
+                            and op.operands[operand_idx] not in func.arguments
+                            and op.operands[operand_idx].owner.name
+                            == "allo.transform_layout"
                         ):
-                            transform_layout_op = op.operands[0].owner
-                            if transform_layout_op.operands[0] == arg:
+                            transform_layout_op = op.operands[operand_idx].owner
+
+                            if (
+                                is_dtensor and transform_layout_op.operands[0] == arg
+                            ) or (
+                                not is_dtensor
+                                and transform_layout_op.operands[0]
+                                not in func.arguments
+                                and allo_d.get_last_use_in_function(
+                                    transform_layout_op.operands[0],
+                                    function,
+                                )
+                                == transform_layout_op
+                            ):
                                 node.interface_layout[arg.arg_number] = (
                                     list(transform_layout_op.attributes["offsets"]),
                                     list(transform_layout_op.attributes["sizes"]),
                                     list(transform_layout_op.attributes["strides"]),
                                 )
-                                op.erase()
+                                if not is_dtensor:
+                                    arg_info[arg.arg_number][
+                                        0
+                                    ].stream.src_layout_transform = (
+                                        list(transform_layout_op.attributes["offsets"]),
+                                        list(transform_layout_op.attributes["sizes"]),
+                                        list(transform_layout_op.attributes["strides"]),
+                                        (
+                                            None
+                                            if "layout_hint"
+                                            not in transform_layout_op.attributes
+                                            else transform_layout_op.attributes[
+                                                "layout_hint"
+                                            ].value
+                                        ),
+                                    )
+                                    op.operands[1] = transform_layout_op.operands[0]
+                                else:
+                                    op.erase()
                                 transform_layout_op.erase()
 
             optimize_layout_transformation_recursive(function)
