@@ -1565,9 +1565,12 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << ";\n";
+  indent();
   // generate ap_int types
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
@@ -1575,7 +1578,7 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   emitValue(result);
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp[";
   emitValue(op.getIndex());
   os << "];";
@@ -1584,15 +1587,18 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
 
 void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
+  emitValue(op.getResult());
+  os << ";\n";
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
   // generate bit indexing
   indent();
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp[";
   emitValue(op.getIndex());
   os << "] = ";
@@ -1602,7 +1608,7 @@ void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp;";
   emitInfoAndNewLine(op);
 }
@@ -1610,10 +1616,13 @@ void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
 void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
+  emitValue(result);
+  os << ";\n";
   fixUnsignedType(result, op->hasAttr("unsigned"));
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
@@ -1621,7 +1630,7 @@ void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   emitValue(result);
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp(";
   emitValue(op.getHi());
   os << ", ";
@@ -1635,15 +1644,18 @@ void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   // T v;
   // v(a, b) = x;
   // c = v; // <- Need to redirect to the updated variable.
+  emitValue(op.getResult());
+  os << ";\n";
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
   // generate bit slicing
   indent();
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp(";
   emitValue(op.getHi());
   os << ", ";
@@ -1655,7 +1667,7 @@ void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp;";
   emitInfoAndNewLine(op);
 }
