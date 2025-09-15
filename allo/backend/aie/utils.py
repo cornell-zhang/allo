@@ -114,8 +114,8 @@ class Stream:
         self.dst: str = None  # destination tile of the stream
 
         # layout transform on stream
-        self.src_layout_transform : allo_d.TransformLayoutOp = None
-        self.dst_layout_transform : allo_d.TransformLayoutOp = None
+        self.src_layout_transform: allo_d.TransformLayoutOp = None
+        self.dst_layout_transform: allo_d.TransformLayoutOp = None
 
     def set_element_type(self, type_str: str, context: Context):
         """
@@ -183,8 +183,13 @@ class Stream:
             raise ValueError(f"Invalid stream type {type_str}.")
 
     def get_dimensions_to_stream(self):
-        if self.src_layout_transform is not None and self.dst_layout_transform is not None:
-            if is_inverse_transform_layout(self.src_layout_transform, self.dst_layout_transform):
+        if (
+            self.src_layout_transform is not None
+            and self.dst_layout_transform is not None
+        ):
+            if is_inverse_transform_layout(
+                self.src_layout_transform, self.dst_layout_transform
+            ):
                 self.src_layout_transform = None
                 self.dst_layout_transform = None
         if self.src_layout_transform is None and self.dst_layout_transform is None:
@@ -1123,18 +1128,12 @@ def string_sort_key(s: str):
     nums = tuple(int(x) for x in re.findall(r"\d+", s))
     return (len(nums), nums)
 
+
 def is_inverse_transform_layout(op1, op2):
     # TODO: better checking
-    if (
-        "layout_hint" in op1.attributes
-        and "layout_hint" in op2.attributes
-    ):
-        parts_1 = re.findall(
-            r"[^_]+", op1.attributes["layout_hint"].value
-        )
-        parts_2 = re.findall(
-            r"[^_]+", op2.attributes["layout_hint"].value
-        )
+    if "layout_hint" in op1.attributes and "layout_hint" in op2.attributes:
+        parts_1 = re.findall(r"[^_]+", op1.attributes["layout_hint"].value)
+        parts_2 = re.findall(r"[^_]+", op2.attributes["layout_hint"].value)
         return (
             len(parts_1) == len(parts_2) == 4
             and parts_1[1] == "from"

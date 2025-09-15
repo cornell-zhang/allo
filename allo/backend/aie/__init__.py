@@ -48,7 +48,7 @@ from .utils import (
     read_tensor_from_file,
     codegen_host,
     RuntimeArgs,
-    is_inverse_transform_layout
+    is_inverse_transform_layout,
 )
 from .mapping import ComputationGraph
 
@@ -462,12 +462,15 @@ class AIE_MLIRModule:
             def transform_with_dma():
                 arg_info = self.core_func_args[function.name.value]
                 for arg in func.arguments:
-                    if arg.arg_number not in arg_info:
+                    if arg.arg_number not in node.global_interfaces:
                         continue
                     # input: transform to the same layout before every 'use'
                     if arg_info[arg.arg_number][1]:
                         var = arg
-                        if arg_info[arg.arg_number][0].stream is not None and len(list(arg.uses))==1:
+                        if (
+                            arg_info[arg.arg_number][0].stream is not None
+                            and len(list(arg.uses)) == 1
+                        ):
                             var = list(arg.uses)[0].owner.result
                         op = None
                         for use in var.uses:
@@ -515,14 +518,15 @@ class AIE_MLIRModule:
             optimize_layout_transformation_recursive(function)
             for op in dead_ops:
                 op.erase()
+            allo_d.copy_on_write_on_function(function)
             transform_with_dma()
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
                 simplify_matmul_accumulate(func)
                 allo_d.copy_on_write_on_function(func)
-                # vectorize_matmul(func)
-                # optimize_layout_transformation(func)
+                vectorize_matmul(func)
+                optimize_layout_transformation(func)
 
         pipeline = "builtin.module(canonicalize)"
         with self.allo_module.context:

@@ -34,18 +34,9 @@ void removeRedundantCopy(func::FuncOp &func) {
     }
   });
   for (auto op : copyOps) {
-    llvm::errs() << *op << "\n";
+    // llvm::errs() << *op << "\n";
     auto src = op->getOperand(0);
     auto dst = op->getOperand(1);
-    // auto nextUse = getNextUse(dst, op, *func);
-    // if (nextUse) {
-    //   if (auto memRefCopyOp = dyn_cast<memref::CopyOp>(nextUse)) {
-    //     memRefCopyOp.setOperand(0, src);
-    //   } else if (auto linalgCopyOp = dyn_cast<linalg::CopyOp>(nextUse)) {
-    //     linalgCopyOp.setOperand(0, src);
-    //   }
-    // }
-    // llvm::errs() << *nextUse << "\n";
     bool resolvable = true;
     Operation *last_user = getLastUse(src, *func);
 
@@ -63,12 +54,9 @@ void removeRedundantCopy(func::FuncOp &func) {
         if (resolvable) {
           for (auto &use : llvm::make_early_inc_range(dst.getUses())) {
             Operation *user = use.getOwner();
-            llvm::errs() << *user << "\n";
             if (user->getBlock() == op->getBlock() &&
                 op->isBeforeInBlock(user)) {
-              llvm::errs() << "\t" << *user << "\n";
               use.set(src);
-              llvm::errs() << "\t-> " << *user << "\n";
             }
           }
           op->erase();
