@@ -459,9 +459,9 @@ print("PASSED!")
 ```
 ##### Using Trace to Measure the Performance of External Kernels
 Trace is useful for evaluating the performance of an external kernel running on a single compute tile. 
-This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](./kernels/).
+This is especially important when profiling for optimizations such as vectorization of external kernels. The following example demonstrates how to use trace profiling on some [convolution kernels](../../library/aie/).
 
-In this case, due to the relatively small computation scale, the difference between the [vectorized](./kernels/conv_small_vector.cc) and [scalar](./kernels/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
+In this case, due to the relatively small computation scale, the difference between the [vectorized](../../library/aie/conv_small_vector.cc) and [scalar](../../library/aie/conv_small_scalar.cc) versions of the kernel is not clearly observable using timing-based profiling to measure NPU time. 
 Instead, one can insert event markers, such as `event0();` and `event1();`, directly into the external C++ code and run the trace on the compute tile executing the external kernel. Sample code can be found in [`test_trace_conv.py`](../../../tests/dataflow/aie/test_trace_conv.py).
 
 Process the generated trace (in `top.prj/trace.txt`) with [`parse_trace.py`](https://github.com/Xilinx/mlir-aie/blob/v1.0/programming_examples/utils/parse_trace.py).
@@ -573,5 +573,5 @@ And the external module can then be used in an Allo kernel.
 An example can be found in [`tests/dataflow/aie/test_norm.py`](../../../tests/dataflow/aie/test_norm.py).
 
 ##### Allo External Kernel Library 
-The [`kernels`](./kernels) directory contains several external kernels used in the GPT-2 block.
+The [`kernels`](../../library/aie/) directory contains several external kernels used in the GPT-2 block.
 Corresponding tests can be found in [`tests/dataflow/aie/gpt2`](../../../tests/dataflow/aie/gpt2/).
