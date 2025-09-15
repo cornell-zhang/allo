@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-enumerate, consider-using-namedtuple-or-dataclass, too-many-branches
+# pylint: disable=no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 

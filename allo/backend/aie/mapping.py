@@ -1,4 +1,4 @@
-# pylint: disable=dangerous-default-value, consider-using-enumerate, too-many-branches, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items, unsupported-binary-operation
+# pylint: disable=consider-using-enumerate, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items, unsupported-binary-operation, c-extension-no-member
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
