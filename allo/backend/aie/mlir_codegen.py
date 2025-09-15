@@ -1615,6 +1615,7 @@ class CodeGenerator:
                             stream.type.shape,
                             get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
                         ),
+                        dimensionsToStream=stream.get_dimensions_to_stream()
                     )
                 # - io fifos: shim <-> mem <-> compute
                 for dma_fifo in self.fifo_manager.fifos:

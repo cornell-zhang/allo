@@ -48,6 +48,7 @@ from .utils import (
     read_tensor_from_file,
     codegen_host,
     RuntimeArgs,
+    is_inverse_transform_layout
 )
 from .mapping import ComputationGraph
 
@@ -391,27 +392,6 @@ class AIE_MLIRModule:
             excuse_operands = set()
 
             def optimize_layout_transformation_recursive(op):
-                def is_inverse_transform_layout(op1, op2):
-                    # TODO: better checking
-                    if (
-                        "layout_hint" in op1.attributes
-                        and "layout_hint" in op2.attributes
-                    ):
-                        parts_1 = re.findall(
-                            r"[^_]+", op1.attributes["layout_hint"].value
-                        )
-                        parts_2 = re.findall(
-                            r"[^_]+", op2.attributes["layout_hint"].value
-                        )
-                        return (
-                            len(parts_1) == len(parts_2) == 4
-                            and parts_1[1] == "from"
-                            and parts_2[1] == "to"
-                            and parts_1[0] + parts_1[2] + parts_1[3]
-                            == parts_2[0] + parts_2[2] + parts_2[3]
-                        )
-                    return False
-
                 # op.operands[0] is whole zero
                 if (
                     "lib" in op.attributes
@@ -482,12 +462,15 @@ class AIE_MLIRModule:
             def transform_with_dma():
                 arg_info = self.core_func_args[function.name.value]
                 for arg in func.arguments:
-                    if arg.arg_number not in node.global_interfaces:
+                    if arg.arg_number not in arg_info:
                         continue
                     # input: transform to the same layout before every 'use'
                     if arg_info[arg.arg_number][1]:
+                        var = arg
+                        if arg_info[arg.arg_number][0].stream is not None and len(list(arg.uses))==1:
+                            var = list(arg.uses)[0].owner.result
                         op = None
-                        for use in arg.uses:
+                        for use in var.uses:
                             if use.owner.name == "allo.transform_layout":
                                 if op is not None:
                                     if (
@@ -510,7 +493,7 @@ class AIE_MLIRModule:
                                 list(op.attributes["sizes"]),
                                 list(op.attributes["strides"]),
                             )
-                            op.result.replace_all_uses_with(arg)
+                            op.result.replace_all_uses_with(var)
                             op.erase()
                     # output: typical transform before transfer pattern
                     else:
@@ -538,8 +521,8 @@ class AIE_MLIRModule:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
                 simplify_matmul_accumulate(func)
                 allo_d.copy_on_write_on_function(func)
-                vectorize_matmul(func)
-                optimize_layout_transformation(func)
+                # vectorize_matmul(func)
+                # optimize_layout_transformation(func)
 
         pipeline = "builtin.module(canonicalize)"
         with self.allo_module.context:

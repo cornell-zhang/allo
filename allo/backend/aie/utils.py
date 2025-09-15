@@ -113,6 +113,10 @@ class Stream:
         self.src: str = None  # source tile of the stream
         self.dst: str = None  # destination tile of the stream
 
+        # layout transform on stream
+        self.src_layout_transform : allo_d.TransformLayoutOp = None
+        self.dst_layout_transform : allo_d.TransformLayoutOp = None
+
     def set_element_type(self, type_str: str, context: Context):
         """
         Set the element type of the stream from a type string.
@@ -177,6 +181,16 @@ class Stream:
                 self.is_tensor = len(shape) > 0
         else:
             raise ValueError(f"Invalid stream type {type_str}.")
+
+    def get_dimensions_to_stream(self):
+        if self.src_layout_transform is not None and self.dst_layout_transform is not None:
+            if is_inverse_transform_layout(self.src_layout_transform, self.dst_layout_transform):
+                self.src_layout_transform = None
+                self.dst_layout_transform = None
+        if self.src_layout_transform is None and self.dst_layout_transform is None:
+            return []
+        else:
+            raise ValueError("To be implemented.")
 
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
@@ -1108,3 +1122,24 @@ def merge_token_sets(token_sets: list) -> list:
 def string_sort_key(s: str):
     nums = tuple(int(x) for x in re.findall(r"\d+", s))
     return (len(nums), nums)
+
+def is_inverse_transform_layout(op1, op2):
+    # TODO: better checking
+    if (
+        "layout_hint" in op1.attributes
+        and "layout_hint" in op2.attributes
+    ):
+        parts_1 = re.findall(
+            r"[^_]+", op1.attributes["layout_hint"].value
+        )
+        parts_2 = re.findall(
+            r"[^_]+", op2.attributes["layout_hint"].value
+        )
+        return (
+            len(parts_1) == len(parts_2) == 4
+            and parts_1[1] == "from"
+            and parts_2[1] == "to"
+            and parts_1[0] + parts_1[2] + parts_1[3]
+            == parts_2[0] + parts_2[2] + parts_2[3]
+        )
+    return False

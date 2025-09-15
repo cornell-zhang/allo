@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 #include "PassDetail.h"
 #include "allo/Dialect/AlloOps.h"
+#include "allo/Support/Liveness.h"
 #include "allo/Transforms/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -33,31 +34,25 @@ void removeRedundantCopy(func::FuncOp &func) {
     }
   });
   for (auto op : copyOps) {
-    // llvm::errs() << *op << "\n";
+    llvm::errs() << *op << "\n";
     auto src = op->getOperand(0);
     auto dst = op->getOperand(1);
-
+    // auto nextUse = getNextUse(dst, op, *func);
+    // if (nextUse) {
+    //   if (auto memRefCopyOp = dyn_cast<memref::CopyOp>(nextUse)) {
+    //     memRefCopyOp.setOperand(0, src);
+    //   } else if (auto linalgCopyOp = dyn_cast<linalg::CopyOp>(nextUse)) {
+    //     linalgCopyOp.setOperand(0, src);
+    //   }
+    // }
+    // llvm::errs() << *nextUse << "\n";
     bool resolvable = true;
-    Operation *last_user = nullptr;
-    for (auto &use : src.getUses()) {
-      Operation *user = use.getOwner();
-      if (last_user == nullptr) {
-        last_user = user;
-        continue;
-      }
-      if (user->getBlock() != op->getBlock()) {
-        // Use in a different block, don't trust isBeforeInBlock
-        resolvable = false;
-        break;
-      }
-      if (last_user->isBeforeInBlock(user)) {
-        last_user = user;
-      }
-    }
+    Operation *last_user = getLastUse(src, *func);
+
     // if copy is the last use of src
-    if (resolvable && last_user == op) {
-      // if dst is local
-      if (dst.getDefiningOp<memref::AllocOp>()) {
+    if (last_user && last_user == op) {
+      // if dst is local, replace the use of dst with src
+      if (dst.getDefiningOp()) {
         for (auto &use : dst.getUses()) {
           Operation *user = use.getOwner();
           if (user->getBlock() != op->getBlock()) {
@@ -68,9 +63,12 @@ void removeRedundantCopy(func::FuncOp &func) {
         if (resolvable) {
           for (auto &use : llvm::make_early_inc_range(dst.getUses())) {
             Operation *user = use.getOwner();
+            llvm::errs() << *user << "\n";
             if (user->getBlock() == op->getBlock() &&
                 op->isBeforeInBlock(user)) {
+              llvm::errs() << "\t" << *user << "\n";
               use.set(src);
+              llvm::errs() << "\t-> " << *user << "\n";
             }
           }
           op->erase();
