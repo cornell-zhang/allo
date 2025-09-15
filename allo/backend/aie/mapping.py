@@ -120,9 +120,10 @@ class FIFO:
         if dimensions_to_stream is not None and len(dimensions_to_stream) == 3:
             sizes = list(dimensions_to_stream[1])
             strides = list(dimensions_to_stream[2])
+            assert len(sizes) == len(strides)
             if str(dtype) == "i4":
                 sizes[-1] //= 2
-                for i in range(3):
+                for i in range(len(sizes) - 1):
                     strides[i] //= 2
             for size, stride in zip(sizes, strides):
                 self.dimensions_to_stream.append((size, stride))

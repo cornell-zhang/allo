@@ -45,6 +45,8 @@ class Config:
     MEM_MAX_RECV = 6
     SHIM_MAX_SEND = 2
     SHIM_MAX_RECV = 2
+    MEM_COMP_DMA_TRANSFORM_DIM = 4
+    COMP_COMP_DMA_TRANSFORM_DIM = 3
     # https://github.com/Xilinx/mlir-aie/blob/46bb8c25967f173eebe56056661be226b3933a14/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd
     DMA_MAX_BDS = 16
 
@@ -195,7 +197,30 @@ class Stream:
         if self.src_layout_transform is None and self.dst_layout_transform is None:
             return []
         else:
-            raise ValueError("To be implemented.")
+            layout_transform = None
+            if (
+                self.src_layout_transform is None
+                and self.dst_layout_transform is not None
+            ):
+                layout_transform = self.dst_layout_transform
+            elif (
+                self.src_layout_transform is not None
+                and self.dst_layout_transform is None
+            ):
+                layout_transform = self.src_layout_transform
+            else:
+                raise ValueError("To be implemented.")
+            dimensions_to_stream: list[tuple[int, int]] = []
+            sizes = list(layout_transform[1])
+            strides = list(layout_transform[2])
+            assert len(sizes) == len(strides)
+            if self.type_str == "i4":
+                sizes[-1] //= 2
+                for i in range(len(sizes) - 1):
+                    strides[i] //= 2
+            for size, stride in zip(sizes, strides):
+                dimensions_to_stream.append((size, stride))
+            return dimensions_to_stream
 
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
