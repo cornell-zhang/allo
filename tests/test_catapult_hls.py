@@ -8,6 +8,7 @@ def vvadd(a: int32[100], b: int32[100]) -> int32[100]:
     return c
 
 s = allo.customize(vvadd)
+print(s.module)
 mod = s.build(target="catapult", mode="csyn", project="my_project.prj")
 
 # Then run synthesis:

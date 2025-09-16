@@ -5,6 +5,7 @@
  */
 
 #include "allo/Translation/EmitCatapultHLS.h"
+#include "allo/Translation/EmitVivadoHLS.h"  // Include Vivado emitter
 #include "allo/Dialect/Visitor.h"
 #include "allo/Support/Utils.h"
 #include "allo/Translation/Utils.h"
@@ -26,10 +27,10 @@ using namespace allo;
 // Utils
 //===----------------------------------------------------------------------===//
 
-// used for determine whether to generate C++ default types or ap_(u)int
+// used for determine whether to generate C++ default types or ac_(u)int
 static bool BIT_FLAG = false;
 
-static SmallString<16> getTypeName(Type valType) {
+static SmallString<16> getCatapultTypeName(Type valType) {
   if (auto arrayType = valType.dyn_cast<ShapedType>())
     valType = arrayType.getElementType();
 
@@ -90,7 +91,7 @@ static SmallString<16> getTypeName(Type valType) {
   else if (auto streamType = valType.dyn_cast<StreamType>())
     return SmallString<16>(
         "ac_channel< " +
-        std::string(getTypeName(streamType.getBaseType()).c_str()) + " >");
+        std::string(getCatapultTypeName(streamType.getBaseType()).c_str()) + " >");
 
   else
     assert(1 == 0 && "Got unsupported type.");
@@ -98,266 +99,36 @@ static SmallString<16> getTypeName(Type valType) {
   return SmallString<16>();
 }
 
+// Forward declare the Vivado ModuleEmitter from the Vivado namespace
+namespace vhls {
+  class ModuleEmitter;
+}
+
 namespace {
-class ModuleEmitter : public AlloEmitterBase {
+// Catapult ModuleEmitter that inherits from Vivado ModuleEmitter
+class CatapultModuleEmitter : public allo::vhls::ModuleEmitter {
 public:
   using operand_range = Operation::operand_range;
-  explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
+  explicit CatapultModuleEmitter(AlloEmitterState &state) : allo::vhls::ModuleEmitter(state) {}
 
-  /// SCF statement emitters.
-  void emitScfFor(scf::ForOp op);
-  void emitScfIf(scf::IfOp op);
-  void emitScfYield(scf::YieldOp op);
+  // Override methods that need Catapult-specific behavior
+  void emitModule(ModuleOp module) override;
+  void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
+  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
 
-  /// Affine statement emitters.
-  void emitAffineFor(AffineForOp op);
-  void emitAffineIf(AffineIfOp op);
-  void emitAffineParallel(AffineParallelOp op);
-  void emitAffineApply(AffineApplyOp op);
-  template <typename OpType>
-  void emitAffineMaxMin(OpType op, const char *syntax);
-  void emitAffineLoad(AffineLoadOp op);
-  void emitAffineStore(AffineStoreOp op);
-  void emitAffineYield(AffineYieldOp op);
-
-  /// Memref-related statement emitters.
-  template <typename OpType> void emitAlloc(OpType op);
-  void emitLoad(memref::LoadOp op);
-  void emitStore(memref::StoreOp op);
-  void emitGetGlobal(memref::GetGlobalOp op);
-  void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
-  void emitGlobal(memref::GlobalOp op);
-  void emitSubView(memref::SubViewOp op);
-  void emitReshape(memref::ReshapeOp op);
-
-  /// Tensor-related statement emitters.
-  void emitTensorExtract(tensor::ExtractOp op);
-  void emitTensorInsert(tensor::InsertOp op);
-  void emitDim(memref::DimOp op);
-  void emitRank(memref::RankOp op);
-
-  /// Standard expression emitters.
-  void emitBinary(Operation *op, const char *syntax);
-  void emitUnary(Operation *op, const char *syntax);
-  void emitPower(Operation *op);
-  void emitMaxMin(Operation *op, const char *syntax);
-
-  /// Special operation emitters.
-  void emitCall(func::CallOp op);
-  void emitSelect(arith::SelectOp op);
-  void emitConstant(arith::ConstantOp op);
-  template <typename CastOpType> void emitCast(CastOpType op);
-  void emitGeneralCast(UnrealizedConversionCastOp op);
-  void emitGetBit(allo::GetIntBitOp op);
-  void emitSetBit(allo::SetIntBitOp op);
-  void emitGetSlice(allo::GetIntSliceOp op);
-  void emitSetSlice(allo::SetIntSliceOp op);
-  void emitBitReverse(allo::BitReverseOp op);
-  void emitBitcast(arith::BitcastOp op);
-
-  /// Stream operation emitters.
-  void emitStreamConstruct(allo::StreamConstructOp op);
-  void emitStreamGet(allo::StreamGetOp op);
-  void emitStreamPut(allo::StreamPutOp op);
-
-  /// Top-level MLIR module emitter.
-  void emitModule(ModuleOp module);
-
-private:
-  /// C++ component emitters.
-  void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
-  unsigned emitNestedLoopHead(Value val);
-  void emitNestedLoopTail(unsigned rank);
-  void emitInfoAndNewLine(Operation *op);
-
-  /// MLIR component and Catapult HLS C++ pragma emitters.
-  void emitBlock(Block &block);
-  void emitLoopDirectives(Operation *op);
-  void emitArrayDirectives(Value memref);
-  void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
-  void emitFunction(func::FuncOp func);
-  void emitHostFunction(func::FuncOp func);
+protected:
+  // Helper method to get Catapult-specific type names
+  SmallString<16> getTypeName(Type valType) { return getCatapultTypeName(valType); }
+  SmallString<16> getTypeName(Value val) { return getCatapultTypeName(val.getType()); }
 };
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// Essential function implementations - simplified for Catapult HLS
+// Catapult-specific implementations
 //===----------------------------------------------------------------------===//
 
-void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
-  auto rank = emitNestedLoopHead(op->getResult(0));
-  indent();
-  Value result = op->getResult(0);
-  fixUnsignedType(result, op->hasAttr("unsigned"));
-  emitValue(result, rank);
-  os << " = ";
-  
-  // For Catapult, handle type casting properly with parentheses around complex types
-  auto resultType = getTypeName(result.getType());
-  auto op0Type = getTypeName(op->getOperand(0).getType());
-  auto op1Type = getTypeName(op->getOperand(1).getType());
-  
-  // Cast first operand to result type if needed and emit with parentheses
-  if (op0Type != resultType) {
-    os << "(" << resultType << ") ";
-  }
-  // For operand 0 - use existing name if declared, otherwise just emit the name
-  if (isDeclared(op->getOperand(0))) {
-    os << getName(op->getOperand(0));
-  } else {
-    // Force add name if not declared and use it
-    addName(op->getOperand(0), false);
-    os << getName(op->getOperand(0));
-  }
-  
-  os << " " << syntax << " ";
-  
-  // Cast second operand to result type if needed and emit with parentheses
-  if (op1Type != resultType) {
-    os << "(" << resultType << ") ";
-  }
-  // For operand 1 - use existing name if declared, otherwise just emit the name
-  if (isDeclared(op->getOperand(1))) {
-    os << getName(op->getOperand(1));
-  } else {
-    // Force add name if not declared and use it
-    addName(op->getOperand(1), false);
-    os << getName(op->getOperand(1));
-  }
-  
-  os << ";";
-  emitInfoAndNewLine(op);
-  emitNestedLoopTail(rank);
-}
-
-void ModuleEmitter::emitBlock(Block &block) {
-  for (auto &op : block) {
-    if (auto forOp = dyn_cast<AffineForOp>(op)) {
-      auto indVar = forOp.getInductionVar();
-      if (!isDeclared(indVar)) {
-        addName(indVar, false);
-      }
-      indent();
-      os << "for (int " << getName(indVar) << " = ";
-      os << "0; " << getName(indVar) << " < ";
-      os << "1024; " << getName(indVar) << "++) {\n";
-      addIndent();
-      emitBlock(*forOp.getBody());
-      reduceIndent();
-      indent();
-      os << "}\n";
-    } else if (auto storeOp = dyn_cast<AffineStoreOp>(op)) {
-      indent();
-      emitValue(storeOp.getMemRef());
-      os << "[";
-      emitValue(storeOp.getIndices()[0]);
-      os << "] = ";
-      emitValue(storeOp.getValueToStore());
-      os << ";";
-      emitInfoAndNewLine(&op);
-    } else if (auto loadOp = dyn_cast<AffineLoadOp>(op)) {
-      auto rank = emitNestedLoopHead(loadOp.getResult());
-      indent();
-      emitValue(loadOp.getResult(), rank);
-      os << " = ";
-      emitValue(loadOp.getMemRef(), rank);
-      os << "[";
-      emitValue(loadOp.getIndices()[0], rank);
-      os << "];";
-      emitInfoAndNewLine(&op);
-      emitNestedLoopTail(rank);
-    } else if (auto addOp = dyn_cast<arith::AddIOp>(op)) {
-      emitBinary(&op, "+");
-    } else if (auto subOp = dyn_cast<arith::SubIOp>(op)) {
-      emitBinary(&op, "-");
-    } else if (auto mulOp = dyn_cast<arith::MulIOp>(op)) {
-      emitBinary(&op, "*");
-    }
-    // Add more operations as needed
-  }
-}
-
-void ModuleEmitter::emitArrayDirectives(Value memref) {
-  // For Catapult, we might want to add array partitioning or other directives
-  // For now, keep it simple
-}
-
-void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr, std::string name) {
-  assert(!(rank && isPtr) && "should be either an array or a pointer.");
-
-  // Value has been declared before or is a constant number.
-  if (isDeclared(val)) {
-    os << getName(val);
-    for (unsigned i = 0; i < rank; ++i)
-      os << "[iv" << i << "]";
-    return;
-  }
-
-  os << getTypeName(val.getType()) << " ";
-
-  if (name == "") {
-    // Add the new value to nameTable and emit its name.
-    os << addName(val, isPtr);
-    for (unsigned i = 0; i < rank; ++i)
-      os << "[iv" << i << "]";
-  } else {
-    os << addName(val, isPtr, name);
-  }
-}
-
-void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
-  if (auto shapedType = array.getType().dyn_cast<ShapedType>()) {
-    if (name.empty()) {
-      os << getTypeName(array.getType().cast<ShapedType>().getElementType());
-      // For Catapult, use shaped arrays instead of pointers for function parameters
-      os << " " << addName(array, false);
-      for (auto dim : shapedType.getShape()) {
-        os << "[" << dim << "]";
-      }
-    } else {
-      os << getTypeName(array.getType().cast<ShapedType>().getElementType());
-      // For Catapult, use shaped arrays instead of pointers for function parameters  
-      os << " " << name;
-      for (auto dim : shapedType.getShape()) {
-        os << "[" << dim << "]";
-      }
-    }
-  }
-}
-
-unsigned ModuleEmitter::emitNestedLoopHead(Value val) {
-  return 0; // Simplified
-}
-
-void ModuleEmitter::emitNestedLoopTail(unsigned rank) {
-  // Simplified
-}
-
-void ModuleEmitter::emitInfoAndNewLine(Operation *op) {
-  os << "\n";
-}
-
-void ModuleEmitter::emitLoopDirectives(Operation *op) {
-  // Add Catapult-specific loop directives if needed
-}
-
-void ModuleEmitter::emitHostFunction(func::FuncOp func) {
-  // Simplified host function emission
-  emitFunction(func);
-}
-
-void ModuleEmitter::emitGlobal(memref::GlobalOp op) {
-  // Simplified global emission
-}
-
-//===----------------------------------------------------------------------===//
-// Function directive emitters - Catapult HLS specific
-//===----------------------------------------------------------------------===//
-
-void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
-                                           ArrayRef<Value> portList) {
+void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
+                                                   ArrayRef<Value> portList) {
   // For Catapult HLS, emit the hls_design top pragma for top-level functions
   if (func->hasAttr("top")) {
     indent();
@@ -382,148 +153,27 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
       emitArrayDirectives(port);
 }
 
-void ModuleEmitter::emitFunction(func::FuncOp func) {
-  if (func->hasAttr("bit"))
-    BIT_FLAG = true;
-
-  if (func.getBlocks().empty())
-    // This is a declaration.
-    return;
-
-  if (func.getBlocks().size() > 1)
-    emitError(func, "has more than one basic blocks.");
-
-  if (func->hasAttr("top"))
-    os << "/// This is top function.\n";
-
-  // Emit function signature.
-  os << "void " << func.getName() << "(\n";
-  addIndent();
-
-  // This vector is to record all ports of the function.
-  SmallVector<Value, 8> portList;
-
-  // Emit input arguments.
-  unsigned argIdx = 0;
-  std::vector<std::string> input_args;
-  if (func->hasAttr("inputs")) {
-    std::string input_names =
-        func->getAttr("inputs").cast<StringAttr>().getValue().str();
-    input_args = split_names(input_names);
-  }
-  std::string output_names;
-  if (func->hasAttr("outputs")) {
-    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
-    input_args.push_back(output_names);
-  }
-  std::string itypes = "";
-  if (func->hasAttr("itypes"))
-    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
-  else {
-    for (unsigned i = 0; i < func.getNumArguments(); ++i)
-      itypes += "x";
-  }
-
-  for (auto &arg : func.getArguments()) {
-    indent();
-    fixUnsignedType(arg, itypes[argIdx] == 'u');
-    if (arg.getType().isa<ShapedType>()) {
-      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
-        auto shapedType = arg.getType().dyn_cast<ShapedType>();
-        os << getTypeName(arg.getType()) << " ";
-        os << addName(arg, false);
-        for (auto shape : shapedType.getShape())
-          os << "[" << shape << "]";
-      } else if (input_args.size() == 0) {
-        emitArrayDecl(arg, true);
-      } else {
-        emitArrayDecl(arg, true, input_args[argIdx]);
+void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
+  if (auto shapedType = array.getType().dyn_cast<ShapedType>()) {
+    if (name.empty()) {
+      os << getCatapultTypeName(array.getType().cast<ShapedType>().getElementType());
+      // For Catapult, use shaped arrays instead of pointers for function parameters
+      os << " " << addName(array, false);
+      for (auto dim : shapedType.getShape()) {
+        os << "[" << dim << "]";
       }
     } else {
-      if (arg.getType().isa<StreamType>()) {
-        // need to pass by reference
-        os << getTypeName(arg.getType()) << "& ";
-        os << addName(arg, false);
-      } else if (input_args.size() == 0) {
-        emitValue(arg);
-      } else {
-        emitValue(arg, 0, false, input_args[argIdx]);
+      os << getCatapultTypeName(array.getType().cast<ShapedType>().getElementType());
+      // For Catapult, use shaped arrays instead of pointers for function parameters  
+      os << " " << name;
+      for (auto dim : shapedType.getShape()) {
+        os << "[" << dim << "]";
       }
     }
-
-    portList.push_back(arg);
-    if (argIdx++ != func.getNumArguments() - 1)
-      os << ",\n";
   }
-
-  // Emit results - similar to VivadoHLS implementation
-  auto args = func.getArguments();
-  std::string otypes = "";
-  if (func->hasAttr("otypes"))
-    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
-  else {
-    for (unsigned i = 0; i < func.getNumArguments(); ++i)
-      otypes += "x";
-  }
-
-  if (auto funcReturn =
-          dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
-    unsigned idx = 0;
-    for (auto result : funcReturn.getOperands()) {
-      if (std::find(args.begin(), args.end(), result) == args.end()) {
-        if (func.getArguments().size() > 0)
-          os << ",\n";
-        indent();
-
-        fixUnsignedType(result, otypes[idx] == 'u');
-        if (result.getType().isa<ShapedType>()) {
-          if (output_names != "")
-            emitArrayDecl(result, true);
-          else
-            emitArrayDecl(result, true, output_names);
-        } else {
-          // In Catapult HLS, pointer indicates the value is an output.
-          if (output_names != "")
-            emitValue(result, /*rank=*/0, /*isPtr=*/true);
-          else
-            emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
-        }
-
-        portList.push_back(result);
-      }
-      idx += 1;
-    }
-  } else
-    emitError(func, "doesn't have a return operation as terminator.");
-
-  reduceIndent();
-  os << "\n) {";
-  emitInfoAndNewLine(func);
-
-  // Emit function body.
-  addIndent();
-
-  // Add #pragma hls_design top for Catapult HLS
-  indent();
-  os << "#pragma hls_design top";
-  emitInfoAndNewLine(func);
-
-  // Emit Catapult-specific function directives
-  emitFunctionDirectives(func, portList);
-
-  if (func->hasAttr("systolic")) {
-    os << "#pragma scop\n";
-  }
-  emitBlock(func.front());
-  if (func->hasAttr("systolic")) {
-    os << "#pragma endscop\n";
-  }
-
-  reduceIndent();
-  os << "}\n\n";
 }
 
-void ModuleEmitter::emitModule(ModuleOp module) {
+void CatapultModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -589,7 +239,7 @@ using namespace std;
 
 LogicalResult allo::emitCatapultHLS(ModuleOp module, llvm::raw_ostream &os) {
   AlloEmitterState state(os);
-  ModuleEmitter(state).emitModule(module);
+  CatapultModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
