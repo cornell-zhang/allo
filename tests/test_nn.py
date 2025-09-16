@@ -303,6 +303,65 @@ def test_bert():
     print(s.build(target="vhls"))
 
 
+def np_rope(X, cos, sin, num_heads=8):
+    X1 = X[:, :, :32]
+    X2 = X[:, :, 32:]
+
+    X_rotated = np.zeros_like(X)  # [1024, 8, 64]
+
+    for i in range(num_heads):
+        X_1_i = X1[:, i, :]
+        X_2_i = X2[:, i, :]
+        X_rotated_i = np.concatenate(
+            (X_1_i * cos - X_2_i * sin, X_1_i * sin + X_2_i * cos), axis=-1
+        )
+
+        X_rotated[:, i, :] = X_rotated_i  # [1024, 8, 64]
+    return X_rotated
+
+
+def test_RoPE():
+    from allo.library.nn import RoPE
+
+    L, D = 1024, 512
+    H = 8
+    s = allo.customize(RoPE, instantiate=[float32, H, L, D])
+    mod = s.build()
+    Q = np.random.randn(L, D).astype(np.float32)
+    cos = np.random.randn(L, 32).astype(np.float32)
+    sin = np.random.randn(L, 32).astype(np.float32)
+    allo_out = mod(Q, cos, sin)
+    Q_np = Q.reshape(1024, 8, 64)
+    np_out = np_rope(Q_np, cos, sin)
+    np_out = np_out.reshape(1024, 512)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+
+
+def np_modulate_fused(x, shift, scale):
+    output = x * (1 + scale) + shift
+    return output
+
+
+def test_modulate_fused():
+    from allo.library.nn import modulate_fused
+    from allo.library.nn import schedule_modulate_fused
+
+    L, D = 1024, 512
+    X = np.random.randn(L, D).astype(np.float32)
+    X_norm = X
+    s = allo.customize(modulate_fused, instantiate=[float32, L, D])
+    schedule_modulate_fused(s)
+    print(s.module)
+    mod = s.build(target="llvm")
+    scale = np.random.randn(D).astype(np.float32)
+    shift = np.random.randn(D).astype(np.float32)
+    allo_out = mod(X, scale, shift)
+    np_out = np_modulate_fused(X_norm, shift=shift, scale=scale)
+    np.testing.assert_allclose(allo_out, np_out, atol=1e-3)
+    print("Passed!")
+
+
 def np_conv2d(inp, filter, stride=1, padding=0):
     N, C, H, W = inp.shape
     F, _, HH, WW = filter.shape

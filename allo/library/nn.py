@@ -246,6 +246,46 @@ def scaled_dot_product_attention[
     return Z
 
 
+def RoPE[
+    Ty, H, L, D
+](X: "Ty[L, D]", cos: "Ty[L, D // H // 2]", sin: "Ty[L, D // H // 2]") -> "Ty[L, D]":
+    # Rotary Position Embedding
+    # Reference: https://arxiv.org/abs/2104.09864
+    X_rotary: Ty[L, D]
+    for h in range(H):
+        X_1_h: Ty[L, D // H // 2]
+        X_2_h: Ty[L, D // H // 2]
+        for i, j in dsl.grid(L, D // H // 2, name="rope_split_1"):
+            X_1_h[i, j] = X[i, h * (D // H) + j]
+        for i, j in dsl.grid(L, D // H // 2, name="rope_split_2"):
+            X_2_h[i, j] = X[i, h * (D // H) + D // H // 2 + j]
+        X_1_rotary: Ty[L, D // H // 2] = 0
+        X_2_rotary: Ty[L, D // H // 2] = 0
+        for i, j in dsl.grid(L, D // H // 2, name="rotary_1"):
+            X_1_rotary[i, j] = cos[i, j] * X_1_h[i, j] - sin[i, j] * X_2_h[i, j]
+        for i, j in dsl.grid(L, D // H // 2, name="rotary_2"):
+            X_2_rotary[i, j] = sin[i, j] * X_1_h[i, j] + cos[i, j] * X_2_h[i, j]
+        for i, j in dsl.grid(L, D // H // 2, name="rotary_merge_1"):
+            X_rotary[i, h * (D // H) + j] = X_1_rotary[i, j]
+        for i, j in dsl.grid(L, D // H // 2, name="rotary_merge_2"):
+            X_rotary[i, h * (D // H) + D // H // 2 + j] = X_2_rotary[i, j]
+    return X_rotary
+
+
+def modulate_fused[
+    Ty, L, D
+](X: "Ty[L,D]", scale: "Ty[D]", shift: "Ty[D]") -> "Ty[L, D]":
+    Z: Ty[L, D]
+    for i, j in dsl.grid(L, D, name="m_fused"):
+        Z[i, j] = X[i, j] * (1 + scale[j]) + shift[j]
+    return Z
+
+
+def schedule_modulate_fused(s):
+    lj = s.get_loops(s.top_func_name)["m_fused"]["j"]
+    s.pipeline(lj)
+
+
 def conv2d[
     Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1
 ](
