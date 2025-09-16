@@ -657,41 +657,6 @@ class ComputationGraph:
         self.nodes[bundled_node.meta_data.name] = bundled_node
         return bundled_node.meta_data.name
 
-    def bundle_subgraph(self, subgraph_list: list[tuple[str]]):
-        """
-        [A] [B] [C] [D]  => [A] x 4
-
-        TODO: bundled nodes can be safely reordered
-        """
-        assert len(subgraph_list) >= 2, "bundle at least two subgraphs"
-        node_lists: list[list[NodeBase]] = []
-        node_names = set()
-        for node_name_list in subgraph_list:
-            node_list = []
-            for name in node_name_list:
-                assert name not in node_names, f"Node({name}) conflict"
-                node_names.add(name)
-                assert name in self.nodes, f"Node({name}) not found"
-                node_list.append(self.nodes.pop(name))
-            node_lists.append(node_list)
-        sample_subgraph: list[NodeBase] = node_lists[0]
-        for subgraph in node_lists:
-            assert len(subgraph) == len(sample_subgraph)
-            for node, sample_node in zip(subgraph, sample_subgraph):
-                assert node.meta_data.op_tag == sample_node.meta_data.op_tag
-            # TODO: better isomorphism test
-        bundled_node_list = list[CollocatedNode]
-        for idx, sample_node in enumerate(sample_subgraph):
-            bundled_node = CollocatedNode(
-                tag=sample_node.meta_data.op_tag,
-                name=f"{sample_node.meta_data.name}x{len(subgraph_list)}",
-                length=sample_node.meta_data.length,
-            )
-            bundled_node.init_for_bundle([node_list[idx] for node_list in node_lists])
-            bundled_node_list.append(bundled_node)
-        # update stream
-        # TODO
-
     def chain(self, node_name_a: str, node_name_b: str):
         """
         [A] [B] => [[A]-[B]]

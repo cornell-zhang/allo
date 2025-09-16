@@ -20,8 +20,6 @@ Operation *getFirstUse(Value value, Operation &func) {
     auto *op = use.getOwner();
     if (!firstUse || domInfo.properlyDominates(op, firstUse->getOwner())) {
       firstUse = &use;
-      //   llvm::errs() << firstUse->get() << "\n";
-      //   llvm::errs() << *firstUse->getOwner() << "\n";
     }
   }
   if (!firstUse) {
@@ -39,8 +37,6 @@ Operation *getLastUse(Value value, Operation &func) {
     auto *op = use.getOwner();
     if (!lastUse || postDom.properlyPostDominates(op, lastUse->getOwner())) {
       lastUse = &use;
-      //   llvm::errs() << lastUse->get() << "\n";
-      //   llvm::errs() << *lastUse->getOwner() << "\n";
     }
   }
   if (!lastUse) {

@@ -198,18 +198,18 @@ def _test_pingpong_gemm_1x1x4():
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int16)
-    # mod_v1 = df.build(
-    #     top,
-    #     target="aie",
-    #     mapping_primitives=[
-    #         ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-    #         ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
-    #         ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
-    #     ],
-    # )
-    # mod_v1(A, B, C)
-    # np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    # print("PASSED!")
+    mod_v1 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
+            ("chain", ["gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0"]),
+            ("chain", ["gemm_0_0_0-gemm_1_0_0-gemm_2_0_0", "gemm_3_0_0"]),
+        ],
+    )
+    mod_v1(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
 
     mod_v2 = df.build(
         top,
@@ -257,7 +257,7 @@ def _test_pingpong_gemm_2x2x4():
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int16)
-    mod_v1 = df.build(
+    mod = df.build(
         top,
         target="aie",
         mapping_primitives=[
@@ -275,37 +275,9 @@ def _test_pingpong_gemm_2x2x4():
             ("chain", ["gemm_0_1_1-gemm_1_1_1-gemm_2_1_1", "gemm_3_1_1"]),
         ],
     )
-    mod_v1(A, B, C)
+    mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
-
-    # mod_v2 = df.build(
-    #     top,
-    #     target="aie",
-    #     mapping_primitives=[
-    #         ("chain", ["gemm_0_0_0", "gemm_1_0_0"]),
-    #         ("chain", ["gemm_2_0_0", "gemm_3_0_0"]),
-    #         ("chain", ["gemm_0_0_1", "gemm_1_0_1"]),
-    #         ("chain", ["gemm_2_0_1", "gemm_3_0_1"]),
-    #         ("chain", ["gemm_0_1_0", "gemm_1_1_0"]),
-    #         ("chain", ["gemm_2_1_0", "gemm_3_1_0"]),
-    #         ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
-    #         ("chain", ["gemm_2_1_1", "gemm_3_1_1"]),
-    #         # (
-    #         #     "bundle",
-    #         #     [
-    #         #         ("gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0-gemm_3_0_0"),
-    #         #         ("gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1-gemm_3_0_1"),
-    #         #         ("gemm_0_1_0-gemm_1_1_0", "gemm_2_1_0-gemm_3_1_0"),
-    #         #         ("gemm_0_1_1-gemm_1_1_1", "gemm_2_1_1-gemm_3_1_1"),
-    #         #     ],
-    #         # ),
-    #     ],
-    # )
-    # mod_v2(A, B, C)
-    # np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    # print("PASSED!")
-
 
 def _test_pingpong_gemm_4x4x4():
 

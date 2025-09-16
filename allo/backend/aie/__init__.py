@@ -649,12 +649,7 @@ class AIE_MLIRModule:
                     assert len(arg_list) == 2
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    if isinstance(arg_list[0], str):
-                        self.virtual_computation_graph.bundle(arg_list)
-                    elif isinstance(arg_list[0], tuple[str]):
-                        self.virtual_computation_graph.bundle_subgraph(arg_list)
-                    else:
-                        raise ValueError("Invalid bundle primitive")
+                    self.virtual_computation_graph.bundle(arg_list)
         self.virtual_computation_graph.refactor()
 
         # record original allo mlir

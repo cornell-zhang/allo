@@ -107,7 +107,7 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
-    M, N, K = 512, 512, 512
+    M, N, K = 2048, 2048, 2048
     m, n, k = 64, 64, 64
     # - i8
     _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
