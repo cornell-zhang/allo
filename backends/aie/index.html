@@ -1,30 +1,30 @@
 <!DOCTYPE html>
 
-<html lang="en" data-content_root="../">
+<html lang="en" data-content_root="../../">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <title>AMD MLIR-AIE (AI Engine) &#8212; Allo Documentation</title>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
-    <link rel="stylesheet" type="text/css" href="../_static/basic_mod.css?v=9b2032db" />
-    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
-    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=d2d258e8" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <script src="../_static/documentation_options.js?v=db78e746"></script>
-    <script src="../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="../_static/copybutton.js?v=30646c52"></script>
-    <script src="../_static/js/theme.js"></script>
-    <script src="../_static/js/petite-vue.js"></script>
-    <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Developer Setup" href="../developer/index.html" />
-    <link rel="prev" title="Multi-Threaded Simulator (CPU)" href="simulator.html" /> 
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic_mod.css?v=9b2032db" />
+    <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="../../_static/documentation_options.js?v=db78e746"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=30646c52"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <script src="../../_static/js/petite-vue.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Environment Setup" href="env.html" />
+    <link rel="prev" title="Multi-Threaded Simulator (CPU)" href="../simulator.html" /> 
   </head><body data-dark_mode_code_blocks="true">
 
 <div id="top_nav">
@@ -38,7 +38,7 @@
         <p id="toggle_sidebar">
             <a href="#" title="Toggle sidebar">|||</a>
         </p>
-        <h1><a href="../index.html" title="Go to homepage">Allo Documentation</a></h1>
+        <h1><a href="../../index.html" title="Go to homepage">Allo Documentation</a></h1>
             <a id="source_link" href="https://github.com/cornell-zhang/allo">
     
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512">
@@ -108,7 +108,7 @@
 })()
 </script>
             <p class="mobile_search_link">
-                <a href="../search.html" title="Search">
+                <a href="../../search.html" title="Search">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 64" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2">
                         <path d="M14.873 40.009c-2.315-3.943-3.642-8.532-3.642-13.429C11.231 11.91 23.141 0 37.811 0s26.58 11.91 26.58 26.58-11.91 26.58-26.58 26.58a26.44 26.44 0 0 1-14.277-4.161L9.739 62.794a3.12 3.12 0 0 1-4.413 0L.913 58.382c-1.217-1.218-1.217-3.196 0-4.413l13.96-13.96zM37.811 8.054c10.225 0 18.526 8.301 18.526 18.526s-8.301 18.526-18.526 18.526-18.526-8.301-18.526-18.526S27.586 8.054 37.811 8.054z" fill="#fff" />
                     </svg>
@@ -121,7 +121,7 @@
 <search id="searchbox" style="display: none" role="search">
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
-    <form class="search" action="../search.html" method="get">
+    <form class="search" action="../../search.html" method="get">
       <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
@@ -136,41 +136,47 @@
       <div class="sphinxsidebar" role="navigation" aria-label="Main">
         <div class="sphinxsidebarwrapper"><p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../setup/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../setup/index.html">Installation</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_01_get_started.html">Getting Started</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_01_get_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/tutorial_02_vhls.html">Vivado/Vitis HLS Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_01_data_types.html">Data Types and Type Casting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_02_template.html">Template Kernels</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_03_composition.html">Kernel Composition</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../dive/ip.html">IP Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../dive/pytorch.html">PyTorch Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/dive_04_features.html">Other Features</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_01_data_types.html">Data Types and Type Casting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_02_template.html">Template Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_03_composition.html">Kernel Composition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dive/ip.html">IP Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dive/pytorch.html">PyTorch Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_05_verifier.html">Equivalence Checking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/dive_04_features.html">Other Features</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="llvm.html">LLVM (CPU)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="vitis.html">AMD Vitis HLS (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tapa.html">RapidStream TAPA (FPGA)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="simulator.html">Multi-Threaded Simulator (CPU)</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">AMD MLIR-AIE (AI Engine)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llvm.html">LLVM (CPU)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vitis.html">AMD Vitis HLS (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tapa.html">RapidStream TAPA (FPGA)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../simulator.html">Multi-Threaded Simulator (CPU)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">AMD MLIR-AIE (AI Engine)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="env.html">Environment Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="use.html">Getting Started with MLIR-AIE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="use.html#learning-materials">Learning Materials</a></li>
+<li class="toctree-l2"><a class="reference internal" href="feature/index.html">Feature Details</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../developer/index.html">Developer Setup</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../gallery/developer_02_mlir.html">MLIR Translation Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../developer/index.html">Developer Setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/developer_01_ir_builder.html">IR Builder Walkthrough</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallery/developer_02_mlir.html">MLIR Translation Guide</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Python API</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../api/index.html">Schedule Primitives</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../api/index.html#data-types">Data Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">Schedule Primitives</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html#data-types">Data Types</a></li>
 </ul>
 
         </div>
@@ -187,76 +193,30 @@
 <p><a class="reference external" href="https://www.amd.com/en/products/adaptive-socs-and-fpgas/technologies/ai-engine.html">AMD AI Engine (AIE)</a> is a hardware accelerator specifically designed for AI applications. It is a TPU-like architecture with an array of AIE cores.
 In this document, we target the <a class="reference external" href="https://www.amd.com/en/products/processors/laptop/ryzen-for-business.html">AMD Ryzen 7040</a> and 8040 Series processors that are built on <a class="reference external" href="https://www.amd.com/en/technologies/xdna.html">AMD XDNA NPUs</a>, which are equipped with the second-generation AI Engine cores.</p>
 <img alt="AMD Ryzen AI Engine Array" class="align-center" src="https://riallto.ai/notebooks/images/png/ryzenai_array_5x4.png" />
-<section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"><span>¶</span></a></h2>
-<p>Before proceeding with the Allo installation, please follow the instructions on the <a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main?tab=readme-ov-file#getting-started-for-amd-ryzen-ai---linux-quick-setup-instructions">MLIR-AIE website</a> to install the required <a class="reference external" href="https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html">Vitis</a> and XRT environment. Stop when you reach the “Install IRON for AMD Ryzen™ AI AIE Application” section as we need a separate process to install MLIR-AIE under the Allo environment.</p>
-</section>
-<section id="install-from-source">
-<h2>Install from Source<a class="headerlink" href="#install-from-source" title="Link to this heading"><span>¶</span></a></h2>
-<p>Please follow the general instructions in <a class="reference internal" href="../setup/index.html#install-from-source"><span class="std std-ref">Install from Source</span></a> to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project and enable the <code class="docutils literal notranslate"><span class="pre">allo</span></code> conda environment.</p>
-<p>We depend on the <a class="reference external" href="https://github.com/Xilinx/mlir-aie">MLIR-AIE</a> project to compile the Allo IR to AIE, but since we are using a specific LLVM-19 version that is not compatible with the latest MLIR-AIE project, we cannot follow the offical instructions but build the MLIR-AIE project from source.</p>
-<p>First, clone the MLIR-AIE project and checkout to the specific commit.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>--recursive<span class="w"> </span>https://github.com/Xilinx/mlir-aie.git
-<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>mlir-aie<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>checkout<span class="w"> </span>fd89c9
-<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">MLIR_AIE_ROOT_DIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>
-</pre></div>
-</div>
-<p>Then, build the MLIR-AIE project. The second command will install the PEANO backend compiler for AIE. Please make sure the current Python environment is Python 3.12 and you have already set up the Vitis and XRT environment. You can check by running <code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">vitis</span></code>.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>./utils/build-mlir-aie.sh<span class="w"> </span><span class="nv">$LLVM_BUILD_DIR</span>
-<span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>env_setup.sh<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install<span class="w"> </span><span class="nv">$LLVM_BUILD_DIR</span>
-</pre></div>
-</div>
-<p>As the above setup script will append additional environment variables to your current shell, you need to relaunch a new shell for the following steps.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install/bin:<span class="nv">$PATH</span>
-<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install/python:<span class="nv">$PYTHONPATH</span>
-<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">MLIR_AIE_INSTALL_DIR</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/install
-<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">PEANO_INSTALL_DIR</span><span class="o">=</span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/utils/my_install/llvm-aie
-<span class="gp">$ </span><span class="c1"># install python packages under the allo conda environment</span>
-<span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/python/requirements.txt
-<span class="gp">$ </span><span class="nv">HOST_MLIR_PYTHON_PACKAGE_PREFIX</span><span class="o">=</span>aie<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span><span class="nv">$MLIR_AIE_ROOT_DIR</span>/requirements_extras.txt
-</pre></div>
-</div>
-<p>Lastly, you can verify the AIE backend by running the following command under the <code class="docutils literal notranslate"><span class="pre">allo</span></code> folder.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>tests/dataflow/aie/test_vector.py
-</pre></div>
-</div>
-</section>
-<section id="internal-installation-cornell">
-<h2>Internal Installation (Cornell)<a class="headerlink" href="#internal-installation-cornell" title="Link to this heading"><span>¶</span></a></h2>
-<p>For Zhang Group students, we have already set up the environment for LLVM and MLIR-AIE, so you do not need to build everything from source. Firstly, you need to create a new conda environment with Python 3.12 and activate it.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>allo<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
-<span class="gp">$ </span>conda<span class="w"> </span>activate<span class="w"> </span>allo
-</pre></div>
-</div>
-<p>To set up the environment, all you need to do is to source the following script.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>/opt/common/setup.sh
-</pre></div>
-</div>
-<p>Then, go through the normal steps to install Allo:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>allo
-<span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>-e<span class="w"> </span>.
-</pre></div>
-</div>
-<p>Some additional packages are required to run the MLIR-AIE compiler. You can install them by running the following commands:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/opt/mlir-aie/python/requirements.txt
-<span class="gp">$ </span><span class="nv">HOST_MLIR_PYTHON_PACKAGE_PREFIX</span><span class="o">=</span>aie<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>/opt/mlir-aie/python/requirements_extras.txt
-</pre></div>
-</div>
-<p>Lastly, to verify the installation, you can run the following command:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3<span class="w"> </span>tests/dataflow/aie/test_vector.py
-</pre></div>
-</div>
-<p>If the unit tests pass, then the installation is successful. Otherwise, please contact us for help.</p>
-</section>
-<section id="learning-materials">
-<h2>Learning Materials<a class="headerlink" href="#learning-materials" title="Link to this heading"><span>¶</span></a></h2>
-<ul class="simple">
-<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/programming_guide">IRON AIE Programming Guide</a></p></li>
-<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/programming_examples">MLIR-AIE Programming Examples</a></p></li>
-<li><p><a class="reference external" href="https://github.com/Xilinx/mlir-aie/tree/main/tutorial">MLIR-based AI Engine Design Tutorial</a></p></li>
-<li><p><a class="reference external" href="https://riallto.ai/index.html">Riallto - an exploration framework for the AMD Ryzen AI NPU</a></p></li>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Setup</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="env.html">Environment Setup</a></li>
 </ul>
-</section>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="use.html">Getting Started with MLIR-AIE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="use.html#learning-materials">Learning Materials</a></li>
+</ul>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Additional Features</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="feature/index.html">Feature Details</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="feature/timing-profile.html">Timing-based Profiling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="feature/trace-profile.html">Trace-based Profiling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="feature/external-kernel.html">User-Defined External Kernels</a></li>
+</ul>
+</li>
+</ul>
+</div>
 </section>
 
 
@@ -265,26 +225,6 @@ In this document, we target the <a class="reference external" href="https://www.
         </div>
       </div>
     
-        <div id="show_right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&lt;</span><span>Page contents</span></a></p>
-        </div>
-
-        <div id="right_sidebar">
-            <p><a class="toggle_right_sidebar" href="#"><span class="icon">&gt;</span><span>Page contents:</span></a></p>
-            <div class="page_toc">
-                <ul>
-<li><a class="reference internal" href="#">AMD MLIR-AIE (AI Engine)</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#install-from-source">Install from Source</a></li>
-<li><a class="reference internal" href="#internal-installation-cornell">Internal Installation (Cornell)</a></li>
-<li><a class="reference internal" href="#learning-materials">Learning Materials</a></li>
-</ul>
-</li>
-</ul>
-
-            </div>
-        </div>
-    
 
       <div class="clearer"></div>
     </div>
@@ -292,14 +232,14 @@ In this document, we target the <a class="reference external" href="https://www.
         <div class="button_nav">
             <div class="left">
                 
-                <a href="simulator.html">
+                <a href="../simulator.html">
                     <span class="icon">&lt;</span><span>Multi-Threaded Simulator (CPU)</span></a>
                 
             </div>
 
             <div class="right">
                 
-                    <a href="../developer/index.html"><span>Developer Setup</span><span class="icon">&gt;</span></a>
+                    <a href="env.html"><span>Environment Setup</span><span class="icon">&gt;</span></a>
                 
             </div>
         </div>
