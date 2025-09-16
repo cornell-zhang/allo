@@ -130,3 +130,14 @@ Now, you can run the following command to test if the installation is successful
   $ python3 -c "import allo as allo; import allo.ir as air"
 
 If you see no error messages, then the installation is successful. Otherwise, please contact us for help.
+
+
+Troubleshooting
+---------------
+
+If you encounter the following issue when building Allo, it is mostly because you source the Vitis environment at the same time, which may cause some library conflicts. Please disable it and try again.
+
+.. code-block:: console
+
+  running build_ext
+    cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory

@@ -6,6 +6,9 @@ import allo
 from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
+from allo.memory import Layout
+
+Ly = Layout("S0")
 
 
 def _test_vector_scalar_add():
@@ -33,6 +36,34 @@ def _test_vector_scalar_add():
     sim_mod(A, B)
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
+
+
+def _test_vector_scalar_conditional_add():
+    Ty = int32
+    M = 1024
+    P = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            pi = df.get_pid()
+            with allo.meta_if(pi < P // 2):
+                B[:] = allo.add(A, 1)
+            with allo.meta_else():
+                B[:] = allo.add(A, -1)
+
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        B = np.zeros(M).astype(np.int32)
+        mod(A, B)
+        A[: M // 2] += 1
+        A[M // 2 :] -= 1
+        np.testing.assert_allclose(B, A)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def _test_vector_scalar_mul():
@@ -153,9 +184,59 @@ def _test_vector_vector_mul():
     print("Dataflow Simulator Passed!")
 
 
+def _test_vector_scalar_add_p0():
+    # https://github.com/Xilinx/mlir-aie/tree/main/programming_guide/section-2/section-2d
+    #                |--------------------------------------------|
+    #                v   v-------------------------v              v
+    # shim tile <-> mem tile <-> comp tile0    comp tile1    comp tile2
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            B[:] = allo.add(A[:], 1)
+
+    mod = df.build(top, target="aie")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.zeros(M).astype(np.int32)
+    mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+
+def _test_vector_vector_add_p0():
+    #                  |--------------------------------------------|
+    #                  v   v--------------------------v             v
+    # shim tile <-> A mem tile 0 <-> comp tile0    comp tile1    comp tile2
+    #       ^-----> B mem tile 1 <-------^------------^-------------^
+    Ty = int32
+    M = 1024
+    P0 = 4
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[P0])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
+            C[:] = allo.add(A, B)
+
+    mod = df.build(top, target="aie")
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.random.randint(0, 100, M).astype(np.int32)
+    C = np.zeros(M).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A + B)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
+    _test_vector_scalar_conditional_add()
     _test_vector_scalar_add()
     _test_vector_scalar_mul()
     _test_vector_vector_add()
     _test_vector_vector_bf16_add()
     _test_vector_vector_mul()
+    _test_vector_scalar_add_p0()
+    _test_vector_vector_add_p0()

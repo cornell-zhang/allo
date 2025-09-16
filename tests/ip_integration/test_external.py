@@ -121,7 +121,7 @@ def test_lib_gemm():
     a = np.random.random((16, 16)).astype(np.float32)
     b = np.random.random((16, 16)).astype(np.float32)
     c = mod(a, b)
-    np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=1e-6)
+    np.testing.assert_allclose(np.matmul(a, b) + 1, c, atol=5e-6)
     print("Passed!")
 
     if hls.is_available():

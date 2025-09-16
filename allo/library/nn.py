@@ -1,21 +1,23 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation
+# pylint: disable=used-before-assignment, unsubscriptable-object, unsupported-assignment-operation, chained-comparison
 
 from .. import dsl
 from .systolic import systolic
 
 
-def linear2d[Ty, M, N, K](X: "Ty[M, K]", W: "Ty[N, K]", b: "Ty[N]") -> "Ty[M, N]":
+def linear2d[
+    TyX, TyW, TyO, M, N, K
+](X: "TyX[M, K]", W: "TyW[N, K]", b: "TyO[N]") -> "TyO[M, N]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
-    Z: Ty[M, N]
-    buf: Ty[N]
+    Z: TyO[M, N]
+    buf: TyO[N]
     for i in range(M):
         for j_init in range(N):
             buf[j_init] = 0
         for k in range(K):
             # reorder reduction loop outside, and pipeline
-            x: Ty = X[i, k]
+            x: TyX = X[i, k]
             for j in range(N):
                 buf[j] += x * W[j, k]
         for j_back in range(N):
@@ -31,18 +33,18 @@ def schedule_linear2d(s):
 
 
 def linear3d[
-    Ty, B, L, D, M
-](X: "Ty[B, L, D]", W: "Ty[M, D]", bias: "Ty[M]") -> "Ty[B, L, M]":
+    TyX, TyW, TyO, B, L, D, M
+](X: "TyX[B, L, D]", W: "TyW[M, D]", bias: "TyO[M]") -> "TyO[B, L, M]":
     # https://pytorch.org/docs/stable/generated/torch.nn.Linear.html
-    Z: Ty[B, L, M]
-    buf: Ty[M]
+    Z: TyO[B, L, M]
+    buf: TyO[M]
     for b in range(B):
         for i in range(L):
             for j_init in range(M):
                 buf[j_init] = 0
             for k in range(D):
                 # reorder reduction loop outside, and pipeline
-                x: Ty = X[b, i, k]
+                x: TyX = X[b, i, k]
                 for j in range(M):
                     buf[j] += x * W[j, k]
             for j_back in range(M):
@@ -81,6 +83,18 @@ def schedule_relu4d(s):
     return s
 
 
+def relu3d[Ty, N, L, C](X: "Ty[N, L, C]") -> "Ty[N, L, C]":
+    Z: Ty[N, L, C]
+    for n, l, c in dsl.grid(N, L, C):
+        Z[n, l, c] = max(0.0, X[n, l, c])
+    return Z
+
+
+def schedule_relu3d(s):
+    s.pipeline("relu3d:c")
+    return s
+
+
 def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
     Z: Ty[L, L]
     E: Ty[L, L]
@@ -103,6 +117,37 @@ def softmax[Ty, L](X: "Ty[L, L]") -> "Ty[L, L]":
 
 
 def schedule_softmax(s):
+    lj = s.get_loops(s.top_func_name)["exp_sum"]["j"]
+    s.pipeline(lj)
+    lj = s.get_loops(s.top_func_name)["update"]["j"]
+    s.pipeline(lj)
+    return s
+
+
+def log_softmax[Ty, B, C](X: "Ty[B, C]") -> "Ty[B, C]":
+    Z: Ty[B, C]
+    E: Ty[B, C]
+    M: Ty[B] = -1000000000000.0
+    S: Ty[B] = 0.0
+
+    # Row-wise max
+    for i, j in dsl.grid(B, C, name="row_max"):
+        if X[i, j] > M[i]:
+            M[i] = X[i, j]
+
+    # Compute exp and sum
+    for i, j in dsl.grid(B, C, name="exp_sum"):
+        E[i, j] = dsl.exp(X[i, j] - M[i])
+        S[i] += E[i, j]
+
+    # Log softmax update
+    for i, j in dsl.grid(B, C, name="update"):
+        Z[i, j] = X[i, j] - M[i] - dsl.log(S[i])
+
+    return Z
+
+
+def schedule_log_softmax(s):
     lj = s.get_loops(s.top_func_name)["exp_sum"]["j"]
     s.pipeline(lj)
     lj = s.get_loops(s.top_func_name)["update"]["j"]
@@ -239,4 +284,173 @@ def modulate_fused[
 def schedule_modulate_fused(s):
     lj = s.get_loops(s.top_func_name)["m_fused"]["j"]
     s.pipeline(lj)
+
+
+def conv2d[
+    Ty, B, Cin, Cout, H, W, Kh, Kw, Oh, Ow, Sh, Sw, Pd0, Pd1
+](
+    inp: "Ty[B, Cin, H, W]", kernel: "Ty[Cout, Cin, Kh, Kw]", bias: "Ty[Cout]"
+) -> "Ty[B, Cout, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    Z: Ty[B, Cout, Oh, Ow]
+
+    # Current implementation is does not support dilation other than 1
+    for batch, cout, oh, ow in dsl.grid(B, Cout, Oh, Ow):
+        temp: Ty = bias[cout]
+
+        for cin, kh, kw in dsl.grid(Cin, Kh, Kw):
+            h_pos: Ty = oh * Sh + kh - Pd0
+            w_pos: Ty = ow * Sw + kw - Pd1
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                temp += inp[batch, cin, h_pos, w_pos] * kernel[cout, cin, kh, kw]
+
+        Z[batch, cout, oh, ow] = temp
+    return Z
+
+
+def schedule_conv2d(s):
+    s.pipeline("conv2d:cout")
+    s.pipeline("conv2d:ow")
+    return s
+
+
+def maxpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        max_val: Ty = -1000000000000.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                new_max: Ty = max(max_val, inp[batch, c, h_pos, w_pos])
+                max_val = new_max
+        Z[batch, c, oh, ow] = max_val
+    return Z
+
+
+def schedule_maxpool2d(s):
+    s.pipeline("maxpool2d:c")
+    s.pipeline("maxpool2d:ow")
+    return s
+
+
+def avgpool2d[
+    Ty, B, C, H, W, K, Oh, Ow, S, Pd
+](inp: "Ty[B, C, H, W]",) -> "Ty[B, C, Oh, Ow]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
+    Z: Ty[B, C, Oh, Ow]
+    for batch, c, oh, ow in dsl.grid(B, C, Oh, Ow):
+        temp: Ty = 0.0
+        for kh, kw in dsl.grid(K, K):
+            h_pos: Ty = oh * S + kh - Pd
+            w_pos: Ty = ow * S + kw - Pd
+            if h_pos >= 0 and h_pos < H and w_pos >= 0 and w_pos < W:
+                temp += inp[batch, c, h_pos, w_pos]
+        Z[batch, c, oh, ow] = temp / (K * K)
+    return Z
+
+
+def schedule_avgpool2d(s):
+    s.pipeline("avgpool2d:c")
+    s.pipeline("avgpool2d:ow")
+    return s
+
+
+def batchnorm2d[
+    Ty, B, C, H, W
+](
+    X: "Ty[B, C, H, W]",
+    gamma: "Ty[C]",
+    beta: "Ty[C]",
+    eps: "Ty",
+    mean: "Ty[C]",
+    var: "Ty[C]",
+) -> "Ty[B, C, H, W]":
+    # https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
+    Z: Ty[B, C, H, W]
+    for b, c, h, w in dsl.grid(B, C, H, W):
+        Z[b, c, h, w] = (
+            gamma[c] * (X[b, c, h, w] - mean[c]) / dsl.sqrt(var[c] + eps) + beta[c]
+        )
+
+    return Z
+
+
+def schedule_batchnorm2d(s):
+    s.pipeline("batchnorm2d:w")
+    return s
+
+
+def batchnorm1d_2d[
+    Ty, B, C
+](
+    X: "Ty[B, C]", gamma: "Ty[C]", beta: "Ty[C]", eps: "Ty", mean: "Ty[C]", var: "Ty[C]"
+) -> "Ty[B, C]":
+    # https://docs.pytorch.org/docs/stable/generated/torch.nn.BatchNorm1d.html
+    Z: Ty[B, C]
+    for b, c in dsl.grid(B, C):
+        Z[b, c] = gamma[c] * (X[b, c] - mean[c]) / dsl.sqrt(var[c] + eps) + beta[c]
+    return Z
+
+
+def schedule_batchnorm1d_2d(s):
+    s.pipeline("batchnorm1d_2d:c")
+    return s
+
+
+def batchnorm1d_3d[
+    Ty, B, C, L
+](
+    X: "Ty[B, C, L]",
+    gamma: "Ty[C]",
+    beta: "Ty[C]",
+    eps: "Ty",
+    mean: "Ty[C]",
+    var: "Ty[C]",
+) -> "Ty[B, C, L]":
+    # https://docs.pytorch.org/docs/stable/generated/torch.nn.BatchNorm1d.html
+    Z: Ty[B, C, L]
+    for b, c, l in dsl.grid(B, C, L):
+        Z[b, c, l] = (
+            gamma[c] * (X[b, c, l] - mean[c]) / dsl.sqrt(var[c] + eps) + beta[c]
+        )
+    return Z
+
+
+def schedule_batchnorm1d_3d(s):
+    s.pipeline("batchnorm1d_3d:l")
+    return s
+
+
+def repeat_batch3d[Ty, B, L, C, N](X: "Ty[B, L, C]") -> "Ty[N*B, L, C]":
+    """
+    Repeat X along batch dimension N times for cls_token.
+    """
+    Y: Ty[N * B, L, C]
+    for r, b, l, c in dsl.grid(N, B, L, C):
+        Y[r * B + b, l, c] = X[b, l, c]
+    return Y
+
+
+def schedule_repeat_batch3d(s):
+    s.pipeline("repeat_batch3d:c")
+    return s
+
+
+def concat[
+    Ty, B, N1, N2, C
+](X1: "Ty[B, N1, C]", X2: "Ty[B, N2, C]") -> "Ty[B, N1+N2, C]":
+    Y: Ty[B, N1 + N2, C]
+    for b, n, c in dsl.grid(B, N1, C):
+        Y[b, n, c] = X1[b, n, c]
+    for b2, n2, c2 in dsl.grid(B, N2, C):
+        Y[b2, n2 + N1, c2] = X2[b2, n2, c2]
+    return Y
+
+
+def schedule_concat(s):
+    s.pipeline("concat:c")
     return s

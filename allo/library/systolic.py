@@ -40,7 +40,7 @@ def PE_kernel[
 ):
     # Be careful, need to use high precision for accumulation
     v: TyC = 0
-    for k in range(K):
+    for k in dsl.grid(K, name="reduction"):
         a: TyA = A_in[k]
         b: TyB = B_in[k]
         v += a * b
@@ -61,7 +61,7 @@ def PE_kernel_packed_int4xint8[
     j: index,
 ):
     v: int32 = 0
-    for k in range(K):
+    for k in dsl.grid(K, name="reduction"):
         a: int8 = A_in[k]
         b_packed: int8 = B_in[k]
         b0: int4 = b_packed[0:4]
@@ -100,7 +100,7 @@ def PE_kernel_packed_int8xint8[
     j: index,
 ):
     v: int32 = 0
-    for k in range(K):
+    for k in dsl.grid(K, name="reduction"):
         a: int8 = A_in[k]
         b_packed: int16 = B_in[k]
         b0: int8 = b_packed[0:8]
@@ -289,6 +289,7 @@ def schedule_systolic(s):
         assert len(s.inst_list) == 8
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-2], s.inst_list[-1]
+        kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
     elif s.top_func_name == "packed_systolic":
         assert len(s.inst_list) == 9
         tile_name = "systolic_tile"
@@ -297,6 +298,7 @@ def schedule_systolic(s):
         assert len(s.inst_list) == 6
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-3], s.inst_list[-2]
+        kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
     else:
         raise ValueError(
             f"Cannot apply `schedule_systolic` to function: {s.top_func_name}"
@@ -304,20 +306,25 @@ def schedule_systolic(s):
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=1)
     s.partition(s.local_B, dim=2)
-    load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ai"]
-    if str(load_A_loop.loop.attributes["upperBoundMap"]) == "affine_map<() -> (1)>":
-        load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
+    load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
     s.pipeline(load_A_loop)
-    load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bj"]
-    if str(load_B_loop.loop.attributes["upperBoundMap"]) == "affine_map<() -> (1)>":
-        load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
+    load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
     s.pipeline(load_B_loop)
-    store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["si"]
-    if str(store_C_loop.loop.attributes["upperBoundMap"]) == "affine_map<() -> (1)>":
-        store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
+    store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
     s.pipeline(store_C_loop)
-    tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
+    inner_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
+    outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
+    tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
     s.dataflow(tile_loop)
+    kernel_loop = None
+    for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
+        try:
+            kernel_loop = s.get_loops(kernel_name)["reduction"]["k"]
+            break
+        except RuntimeError:
+            continue
+    if kernel_loop is not None:
+        s.pipeline(kernel_loop)
     pe = s.unfold(f"{tile_name}:PE", [0, 1])  # specify which are spatial loops
     s.to(MockBuffer(tile_name, "A_fifo"), pe, axis=1, depth=M0 + 1)
     s.to(MockBuffer(tile_name, "B_fifo"), pe, axis=0, depth=M1 + 1)

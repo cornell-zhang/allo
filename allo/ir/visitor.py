@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, too-many-instance-attributes
+# pylint: disable=no-name-in-module, too-many-instance-attributes, too-many-arguments
 
+import ast
 from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
 
@@ -39,6 +40,9 @@ class ASTContext:
         mlir_ctx,
         inst=None,
         func_args=None,
+        func_predicate_tags=None,
+        func_tag2instance=None,
+        unroll=True,
         enable_tensor=False,
         verbose=False,
     ):
@@ -68,6 +72,8 @@ class ASTContext:
         self.dim_count = 0
         self.unnamed_linalg_op_count = 0
         self.affine_vars = []
+        # whether the instances are unrolled at ir build time
+        self.unroll = unroll
         self.enable_tensor = enable_tensor
         self.verbose = verbose
         # libraries for external IPs
@@ -75,7 +81,24 @@ class ASTContext:
         # metaprogramming
         self.with_scope_level = 0
         self.meta_if_stack = []
+        self.raw_meta_if_stack = []
+        # df.kernel name -> {dim ids -> predicate tag},
+        #   predicate tag indicates the control flow in the kernel instance
+        self.func_predicate_tags = (
+            {} if func_predicate_tags is None else func_predicate_tags
+        )
+        # df.kernel name -> {predicate tag -> kernel instance},
+        self.func_tag2instance = {} if func_tag2instance is None else func_tag2instance
+        # a nested structure of (predicate, []),
+        #  the predicate will be used to eval with specific pid to decide the control flow
+        self.predicate_list = tuple(("True", []))
+        self.predicate_stack = [self.predicate_list[1]]
+        # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
+        self.symbolic = {}
         self.has_return = False
+        # used for tensor mapping
+        self.rank = 0
+        self.mapping = None
 
     def copy(self):
         ctx = ASTContext(
@@ -84,14 +107,19 @@ class ASTContext:
             self.mlir_ctx,
             self.inst,
             self.func_args,
-            self.enable_tensor,
-            self.verbose,
+            self.func_predicate_tags,
+            self.func_tag2instance,
+            unroll=self.unroll,
+            enable_tensor=self.enable_tensor,
+            verbose=self.verbose,
         )
         ctx.func_id = self.func_id
         ctx.func_name2id = self.func_name2id
         ctx.enable_tensor = self.enable_tensor
         ctx.verbose = self.verbose
         ctx.ext_libs = self.ext_libs
+        ctx.rank = self.rank
+        ctx.mapping = self.mapping
         return ctx
 
     def set_ip(self, ip):
@@ -261,3 +289,42 @@ def visit_stmts(ctx, stmts):
     for stmt in stmts:
         results.append(visit_stmt(ctx, stmt))
     return results
+
+
+class ReplaceNames(ast.NodeTransformer):
+    """
+    AST transformer that replaces variable names with either:
+    - a symbolic expression (from symbolic_mapping), or
+    - a constant value (from var_map).
+    """
+
+    def __init__(self, symbolic_mapping, var_map):
+        """
+        - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
+        - var_map: name in AST -> value
+        """
+        super().__init__()
+        self.symbolic_mapping = symbolic_mapping
+        self.var_map = var_map
+
+    def visit_Name(self, node):
+        if node.id in self.symbolic_mapping:
+            new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            return new_node
+        if node.id in self.var_map:
+            return ast.Constant(self.var_map[node.id])
+        return node
+
+
+def get_symbolic_expr(expr_node, mapping, var_map) -> str:
+    """
+    Transform the AST expression into symbolic version.
+    (an expression consist of pid symbols and constants)
+
+        - expr_node: ast.expr, the original AST expr
+        - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
+        - var_map: name in AST -> value
+    """
+    new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
+    ast.fix_missing_locations(new_tree)
+    return ast.unparse(new_tree)

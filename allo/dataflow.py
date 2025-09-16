@@ -1,9 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks
 
 import functools
-
+import os
 from ._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -11,15 +11,18 @@ from ._mlir.ir import (
     UnitAttr,
     StringAttr,
     FunctionType,
+    MemRefType,
+    Type,
 )
 from ._mlir.dialects import func as func_d, allo as allo_d
 from ._mlir.passmanager import PassManager as mlir_pass_manager
-from .customize import customize as _customize
-from .ir.utils import get_global_vars, get_all_funcs_except_top
-from .backend.aie import AIEModule
+from .customize import customize as _customize, Schedule
+from .utils import parse_kernel_name, construct_kernel_name
+from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.simulator import LLVMOMPModule
 from .ir.types import Stream
 from .passes import df_pipeline
+from .backend import AIE_MLIRModule
 
 
 def get_pid():
@@ -40,11 +43,12 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s):
+def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll=True):
     stream_info = {}
-    funcs = get_all_funcs_except_top(s)
+    funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
-
+    if with_stream_type:
+        stream_types_dict: dict[str, Type] = {}
     for func in funcs:
         func_name = func.attributes["sym_name"].value
         stream_ops = []
@@ -54,12 +58,26 @@ def move_stream_to_interface(s):
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
-        new_arg_names = new_func_args[func_name].copy()
+        new_args = new_func_args[func_name].copy()
+        prefix, ids = parse_kernel_name(func_name)
+        if not unroll:
+            assert s.func_instances is not None and prefix in s.func_instances
+            assert ids in s.func_instances[prefix].keys()
+            for ids_, predicate_tag in s.func_instances[prefix].items():
+                func_name_ = construct_kernel_name(prefix, ids_)
+                if (
+                    func_name_ != func_name
+                    and predicate_tag == s.func_instances[prefix][ids]
+                ):
+                    stream_info[func_name_] = []
+                    new_func_args[func_name_] = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
                 stream_name = op.attributes["name"].value
+                if with_stream_type and stream_name not in stream_types_dict:
+                    stream_types_dict[stream_name] = op.result.type
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
@@ -71,10 +89,33 @@ def move_stream_to_interface(s):
                         raise ValueError("Stream is not used correctly.")
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
-                new_arg_names.append(stream_name)
+                new_args.append(stream_name)
+                if not unroll and "symbolic_slice" in op.attributes:
+                    symbolic_name = op.attributes["symbolic_slice"].value
+                    for ids_, predicate_tag in s.func_instances[prefix].items():
+                        func_name_ = construct_kernel_name(prefix, ids_)
+                        if (
+                            func_name_ != func_name
+                            and predicate_tag == s.func_instances[prefix][ids]
+                        ):
+                            pid_map = {
+                                f"p{idx}": value for idx, value in enumerate(ids_)
+                            }
+                            slice_ = eval(symbolic_name, pid_map)
+                            if isinstance(slice_, int):
+                                slice_ = tuple([slice_])
+                            parts = stream_name.rsplit("_", len(slice_))[: -len(slice_)]
+                            stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
+                            if (
+                                with_stream_type
+                                and stream_name_ not in stream_types_dict
+                            ):
+                                stream_types_dict[stream_name_] = op.result.type
+                            stream_info[func_name_].append((stream_name_, direction))
+                            new_func_args[func_name_].append(stream_name_)
         # create new func to update arguments
         in_types += stream_types
-        new_func_args[func_name] = new_arg_names
+        new_func_args[func_name] = new_args
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
             new_func = func_d.FuncOp(
@@ -83,7 +124,7 @@ def move_stream_to_interface(s):
                 ip=InsertionPoint(func),
             )
             new_func.add_entry_block()
-            return_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
+            final_op = func_d.ReturnOp([], ip=InsertionPoint(new_func.entry_block))
             # copy old attributes
             if "itypes" in func.attributes:
                 new_func.attributes["itypes"] = StringAttr.get(
@@ -93,11 +134,15 @@ def move_stream_to_interface(s):
                 new_func.attributes["otypes"] = func.attributes["otypes"]
             # tag stream types
             new_func.attributes["stypes"] = StringAttr.get(s_type_str)
+            if "df.kernel" in func.attributes:
+                new_func.attributes["df.kernel"] = UnitAttr.get()
+            if "tag" in func.attributes:
+                new_func.attributes["tag"] = StringAttr.get(
+                    func.attributes["tag"].value
+                )
             # move operations from old func to new func
             cnt_stream = 0
             for op in func.entry_block.operations:
-                if isinstance(op, func_d.ReturnOp):
-                    break
                 if op in stream_ops:
                     op.result.replace_all_uses_with(
                         new_func.arguments[len(in_types) - len(stream_ops) + cnt_stream]
@@ -105,12 +150,15 @@ def move_stream_to_interface(s):
                     cnt_stream += 1
                     op.operation.erase()
                     continue
-                op.operation.move_before(return_op)
+                op.operation.move_before(final_op)
+            final_op.erase()
             # update original arguments
             for i, arg in enumerate(func.arguments):
                 arg.replace_all_uses_with(new_func.arguments[i])
             func.operation.erase()
     s.func_args = new_func_args
+    if with_stream_type:
+        return stream_info, stream_types_dict
     return stream_info
 
 
@@ -131,26 +179,25 @@ def remove_unused_func_ops(s, func_names):
             func_op.erase()
 
 
-def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
+def _build_top(s, stream_info, target="vitis_hls", get_parameter_list: bool = False):
     """
     s: top-level schedule
     stream_info: {func_name: [(stream_names, direction)]}
     """
     # remove unused kernel
-    if not enable_tensor:
-        passes = ["canonicalize"]
-        pipeline = f'builtin.module(func.func({",".join(passes)}))'
-        try:
-            with s.module.context:
-                mlir_pass_manager.parse(pipeline).run(s.module.operation)
-        except Exception as e:
-            print("Error: failed to run MLIR lower pipeline, printing module...")
-            print(s.module)
-            raise e
+    passes = ["canonicalize"]
+    pipeline = f'builtin.module(func.func({",".join(passes)}))'
+    try:
+        with s.module.context:
+            mlir_pass_manager.parse(pipeline).run(s.module.operation)
+    except Exception as e:
+        print("Error: failed to run MLIR lower pipeline, printing module...")
+        print(s.module)
+        raise e
     remove_unused_func_ops(s, stream_info.keys())
 
     # create argument mapping
-    funcs = get_all_funcs_except_top(s)
+    funcs = get_all_df_kernels(s)
     input_types = []
     input_signed = ""
     arg_mapping = {}
@@ -160,13 +207,14 @@ def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
         arg_mapping[func_name] = []
         for i, arg in enumerate(func.arguments):
             if "!allo.stream" not in str(arg.type):
-                arg_name = s.func_args[func_name][i]
+                arg_name = s.func_args[func_name][i].name
                 if arg_name not in used_args:
                     used_args[arg_name] = len(input_types)
-                    input_types.append(arg.type)
+                    dtensor = s.func_args[func_name][i]
+                    input_types.append((dtensor.shape, dtensor.dtype))
                     if "itypes" in func.attributes:
                         input_signed += func.attributes["itypes"].value[i]
-                    s.func_args[s.top_func_name].append(arg_name)
+                    s.func_args[s.top_func_name].append(s.func_args[func_name][i])
                 arg_mapping[func_name].append(used_args[arg_name])
     # update top function
     top_func = None
@@ -180,7 +228,9 @@ def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
     assert top_func is not None, "Top function not found"
     with s.module.context, Location.unknown():
         # create new func
-        func_type = FunctionType.get(input_types, [])
+        func_type = FunctionType.get(
+            [MemRefType.get(shape, dtype.build()) for shape, dtype in input_types], []
+        )
         new_top = func_d.FuncOp(
             name=s.top_func_name, type=func_type, ip=InsertionPoint(top_func)
         )
@@ -216,6 +266,8 @@ def _build_top(s, stream_info, enable_tensor, target="vitis_hls"):
                     call_op.attributes["last"] = UnitAttr.get()
         new_top.attributes["dataflow"] = UnitAttr.get()
     s.top_func = new_top
+    if get_parameter_list:
+        return used_args, s
     return s
 
 
@@ -293,22 +345,58 @@ def build(
     wrap_io=True,
     opt_default=True,
     enable_tensor=False,
+    mapping_primitives: list[tuple[str, list]] = None,
+    profile=False,
+    warmup=20,
+    num_iters=100,
+    trace: list[tuple[str, tuple[int, ...]]] = None,
+    trace_size: int = 4096,
+    device_type: str = None,
 ):
+    assert not profile or target == "aie", "Profiling is only supported for AIE target"
+    assert (
+        trace is None or target == "aie"
+    ), "Trace profiling is only supported for AIE target"
+
     if target == "aie":
         global_vars = get_global_vars(func)
-        s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
-        stream_info = move_stream_to_interface(s)
-        s = _build_top(s, stream_info, enable_tensor=enable_tensor, target=target)
-        mod = AIEModule(
+        # [NOTE]: set unroll = False to improve compilation efficiency
+        s: Schedule = _customize(
+            func, global_vars=global_vars, enable_tensor=False, unroll=False
+        )
+        stream_info, stream_types_dict = move_stream_to_interface(
+            s, with_stream_type=True, unroll=False
+        )
+        parameter_list, s = _build_top(
+            s, stream_info, target=target, get_parameter_list=True
+        )
+        aie_mod = AIE_MLIRModule(
             s.module,
             s.top_func_name,
+            parameter_list,
+            s.func_args,
             project,
-            func.mappings,
-            enable_tensor,
             stream_info,
+            stream_types_dict,
+            s.ext_libs,
+            s.func_instances,
         )
-        mod.build()
-        return mod
+        if device_type is None:
+            if os.getenv("NPU2") == "1":
+                device_type = "npu2"
+            else:
+                device_type = "npu1_4col"
+        aie_mod.build(
+            device_type=device_type,
+            mapping_primitives=mapping_primitives,
+            profile=profile,
+            warmup=warmup,
+            num_iters=num_iters,
+            trace=trace,
+            trace_size=trace_size,
+        )
+        return aie_mod
+
     if target == "simulator":
         s = customize(func, opt_default)
         return LLVMOMPModule(s.module, s.top_func_name)
