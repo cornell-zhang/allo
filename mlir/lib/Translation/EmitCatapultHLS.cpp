@@ -117,6 +117,8 @@ public:
   void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
 
 protected:
+  void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
+                 std::string name = "");
   // Helper method to get Catapult-specific type names
   SmallString<16> getTypeName(Type valType) { return getCatapultTypeName(valType); }
   SmallString<16> getTypeName(Value val) { return getCatapultTypeName(val.getType()); }
@@ -126,6 +128,31 @@ protected:
 //===----------------------------------------------------------------------===//
 // Catapult-specific implementations
 //===----------------------------------------------------------------------===//
+
+void CatapultModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
+                                      std::string name) {
+
+  assert(!(rank && isPtr) && "should be either an array or a pointer.");
+
+  // Value has been declared before or is a constant number.
+  if (isDeclared(val)) {
+    os << getName(val);
+    for (unsigned i = 0; i < rank; ++i)
+      os << "[iv" << i << "]";
+    return;
+  }
+
+  os << getCatapultTypeName(val.getType()) << " ";
+
+  if (name == "") {
+    // Add the new value to nameTable and emit its name.
+    os << addName(val, isPtr);
+    for (unsigned i = 0; i < rank; ++i)
+      os << "[iv" << i << "]";
+  } else {
+    os << addName(val, isPtr, name);
+  }
+}
 
 void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                                    ArrayRef<Value> portList) {
