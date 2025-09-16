@@ -97,7 +97,7 @@ class CodeGenerator:
         self.virtual_computation_graph: ComputationGraph = virtual_computation_graph
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
-        self.fifo_map: dict[str, aie_d.object_fifo] = {}
+        self.fifo_map: dict[str, aie_d.object_fifo | tuple[aie_d.object_fifo]] = {}
         # function name (with id) -> a map from DTensor to fifo name
         self.compute_core_io: dict[str : dict[DTensor, str]] = {}
         self.external_functions: str = ""
@@ -300,6 +300,8 @@ class CodeGenerator:
                             if op.name == "memref.store" or (
                                 op.name == "memref.copy" and argument == op.operands[1]
                             ):  # allo.stream_put
+                                if isinstance(fifo, tuple):
+                                    fifo = fifo[0]
                                 acquired = fifo.acquire(0, 1)
                                 op.operands[1] = acquired
                                 new_op = op.clone()  # no use, no need to replace
@@ -308,6 +310,8 @@ class CodeGenerator:
                             elif (
                                 op.name == "memref.load"
                             ):  # allo.stream_get, non-tensor
+                                if isinstance(fifo, tuple):
+                                    fifo = fifo[1]
                                 acquired = fifo.acquire(1, 1)
                                 op.operands[0] = acquired
                                 new_op = op.clone()
@@ -316,6 +320,8 @@ class CodeGenerator:
                                 fifo.release(1, 1)
                                 op.erase()
                             elif op.name == "memref.copy":  # allo.stream_get, tensor
+                                if isinstance(fifo, tuple):
+                                    fifo = fifo[1]
                                 acquired = fifo.acquire(1, 1)
                                 op.operands[0] = acquired
                                 new_op = op.clone()
@@ -1293,6 +1299,26 @@ class CodeGenerator:
 
                 transfer(size, interface_list)
 
+        # insert placeholder for mem/shim tiles
+        while len(self.used_mem_tiles) < MAX_MEM_TILES:
+            assigned_mem_tile = SwitchNode(
+                name=f"{len(self.used_mem_tiles)}_mem_tile",
+                send_port_num=Config.MEM_MAX_SEND,
+                recv_port_num=Config.MEM_MAX_RECV,
+                col_id=len(self.used_mem_tiles),
+                row_id=1,
+            )
+            self.used_mem_tiles.append(assigned_mem_tile)
+        while len(self.used_shim_tiles) < MAX_SHIM_TILES:
+            assigned_shim_tile = SwitchNode(
+                name=f"{len(self.used_shim_tiles)}_shim_tile",
+                send_port_num=Config.SHIM_MAX_SEND,
+                recv_port_num=Config.SHIM_MAX_RECV,
+                col_id=len(self.used_shim_tiles),
+                row_id=0,
+            )
+            self.used_shim_tiles.append(assigned_shim_tile)
+
         token_map: dict[str, str] = {}
         token_cnt = 0
         related_token_list: list[set[tuple[str]]] = []
@@ -1606,18 +1632,71 @@ class CodeGenerator:
                 # define fifos
                 # - stream fifos: compute <-> compute
                 for stream_name, stream in self.streams.items():
-                    self.fifo_map[stream_name] = aie_d.object_fifo(
-                        stream_name,
-                        self.tile_map[stream.src],
-                        self.tile_map[stream.dst],
-                        depth=stream.type.depth,
-                        datatype=aie_ir.MemRefType.get(
-                            stream.type.shape,
-                            get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
-                        ),
-                    )
+                    dimensions_to_stream = stream.get_dimensions_to_stream()
+                    if len(dimensions_to_stream) <= Config.COMP_COMP_DMA_TRANSFORM_DIM:
+                        self.fifo_map[stream_name] = aie_d.object_fifo(
+                            stream_name,
+                            self.tile_map[stream.src],
+                            self.tile_map[stream.dst],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                            dimensionsToStream=dimensions_to_stream,
+                        )
+                    elif len(dimensions_to_stream) <= Config.MEM_COMP_DMA_TRANSFORM_DIM:
+                        # prioritize the mem tile in the same column
+                        switch_mem = self.used_mem_tiles[
+                            core_function_mapping[stream.src][1]
+                        ]
+                        if (
+                            len(switch_mem.recv_ports) == switch_mem.max_recv
+                            or len(switch_mem.send_ports) == switch_mem.max_send
+                        ):
+                            switch_mem = None
+                            for mem_tile in self.used_mem_tiles:
+                                if (
+                                    len(mem_tile.recv_ports) < mem_tile.max_recv
+                                    and len(mem_tile.send_ports) <= mem_tile.max_send
+                                ):
+                                    switch_mem = mem_tile
+                                    break
+                        stream_src = aie_d.object_fifo(
+                            stream_name + "_src",
+                            self.tile_map[stream.src],
+                            self.tile_map[switch_mem.name],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                        )
+                        stream_dst = aie_d.object_fifo(
+                            stream_name + "_dst",
+                            self.tile_map[switch_mem.name],
+                            self.tile_map[stream.dst],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                            dimensionsToStream=dimensions_to_stream,
+                        )
+                        switch_mem.send_ports.append(None)
+                        switch_mem.recv_ports.append(None)
+                        self.fifo_map[stream_name] = (stream_src, stream_dst)
+                        aie_d.object_fifo_link([stream_src], [stream_dst], [], [])
+                    else:
+                        raise ValueError(
+                            "layout transformation cannot be achieved on DMA"
+                        )
                 # - io fifos: shim <-> mem <-> compute
                 for dma_fifo in self.fifo_manager.fifos:
+                    assert (
+                        len(dma_fifo.dimensions_to_stream)
+                        <= Config.MEM_COMP_DMA_TRANSFORM_DIM
+                    )
                     self.fifo_map[dma_fifo.name] = aie_d.object_fifo(
                         dma_fifo.name,
                         self.tile_map[dma_fifo.src],

@@ -200,6 +200,12 @@ static MlirOperation getLastUseInFunction(MlirValue value,
   return wrap(result);
 }
 
+static MlirOperation getNextUseInFunction(MlirValue value, MlirOperation curUse,
+                                          MlirOperation &func) {
+  Operation *result = getNextUse(unwrap(value), unwrap(curUse), *unwrap(func));
+  return wrap(result);
+}
+
 //===----------------------------------------------------------------------===//
 // Allo Python module definition
 //===----------------------------------------------------------------------===//
@@ -311,4 +317,5 @@ PYBIND11_MODULE(_allo, m) {
   // Utility APIs
   allo_m.def("get_first_use_in_function", &getFirstUseInFunction);
   allo_m.def("get_last_use_in_function", &getLastUseInFunction);
+  allo_m.def("get_next_use_in_function", &getNextUseInFunction);
 }
