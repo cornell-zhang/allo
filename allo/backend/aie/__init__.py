@@ -511,7 +511,7 @@ class AIE_MLIRModule:
                                 )
                             op.result.replace_all_uses_with(var)
                             op.erase()
-                    # output: typical transform before transfer pattern
+                    # output
                     else:
                         op = allo_d.get_last_use_in_function(arg, function)
                         is_dtensor = arg_info[arg.arg_number][0].stream is None
@@ -527,19 +527,25 @@ class AIE_MLIRModule:
                             == "allo.transform_layout"
                         ):
                             transform_layout_op = op.operands[operand_idx].owner
-
-                            if (
-                                is_dtensor and transform_layout_op.operands[0] == arg
-                            ) or (
-                                not is_dtensor
-                                and transform_layout_op.operands[0]
-                                not in func.arguments
+                            # the layout transfer before copy can be forwarded to transfer after copy
+                            forward_layout_transform_flag = (
+                                transform_layout_op.operands[0] not in func.arguments
                                 and allo_d.get_last_use_in_function(
                                     transform_layout_op.operands[0],
                                     function,
                                 )
                                 == transform_layout_op
-                            ):
+                            )
+                            opt_flag = False
+                            if is_dtensor:
+                                # typical transform before transfer pattern
+                                if transform_layout_op.operands[0] == arg:
+                                    opt_flag = True
+                                else:
+                                    opt_flag = forward_layout_transform_flag
+                            else:
+                                opt_flag = forward_layout_transform_flag
+                            if opt_flag:
                                 node.interface_layout[arg.arg_number] = (
                                     list(transform_layout_op.attributes["offsets"]),
                                     list(transform_layout_op.attributes["sizes"]),
@@ -562,8 +568,12 @@ class AIE_MLIRModule:
                                         ),
                                     )
                                     op.operands[1] = transform_layout_op.operands[0]
-                                else:
+                                if not forward_layout_transform_flag:
+                                    # if is forward, cannot erase the op
                                     op.erase()
+                                transform_layout_op.result.replace_all_uses_with(
+                                    transform_layout_op.operands[0]
+                                )
                                 transform_layout_op.erase()
 
             optimize_layout_transformation_recursive(function)

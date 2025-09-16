@@ -10,8 +10,8 @@ FILES=(
     test_mapping_basic.py       
     test_mapping_gemm.py        
     test_mapping_large_gemm.py  
-    test_mapping_tp.py  
-    test_matrix.py      
+    test_mapping_tp.py
+    test_matrix.py
     test_norm.py        
     test_pingpong_gemm.py      
     test_producer_consumer.py  
