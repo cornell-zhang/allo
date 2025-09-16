@@ -1,4 +1,4 @@
-# pylint: disable=c-extension-no-member, too-many-instance-attributes
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 

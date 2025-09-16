@@ -279,6 +279,7 @@ def _test_pingpong_gemm_2x2x4():
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
+
 def _test_pingpong_gemm_4x4x4():
 
     Ty = int16

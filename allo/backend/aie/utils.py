@@ -196,31 +196,26 @@ class Stream:
                 self.dst_layout_transform = None
         if self.src_layout_transform is None and self.dst_layout_transform is None:
             return []
+        layout_transform = None
+        if self.src_layout_transform is None and self.dst_layout_transform is not None:
+            layout_transform = self.dst_layout_transform
+        elif (
+            self.src_layout_transform is not None and self.dst_layout_transform is None
+        ):
+            layout_transform = self.src_layout_transform
         else:
-            layout_transform = None
-            if (
-                self.src_layout_transform is None
-                and self.dst_layout_transform is not None
-            ):
-                layout_transform = self.dst_layout_transform
-            elif (
-                self.src_layout_transform is not None
-                and self.dst_layout_transform is None
-            ):
-                layout_transform = self.src_layout_transform
-            else:
-                raise ValueError("To be implemented.")
-            dimensions_to_stream: list[tuple[int, int]] = []
-            sizes = list(layout_transform[1])
-            strides = list(layout_transform[2])
-            assert len(sizes) == len(strides)
-            if self.type_str == "i4":
-                sizes[-1] //= 2
-                for i in range(len(sizes) - 1):
-                    strides[i] //= 2
-            for size, stride in zip(sizes, strides):
-                dimensions_to_stream.append((size, stride))
-            return dimensions_to_stream
+            raise ValueError("To be implemented.")
+        dimensions_to_stream: list[tuple[int, int]] = []
+        sizes = list(layout_transform[1])
+        strides = list(layout_transform[2])
+        assert len(sizes) == len(strides)
+        if self.type_str == "i4":
+            sizes[-1] //= 2
+            for i in range(len(sizes) - 1):
+                strides[i] //= 2
+        for size, stride in zip(sizes, strides):
+            dimensions_to_stream.append((size, stride))
+        return dimensions_to_stream
 
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
