@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -116,8 +116,8 @@ class Stream:
         self.dst: str = None  # destination tile of the stream
 
         # layout transform on stream
-        self.src_layout_transform = None
-        self.dst_layout_transform = None
+        self.src_layout_transform: tuple[list[int], list[int], list[int], str] = None
+        self.dst_layout_transform: tuple[list[int], list[int], list[int], str] = None
 
     def set_element_type(self, type_str: str, context: Context):
         """
