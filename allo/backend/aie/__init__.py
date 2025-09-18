@@ -1,6 +1,6 @@
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
 
 import os
 import re
@@ -25,7 +25,6 @@ from allo._mlir.ir import (
     StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
-    BlockArgument,
     MemRefType,
 )
 from allo._mlir.passmanager import PassManager as mlir_pass_manager
@@ -51,6 +50,10 @@ from .utils import (
     is_inverse_transform_layout,
 )
 from .mapping import ComputationGraph
+
+
+def is_available():
+    return "MLIR_AIE_INSTALL_DIR" in os.environ
 
 
 class AIE_MLIRModule:
