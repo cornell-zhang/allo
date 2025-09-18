@@ -1,4 +1,4 @@
-# pylint: disable=c-extension-no-member, too-many-instance-attributes
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -48,6 +48,7 @@ from .utils import (
     read_tensor_from_file,
     codegen_host,
     RuntimeArgs,
+    is_inverse_transform_layout,
 )
 from .mapping import ComputationGraph
 
@@ -387,7 +388,6 @@ class AIE_MLIRModule:
                 func.attributes["sym_name"].value
             ]
             dead_ops = []
-            op_stack_map: dict = {}
             # no need to transform if the result is unchanged
             excuse_operands = set()
 
@@ -405,68 +405,182 @@ class AIE_MLIRModule:
                         excuse_operands.remove(op.operands[0])
                         dead_ops.append(op)
                         return
-                    if op.operands[0] in func.arguments:
-                        arg = BlockArgument(op.operands[0])
-                        if arg.arg_number in node.global_interfaces:
-                            # only used once
-                            transform_layout_cnt = 0
-                            for use in arg.uses:
-                                if (
-                                    use.owner.name == "allo.transform_layout"
-                                    and use.owner not in dead_ops
-                                ):
-                                    transform_layout_cnt += 1
-                            if transform_layout_cnt == 1:
-                                node.interface_layout[arg.arg_number] = (
-                                    list(op.attributes["offsets"]),
-                                    list(op.attributes["sizes"]),
-                                    list(op.attributes["strides"]),
-                                )
-                                op.result.replace_all_uses_with(arg)
-                                dead_ops.append(op)
-                                return
                     if "layout_hint" in op.attributes:
                         layout_hint = op.attributes["layout_hint"].value
                         parts = re.findall(r"[^_]+", layout_hint)
                         if len(parts) == 4 and parts[1] == "from":
-                            result_uses = list(op.result.uses)
-                            if (
-                                len(result_uses) == 1
-                                and result_uses[0].owner.name == "memref.copy"
-                                and result_uses[0].owner.operands[1] == op.operands[0]
-                            ):
-                                op_stack_map[op.operands[0]] = (
-                                    parts[0] + parts[2] + parts[3],
-                                    op,
-                                    result_uses[0].owner,
-                                )
-                        if (
-                            len(parts) == 4
-                            and parts[1] == "to"
-                            and op.operands[0] in op_stack_map
-                        ):
-                            if (
-                                parts[0] + parts[2] + parts[3]
-                                == op_stack_map[op.operands[0]][0]
-                            ):
-                                op.result.replace_all_uses_with(op.operands[0])
-                                dead_ops.append(op)
-                                dead_ops.append(op_stack_map[op.operands[0]][2])
-                                dead_ops.append(op_stack_map[op.operands[0]][1])
-                                op_stack_map.pop(op.operands[0])
-                                return
+                            next_use_op = allo_d.get_next_use_in_function(
+                                op.result, op, function
+                            )
+                            if next_use_op is not None:
+                                # transform_layout
+                                if "layout_hint" in next_use_op.attributes:
+                                    if is_inverse_transform_layout(op, next_use_op):
+                                        next_use_op.result.replace_all_uses_with(
+                                            op.operands[0]
+                                        )
+                                        dead_ops.append(op)
+                                        dead_ops.append(next_use_op)
+                                # memcpy to another memref
+                                elif (
+                                    next_use_op.name == "memref.copy"
+                                    and op.result == next_use_op.operands[0]
+                                ):
+                                    memcpy_op = next_use_op
+                                    next_use_op = allo_d.get_next_use_in_function(
+                                        memcpy_op.operands[1], next_use_op, function
+                                    )
+                                    # cpy result used in transform_layout
+                                    if (
+                                        next_use_op is not None
+                                        and "layout_hint" in next_use_op.attributes
+                                    ):
+                                        if is_inverse_transform_layout(op, next_use_op):
+                                            if (
+                                                allo_d.get_next_use_in_function(
+                                                    memcpy_op.operands[1],
+                                                    next_use_op,
+                                                    function,
+                                                ).name
+                                                == "memref.copy"
+                                            ):
+                                                next_use_op.result.replace_all_uses_with(
+                                                    op.operands[0]
+                                                )
+                                                dead_ops.append(next_use_op)
+                                                dead_ops.append(memcpy_op)
+                                                dead_ops.append(op)
+                                                return
 
                 for region in op.regions:
                     for block in region.blocks:
                         # fixme: using 'stack' for nested blocks can be better
                         excuse_operands.clear()
-                        op_stack_map.clear()
                         for inner_op in block.operations:
                             optimize_layout_transformation_recursive(inner_op)
+
+            def transform_with_dma():
+                arg_info = self.core_func_args[function.name.value]
+                for arg in func.arguments:
+                    if arg.arg_number not in arg_info:
+                        continue
+                    # input: transform to the same layout before every 'use'
+                    if arg_info[arg.arg_number][1]:
+                        var = arg
+                        if (
+                            arg_info[arg.arg_number][0].stream is not None
+                            and len(list(arg.uses)) == 1  # allo.stream_get
+                        ):
+                            var = list(arg.uses)[0].owner.result
+                        op = None
+                        for use in var.uses:
+                            if use.owner.name == "allo.transform_layout":
+                                if op is not None:
+                                    if (
+                                        op.attributes["offsets"]
+                                        != use.owner.attributes["offsets"]
+                                        or op.attributes["sizes"]
+                                        != use.owner.attributes["sizes"]
+                                        or op.attributes["strides"]
+                                        != use.owner.attributes["strides"]
+                                    ):
+                                        op = None
+                                        break
+                                op = use.owner
+                            else:
+                                op = None
+                                break
+                        if op is not None:
+                            node.interface_layout[arg.arg_number] = (
+                                list(op.attributes["offsets"]),
+                                list(op.attributes["sizes"]),
+                                list(op.attributes["strides"]),
+                            )
+                            if arg_info[arg.arg_number][0].stream is not None:
+                                arg_info[arg.arg_number][
+                                    0
+                                ].stream.dst_layout_transform = (
+                                    list(op.attributes["offsets"]),
+                                    list(op.attributes["sizes"]),
+                                    list(op.attributes["strides"]),
+                                    (
+                                        None
+                                        if "layout_hint" not in op.attributes
+                                        else op.attributes["layout_hint"].value
+                                    ),
+                                )
+                            op.result.replace_all_uses_with(var)
+                            op.erase()
+                    # output
+                    else:
+                        op = allo_d.get_last_use_in_function(arg, function)
+                        is_dtensor = arg_info[arg.arg_number][0].stream is None
+                        operand_idx = 0 if is_dtensor else 1
+                        if (
+                            (
+                                op.name == "memref.copy"
+                                if is_dtensor
+                                else op.name == "allo.stream_put"
+                            )
+                            and op.operands[operand_idx] not in func.arguments
+                            and op.operands[operand_idx].owner.name
+                            == "allo.transform_layout"
+                        ):
+                            transform_layout_op = op.operands[operand_idx].owner
+                            # the layout transfer before copy can be forwarded to transfer after copy
+                            forward_layout_transform_flag = (
+                                transform_layout_op.operands[0] not in func.arguments
+                                and allo_d.get_last_use_in_function(
+                                    transform_layout_op.operands[0],
+                                    function,
+                                )
+                                == transform_layout_op
+                            )
+                            opt_flag = False
+                            if is_dtensor:
+                                # typical transform before transfer pattern
+                                if transform_layout_op.operands[0] == arg:
+                                    opt_flag = True
+                                else:
+                                    opt_flag = forward_layout_transform_flag
+                            else:
+                                opt_flag = forward_layout_transform_flag
+                            if opt_flag:
+                                node.interface_layout[arg.arg_number] = (
+                                    list(transform_layout_op.attributes["offsets"]),
+                                    list(transform_layout_op.attributes["sizes"]),
+                                    list(transform_layout_op.attributes["strides"]),
+                                )
+                                if not is_dtensor:
+                                    arg_info[arg.arg_number][
+                                        0
+                                    ].stream.src_layout_transform = (
+                                        list(transform_layout_op.attributes["offsets"]),
+                                        list(transform_layout_op.attributes["sizes"]),
+                                        list(transform_layout_op.attributes["strides"]),
+                                        (
+                                            None
+                                            if "layout_hint"
+                                            not in transform_layout_op.attributes
+                                            else transform_layout_op.attributes[
+                                                "layout_hint"
+                                            ].value
+                                        ),
+                                    )
+                                    op.operands[1] = transform_layout_op.operands[0]
+                                if not forward_layout_transform_flag:
+                                    # if is forward, cannot erase the op
+                                    op.erase()
+                                transform_layout_op.result.replace_all_uses_with(
+                                    transform_layout_op.operands[0]
+                                )
+                                transform_layout_op.erase()
 
             optimize_layout_transformation_recursive(function)
             for op in dead_ops:
                 op.erase()
+            allo_d.copy_on_write_on_function(function)
+            transform_with_dma()
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:

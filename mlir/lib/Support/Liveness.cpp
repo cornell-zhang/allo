@@ -20,8 +20,6 @@ Operation *getFirstUse(Value value, Operation &func) {
     auto *op = use.getOwner();
     if (!firstUse || domInfo.properlyDominates(op, firstUse->getOwner())) {
       firstUse = &use;
-      //   llvm::errs() << firstUse->get() << "\n";
-      //   llvm::errs() << *firstUse->getOwner() << "\n";
     }
   }
   if (!firstUse) {
@@ -39,8 +37,6 @@ Operation *getLastUse(Value value, Operation &func) {
     auto *op = use.getOwner();
     if (!lastUse || postDom.properlyPostDominates(op, lastUse->getOwner())) {
       lastUse = &use;
-      //   llvm::errs() << lastUse->get() << "\n";
-      //   llvm::errs() << *lastUse->getOwner() << "\n";
     }
   }
   if (!lastUse) {
@@ -49,5 +45,25 @@ Operation *getLastUse(Value value, Operation &func) {
     return lastUse->getOwner();
   }
 }
+
+Operation *getNextUse(Value value, Operation *curUse, Operation &func) {
+  func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  DominanceInfo domInfo(&func);
+  OpOperand *nextUse = nullptr;
+  for (auto &use : value.getUses()) {
+    Operation *useOp = use.getOwner();
+    if (useOp != curUse && domInfo.properlyDominates(curUse, useOp)) {
+      if (!nextUse || domInfo.properlyDominates(useOp, nextUse->getOwner())) {
+        nextUse = &use;
+      }
+    }
+  }
+  if (!nextUse) {
+    return nullptr;
+  } else {
+    return nextUse->getOwner();
+  }
+}
+
 } // namespace allo
 } // namespace mlir
