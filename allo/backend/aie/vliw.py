@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# AIE VLIW Backend for AMD AIE processors
+# pylint: disable=no-name-in-module
 
 import os
 import io
@@ -208,12 +208,12 @@ extern "C" {{
         This would typically be used in simulation or testing contexts.
         """
         if self.external_module is not None:
+            # pylint: disable=not-callable
             return self.external_module(*args)
-        else:
-            raise NotImplementedError(
-                "Direct execution not supported without ExternalModule wrapper. "
-                "Use get_external_module() for AIE execution."
-            )
+        raise NotImplementedError(
+            "Direct execution not supported without ExternalModule wrapper. "
+            "Use get_external_module() for AIE execution."
+        )
 
 
 def create_vliw_module(func, **kwargs):
@@ -221,7 +221,7 @@ def create_vliw_module(func, **kwargs):
     Ultra-simple function to create an AIE VLIW module from a function.
 
     Args:
-        func: Python function to convert to AIE (will be processed with allo.customize)
+        func (Callable): Python function to convert to AIE (will be processed with allo.customize)
         **kwargs: Optional arguments to override defaults:
                  - input_idx: List of input argument indices (auto-inferred if None)
                  - output_idx: List of output argument indices (auto-inferred if None)
