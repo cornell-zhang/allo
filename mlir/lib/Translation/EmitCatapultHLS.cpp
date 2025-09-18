@@ -115,6 +115,10 @@ public:
   void emitModule(ModuleOp module) override;
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
   void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
+  void emitLoopDirectives(Operation *op);
+  void emitStreamConstruct(allo::StreamConstructOp op);
+  void emitArrayDirectives(Value memref);
+  void emitFunction(func::FuncOp func);
 
 protected:
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
@@ -181,23 +185,260 @@ void CatapultModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 }
 
 void CatapultModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
-  if (auto shapedType = array.getType().dyn_cast<ShapedType>()) {
-    if (name.empty()) {
-      os << getCatapultTypeName(array.getType().cast<ShapedType>().getElementType());
-      // For Catapult, use shaped arrays instead of pointers for function parameters
-      os << " " << addName(array, false);
-      for (auto dim : shapedType.getShape()) {
-        os << "[" << dim << "]";
+  assert(!isDeclared(array) && "has been declared before.");
+
+  auto arrayType = array.getType().cast<ShapedType>();
+  if (arrayType.hasStaticShape()) {
+    auto memref = array.getType().dyn_cast<MemRefType>();
+    if (memref) {
+      auto attr = memref.getMemorySpace();
+      if (attr &&
+          attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+        // Value has been declared before or is a constant number.
+        if (isDeclared(array)) {
+          os << getName(array);
+          return;
+        }
+
+        // print stream type using ac_channel instead of hls::stream
+        os << "ac_channel< " << getCatapultTypeName(arrayType.getElementType()) << " > ";
+
+        auto attr_str = attr.cast<StringAttr>().getValue().str();
+        int S_index = attr_str.find("S"); // spatial
+        int T_index = attr_str.find("T"); // temporal
+        if (isFunc &&
+            !(((int)(arrayType.getShape().size()) > T_index - S_index) &&
+              (T_index > S_index))) {
+          os << "&"; // pass by reference, only non-array needs reference
+        }
+
+        // Add the new value to nameTable and emit its name.
+        os << addName(array, /*isPtr=*/false, name);
+        if ((int)(arrayType.getShape().size()) > T_index - S_index) {
+          for (int i = 0; i < T_index - S_index; ++i)
+            os << "[" << arrayType.getShape()[i] << "]";
+        }
+        // Add original array declaration as comment
+        os << " /* ";
+        emitValue(array, 0, false, name);
+        for (auto &shape : arrayType.getShape())
+          os << "[" << shape << "]";
+        os << " */";
+      } else {
+        emitValue(array, 0, false, name);
+        for (auto &shape : arrayType.getShape())
+          os << "[" << shape << "]";
       }
-    } else {
-      os << getCatapultTypeName(array.getType().cast<ShapedType>().getElementType());
-      // For Catapult, use shaped arrays instead of pointers for function parameters  
-      os << " " << name;
-      for (auto dim : shapedType.getShape()) {
-        os << "[" << dim << "]";
-      }
+    } else { // tensor
+      emitValue(array, 0, false, name);
+    }
+  } else
+    emitValue(array, /*rank=*/0, /*isPtr=*/true, name);
+}
+
+void CatapultModuleEmitter::emitLoopDirectives(Operation *op) {
+  if (auto ii = getLoopDirective(op, "pipeline_ii")) {
+    reduceIndent();
+    indent();
+    os << "#pragma hls_pipeline_init_interval " << ii.cast<IntegerAttr>().getValue();
+    os << "\n";
+    addIndent();
+  }
+
+  if (auto factor = getLoopDirective(op, "unroll")) {
+    reduceIndent();
+    indent();
+    auto val = factor.cast<IntegerAttr>().getValue();
+    if (val == 0)
+      os << "#pragma hls_unroll"
+         << "\n";
+    else
+      os << "#pragma hls_unroll " << val << "\n";
+    addIndent();
+  }
+
+  if (auto dataflow = getLoopDirective(op, "dataflow")) {
+    reduceIndent();
+    indent();
+    os << "#pragma hls_design dataflow\n";
+    addIndent();
+  }
+}
+
+void CatapultModuleEmitter::emitStreamConstruct(allo::StreamConstructOp op) {
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  if (auto shapedType = result.getType().dyn_cast<ShapedType>()) {
+    for (auto shape : shapedType.getShape()) {
+      os << "[" << shape << "]";
     }
   }
+  os << ";\n";
+  // Note: Catapult HLS doesn't need explicit stream depth pragmas like Vivado HLS
+  // The depth is handled through the ac_channel template parameter or synthesis settings
+  emitInfoAndNewLine(op);
+}
+
+void CatapultModuleEmitter::emitArrayDirectives(Value memref) {
+  bool emitPragmaFlag = false;
+  auto type = memref.getType().cast<MemRefType>();
+
+  // streaming
+  auto attr = type.getMemorySpace();
+  if (attr) {
+    std::string attr_str = attr.cast<StringAttr>().getValue().str();
+    if (attr_str.substr(0, 6) == "stream") {
+      // Note: Catapult HLS doesn't need explicit stream pragmas like Vivado HLS
+      // The streaming behavior is handled through ac_channel type
+      return;
+    }
+  }
+
+  // For other array directives, delegate to the parent implementation
+  // but we need to call the parent method explicitly
+  allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
+}
+
+void CatapultModuleEmitter::emitFunction(func::FuncOp func) {
+  if (func->hasAttr("bit"))
+    BIT_FLAG = true;
+
+  if (func.getBlocks().empty())
+    // This is a declaration.
+    return;
+
+  if (func.getBlocks().size() > 1)
+    emitError(func, "has more than one basic blocks.");
+
+  if (func->hasAttr("top"))
+    os << "/// This is top function.\n";
+
+  // Emit function signature.
+  os << "void " << func.getName() << "(\n";
+  addIndent();
+
+  // This vector is to record all ports of the function.
+  SmallVector<Value, 8> portList;
+
+  // Emit input arguments.
+  unsigned argIdx = 0;
+  std::vector<std::string> input_args;
+  if (func->hasAttr("inputs")) {
+    std::string input_names =
+        func->getAttr("inputs").cast<StringAttr>().getValue().str();
+    input_args = split_names(input_names);
+  }
+  std::string output_names;
+  if (func->hasAttr("outputs")) {
+    output_names = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+    // suppose only one output
+    input_args.push_back(output_names);
+  }
+  std::string itypes = "";
+  if (func->hasAttr("itypes"))
+    itypes = func->getAttr("itypes").cast<StringAttr>().getValue().str();
+  else {
+    for (unsigned i = 0; i < func.getNumArguments(); ++i)
+      itypes += "x";
+  }
+  for (auto &arg : func.getArguments()) {
+    indent();
+    fixUnsignedType(arg, itypes[argIdx] == 'u');
+    if (arg.getType().isa<ShapedType>()) {
+      if (arg.getType().cast<ShapedType>().getElementType().isa<StreamType>()) {
+        auto shapedType = arg.getType().dyn_cast<ShapedType>();
+        // Use Catapult-specific stream type name
+        os << getCatapultTypeName(arg.getType()) << " ";
+        os << addName(arg, false);
+        for (auto shape : shapedType.getShape())
+          os << "[" << shape << "]";
+      } else if (input_args.size() == 0) {
+        emitArrayDecl(arg, true);
+      } else {
+        emitArrayDecl(arg, true, input_args[argIdx]);
+      }
+    } else {
+      if (arg.getType().isa<StreamType>()) {
+        // need to pass by reference - use Catapult-specific stream type
+        os << getCatapultTypeName(arg.getType()) << "& ";
+        os << addName(arg, false);
+      } else if (input_args.size() == 0) {
+        emitValue(arg);
+      } else {
+        emitValue(arg, 0, false, input_args[argIdx]);
+      }
+    }
+
+    portList.push_back(arg);
+    if (argIdx++ != func.getNumArguments() - 1)
+      os << ",\n";
+  }
+
+  // Emit results.
+  auto args = func.getArguments();
+  std::string otypes = "";
+  if (func->hasAttr("otypes"))
+    otypes = func->getAttr("otypes").cast<StringAttr>().getValue().str();
+  else {
+    for (unsigned i = 0; i < func.getNumArguments(); ++i)
+      otypes += "x";
+  }
+  if (auto funcReturn =
+          dyn_cast<func::ReturnOp>(func.front().getTerminator())) {
+    unsigned idx = 0;
+    for (auto result : funcReturn.getOperands()) {
+      if (std::find(args.begin(), args.end(), result) == args.end()) {
+        if (func.getArguments().size() > 0)
+          os << ",\n";
+        indent();
+
+        // TODO: a known bug, cannot return a value twice, e.g. return %0, %0
+        // : index, index. However, typically this should not happen.
+        fixUnsignedType(result, otypes[idx] == 'u');
+        if (result.getType().isa<ShapedType>()) {
+          if (output_names != "")
+            emitArrayDecl(result, true);
+          else
+            emitArrayDecl(result, true, output_names);
+        } else {
+          // In Catapult HLS, pointer indicates the value is an output.
+          if (output_names != "")
+            emitValue(result, /*rank=*/0, /*isPtr=*/true);
+          else
+            emitValue(result, /*rank=*/0, /*isPtr=*/true, output_names);
+        }
+
+        portList.push_back(result);
+      }
+      idx += 1;
+    }
+  } else
+    emitError(func, "doesn't have a return operation as terminator.");
+
+  reduceIndent();
+  os << "\n) {";
+  emitInfoAndNewLine(func);
+
+  // Emit function body.
+  addIndent();
+
+  emitFunctionDirectives(func, portList);
+
+  if (func->hasAttr("systolic")) {
+    os << "#pragma scop\n";
+  }
+  emitBlock(func.front());
+  if (func->hasAttr("systolic")) {
+    os << "#pragma endscop\n";
+  }
+
+  reduceIndent();
+  os << "}\n";
+
+  // An empty line.
+  os << "\n";
 }
 
 void CatapultModuleEmitter::emitModule(ModuleOp module) {
