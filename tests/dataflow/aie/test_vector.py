@@ -199,12 +199,15 @@ def _test_vector_scalar_add_p0():
         def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
             B[:] = allo.add(A[:], 1)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 100, M).astype(np.int32)
-    B = np.zeros(M).astype(np.int32)
-    mod(A, B)
-    np.testing.assert_allclose(B, A + 1)
-    print("PASSED!")
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 100, M).astype(np.int32)
+        B = np.zeros(M).astype(np.int32)
+        mod(A, B)
+        np.testing.assert_allclose(B, A + 1)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def _test_vector_vector_add_p0():
@@ -222,13 +225,16 @@ def _test_vector_vector_add_p0():
         def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
             C[:] = allo.add(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 100, M).astype(np.int32)
-    B = np.random.randint(0, 100, M).astype(np.int32)
-    C = np.zeros(M).astype(np.int32)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A + B)
-    print("PASSED!")
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 100, M).astype(np.int32)
+        B = np.random.randint(0, 100, M).astype(np.int32)
+        C = np.zeros(M).astype(np.int32)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A + B)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
