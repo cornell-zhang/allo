@@ -2116,7 +2116,9 @@ class ASTTransformer(ASTBuilder):
                     input_types.append(memref)
                 func_type = FunctionType.get(input_types, [])
                 func_op = func_d.FuncOp(
-                    name=external_module.top, type=func_type, ip=InsertionPoint(ctx.top_func)
+                    name=external_module.top,
+                    type=func_type,
+                    ip=InsertionPoint(ctx.top_func),
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
             # Build arguments and create call
