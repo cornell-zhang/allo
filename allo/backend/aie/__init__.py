@@ -1,6 +1,6 @@
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module
 
 import os
 import re
@@ -15,20 +15,19 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
-from allo._mlir.ir import (
+from ..._mlir.ir import (
     Type,
     StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
-    BlockArgument,
     MemRefType,
 )
-from allo._mlir.passmanager import PassManager as mlir_pass_manager
+from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
 from ...utils import construct_kernel_name

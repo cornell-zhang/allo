@@ -62,7 +62,6 @@ from .utils import (
 from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
-from ..backend.ip import IPModule
 from ..utils import (
     get_mlir_dtype_from_str,
     c2allo_type,
@@ -70,8 +69,6 @@ from ..utils import (
     construct_kernel_name,
 )
 from ..logging import print_error_message
-from ..backend.aie.external_kernel import ExternalModule
-from ..backend.aie.vliw import VLIWKernelFunction
 
 
 class ASTBuilder(ASTVisitor):
@@ -2098,7 +2095,8 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
-        # Check if it's a VLIW kernel function
+        from ..backend.aie.vliw import VLIWKernelFunction
+
         if isinstance(obj, VLIWKernelFunction):
             # Get the external module from the VLIW function
             external_module = obj.get_external_module()
@@ -2137,6 +2135,10 @@ class ASTTransformer(ASTBuilder):
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
+            # Local imports to avoid cyclic dependencies
+            from ..backend.ip import IPModule
+            from ..backend.aie.external_kernel import ExternalModule
+
             fn_name = (
                 obj.__name__
                 if not isinstance(obj, (IPModule, ExternalModule))

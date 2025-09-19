@@ -4,7 +4,6 @@
 
 import os
 import io
-import allo
 from ..._mlir.dialects import allo as allo_d
 from ..._mlir.ir import (
     Context,
@@ -292,8 +291,9 @@ def create_vliw_module(func, **kwargs):
     Returns:
         VLIWModule instance
     """
-    # Create Allo schedule from the function
-    s = allo.customize(func)
+    from ...customize import customize
+
+    s = customize(func)
 
     # Get function name from the schedule
     top_func_name = s.top_func_name
