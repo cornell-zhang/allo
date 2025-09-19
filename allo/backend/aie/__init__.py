@@ -34,6 +34,7 @@ from ...memory import DTensor
 from ...utils import construct_kernel_name
 from .external_kernel import ExternalModule, ExternalModuleBase
 from .mlir_codegen import CodeGenerator
+from .vliw import vliw
 from .utils import (
     Argument,
     Stream,

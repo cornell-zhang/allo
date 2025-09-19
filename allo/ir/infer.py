@@ -43,6 +43,7 @@ from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
 from ..backend.aie.external_kernel import ExternalModule
+from ..backend.aie.vliw import VLIWKernelFunction
 
 
 # pylint: disable=too-many-public-methods
@@ -910,6 +911,12 @@ class TypeInferer(ASTVisitor):
                 node.shape = new_args[0].shape
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
+            return node
+
+        if isinstance(obj, VLIWKernelFunction):
+            visit_stmts(ctx, node.args)
+            node.shape = None
+            node.dtype = None
             return node
 
         if (

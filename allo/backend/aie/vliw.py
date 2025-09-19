@@ -23,7 +23,67 @@ from ...ir.transform import find_func_in_module
 from .external_kernel import ExternalModule
 
 
-class AIEModule:
+class VLIWKernelFunction:
+    """Wrapper for functions decorated with @vliw.kernel"""
+
+    def __init__(self, func, **kwargs):
+        self.func = func
+        self.kwargs = kwargs
+        self.vliw_module = None
+        self.external_module = None
+        self._created = False
+
+    def _create_vliw_module(self):
+        """Lazily create the VLIW module when first needed"""
+        if not self._created:
+            self.vliw_module = create_vliw_module(self.func, **self.kwargs)
+            self.external_module = self.vliw_module.get_external_module()
+            self._created = True
+
+    def get_external_module(self):
+        """Get the external module, creating it if necessary"""
+        self._create_vliw_module()
+        return self.external_module
+
+    def __call__(self, *args, **kwargs):
+        """Direct execution of the function (for testing/simulation)"""
+        # For direct calls, just use the original function
+        return self.func(*args, **kwargs)
+
+    def __repr__(self):
+        return f"VLIWKernelFunction({self.func.__name__})"
+
+
+class VLIWDecorator:
+    """Decorator class for @vliw.kernel"""
+
+    def kernel(self, **kwargs):
+        """
+        Decorator to mark a function as a VLIW kernel.
+
+        Args:
+            **kwargs: Optional arguments passed to VLIWModule creation:
+                     - input_idx: List of input argument indices
+                     - output_idx: List of output argument indices
+                     - configs: Configuration dictionary
+                     - project: Project directory path
+                     - save_code: Whether to save generated code
+
+        Returns:
+            VLIWKernelFunction wrapper
+        """
+
+        def decorator(func):
+            return VLIWKernelFunction(func, **kwargs)
+
+        return decorator
+
+
+# Create a module-level instance that users can import
+vliw = VLIWDecorator()
+
+
+class VLIWModule:
     """
     AIE VLIW Module for generating C code for AMD AIE processors.
 
@@ -200,7 +260,7 @@ extern "C" {{
         return self._postprocess_c_code()
 
     def __repr__(self):
-        return f"AIEModule({self.top_func_name}, inputs={self.input_idx}, outputs={self.output_idx})"
+        return f"VLIWModule({self.top_func_name}, inputs={self.input_idx}, outputs={self.output_idx})"
 
     def __call__(self, *args):
         """
@@ -230,7 +290,7 @@ def create_vliw_module(func, **kwargs):
                  - save_code: Whether to save generated code to file (default True)
 
     Returns:
-        AIEModule instance
+        VLIWModule instance
     """
     # Create Allo schedule from the function
     s = allo.customize(func)
@@ -239,9 +299,9 @@ def create_vliw_module(func, **kwargs):
     top_func_name = s.top_func_name
 
     # Auto-generate project name if not provided
-    project = kwargs.get("project", f"aie_{top_func_name}_project")
+    project = kwargs.get("project", f"aie_{top_func_name}_kernel")
 
-    return AIEModule(
+    return VLIWModule(
         mod=s.module,
         top_func_name=top_func_name,
         input_idx=kwargs.get("input_idx", None),
