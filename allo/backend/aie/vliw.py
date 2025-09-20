@@ -35,7 +35,31 @@ class VLIWKernelFunction:
     def _create_vliw_module(self):
         """Lazily create the VLIW module when first needed"""
         if not self._created:
-            self.vliw_module = create_vliw_module(self.func, **self.kwargs)
+            # Import at runtime to avoid circular imports
+            import importlib
+
+            customize_module = importlib.import_module("allo.customize")
+            customize = customize_module.customize
+
+            # Create Allo schedule from the function
+            s = customize(self.func)
+
+            # Get function name from the schedule
+            top_func_name = s.top_func_name
+
+            # Auto-generate project name if not provided
+            project = self.kwargs.get("project", f"aie_{top_func_name}_kernel")
+
+            self.vliw_module = VLIWModule(
+                mod=s.module,
+                top_func_name=top_func_name,
+                input_idx=self.kwargs.get("input_idx", None),
+                output_idx=self.kwargs.get("output_idx", None),
+                configs=self.kwargs.get("configs", None),
+                project=project,
+                save_code=self.kwargs.get("save_code", True),
+                auto_infer_io=True,
+            )
             self.external_module = self.vliw_module.get_external_module()
             self._created = True
 
@@ -291,23 +315,7 @@ def create_vliw_module(func, **kwargs):
     Returns:
         VLIWModule instance
     """
-    from ...customize import customize
-
-    s = customize(func)
-
-    # Get function name from the schedule
-    top_func_name = s.top_func_name
-
-    # Auto-generate project name if not provided
-    project = kwargs.get("project", f"aie_{top_func_name}_kernel")
-
-    return VLIWModule(
-        mod=s.module,
-        top_func_name=top_func_name,
-        input_idx=kwargs.get("input_idx", None),
-        output_idx=kwargs.get("output_idx", None),
-        configs=kwargs.get("configs", None),
-        project=project,
-        save_code=kwargs.get("save_code", True),
-        auto_infer_io=True,
-    )
+    # Use VLIWKernelFunction to handle the lazy import and creation
+    vliw_func = VLIWKernelFunction(func, **kwargs)
+    vliw_func._create_vliw_module()
+    return vliw_func.vliw_module
