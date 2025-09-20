@@ -253,12 +253,12 @@ def test_vliw_decorator_conv2d():
 
 if __name__ == "__main__":
     # Original approach tests
-    # test_simple_add()
-    # test_matrix_multiply()
-    # test_conv2d()
+    test_simple_add()
+    test_matrix_multiply()
+    test_conv2d()
 
     # New decorator approach test
-    # test_simple_add_with_decorator()
-    # test_vliw_decorator_matrix_multiply()
+    test_simple_add_with_decorator()
+    test_vliw_decorator_matrix_multiply()
     test_vliw_decorator_conv2d()
     print("All tests passed! The new @vliw.kernel decorator simplifies VLIW usage.")

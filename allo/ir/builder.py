@@ -2095,7 +2095,12 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
-        from ..backend.aie.vliw import VLIWKernelFunction
+        try:
+            from ..backend.aie.vliw import VLIWKernelFunction
+        except ImportError:
+
+            class VLIWKernelFunction:
+                pass
 
         if isinstance(obj, VLIWKernelFunction):
             # Get the external module from the VLIW function
@@ -2137,7 +2142,13 @@ class ASTTransformer(ASTBuilder):
         ):
             # Local imports to avoid cyclic dependencies
             from ..backend.ip import IPModule
-            from ..backend.aie.external_kernel import ExternalModule
+
+            try:
+                from ..backend.aie.external_kernel import ExternalModule
+            except ImportError:
+
+                class ExternalModule:
+                    pass
 
             fn_name = (
                 obj.__name__

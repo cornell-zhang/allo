@@ -911,9 +911,21 @@ class TypeInferer(ASTVisitor):
             return node
 
         # Local imports to avoid cyclic dependencies
-        from ..backend.aie.vliw import VLIWKernelFunction
         from ..backend.ip import IPModule
-        from ..backend.aie.external_kernel import ExternalModule
+
+        try:
+            from ..backend.aie.vliw import VLIWKernelFunction
+        except ImportError:
+
+            class VLIWKernelFunction:
+                pass
+
+        try:
+            from ..backend.aie.external_kernel import ExternalModule
+        except ImportError:
+
+            class ExternalModule:
+                pass
 
         if isinstance(obj, VLIWKernelFunction):
             visit_stmts(ctx, node.args)
