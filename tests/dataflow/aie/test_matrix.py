@@ -1,12 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import allo
-from allo.ir.types import int16, int32, float32
+from allo.ir.types import int16, int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
 LyA = Layout("S0R")
 LyB = Layout("RS1")
@@ -26,7 +26,7 @@ def _test_matrix_scalar_add():
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros((M, N)).astype(np.int32)
         mod(A, B)
@@ -35,6 +35,7 @@ def _test_matrix_scalar_add():
     else:
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
+    # TODO: Fix AIE simulator
     # sim_mod = df.build(top, target="simulator")
     # B = np.zeros((M, N)).astype(np.int32)
     # sim_mod(A, B)
@@ -55,7 +56,7 @@ def _test_matrix_matrix_add():
 
     A = np.random.randint(0, 100, (M, N)).astype(np.int32)
     B = np.random.randint(0, 100, (M, N)).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         C = np.zeros((M, N)).astype(np.int32)
         mod(A, B, C)

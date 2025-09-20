@@ -1,0 +1,10 @@
+--- a/python/compiler/aiecc/main.py
++++ b/python/compiler/aiecc/main.py
+@@ -394,6 +394,7 @@
+ 
+ def downgrade_ir_for_peano(llvmir):
+     llvmir = llvmir.replace("getelementptr inbounds nuw", "getelementptr inbounds")
++    llvmir = llvmir.replace("captures(none)", "")
+     return llvmir
+ 
+ 

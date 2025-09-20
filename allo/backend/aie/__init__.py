@@ -39,6 +39,7 @@ from .utils import (
     Stream,
     inject_external_kernels,
     matmul_external_kernel_config_map,
+    device_config_map,
     get_df_kernels,
     classify_aie_functions,
     codegen_external_kernels,
@@ -51,6 +52,10 @@ from .utils import (
     is_inverse_transform_layout,
 )
 from .mapping import ComputationGraph
+
+
+def is_available():
+    return "MLIR_AIE_INSTALL_DIR" in os.environ
 
 
 class AIE_MLIRModule:
@@ -667,6 +672,15 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
+
+        # mapping guard
+        logical_node_num = len(self.virtual_computation_graph.nodes)
+        assert device_type in device_config_map, "Unsupported device type"
+        physical_node_num = np.prod(device_config_map[device_type]["mesh"])
+        assert (
+            logical_node_num <= physical_node_num
+        ), f"Unresolvable mapping from {logical_node_num} logical nodes to {physical_node_num} physical nodes"
+
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 

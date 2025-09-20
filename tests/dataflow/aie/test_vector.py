@@ -7,6 +7,7 @@ from allo.ir.types import int32, float32, bfloat16
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
+from allo.backend.aie import is_available
 
 Ly = Layout("S0")
 
@@ -23,7 +24,7 @@ def _test_vector_scalar_add():
             B[:] = allo.add(A, 1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.int32)
         mod(A, B)
@@ -54,7 +55,7 @@ def _test_vector_scalar_conditional_add():
                 B[:] = allo.add(A, -1)
 
     A = np.random.randint(0, 100, M).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.int32)
         mod(A, B)
@@ -78,7 +79,7 @@ def _test_vector_scalar_mul():
             B[:] = allo.mul(A, 2)
 
     A = np.random.random(M).astype(np.float32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         B = np.zeros(M).astype(np.float32)
         mod(A, B)
@@ -106,7 +107,7 @@ def _test_vector_vector_add():
 
     A = np.random.randint(0, 100, M).astype(np.int32)
     B = np.random.randint(0, 100, M).astype(np.int32)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         C = np.zeros(M).astype(np.int32)
         mod(A, B, C)
@@ -135,7 +136,7 @@ def _test_vector_vector_bf16_add():
 
     A = np.random.random(M).astype(np_bfloat16)
     B = np.random.random(M).astype(np_bfloat16)
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         C = np.zeros(M).astype(np_bfloat16)
         mod(A, B, C)
@@ -168,7 +169,7 @@ def _test_vector_vector_mul():
     A = np.random.random(M).astype(np.float32)
     B = np.random.random(M).astype(np.float32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         C = np.zeros(M).astype(np.float32)
         mod(A, B, C)
@@ -199,12 +200,15 @@ def _test_vector_scalar_add_p0():
         def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
             B[:] = allo.add(A[:], 1)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 100, M).astype(np.int32)
-    B = np.zeros(M).astype(np.int32)
-    mod(A, B)
-    np.testing.assert_allclose(B, A + 1)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 100, M).astype(np.int32)
+        B = np.zeros(M).astype(np.int32)
+        mod(A, B)
+        np.testing.assert_allclose(B, A + 1)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def _test_vector_vector_add_p0():
@@ -222,13 +226,16 @@ def _test_vector_vector_add_p0():
         def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly, C: Ty[M] @ Ly):
             C[:] = allo.add(A, B)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 100, M).astype(np.int32)
-    B = np.random.randint(0, 100, M).astype(np.int32)
-    C = np.zeros(M).astype(np.int32)
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A + B)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 100, M).astype(np.int32)
+        B = np.random.randint(0, 100, M).astype(np.int32)
+        C = np.zeros(M).astype(np.int32)
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A + B)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
