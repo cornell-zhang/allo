@@ -7,7 +7,10 @@ import os
 from dataclasses import dataclass
 import numpy as np
 
-import aie.ir as aie_ir
+try:
+    import aie.ir as aie_ir
+except ImportError:
+    pass
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..utils import format_str, format_code
 from ...utils import np_read_file_types

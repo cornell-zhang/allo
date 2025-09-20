@@ -10,12 +10,15 @@ import numpy as np
 
 # =======================
 
-import aie.dialects.aie as aie_d
-import aie.dialects.aiex as aiex_d
-import aie.dialects.arith as aie_arith_d
-import aie.dialects.func as aie_func_d
-import aie.dialects.scf as aie_scf_d
-import aie.ir as aie_ir
+try:
+    import aie.dialects.aie as aie_d
+    import aie.dialects.aiex as aiex_d
+    import aie.dialects.arith as aie_arith_d
+    import aie.dialects.func as aie_func_d
+    import aie.dialects.scf as aie_scf_d
+    import aie.ir as aie_ir
+except ImportError:
+    pass
 
 # =======================
 
