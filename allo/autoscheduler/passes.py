@@ -1,8 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
 import os
 
-from allo._mlir.ir import (
+from .._mlir.ir import (
     Location,
     InsertionPoint,
     IntegerSetAttr,
@@ -16,16 +17,17 @@ from allo._mlir.ir import (
     Operation,
     MemRefType,
 )
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
 )
-from allo._mlir.passmanager import PassManager as mlir_pass_manager
-from allo.customize import Schedule
-from allo.ir.transform import find_func_in_module
-from allo.ir.utils import MockBuffer
-import allo
+from .._mlir.passmanager import PassManager as mlir_pass_manager
+from ..customize import Schedule
+from ..ir.transform import find_func_in_module
+from ..ir.utils import MockBuffer
+from ..verify import verify
+
 
 from .util import (
     check_perfect_affine_kernel,
@@ -208,7 +210,7 @@ def dataflow_optimization_pass(
             print(f"\t{primitive}")
 
     if cfg.verify:
-        verifier = allo.verify(schedule, original_schedule)
+        verifier = verify(schedule, original_schedule)
         assert (
             verifier
         ), "Failed verification: Schedule is not equivalent to original schedule"

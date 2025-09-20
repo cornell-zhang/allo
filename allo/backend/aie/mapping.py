@@ -1,24 +1,24 @@
-# pylint: disable=consider-using-enumerate, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items, unsupported-binary-operation, c-extension-no-member
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=consider-using-enumerate, too-many-nested-blocks, consider-iterating-dictionary, consider-using-dict-items, unsupported-binary-operation, c-extension-no-member, no-name-in-module
 
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.ir import (
+from ..._mlir.ir import (
     InsertionPoint,
     FunctionType,
     UnitAttr,
     IndexType,
     StringAttr,
 )
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     func as func_d,
     allo as allo_d,
     arith as arith_d,
     scf as scf_d,
 )
-from allo.utils import parse_kernel_name, construct_kernel_name
+from ...utils import parse_kernel_name, construct_kernel_name
 from .utils import (
     Argument,
     Stream,

@@ -62,7 +62,6 @@ from .utils import (
 from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
-from ..backend.ip import IPModule
 from ..utils import (
     get_mlir_dtype_from_str,
     c2allo_type,
@@ -70,7 +69,6 @@ from ..utils import (
     construct_kernel_name,
 )
 from ..logging import print_error_message
-from ..backend.aie.external_kernel import ExternalModule
 
 
 class ASTBuilder(ASTVisitor):
@@ -2097,12 +2095,61 @@ class ASTTransformer(ASTBuilder):
                 return opcls(lhs.result, rhs.result, ip=ctx.get_ip())
             raise RuntimeError(f"Cannot resolve function `{node.func.id}`")
 
+        try:
+            from ..backend.aie.vliw import VLIWKernelFunction
+        except ImportError:
+
+            class VLIWKernelFunction:
+                pass
+
+        if isinstance(obj, VLIWKernelFunction):
+            # Get the external module from the VLIW function
+            external_module = obj.get_external_module()
+            # Add the external module to ext_libs for processing
+            if external_module not in ctx.ext_libs:
+                ctx.ext_libs.append(external_module)
+                # Create function declaration similar to other external modules
+                input_types = []
+                for arg_type, shape in external_module.args:
+                    ele_type = get_mlir_dtype_from_str(c2allo_type[arg_type])
+                    if len(shape) != 0:
+                        memref = MemRefType.get(shape, ele_type)
+                    else:
+                        memref = ele_type
+                    input_types.append(memref)
+                func_type = FunctionType.get(input_types, [])
+                func_op = func_d.FuncOp(
+                    name=external_module.top,
+                    type=func_type,
+                    ip=InsertionPoint(ctx.top_func),
+                )
+                func_op.attributes["sym_visibility"] = StringAttr.get("private")
+            # Build arguments and create call
+            new_args = build_stmts(ctx, node.args)
+            call_op = func_d.CallOp(
+                [],
+                FlatSymbolRefAttr.get(external_module.top),
+                [arg.result for arg in new_args],
+                ip=ctx.get_ip(),
+            )
+            return call_op
+
         # pylint: disable=too-many-nested-blocks
         if (
             obj.__module__.startswith("allo")
             and not obj.__module__.startswith("allo.library")
             and not obj.__module__.startswith("allo._mlir")
         ):
+            # Local imports to avoid cyclic dependencies
+            from ..backend.ip import IPModule
+
+            try:
+                from ..backend.aie.external_kernel import ExternalModule
+            except ImportError:
+
+                class ExternalModule:
+                    pass
+
             fn_name = (
                 obj.__name__
                 if not isinstance(obj, (IPModule, ExternalModule))

@@ -30,7 +30,6 @@ from .types import (
     Stream,
 )
 from .typing_rule import get_typing_rule
-from ..backend.ip import IPModule
 from ..utils import (
     is_anywidth_int_type_and_not_np,
     get_bitwidth_from_type,
@@ -42,7 +41,6 @@ from ..utils import (
 from ..memory import DTensor, Layout
 from ..logging import print_error_message
 from .utils import parse_ast, get_func_id_from_param_types, resolve_generic_types
-from ..backend.aie.external_kernel import ExternalModule
 
 
 # pylint: disable=too-many-public-methods
@@ -910,6 +908,29 @@ class TypeInferer(ASTVisitor):
                 node.shape = new_args[0].shape
             else:
                 raise RuntimeError(f"Unsupported function call {node.func.id}")
+            return node
+
+        # Local imports to avoid cyclic dependencies
+        from ..backend.ip import IPModule
+
+        try:
+            from ..backend.aie.vliw import VLIWKernelFunction
+        except ImportError:
+
+            class VLIWKernelFunction:
+                pass
+
+        try:
+            from ..backend.aie.external_kernel import ExternalModule
+        except ImportError:
+
+            class ExternalModule:
+                pass
+
+        if isinstance(obj, VLIWKernelFunction):
+            visit_stmts(ctx, node.args)
+            node.shape = None
+            node.dtype = None
             return node
 
         if (
