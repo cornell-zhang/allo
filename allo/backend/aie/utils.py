@@ -595,7 +595,7 @@ def classify_aie_functions(
     return top_func, core_funcs, external_funcs
 
 
-def get_aie_mlir_dtype_from_str(dtype_str: str) -> aie_ir.Type:
+def get_aie_mlir_dtype_from_str(dtype_str: str):
     """
     Convert a string representing a data type into the corresponding AIE IR type.
     """
