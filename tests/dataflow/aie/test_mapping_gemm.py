@@ -91,10 +91,11 @@ def _test_pingpong_gemm_2x2x2():
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -139,10 +140,11 @@ def _test_pingpong_gemm_2x2x2_partial_chain():
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -185,10 +187,11 @@ def _test_pingpong_gemm_1x1x4():
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -244,10 +247,11 @@ def _test_pingpong_gemm_2x2x4():
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -300,10 +304,11 @@ def _test_pingpong_gemm_4x4x4():
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -395,9 +400,6 @@ def _test_split_k_gemm_1x1x4():
             C_: Ty[M, N] = 0
             with allo.meta_for(Pk) as i:
                 C_[:, :] += pipe[i].get()
-            for i in range(Pk):
-                if i > 2:
-                    C_[i, i] = 0 
             C[:, :] = C_
 
     mod = df.build(
@@ -503,12 +505,12 @@ def _test_split_k_gemm_2x2x4():
 
 
 if __name__ == "__main__":
-    # _test_gemm_2D_v1()
-    # _test_gemm_2D_v2()
-    # _test_pingpong_gemm_2x2x2()
-    # _test_pingpong_gemm_2x2x2_partial_chain()
-    # _test_pingpong_gemm_1x1x4()
-    # _test_pingpong_gemm_2x2x4()
-    # _test_pingpong_gemm_4x4x4()
+    _test_gemm_2D_v1()
+    _test_gemm_2D_v2()
+    _test_pingpong_gemm_2x2x2()
+    _test_pingpong_gemm_2x2x2_partial_chain()
+    _test_pingpong_gemm_1x1x4()
+    _test_pingpong_gemm_2x2x4()
+    _test_pingpong_gemm_4x4x4()
     _test_split_k_gemm_1x1x4()
-    # _test_split_k_gemm_2x2x4()
+    _test_split_k_gemm_2x2x4()

@@ -112,8 +112,8 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Name(ctx: ASTContext, node: ast.Name):
-        if node.id in ctx.buffers:
-            var = ctx.buffers[node.id]
+        var = ctx.get_var(node.id, allow_missing=True)
+        if var is not None:
             node.dtype = var.dtype
             node.shape = var.shape
             return node
@@ -207,7 +207,7 @@ class TypeInferer(ASTVisitor):
         for iv in ivs:
             iv.shape = tuple()
             iv.dtype = Index()
-            ctx.buffers[iv.id] = iv
+            ctx.put_var(name=iv.id, var=iv)
         visit_stmts(ctx, node.iter.args)
         visit_stmts(ctx, node.body)
         node.shape = None
@@ -345,7 +345,7 @@ class TypeInferer(ASTVisitor):
                         ]
                         ctx.symbolic[ast.unparse(target)] = f"p{i}"
                     else:
-                        ctx.buffers[target.id] = target
+                        ctx.put_var(name=target.id, var=target)
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -393,7 +393,7 @@ class TypeInferer(ASTVisitor):
         if isinstance(node.target, ast.Subscript):
             lhs = visit_stmt(ctx, node.target)
         elif isinstance(node.target, ast.Name):  # scalar
-            lhs = ctx.buffers[node.target.id]
+            lhs = ctx.get_var(node.target.id)
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
@@ -479,7 +479,7 @@ class TypeInferer(ASTVisitor):
                         upper = (
                             index[1]
                             if index[1] is not None
-                            else ctx.buffers[node.value.id].shape[dim]
+                            else ctx.get_var(node.value.id).shape[dim]
                         )
                         step = (
                             index[2] if (len(index) > 2 and index[2] is not None) else 1
@@ -488,7 +488,7 @@ class TypeInferer(ASTVisitor):
                         if size > 0:
                             shape.append(size)
             node.shape = tuple(shape)
-            node.dtype = ctx.buffers[node.value.id].dtype
+            node.dtype = ctx.get_var(node.value.id).dtype
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
@@ -570,7 +570,7 @@ class TypeInferer(ASTVisitor):
             node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
-        ctx.buffers[node.target.id] = node
+        ctx.put_var(name=node.target.id, var=node)
         node.dtype = target_dtype
         node.shape = target_shape
         visit_stmt(ctx, node.target)
@@ -592,6 +592,7 @@ class TypeInferer(ASTVisitor):
             old_ctx = ctx
             ctx = old_ctx.copy()
             ctx.buffers = old_ctx.buffers.copy()
+            ctx.scopes = copy.deepcopy(old_ctx.scopes)
             for decorator in node.decorator_list:
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
@@ -609,6 +610,7 @@ class TypeInferer(ASTVisitor):
                                     new_ctx = old_ctx.copy()
                                     new_ctx.rank = dim
                                     new_ctx.buffers = old_ctx.buffers.copy()
+                                    new_ctx.scopes = copy.deepcopy(old_ctx.scopes)
                                     new_ctx.global_vars = old_ctx.global_vars.copy()
                                     for axis, val in enumerate(dim):
                                         new_ctx.global_vars.update(
@@ -649,6 +651,7 @@ class TypeInferer(ASTVisitor):
                                 new_ctx = old_ctx.copy()
                                 new_ctx.rank = sample_dim
                                 new_ctx.buffers = old_ctx.buffers.copy()
+                                new_ctx.scopes = copy.deepcopy(old_ctx.scopes)
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
                                 for axis, val in enumerate(sample_dim):
                                     new_ctx.global_vars.update(
@@ -740,7 +743,6 @@ class TypeInferer(ASTVisitor):
         # Add the visited function to global variable for later reference
         ctx.global_vars[func_name] = node
         ctx.exit_scope()
-        assert len(ctx.scopes) == 0
         return node
 
     @staticmethod
@@ -862,8 +864,9 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
-                    node.func.value.shape = ctx.buffers[vid].dtype.shape
-                    node.func.value.dtype = ctx.buffers[vid].dtype.dtype
+                    val = ctx.get_var(vid)
+                    node.func.value.shape = val.dtype.shape
+                    node.func.value.dtype = val.dtype.dtype
                 elif node.func.attr == "get":
                     vid = (
                         node.func.value.id
@@ -871,11 +874,12 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     # return value
-                    node.shape = ctx.buffers[vid].dtype.shape
-                    node.dtype = ctx.buffers[vid].dtype.dtype
+                    val = ctx.get_var(vid)
+                    node.shape = val.dtype.shape
+                    node.dtype = val.dtype.dtype
                     # stream type itself
                     node.func.value.shape = tuple()
-                    node.func.value.dtype = ctx.buffers[vid].dtype
+                    node.func.value.dtype = val.dtype
                 elif node.func.attr == "bitcast":
                     visit_stmt(ctx, node.func.value)
                     # single-element operation
@@ -1182,7 +1186,7 @@ class TypeInferer(ASTVisitor):
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
-                ctx.buffers.keys(),
+                ctx.get_alive_var_names(),
             )
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond

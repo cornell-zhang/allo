@@ -879,53 +879,61 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_Call(ctx, node.value, out_buffer)
             return rhs
         # Compute RHS
-        rhs = build_stmt(ctx, node.value)
-        if (
-            isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-        ) and not isinstance(node.targets[0], ast.Subscript):
-            targets = []
-            if isinstance(node.targets[0], ast.Tuple):
-                targets = node.targets[0].elts
-            else:
-                targets = [node.targets[0]]
-            for idx, target in enumerate(targets):
-                if isinstance(target, ast.Name):
-                    if isinstance(rhs, list):
-                        # array of FIFOs
-                        for ele in rhs:
-                            new_name = target.id + "_" + ele.attributes["id"].value
-                            ele.attributes["name"] = StringAttr.get(new_name)
-                            ctx.buffers[new_name] = ele
-                        return rhs
-                    if hasattr(rhs, "attributes"):
-                        rhs.attributes["name"] = StringAttr.get(target.id)
-                    if target.id in ctx.buffers:
-                        raise RuntimeError(
-                            f"Variable `{target.id}` has already been defined, please use a different name"
-                        )
-                    if (
-                        isinstance(node.value, ast.Call)
-                        and isinstance(node.value.func, ast.Attribute)
-                        and node.value.func.attr == "get_pid"
-                    ):
-                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
-                            f"df.p{idx}"
-                        ]
-                        ctx.symbolic[ast.unparse(target)] = f"p{idx}"
-                    else:
-                        ctx.buffers[target.id] = (
-                            rhs[idx] if isinstance(rhs, tuple) else rhs
-                        )
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, int):
+            memref_type = MemRefType.get(list(node.shape), node.dtype.build())
+            rhs = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+            val = MockConstant(node.value.value, ctx)
+            # [NOTE]: wired bug, `ip=ctx.get_ip()` not work
+            with ctx.get_ip():
+                linalg_d.fill(val.result, outs=[rhs.result])
+        else:
+            rhs = build_stmt(ctx, node.value)
+            if (
+                isinstance(node.value, ast.Call) or len(node.value.shape) > 0
+            ) and not isinstance(node.targets[0], ast.Subscript):
+                targets = []
+                if isinstance(node.targets[0], ast.Tuple):
+                    targets = node.targets[0].elts
                 else:
-                    store_op = build_stmt(ctx, target, val=rhs, idx=idx)
-            return rhs
-        # Store LHS
-        rhs = ASTTransformer.build_cast_op(
-            ctx, rhs, node.value.dtype, node.dtype, node.value.shape
-        )
-        rhs = ASTTransformer.build_broadcast_op(
-            ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
-        )
+                    targets = [node.targets[0]]
+                for idx, target in enumerate(targets):
+                    if isinstance(target, ast.Name):
+                        if isinstance(rhs, list):
+                            # array of FIFOs
+                            for ele in rhs:
+                                new_name = target.id + "_" + ele.attributes["id"].value
+                                ele.attributes["name"] = StringAttr.get(new_name)
+                                ctx.buffers[new_name] = ele
+                            return rhs
+                        if hasattr(rhs, "attributes"):
+                            rhs.attributes["name"] = StringAttr.get(target.id)
+                        if target.id in ctx.buffers:
+                            raise RuntimeError(
+                                f"Variable `{target.id}` has already been defined, please use a different name"
+                            )
+                        if (
+                            isinstance(node.value, ast.Call)
+                            and isinstance(node.value.func, ast.Attribute)
+                            and node.value.func.attr == "get_pid"
+                        ):
+                            ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
+                                f"df.p{idx}"
+                            ]
+                            ctx.symbolic[ast.unparse(target)] = f"p{idx}"
+                        else:
+                            ctx.buffers[target.id] = (
+                                rhs[idx] if isinstance(rhs, tuple) else rhs
+                            )
+                    else:
+                        store_op = build_stmt(ctx, target, val=rhs, idx=idx)
+                return rhs
+            # Store LHS
+            rhs = ASTTransformer.build_cast_op(
+                ctx, rhs, node.value.dtype, node.dtype, node.value.shape
+            )
+            rhs = ASTTransformer.build_broadcast_op(
+                ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
+            )
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
@@ -2838,7 +2846,6 @@ build_stmt = ASTTransformer()
 
 def build_stmts(ctx: ASTContext, stmts: list[ast.stmt]):
     results = []
-    print(ctx.buffers)
     for stmt in stmts:
         try:
             results.append(build_stmt(ctx, stmt))

@@ -48,7 +48,7 @@ class ASTContext:
     ):
         self.ip_stack = []
         self.buffers = {}
-        self.scopes = [] # variable scope
+        self.scopes = []  # variable scope
         # ast tree
         self.tree = tree
         self.top_func = None
@@ -133,7 +133,7 @@ class ASTContext:
 
     def pop_ip(self):
         return self.ip_stack.pop()
-    
+
     def put_var(self, name, var):
         self.scopes[-1][name] = var
 
@@ -144,7 +144,13 @@ class ASTContext:
         if allow_missing:
             return None
         raise ValueError(f"Variable {name} not defined in current scope.")
-    
+
+    def get_alive_var_names(self):
+        names = set()
+        for scope in self.scopes:
+            names.update(scope.keys())
+        return names
+
     def enter_scope(self, outer=None):
         if outer is not None:
             scope = dict(outer)

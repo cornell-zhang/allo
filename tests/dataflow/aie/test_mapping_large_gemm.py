@@ -60,10 +60,11 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: TyO[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: TyO[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
