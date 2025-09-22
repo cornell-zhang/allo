@@ -332,7 +332,6 @@ class TypeInferer(ASTVisitor):
                     target.shape = (
                         rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
                     )
-                    ctx.buffers[target.id] = target
                     # update global variables for metaprogramming
                     if (
                         isinstance(node.value, ast.Call)
@@ -343,6 +342,8 @@ class TypeInferer(ASTVisitor):
                             f"df.p{i}"
                         ]
                         ctx.symbolic[ast.unparse(target)] = f"p{i}"
+                    else:
+                        ctx.buffers[target.id] = target
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -1170,6 +1171,7 @@ class TypeInferer(ASTVisitor):
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
+                ctx.buffers.keys(),
             )
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
@@ -1216,6 +1218,7 @@ class TypeInferer(ASTVisitor):
             assert (
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            # fixme: type inferer only check the first iteration of meta_for
             lb = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             var = node.items[0].optional_vars.id
             ctx.global_vars[var] = lb

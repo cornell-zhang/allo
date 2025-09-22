@@ -903,7 +903,6 @@ class ASTTransformer(ASTBuilder):
                         raise RuntimeError(
                             f"Variable `{target.id}` has already been defined, please use a different name"
                         )
-                    ctx.buffers[target.id] = rhs[idx] if isinstance(rhs, tuple) else rhs
                     if (
                         isinstance(node.value, ast.Call)
                         and isinstance(node.value.func, ast.Attribute)
@@ -913,6 +912,10 @@ class ASTTransformer(ASTBuilder):
                             f"df.p{idx}"
                         ]
                         ctx.symbolic[ast.unparse(target)] = f"p{idx}"
+                    else:
+                        ctx.buffers[target.id] = (
+                            rhs[idx] if isinstance(rhs, tuple) else rhs
+                        )
                 else:
                     store_op = build_stmt(ctx, target, val=rhs, idx=idx)
             return rhs
@@ -1959,6 +1962,7 @@ class ASTTransformer(ASTBuilder):
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
+                            ctx.buffers.keys(),
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])
@@ -2011,6 +2015,7 @@ class ASTTransformer(ASTBuilder):
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
+                            ctx.buffers.keys(),
                         )
                         if isinstance(slice, int):
                             slice = tuple([slice])

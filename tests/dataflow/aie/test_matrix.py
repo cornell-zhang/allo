@@ -157,11 +157,11 @@ def _test_gemm_2D_mixed():
 
 
 if __name__ == "__main__":
-    # _test_matrix_scalar_add()
-    # _test_matrix_matrix_add()
-    # _test_gemm_1D_mixed()
-    # _test_gemm_2D_mixed()
-    # _test_gemm_1D()
+    _test_matrix_scalar_add()
+    _test_matrix_matrix_add()
+    _test_gemm_1D_mixed()
+    _test_gemm_2D_mixed()
+    _test_gemm_1D()
 
     # Allo flow
     _test_gemm_2D()

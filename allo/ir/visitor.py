@@ -298,16 +298,20 @@ class ReplaceNames(ast.NodeTransformer):
     - a constant value (from var_map).
     """
 
-    def __init__(self, symbolic_mapping, var_map):
+    def __init__(self, symbolic_mapping, var_map, variables):
         """
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
-        - var_map: name in AST -> value
+        - var_map: name in AST -> value (should be compile time constant)
+        - variables: variable names
         """
         super().__init__()
         self.symbolic_mapping = symbolic_mapping
         self.var_map = var_map
+        self.variables = variables
 
     def visit_Name(self, node):
+        if node.id in self.variables:
+            raise ValueError("Fail to resolve the expression as symbolic expression.")
         if node.id in self.symbolic_mapping:
             new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
             return new_node
@@ -316,7 +320,7 @@ class ReplaceNames(ast.NodeTransformer):
         return node
 
 
-def get_symbolic_expr(expr_node, mapping, var_map) -> str:
+def get_symbolic_expr(expr_node, mapping, var_map, variables) -> str:
     """
     Transform the AST expression into symbolic version.
     (an expression consist of pid symbols and constants)
@@ -325,6 +329,6 @@ def get_symbolic_expr(expr_node, mapping, var_map) -> str:
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
         - var_map: name in AST -> value
     """
-    new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
+    new_tree = ReplaceNames(mapping, var_map, variables).visit(expr_node)
     ast.fix_missing_locations(new_tree)
     return ast.unparse(new_tree)
