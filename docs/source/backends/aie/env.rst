@@ -30,7 +30,7 @@ Before proceeding with the Allo installation, please follow the instructions on 
 Install from Source
 -------------------
 
-Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project and enable the ``allo`` conda environment.
+Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project, cloned Allo repository and created the ``allo`` conda environment.
 
 Below are the exact commands to set up the environment:
 
@@ -38,20 +38,20 @@ Step 1
 ~~~~~~
 Activate the ``allo`` conda environment
 
-   .. code-block:: bash
+.. code-block:: bash
 
-      conda activate allo
+   conda activate allo
 
 Step 2
 ~~~~~~
 We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to compile the Allo IR to AIE. Install release 1.0
 
-   .. code-block:: bash
+.. code-block:: bash
 
-      # Install IRON library and mlir-aie from a wheel
-      python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
-      # Install Peano from a llvm-aie wheel
-      python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+   # Install IRON library and mlir-aie from a wheel
+   python3 -m pip install mlir_aie -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.0
+   # Install Peano from a llvm-aie wheel
+   python3 -m pip install https://github.com/Xilinx/llvm-aie/releases/download/nightly/llvm_aie-19.0.0.2025041501+b2a279c1-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 
 
 .. warning::
@@ -61,59 +61,70 @@ We depend on the `MLIR-AIE <https://github.com/Xilinx/mlir-aie>`_ project to com
 
    ``ERROR: mlir_aie-0.0.1.2025042204+24208c0-cp312-cp312-manylinux_2_35_x86_64.whl is not a supported wheel on this platform.``
 
+.. _step3:
+
 Step 3
 ~~~~~~
-Clone the mlir-aie repository and checkout to the commit corresponding to release 1.0
+Enter the Allo repository and install.
+
+Enter the ``scripts`` directory
+
+.. code-block:: bash
+
+   cd scripts
+
+Set up MLIR-AIE by running the setup script
+
+.. code-block:: bash
+
+   source aie-setup.sh
+
+.. note::
+
+   This will clone the ``mlir-aie`` repository and checkout to the commit corresponding to release 1.0. 
+   
+   By default, the repository is cloned under Allo's root directory. To customize the installation directory, 
+   use the ``--clone-dir`` option.
 
    .. code-block:: bash
 
-      git clone https://github.com/Xilinx/mlir-aie.git
-      cd mlir-aie
-      git checkout 07320d6
+      source aie-setup.sh --clone-dir /customized/path/
 
-Then, install python requirements, setup environment and add tools to PATHs (under ``mlir-aie``)
+   After running the setup script, you may see the following message in the terminal:
 
-   .. code-block:: bash
+   .. code-block:: text
 
-      # Install basic Python requirements 
-      python3 -m pip install -r python/requirements.txt
-      # Install the pre-commit hooks defined in .pre-commit-config.yaml
-      pre-commit install
-      # Install MLIR Python Extras 
-      HOST_MLIR_PYTHON_PACKAGE_PREFIX=aie python3 -m pip install -r python/requirements_extras.txt
-      # Install Torch for ML examples
-      python3 -m pip install -r python/requirements_ml.txt
+      >>> Please note: Each time you activate your environment, you need to export the following variables:
+      export PATH=/path/to/your/env/lib/python3.12/site-packages/mlir_aie/bin:$PATH
+      export MLIR_AIE_INSTALL_DIR=/path/to/your/env/lib/python3.12/site-packages/mlir_aie
+      export PEANO_INSTALL_DIR=/path/to/your/env/lib/python3.12/site-packages/llvm-aie
+      export MLIR_AIE_EXTERNAL_KERNEL_DIR=/path/to/mlir-aie/aie_kernels/
+      export RUNTIME_LIB_DIR=/path/to/mlir-aie/runtime_lib/
+      export PYTHONPATH=/path/to/your/env/lib/python3.12/site-packages/mlir_aie/python:$PYTHONPATH
 
-      source utils/env_setup.sh
+   You can copy the export commands listed here into your own script (e.g., ``/path/to/your/env/etc/conda/activate.d/setup.sh``), so that these environment variables are automatically set whenever you activate your environment.
 
-.. _step4:
 
-Step 4
-~~~~~~
-Clone the allo repository and install.
+To build and install Allo, you may want to set up environment variables first to use a custom CMake and LLVM build. For example:
 
-   You may want to set up environment variables first to use a custom CMake and LLVM build. For example:
+.. code-block:: bash
 
-   .. code-block:: bash
+   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH
+   export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
 
-      export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH
-      export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
+Next, enter Allo's root directory and install by running the following commands
 
-   Then clone the allo repository and install by running the following commands
+.. code-block:: bash
 
-   .. code-block:: bash
-
-      git clone https://github.com/cornell-zhang/allo.git
-      cd allo
-      python3 -m pip install -v -e .
+   python3 -m pip install -v -e .
 
 .. note::
 
    See :ref:`internal_install` for Zhang Group students.
 
-.. _step5:
+.. _step4:
 
-Step 5
+Step 4
 ~~~~~~
 Setup Vitis and XRT.
 
@@ -121,100 +132,37 @@ Setup Vitis and XRT.
 
    See :ref:`internal_install` for Zhang Group students.
 
-Lastly, you can verify the AIE backend by running the following command under the ``allo`` folder.
+Lastly, you can verify the AIE backend by running the following command under Allo's root directory.
 
 .. code-block:: console
 
-    python3 tests/dataflow/aie/test_vector.py
+   python3 tests/dataflow/aie/test_vector.py
 
-
-Patches and Configuration
--------------------------
-
-To use components from the `MLIR-AIE toolchain <https://github.com/Xilinx/mlir-aie>`_ as libraries:
-
-.. note::
-
-   The instructions below are based on `MLIR-AIE release v1.0 <https://github.com/Xilinx/mlir-aie/releases/tag/v1.0>`_, which corresponds to commit `07320d6 <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd>`_.
-   For compatibility, make sure to use this commit when copying the following components.
-
-Clone and checkout the specific commit:
-
-.. code-block:: bash
-
-   git clone https://github.com/Xilinx/mlir-aie.git
-   cd mlir-aie
-   git checkout 07320d6
-
-- To use `external kernels <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/aie_kernels>`_ as an AIE kernel library:
-
-  .. code-block:: bash
-
-     export MLIR_AIE_EXTERNAL_KERNEL_DIR=/your/copied/path/aie_kernels
-
-- To use `runtime_lib <https://github.com/Xilinx/mlir-aie/tree/07320d6831b17e4a4c436d48c3301a17c1e9f1cd/runtime_lib>`_ for the host:
-
-  .. code-block:: bash
-
-     export RUNTIME_LIB_DIR=/your/copied/path/runtime_lib
-
-If you run into issues when using ``aiecc.py`` such as:
-
-.. code-block:: text
-
-   error: expected ')' at end of argument list
-   declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
-                                                             ^
-
-You can fix this by modifying ``downgrade_ir_for_peano`` in:
-
-.. code-block:: text
-
-   $MLIR_AIE_INSTALL_DIR/python/aie/compiler/aiecc/main.py
-
-Update the function as follows:
-
-**Before:**
-
-.. code-block:: python
-
-   def downgrade_ir_for_peano(llvmir):
-       llvmir = llvmir.replace("getelementptr inbounds nuw", "getelementptr inbounds")
-       return llvmir
-
-**After:**
-
-.. code-block:: python
-
-   def downgrade_ir_for_peano(llvmir):
-       llvmir = llvmir.replace("getelementptr inbounds nuw", "getelementptr inbounds")
-       llvmir = llvmir.replace("captures(none)", "")
-       return llvmir
 
 .. _internal_install:
 
 Internal Installation (Cornell)
 -------------------------------
 
-For Zhang Group students, please set up environment variables in :ref:`step4` with the following commands.
+For Zhang Group students, please set up environment variables in :ref:`step3` with the following commands.
 
 .. code-block:: console
 
-      export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH  
-      export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
+   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH  
+   export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
 
-And set up Vitis and XRT in :ref:`step5`  by running the following commands.
+And set up Vitis and XRT in :ref:`step4` by running the following commands.
 
 .. code-block:: console
 
-      source /opt/common/setupVitis.sh
-      source /opt/common/setupXRT.sh
+   source /opt/common/setupVitis.sh
+   source /opt/common/setupXRT.sh
 
 
 Lastly, to verify the installation, you can run the following command:
 
 .. code-block:: console
 
-      python3 tests/dataflow/aie/test_vector.py
+   python3 tests/dataflow/aie/test_vector.py
 
 If the unit tests pass, then the installation is successful. Otherwise, please contact us for help.

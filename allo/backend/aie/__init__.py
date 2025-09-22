@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module
 
 import os
 import re
@@ -15,29 +15,31 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
-from allo._mlir.ir import (
+from ..._mlir.ir import (
     Type,
     StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
     MemRefType,
 )
-from allo._mlir.passmanager import PassManager as mlir_pass_manager
+from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
 from ...utils import construct_kernel_name
 from .external_kernel import ExternalModule, ExternalModuleBase
 from .mlir_codegen import CodeGenerator
+from .vliw import vliw
 from .utils import (
     Argument,
     Stream,
     inject_external_kernels,
     matmul_external_kernel_config_map,
+    device_config_map,
     get_df_kernels,
     classify_aie_functions,
     codegen_external_kernels,
@@ -670,6 +672,15 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
+
+        # mapping guard
+        logical_node_num = len(self.virtual_computation_graph.nodes)
+        assert device_type in device_config_map, "Unsupported device type"
+        physical_node_num = np.prod(device_config_map[device_type]["mesh"])
+        assert (
+            logical_node_num <= physical_node_num
+        ), f"Unresolvable mapping from {logical_node_num} logical nodes to {physical_node_num} physical nodes"
+
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 

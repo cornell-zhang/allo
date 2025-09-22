@@ -20,7 +20,7 @@ import aie.ir as aie_ir
 # =======================
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
