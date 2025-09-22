@@ -134,10 +134,10 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
-    def put_var(self, name, var):
-        self.scopes[-1][name] = var
+    def put_symbol(self, name, val):
+        self.scopes[-1][name] = val
 
-    def get_var(self, name, allow_missing=False):
+    def get_symbol(self, name, allow_missing=False):
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
@@ -151,12 +151,8 @@ class ASTContext:
             names.update(scope.keys())
         return names
 
-    def enter_scope(self, outer=None):
-        if outer is not None:
-            scope = dict(outer)
-        else:
-            scope = {}
-        self.scopes.append(scope)
+    def enter_scope(self):
+        self.scopes.append({})
 
     def exit_scope(self):
         self.scopes.pop()

@@ -112,7 +112,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Name(ctx: ASTContext, node: ast.Name):
-        var = ctx.get_var(node.id, allow_missing=True)
+        var = ctx.get_symbol(node.id, allow_missing=True)
         if var is not None:
             node.dtype = var.dtype
             node.shape = var.shape
@@ -207,7 +207,7 @@ class TypeInferer(ASTVisitor):
         for iv in ivs:
             iv.shape = tuple()
             iv.dtype = Index()
-            ctx.put_var(name=iv.id, var=iv)
+            ctx.put_symbol(name=iv.id, val=iv)
         visit_stmts(ctx, node.iter.args)
         visit_stmts(ctx, node.body)
         node.shape = None
@@ -345,7 +345,7 @@ class TypeInferer(ASTVisitor):
                         ]
                         ctx.symbolic[ast.unparse(target)] = f"p{i}"
                     else:
-                        ctx.put_var(name=target.id, var=target)
+                        ctx.put_symbol(name=target.id, val=target)
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -393,7 +393,7 @@ class TypeInferer(ASTVisitor):
         if isinstance(node.target, ast.Subscript):
             lhs = visit_stmt(ctx, node.target)
         elif isinstance(node.target, ast.Name):  # scalar
-            lhs = ctx.get_var(node.target.id)
+            lhs = ctx.get_symbol(node.target.id)
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
@@ -479,7 +479,7 @@ class TypeInferer(ASTVisitor):
                         upper = (
                             index[1]
                             if index[1] is not None
-                            else ctx.get_var(node.value.id).shape[dim]
+                            else ctx.get_symbol(node.value.id).shape[dim]
                         )
                         step = (
                             index[2] if (len(index) > 2 and index[2] is not None) else 1
@@ -488,7 +488,7 @@ class TypeInferer(ASTVisitor):
                         if size > 0:
                             shape.append(size)
             node.shape = tuple(shape)
-            node.dtype = ctx.get_var(node.value.id).dtype
+            node.dtype = ctx.get_symbol(node.value.id).dtype
         elif len(value.shape) == 0 and isinstance(
             value.dtype, (Int, UInt)
         ):  # bit operation
@@ -570,7 +570,7 @@ class TypeInferer(ASTVisitor):
             node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
-        ctx.put_var(name=node.target.id, var=node)
+        ctx.put_symbol(name=node.target.id, val=node)
         node.dtype = target_dtype
         node.shape = target_shape
         visit_stmt(ctx, node.target)
@@ -591,8 +591,7 @@ class TypeInferer(ASTVisitor):
             # Create a new context to avoid name collision
             old_ctx = ctx
             ctx = old_ctx.copy()
-            ctx.buffers = old_ctx.buffers.copy()
-            ctx.scopes = copy.deepcopy(old_ctx.scopes)
+            ctx.scopes = old_ctx.scopes
             for decorator in node.decorator_list:
                 if isinstance(decorator, ast.Call):
                     if isinstance(decorator.func, ast.Attribute):
@@ -609,8 +608,7 @@ class TypeInferer(ASTVisitor):
                                 for dim in np.ndindex(*mapping):
                                     new_ctx = old_ctx.copy()
                                     new_ctx.rank = dim
-                                    new_ctx.buffers = old_ctx.buffers.copy()
-                                    new_ctx.scopes = copy.deepcopy(old_ctx.scopes)
+                                    new_ctx.scopes = old_ctx.scopes
                                     new_ctx.global_vars = old_ctx.global_vars.copy()
                                     for axis, val in enumerate(dim):
                                         new_ctx.global_vars.update(
@@ -650,8 +648,7 @@ class TypeInferer(ASTVisitor):
                                 sample_dim = (0,) * len(mapping)
                                 new_ctx = old_ctx.copy()
                                 new_ctx.rank = sample_dim
-                                new_ctx.buffers = old_ctx.buffers.copy()
-                                new_ctx.scopes = copy.deepcopy(old_ctx.scopes)
+                                new_ctx.scopes = old_ctx.scopes
                                 new_ctx.global_vars = old_ctx.global_vars.copy()
                                 for axis, val in enumerate(sample_dim):
                                     new_ctx.global_vars.update(
@@ -686,6 +683,7 @@ class TypeInferer(ASTVisitor):
                 )
                 ctx.global_vars[name] = call_val
 
+        ctx.enter_scope()
         # Input types
         for arg in node.args.args:
             arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
@@ -696,7 +694,7 @@ class TypeInferer(ASTVisitor):
             )
             # update shape
             arg.shape = arg.dtensor.get_local_shape()
-            ctx.buffers[arg.arg] = arg
+            ctx.put_symbol(name=arg.arg, val=arg)
 
         func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
         # Return type
@@ -721,12 +719,11 @@ class TypeInferer(ASTVisitor):
                 node.returns.dtype, node.returns.shape, node.returns.spec = (
                     TypeInferer.visit_type_hint(ctx, node.returns)
                 )
-            ctx.buffers[func_name] = node
+            ctx.put_symbol(name=func_name, val=node)
 
         # set context
         ctx.top_func = node
         ctx.top_func_tree = node
-        ctx.enter_scope(ctx.buffers)
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
         if node.returns is None or (
@@ -737,12 +734,12 @@ class TypeInferer(ASTVisitor):
         else:
             node.dtype = node.returns.dtype
             node.shape = node.returns.shape
+        ctx.exit_scope()
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
         # Add the visited function to global variable for later reference
         ctx.global_vars[func_name] = node
-        ctx.exit_scope()
         return node
 
     @staticmethod
@@ -864,7 +861,7 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
-                    val = ctx.get_var(vid)
+                    val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
                 elif node.func.attr == "get":
@@ -874,7 +871,7 @@ class TypeInferer(ASTVisitor):
                         else node.func.value.value.id
                     )
                     # return value
-                    val = ctx.get_var(vid)
+                    val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape
                     node.dtype = val.dtype.dtype
                     # stream type itself
