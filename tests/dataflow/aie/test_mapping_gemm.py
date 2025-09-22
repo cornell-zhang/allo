@@ -395,6 +395,9 @@ def _test_split_k_gemm_1x1x4():
             C_: Ty[M, N] = 0
             with allo.meta_for(Pk) as i:
                 C_[:, :] += pipe[i].get()
+            for i in range(Pk):
+                if i > 2:
+                    C_[i, i] = 0 
             C[:, :] = C_
 
     mod = df.build(

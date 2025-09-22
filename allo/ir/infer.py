@@ -198,6 +198,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_all_for(ctx: ASTContext, node: ast.For):
+        ctx.enter_scope()
         # Set loop induction variables
         if isinstance(node.target, ast.Tuple):
             ivs = list(node.target.elts)
@@ -211,6 +212,7 @@ class TypeInferer(ASTVisitor):
         visit_stmts(ctx, node.body)
         node.shape = None
         node.dtype = None
+        ctx.exit_scope()
         return node
 
     @staticmethod
@@ -721,6 +723,7 @@ class TypeInferer(ASTVisitor):
         # set context
         ctx.top_func = node
         ctx.top_func_tree = node
+        ctx.enter_scope(ctx.buffers)
         visit_stmts(ctx, node.body)
         # Note that the result type may be different from the return type
         if node.returns is None or (
@@ -736,6 +739,8 @@ class TypeInferer(ASTVisitor):
             ctx = old_ctx
         # Add the visited function to global variable for later reference
         ctx.global_vars[func_name] = node
+        ctx.exit_scope()
+        assert len(ctx.scopes) == 0
         return node
 
     @staticmethod
@@ -770,9 +775,13 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_If(ctx: ASTContext, node: ast.If):
         visit_stmt(ctx, node.test)
+        ctx.enter_scope()
         visit_stmts(ctx, node.body)
+        ctx.exit_scope()
         if len(node.orelse) > 0:
+            ctx.enter_scope()
             visit_stmts(ctx, node.orelse)
+            ctx.exit_scope()
         node.dtype = None
         node.shape = None
         return node
@@ -780,7 +789,9 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_While(ctx: ASTContext, node: ast.While):
         visit_stmt(ctx, node.test)
+        ctx.enter_scope()
         visit_stmts(ctx, node.body)
+        ctx.exit_scope()
         if len(node.orelse) > 0:
             raise RuntimeError(
                 "'else' clause for 'while' not supported in Allo kernels"
@@ -1222,8 +1233,30 @@ class TypeInferer(ASTVisitor):
             lb = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             var = node.items[0].optional_vars.id
             ctx.global_vars[var] = lb
+            ctx.enter_scope()
             visit_stmts(ctx, node.body)
+            ctx.exit_scope()
             ctx.global_vars.pop(var)
+            # rargs = [
+            #     ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            # ]
+            # if len(node.items[0].context_expr.args) > 1:
+            #     rargs.append(
+            #         ASTResolver.resolve_constant(
+            #             node.items[0].context_expr.args[1], ctx
+            #         )
+            #     )
+            # if len(node.items[0].context_expr.args) > 2:
+            #     rargs.append(
+            #         ASTResolver.resolve_constant(
+            #             node.items[0].context_expr.args[2], ctx
+            #         )
+            #     )
+            # var = node.items[0].optional_vars.id
+            # for i in range(*rargs):
+            #     ctx.global_vars[var] = i
+            #     visit_stmts(ctx, node.body)
+            #     ctx.global_vars.pop(var)
             node.dtype = None
             node.shape = None
             return node
@@ -1231,7 +1264,9 @@ class TypeInferer(ASTVisitor):
             raise RuntimeError("Unsupported meta function")
         if ctx.unroll and final_cond:
             ctx.with_scope_level += 1
+            ctx.enter_scope()
             visit_stmts(ctx, node.body)
+            ctx.exit_scope()
             # clear inner context
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
@@ -1241,7 +1276,9 @@ class TypeInferer(ASTVisitor):
             ctx.predicate_stack[-1].append(tuple((symbolic_cond, [])))
             ctx.with_scope_level += 1
             ctx.predicate_stack.append(ctx.predicate_stack[-1][-1][1])
+            ctx.enter_scope()
             visit_stmts(ctx, node.body)
+            ctx.exit_scope()
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1

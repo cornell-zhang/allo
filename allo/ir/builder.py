@@ -2838,6 +2838,7 @@ build_stmt = ASTTransformer()
 
 def build_stmts(ctx: ASTContext, stmts: list[ast.stmt]):
     results = []
+    print(ctx.buffers)
     for stmt in stmts:
         try:
             results.append(build_stmt(ctx, stmt))
