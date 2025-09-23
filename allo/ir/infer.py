@@ -198,21 +198,20 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_all_for(ctx: ASTContext, node: ast.For):
-        ctx.enter_scope()
-        # Set loop induction variables
-        if isinstance(node.target, ast.Tuple):
-            ivs = list(node.target.elts)
-        else:
-            ivs = [node.target]
-        for iv in ivs:
-            iv.shape = tuple()
-            iv.dtype = Index()
-            ctx.put_symbol(name=iv.id, val=iv)
-        visit_stmts(ctx, node.iter.args)
-        visit_stmts(ctx, node.body)
-        node.shape = None
-        node.dtype = None
-        ctx.exit_scope()
+        with ctx.block_scope_guard():
+            # Set loop induction variables
+            if isinstance(node.target, ast.Tuple):
+                ivs = list(node.target.elts)
+            else:
+                ivs = [node.target]
+            for iv in ivs:
+                iv.shape = tuple()
+                iv.dtype = Index()
+                ctx.put_symbol(name=iv.id, val=iv)
+            visit_stmts(ctx, node.iter.args)
+            visit_stmts(ctx, node.body)
+            node.shape = None
+            node.dtype = None
         return node
 
     @staticmethod
@@ -683,58 +682,59 @@ class TypeInferer(ASTVisitor):
                 )
                 ctx.global_vars[name] = call_val
 
-        ctx.enter_scope()
-        # Input types
-        for arg in node.args.args:
-            arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
-                ctx, arg.annotation
-            )
-            arg.dtensor = DTensor(
-                ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
-            )
-            # update shape
-            arg.shape = arg.dtensor.get_local_shape()
-            ctx.put_symbol(name=arg.arg, val=arg)
-
-        func_name = node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
-        # Return type
-        if not (
-            (isinstance(node.returns, ast.Constant) and node.returns.value is None)
-            or node.returns is None
-        ):
-            if isinstance(node.returns, ast.Tuple):
-                # Multiple return values
-                node.returns.shape = []
-                node.returns.dtype = []
-                node.returns.spec = []
-                for elt in node.returns.elts:
-                    elt.dtype, elt.shape, elt.spec = TypeInferer.visit_type_hint(
-                        ctx, elt
-                    )
-                    node.returns.dtype += [elt.dtype]
-                    node.returns.shape += [elt.shape]
-                    node.returns.spec += [elt.spec]
-            else:
-                # Single return value
-                node.returns.dtype, node.returns.shape, node.returns.spec = (
-                    TypeInferer.visit_type_hint(ctx, node.returns)
+        with ctx.block_scope_guard():
+            # Input types
+            for arg in node.args.args:
+                arg.dtype, arg.shape, arg.spec = TypeInferer.visit_type_hint(
+                    ctx, arg.annotation
                 )
-            ctx.put_symbol(name=func_name, val=node)
+                arg.dtensor = DTensor(
+                    ctx.rank, ctx.mapping, arg.shape, arg.dtype, arg.spec, name=arg.arg
+                )
+                # update shape
+                arg.shape = arg.dtensor.get_local_shape()
+                ctx.put_symbol(name=arg.arg, val=arg)
 
-        # set context
-        ctx.top_func = node
-        ctx.top_func_tree = node
-        visit_stmts(ctx, node.body)
-        # Note that the result type may be different from the return type
-        if node.returns is None or (
-            isinstance(node.returns, ast.Constant) and node.returns.value is None
-        ):
-            node.dtype = None
-            node.shape = None
-        else:
-            node.dtype = node.returns.dtype
-            node.shape = node.returns.shape
-        ctx.exit_scope()
+            func_name = (
+                node.name if ctx.func_id is None else f"{node.name}_{ctx.func_id}"
+            )
+            # Return type
+            if not (
+                (isinstance(node.returns, ast.Constant) and node.returns.value is None)
+                or node.returns is None
+            ):
+                if isinstance(node.returns, ast.Tuple):
+                    # Multiple return values
+                    node.returns.shape = []
+                    node.returns.dtype = []
+                    node.returns.spec = []
+                    for elt in node.returns.elts:
+                        elt.dtype, elt.shape, elt.spec = TypeInferer.visit_type_hint(
+                            ctx, elt
+                        )
+                        node.returns.dtype += [elt.dtype]
+                        node.returns.shape += [elt.shape]
+                        node.returns.spec += [elt.spec]
+                else:
+                    # Single return value
+                    node.returns.dtype, node.returns.shape, node.returns.spec = (
+                        TypeInferer.visit_type_hint(ctx, node.returns)
+                    )
+                ctx.put_symbol(name=func_name, val=node)
+
+            # set context
+            ctx.top_func = node
+            ctx.top_func_tree = node
+            visit_stmts(ctx, node.body)
+            # Note that the result type may be different from the return type
+            if node.returns is None or (
+                isinstance(node.returns, ast.Constant) and node.returns.value is None
+            ):
+                node.dtype = None
+                node.shape = None
+            else:
+                node.dtype = node.returns.dtype
+                node.shape = node.returns.shape
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
@@ -774,13 +774,11 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_If(ctx: ASTContext, node: ast.If):
         visit_stmt(ctx, node.test)
-        ctx.enter_scope()
-        visit_stmts(ctx, node.body)
-        ctx.exit_scope()
+        with ctx.block_scope_guard():
+            visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
-            ctx.enter_scope()
-            visit_stmts(ctx, node.orelse)
-            ctx.exit_scope()
+            with ctx.block_scope_guard():
+                visit_stmts(ctx, node.orelse)
         node.dtype = None
         node.shape = None
         return node
@@ -788,9 +786,8 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_While(ctx: ASTContext, node: ast.While):
         visit_stmt(ctx, node.test)
-        ctx.enter_scope()
-        visit_stmts(ctx, node.body)
-        ctx.exit_scope()
+        with ctx.block_scope_guard():
+            visit_stmts(ctx, node.body)
         if len(node.orelse) > 0:
             raise RuntimeError(
                 "'else' clause for 'while' not supported in Allo kernels"
@@ -1179,13 +1176,12 @@ class TypeInferer(ASTVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            symbolic_cond, must_unrolled_loop = get_symbolic_expr(
+            symbolic_cond, _ = get_symbolic_expr(
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
                 ctx.get_alive_var_names(),
             )
-            ctx.must_unrolled_meta_for.update(must_unrolled_loop)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
                 if len(ctx.meta_if_stack) > ctx.with_scope_level:
@@ -1250,13 +1246,10 @@ class TypeInferer(ASTVisitor):
             for i in range(*rargs):
                 ctx.global_vars[var] = i
                 ctx.symbolic[var] = (i, node)
-                ctx.enter_scope()
-                visit_stmts(ctx, node.body)
-                ctx.exit_scope()
+                with ctx.block_scope_guard():
+                    visit_stmts(ctx, node.body)
                 ctx.global_vars.pop(var)
                 ctx.symbolic.pop(var)
-                if not ctx.unroll and node not in ctx.must_unrolled_meta_for:
-                    break
             node.dtype = None
             node.shape = None
             return node
@@ -1264,9 +1257,8 @@ class TypeInferer(ASTVisitor):
             raise RuntimeError("Unsupported meta function")
         if ctx.unroll and final_cond:
             ctx.with_scope_level += 1
-            ctx.enter_scope()
-            visit_stmts(ctx, node.body)
-            ctx.exit_scope()
+            with ctx.block_scope_guard():
+                visit_stmts(ctx, node.body)
             # clear inner context
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
@@ -1276,9 +1268,8 @@ class TypeInferer(ASTVisitor):
             ctx.predicate_stack[-1].append(tuple((symbolic_cond, [])))
             ctx.with_scope_level += 1
             ctx.predicate_stack.append(ctx.predicate_stack[-1][-1][1])
-            ctx.enter_scope()
-            visit_stmts(ctx, node.body)
-            ctx.exit_scope()
+            with ctx.block_scope_guard():
+                visit_stmts(ctx, node.body)
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.predicate_stack = ctx.predicate_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1

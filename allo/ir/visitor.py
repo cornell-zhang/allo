@@ -7,6 +7,17 @@ from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
 
 
+class BlockScopeGuard:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        self.ctx.scopes.append({})
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ctx.scopes.pop()
+
+
 class LoopScopeGuard:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -43,7 +54,6 @@ class ASTContext:
         func_predicate_tags=None,
         func_tag2instance=None,
         unroll=True,
-        must_unrolled_meta_for=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -97,9 +107,6 @@ class ASTContext:
         self.predicate_stack = [self.predicate_list[1]]
         # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
-        self.must_unrolled_meta_for = (
-            set() if must_unrolled_meta_for is None else must_unrolled_meta_for
-        )
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
@@ -125,7 +132,6 @@ class ASTContext:
         ctx.ext_libs = self.ext_libs
         ctx.rank = self.rank
         ctx.mapping = self.mapping
-        ctx.must_unrolled_meta_for = self.must_unrolled_meta_for
         return ctx
 
     def set_ip(self, ip):
@@ -156,11 +162,8 @@ class ASTContext:
             names.update(scope.keys())
         return names
 
-    def enter_scope(self):
-        self.scopes.append({})
-
-    def exit_scope(self):
-        self.scopes.pop()
+    def block_scope_guard(self):
+        return BlockScopeGuard(self)
 
     def loop_scope_guard(self):
         return LoopScopeGuard(self)

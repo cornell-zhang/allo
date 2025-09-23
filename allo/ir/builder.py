@@ -333,24 +333,23 @@ class ASTTransformer(ASTBuilder):
             if not isinstance(for_op, affine_d.AffineForOp):
                 is_affine = False
 
-        ctx.enter_scope()
-        ivs = [loop.induction_variable for loop in for_loops]
-        for name, iv in zip(names, ivs):
-            ctx.put_symbol(name=name, val=MockArg(iv, is_affine))
-        ctx.set_ip(for_loops[-1].body.operations[0])
+        with ctx.block_scope_guard():
+            ivs = [loop.induction_variable for loop in for_loops]
+            for name, iv in zip(names, ivs):
+                ctx.put_symbol(name=name, val=MockArg(iv, is_affine))
+            ctx.set_ip(for_loops[-1].body.operations[0])
 
-        # build loop body
-        build_stmts(ctx, node.body)
+            # build loop body
+            build_stmts(ctx, node.body)
 
-        # attach necessary attributes
-        if (
-            isinstance(node.iter.func, ast.Attribute)
-            and node.iter.func.attr == "reduction"
-        ):
-            for loop in for_loops:
-                loop.attributes["reduction"] = UnitAttr.get()
+            # attach necessary attributes
+            if (
+                isinstance(node.iter.func, ast.Attribute)
+                and node.iter.func.attr == "reduction"
+            ):
+                for loop in for_loops:
+                    loop.attributes["reduction"] = UnitAttr.get()
 
-        ctx.exit_scope()
         for_loops = None
         # Not sure why the for loops will not be collected if we do not call gc.collect()
         gc.collect()
@@ -1701,34 +1700,34 @@ class ASTTransformer(ASTBuilder):
                 output_typehints.append(get_extra_type_hints(node.returns.dtype))
 
         # Build function
-        ctx.enter_scope()
-        # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
-        func_type = FunctionType.get(input_types, output_types)
-        func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
-        func_op.add_entry_block()
-        # attach type hints
-        func_op.attributes["otypes"] = StringAttr.get("".join(output_typehints))
-        func_op.attributes["itypes"] = StringAttr.get("".join(input_typehints))
-        # set context
-        ctx.top_func = func_op
-        ctx.top_func_tree = node
-        for i, (dtensor, arg) in enumerate(zip(dtensors, func_op.arguments)):
-            name = dtensor.name
-            mock_arg = MockArg(arg, idx=i)
-            ctx.buffers[name] = mock_arg
-            ctx.put_symbol(name=name, val=mock_arg)
-        ctx.func_args[func_name] = dtensors
-        ctx.set_ip(func_op.entry_block)
-        stmts = build_stmts(ctx, node.body)
-        # node.returns is the function definition, not the actual return operation
-        if len(stmts) > 0 and not ctx.has_return:
-            if (
-                isinstance(node.returns, ast.Constant) and node.returns.value is None
-            ) or node.returns is None:
-                func_d.ReturnOp([], ip=ctx.pop_ip())
-            else:
-                raise RuntimeError("Missing return statement")
-        ctx.exit_scope()
+        with ctx.block_scope_guard():
+            # pylint: disable=unexpected-keyword-arg, no-value-for-parameter
+            func_type = FunctionType.get(input_types, output_types)
+            func_op = func_d.FuncOp(name=func_name, type=func_type, ip=ctx.get_ip())
+            func_op.add_entry_block()
+            # attach type hints
+            func_op.attributes["otypes"] = StringAttr.get("".join(output_typehints))
+            func_op.attributes["itypes"] = StringAttr.get("".join(input_typehints))
+            # set context
+            ctx.top_func = func_op
+            ctx.top_func_tree = node
+            for i, (dtensor, arg) in enumerate(zip(dtensors, func_op.arguments)):
+                name = dtensor.name
+                mock_arg = MockArg(arg, idx=i)
+                ctx.buffers[name] = mock_arg
+                ctx.put_symbol(name=name, val=mock_arg)
+            ctx.func_args[func_name] = dtensors
+            ctx.set_ip(func_op.entry_block)
+            stmts = build_stmts(ctx, node.body)
+            # node.returns is the function definition, not the actual return operation
+            if len(stmts) > 0 and not ctx.has_return:
+                if (
+                    isinstance(node.returns, ast.Constant)
+                    and node.returns.value is None
+                ) or node.returns is None:
+                    func_d.ReturnOp([], ip=ctx.pop_ip())
+                else:
+                    raise RuntimeError("Missing return statement")
         # Recover the old context
         if old_ctx is not None:
             ctx = old_ctx
@@ -1887,24 +1886,22 @@ class ASTTransformer(ASTBuilder):
             if_op = scf_d.IfOp(cond.result, ip=ctx.get_ip(), hasElse=len(node.orelse))
             then_block = if_op.then_block
         ctx.set_ip(then_block)
-        ctx.enter_scope()
-        build_stmts(ctx, node.body)
-        if is_affine:
-            affine_d.AffineYieldOp([], ip=ctx.get_ip())
-        else:
-            scf_d.YieldOp([], ip=ctx.get_ip())
-        ctx.exit_scope()
-        ctx.pop_ip()
-        if len(node.orelse) > 0:
-            else_block = if_op.elseRegion.blocks[0]
-            ctx.set_ip(else_block)
-            ctx.enter_scope()
-            build_stmts(ctx, node.orelse)
+        with ctx.block_scope_guard():
+            build_stmts(ctx, node.body)
             if is_affine:
                 affine_d.AffineYieldOp([], ip=ctx.get_ip())
             else:
                 scf_d.YieldOp([], ip=ctx.get_ip())
-            ctx.exit_scope()
+        ctx.pop_ip()
+        if len(node.orelse) > 0:
+            else_block = if_op.elseRegion.blocks[0]
+            ctx.set_ip(else_block)
+            with ctx.block_scope_guard():
+                build_stmts(ctx, node.orelse)
+                if is_affine:
+                    affine_d.AffineYieldOp([], ip=ctx.get_ip())
+                else:
+                    scf_d.YieldOp([], ip=ctx.get_ip())
             ctx.pop_ip()
 
     @staticmethod
@@ -1936,10 +1933,9 @@ class ASTTransformer(ASTBuilder):
             scf_d.ConditionOp(cond.result, [], ip=ctx.get_ip())
             ctx.pop_ip()
             ctx.set_ip(while_op.after.blocks[0])
-            ctx.enter_scope()
-            build_stmts(ctx, node.body)
-            scf_d.YieldOp([], ip=ctx.get_ip())
-            ctx.exit_scope()
+            with ctx.block_scope_guard():
+                build_stmts(ctx, node.body)
+                scf_d.YieldOp([], ip=ctx.get_ip())
             ctx.pop_ip()
         return while_op
 
@@ -2855,19 +2851,17 @@ class ASTTransformer(ASTBuilder):
                 )
             var = node.items[0].optional_vars.id
             for i in range(*rargs):
-                ctx.enter_scope()
-                ctx.global_vars[var] = i
-                build_stmts(ctx, node.body)
-                ctx.global_vars.pop(var)
-                ctx.exit_scope()
+                with ctx.block_scope_guard():
+                    ctx.global_vars[var] = i
+                    build_stmts(ctx, node.body)
+                    ctx.global_vars.pop(var)
             return
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
             ctx.with_scope_level += 1
-            ctx.enter_scope()
-            stmts = build_stmts(ctx, node.body)
-            ctx.exit_scope()
+            with ctx.block_scope_guard():
+                stmts = build_stmts(ctx, node.body)
             # clear inner context
             ctx.meta_if_stack = ctx.meta_if_stack[: ctx.with_scope_level]
             ctx.with_scope_level -= 1
