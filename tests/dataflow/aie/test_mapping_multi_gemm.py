@@ -56,16 +56,16 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         )
 
         @df.kernel(mapping=[Pk, Pm, Pn])
-        def gemm(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
+        def gemma(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
             C_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in[:, :] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe_a[pk - 1, pm, pn].get()
             with allo.meta_else():
                 C_in[:, :] = 0
             C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
-                pipe[pk, pm, pn].put(C_out)
+                pipe_a[pk, pm, pn].put(C_out)
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
@@ -76,10 +76,11 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemmb(D: TyI[M, K] @ LyA, E: TyI[K, N] @ LyB, F: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            F_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
-                F_in: TyO[Mt, Nt] = pipe_b[pk - 1, pm, pn].get()
+                F_in[:, :] = pipe_b[pk - 1, pm, pn].get()
             with allo.meta_else():
-                F_in: TyO[Mt, Nt] = 0
+                F_in[:, :] = 0
             F_out: TyO[Mt, Nt] = allo.add(allo.matmul(D, E), F_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe_b[pk, pm, pn].put(F_out)
