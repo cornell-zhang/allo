@@ -336,7 +336,6 @@ def inject_external_kernels(
             ):
                 if (
                     op.inputs[0].owner.opview.literal_value == 0
-                    and len(op.outputs[0].type.shape) > 0
                     and len(op.outputs[0].type.shape) <= 2
                 ):
                     M = (
