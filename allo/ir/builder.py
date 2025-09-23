@@ -896,13 +896,13 @@ class ASTTransformer(ASTBuilder):
                     if ctx.enable_tensor:
                         rhs = fill_op.owner
             else:
-                rhs = MockConstant(node.value.value, ctx)
-                rhs = ASTTransformer.build_cast_op(
-                    ctx, rhs, node.value.dtype, node.dtype, node.value.shape
+                constant = MockConstant(node.value.value, ctx)
+                cast = ASTTransformer.build_cast_op(
+                    ctx, constant, node.value.dtype, node.dtype, node.value.shape
                 )
                 rhs = ASTTransformer.build_broadcast_op(
                     ctx,
-                    rhs,
+                    cast,
                     node.dtype,
                     node.value.shape,
                     node.shape,

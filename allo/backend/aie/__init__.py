@@ -832,6 +832,7 @@ class AIE_MLIRModule:
                 )
                 args[idx][:] = result
 
+
 def _call_prj(
     project: str,
     dtype_list: list,
@@ -840,6 +841,14 @@ def _call_prj(
     output_idx: list[int],
     *args,
 ):
+    """
+    This function allows you to manually adjust files under the project
+    directory (e.g., top.prj) after building with AIE_MLIRModule, such as
+    `top.mlir`, external kernel functions, or `test.cpp`, and then
+    recompile and rerun.
+
+    Note (Shihan): currently intended for internal debugging use only.
+    """
     # generate insts.txt
     cmd = f"cd {project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
     with subprocess.Popen(cmd, shell=True) as process:
@@ -856,9 +865,7 @@ def _call_prj(
         arg = args[idx]
         if str(dtype_list[idx]) == "i4":
             arg = pack_int4(arg)
-        with open(
-            os.path.join(project, f"input{idx}.data"), "wb"
-        ) as f:
+        with open(os.path.join(project, f"input{idx}.data"), "wb") as f:
             f.write(arg.tobytes())
     if trace_size > 0:
         cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"

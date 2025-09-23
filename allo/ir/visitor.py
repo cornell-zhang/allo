@@ -43,7 +43,7 @@ class ASTContext:
         func_predicate_tags=None,
         func_tag2instance=None,
         unroll=True,
-        must_unrolled_meta_for=set(),
+        must_unrolled_meta_for=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -97,7 +97,9 @@ class ASTContext:
         self.predicate_stack = [self.predicate_list[1]]
         # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
-        self.must_unrolled_meta_for = must_unrolled_meta_for
+        self.must_unrolled_meta_for = (
+            set() if must_unrolled_meta_for is None else must_unrolled_meta_for
+        )
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
