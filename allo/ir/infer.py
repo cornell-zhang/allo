@@ -861,6 +861,14 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, must_unrolled_loop = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        ctx.must_unrolled_meta_for.update(must_unrolled_loop)
                     val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
@@ -870,6 +878,14 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, must_unrolled_loop = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        ctx.must_unrolled_meta_for.update(must_unrolled_loop)
                     # return value
                     val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape
