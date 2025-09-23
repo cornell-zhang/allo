@@ -2838,6 +2838,7 @@ class ASTTransformer(ASTBuilder):
             assert (
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            var = node.items[0].optional_vars.id
             if ctx.unroll or node in ctx.must_unrolled_meta_for:
                 rargs = [
                     ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
@@ -2854,17 +2855,27 @@ class ASTTransformer(ASTBuilder):
                             node.items[0].context_expr.args[2], ctx
                         )
                     )
-                var = node.items[0].optional_vars.id
                 for i in range(*rargs):
                     ctx.enter_scope()
                     ctx.global_vars[var] = i
                     build_stmts(ctx, node.body)
                     ctx.global_vars.pop(var)
                     ctx.exit_scope()
-                return
             else:
                 # replace with regular for loop to reduce codesize
-                raise ValueError("TODO......")
+                with ctx.loop_scope_guard():
+                    for_op = ASTTransformer.build_single_for(
+                        ctx, node.items[0].context_expr.args, f"S_{var}_{str(ctx.loop_band_count)}", var
+                    )
+                    is_affine = isinstance(for_op, affine_d.AffineForOp)
+                    ctx.enter_scope()
+                    ctx.put_symbol(name=var, val=MockArg(for_op.induction_variable, is_affine))
+                    ctx.set_ip(for_op.body.operations[0])
+                    build_stmts(ctx, node.body)
+                    ctx.exit_scope()
+                    gc.collect()
+                    ctx.pop_ip()
+            return
         else:
             raise RuntimeError("Unsupported meta function")
         if final_cond:
