@@ -882,13 +882,28 @@ class ASTTransformer(ASTBuilder):
                 rhs = ASTTransformer.build_Call(ctx, node.value, val)
                 return rhs
         # Compute RHS
+        # if False:
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, int):
-            memref_type = MemRefType.get(list(node.shape), node.dtype.build())
-            rhs = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-            val = MockConstant(node.value.value, ctx)
-            # [NOTE]: wired bug, `ip=ctx.get_ip()` not work
-            with ctx.get_ip():
-                linalg_d.fill(val.result, outs=[rhs.result])
+            if len(node.shape) > 0:
+                if  ctx.enable_tensor:
+                    rhs = tensor_d.EmptyOp(list(node.shape), node.dtype.build(), ip=ctx.get_ip())
+                else:
+                    memref_type = MemRefType.get(list(node.shape), node.dtype.build())
+                    rhs = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                val = MockConstant(node.value.value, ctx)
+                # [NOTE]: wired bug, `ip=ctx.get_ip()` not work
+                with ctx.get_ip():
+                    fill_op = linalg_d.fill(val.result, outs=[rhs.result])
+                    if ctx.enable_tensor:
+                        rhs = fill_op.owner
+            else:
+                rhs = MockConstant(node.value.value, ctx)
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, rhs, node.value.dtype, node.dtype, node.value.shape
+                )
+                rhs = ASTTransformer.build_broadcast_op(
+                ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
+            )
         else:
             rhs = build_stmt(ctx, node.value)
             if (
@@ -934,12 +949,14 @@ class ASTTransformer(ASTBuilder):
                         store_op = build_stmt(ctx, target, val=rhs, idx=idx)
                 return rhs
             # Store LHS
+            print("===", rhs)
             rhs = ASTTransformer.build_cast_op(
                 ctx, rhs, node.value.dtype, node.dtype, node.value.shape
             )
             rhs = ASTTransformer.build_broadcast_op(
                 ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
             )
+        print(rhs, "\n")
         store_op = build_stmt(ctx, node.targets[0], val=rhs)
         # Since tensor operations returns a new tensor, we also need to update the buffer
         if (
