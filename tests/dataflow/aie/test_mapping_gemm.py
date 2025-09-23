@@ -505,12 +505,12 @@ def _test_split_k_gemm_2x2x4():
 
 
 if __name__ == "__main__":
-    # _test_gemm_2D_v1()
-    # _test_gemm_2D_v2()
-    # _test_pingpong_gemm_2x2x2()
-    # _test_pingpong_gemm_2x2x2_partial_chain()
-    # _test_pingpong_gemm_1x1x4()
-    # _test_pingpong_gemm_2x2x4()
-    # _test_pingpong_gemm_4x4x4()
+    _test_gemm_2D_v1()
+    _test_gemm_2D_v2()
+    _test_pingpong_gemm_2x2x2()
+    _test_pingpong_gemm_2x2x2_partial_chain()
+    _test_pingpong_gemm_1x1x4()
+    _test_pingpong_gemm_2x2x4()
+    _test_pingpong_gemm_4x4x4()
     _test_split_k_gemm_1x1x4()
-    # _test_split_k_gemm_2x2x4()
+    _test_split_k_gemm_2x2x4()
