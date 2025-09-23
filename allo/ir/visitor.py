@@ -43,6 +43,7 @@ class ASTContext:
         func_predicate_tags=None,
         func_tag2instance=None,
         unroll=True,
+        must_unrolled_meta_for=set(),
         enable_tensor=False,
         verbose=False,
     ):
@@ -96,6 +97,7 @@ class ASTContext:
         self.predicate_stack = [self.predicate_list[1]]
         # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
+        self.must_unrolled_meta_for = must_unrolled_meta_for
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
@@ -121,6 +123,7 @@ class ASTContext:
         ctx.ext_libs = self.ext_libs
         ctx.rank = self.rank
         ctx.mapping = self.mapping
+        ctx.must_unrolled_meta_for = self.must_unrolled_meta_for
         return ctx
 
     def set_ip(self, ip):
@@ -332,12 +335,18 @@ class ReplaceNames(ast.NodeTransformer):
         self.symbolic_mapping = symbolic_mapping
         self.var_map = var_map
         self.variables = variables
+        self.special_symbol = set()
 
     def visit_Name(self, node):
         if node.id in self.variables:
             raise ValueError("Fail to resolve the expression as symbolic expression.")
         if node.id in self.symbolic_mapping:
-            new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            symbol_var = self.symbolic_mapping[node.id]
+            if isinstance(symbol_var, str):
+                new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            elif isinstance(symbol_var, tuple) and isinstance(symbol_var[0], int):
+                new_node = ast.Constant(symbol_var[0])
+                self.special_symbol.add(symbol_var[1])
             return new_node
         if node.id in self.var_map:
             return ast.Constant(self.var_map[node.id])
@@ -353,6 +362,7 @@ def get_symbolic_expr(expr_node, mapping, var_map, variables) -> str:
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
         - var_map: name in AST -> value
     """
-    new_tree = ReplaceNames(mapping, var_map, variables).visit(expr_node)
+    processor = ReplaceNames(mapping, var_map, variables)
+    new_tree = processor.visit(expr_node)
     ast.fix_missing_locations(new_tree)
-    return ast.unparse(new_tree)
+    return ast.unparse(new_tree), processor.special_symbol

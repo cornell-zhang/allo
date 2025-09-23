@@ -172,7 +172,6 @@ class MockBuffer(MockOp):
 
 class MockConstant(MockOp):
     def __init__(self, val, ctx, dtype=None):
-        print(val,dtype)
         self.val = val
         self.ctx = ctx
         assert dtype is None or isinstance(

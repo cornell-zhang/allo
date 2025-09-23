@@ -1179,12 +1179,13 @@ class TypeInferer(ASTVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            symbolic_cond = get_symbolic_expr(
+            symbolic_cond, must_unrolled_loop = get_symbolic_expr(
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
                 ctx.get_alive_var_names(),
             )
+            ctx.must_unrolled_meta_for.update(must_unrolled_loop)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
                 if len(ctx.meta_if_stack) > ctx.with_scope_level:
@@ -1230,34 +1231,32 @@ class TypeInferer(ASTVisitor):
             assert (
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
-            # fixme: type inferer only check the first iteration of meta_for
-            lb = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            rargs = [
+                ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
+            ]
+            if len(node.items[0].context_expr.args) > 1:
+                rargs.append(
+                    ASTResolver.resolve_constant(
+                        node.items[0].context_expr.args[1], ctx
+                    )
+                )
+            if len(node.items[0].context_expr.args) > 2:
+                rargs.append(
+                    ASTResolver.resolve_constant(
+                        node.items[0].context_expr.args[2], ctx
+                    )
+                )
             var = node.items[0].optional_vars.id
-            ctx.global_vars[var] = lb
-            ctx.enter_scope()
-            visit_stmts(ctx, node.body)
-            ctx.exit_scope()
-            ctx.global_vars.pop(var)
-            # rargs = [
-            #     ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            # ]
-            # if len(node.items[0].context_expr.args) > 1:
-            #     rargs.append(
-            #         ASTResolver.resolve_constant(
-            #             node.items[0].context_expr.args[1], ctx
-            #         )
-            #     )
-            # if len(node.items[0].context_expr.args) > 2:
-            #     rargs.append(
-            #         ASTResolver.resolve_constant(
-            #             node.items[0].context_expr.args[2], ctx
-            #         )
-            #     )
-            # var = node.items[0].optional_vars.id
-            # for i in range(*rargs):
-            #     ctx.global_vars[var] = i
-            #     visit_stmts(ctx, node.body)
-            #     ctx.global_vars.pop(var)
+            for i in range(*rargs):
+                ctx.global_vars[var] = i
+                ctx.symbolic[var] = (i, node)
+                ctx.enter_scope()
+                visit_stmts(ctx, node.body)
+                ctx.exit_scope()
+                ctx.global_vars.pop(var)
+                ctx.symbolic.pop(var)
+                if not ctx.unroll and node not in ctx.must_unrolled_meta_for:
+                    break
             node.dtype = None
             node.shape = None
             return node
