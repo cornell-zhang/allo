@@ -536,7 +536,7 @@ class ComputationGraph:
         allo_module: allo_ir.ir.Module,
         top_func_name: str,
         stream_map: dict[str, Stream],
-        core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
+        core_func_args: dict[str, dict[int, tuple[Argument | list[Argument], bool]]],
         use_external_kernels: dict[str, bool],
         func_instances: dict = None,
     ):
@@ -580,6 +580,14 @@ class ComputationGraph:
                 _, indexes = parse_kernel_name(func_name)
                 params = core_func_args[func_name]
                 for idx, (argument, is_input) in params.items():
+                    if isinstance(argument, list):
+                        for arg in argument:
+                            if arg.stream is not None:
+                                if is_input:
+                                    node.meta_data.input_streams.append(arg.stream)
+                                else:
+                                    node.meta_data.output_streams.append(arg.stream)
+                        continue
                     if argument.stream is not None:
                         if is_input:
                             node.meta_data.input_streams.append(argument.stream)
@@ -640,11 +648,15 @@ class ComputationGraph:
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
         for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            if arg[0].stream is not None:
+            assert isinstance(arg[0], Argument) or len(arg[0])==1
+            arg_info_ = arg[0] if isinstance(arg[0], Argument) else arg[0][0]
+            if arg_info_.stream is not None:
                 for name in node_name_list:
+                    assert isinstance(self.func_args[name][idx][0], Argument) or len(self.func_args[name][idx][0])==1
+                    arg_ = self.func_args[name][idx][0] if isinstance(self.func_args[name][idx][0], Argument) else self.func_args[name][idx][0][0]
                     if name != sample_node.meta_data.name:
-                        self.edges.pop(self.func_args[name][idx][0].stream.name)
-                    self.func_args[name][idx][0].stream.name = arg[0].stream.name
+                        self.edges.pop(arg_.stream.name)
+                    arg_.stream.name = arg_info_.stream.name
         self.func_args[bundled_node.meta_data.name] = self.func_args[
             sample_node.meta_data.name
         ]
@@ -687,11 +699,15 @@ class ComputationGraph:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
                 for idx, arg_info in param_a.items():
-                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                    assert isinstance(arg_info[0], Argument) or len(arg_info[0])==1
+                    arg_info_ = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
+                    if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_a = idx
                         break
                 for idx, arg_info in param_b.items():
-                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                    assert isinstance(arg_info[0], Argument) or len(arg_info[0])==1
+                    arg_info_ = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
+                    if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_b = idx
                         break
                 assert idx_a >= 0 and idx_b >= 0

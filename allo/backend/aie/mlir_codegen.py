@@ -125,7 +125,7 @@ class CodeGenerator:
     def preporocess_dumped_core_func(
         self,
         original_func: allo_func_d.FuncOp,
-        func_args: dict[int, tuple[Argument, bool]],
+        func_args: dict[int, tuple[Argument| list[Argument] , bool]],
     ) -> str:
         """
         Preprocess the core function in allo MLIR.
@@ -142,11 +142,15 @@ class CodeGenerator:
             func_inputs = original_func.type.inputs
             new_func_inputs = []
             for idx in range(len(func_inputs)):
-                if idx in func_args and func_args[idx][0].stream is not None:
-                    new_func_inputs.append(func_args[idx][0].stream.allo_element_type)
-                    func_inputs[idx] = func_args[idx][0].stream.allo_element_type
-                elif idx in func_args and func_args[idx][0].dtensor is not None:
-                    new_func_inputs.append(func_inputs[idx])
+                if idx in func_args:
+                    sample_stream = func_args[idx][0].stream if isinstance(func_args[idx][0], Argument) else func_args[idx][0][0].stream
+                    if sample_stream is not None:
+                        new_func_inputs.append(sample_stream.allo_element_type)
+                        func_inputs[idx] = sample_stream.allo_element_type
+                        continue
+                    elif func_args[idx][0].dtensor is not None:
+                        new_func_inputs.append(func_inputs[idx])
+                        continue
                 else:
                     # fixme: this is a fake placeholder, we'd better remove the useless argument, but doing so leads to crash
                     #           "Cannot destroy a value that still has uses!"
@@ -175,14 +179,15 @@ class CodeGenerator:
                             old.replace_all_uses_with(new)
             original_func.erase()
             for idx, arg_info in func_args.items():
-                if arg_info[0].stream is not None:
+                sample_stream = arg_info[0].stream if isinstance(arg_info[0], Argument) else arg_info[0][0].stream
+                if sample_stream is not None:
                     argument = new_function.arguments[idx]
                     for use_ in argument.uses:
                         op = use_.owner
                         if op.name == "allo.stream_put":
                             operands = op.operands
                             # store/copy
-                            if arg_info[0].stream.is_tensor:
+                            if sample_stream.is_tensor:
                                 new_op = allo_memref_d.CopyOp(
                                     operands[1], operands[0], ip=InsertionPoint(op)
                                 )
@@ -192,10 +197,10 @@ class CodeGenerator:
                                 )
                         elif op.name == "allo.stream_get":
                             # load/alloc
-                            if arg_info[0].stream.is_tensor:
+                            if sample_stream.is_tensor:
                                 # replace use with alloc
                                 new_op = allo_memref_d.AllocOp(
-                                    arg_info[0].stream.allo_element_type,
+                                    sample_stream.allo_element_type,
                                     [],
                                     [],
                                     ip=InsertionPoint(op),
@@ -268,7 +273,8 @@ class CodeGenerator:
                 if not i in func_args:
                     continue
                 arg_info: tuple[Argument, bool] = func_args[i]
-                if arg_info[0].dtensor is not None:
+                sample_arg_info = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
+                if sample_arg_info.dtensor is not None:
                     # fixme: argument.uses is unordered??
                     first_use = list(argument.uses)[-1]
                     if first_use is not None:
@@ -280,19 +286,19 @@ class CodeGenerator:
                         with aie_ir.InsertionPoint(first_use_op):
                             if arg_to_fifo[i].name in reused_fifo_name:
                                 fifo.release(
-                                    1 if arg_info[0].dtensor.is_input else 0, 1
+                                    1 if sample_arg_info.dtensor.is_input else 0, 1
                                 )
                             else:
                                 reused_fifo_name[arg_to_fifo[i].name] = arg_info[
                                     0
                                 ].dtensor.is_input
                             acquired = fifo.acquire(
-                                1 if arg_info[0].dtensor.is_input else 0, 1
+                                1 if sample_arg_info.dtensor.is_input else 0, 1
                             )
                             # incorrect
                             argument.replace_all_uses_with(acquired)
                 else:
-                    stream: Stream = arg_info[0].stream
+                    stream: Stream = sample_arg_info.stream
                     fifo = self.fifo_map[stream.name]
                     for use_ in argument.uses:
                         op = use_.owner

@@ -60,6 +60,7 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
         new_args = new_func_args[func_name].copy()
+        skip_new_args_flag = False
         prefix, ids = parse_kernel_name(func_name)
         if not unroll:
             assert s.func_instances is not None and prefix in s.func_instances
@@ -93,9 +94,11 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                 new_args.append(stream_name)
                 if not unroll and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
+                    arg_idx = len(new_args) - 1
                     for ids_, predicate_tag in s.func_instances[prefix].items():
-                        print(symbolic_name)
                         func_name_ = construct_kernel_name(prefix, ids_)
+                        if func_name_ == func_name:
+                            skip_new_args_flag = True
                         if predicate_tag == s.func_instances[prefix][ids]:
                             pid_map = {
                                 f"p{idx}": value for idx, value in enumerate(ids_)
@@ -105,10 +108,9 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                                 rargs = []
                                 for val in name_attr.attr:
                                     rargs.append(val.value)
-                                loops.append((name_attr.name, rargs))
-                            print(loops)
+                                loops.append((name_attr.name, range(*rargs)))
 
-                            def eval_stream(symbol_map, update_info):
+                            def eval_stream(symbol_map):
                                 slice_ = eval(symbolic_name, symbol_map)
                                 if isinstance(slice_, int):
                                     slice_ = tuple([slice_])
@@ -121,14 +123,15 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                                     and stream_name_ not in stream_types_dict
                                 ):
                                     stream_types_dict[stream_name_] = op.result.type
-                                if update_info:
-                                    stream_info[func_name_].append(
-                                        (stream_name_, direction)
-                                    )
-                                    new_func_args[func_name_].append(stream_name_)
+                                if len(new_func_args[func_name_]) == arg_idx:
+                                    new_func_args[func_name_].append([])
+                                stream_info[func_name_].append(
+                                    (stream_name_, direction)
+                                )
+                                new_func_args[func_name_][-1].append(stream_name_)
 
                             if len(loops) == 0:
-                                eval_stream(pid_map, func_name_ != func_name)
+                                eval_stream(pid_map)
                             else:
                                 iter_symbol_map = pid_map.copy()
                                 for combo in itertools.product(
@@ -136,14 +139,13 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                                 ):
                                     for (name, _), val in zip(loops, combo):
                                         iter_symbol_map[name] = val
-                                    # fixme: update pattern
-                                    eval_stream(
-                                        iter_symbol_map, func_name_ != func_name
-                                    )
+                                    eval_stream(iter_symbol_map)
 
         # create new func to update arguments
         in_types += stream_types
-        new_func_args[func_name] = new_args
+        # skip_new_args_flag: updated with symbolic info, do not use `new_args`
+        if not skip_new_args_flag:
+            new_func_args[func_name] = new_args
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
             new_func = func_d.FuncOp(
@@ -395,6 +397,7 @@ def build(
         stream_info, stream_types_dict = move_stream_to_interface(
             s, with_stream_type=True, unroll=False
         )
+        print(s.func_args)
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
         )
