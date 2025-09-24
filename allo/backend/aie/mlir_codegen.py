@@ -125,7 +125,7 @@ class CodeGenerator:
     def preporocess_dumped_core_func(
         self,
         original_func: allo_func_d.FuncOp,
-        func_args: dict[int, tuple[Argument| list[Argument] , bool]],
+        func_args: dict[int, tuple[Argument | list[Argument], bool]],
     ) -> str:
         """
         Preprocess the core function in allo MLIR.
@@ -143,7 +143,11 @@ class CodeGenerator:
             new_func_inputs = []
             for idx in range(len(func_inputs)):
                 if idx in func_args:
-                    sample_stream = func_args[idx][0].stream if isinstance(func_args[idx][0], Argument) else func_args[idx][0][0].stream
+                    sample_stream = (
+                        func_args[idx][0].stream
+                        if isinstance(func_args[idx][0], Argument)
+                        else func_args[idx][0][0].stream
+                    )
                     if sample_stream is not None:
                         new_func_inputs.append(sample_stream.allo_element_type)
                         func_inputs[idx] = sample_stream.allo_element_type
@@ -179,7 +183,11 @@ class CodeGenerator:
                             old.replace_all_uses_with(new)
             original_func.erase()
             for idx, arg_info in func_args.items():
-                sample_stream = arg_info[0].stream if isinstance(arg_info[0], Argument) else arg_info[0][0].stream
+                sample_stream = (
+                    arg_info[0].stream
+                    if isinstance(arg_info[0], Argument)
+                    else arg_info[0][0].stream
+                )
                 if sample_stream is not None:
                     argument = new_function.arguments[idx]
                     for use_ in argument.uses:
@@ -273,8 +281,10 @@ class CodeGenerator:
                 if not i in func_args:
                     continue
                 arg_info: tuple[Argument, bool] = func_args[i]
-                sample_arg_info = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
-                if sample_arg_info.dtensor is not None:
+                if (
+                    isinstance(arg_info[0], Argument)
+                    and arg_info[0].dtensor is not None
+                ):
                     # fixme: argument.uses is unordered??
                     first_use = list(argument.uses)[-1]
                     if first_use is not None:
@@ -286,52 +296,67 @@ class CodeGenerator:
                         with aie_ir.InsertionPoint(first_use_op):
                             if arg_to_fifo[i].name in reused_fifo_name:
                                 fifo.release(
-                                    1 if sample_arg_info.dtensor.is_input else 0, 1
+                                    1 if arg_info[0].dtensor.is_input else 0, 1
                                 )
                             else:
                                 reused_fifo_name[arg_to_fifo[i].name] = arg_info[
                                     0
                                 ].dtensor.is_input
                             acquired = fifo.acquire(
-                                1 if sample_arg_info.dtensor.is_input else 0, 1
+                                1 if arg_info[0].dtensor.is_input else 0, 1
                             )
                             # incorrect
                             argument.replace_all_uses_with(acquired)
                 else:
-                    stream: Stream = sample_arg_info.stream
-                    fifo = self.fifo_map[stream.name]
+                    fifo_list = []
+                    if isinstance(arg_info[0], Argument):
+                        fifo_list.append(self.fifo_map[arg_info[0].stream.name])
+                    else:
+                        for stream_arg in arg_info[0]:
+                            fifo_list.append(self.fifo_map[stream_arg.stream.name])
+                    compact_flag = len(fifo_list) == 1 or len(set(fifo_list)) == 1
+                    fifo = fifo_list[0]
                     for use_ in argument.uses:
                         op = use_.owner
                         with aie_ir.InsertionPoint(op.operation):
                             if op.name == "memref.store" or (
                                 op.name == "memref.copy" and argument == op.operands[1]
                             ):  # allo.stream_put
-                                if isinstance(fifo, tuple):
-                                    fifo = fifo[0]
-                                acquired = fifo.acquire(0, 1)
-                                op.operands[1] = acquired
-                                new_op = op.clone()  # no use, no need to replace
-                                fifo.release(0, 1)
+                                if compact_flag:
+                                    if isinstance(fifo, tuple):
+                                        fifo = fifo[0]
+                                    acquired = fifo.acquire(0, 1)
+                                    op.operands[1] = acquired
+                                    new_op = op.clone()  # no use, no need to replace
+                                    fifo.release(0, 1)
+                                else:
+                                    raise RuntimeError("TODO")
                                 op.erase()
                             elif (
                                 op.name == "memref.load"
                             ):  # allo.stream_get, non-tensor
-                                if isinstance(fifo, tuple):
-                                    fifo = fifo[1]
-                                acquired = fifo.acquire(1, 1)
-                                op.operands[0] = acquired
-                                new_op = op.clone()
-                                for old, new in zip(op.results, new_op.results):
-                                    old.replace_all_uses_with(new)
-                                fifo.release(1, 1)
+                                if compact_flag:
+                                    if isinstance(fifo, tuple):
+                                        fifo = fifo[1]
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    for old, new in zip(op.results, new_op.results):
+                                        old.replace_all_uses_with(new)
+                                    fifo.release(1, 1)
+                                else:
+                                    raise RuntimeError("TODO")
                                 op.erase()
                             elif op.name == "memref.copy":  # allo.stream_get, tensor
-                                if isinstance(fifo, tuple):
-                                    fifo = fifo[1]
-                                acquired = fifo.acquire(1, 1)
-                                op.operands[0] = acquired
-                                new_op = op.clone()
-                                fifo.release(1, 1)
+                                if compact_flag:
+                                    if isinstance(fifo, tuple):
+                                        fifo = fifo[1]
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    fifo.release(1, 1)
+                                else:
+                                    raise RuntimeError("TODO")
                                 op.erase()
             with aie_ir.InsertionPoint(loop.body):
                 for parsed_func_block in parsed_function.body:

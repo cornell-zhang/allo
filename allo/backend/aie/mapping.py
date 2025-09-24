@@ -648,12 +648,19 @@ class ComputationGraph:
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
         for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            assert isinstance(arg[0], Argument) or len(arg[0])==1
+            assert isinstance(arg[0], Argument) or len(arg[0]) == 1, "TODO (Shihan)"
             arg_info_ = arg[0] if isinstance(arg[0], Argument) else arg[0][0]
             if arg_info_.stream is not None:
                 for name in node_name_list:
-                    assert isinstance(self.func_args[name][idx][0], Argument) or len(self.func_args[name][idx][0])==1
-                    arg_ = self.func_args[name][idx][0] if isinstance(self.func_args[name][idx][0], Argument) else self.func_args[name][idx][0][0]
+                    assert (
+                        isinstance(self.func_args[name][idx][0], Argument)
+                        or len(self.func_args[name][idx][0]) == 1
+                    ), "TODO (Shihan)"
+                    arg_ = (
+                        self.func_args[name][idx][0]
+                        if isinstance(self.func_args[name][idx][0], Argument)
+                        else self.func_args[name][idx][0][0]
+                    )
                     if name != sample_node.meta_data.name:
                         self.edges.pop(arg_.stream.name)
                     arg_.stream.name = arg_info_.stream.name
@@ -699,14 +706,26 @@ class ComputationGraph:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
                 for idx, arg_info in param_a.items():
-                    assert isinstance(arg_info[0], Argument) or len(arg_info[0])==1
-                    arg_info_ = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
+                    assert (
+                        isinstance(arg_info[0], Argument) or len(arg_info[0]) == 1
+                    ), "TODO (Shihan)"
+                    arg_info_ = (
+                        arg_info[0]
+                        if isinstance(arg_info[0], Argument)
+                        else arg_info[0][0]
+                    )
                     if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_a = idx
                         break
                 for idx, arg_info in param_b.items():
-                    assert isinstance(arg_info[0], Argument) or len(arg_info[0])==1
-                    arg_info_ = arg_info[0] if isinstance(arg_info[0], Argument) else arg_info[0][0]
+                    assert (
+                        isinstance(arg_info[0], Argument) or len(arg_info[0]) == 1
+                    ), "TODO (Shihan)"
+                    arg_info_ = (
+                        arg_info[0]
+                        if isinstance(arg_info[0], Argument)
+                        else arg_info[0][0]
+                    )
                     if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_b = idx
                         break

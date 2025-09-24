@@ -397,7 +397,6 @@ def build(
         stream_info, stream_types_dict = move_stream_to_interface(
             s, with_stream_type=True, unroll=False
         )
-        print(s.func_args)
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
         )

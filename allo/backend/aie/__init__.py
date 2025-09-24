@@ -159,7 +159,6 @@ class AIE_MLIRModule:
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
-        print(self.streams)
         edge_map = {src: set() for src in stream_info.keys()}
         for stream in self.streams.values():
             edge_map[stream.src].add(stream.dst)

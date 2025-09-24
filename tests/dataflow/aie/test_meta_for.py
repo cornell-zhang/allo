@@ -32,7 +32,7 @@ def _test_split_k_gemm_1x1x4():
 
     Ty = int16
     M, N, K = 32, 32, 64
-    Pk = 2
+    Pk = 4
 
     LyA = Layout("RS0")
     LyB = Layout("S0R")
@@ -56,17 +56,17 @@ def _test_split_k_gemm_1x1x4():
     mod = df.build(
         top,
         target="aie",
-        # mapping_primitives=[
-        #     (
-        #         "bundle",
-        #         [
-        #             "partial_gemm_0",
-        #             "partial_gemm_1",
-        #             "partial_gemm_2",
-        #             "partial_gemm_3",
-        #         ],
-        #     ),
-        # ],
+        mapping_primitives=[
+            (
+                "bundle",
+                [
+                    "partial_gemm_0",
+                    "partial_gemm_1",
+                    "partial_gemm_2",
+                    "partial_gemm_3",
+                ],
+            ),
+        ],
     )
     A = np.random.randint(0, 64, (M, K)).astype(np.int16)
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
