@@ -224,7 +224,7 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
     mod = df.build(
         top,
         project=f"fa_{SEQ_LEN}.prj",
-        target="aie-mlir",
+        target="aie",
         # mapping_primitives=mapping_primitives_,
         profile=False,
         warmup=20,

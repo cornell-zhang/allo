@@ -413,7 +413,13 @@ def inject_external_kernels(
                         kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
                         input_idx.extend([0, 1])
                         output_idx.append(2)
-                        kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        path = os.environ.get("MY_MM_KERNEL_PATH")
+                        if path is None:
+                            kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        else:
+                            kernel_name = (
+                                f"matmul_scalar_{dtype}_{out_dtype}_{M}x{K}x{N}"
+                            )
                         call_builtin = True
                         if not replace_casting:
                             operands = [
@@ -632,8 +638,22 @@ def codegen_external_kernels(
     kernel_file_code = ""
     for src in include_src:
         if "mm.cc" in src:  # this file is too large to be included
+            # with open(
+            #     os.path.expandvars(f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"),
+            #     "r",
+            #     encoding="utf-8",
+            # ) as f:
+            #     mm_kernel = f.read()
+            #     pattern = r'#include\s+"zero\.cc"'
+            #     mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
+            #     kernel_file_code += mm_kernel
+            path = os.environ.get("MY_MM_KERNEL_PATH")
+            if path is None:
+                path = os.path.expandvars(
+                    f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"
+                )
             with open(
-                os.path.expandvars(f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"),
+                path,
                 "r",
                 encoding="utf-8",
             ) as f:
