@@ -868,7 +868,7 @@ class TypeInferer(ASTVisitor):
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
-                        ctx.must_unrolled_meta_for.update(must_unrolled_loop)
+                        # ctx.must_unrolled_meta_for.update(must_unrolled_loop)
                     val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
@@ -885,7 +885,7 @@ class TypeInferer(ASTVisitor):
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
-                        ctx.must_unrolled_meta_for.update(must_unrolled_loop)
+                        # ctx.must_unrolled_meta_for.update(must_unrolled_loop)
                     # return value
                     val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape

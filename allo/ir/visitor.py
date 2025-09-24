@@ -139,12 +139,17 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
-    def put_symbol(self, name, val):
-        self.scopes[-1][name] = val
+    def put_symbol(self, name, val, tag=None):
+        if tag is None:
+            self.scopes[-1][name] = val
+        else:
+            self.scopes[-1][name] = (val, tag)
 
     def get_symbol(self, name, allow_missing=False):
         for scope in reversed(self.scopes):
             if name in scope:
+                if isinstance(scope[name], tuple):
+                    return scope[name][0]
                 return scope[name]
         if allow_missing:
             return None
@@ -153,7 +158,9 @@ class ASTContext:
     def get_alive_var_names(self):
         names = set()
         for scope in self.scopes:
-            names.update(scope.keys())
+            for k, v in scope.items():
+                if not isinstance(v, tuple):
+                    names.add(k)
         return names
 
     def enter_scope(self):
@@ -345,9 +352,12 @@ class ReplaceNames(ast.NodeTransformer):
         if node.id in self.symbolic_mapping:
             symbol_var = self.symbolic_mapping[node.id]
             if isinstance(symbol_var, str):
-                new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
-            elif isinstance(symbol_var, tuple) and isinstance(symbol_var[0], int):
-                new_node = ast.Constant(symbol_var[0])
+                new_node = ast.parse(symbol_var, mode="eval").body
+            elif isinstance(symbol_var, tuple):
+                if isinstance(symbol_var[0], int):
+                    new_node = ast.Constant(symbol_var[0])
+                elif isinstance(symbol_var[0], str):
+                    new_node = ast.parse(symbol_var[0], mode="eval").body
                 self.special_symbol.add(symbol_var[1])
             return new_node
         if node.id in self.var_map:

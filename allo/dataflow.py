@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks
 
 import functools
+import itertools
 import os
 from ._mlir.ir import (
     InsertionPoint,
@@ -93,26 +94,53 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                 if not unroll and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
                     for ids_, predicate_tag in s.func_instances[prefix].items():
+                        print(symbolic_name)
                         func_name_ = construct_kernel_name(prefix, ids_)
-                        if (
-                            func_name_ != func_name
-                            and predicate_tag == s.func_instances[prefix][ids]
-                        ):
+                        if predicate_tag == s.func_instances[prefix][ids]:
                             pid_map = {
                                 f"p{idx}": value for idx, value in enumerate(ids_)
                             }
-                            slice_ = eval(symbolic_name, pid_map)
-                            if isinstance(slice_, int):
-                                slice_ = tuple([slice_])
-                            parts = stream_name.rsplit("_", len(slice_))[: -len(slice_)]
-                            stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
-                            if (
-                                with_stream_type
-                                and stream_name_ not in stream_types_dict
-                            ):
-                                stream_types_dict[stream_name_] = op.result.type
-                            stream_info[func_name_].append((stream_name_, direction))
-                            new_func_args[func_name_].append(stream_name_)
+                            loops = []
+                            for name_attr in op.attributes["iterators"]:
+                                rargs = []
+                                for val in name_attr.attr:
+                                    rargs.append(val.value)
+                                loops.append((name_attr.name, rargs))
+                            print(loops)
+
+                            def eval_stream(symbol_map, update_info):
+                                slice_ = eval(symbolic_name, symbol_map)
+                                if isinstance(slice_, int):
+                                    slice_ = tuple([slice_])
+                                parts = stream_name.rsplit("_", len(slice_))[
+                                    : -len(slice_)
+                                ]
+                                stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
+                                if (
+                                    with_stream_type
+                                    and stream_name_ not in stream_types_dict
+                                ):
+                                    stream_types_dict[stream_name_] = op.result.type
+                                if update_info:
+                                    stream_info[func_name_].append(
+                                        (stream_name_, direction)
+                                    )
+                                    new_func_args[func_name_].append(stream_name_)
+
+                            if len(loops) == 0:
+                                eval_stream(pid_map, func_name_ != func_name)
+                            else:
+                                iter_symbol_map = pid_map.copy()
+                                for combo in itertools.product(
+                                    *[rng for _, rng in loops]
+                                ):
+                                    for (name, _), val in zip(loops, combo):
+                                        iter_symbol_map[name] = val
+                                    # fixme: update pattern
+                                    eval_stream(
+                                        iter_symbol_map, func_name_ != func_name
+                                    )
+
         # create new func to update arguments
         in_types += stream_types
         new_func_args[func_name] = new_args

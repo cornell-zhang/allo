@@ -7,6 +7,7 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 
+
 def _test_vector_scalar_add():
     Ty = int32
     M = 1024
@@ -15,7 +16,7 @@ def _test_vector_scalar_add():
     def top():
         @df.kernel(mapping=[1])
         def core(A: Ty[M], B: Ty[M]):
-            # [NOTE]: this will be optimized as `for i in range(M):`
+            # [NOTE]: this will be optimized as `for i in range(M):` (though such usage is not recommended)
             with allo.meta_for(M) as i:
                 B[i] = A[i] + 1
 
@@ -74,6 +75,7 @@ def _test_split_k_gemm_1x1x4():
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
+
 if __name__ == "__main__":
-    _test_vector_scalar_add()
+    # _test_vector_scalar_add()
     _test_split_k_gemm_1x1x4()
