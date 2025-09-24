@@ -7,6 +7,17 @@ from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
 
 
+class BlockScopeGuard:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        self.ctx.scopes.append({})
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ctx.scopes.pop()
+
+
 class LoopScopeGuard:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -48,6 +59,7 @@ class ASTContext:
     ):
         self.ip_stack = []
         self.buffers = {}
+        self.scopes = []  # variable scope
         # ast tree
         self.tree = tree
         self.top_func = None
@@ -132,6 +144,26 @@ class ASTContext:
 
     def pop_ip(self):
         return self.ip_stack.pop()
+
+    def put_symbol(self, name, val):
+        self.scopes[-1][name] = val
+
+    def get_symbol(self, name, allow_missing=False):
+        for scope in reversed(self.scopes):
+            if name in scope:
+                return scope[name]
+        if allow_missing:
+            return None
+        raise ValueError(f"Variable {name} not defined in current scope.")
+
+    def get_alive_var_names(self):
+        names = set()
+        for scope in self.scopes:
+            names.update(scope.keys())
+        return names
+
+    def block_scope_guard(self):
+        return BlockScopeGuard(self)
 
     def loop_scope_guard(self):
         return LoopScopeGuard(self)
@@ -298,25 +330,35 @@ class ReplaceNames(ast.NodeTransformer):
     - a constant value (from var_map).
     """
 
-    def __init__(self, symbolic_mapping, var_map):
+    def __init__(self, symbolic_mapping, var_map, variables):
         """
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
-        - var_map: name in AST -> value
+        - var_map: name in AST -> value (should be compile time constant)
+        - variables: variable names
         """
         super().__init__()
         self.symbolic_mapping = symbolic_mapping
         self.var_map = var_map
+        self.variables = variables
+        self.special_symbol = set()
 
     def visit_Name(self, node):
+        if node.id in self.variables:
+            raise ValueError("Fail to resolve the expression as symbolic expression.")
         if node.id in self.symbolic_mapping:
-            new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            symbol_var = self.symbolic_mapping[node.id]
+            if isinstance(symbol_var, str):
+                new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
+            elif isinstance(symbol_var, tuple) and isinstance(symbol_var[0], int):
+                new_node = ast.Constant(symbol_var[0])
+                self.special_symbol.add(symbol_var[1])
             return new_node
         if node.id in self.var_map:
             return ast.Constant(self.var_map[node.id])
         return node
 
 
-def get_symbolic_expr(expr_node, mapping, var_map) -> str:
+def get_symbolic_expr(expr_node, mapping, var_map, variables) -> str:
     """
     Transform the AST expression into symbolic version.
     (an expression consist of pid symbols and constants)
@@ -325,6 +367,7 @@ def get_symbolic_expr(expr_node, mapping, var_map) -> str:
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
         - var_map: name in AST -> value
     """
-    new_tree = ReplaceNames(mapping, var_map).visit(expr_node)
+    node_transformer = ReplaceNames(mapping, var_map, variables)
+    new_tree = node_transformer.visit(expr_node)
     ast.fix_missing_locations(new_tree)
-    return ast.unparse(new_tree)
+    return ast.unparse(new_tree), node_transformer.special_symbol

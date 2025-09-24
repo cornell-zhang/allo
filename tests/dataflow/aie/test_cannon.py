@@ -45,14 +45,12 @@ def _test_cannon():
             A_pipe[(pi - 1) % P, pj].put(A_out)
             B_pipe[pi, (pj - 1) % P].put(B_out)
 
-            with allo.meta_for(P - 1) as i:
+            for _ in range(P - 1):
                 A_out: Ty[m, k] = A_pipe[pi, pj].get()
                 B_out: Ty[k, n] = B_pipe[pi, pj].get()
-
                 C[:, :] += allo.matmul(A_out, B_out)
-                if i < P - 1:
-                    A_pipe[(pi - 1) % P, pj].put(A_out)
-                    B_pipe[pi, (pj - 1) % P].put(B_out)
+                A_pipe[(pi - 1) % P, pj].put(A_out)
+                B_pipe[pi, (pj - 1) % P].put(B_out)
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
