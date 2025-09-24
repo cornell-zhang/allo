@@ -44,8 +44,10 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll=True):
+def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, with_extra_info: bool = False, unroll=True):
     stream_info = {}
+    if with_extra_info:
+        extra_stream_info = {}
     funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
     if with_stream_type:
@@ -56,6 +58,7 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
         stream_types = []
         stream_signed = ""
         stream_info[func_name] = []
+        extra_stream_info[func_name] = {}
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
@@ -72,6 +75,8 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                     and predicate_tag == s.func_instances[prefix][ids]
                 ):
                     stream_info[func_name_] = []
+                    if with_extra_info:
+                        extra_stream_info[func_name_] = {}
                     new_func_args[func_name_] = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
@@ -110,8 +115,12 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                                     rargs.append(val.value)
                                 loops.append((name_attr.name, range(*rargs)))
 
-                            def eval_stream(symbol_map):
-                                slice_ = eval(symbolic_name, symbol_map)
+                            def eval_stream(symbol_map_):
+                                iter_map = {}
+                                for k, v in symbol_map_.items():
+                                    if k not in pid_map:
+                                        iter_map[k] = v
+                                slice_ = eval(symbolic_name, symbol_map_)
                                 if isinstance(slice_, int):
                                     slice_ = tuple([slice_])
                                 parts = stream_name.rsplit("_", len(slice_))[
@@ -128,15 +137,17 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                                 stream_info[func_name_].append(
                                     (stream_name_, direction)
                                 )
+                                if with_extra_info:
+                                    extra_stream_info[func_name_][stream_name_] = iter_map
                                 new_func_args[func_name_][-1].append(stream_name_)
 
                             if len(loops) == 0:
                                 eval_stream(pid_map)
                             else:
-                                iter_symbol_map = pid_map.copy()
                                 for combo in itertools.product(
                                     *[rng for _, rng in loops]
                                 ):
+                                    iter_symbol_map = pid_map.copy()
                                     for (name, _), val in zip(loops, combo):
                                         iter_symbol_map[name] = val
                                     eval_stream(iter_symbol_map)
@@ -188,6 +199,8 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
             func.operation.erase()
     s.func_args = new_func_args
     if with_stream_type:
+        if with_extra_info:
+            return stream_info, stream_types_dict, extra_stream_info
         return stream_info, stream_types_dict
     return stream_info
 
@@ -394,8 +407,8 @@ def build(
         s: Schedule = _customize(
             func, global_vars=global_vars, enable_tensor=False, unroll=False
         )
-        stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True, unroll=False
+        stream_info, stream_types_dict, extra_stream_info = move_stream_to_interface(
+            s, with_stream_type=True, with_extra_info=True, unroll=False
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
@@ -410,6 +423,7 @@ def build(
             stream_types_dict,
             s.ext_libs,
             s.func_instances,
+            extra_stream_info=extra_stream_info
         )
         if device_type is None:
             if os.getenv("NPU2") == "1":

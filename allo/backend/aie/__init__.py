@@ -73,6 +73,7 @@ class AIE_MLIRModule:
         stream_types_dict: dict[str, Type],
         ext_libs: list = None,
         func_instances: dict = None,
+        extra_stream_info: dict = None,
     ):
         """
         Note: the module is data-driven,
@@ -98,7 +99,9 @@ class AIE_MLIRModule:
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(
+            stream_info, stream_types_dict, extra_stream_info
+        )
 
         # index in top function argument list -> DTensor
         self.global_tensors: dict[int, DTensor] = None
@@ -143,7 +146,12 @@ class AIE_MLIRModule:
                 else:
                     raise ValueError(f"Unresolved function argument {arg}")
 
-    def _init_streams(self, stream_info: dict, stream_types_dict: dict[str, Type]):
+    def _init_streams(
+        self,
+        stream_info: dict,
+        stream_types_dict: dict[str, Type],
+        extra_stream_info: dict,
+    ):
         """
         Collect allo.stream information for each function.
         """
@@ -156,9 +164,17 @@ class AIE_MLIRModule:
                 if io == "in":
                     self.streams[name].dst = func_name
                     self.stream_info[func_name][name] = True
+                    if extra_stream_info is not None:
+                        self.streams[name].dst_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+                    if extra_stream_info is not None:
+                        self.streams[name].src_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
         edge_map = {src: set() for src in stream_info.keys()}
         for stream in self.streams.values():
             edge_map[stream.src].add(stream.dst)

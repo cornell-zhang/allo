@@ -115,6 +115,10 @@ class Stream:
         self.src: str = None  # source tile of the stream
         self.dst: str = None  # destination tile of the stream
 
+        # used to 'select' the right stream in a regular for loop
+        self.src_related_iter_info = None
+        self.dst_related_iter_info = None
+
         # layout transform on stream
         self.src_layout_transform: tuple[list[int], list[int], list[int], str] = None
         self.dst_layout_transform: tuple[list[int], list[int], list[int], str] = None
