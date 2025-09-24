@@ -812,5 +812,79 @@ def test_dsl_broadcast_binary_ops():
     np.testing.assert_allclose(np_B_2, 50 - 2 * (3 + 10 // np_A))
 
 
+def test_scope():
+    # kernel1: declare local variable r outside the if/else
+    def kernel1(a: int32) -> int32:
+        r: int32 = 0
+        if a == 0:
+            r = 1
+        else:
+            r = 4
+        return r
+
+    s = allo.customize(kernel1)
+    mod = s.build()
+    assert mod(0) == kernel1(0)
+    assert mod(1) == kernel1(1)
+
+    # kernel2: declare r inside each branch -> invalid scope
+    def kernel2(a: int32) -> int32:
+        if a == 0:
+            r: int32 = 1
+        else:
+            r: int32 = 4
+        return r
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel2)
+
+    def kernel3(a: int32) -> int32:
+        r: int32 = 0
+        if a > 0:
+            t: int32 = 1  # t is local to the if-branch
+            r = r + t
+        return r
+
+    s = allo.customize(kernel3)
+    mod = s.build()
+    assert mod(0) == kernel3(0)
+    assert mod(1) == kernel3(1)
+
+    # kernel4: declare tmp inside loop and used outside the loop-> invalid scope
+    def kernel4(n: int32) -> int32:
+        for i in range(n):
+            tmp: int32 = i
+        return tmp
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel4)
+
+    # case 5: inner loop shadows iterator from outer loop
+    def kernel5(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):  # outer loop, iterator is i
+            for i in range(n):  # inner loop reuses the same name i -> shadowing outer i
+                s = s + i  # here i refers to the inner loop variable
+            s = s + i  # here i refers to the outer loop variable
+        return s
+
+    def kernel5_py(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):
+            for j in range(n):
+                s = s + j
+            s = s + i
+        return s
+
+    s = allo.customize(kernel5)
+    mod = s.build()
+    assert mod(4) == kernel5_py(4)
+    assert mod(8) == kernel5_py(8)
+    s = allo.customize(kernel5_py)
+    mod = s.build()
+    assert mod(4) == kernel5_py(4)
+    assert mod(8) == kernel5_py(8)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
