@@ -119,18 +119,6 @@ def _test_scatter():
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
-    # mod_v3 = df.build(
-    #     top,
-    #     target="aie",
-    #     mapping_primitives=[
-    #         ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
-    #         ("chain", ["prod_0", "core_0x4"]),
-    #     ],
-    # )
-    # mod_v3(A, B)
-    # np.testing.assert_allclose(B, A + 1)
-    # print("PASSED!")
-
 
 if __name__ == "__main__":
     _test_vector_scalar_add()
