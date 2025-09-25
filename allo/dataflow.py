@@ -44,7 +44,12 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, with_extra_info: bool = False, unroll=True):
+def move_stream_to_interface(
+    s: Schedule,
+    with_stream_type: bool = False,
+    with_extra_info: bool = False,
+    unroll=True,
+):
     stream_info = {}
     if with_extra_info:
         extra_stream_info = {}
@@ -58,7 +63,8 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, with_e
         stream_types = []
         stream_signed = ""
         stream_info[func_name] = []
-        extra_stream_info[func_name] = {}
+        if with_extra_info:
+            extra_stream_info[func_name] = {}
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
@@ -138,7 +144,9 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, with_e
                                     (stream_name_, direction)
                                 )
                                 if with_extra_info:
-                                    extra_stream_info[func_name_][stream_name_] = iter_map
+                                    extra_stream_info[func_name_][
+                                        stream_name_
+                                    ] = iter_map
                                 new_func_args[func_name_][-1].append(stream_name_)
 
                             if len(loops) == 0:
@@ -423,7 +431,7 @@ def build(
             stream_types_dict,
             s.ext_libs,
             s.func_instances,
-            extra_stream_info=extra_stream_info
+            extra_stream_info=extra_stream_info,
         )
         if device_type is None:
             if os.getenv("NPU2") == "1":

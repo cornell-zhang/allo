@@ -164,14 +164,20 @@ class AIE_MLIRModule:
                 if io == "in":
                     self.streams[name].dst = func_name
                     self.stream_info[func_name][name] = True
-                    if extra_stream_info is not None:
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
                         self.streams[name].dst_related_iter_info = extra_stream_info[
                             func_name
                         ][name]
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
-                    if extra_stream_info is not None:
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
                         self.streams[name].src_related_iter_info = extra_stream_info[
                             func_name
                         ][name]
@@ -725,7 +731,7 @@ class AIE_MLIRModule:
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops,lower-affine",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
