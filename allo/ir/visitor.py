@@ -7,6 +7,17 @@ from .._mlir import InsertionPoint
 from .._mlir.dialects import allo as allo_d
 
 
+class BlockScopeGuard:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        self.ctx.scopes.append({})
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ctx.scopes.pop()
+
+
 class LoopScopeGuard:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -163,11 +174,8 @@ class ASTContext:
                     names.add(k)
         return names
 
-    def enter_scope(self):
-        self.scopes.append({})
-
-    def exit_scope(self):
-        self.scopes.pop()
+    def block_scope_guard(self):
+        return BlockScopeGuard(self)
 
     def loop_scope_guard(self):
         return LoopScopeGuard(self)
@@ -374,7 +382,7 @@ def get_symbolic_expr(expr_node, mapping, var_map, variables) -> str:
         - mapping:dict[str,str], the symbolic map (name in AST -> symbol)
         - var_map: name in AST -> value
     """
-    processor = ReplaceNames(mapping, var_map, variables)
-    new_tree = processor.visit(expr_node)
+    node_transformer = ReplaceNames(mapping, var_map, variables)
+    new_tree = node_transformer.visit(expr_node)
     ast.fix_missing_locations(new_tree)
-    return ast.unparse(new_tree), processor.special_symbol
+    return ast.unparse(new_tree), node_transformer.special_symbol

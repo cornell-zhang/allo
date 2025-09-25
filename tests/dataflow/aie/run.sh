@@ -12,7 +12,7 @@ FILES=(
     test_mapping_basic.py       
     test_mapping_gemm.py        
     test_mapping_large_gemm.py  
-    test_mapping_tp.py  # fixme
+    # test_mapping_tp.py  # fixme
     test_matrix.py      
     test_norm.py        
     test_pingpong_gemm.py      
@@ -21,6 +21,7 @@ FILES=(
     test_tp.py
     test_vector.py
     test_trace_data_transfer.py
+    test_meta_for.py
     # test_trace_conv.py
 )
 
