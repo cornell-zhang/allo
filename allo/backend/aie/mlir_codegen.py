@@ -360,7 +360,6 @@ class CodeGenerator:
                                             old.replace_all_uses_with(new)
                                 fifo.release(0 if is_put else 1, 1)
                             else:
-                                # fixme: put not verified
                                 assert len(loop_nests) == 1, "To be implemented..."
                                 loop_name = list(loop_nests.keys())[0]
                                 cases = []
