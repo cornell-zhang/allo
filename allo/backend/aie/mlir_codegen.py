@@ -15,7 +15,6 @@ import aie.dialects.aiex as aiex_d
 import aie.dialects.arith as aie_arith_d
 import aie.dialects.func as aie_func_d
 import aie.dialects.scf as aie_scf_d
-import aie.dialects.affine as aie_affine_d
 import aie.ir as aie_ir
 
 # =======================
@@ -153,7 +152,7 @@ class CodeGenerator:
                         new_func_inputs.append(sample_stream.allo_element_type)
                         func_inputs[idx] = sample_stream.allo_element_type
                         continue
-                    elif func_args[idx][0].dtensor is not None:
+                    if func_args[idx][0].dtensor is not None:
                         new_func_inputs.append(func_inputs[idx])
                         continue
                 else:

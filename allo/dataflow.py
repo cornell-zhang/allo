@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks, too-many-branches
 
 import functools
 import itertools
@@ -121,15 +121,22 @@ def move_stream_to_interface(
                                     rargs.append(val.value)
                                 loops.append((name_attr.name, range(*rargs)))
 
-                            def eval_stream(symbol_map_):
+                            def eval_stream(
+                                symbol_map_,
+                                pid_map_,
+                                symbolic_name_,
+                                org_stream_name,
+                                op_,
+                                arg_idx_,
+                            ):
                                 iter_map = {}
                                 for k, v in symbol_map_.items():
-                                    if k not in pid_map:
+                                    if k not in pid_map_:
                                         iter_map[k] = v
-                                slice_ = eval(symbolic_name, symbol_map_)
+                                slice_ = eval(symbolic_name_, symbol_map_)
                                 if isinstance(slice_, int):
                                     slice_ = tuple([slice_])
-                                parts = stream_name.rsplit("_", len(slice_))[
+                                parts = org_stream_name.rsplit("_", len(slice_))[
                                     : -len(slice_)
                                 ]
                                 stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
@@ -137,8 +144,8 @@ def move_stream_to_interface(
                                     with_stream_type
                                     and stream_name_ not in stream_types_dict
                                 ):
-                                    stream_types_dict[stream_name_] = op.result.type
-                                if len(new_func_args[func_name_]) == arg_idx:
+                                    stream_types_dict[stream_name_] = op_.result.type
+                                if len(new_func_args[func_name_]) == arg_idx_:
                                     new_func_args[func_name_].append([])
                                 stream_info[func_name_].append(
                                     (stream_name_, direction)
@@ -150,7 +157,14 @@ def move_stream_to_interface(
                                 new_func_args[func_name_][-1].append(stream_name_)
 
                             if len(loops) == 0:
-                                eval_stream(pid_map)
+                                eval_stream(
+                                    pid_map,
+                                    pid_map_=pid_map,
+                                    symbolic_name_=symbolic_name,
+                                    org_stream_name=stream_name,
+                                    op_=op,
+                                    arg_idx_=arg_idx,
+                                )
                             else:
                                 for combo in itertools.product(
                                     *[rng for _, rng in loops]
@@ -158,7 +172,14 @@ def move_stream_to_interface(
                                     iter_symbol_map = pid_map.copy()
                                     for (name, _), val in zip(loops, combo):
                                         iter_symbol_map[name] = val
-                                    eval_stream(iter_symbol_map)
+                                    eval_stream(
+                                        iter_symbol_map,
+                                        pid_map_=pid_map,
+                                        symbolic_name_=symbolic_name,
+                                        org_stream_name=stream_name,
+                                        op_=op,
+                                        arg_idx_=arg_idx,
+                                    )
 
         # create new func to update arguments
         in_types += stream_types

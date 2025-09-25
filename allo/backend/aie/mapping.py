@@ -648,22 +648,19 @@ class ComputationGraph:
                 self.dependencies[bundled_node.meta_data.name].add(stream.src)
         # update nodes and remove bundled function
         for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            assert isinstance(arg[0], Argument) or len(arg[0]) == 1, "TODO (Shihan)"
-            arg_info_ = arg[0] if isinstance(arg[0], Argument) else arg[0][0]
-            if arg_info_.stream is not None:
+            if isinstance(arg[0], Argument):
+                if arg[0].stream is not None:
+                    for name in node_name_list:
+                        if name != sample_node.meta_data.name:
+                            self.edges.pop(self.func_args[name][idx][0].stream.name)
+                        self.func_args[name][idx][0].stream.name = arg[0].stream.name
+            else:
+                # stream list
                 for name in node_name_list:
-                    assert (
-                        isinstance(self.func_args[name][idx][0], Argument)
-                        or len(self.func_args[name][idx][0]) == 1
-                    ), "TODO (Shihan)"
-                    arg_ = (
-                        self.func_args[name][idx][0]
-                        if isinstance(self.func_args[name][idx][0], Argument)
-                        else self.func_args[name][idx][0][0]
-                    )
-                    if name != sample_node.meta_data.name:
-                        self.edges.pop(arg_.stream.name)
-                    arg_.stream.name = arg_info_.stream.name
+                    for arg_idx, stream_arg in enumerate(self.func_args[name][idx][0]):
+                        if name != sample_node.meta_data.name:
+                            self.edges.pop(stream_arg.stream.name)
+                        stream_arg.stream.name = arg[0][arg_idx].stream.name
         self.func_args[bundled_node.meta_data.name] = self.func_args[
             sample_node.meta_data.name
         ]
@@ -706,9 +703,13 @@ class ComputationGraph:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
                 for idx, arg_info in param_a.items():
+                    stream_names = set()
+                    if isinstance(arg_info[0], list):
+                        for stream_arg in arg_info[0]:
+                            stream_names.add(stream_arg.stream.name)
                     assert (
-                        isinstance(arg_info[0], Argument) or len(arg_info[0]) == 1
-                    ), "TODO (Shihan)"
+                        isinstance(arg_info[0], Argument) or len(stream_names) == 1
+                    ), "TODO..."
                     arg_info_ = (
                         arg_info[0]
                         if isinstance(arg_info[0], Argument)
@@ -718,9 +719,13 @@ class ComputationGraph:
                         idx_a = idx
                         break
                 for idx, arg_info in param_b.items():
+                    stream_names = set()
+                    if isinstance(arg_info[0], list):
+                        for stream_arg in arg_info[0]:
+                            stream_names.add(stream_arg.stream.name)
                     assert (
-                        isinstance(arg_info[0], Argument) or len(arg_info[0]) == 1
-                    ), "TODO (Shihan)"
+                        isinstance(arg_info[0], Argument) or len(stream_names) == 1
+                    ), "TODO..."
                     arg_info_ = (
                         arg_info[0]
                         if isinstance(arg_info[0], Argument)
@@ -881,7 +886,7 @@ class ComputationGraph:
                         for i in range(len(stream_puts)):
                             stream_put: allo_d.StreamPutOp = stream_puts[i]
                             stream_get: allo_d.StreamGetOp = stream_gets[i]
-                            # TODO: support bufferize stream in branches or even loops
+                            # TODO: support bufferize stream across regions
                             if stream_put.parent is stream_get.parent:
                                 put_value = stream_put.operands[-1]
                                 get_result = stream_get.result
