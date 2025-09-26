@@ -916,12 +916,12 @@ class ComputationGraph:
                                 put_in_loop = (
                                     stream_put.parent is not None
                                     and stream_put.parent.name
-                                    in ("scf.for", "affine.for")
+                                    in {"scf.for", "affine.for"}
                                 )
                                 get_in_loop = (
                                     stream_get.parent is not None
                                     and stream_get.parent.name
-                                    in ("scf.for", "affine.for")
+                                    in {"scf.for", "affine.for"}
                                 )
                                 if (
                                     put_in_loop

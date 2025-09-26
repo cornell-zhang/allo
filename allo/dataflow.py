@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks, too-many-branches
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
 
 import functools
 import itertools
@@ -44,6 +44,7 @@ def array(element, shape):
     return Array(element, shape)
 
 
+# pylint: disable=eval-used, bad-builtin, too-many-branches, too-many-nested-blocks
 def move_stream_to_interface(
     s: Schedule,
     with_stream_type: bool = False,
@@ -408,6 +409,7 @@ def customize(func, opt_default=True, enable_tensor=False):
     return s
 
 
+# pylint: disable=too-many-arguments
 def build(
     func,
     target="vitis_hls",
