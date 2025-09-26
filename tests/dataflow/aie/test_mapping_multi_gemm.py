@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import allo
 from allo.ir.types import int8, int16, bfloat16
 import allo.dataflow as df
@@ -134,9 +135,16 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
 
 if __name__ == "__main__":
+    dma_opt_flag = os.getenv("ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH") == "1"
+    if dma_opt_flag:
+        os.environ["FACTOR"] = "2"
+
     _test_batched_gemm(512, 512, 512, 8, 8, 8, int16, int16)
     _test_batched_gemm(512, 512, 512, 8, 8, 8, int8, int8)
     try:
         _test_batched_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")
+
+    if dma_opt_flag:
+        del os.environ["FACTOR"]

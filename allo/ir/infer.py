@@ -5,6 +5,7 @@
 import ast
 import copy
 import sys
+import os
 import traceback
 import inspect
 import textwrap
@@ -858,6 +859,15 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, loops_to_unroll = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
+                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
                     val = ctx.get_symbol(vid)
                     node.func.value.shape = val.dtype.shape
                     node.func.value.dtype = val.dtype.dtype
@@ -867,6 +877,15 @@ class TypeInferer(ASTVisitor):
                         if isinstance(node.func.value, ast.Name)
                         else node.func.value.value.id
                     )
+                    if isinstance(node.func.value, ast.Subscript):
+                        _, loops_to_unroll = get_symbolic_expr(
+                            copy.deepcopy(node.func.value.slice),
+                            ctx.symbolic,
+                            ctx.global_vars,
+                            ctx.get_alive_var_names(),
+                        )
+                        if os.getenv("FORCE_UNROLL_INDEX") == "1":
+                            ctx.meta_fors_to_unroll.update(loops_to_unroll)
                     # return value
                     val = ctx.get_symbol(vid)
                     node.shape = val.dtype.shape
@@ -1176,12 +1195,13 @@ class TypeInferer(ASTVisitor):
         # Compile-time comparison
         if node.items[0].context_expr.func.attr in {"meta_if", "meta_elif"}:
             cond = ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
-            symbolic_cond, _ = get_symbolic_expr(
+            symbolic_cond, loops_to_unroll = get_symbolic_expr(
                 copy.deepcopy(node.items[0].context_expr.args[0]),
                 ctx.symbolic,
                 ctx.global_vars,
                 ctx.get_alive_var_names(),
             )
+            ctx.meta_fors_to_unroll.update(loops_to_unroll)
             if node.items[0].context_expr.func.attr == "meta_if":
                 final_cond = cond
                 if len(ctx.meta_if_stack) > ctx.with_scope_level:
@@ -1250,6 +1270,8 @@ class TypeInferer(ASTVisitor):
                     visit_stmts(ctx, node.body)
                 ctx.global_vars.pop(var)
                 ctx.symbolic.pop(var)
+                if not ctx.unroll and node not in ctx.meta_fors_to_unroll:
+                    break
             node.dtype = None
             node.shape = None
             return node

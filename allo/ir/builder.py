@@ -23,6 +23,7 @@ from .._mlir.ir import (
     UnitAttr,
     IntegerAttr,
     StringAttr,
+    DictAttr,
     AffineExpr,
     AffineConstantExpr,
     AffineMap,
@@ -2000,17 +2001,25 @@ class ASTTransformer(ASTBuilder):
                         else node.func.value.value.id
                     )
                     symbolic_slice = None
+                    iterator_infos = {}
                     if isinstance(node.func.value, ast.Subscript):
                         # pylint: disable=redefined-builtin
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        symbolic_slice, _ = get_symbolic_expr(
+                        symbolic_slice, iterator_info = get_symbolic_expr(
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
+                        for info in iterator_info:
+                            iterator_infos[info[0]] = ArrayAttr.get(
+                                [
+                                    IntegerAttr.get(IntegerType.get_signless(64), v)
+                                    for v in info[1]
+                                ]
+                            )
                         if isinstance(slice, int):
                             slice = tuple([slice])
                         else:
@@ -2038,6 +2047,7 @@ class ASTTransformer(ASTBuilder):
                         stream.attributes["symbolic_slice"] = StringAttr.get(
                             symbolic_slice
                         )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
                     put_op = allo_d.StreamPutOp(
                         stream.result,
                         [],
@@ -2054,16 +2064,24 @@ class ASTTransformer(ASTBuilder):
                         else node.func.value.value.id
                     )
                     symbolic_slice = None
+                    iterator_infos = {}
                     if isinstance(node.func.value, ast.Subscript):
                         slice = eval(
                             ast.unparse(node.func.value.slice), ctx.global_vars
                         )
-                        symbolic_slice, _ = get_symbolic_expr(
+                        symbolic_slice, iterator_info = get_symbolic_expr(
                             copy.deepcopy(node.func.value.slice),
                             ctx.symbolic,
                             ctx.global_vars,
                             ctx.get_alive_var_names(),
                         )
+                        for info in iterator_info:
+                            iterator_infos[info[0]] = ArrayAttr.get(
+                                [
+                                    IntegerAttr.get(IntegerType.get_signless(64), v)
+                                    for v in info[1]
+                                ]
+                            )
                         if isinstance(slice, int):
                             slice = tuple([slice])
                         else:
@@ -2091,6 +2109,7 @@ class ASTTransformer(ASTBuilder):
                         stream.attributes["symbolic_slice"] = StringAttr.get(
                             symbolic_slice
                         )
+                        stream.attributes["iterators"] = DictAttr.get(iterator_infos)
                     get_op = allo_d.StreamGetOp(
                         node.func.value.dtype.build(),
                         stream.result,
@@ -2834,6 +2853,7 @@ class ASTTransformer(ASTBuilder):
             assert (
                 len(node.items[0].context_expr.args) <= 3
             ), "Only support three arguments (lower, upper bound, and step) for `allo.meta_for()`"
+            var = node.items[0].optional_vars.id
             rargs = [
                 ASTResolver.resolve_constant(node.items[0].context_expr.args[0], ctx)
             ]
@@ -2849,11 +2869,32 @@ class ASTTransformer(ASTBuilder):
                         node.items[0].context_expr.args[2], ctx
                     )
                 )
-            var = node.items[0].optional_vars.id
-            for i in range(*rargs):
-                with ctx.block_scope_guard():
-                    ctx.global_vars[var] = i
-                    build_stmts(ctx, node.body)
+            if ctx.unroll or node in ctx.meta_fors_to_unroll:
+                for i in range(*rargs):
+                    with ctx.block_scope_guard():
+                        ctx.global_vars[var] = i
+                        build_stmts(ctx, node.body)
+                        ctx.global_vars.pop(var)
+            else:
+                # replace with regular for loop to reduce codesize
+                with ctx.loop_scope_guard():
+                    op_name = f"S_{var}_{str(ctx.loop_band_count)}"
+                    for_op = ASTTransformer.build_single_for(
+                        ctx, node.items[0].context_expr.args, op_name, var
+                    )
+                    ctx.global_vars[var] = 0 if len(rargs) == 1 else rargs[0]
+                    ctx.symbolic[var] = (op_name, (op_name, tuple(rargs)))
+                    is_affine = isinstance(for_op, affine_d.AffineForOp)
+                    with ctx.block_scope_guard():
+                        ctx.put_symbol(
+                            name=var,
+                            val=MockArg(for_op.induction_variable, is_affine),
+                            tag="placeholder",
+                        )
+                        ctx.set_ip(for_op.body.operations[0])
+                        build_stmts(ctx, node.body)
+                    gc.collect()
+                    ctx.pop_ip()
                     ctx.global_vars.pop(var)
             return
         else:
