@@ -1281,7 +1281,7 @@ def customize(
         inst=instantiate,
         func_predicate_tags=ctx_type_inf.func_predicate_tags,
         unroll=unroll,
-        must_unrolled_meta_for=ctx_type_inf.must_unrolled_meta_for,
+        meta_fors_to_unroll=ctx_type_inf.meta_fors_to_unroll,
         enable_tensor=enable_tensor,
         verbose=verbose,
     )
