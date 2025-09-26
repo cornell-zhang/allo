@@ -2869,7 +2869,7 @@ class ASTTransformer(ASTBuilder):
                         node.items[0].context_expr.args[2], ctx
                     )
                 )
-            if ctx.unroll or node in ctx.must_unrolled_meta_for:
+            if ctx.unroll or node in ctx.meta_fors_to_unroll:
                 for i in range(*rargs):
                     with ctx.block_scope_guard():
                         ctx.global_vars[var] = i
@@ -2878,7 +2878,6 @@ class ASTTransformer(ASTBuilder):
             else:
                 # replace with regular for loop to reduce codesize
                 with ctx.loop_scope_guard():
-                    # "op_name": f"S_{var}_{str(ctx.loop_band_count)}"
                     op_name = f"S_{var}_{str(ctx.loop_band_count)}"
                     for_op = ASTTransformer.build_single_for(
                         ctx, node.items[0].context_expr.args, op_name, var

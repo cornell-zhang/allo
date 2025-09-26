@@ -54,7 +54,7 @@ class ASTContext:
         func_predicate_tags=None,
         func_tag2instance=None,
         unroll=True,
-        must_unrolled_meta_for=None,
+        meta_fors_to_unroll=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -108,8 +108,9 @@ class ASTContext:
         self.predicate_stack = [self.predicate_list[1]]
         # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
-        self.must_unrolled_meta_for = (
-            set() if must_unrolled_meta_for is None else must_unrolled_meta_for
+        # a set of `meta_for` loops that must be unrolled
+        self.meta_fors_to_unroll = (
+            set() if meta_fors_to_unroll is None else meta_fors_to_unroll
         )
         self.has_return = False
         # used for tensor mapping
@@ -136,7 +137,7 @@ class ASTContext:
         ctx.ext_libs = self.ext_libs
         ctx.rank = self.rank
         ctx.mapping = self.mapping
-        ctx.must_unrolled_meta_for = self.must_unrolled_meta_for
+        ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
         return ctx
 
     def set_ip(self, ip):
