@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type, consider-using-enumerate, too-many-instance-attributes, chained-comparison, cell-var-from-loop, unsupported-binary-operation
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-branches, too-many-nested-blocks, redefined-variable-type, consider-using-enumerate, too-many-instance-attributes, chained-comparison, cell-var-from-loop
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -122,6 +122,7 @@ class CodeGenerator:
             None  # mark the inserting point for buffers
         )
 
+    # pylint: disable=unsupported-binary-operation
     def preporocess_dumped_core_func(
         self,
         original_func: allo_func_d.FuncOp,

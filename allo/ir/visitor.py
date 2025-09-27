@@ -152,12 +152,43 @@ class ASTContext:
         return self.ip_stack.pop()
 
     def put_symbol(self, name, val, tag=None):
+        """
+        Insert a variable name, value pair into the current scope.
+
+        Args:
+            - name (str): The variable name.
+            - val (Any): The value associated with the variable.
+            - tag (str, optional): An optional tag for special use.
+                - If None, the variable is treated as a normal local variable.
+                - If not None, the (val, tag) tuple is stored. The tag is used
+                to distinguish cases where the same variable can have dual roles
+                (e.g., both as a local variable and as a symbolic placeholder).
+
+        Example:
+            # Put a normal variable
+            ctx.put_symbol(name=dtensor.name, val=MockArg(arg, idx=i))
+
+            # Put a placeholder variable (used as normal variable and a symbol in symbolic stream index resolution)
+            ctx.put_symbol(
+                name=var,
+                val=MockArg(for_op.induction_variable, is_affine),
+                tag="placeholder",
+            )
+        """
         if tag is None:
             self.scopes[-1][name] = val
         else:
             self.scopes[-1][name] = (val, tag)
 
     def get_symbol(self, name, allow_missing=False):
+        """
+        Get the value of a symbol from the current scope chain.
+
+        Args:
+            - name (str): The variable name to look up.
+            - allow_missing (bool): If True, return None when the symbol
+                does not exist. Otherwise, raise an error.
+        """
         for scope in reversed(self.scopes):
             if name in scope:
                 if isinstance(scope[name], tuple):

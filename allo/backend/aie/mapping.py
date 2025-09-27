@@ -944,9 +944,7 @@ class ComputationGraph:
                                         stream_get.erase()
                                         continue
                                 # TODO: support bufferize stream across regions
-                                raise RuntimeError(
-                                    "TODO: support more patterns for bufferizing stream across regions"
-                                )
+                                raise RuntimeError("TODO")
         # Step4: Clean up unused functions
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
