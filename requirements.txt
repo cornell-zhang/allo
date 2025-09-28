@@ -19,4 +19,5 @@ rich
 ml_dtypes
 gurobipy
 pyparsing
+graphviz
 past @ https://github.com/cornell-zhang/past-python-bindings/releases/download/65f989b/past-0.7.2-cp312-cp312-linux_x86_64.whl
