@@ -28,11 +28,11 @@ def _test_vector_scalar_add():
     print("PASSED!")
 
 
-def _test_split_k_gemm_1x1x4():
+def _test_gather():
 
     Ty = int16
     M, N, K = 32, 32, 64
-    Pk = 4
+    Pk = 2
 
     LyA = Layout("RS0")
     LyB = Layout("S0R")
@@ -53,7 +53,15 @@ def _test_split_k_gemm_1x1x4():
                 C_[:, :] += pipe[i].get()
             C[:, :] = C_
 
-    mod = df.build(
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int16)
+    mod_v1 = df.build(top, target="aie")
+    mod_v1(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
+
+    mod_v2 = df.build(
         top,
         target="aie",
         mapping_primitives=[
@@ -62,20 +70,69 @@ def _test_split_k_gemm_1x1x4():
                 [
                     "partial_gemm_0",
                     "partial_gemm_1",
-                    "partial_gemm_2",
-                    "partial_gemm_3",
                 ],
             ),
         ],
     )
-    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
-    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
-    C = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, C)
+    mod_v2(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
 
+def _test_scatter():
+    Ty = int32
+    M = 1024
+    P = 4
+    Ly = Layout("S0")
+
+    @df.region()
+    def top():
+        pipe = df.array(df.pipe(dtype=Ty, shape=(M // P,), depth=2), shape=(P,))
+
+        @df.kernel(mapping=[1])
+        def prod():
+            Acc: Ty[M // P] = 1
+            with allo.meta_for(P) as i:
+                pipe[i].put(Acc)
+
+        @df.kernel(mapping=[P])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            pk = df.get_pid()
+            B[:] = allo.add(A, pipe[pk].get())
+
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.zeros(M).astype(np.int32)
+
+    mod_v1 = df.build(top, target="aie")
+    mod_v1(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+    mod_v2 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+        ],
+    )
+    mod_v2(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+    mod_v3 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+            ("chain", ["prod_0", "core_0x4"]),
+        ],
+    )
+    mod_v3(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
-    # _test_vector_scalar_add()
-    _test_split_k_gemm_1x1x4()
+    _test_vector_scalar_add()
+    _test_gather()
+    _test_scatter()
