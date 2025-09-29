@@ -9,7 +9,6 @@ import allo.dataflow as df
 from allo.memory import Layout
 
 
-# [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/
 def _test_gemm_1D():
     TyI = int4
     TyO = int8
@@ -160,10 +159,11 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: TyI[M, K] @ LyA, B: TyI_l[K, N] @ LyB, C: TyO[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: TyO[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: TyO[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: TyO[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: TyO[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)
@@ -189,8 +189,14 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
 
 if __name__ == "__main__":
+    # [NOTE]: export ALLO_EXTERNAL_KERNEL_DIR=/allo/root/dir/allo/library/aie/
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+
     _test_gemm_1D()
     _test_gemm_2D()
     _test_mixed_gemm_1D()
     _test_mixed_gemm_2D()
     _test_pingpong_mixed_gemm(512, 512, 512, 8, 4, 4)
+
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]

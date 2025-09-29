@@ -404,12 +404,15 @@ class AIE_MLIRModule:
                                 call_matmul_op.attributes["lib"].value
                             ]
                         )
+                        kernel_code = scalar_kernel.kernel_code.replace(
+                            "matmul_scalar_", "matmul_vectorized_"
+                        )
                         self.injected_external_kernels[vectorized_kernel_name] = (
                             ExternalModuleBase(
                                 vectorized_kernel_name,
                                 scalar_kernel.input_idx,
                                 scalar_kernel.output_idx,
-                                scalar_kernel.kernel_code,
+                                kernel_code,
                                 scalar_kernel.kernel_header,
                             )
                         )

@@ -9,6 +9,7 @@ PYTHON=python3
 FILES=(
     test_cannon.py                   
     test_gemm_temporal_reduction.py  
+    test_low_bit_gemm.py
     test_mapping_basic.py       
     test_mapping_gemm.py        
     test_mapping_large_gemm.py  

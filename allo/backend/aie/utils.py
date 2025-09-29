@@ -275,15 +275,31 @@ external_kernel_aie2c_type = {
 #   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
 #   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
 matmul_external_kernel_config_map = {
-    ("i4", "i8"): {"aie2": (4, 16, 8)},
+    ("i4", "i8"): {"ctype": ("int8", "int8"), "aie2": (4, 16, 8)},
     ("i8", "i4", "i8"): {"aie2": (4, 16, 8)},  # i8xi4 -> i8
-    ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i16", "i16"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
-    ("i16", "i32"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
-    ("bf16", "bf16"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
-    ("bf16", "f32"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
+    ("i8", "i8"): {"ctype": ("int8", "int8"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i16"): {"ctype": ("int8", "int16"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i32"): {"ctype": ("int8", "int32"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i16", "i16"): {
+        "ctype": ("int16", "int16"),
+        "aie2": (4, 4, 4),
+        "aie2p": (4, 4, 8),
+    },
+    ("i16", "i32"): {
+        "ctype": ("int16", "int32"),
+        "aie2": (4, 4, 4),
+        "aie2p": (4, 4, 8),
+    },
+    ("bf16", "bf16"): {
+        "ctype": ("bfloat16", "bfloat16"),
+        "aie2": (4, 8, 4),
+        "aie2p": (8, 8, 8),
+    },
+    ("bf16", "f32"): {
+        "ctype": ("bfloat16", "bfloat"),
+        "aie2": (4, 8, 4),
+        "aie2p": (8, 8, 8),
+    },
 }
 
 
@@ -406,24 +422,29 @@ def inject_external_kernels(
                         replace_casting = True
                 if dtype_a == dtype_b:
                     if (dtype_a, out_dtype) in matmul_external_kernel_config_map:
-                        if dtype_a == "i4":
-                            include_src.add('#include "mmi4.cc"\n')
-                        else:
-                            include_src.add('#include "mm.cc"\n')
+                        include_src.add('#include "mm.cc"\n')
                         use_external_kernels[df_function_tag] = True
-                        kernel_header += f"#define DIM_M {M}\n"
-                        kernel_header += f"#define DIM_N {N}\n"
-                        kernel_header += f"#define DIM_K {K}\n"
-                        kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
                         input_idx.extend([0, 1])
                         output_idx.append(2)
-                        path = os.environ.get("MY_MM_KERNEL_PATH")
-                        if path is None:
+                        path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
+                        if path is None or lib_dir != "aie2":
+                            kernel_header += f"#define DIM_M {M}\n"
+                            kernel_header += f"#define DIM_N {N}\n"
+                            kernel_header += f"#define DIM_K {K}\n"
+                            kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
                             kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
                         else:
                             kernel_name = (
-                                f"matmul_scalar_{dtype}_{out_dtype}_{M}x{K}x{N}"
+                                f"matmul_scalar_{dtype_a}_{out_dtype}_{M}x{K}x{N}"
                             )
+                            ctype = matmul_external_kernel_config_map[
+                                (dtype_a, out_dtype)
+                            ]["ctype"]
+                            m, k, n = matmul_external_kernel_config_map[
+                                (dtype_a, out_dtype)
+                            ][lib_dir]
+                            # scalar version
+                            kernel_code += f"matmul_scalar_c_func({ctype[0]}, {dtype_a}, {ctype[1]}, {out_dtype}, {m}, {k}, {n}, {M}, {K}, {N})\n\n"
                         call_builtin = True
                         if not replace_casting:
                             operands = [
@@ -493,7 +514,8 @@ def inject_external_kernels(
                             for use in op.outputs[0].uses:
                                 use.owner.erase()
                 elif dtype_a == "i8" and dtype_b == "i4":
-                    include_src.add('#include "mmi4.cc"\n')
+                    print("!!!!!")
+                    include_src.add('#include "mixed_mm.cc"\n')
                     use_external_kernels[df_function_tag] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
@@ -641,38 +663,30 @@ def codegen_external_kernels(
     # [NOTE]: include too much may lead to 'Overflow of program memory'
     kernel_file_code = ""
     for src in include_src:
-        if "mm.cc" in src:  # this file is too large to be included
-            # with open(
-            #     os.path.expandvars(f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"),
-            #     "r",
-            #     encoding="utf-8",
-            # ) as f:
-            #     mm_kernel = f.read()
-            #     pattern = r'#include\s+"zero\.cc"'
-            #     mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
-            #     kernel_file_code += mm_kernel
-            path = os.environ.get("MY_MM_KERNEL_PATH")
-            if path is None:
+        if "mixed_mm.cc" in src:
+            with open(
+                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/mixed_mm.cc"),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                mm_kernel = f.read()
+                kernel_file_code += mm_kernel
+        elif "mm.cc" in src:  # this file is too large to be included
+            path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
+            if path is None or lib_dir != "aie2":
                 path = os.path.expandvars(
                     f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"
                 )
-            with open(
-                path,
-                "r",
-                encoding="utf-8",
-            ) as f:
-                mm_kernel = f.read()
-                pattern = r'#include\s+"zero\.cc"'
-                mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
-                kernel_file_code += mm_kernel
-        elif "mmi4.cc" in src:
-            with open(
-                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
-                "r",
-                encoding="utf-8",
-            ) as f:
-                mm_kernel = f.read()
-                kernel_file_code += mm_kernel
+                with open(path, "r", encoding="utf-8") as f:
+                    mm_kernel = f.read()
+                    pattern = r'#include\s+"zero\.cc"'
+                    mm_kernel = re.sub(
+                        pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel
+                    )
+            else:
+                with open(f"{path}/mm.cc", "r", encoding="utf-8") as f:
+                    mm_kernel = f.read()
+            kernel_file_code += mm_kernel
         else:
             code += src
 
@@ -681,11 +695,12 @@ def codegen_external_kernels(
         code += kernel.kernel_header
         kernel_code += kernel.kernel_code
 
+    code += kernel_file_code
+
     code += '\nextern "C" {\n\n'
     code += kernel_code
     code += '} // extern "C"\n\n'
 
-    code += kernel_file_code
     return code
 
 

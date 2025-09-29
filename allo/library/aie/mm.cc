@@ -37,8 +37,6 @@
 
 #include <aie_api/aie.hpp>
 
-#include "zero.cc"
-
 using int8 = int8_t;
 using int16 = int16_t;
 using int32 = int32_t;
@@ -649,22 +647,17 @@ static inline void matmul_vectorized_4x8x8_i8_i8(const int8 *__restrict pA,
                                     t>(pA, pB, pC);
 }
 
-// int4 (input) x int8 (output) kernel using native 8b x 4b MMUL with shape
-// 4x16x8
+// matmul_vectorized_4x16x8_i4_i8_packedB
+// i8xi4 -> i8
 template <unsigned m, unsigned k, unsigned n>
-static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
-                                                  const int8 *__restrict pB,
-                                                  int8 *__restrict pC) {
+static inline void matmul_vectorized_4x16x8_i4_i8_packedB(
+    const int8 *__restrict pA, const int8 *__restrict pB, int8 *__restrict pC) {
 
-  constexpr int r = 4;
-  constexpr int s = 16;
-  constexpr int t = 8;
-
+  constexpr int r = 4, s = 16, t = 8;
+  using MMUL = aie::mmul<r, s, t, int8, int4, accauto>;
   static_assert(m % (4 * r) == 0);
   static_assert(k % s == 0);
   static_assert(n % (2 * t) == 0);
-
-  using MMUL = aie::mmul<r, s, t, int8, int4, accauto>;
 
   event0();
 
@@ -676,6 +669,7 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
       int8 *__restrict pC4 = pC + ((z + 3) * (n / t) + 0) * MMUL::size_C;
 
       for (unsigned j = 0; j < (n / t); j += 2) {
+        // A pointers are the same as in the original version
         const int8 *__restrict pA1 = pA + (z * (k / s) + 0) * MMUL::size_A;
         const int8 *__restrict pA2 =
             pA + ((z + 1) * (k / s) + 0) * MMUL::size_A;
@@ -684,9 +678,14 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
         const int8 *__restrict pA4 =
             pA + ((z + 3) * (k / s) + 0) * MMUL::size_A;
 
-        const int8 *__restrict pB1 = pB + (0 * (n / t) + j) * MMUL::size_B;
-        const int8 *__restrict pB2 =
-            pB + (0 * (n / t) + (j + 1)) * MMUL::size_B;
+        // Key: B is now tile-major. Each (s×t) tile is a contiguous 64B block
+        // in L1. pB1 points to tile j, pB2 points to tile (j+1); advance by 64B
+        // per K-chunk.
+        const uint8_t *__restrict pB1 = reinterpret_cast<const uint8_t *>(pB) +
+                                        (0 * (n / t) + j) * (MMUL::size_B / 2);
+        const uint8_t *__restrict pB2 =
+            reinterpret_cast<const uint8_t *>(pB) +
+            (0 * (n / t) + (j + 1)) * (MMUL::size_B / 2);
 
         aie::vector<int8, MMUL::size_A> A01 = aie::load_v<MMUL::size_A>(pA1);
         pA1 += MMUL::size_A;
@@ -697,38 +696,26 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
         aie::vector<int8, MMUL::size_A> A31 = aie::load_v<MMUL::size_A>(pA4);
         pA4 += MMUL::size_A;
 
-        aie::vector<int8, MMUL::size_B> B01_u8 = aie::load_v<MMUL::size_B>(pB1);
-        pB1 += (MMUL::size_B * (n / t));
-        aie::vector<int8, MMUL::size_B> B11_u8 = aie::load_v<MMUL::size_B>(pB2);
-        pB2 += (MMUL::size_B * (n / t));
-        aie::vector<int4, MMUL::size_B> B01 = B01_u8.pack();
-        aie::vector<int4, MMUL::size_B> B11 = B11_u8.pack();
+        // === Load a 64B packed tile at once ===
+        aie::vector<uint8_t, s * t / 2> Bp0 = aie::load_v<s * t / 2>(pB1);
+        aie::vector<uint8_t, s * t / 2> Bp1 = aie::load_v<s * t / 2>(pB2);
 
-        aie::vector<int8, MMUL::size_C> acc_C00 =
-            aie::load_v<MMUL::size_C>(pC1);
-        aie::vector<int8, MMUL::size_C> acc_C01 =
-            aie::load_v<MMUL::size_C>(pC1 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C10 =
-            aie::load_v<MMUL::size_C>(pC2);
-        aie::vector<int8, MMUL::size_C> acc_C11 =
-            aie::load_v<MMUL::size_C>(pC2 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C20 =
-            aie::load_v<MMUL::size_C>(pC3);
-        aie::vector<int8, MMUL::size_C> acc_C21 =
-            aie::load_v<MMUL::size_C>(pC3 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C30 =
-            aie::load_v<MMUL::size_C>(pC4);
-        aie::vector<int8, MMUL::size_C> acc_C31 =
-            aie::load_v<MMUL::size_C>(pC4 + MMUL::size_C);
+        // directly vector_cast it to int4
+        auto B01 = aie::vector_cast<int4>(Bp0);
+        auto B11 = aie::vector_cast<int4>(Bp1);
 
-        MMUL C00(acc_C00);
-        MMUL C01(acc_C01);
-        MMUL C10(acc_C10);
-        MMUL C11(acc_C11);
-        MMUL C20(acc_C20);
-        MMUL C21(acc_C21);
-        MMUL C30(acc_C30);
-        MMUL C31(acc_C31);
+        // C path same as the original version
+        auto acc_C00 = aie::load_v<MMUL::size_C>(pC1);
+        auto acc_C01 = aie::load_v<MMUL::size_C>(pC1 + MMUL::size_C);
+        auto acc_C10 = aie::load_v<MMUL::size_C>(pC2);
+        auto acc_C11 = aie::load_v<MMUL::size_C>(pC2 + MMUL::size_C);
+        auto acc_C20 = aie::load_v<MMUL::size_C>(pC3);
+        auto acc_C21 = aie::load_v<MMUL::size_C>(pC3 + MMUL::size_C);
+        auto acc_C30 = aie::load_v<MMUL::size_C>(pC4);
+        auto acc_C31 = aie::load_v<MMUL::size_C>(pC4 + MMUL::size_C);
+
+        MMUL C00(acc_C00), C01(acc_C01), C10(acc_C10), C11(acc_C11);
+        MMUL C20(acc_C20), C21(acc_C21), C30(acc_C30), C31(acc_C31);
 
         C00.mac(A01, B01);
         C01.mac(A01, B11);
@@ -739,7 +726,8 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
         C30.mac(A31, B01);
         C31.mac(A31, B11);
 
-        for (unsigned i = 1; i < (k / s); i += 1) {
+        // Remaining blocks along K
+        for (unsigned i = 1; i < (k / s); ++i) {
           A01 = aie::load_v<MMUL::size_A>(pA1);
           pA1 += MMUL::size_A;
           A11 = aie::load_v<MMUL::size_A>(pA2);
@@ -748,12 +736,157 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
           pA3 += MMUL::size_A;
           A31 = aie::load_v<MMUL::size_A>(pA4);
           pA4 += MMUL::size_A;
-          B01_u8 = aie::load_v<MMUL::size_B>(pB1);
-          pB1 += (MMUL::size_B * (n / t));
-          B11_u8 = aie::load_v<MMUL::size_B>(pB2);
-          pB2 += (MMUL::size_B * (n / t));
-          B01 = B01_u8.pack();
-          B11 = B11_u8.pack();
+
+          pB1 += (MMUL::size_B / 2) * (n / t);
+          ; // next tile along K, step 64B
+          pB2 += (MMUL::size_B / 2) * (n / t);
+          ;
+
+          Bp0 = aie::load_v<s * t / 2>(pB1);
+          Bp1 = aie::load_v<s * t / 2>(pB2);
+
+          B01 = aie::vector_cast<int4>(Bp0);
+          B11 = aie::vector_cast<int4>(Bp1);
+
+          C00.mac(A01, B01);
+          C01.mac(A01, B11);
+          C10.mac(A11, B01);
+          C11.mac(A11, B11);
+          C20.mac(A21, B01);
+          C21.mac(A21, B11);
+          C30.mac(A31, B01);
+          C31.mac(A31, B11);
+        }
+
+        aie::store_v(pC1, C00.template to_vector<int8>());
+        pC1 += MMUL::size_C;
+        aie::store_v(pC1, C01.template to_vector<int8>());
+        pC1 += MMUL::size_C;
+        aie::store_v(pC2, C10.template to_vector<int8>());
+        pC2 += MMUL::size_C;
+        aie::store_v(pC2, C11.template to_vector<int8>());
+        pC2 += MMUL::size_C;
+        aie::store_v(pC3, C20.template to_vector<int8>());
+        pC3 += MMUL::size_C;
+        aie::store_v(pC3, C21.template to_vector<int8>());
+        pC3 += MMUL::size_C;
+        aie::store_v(pC4, C30.template to_vector<int8>());
+        pC4 += MMUL::size_C;
+        aie::store_v(pC4, C31.template to_vector<int8>());
+        pC4 += MMUL::size_C;
+      }
+    }
+  event1();
+}
+
+// i4xi4 -> i8, both A and B are packed
+template <unsigned m, unsigned k, unsigned n>
+static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
+                                                  const int8 *__restrict pB,
+                                                  int8 *__restrict pC) {
+
+  constexpr int r = 4, s = 16, t = 8;
+  using MMUL = aie::mmul<r, s, t, int8, int4, accauto>;
+  static_assert(m % (4 * r) == 0);
+  static_assert(k % s == 0);
+  static_assert(n % (2 * t) == 0);
+
+  event0();
+
+  for (unsigned z = 0; z < (m / r); z += 4)
+    chess_prepare_for_pipelining chess_loop_range(4, ) {
+      int8 *__restrict pC1 = pC + (z * (n / t) + 0) * MMUL::size_C;
+      int8 *__restrict pC2 = pC + ((z + 1) * (n / t) + 0) * MMUL::size_C;
+      int8 *__restrict pC3 = pC + ((z + 2) * (n / t) + 0) * MMUL::size_C;
+      int8 *__restrict pC4 = pC + ((z + 3) * (n / t) + 0) * MMUL::size_C;
+
+      for (unsigned j = 0; j < (n / t); j += 2) {
+        // A pointers are the same as in the original version
+        const int8 *__restrict pA1 =
+            pA + (z * (k / s) + 0) * (MMUL::size_A / 2);
+        const int8 *__restrict pA2 =
+            pA + ((z + 1) * (k / s) + 0) * (MMUL::size_A / 2);
+        const int8 *__restrict pA3 =
+            pA + ((z + 2) * (k / s) + 0) * (MMUL::size_A / 2);
+        const int8 *__restrict pA4 =
+            pA + ((z + 3) * (k / s) + 0) * (MMUL::size_A / 2);
+
+        // Key: B is tile-major. Each (s×t) tile is a contiguous 64B block in
+        // L1. pB1 points to tile j, pB2 points to tile (j+1); advance 64B per
+        // K-chunk.
+        const uint8_t *__restrict pB1 = reinterpret_cast<const uint8_t *>(pB) +
+                                        (0 * (n / t) + j) * (MMUL::size_B / 2);
+        const uint8_t *__restrict pB2 =
+            reinterpret_cast<const uint8_t *>(pB) +
+            (0 * (n / t) + (j + 1)) * (MMUL::size_B / 2);
+
+        // use vector_cast to load (MMUL::size_A / 2) int8 data as
+        // (MMUL::size_A) int4; then unpack() to int8
+        auto A01_i4 = aie::vector_cast<int4>(aie::load_v<r * s / 2>(pA1));
+        aie::vector<int8, MMUL::size_A> A01 = aie::unpack(A01_i4);
+        auto A11_i4 = aie::vector_cast<int4>(aie::load_v<r * s / 2>(pA2));
+        aie::vector<int8, MMUL::size_A> A11 = aie::unpack(A11_i4);
+        auto A21_i4 = aie::vector_cast<int4>(aie::load_v<r * s / 2>(pA3));
+        aie::vector<int8, MMUL::size_A> A21 = aie::unpack(A21_i4);
+        auto A31_i4 = aie::vector_cast<int4>(aie::load_v<r * s / 2>(pA4));
+        aie::vector<int8, MMUL::size_A> A31 = aie::unpack(A31_i4);
+
+        // === Load a 64B packed tile at once ===
+        aie::vector<uint8_t, s * t / 2> Bp0 = aie::load_v<s * t / 2>(pB1);
+        aie::vector<uint8_t, s * t / 2> Bp1 = aie::load_v<s * t / 2>(pB2);
+
+        // directly vector_cast it to int4
+        auto B01 = aie::vector_cast<int4>(Bp0);
+        auto B11 = aie::vector_cast<int4>(Bp1);
+
+        // C path same as the original version
+        auto acc_C00 = aie::load_v<MMUL::size_C>(pC1);
+        auto acc_C01 = aie::load_v<MMUL::size_C>(pC1 + MMUL::size_C);
+        auto acc_C10 = aie::load_v<MMUL::size_C>(pC2);
+        auto acc_C11 = aie::load_v<MMUL::size_C>(pC2 + MMUL::size_C);
+        auto acc_C20 = aie::load_v<MMUL::size_C>(pC3);
+        auto acc_C21 = aie::load_v<MMUL::size_C>(pC3 + MMUL::size_C);
+        auto acc_C30 = aie::load_v<MMUL::size_C>(pC4);
+        auto acc_C31 = aie::load_v<MMUL::size_C>(pC4 + MMUL::size_C);
+
+        MMUL C00(acc_C00), C01(acc_C01), C10(acc_C10), C11(acc_C11);
+        MMUL C20(acc_C20), C21(acc_C21), C30(acc_C30), C31(acc_C31);
+
+        C00.mac(A01, B01);
+        C01.mac(A01, B11);
+        C10.mac(A11, B01);
+        C11.mac(A11, B11);
+        C20.mac(A21, B01);
+        C21.mac(A21, B11);
+        C30.mac(A31, B01);
+        C31.mac(A31, B11);
+
+        // Remaining blocks along K
+        for (unsigned i = 1; i < (k / s); ++i) {
+          pA1 += MMUL::size_A / 2;
+          pA2 += MMUL::size_A / 2;
+          pA3 += MMUL::size_A / 2;
+          pA4 += MMUL::size_A / 2;
+
+          A01_i4 = aie::vector_cast<int4>(aie::load_v<MMUL::size_A / 2>(pA1));
+          A01 = aie::unpack(A01_i4);
+          A11_i4 = aie::vector_cast<int4>(aie::load_v<MMUL::size_A / 2>(pA2));
+          A11 = aie::unpack(A11_i4);
+          A21_i4 = aie::vector_cast<int4>(aie::load_v<MMUL::size_A / 2>(pA3));
+          A21 = aie::unpack(A21_i4);
+          A31_i4 = aie::vector_cast<int4>(aie::load_v<MMUL::size_A / 2>(pA4));
+          A31 = aie::unpack(A31_i4);
+
+          pB1 += (MMUL::size_B / 2) * (n / t);
+          ; // next tile along K, step 64B
+          pB2 += (MMUL::size_B / 2) * (n / t);
+          ;
+
+          Bp0 = aie::load_v<s * t / 2>(pB1);
+          Bp1 = aie::load_v<s * t / 2>(pB2);
+
+          B01 = aie::vector_cast<int4>(Bp0);
+          B11 = aie::vector_cast<int4>(Bp1);
 
           C00.mac(A01, B01);
           C01.mac(A01, B11);
@@ -786,8 +919,6 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
 
   event1();
 }
-
-// (removed legacy 4x8x8 i4 path; use 4x16x8 variant instead)
 
 // int8 MatMul kernel definion with int16 outputs.
 template <unsigned m, unsigned k, unsigned n>
@@ -838,61 +969,6 @@ static inline void matmul_vectorized_4x8x8_i8_i32(const int8 *__restrict pA,
                                     s, t>(pA, pB, pC);
 }
 
-extern "C" {
-
-#ifndef DIM_M
-#define DIM_M 64
-#endif
-
-#ifndef DIM_K
-#define DIM_K 64
-#endif
-
-#ifndef DIM_N
-#define DIM_N 64
-#endif
-
-#ifdef i8_i8_ONLY
-#define combos(X) X(int8, i8, int8, i8, 4, 8, 8)
-#endif
-
-#ifdef i8_i16_ONLY
-#define combos(X) X(int8, i8, int16, i16, 4, 8, 8)
-#endif
-
-#ifdef i8_i32_ONLY
-#define combos(X) X(int8, i8, int32, i32, 4, 8, 8)
-#endif
-
-#ifdef i4_i8_ONLY
-#define combos(X) X(int8, i4, int8, i8, 4, 16, 8)
-#endif
-
-#ifdef i16_i16_ONLY
-#define combos(X) X(int16, i16, int16, i16, 4, 4, 4)
-#endif
-
-#ifdef i16_i32_ONLY
-#define combos(X) X(int16, i16, int32, i32, 4, 4, 4)
-#endif
-
-#ifdef bf16_bf16_ONLY
-#define combos(X) X(bfloat16, bf16, bfloat16, bf16, 4, 8, 4)
-#endif
-
-#ifdef bf16_f32_ONLY
-#define combos(X) X(bfloat16, bf16, float, f32, 4, 8, 4)
-#endif
-
-#ifndef combos
-#define combos(X)                                                              \
-  X(int8, i8, int8, i8, 4, 8, 8)                                               \
-  X(int16, i16, int16, i16, 4, 4, 4)                                           \
-  X(int16, i16, int32, i32, 4, 4, 4)                                           \
-  X(bfloat16, bf16, bfloat16, bf16, 4, 8, 4)                                   \
-  X(bfloat16, bf16, float, f32, 4, 8, 4)
-#endif
-
 #define CAT(a, b) a##b
 #define CAT3(a, b, c) a##b##c
 #define CAT5(a, b, c, d, e) a##b##c##d##e
@@ -901,7 +977,7 @@ extern "C" {
 #define EXPAND_AND_CAT5(a, b, c, d, e) CAT5(a, b, c, d, e)
 
 #define GEN_VECTOR_FUNC_NAME(type_in, type_out, m, k, n)                       \
-  EXPAND_AND_CAT5(matmul_vectorized_##type_in##_##type_out##_, m, x, k,        \
+  EXPAND_AND_CAT5(matmul_##type_in##_##type_out##_, m, x, k,                   \
                   EXPAND_AND_CAT(x, n))
 
 #define GEN_SCALAR_FUNC_NAME(type_in, type_out, m, k, n)                       \
@@ -909,21 +985,20 @@ extern "C" {
                   EXPAND_AND_CAT(x, n))
 
 #define matmul_vectorized_c_func(ctype_in, mlir_type_in, ctype_out,            \
-                                 mlir_type_out, r, s, t)                       \
-  void GEN_VECTOR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M, DIM_K, DIM_N)( \
-      ctype_in * a_in, ctype_in * b_in, ctype_out * c_out) {                   \
+                                 mlir_type_out, r, s, t, DIM_M_, DIM_K_,       \
+                                 DIM_N_)                                       \
+  void GEN_VECTOR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M_, DIM_K_,       \
+                            DIM_N_)(ctype_in * a_in, ctype_in * b_in,          \
+                                    ctype_out * c_out) {                       \
     matmul_vectorized_##r##x##s##x##t##_##mlir_type_in##_##mlir_type_out<      \
-        DIM_M, DIM_K, DIM_N>(a_in, b_in, c_out);                               \
+        DIM_M_, DIM_K_, DIM_N_>(a_in, b_in, c_out);                            \
   }
 
 #define matmul_scalar_c_func(ctype_in, mlir_type_in, ctype_out, mlir_type_out, \
-                             r, s, t)                                          \
-  void GEN_SCALAR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M, DIM_K, DIM_N)( \
-      ctype_in * a_in, ctype_in * b_in, ctype_out * c_out) {                   \
-    matmul_scalar<ctype_in, ctype_out, DIM_M, DIM_K, DIM_N>(a_in, b_in,        \
-                                                            c_out);            \
+                             r, s, t, DIM_M_, DIM_K_, DIM_N_)                  \
+  void GEN_SCALAR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M_, DIM_K_,       \
+                            DIM_N_)(ctype_in * a_in, ctype_in * b_in,          \
+                                    ctype_out * c_out) {                       \
+    matmul_scalar<ctype_in, ctype_out, DIM_M_, DIM_K_, DIM_N_>(a_in, b_in,     \
+                                                               c_out);         \
   }
-
-combos(matmul_vectorized_c_func) combos(matmul_scalar_c_func)
-
-} // extern "C"
