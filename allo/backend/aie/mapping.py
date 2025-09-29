@@ -4,6 +4,7 @@
 
 from dataclasses import dataclass
 from collections import defaultdict, Counter
+from graphviz import Digraph
 import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.ir import (
     InsertionPoint,
@@ -1029,3 +1030,12 @@ class ComputationGraph:
         for (name_1, name_2), count in connections.items():
             connection_info.append((count, name_1, name_2))
         return connection_info
+
+    def dump(self, output_dir, file_name="virtual_graph"):
+        dot = Digraph(comment="Virtual Computation Graph")
+        dot.attr(rankdir="LR")
+        for node in self.nodes.values():
+            dot.node(node.meta_data.name, label=node.meta_data.name)
+        for edge in self.edges.values():
+            dot.edge(edge.src, edge.dst, label=edge.name)
+        dot.render(file_name, directory=output_dir, format="pdf")

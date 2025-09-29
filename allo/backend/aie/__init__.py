@@ -702,6 +702,9 @@ class AIE_MLIRModule:
         )
         # ------------------------- virtual mapping -------------------------
         self.init_virtual_graph(use_external_kernels)
+        if os.getenv("DEBUG") == "1":
+            self.virtual_computation_graph.dump(self.project_dir)
+
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -711,6 +714,9 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     self.virtual_computation_graph.bundle(arg_list)
+            if os.getenv("DEBUG") == "1":
+                self.virtual_computation_graph.dump(self.project_dir, "after_mapping")
+
         self.virtual_computation_graph.refactor()
 
         # record original allo mlir
