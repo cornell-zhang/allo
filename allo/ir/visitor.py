@@ -54,6 +54,7 @@ class ASTContext:
         func_predicate_tags=None,
         func_tag2instance=None,
         unroll=True,
+        meta_fors_to_unroll=None,
         enable_tensor=False,
         verbose=False,
     ):
@@ -107,6 +108,10 @@ class ASTContext:
         self.predicate_stack = [self.predicate_list[1]]
         # for pid, if only one sample is constructed for df.kernel instances, pid are only symbols
         self.symbolic = {}
+        # a set of `meta_for` loops that must be unrolled
+        self.meta_fors_to_unroll = (
+            set() if meta_fors_to_unroll is None else meta_fors_to_unroll
+        )
         self.has_return = False
         # used for tensor mapping
         self.rank = 0
@@ -132,6 +137,7 @@ class ASTContext:
         ctx.ext_libs = self.ext_libs
         ctx.rank = self.rank
         ctx.mapping = self.mapping
+        ctx.meta_fors_to_unroll = self.meta_fors_to_unroll
         return ctx
 
     def set_ip(self, ip):
@@ -145,12 +151,48 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
-    def put_symbol(self, name, val):
-        self.scopes[-1][name] = val
+    def put_symbol(self, name, val, tag=None):
+        """
+        Insert a variable name, value pair into the current scope.
+
+        Args:
+            - name (str): The variable name.
+            - val (Any): The value associated with the variable.
+            - tag (str, optional): An optional tag for special use.
+                - If None, the variable is treated as a normal local variable.
+                - If not None, the (val, tag) tuple is stored. The tag is used
+                to distinguish cases where the same variable can have dual roles
+                (e.g., both as a local variable and as a symbolic placeholder).
+
+        Example:
+            # Put a normal variable
+            ctx.put_symbol(name=dtensor.name, val=MockArg(arg, idx=i))
+
+            # Put a placeholder variable (used as normal variable and a symbol in symbolic stream index resolution)
+            ctx.put_symbol(
+                name=var,
+                val=MockArg(for_op.induction_variable, is_affine),
+                tag="placeholder",
+            )
+        """
+        if tag is None:
+            self.scopes[-1][name] = val
+        else:
+            self.scopes[-1][name] = (val, tag)
 
     def get_symbol(self, name, allow_missing=False):
+        """
+        Get the value of a symbol from the current scope chain.
+
+        Args:
+            - name (str): The variable name to look up.
+            - allow_missing (bool): If True, return None when the symbol
+                does not exist. Otherwise, raise an error.
+        """
         for scope in reversed(self.scopes):
             if name in scope:
+                if isinstance(scope[name], tuple):
+                    return scope[name][0]
                 return scope[name]
         if allow_missing:
             return None
@@ -159,7 +201,9 @@ class ASTContext:
     def get_alive_var_names(self):
         names = set()
         for scope in self.scopes:
-            names.update(scope.keys())
+            for k, v in scope.items():
+                if not isinstance(v, tuple):
+                    names.add(k)
         return names
 
     def block_scope_guard(self):
@@ -348,9 +392,12 @@ class ReplaceNames(ast.NodeTransformer):
         if node.id in self.symbolic_mapping:
             symbol_var = self.symbolic_mapping[node.id]
             if isinstance(symbol_var, str):
-                new_node = ast.parse(self.symbolic_mapping[node.id], mode="eval").body
-            elif isinstance(symbol_var, tuple) and isinstance(symbol_var[0], int):
-                new_node = ast.Constant(symbol_var[0])
+                new_node = ast.parse(symbol_var, mode="eval").body
+            elif isinstance(symbol_var, tuple):
+                if isinstance(symbol_var[0], int):
+                    new_node = ast.Constant(symbol_var[0])
+                elif isinstance(symbol_var[0], str):
+                    new_node = ast.parse(symbol_var[0], mode="eval").body
                 self.special_symbol.add(symbol_var[1])
             return new_node
         if node.id in self.var_map:

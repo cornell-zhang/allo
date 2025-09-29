@@ -1,6 +1,6 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, too-many-arguments, unsupported-binary-operation
 
 import os
 import re
@@ -73,6 +73,7 @@ class AIE_MLIRModule:
         stream_types_dict: dict[str, Type],
         ext_libs: list = None,
         func_instances: dict = None,
+        extra_stream_info: dict = None,
     ):
         """
         Note: the module is data-driven,
@@ -94,17 +95,21 @@ class AIE_MLIRModule:
             if isinstance(ext_kernel, ExternalModule):
                 self.external_kernel_lib[ext_kernel.top] = ext_kernel
 
-        self.func_args: dict[str, list[Argument]] = {}
+        self.func_args: dict[str, list[Argument | list[Argument]]] = {}
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(
+            stream_info, stream_types_dict, extra_stream_info
+        )
 
         # index in top function argument list -> DTensor
         self.global_tensors: dict[int, DTensor] = None
         self.module_runtime_args: list[RuntimeArgs] = None
         # function name -> (argument index -> (argument, is_input))
-        self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = None
+        self.core_func_args: dict[
+            str, dict[int, tuple[Argument | list[Argument], bool]]
+        ] = None
 
         self.aie_module: aie_ir.Module = None
 
@@ -113,7 +118,20 @@ class AIE_MLIRModule:
         for func_name, args in func_args.items():
             self.func_args[func_name] = []
             for arg in args:
-                if arg in tmp_map:
+                if isinstance(arg, list):
+                    stream_args = []
+                    for stream_ in arg:
+                        assert isinstance(stream_, str)
+                        if stream_ in tmp_map:
+                            stream_args.append(tmp_map[stream_])
+                        else:
+                            stream = Stream(stream_)
+                            self.streams[stream_] = stream
+                            argument = Argument(None, stream)
+                            stream_args.append(argument)
+                            tmp_map[stream_] = argument
+                    self.func_args[func_name].append(stream_args)
+                elif arg in tmp_map:
                     self.func_args[func_name].append(tmp_map[arg])
                 elif isinstance(arg, DTensor):
                     argument = Argument(arg, None)
@@ -128,7 +146,12 @@ class AIE_MLIRModule:
                 else:
                     raise ValueError(f"Unresolved function argument {arg}")
 
-    def _init_streams(self, stream_info: dict, stream_types_dict: dict[str, Type]):
+    def _init_streams(
+        self,
+        stream_info: dict,
+        stream_types_dict: dict[str, Type],
+        extra_stream_info: dict,
+    ):
         """
         Collect allo.stream information for each function.
         """
@@ -141,9 +164,23 @@ class AIE_MLIRModule:
                 if io == "in":
                     self.streams[name].dst = func_name
                     self.stream_info[func_name][name] = True
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
+                        self.streams[name].dst_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
+                        self.streams[name].src_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
         edge_map = {src: set() for src in stream_info.keys()}
         for stream in self.streams.values():
             edge_map[stream.src].add(stream.dst)
@@ -222,12 +259,15 @@ class AIE_MLIRModule:
                     (out_idx_list, "out"),
                 ):
                     for io_idx in io_idx_list:
-                        argument: Argument = self.func_args[kernel_name][io_idx]
+                        argument = self.func_args[kernel_name][io_idx]
                         self.core_func_args[kernel_name][io_idx] = (
                             argument,
                             io_type == "in",
                         )
-                        if not argument.dtensor is None:
+                        if (
+                            isinstance(argument, Argument)
+                            and not argument.dtensor is None
+                        ):
                             argument.dtensor.set_access_pattern()
                             argument.dtensor.type_as_param = kernel.arguments[
                                 io_idx
@@ -242,14 +282,19 @@ class AIE_MLIRModule:
                 # streams
                 for i, _ in enumerate(kernel.arguments):
                     func_arg = self.func_args[kernel_name][i]
-                    if (
-                        i in self.core_func_args[kernel_name]
-                        or func_arg.stream is None  # unused
-                    ):
+                    if i in self.core_func_args[kernel_name]:
                         continue
+                    # unused Dtensor
+                    if isinstance(func_arg, Argument) and func_arg.stream is None:
+                        continue
+                    if isinstance(func_arg, Argument):
+                        sample_stream = func_arg.stream
+                    else:
+                        assert len(func_arg) > 0 and func_arg[0].stream is not None
+                        sample_stream = func_arg[0].stream
                     self.core_func_args[kernel_name][i] = (
                         func_arg,
-                        self.stream_info[kernel_name][func_arg.stream.name],
+                        self.stream_info[kernel_name][sample_stream.name],
                     )
 
     def allo_opt(self):
@@ -470,10 +515,15 @@ class AIE_MLIRModule:
                     if arg.arg_number not in arg_info:
                         continue
                     # input: transform to the same layout before every 'use'
+                    sample_stream = (
+                        arg_info[arg.arg_number][0].stream
+                        if isinstance(arg_info[arg.arg_number][0], Argument)
+                        else arg_info[arg.arg_number][0][0].stream
+                    )
                     if arg_info[arg.arg_number][1]:
                         var = arg
                         if (
-                            arg_info[arg.arg_number][0].stream is not None
+                            sample_stream is not None
                             and len(list(arg.uses)) == 1  # allo.stream_get
                         ):
                             var = list(arg.uses)[0].owner.result
@@ -501,10 +551,8 @@ class AIE_MLIRModule:
                                 list(op.attributes["sizes"]),
                                 list(op.attributes["strides"]),
                             )
-                            if arg_info[arg.arg_number][0].stream is not None:
-                                arg_info[arg.arg_number][
-                                    0
-                                ].stream.dst_layout_transform = (
+                            if sample_stream is not None:
+                                sample_stream.dst_layout_transform = (
                                     list(op.attributes["offsets"]),
                                     list(op.attributes["sizes"]),
                                     list(op.attributes["strides"]),
@@ -519,7 +567,7 @@ class AIE_MLIRModule:
                     # output
                     else:
                         op = allo_d.get_last_use_in_function(arg, function)
-                        is_dtensor = arg_info[arg.arg_number][0].stream is None
+                        is_dtensor = sample_stream is None
                         operand_idx = 0 if is_dtensor else 1
                         if (
                             (
@@ -557,9 +605,7 @@ class AIE_MLIRModule:
                                     list(transform_layout_op.attributes["strides"]),
                                 )
                                 if not is_dtensor:
-                                    arg_info[arg.arg_number][
-                                        0
-                                    ].stream.src_layout_transform = (
+                                    sample_stream.src_layout_transform = (
                                         list(transform_layout_op.attributes["offsets"]),
                                         list(transform_layout_op.attributes["sizes"]),
                                         list(transform_layout_op.attributes["strides"]),
@@ -691,7 +737,7 @@ class AIE_MLIRModule:
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops,lower-affine",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
@@ -837,3 +883,54 @@ class AIE_MLIRModule:
                     f"{self.project_dir}/output{idx}.data",
                 )
                 args[idx][:] = result
+
+
+def _call_prj(
+    project: str,
+    dtype_list: list,
+    trace_size: int,
+    input_idx: list[int],
+    output_idx: list[int],
+    *args,
+):
+    """
+    This function allows you to manually adjust files under the project
+    directory (e.g., top.prj) after building with AIE_MLIRModule, such as
+    `top.mlir`, external kernel functions, or `test.cpp`, and then
+    recompile and rerun.
+
+    Note (Shihan): currently intended for internal debugging use only.
+    """
+    # generate insts.txt
+    cmd = f"cd {project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to compile the MLIR-AIE code")
+    cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to build AIE project.")
+    # suppose the last argument is output
+    for idx in input_idx:
+        arg = args[idx]
+        if str(dtype_list[idx]) == "i4":
+            arg = pack_int4(arg)
+        with open(os.path.join(project, f"input{idx}.data"), "wb") as f:
+            f.write(arg.tobytes())
+    if trace_size > 0:
+        cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
+    else:
+        cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p false --warmup 20 --test_iter 100"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to execute AIE code.")
+    for idx in output_idx:
+        result = read_tensor_from_file(
+            dtype_list[idx],
+            args[idx].shape,
+            f"{project}/output{idx}.data",
+        )
+        args[idx][:] = result

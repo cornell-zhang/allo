@@ -1,8 +1,9 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught, too-many-arguments, eval-used, bad-builtin, too-many-nested-blocks
+# pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, global-variable-not-assigned, global-statement, broad-exception-caught
 
 import functools
+import itertools
 import os
 from ._mlir.ir import (
     InsertionPoint,
@@ -43,8 +44,16 @@ def array(element, shape):
     return Array(element, shape)
 
 
-def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll=True):
+# pylint: disable=eval-used, bad-builtin, too-many-branches, too-many-nested-blocks
+def move_stream_to_interface(
+    s: Schedule,
+    with_stream_type: bool = False,
+    with_extra_info: bool = False,
+    unroll=True,
+):
     stream_info = {}
+    if with_extra_info:
+        extra_stream_info = {}
     funcs = get_all_df_kernels(s)
     new_func_args = s.func_args.copy()
     if with_stream_type:
@@ -55,10 +64,13 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
         stream_types = []
         stream_signed = ""
         stream_info[func_name] = []
+        if with_extra_info:
+            extra_stream_info[func_name] = {}
         in_types = func.attributes["function_type"].value.inputs
         out_types = func.attributes["function_type"].value.results
         s_type_str = "_" * len(in_types)
         new_args = new_func_args[func_name].copy()
+        skip_new_args_flag = False
         prefix, ids = parse_kernel_name(func_name)
         if not unroll:
             assert s.func_instances is not None and prefix in s.func_instances
@@ -70,6 +82,8 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                     and predicate_tag == s.func_instances[prefix][ids]
                 ):
                     stream_info[func_name_] = []
+                    if with_extra_info:
+                        extra_stream_info[func_name_] = {}
                     new_func_args[func_name_] = new_func_args[func_name].copy()
         for op in func.entry_block.operations:
             if isinstance(op, allo_d.StreamConstructOp):
@@ -92,30 +106,87 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
                 new_args.append(stream_name)
                 if not unroll and "symbolic_slice" in op.attributes:
                     symbolic_name = op.attributes["symbolic_slice"].value
+                    arg_idx = len(new_args) - 1
                     for ids_, predicate_tag in s.func_instances[prefix].items():
                         func_name_ = construct_kernel_name(prefix, ids_)
-                        if (
-                            func_name_ != func_name
-                            and predicate_tag == s.func_instances[prefix][ids]
-                        ):
+                        if func_name_ == func_name:
+                            skip_new_args_flag = True
+                        if predicate_tag == s.func_instances[prefix][ids]:
                             pid_map = {
                                 f"p{idx}": value for idx, value in enumerate(ids_)
                             }
-                            slice_ = eval(symbolic_name, pid_map)
-                            if isinstance(slice_, int):
-                                slice_ = tuple([slice_])
-                            parts = stream_name.rsplit("_", len(slice_))[: -len(slice_)]
-                            stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
-                            if (
-                                with_stream_type
-                                and stream_name_ not in stream_types_dict
+                            loops = []
+                            for name_attr in op.attributes["iterators"]:
+                                rargs = []
+                                for val in name_attr.attr:
+                                    rargs.append(val.value)
+                                loops.append((name_attr.name, range(*rargs)))
+
+                            def eval_stream(
+                                symbol_map_,
+                                pid_map_,
+                                symbolic_name_,
+                                org_stream_name,
+                                op_,
+                                arg_idx_,
                             ):
-                                stream_types_dict[stream_name_] = op.result.type
-                            stream_info[func_name_].append((stream_name_, direction))
-                            new_func_args[func_name_].append(stream_name_)
+                                iter_map = {}
+                                for k, v in symbol_map_.items():
+                                    if k not in pid_map_:
+                                        iter_map[k] = v
+                                slice_ = eval(symbolic_name_, symbol_map_)
+                                if isinstance(slice_, int):
+                                    slice_ = tuple([slice_])
+                                parts = org_stream_name.rsplit("_", len(slice_))[
+                                    : -len(slice_)
+                                ]
+                                stream_name_ = f"{"_".join(map(str, parts))}_{"_".join(map(str, slice_))}"
+                                if (
+                                    with_stream_type
+                                    and stream_name_ not in stream_types_dict
+                                ):
+                                    stream_types_dict[stream_name_] = op_.result.type
+                                if len(new_func_args[func_name_]) == arg_idx_:
+                                    new_func_args[func_name_].append([])
+                                stream_info[func_name_].append(
+                                    (stream_name_, direction)
+                                )
+                                if with_extra_info:
+                                    extra_stream_info[func_name_][
+                                        stream_name_
+                                    ] = iter_map
+                                new_func_args[func_name_][-1].append(stream_name_)
+
+                            if len(loops) == 0:
+                                eval_stream(
+                                    pid_map,
+                                    pid_map_=pid_map,
+                                    symbolic_name_=symbolic_name,
+                                    org_stream_name=stream_name,
+                                    op_=op,
+                                    arg_idx_=arg_idx,
+                                )
+                            else:
+                                for combo in itertools.product(
+                                    *[rng for _, rng in loops]
+                                ):
+                                    iter_symbol_map = pid_map.copy()
+                                    for (name, _), val in zip(loops, combo):
+                                        iter_symbol_map[name] = val
+                                    eval_stream(
+                                        iter_symbol_map,
+                                        pid_map_=pid_map,
+                                        symbolic_name_=symbolic_name,
+                                        org_stream_name=stream_name,
+                                        op_=op,
+                                        arg_idx_=arg_idx,
+                                    )
+
         # create new func to update arguments
         in_types += stream_types
-        new_func_args[func_name] = new_args
+        # skip_new_args_flag: updated with symbolic info, do not use `new_args`
+        if not skip_new_args_flag:
+            new_func_args[func_name] = new_args
         with s.module.context, Location.unknown():
             func_type = FunctionType.get(in_types, out_types)
             new_func = func_d.FuncOp(
@@ -158,6 +229,8 @@ def move_stream_to_interface(s: Schedule, with_stream_type: bool = False, unroll
             func.operation.erase()
     s.func_args = new_func_args
     if with_stream_type:
+        if with_extra_info:
+            return stream_info, stream_types_dict, extra_stream_info
         return stream_info, stream_types_dict
     return stream_info
 
@@ -336,6 +409,7 @@ def customize(func, opt_default=True, enable_tensor=False):
     return s
 
 
+# pylint: disable=too-many-arguments
 def build(
     func,
     target="vitis_hls",
@@ -364,8 +438,8 @@ def build(
         s: Schedule = _customize(
             func, global_vars=global_vars, enable_tensor=False, unroll=False
         )
-        stream_info, stream_types_dict = move_stream_to_interface(
-            s, with_stream_type=True, unroll=False
+        stream_info, stream_types_dict, extra_stream_info = move_stream_to_interface(
+            s, with_stream_type=True, with_extra_info=True, unroll=False
         )
         parameter_list, s = _build_top(
             s, stream_info, target=target, get_parameter_list=True
@@ -380,6 +454,7 @@ def build(
             stream_types_dict,
             s.ext_libs,
             s.func_instances,
+            extra_stream_info=extra_stream_info,
         )
         if device_type is None:
             if os.getenv("NPU2") == "1":
