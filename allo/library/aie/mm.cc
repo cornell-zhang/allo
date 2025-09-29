@@ -5,17 +5,14 @@
  * This file is modified from:
  *   https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
  *
- * References:
- *   - MLIR-AIE Project: https://github.com/Xilinx/mlir-aie
- *
  * Acknowledgements:
  *   - This file is adapted from the MLIR-AIE project by Xilinx.
  *   - We thank the original authors for their contributions and for releasing
  *     their work under the Apache 2.0 License with LLVM Exceptions.
  *
  * Notes:
- *   - The modifications include adding reference and acknowledgement statements,
- *     as well as project-specific adjustments for Allo.
+ *   - The modifications include adding reference and acknowledgement
+ * statements, as well as project-specific adjustments for Allo.
  */
 
 //===- mm.cc ----------------------------------------------000---*- C++ -*-===//
@@ -46,7 +43,6 @@ using int8 = int8_t;
 using int16 = int16_t;
 using int32 = int32_t;
 using bfloat16 = __bf16;
-
 
 template <typename T_in, typename T_out, int rowA, int colA, int colB>
 static inline void matmul_scalar(T_in *a, T_in *b, T_out *c) {
@@ -653,11 +649,12 @@ static inline void matmul_vectorized_4x8x8_i8_i8(const int8 *__restrict pA,
                                     t>(pA, pB, pC);
 }
 
-// int4 (input) x int8 (output) kernel using native 8b x 4b MMUL with shape 4x16x8
+// int4 (input) x int8 (output) kernel using native 8b x 4b MMUL with shape
+// 4x16x8
 template <unsigned m, unsigned k, unsigned n>
 static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
-                                                 const int8 *__restrict pB,
-                                                 int8 *__restrict pC) {
+                                                  const int8 *__restrict pB,
+                                                  int8 *__restrict pC) {
 
   constexpr int r = 4;
   constexpr int s = 16;
@@ -680,12 +677,16 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
 
       for (unsigned j = 0; j < (n / t); j += 2) {
         const int8 *__restrict pA1 = pA + (z * (k / s) + 0) * MMUL::size_A;
-        const int8 *__restrict pA2 = pA + ((z + 1) * (k / s) + 0) * MMUL::size_A;
-        const int8 *__restrict pA3 = pA + ((z + 2) * (k / s) + 0) * MMUL::size_A;
-        const int8 *__restrict pA4 = pA + ((z + 3) * (k / s) + 0) * MMUL::size_A;
+        const int8 *__restrict pA2 =
+            pA + ((z + 1) * (k / s) + 0) * MMUL::size_A;
+        const int8 *__restrict pA3 =
+            pA + ((z + 2) * (k / s) + 0) * MMUL::size_A;
+        const int8 *__restrict pA4 =
+            pA + ((z + 3) * (k / s) + 0) * MMUL::size_A;
 
         const int8 *__restrict pB1 = pB + (0 * (n / t) + j) * MMUL::size_B;
-        const int8 *__restrict pB2 = pB + (0 * (n / t) + (j + 1)) * MMUL::size_B;
+        const int8 *__restrict pB2 =
+            pB + (0 * (n / t) + (j + 1)) * MMUL::size_B;
 
         aie::vector<int8, MMUL::size_A> A01 = aie::load_v<MMUL::size_A>(pA1);
         pA1 += MMUL::size_A;
@@ -703,14 +704,22 @@ static inline void matmul_vectorized_4x16x8_i4_i8(const int8 *__restrict pA,
         aie::vector<int4, MMUL::size_B> B01 = B01_u8.pack();
         aie::vector<int4, MMUL::size_B> B11 = B11_u8.pack();
 
-        aie::vector<int8, MMUL::size_C> acc_C00 = aie::load_v<MMUL::size_C>(pC1);
-        aie::vector<int8, MMUL::size_C> acc_C01 = aie::load_v<MMUL::size_C>(pC1 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C10 = aie::load_v<MMUL::size_C>(pC2);
-        aie::vector<int8, MMUL::size_C> acc_C11 = aie::load_v<MMUL::size_C>(pC2 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C20 = aie::load_v<MMUL::size_C>(pC3);
-        aie::vector<int8, MMUL::size_C> acc_C21 = aie::load_v<MMUL::size_C>(pC3 + MMUL::size_C);
-        aie::vector<int8, MMUL::size_C> acc_C30 = aie::load_v<MMUL::size_C>(pC4);
-        aie::vector<int8, MMUL::size_C> acc_C31 = aie::load_v<MMUL::size_C>(pC4 + MMUL::size_C);
+        aie::vector<int8, MMUL::size_C> acc_C00 =
+            aie::load_v<MMUL::size_C>(pC1);
+        aie::vector<int8, MMUL::size_C> acc_C01 =
+            aie::load_v<MMUL::size_C>(pC1 + MMUL::size_C);
+        aie::vector<int8, MMUL::size_C> acc_C10 =
+            aie::load_v<MMUL::size_C>(pC2);
+        aie::vector<int8, MMUL::size_C> acc_C11 =
+            aie::load_v<MMUL::size_C>(pC2 + MMUL::size_C);
+        aie::vector<int8, MMUL::size_C> acc_C20 =
+            aie::load_v<MMUL::size_C>(pC3);
+        aie::vector<int8, MMUL::size_C> acc_C21 =
+            aie::load_v<MMUL::size_C>(pC3 + MMUL::size_C);
+        aie::vector<int8, MMUL::size_C> acc_C30 =
+            aie::load_v<MMUL::size_C>(pC4);
+        aie::vector<int8, MMUL::size_C> acc_C31 =
+            aie::load_v<MMUL::size_C>(pC4 + MMUL::size_C);
 
         MMUL C00(acc_C00);
         MMUL C01(acc_C01);
@@ -831,11 +840,6 @@ static inline void matmul_vectorized_4x8x8_i8_i32(const int8 *__restrict pA,
 
 extern "C" {
 
-// If you want to compile microkernels with different inner tile sizes,
-// define DIM_M, DIM_K and DIM_N at compile time using -DDIM_M 32 etc.
-// These dimensions must be divisible by the r, s, t dimensions used in
-// the kernels.
-
 #ifndef DIM_M
 #define DIM_M 64
 #endif
@@ -896,38 +900,30 @@ extern "C" {
 #define EXPAND_AND_CAT3(a, b, c) CAT3(a, b, c)
 #define EXPAND_AND_CAT5(a, b, c, d, e) CAT5(a, b, c, d, e)
 
-#define GEN_FUNC_NAME(type_in, type_out, m, k, n) \
-    EXPAND_AND_CAT5(matmul_##type_in##_##type_out##_, m, x, k, EXPAND_AND_CAT(x, n))
+#define GEN_VECTOR_FUNC_NAME(type_in, type_out, m, k, n)                       \
+  EXPAND_AND_CAT5(matmul_vectorized_##type_in##_##type_out##_, m, x, k,        \
+                  EXPAND_AND_CAT(x, n))
+
+#define GEN_SCALAR_FUNC_NAME(type_in, type_out, m, k, n)                       \
+  EXPAND_AND_CAT5(matmul_scalar_##type_in##_##type_out##_, m, x, k,            \
+                  EXPAND_AND_CAT(x, n))
 
 #define matmul_vectorized_c_func(ctype_in, mlir_type_in, ctype_out,            \
                                  mlir_type_out, r, s, t)                       \
-  void GEN_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M, DIM_K, DIM_N)(        \
-      ctype_in *a_in, ctype_in *b_in, ctype_out *c_out) {                      \
+  void GEN_VECTOR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M, DIM_K, DIM_N)( \
+      ctype_in * a_in, ctype_in * b_in, ctype_out * c_out) {                   \
     matmul_vectorized_##r##x##s##x##t##_##mlir_type_in##_##mlir_type_out<      \
         DIM_M, DIM_K, DIM_N>(a_in, b_in, c_out);                               \
   }
 
 #define matmul_scalar_c_func(ctype_in, mlir_type_in, ctype_out, mlir_type_out, \
                              r, s, t)                                          \
-  void matmul_scalar_##mlir_type_in##_##mlir_type_out(                         \
-      ctype_in *a_in, ctype_in *b_in, ctype_out *c_out) {                      \
+  void GEN_SCALAR_FUNC_NAME(mlir_type_in, mlir_type_out, DIM_M, DIM_K, DIM_N)( \
+      ctype_in * a_in, ctype_in * b_in, ctype_out * c_out) {                   \
     matmul_scalar<ctype_in, ctype_out, DIM_M, DIM_K, DIM_N>(a_in, b_in,        \
                                                             c_out);            \
   }
 
-#define zero_vectorized_c_func(ctype_in, mlir_type_in, ctype_out,              \
-                               mlir_type_out, r, s, t)                         \
-  void zero_##mlir_type_out(ctype_out *c_out) {                                \
-    zero_vectorized<ctype_out, DIM_M, DIM_N>(c_out);                           \
-  }
-
-#define zero_scalar_c_func(ctype_in, mlir_type_in, ctype_out, mlir_type_out,   \
-                           r, s, t)                                            \
-  void zero_scalar_##mlir_type_out(ctype_out *c_out) {                         \
-    zero_scalar<ctype_out, DIM_M, DIM_N>(c_out);                               \
-  }
-
 combos(matmul_vectorized_c_func) combos(matmul_scalar_c_func)
-    combos(zero_vectorized_c_func) combos(zero_scalar_c_func)
 
 } // extern "C"
