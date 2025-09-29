@@ -5,6 +5,7 @@
 - [Environment Setup](#environment-setup)
 - [Usage](#usage)
     - [Basic Examples](#example)
+    - [Environment Variables for Controlling Compiler Behavior](#environment-variables-for-controlling-compiler-behavior)
     - [New Features](#new-feature)
         - [Timing-based Profiling](#profiling)
         - [Tracing-based Profiling](#profiling-with-trace)
@@ -313,6 +314,46 @@ np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")
 ```
 
+### Environment Variables for Controlling Compiler Behavior
+The compiler exposes several environment variables that can be used to fine-tune its behavior.
+
+You can set them globally in the terminal, for example:
+```bash
+export FORCE_UNROLL_INDEX=1
+```
+Or only for a specific test case in Python:
+
+```python
+import os
+
+os.environ["FORCE_UNROLL_INDEX"] = "1"
+# run your test
+del os.environ["FORCE_UNROLL_INDEX"]  # reset after use
+```
+
+#### `FORCE_UNROLL_INDEX`
+
+By default, the AIE backend tries to **avoid unrolling** `meta_for` loops to optimize code size.
+However, when the iterator of a rolled `meta_for` is used as the index of a pipe, the current virtual mapping (especially chain) faces significant restrictions.
+
+If you prefer to sacrifice code size in exchange for greater flexibility in using mapping primitives, you can set:
+
+```
+FORCE_UNROLL_INDEX=1
+```
+
+This will force the compiler to **unroll any `meta_for` loop whose iterator is used as an index**, bypassing the default optimization.
+
+#### `ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH`
+This variable controls an optimization patch for DMA scheduling.
+
+If you want to maximize DMA performance, you can try:
+```
+ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=1
+```
+This enables an aggressive strategy that tries to fully utilize available DMA ports.
+
+#### 
 ### New Feature
 #### Profiling
 A new timing-based profiling feature has been added to help measure the performance of the module during execution. 
