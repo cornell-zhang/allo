@@ -9,7 +9,10 @@ import allo._mlir._mlir_libs._mlir as allo_ir
 from ..._mlir.ir import (
     InsertionPoint,
     FunctionType,
+    IntegerType,
     UnitAttr,
+    IntegerAttr,
+    ArrayAttr,
     IndexType,
     StringAttr,
 )
@@ -369,6 +372,10 @@ class NodeMetaData:
         self.df_kernels: set[str] = set()
         self.in_types: list = in_types
         self.out_types: list = out_types
+        self.in_types_nest_depth = [0] * len(in_types) if in_types is not None else []
+        self.out_types_nest_depth = (
+            [0] * len(out_types) if out_types is not None else []
+        )
         self.repeat: int = repeat  # repeat count after bundling
         self.length: int = length
         self.input_streams: list[Stream] = []
@@ -484,7 +491,11 @@ class CollocatedNode(NodeBase):
         sample_node: NodeBase = node_list[0]
         self.meta_data.used_external_kernel = sample_node.meta_data.used_external_kernel
         self.meta_data.in_types = sample_node.meta_data.in_types
+        for i_depth in sample_node.meta_data.in_types_nest_depth:
+            self.meta_data.in_types_nest_depth.append(i_depth + 1)
         self.meta_data.out_types = sample_node.meta_data.out_types
+        for o_depth in sample_node.meta_data.out_types_nest_depth:
+            self.meta_data.out_types_nest_depth.append(o_depth + 1)
         self.meta_data.input_streams = sample_node.meta_data.input_streams
         self.meta_data.output_streams = sample_node.meta_data.output_streams
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
@@ -517,7 +528,14 @@ class CollocatedNode(NodeBase):
         out_types_a = node_a.meta_data.out_types
         out_types_b = node_b.meta_data.out_types
         self.meta_data.in_types = in_types_a + in_types_b
+        self.meta_data.in_types_nest_depth = (
+            node_a.meta_data.in_types_nest_depth + node_b.meta_data.in_types_nest_depth
+        )
         self.meta_data.out_types = out_types_a + out_types_b
+        self.meta_data.out_types_nest_depth = (
+            node_a.meta_data.out_types_nest_depth
+            + node_b.meta_data.out_types_nest_depth
+        )
         self.buffered_stream.update(node_a.buffered_stream)
         for stream_info in node_b.buffered_stream.values():
             stream_info.src_arg_idx += arg_idx_offset
@@ -806,6 +824,24 @@ class ComputationGraph:
                     ip=self.insert_point,
                 )
                 new_function.attributes["df.kernel"] = UnitAttr.get()
+                new_function.attributes["input_depth"] = ArrayAttr.get(
+                    [
+                        IntegerAttr.get(
+                            IntegerType.get_signless(64),
+                            max(node.meta_data.in_types_nest_depth) - v,
+                        )
+                        for v in node.meta_data.in_types_nest_depth
+                    ]
+                )
+                new_function.attributes["output_depth"] = ArrayAttr.get(
+                    [
+                        IntegerAttr.get(
+                            IntegerType.get_signless(64),
+                            max(node.meta_data.out_types_nest_depth) - v,
+                        )
+                        for v in node.meta_data.out_types_nest_depth
+                    ]
+                )
                 entry_block = new_function.add_entry_block()
                 arg_offset = 0
                 with InsertionPoint(entry_block):
@@ -843,6 +879,7 @@ class ComputationGraph:
                                 loop = scf_d.ForOp(
                                     lower_bound=c0, upper_bound=cmax, step=c1
                                 )
+                                loop.attributes["task_nest"] = UnitAttr.get()
                                 with InsertionPoint(loop.body):
                                     construct_kernel(ele_tag[0])
                                     scf_d.YieldOp([])
@@ -907,7 +944,6 @@ class ComputationGraph:
                             and is_op_in_func(use.owner, new_function)
                         ]
                         assert len(stream_puts) == len(stream_gets)
-                        print(stream_puts, stream_gets)
                         for i in range(len(stream_puts)):
                             stream_put: allo_d.StreamPutOp = stream_puts[i]
                             stream_get: allo_d.StreamGetOp = stream_gets[i]
