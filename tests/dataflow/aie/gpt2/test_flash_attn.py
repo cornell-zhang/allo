@@ -189,43 +189,32 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
 
     mapping_primitives_ = []
     for idx in range(iteration):
-        nodes = [f"cal_attn_score_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)]
-        mapping_primitives_.append(("bundle", nodes))
-        nodes = [f"attn_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)]
-        mapping_primitives_.append(("bundle", nodes))
-        mapping_primitives_.append(
-            ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
-        )
-    if iteration // COL > 1:
-        for i_ in range(COL):
+        if SEQ_LEN // kv_chunk_size > 1:
+            nodes = [
+                f"cal_attn_score_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)
+            ]
+            mapping_primitives_.append(("bundle", nodes))
+            nodes = [f"attn_{idx}_{i}" for i in range(SEQ_LEN // kv_chunk_size)]
+            mapping_primitives_.append(("bundle", nodes))
             mapping_primitives_.append(
                 (
-                    "bundle",
+                    "chain",
                     [
-                        f"send_q_{idx*COL+i_}_0-cal_attn_score_{idx*COL+i_}_0"
-                        for idx in range(iteration // COL)
+                        f"send_q_{idx}_0",
+                        f"cal_attn_score_{idx}_0x{SEQ_LEN // kv_chunk_size}",
                     ],
                 )
             )
+        else:
             mapping_primitives_.append(
-                (
-                    "bundle",
-                    [f"cal_softmax_{idx*COL+i_}_0" for idx in range(iteration // COL)],
-                )
-            )
-            mapping_primitives_.append(
-                ("bundle", [f"attn_{idx*COL+i_}_0" for idx in range(iteration // COL)])
-            )
-            mapping_primitives_.append(
-                ("bundle", [f"acc_{idx*COL+i_}_0" for idx in range(iteration // COL)])
+                ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
 
-    # print(mapping_primitives)
     mod = df.build(
         top,
         project=f"fa_{SEQ_LEN}.prj",
         target="aie",
-        # mapping_primitives=mapping_primitives_,
+        mapping_primitives=mapping_primitives_,
         profile=False,
         warmup=20,
         num_iters=100,
@@ -247,11 +236,11 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
 
 
 if __name__ == "__main__":
-    # N, D = 1024, 64  # Sequence Length, Embedding Dim = 64
-    # chunk_size = 32
-    # print(out.shape)
-    # print(out)
-    # seq_len_list = [128,256,512,1024,2048]
-    seq_len_list = [32]
+    os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
+
+    # seq_len_list = [64, 128]
+    seq_len_list = [64]
     for seq_len in seq_len_list:
         test_flash_attention(seq_len, 64, q_chunk_size=32, kv_chunk_size=32)
+
+    del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
