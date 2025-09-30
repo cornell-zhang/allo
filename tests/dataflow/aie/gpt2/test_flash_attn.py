@@ -27,10 +27,11 @@ def flash_attention(Q, K, V, chunk_size=32):
     Returns:
         Output: (N, D)
     """
+    Q_size, _ = Q.shape
     N, D = K.shape
-    output = np.zeros((N, D), dtype=Q.dtype)
+    output = np.zeros((Q_size, D), dtype=Q.dtype)
 
-    for q_start in range(0, N, chunk_size):
+    for q_start in range(0, Q_size, chunk_size):
         q_end = min(q_start + chunk_size, N)
         Q_chunk = Q[q_start:q_end, :]  # (cq, D)
 
@@ -66,9 +67,10 @@ def gen_bundle(prefix, idx, total):
     return ("bundle", nodes)
 
 
-def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
-    COL = 4
-    iteration = SEQ_LEN // q_chunk_size
+def test_flash_attention(
+    SEQ_LEN, HEAD_DIM, Q_chunk_size, q_chunk_size=32, kv_chunk_size=32
+):
+    iteration = Q_chunk_size // q_chunk_size
 
     init_softmax = ExternalModule(
         top="init_softmax",
@@ -107,41 +109,41 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
     def top():
         q_pipe = df.array(
             df.pipe(dtype=Ty, shape=(q_chunk_size, HEAD_DIM), depth=2),
-            shape=(SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size),
+            shape=(Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
         )
 
         score_pipe = df.array(
             df.pipe(dtype=Ty, shape=(q_chunk_size, kv_chunk_size), depth=2),
-            shape=(SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size),
+            shape=(Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
         )
 
         weight_pipe = df.array(
             df.pipe(dtype=Ty, shape=(q_chunk_size, kv_chunk_size), depth=2),
-            shape=(SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size),
+            shape=(Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
         )
 
         o_pipe = df.array(
             df.pipe(dtype=Ty, shape=(q_chunk_size, HEAD_DIM), depth=2),
-            shape=(SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size),
+            shape=(Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
         )
 
         exp_sum_pipe = df.array(
             df.pipe(dtype=Ty, shape=(kv_chunk_size,), depth=2),
-            shape=(SEQ_LEN // q_chunk_size,),
+            shape=(Q_chunk_size // q_chunk_size,),
         )
 
         exp_scale_pipe = df.array(
             df.pipe(dtype=Ty, shape=(kv_chunk_size,), depth=2),
-            shape=(SEQ_LEN // q_chunk_size,),
+            shape=(Q_chunk_size // q_chunk_size,),
         )
 
-        @df.kernel(mapping=[SEQ_LEN // q_chunk_size, 1])
-        def send_q(Q: Ty[SEQ_LEN, HEAD_DIM] @ Ly_outer):
+        @df.kernel(mapping=[Q_chunk_size // q_chunk_size, 1])
+        def send_q(Q: Ty[Q_chunk_size, HEAD_DIM] @ Ly_outer):
             po, _ = df.get_pid()
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
                 q_pipe[po, i].put(Q)
 
-        @df.kernel(mapping=[SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size])
+        @df.kernel(mapping=[Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size])
         def cal_attn_score(K: Ty[HEAD_DIM, SEQ_LEN] @ Ly_K):
             po, pi = df.get_pid()
             score: Ty[q_chunk_size, kv_chunk_size] = allo.matmul(
@@ -149,7 +151,7 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
             )
             score_pipe[po, pi].put(score)
 
-        @df.kernel(mapping=[SEQ_LEN // q_chunk_size, 1])
+        @df.kernel(mapping=[Q_chunk_size // q_chunk_size, 1])
         def cal_softmax():
             po, _ = df.get_pid()
             max_logit: Ty[kv_chunk_size]
@@ -173,13 +175,13 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
                 weight_pipe[po, i].put(attn_weight)
             exp_sum_pipe[po].put(sum_exp)
 
-        @df.kernel(mapping=[SEQ_LEN // q_chunk_size, SEQ_LEN // kv_chunk_size])
+        @df.kernel(mapping=[Q_chunk_size // q_chunk_size, SEQ_LEN // kv_chunk_size])
         def attn(V: Ty[SEQ_LEN, HEAD_DIM] @ Ly_inner):
             po, pi = df.get_pid()
             o_pipe[po, pi].put(allo.matmul(weight_pipe[po, pi].get(), V))
 
-        @df.kernel(mapping=[SEQ_LEN // q_chunk_size, 1])
-        def acc(O: Ty[SEQ_LEN, HEAD_DIM] @ Ly_outer):
+        @df.kernel(mapping=[Q_chunk_size // q_chunk_size, 1])
+        def acc(O: Ty[Q_chunk_size, HEAD_DIM] @ Ly_outer):
             attn_output: Ty[q_chunk_size, HEAD_DIM] = 0
             po, _ = df.get_pid()
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
@@ -220,27 +222,31 @@ def test_flash_attention(SEQ_LEN, HEAD_DIM, q_chunk_size=32, kv_chunk_size=32):
         num_iters=100,
         # device_type="npu1_2col",
     )
-    Q = np.random.randn(SEQ_LEN, HEAD_DIM)
+    Q = np.random.randn(Q_chunk_size, HEAD_DIM)
     K = np.random.randn(SEQ_LEN, HEAD_DIM)
     V = np.random.randn(SEQ_LEN, HEAD_DIM)
     Q_ = Q.astype(np_bfloat16)
     K_ = K.astype(np_bfloat16)
     V_ = V.astype(np_bfloat16)
-    O = np.zeros(SEQ_LEN * HEAD_DIM).astype(np_bfloat16)
+    O = np.zeros(Q_chunk_size * HEAD_DIM).astype(np_bfloat16)
     mod(Q_, K_.T, V_, O)
     np.set_printoptions(threshold=np.inf)
     out = flash_attention(Q_, K_, V_, chunk_size=32)
-    print(out)
-    O = O.astype(np.float32).reshape(SEQ_LEN, HEAD_DIM)
-    print(O)
+    # print(out)
+    O = O.astype(np.float32).reshape(Q_chunk_size, HEAD_DIM)
+    # print(O)
+    np.testing.assert_allclose(out, O, atol=5e-2)
+    print("PASSED!")
 
 
 if __name__ == "__main__":
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../../allo/library/aie/"
     os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
 
-    # seq_len_list = [64, 128]
-    seq_len_list = [64]
+    seq_len_list = [64, 128]
     for seq_len in seq_len_list:
-        test_flash_attention(seq_len, 64, q_chunk_size=32, kv_chunk_size=32)
+        test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
 
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
