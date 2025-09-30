@@ -349,6 +349,7 @@ class BufferedStream:
     dst_arg_idx: int
 
 
+# pylint: disable=too-many-instance-attributes
 class NodeMetaData:
     node_cnt = 0
 

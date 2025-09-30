@@ -76,6 +76,7 @@ class CodeGenerator:
     AIE dialect of MLIR.
     """
 
+    # pylint: disable=unsupported-binary-operation
     def __init__(
         self,
         device_type: str,
