@@ -880,6 +880,9 @@ class ComputationGraph:
                                 loop = scf_d.ForOp(
                                     lower_bound=c0, upper_bound=cmax, step=c1
                                 )
+                                # "task_nest" marks the boundary of original tasks (virtual nodes).
+                                # It ensures acquire/release operations for input/output arguments
+                                # are inserted at the correct points after virtual mapping.
                                 loop.attributes["task_nest"] = UnitAttr.get()
                                 with InsertionPoint(loop.body):
                                     construct_kernel(ele_tag[0])

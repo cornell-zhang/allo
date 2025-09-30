@@ -307,7 +307,6 @@ class CodeGenerator:
                                 first_use_op = first_use_op.parent
                             nest_depth -= 1
                             first_use_op = first_use_op.parent
-                        # no branch
                         while (
                             first_use_op.parent.name != "func.func"
                             and "task_nest" not in first_use_op.parent.attributes
