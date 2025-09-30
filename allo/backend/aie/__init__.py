@@ -780,7 +780,6 @@ class AIE_MLIRModule:
             used_external_kernel = self.virtual_computation_graph.nodes[
                 func_name
             ].meta_data.used_external_kernel
-            print(used_external_kernel)
             try:
                 linked_external_cc[func_name] = external_cc_list.index(
                     used_external_kernel

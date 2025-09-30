@@ -102,10 +102,11 @@ def attn_score_kernel():
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, D] @ LyA, B: Ty[D, N] @ LyB, C: Ty[N, N] @ LyC):
         pk, pm, pn = df.get_pid()
+        C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
-            C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+            C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
-            C_in: Ty[Mt, Nt] = 0
+            C_in[:, :] = 0
         C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
@@ -179,10 +180,11 @@ def top():
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, N] @ LyA, B: Ty[N, D] @ LyB, C: Ty[N, D] @ LyC):
         pk, pm, pn = df.get_pid()
+        C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
-            C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+            C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
-            C_in: Ty[Mt, Nt] = 0
+            C_in[:, :] = 0
         C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
