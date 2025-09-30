@@ -1634,6 +1634,7 @@ class CodeGenerator:
         self,
         core_funcs: list[allo_func_d.FuncOp],
         external_funcs: list[allo_func_d.FuncOp],
+        linked_external_cc: dict[str, int],
         trace: list[tuple[str, tuple[int, ...]]],
         trace_size: int,
     ) -> aie_ir.Module:
@@ -1831,12 +1832,16 @@ class CodeGenerator:
                 # compute logic on each compute tile
                 for func in core_funcs:
                     func_name = func.attributes["sym_name"].value
-                    use_external_kernel = self.virtual_computation_graph.nodes[
+                    used_external_kernel = self.virtual_computation_graph.nodes[
                         func_name
-                    ].meta_data.use_external_kernel
+                    ].meta_data.used_external_kernel
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
-                        link_with=("external.o" if use_external_kernel else None),
+                        link_with=(
+                            f"external{linked_external_cc[func_name]}.o"
+                            if len(used_external_kernel) > 0
+                            else None
+                        ),
                     )
                     if self.global_ip is None:
                         self.global_ip = aie_ir.InsertionPoint(func_core)

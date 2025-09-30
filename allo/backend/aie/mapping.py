@@ -352,7 +352,7 @@ class NodeMetaData:
     def __init__(
         self,
         name: str,
-        use_external_kernel: bool,
+        used_external_kernel: set[str],
         tag: str,
         in_types: list,
         out_types: list,
@@ -362,7 +362,9 @@ class NodeMetaData:
         self.id = NodeMetaData.node_cnt
         NodeMetaData.node_cnt += 1
         self.name = name
-        self.use_external_kernel = use_external_kernel
+        self.used_external_kernel: set[str] = (
+            used_external_kernel if used_external_kernel is not None else set()
+        )
         self.op_tag: str = tag
         self.df_kernels: set[str] = set()
         self.in_types: list = in_types
@@ -391,14 +393,14 @@ class NodeBase:
         self,
         name: str = None,
         func_sample: func_d.FuncOp = None,
-        use_external_kernel: bool = False,
+        used_external_kernel: set[str] = None,
         tag: str = None,
         repeat: int = 0,
         length: int = 1,
     ):
         self.meta_data: NodeMetaData = NodeMetaData(
             name,
-            use_external_kernel,
+            used_external_kernel,
             tag,
             in_types=(
                 func_sample.attributes["function_type"].value.inputs
@@ -447,10 +449,10 @@ class InitialNode(NodeBase):
         self,
         func_sample: func_d.FuncOp,
         func_name: str,
-        use_external_kernel: bool,
+        used_external_kernel: bool,
         tag: str,
     ):
-        super().__init__(func_name, func_sample, use_external_kernel, tag, 1)
+        super().__init__(func_name, func_sample, used_external_kernel, tag, 1)
         self.org_tags.append(tag)
         self.meta_data.df_kernels.add(func_name)
 
@@ -480,7 +482,7 @@ class CollocatedNode(NodeBase):
 
     def init_for_bundle(self, node_list: list[NodeBase]):
         sample_node: NodeBase = node_list[0]
-        self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
+        self.meta_data.used_external_kernel = sample_node.meta_data.used_external_kernel
         self.meta_data.in_types = sample_node.meta_data.in_types
         self.meta_data.out_types = sample_node.meta_data.out_types
         self.meta_data.input_streams = sample_node.meta_data.input_streams
@@ -504,8 +506,10 @@ class CollocatedNode(NodeBase):
         self.org_tags.append(tuple(org_tags))
 
     def init_for_chain(self, node_a: NodeBase, node_b: NodeBase):
-        self.meta_data.use_external_kernel = (
-            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
+        self.meta_data.used_external_kernel = (
+            node_a.meta_data.used_external_kernel.union(
+                node_b.meta_data.used_external_kernel
+            )
         )
         in_types_a: list = node_a.meta_data.in_types
         arg_idx_offset = len(in_types_a)
@@ -545,7 +549,7 @@ class ComputationGraph:
         top_func_name: str,
         stream_map: dict[str, Stream],
         core_func_args: dict[str, dict[int, tuple[Argument | list[Argument], bool]]],
-        use_external_kernels: dict[str, bool],
+        used_external_kernels: dict[str, set[str]],
         func_instances: dict = None,
     ):
         self.allo_module = allo_module
@@ -582,7 +586,7 @@ class ComputationGraph:
                 node = InitialNode(
                     func_sample,
                     func_name,
-                    use_external_kernels[predicate_tag],
+                    used_external_kernels[predicate_tag],
                     predicate_tag,
                 )
                 _, indexes = parse_kernel_name(func_name)
