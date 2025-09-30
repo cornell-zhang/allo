@@ -1,4 +1,10 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
+import torch
+import math
+import torch.nn.functional as F
 import allo
 from allo.ir.types import bfloat16
 import allo.dataflow as df
@@ -7,12 +13,18 @@ from ml_dtypes import bfloat16 as np_bfloat16
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
 
-KERNEL_LIB_PATH = "/home/sf668/workspace/allo/tests/dataflow/aie/gpt2/kernels/"
-np.random.seed(42)
 
 # ################################################################
 # Flash Attention
 # ################################################################
+
+
+def scaled_dot_product_attention(q, k, v):
+    _, D = k.shape
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(D)
+    attn = F.softmax(scores, dim=-1)
+    output = torch.matmul(attn, v)
+    return output
 
 
 def flash_attention(Q, K, V, chunk_size=32):
@@ -70,18 +82,19 @@ def gen_bundle(prefix, idx, total):
 def test_flash_attention(
     SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size=32, kv_chunk_size=32
 ):
+    KERNEL_LIB_PATH = os.getenv("ALLO_EXTERNAL_KERNEL_DIR")
     iteration = Q_tile_size // q_chunk_size
 
     init_softmax = ExternalModule(
         top="init_softmax",
-        impl_path=KERNEL_LIB_PATH + "lut_softmax.cc",
+        impl_path=KERNEL_LIB_PATH + "softmax_bf16.cc",
         input_idx=[],
         output_idx=[0, 1],
     )
 
     online_softmax = ExternalModule(
         top="online_softmax",
-        impl_path=KERNEL_LIB_PATH + "lut_softmax.cc",
+        impl_path=KERNEL_LIB_PATH + "softmax_bf16.cc",
         input_idx=[0, 1, 2],
         output_idx=[3, 4, 5, 6],
     )
@@ -230,10 +243,17 @@ def test_flash_attention(
     V_ = V.astype(np_bfloat16)
     O = np.zeros(Q_tile_size * HEAD_DIM).astype(np_bfloat16)
     mod(Q_, K_.T, V_, O)
-    np.set_printoptions(threshold=np.inf)
-    out = flash_attention(Q_, K_, V_, chunk_size=32)
     O = O.astype(np.float32).reshape(Q_tile_size, HEAD_DIM)
+
+    out = flash_attention(Q_, K_, V_, chunk_size=32)
     np.testing.assert_allclose(out, O, atol=5e-2)
+    print("PASSED!")
+
+    q = torch.from_numpy(Q).to(dtype=torch.bfloat16)
+    k = torch.from_numpy(K).to(dtype=torch.bfloat16)
+    v = torch.from_numpy(V).to(dtype=torch.bfloat16)
+    out_ = scaled_dot_product_attention(q, k, v)
+    np.testing.assert_allclose(out_.to(torch.float32).numpy(), O, atol=5e-2)
     print("PASSED!")
 
 
