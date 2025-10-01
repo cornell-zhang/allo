@@ -4,6 +4,7 @@
 
 import os
 import copy
+from typing import Any
 from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
@@ -75,6 +76,7 @@ class CodeGenerator:
     AIE dialect of MLIR.
     """
 
+    # pylint: disable=unsupported-binary-operation
     def __init__(
         self,
         device_type: str,
@@ -253,6 +255,12 @@ class CodeGenerator:
             - original_func (FuncOp): The Allo function to compile.
             - func_args (dict): Maps argument indices to (Argument, is_output) tuples.
         """
+        if "input_depth" in original_func.attributes:
+            input_arg_depth = []
+            for elem in original_func.attributes["input_depth"]:
+                input_arg_depth.append(elem.value)
+        else:
+            input_arg_depth = None
         func_string = self.preporocess_dumped_core_func(original_func, func_args)
         original_module = aie_ir.Module.parse(func_string)
         parsed_function: aie_func_d.FuncOp = None
@@ -277,7 +285,7 @@ class CodeGenerator:
             cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
-            reused_fifo_name: dict[str, bool] = {}
+            reused_fifo_info: dict[str, tuple[bool, Any]] = {}
             for i, argument in enumerate(parsed_function.arguments):
                 if not i in func_args:
                     continue
@@ -286,23 +294,37 @@ class CodeGenerator:
                     isinstance(arg_info[0], Argument)
                     and arg_info[0].dtensor is not None
                 ):
+                    nest_depth = (
+                        input_arg_depth[i] if input_arg_depth is not None else 0
+                    )
                     # fixme: argument.uses is unordered??
                     first_use = list(argument.uses)[-1]
                     if first_use is not None:
                         first_use_op = first_use.owner
-                        # no branch
-                        while first_use_op.parent.name != "func.func":
+                        # find parenting nest
+                        while nest_depth > 0:
+                            while "task_nest" not in first_use_op.parent.attributes:
+                                first_use_op = first_use_op.parent
+                            nest_depth -= 1
+                            first_use_op = first_use_op.parent
+                        while (
+                            first_use_op.parent.name != "func.func"
+                            and "task_nest" not in first_use_op.parent.attributes
+                        ):
                             first_use_op = first_use_op.parent
                         fifo = self.fifo_map[arg_to_fifo[i].name]
+                        block = first_use_op.parent.regions[0].blocks[0]
                         with aie_ir.InsertionPoint(first_use_op):
-                            if arg_to_fifo[i].name in reused_fifo_name:
+                            if arg_to_fifo[i].name in reused_fifo_info:
+                                assert block == reused_fifo_info[arg_to_fifo[i].name][1]
                                 fifo.release(
                                     1 if arg_info[0].dtensor.is_input else 0, 1
                                 )
                             else:
-                                reused_fifo_name[arg_to_fifo[i].name] = arg_info[
-                                    0
-                                ].dtensor.is_input
+                                reused_fifo_info[arg_to_fifo[i].name] = (
+                                    arg_info[0].dtensor.is_input,
+                                    block,
+                                )
                             acquired = fifo.acquire(
                                 1 if arg_info[0].dtensor.is_input else 0, 1
                             )
@@ -426,6 +448,10 @@ class CodeGenerator:
                                         cnt += 1
                             op.erase()
 
+            for fifo_name, (is_input, region) in reused_fifo_info.items():
+                with aie_ir.InsertionPoint.at_block_terminator(region):
+                    self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
+
             with aie_ir.InsertionPoint(loop.body):
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
@@ -456,9 +482,6 @@ class CodeGenerator:
                     for old, new in zip(alloc_op.results, buffer_op.results):
                         old.replace_all_uses_with(new)
                     alloc_op.erase()
-
-                for fifo_name, is_input in reused_fifo_name.items():
-                    self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
 
                 aie_scf_d.YieldOp([])
             aie_d.EndOp()
@@ -1634,6 +1657,7 @@ class CodeGenerator:
         self,
         core_funcs: list[allo_func_d.FuncOp],
         external_funcs: list[allo_func_d.FuncOp],
+        linked_external_cc: dict[str, int],
         trace: list[tuple[str, tuple[int, ...]]],
         trace_size: int,
     ) -> aie_ir.Module:
@@ -1831,12 +1855,16 @@ class CodeGenerator:
                 # compute logic on each compute tile
                 for func in core_funcs:
                     func_name = func.attributes["sym_name"].value
-                    use_external_kernel = self.virtual_computation_graph.nodes[
+                    used_external_kernel = self.virtual_computation_graph.nodes[
                         func_name
-                    ].meta_data.use_external_kernel
+                    ].meta_data.used_external_kernel
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
-                        link_with=("external.o" if use_external_kernel else None),
+                        link_with=(
+                            f"external{linked_external_cc[func_name]}.o"
+                            if len(used_external_kernel) > 0
+                            else None
+                        ),
                     )
                     if self.global_ip is None:
                         self.global_ip = aie_ir.InsertionPoint(func_core)

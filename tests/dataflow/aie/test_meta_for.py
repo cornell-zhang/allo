@@ -132,7 +132,61 @@ def _test_scatter():
     print("PASSED!")
 
 
+def _test_scatter2():
+    Ty = int32
+    M = 1024
+    P = 4
+    Ly = Layout("S0")
+
+    @df.region()
+    def top():
+        pipe = df.array(df.pipe(dtype=Ty, shape=(M // P,), depth=2), shape=(P,))
+
+        @df.kernel(mapping=[1])
+        def prod(Inc: Ty[M // P] @ Ly):
+            with allo.meta_for(P) as i:
+                pipe[i].put(Inc)
+
+        @df.kernel(mapping=[P])
+        def core(A: Ty[M] @ Ly, B: Ty[M] @ Ly):
+            pk = df.get_pid()
+            B[:] = allo.add(A, pipe[pk].get())
+
+    Inc = np.ones(M // P).astype(np.int32)
+    A = np.random.randint(0, 100, M).astype(np.int32)
+    B = np.zeros(M).astype(np.int32)
+
+    mod_v1 = df.build(top, target="aie")
+    mod_v1(Inc, A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+    mod_v2 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+        ],
+    )
+    mod_v2(Inc, A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+    mod_v3 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("bundle", ["core_0", "core_1", "core_2", "core_3"]),
+            ("chain", ["prod_0", "core_0x4"]),
+        ],
+    )
+    mod_v3(Inc, A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("PASSED!")
+
+
 if __name__ == "__main__":
     _test_vector_scalar_add()
     _test_gather()
     _test_scatter()
+    _test_scatter2()

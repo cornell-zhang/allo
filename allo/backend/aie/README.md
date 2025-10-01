@@ -379,7 +379,22 @@ For programs that use virtual mapping primitives, two visualization results are 
 - The virtual mapping graph after applying all mapping primitives (named "after_mapping.pdf")
     <img width="60%" alt="after" src="https://github.com/user-attachments/assets/22f82618-68a1-409e-b8c7-d10d252ef85a" />
 
-#### 
+#### `ALLO_EXTERNAL_KERNEL_DIR`
+
+This variable specifies the path to the Allo external kernel library.
+You can find this library under [`allo/library/aie`](../../library/aie/).
+
+Allo has modified and extended the [`mm.cc` kernel](https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc) in the `mlir-aie` kernel library.
+The changes include:
+* Adding support for `int4`.
+* Avoiding certain function name conflicts.
+
+If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or other external kernels in Allo external kernel library, you can set:
+
+```
+ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
+```
+
 ### New Feature
 #### Profiling
 A new timing-based profiling feature has been added to help measure the performance of the module during execution. 

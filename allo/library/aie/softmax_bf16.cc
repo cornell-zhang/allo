@@ -526,6 +526,72 @@ bfloat16 __attribute__((always_inline)) compute_inv_as_bf16(float x) {
   return *inv_x;
 }
 
+template <unsigned VecLen, typename VecIteratorIn, typename VecIteratorOut>
+float fa_exp_bf16(int num_elems, VecIteratorIn &in, VecIteratorOut &out) {
+  bfloat16 __aie_dm_resource_a *ilut_ab =
+      (bfloat16 __aie_dm_resource_a *)softmax_ilut_ab;
+  bfloat16 __aie_dm_resource_b *ilut_cd =
+      (bfloat16 __aie_dm_resource_b *)softmax_ilut_cd;
+  bfloat16 __aie_dm_resource_a *flut_ab =
+      (bfloat16 __aie_dm_resource_a *)softmax_flut_ab;
+  bfloat16 __aie_dm_resource_b *flut_cd =
+      (bfloat16 __aie_dm_resource_b *)softmax_flut_cd;
+  using lut_type = aie::lut<4, bfloat16, bfloat16>;
+  const int LUT_elems = 256;
+  const int step_i = 8;
+  const int step_f = 0;
+
+  constexpr int SM_SCALE_FAC =
+      8; // Use 8-bit fractional part for LUTs when converting from bfloat16 to
+         // int, adjust any input scale factor using this.
+
+  const int elem_iters =
+      num_elems / VecLen +
+      (num_elems % VecLen != 0); // number of iterations need to be performed
+  aie::vector<bfloat16, VecLen> I_val_vec, F_val_vec, res0, input_bf16;
+  aie::accum<accfloat, VecLen> exp_val_accum;
+  aie::accum<accfloat, VecLen> exp_val_accum_shift;
+  exp_val_accum = aie::zeros<accfloat, VecLen>();
+  // Maximum value computation
+  aie::accum<accfloat, VecLen> acc0;
+  aie::vector<int16, VecLen> input;
+  aie::vector<int16, 2 * VecLen> input0;
+
+  lut_type lut_i(LUT_elems, ilut_ab, ilut_cd);
+  lut_type lut_f(LUT_elems, flut_ab, flut_cd);
+  aie::parallel_lookup<uint16, lut_type, aie::lut_oor_policy::truncate>
+      lookup_i(lut_i, step_i);
+  aie::parallel_lookup<uint16, lut_type, aie::lut_oor_policy::truncate>
+      lookup_f(lut_f, step_f);
+  aie::accum<accfloat, VecLen> exp_val;
+
+  for (int i = 0; i < elem_iters; i++)
+    chess_prepare_for_pipelining chess_loop_range(4, ) {
+      aie::vector<bfloat16, VecLen> input_org = aie::load_v<VecLen>(in);
+      in += VecLen;
+      acc0.from_vector(input_org, 0);
+      input_bf16 = to_v16bfloat16(acc0);
+      input0 = v32int16(bfloat16_to_int(input_bf16, SM_SCALE_FAC));
+#ifndef SM_USE_MSB
+      input = filter_even(input0);
+#else
+      input = filter_odd(input0);
+#endif
+
+      I_val_vec = lookup_i.fetch(input.template cast_to<uint16>());
+      F_val_vec = lookup_f.fetch(input.template cast_to<uint16>());
+      exp_val = aie::mul(I_val_vec, F_val_vec);
+      exp_val_accum = add(exp_val_accum, exp_val);
+      aie::store_v(out, exp_val.template to_vector<bfloat16>());
+      out += VecLen;
+    }
+  // Variant not using emulated FP32 for the mul reduce, off by +/- 1 in final
+  // result and 10 cycles slower
+  aie::vector<float, VecLen> reduce = exp_val_accum.template to_vector<float>();
+  float res = aie::reduce_add(reduce);
+  return res;
+}
+
 template <int L>
 void init_softmax(bfloat16 *__restrict max_logit,
                   bfloat16 *__restrict sum_exp) {
@@ -548,6 +614,57 @@ void init_softmax(bfloat16 *__restrict max_logit,
 }
 
 extern "C" {
+
+void init_softmax(bfloat16 max_logit[32], bfloat16 sum_exp[32]) {
+  init_softmax<32>(max_logit, sum_exp);
+}
+
+void online_softmax(bfloat16 attention_score[32][32],
+                    bfloat16 prev_max_logit[32], bfloat16 prev_sum_exp[32],
+                    bfloat16 attention_weight[32][32], bfloat16 scale_exp[32],
+                    bfloat16 new_max_logit[32], bfloat16 new_sum_exp[32]) {
+  const int ROW = 32;
+  const int CHUNK_SIZE = 32;
+  constexpr int vec_factor = 256 / (sizeof(bfloat16) * 8);
+  const int F = CHUNK_SIZE / vec_factor;
+  // ! Note: When using vectorized instructions, the arrays must be properly
+  // aligned in memory.
+  alignas(64) bfloat16 tmp_max_logit[32];
+  for (int r = 0; r < ROW; ++r) {
+    bfloat16 *score_row_ptr = &attention_score[r][0];
+    // row max
+    bfloat16 row_max = prev_max_logit[r];
+    for (int i = 0; i < F; i++) {
+      aie::vector<bfloat16, vec_factor> scores =
+          aie::load_v<vec_factor>(score_row_ptr);
+      row_max = std::max(row_max, bfloat16(aie::reduce_max(scores) * 0.125f));
+      score_row_ptr += vec_factor;
+    }
+    // max_logit - new_max
+    tmp_max_logit[r] = bfloat16((prev_max_logit[r] - row_max));
+    new_max_logit[r] = bfloat16(row_max);
+    // logits - new_max
+    score_row_ptr = &attention_score[r][0];
+    for (int i = 0; i < F; i++) {
+      aie::vector<bfloat16, vec_factor> scores =
+          aie::load_v<vec_factor>(score_row_ptr);
+      scores = aie::sub(aie::mul(scores, bfloat16(0.125f)), row_max);
+      aie::store_v(score_row_ptr, scores);
+      score_row_ptr += vec_factor;
+    }
+  }
+  // scale = np.exp(max_logit - new_max)
+  const bfloat16 *__restrict scaleIn = &tmp_max_logit[0];
+  bfloat16 *__restrict scaleExp = &scale_exp[0];
+  fa_exp_bf16<16>(ROW, scaleIn, scaleExp);
+  for (int r = 0; r < ROW; ++r) {
+    // exp_logits = exp(logits - new_max)
+    const bfloat16 *__restrict pIn = &attention_score[r][0];
+    bfloat16 *__restrict pExp = &attention_weight[r][0];
+    float accum_exp_val = fa_exp_bf16<16>(CHUNK_SIZE, pIn, pExp);
+    new_sum_exp[r] = prev_sum_exp[r] * scale_exp[r] + accum_exp_val;
+  }
+}
 
 void softmax_bf16(const bfloat16 in[4][1024], bfloat16 out[4][1024]) {
   const int SIZE = 1024;
