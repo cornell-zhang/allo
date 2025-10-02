@@ -1102,20 +1102,22 @@ class ASTTransformer(ASTBuilder):
         return None
 
     @staticmethod
-    def build_slices(ctx: ASTContext, node: ast.Subscript, in_shape: ShapedType):
+    def build_slices(ctx: ASTContext, node: ast.Subscript, in_shape: list[int]):
+        # TODO: support dynamic.
         # calculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
         if isinstance(node.slice, ast.Tuple):
             slices = list(node.slice.elts)
         else:
             slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
+        offsets = []
+        sizes = []
+        strides = []
         static_offsets = []
         static_sizes = []
         static_strides = []
-        offsets = []
-        sizes = []
-        # Not support dynamic strides?
         for index, size in zip(slices, in_shape):
             if isinstance(index, ast.Slice):
+                # fixme: slice lower/upper/step is not constant
                 lower = (
                     0
                     if index.lower is None
@@ -1135,10 +1137,6 @@ class ASTTransformer(ASTBuilder):
                 if lower is None:
                     static_offsets.append(ShapedType.get_dynamic_size())
                     offset_expr = build_stmt(ctx, index.lower)
-                    offset = ASTTransformer.build_cast_op(
-                        ctx, offset_expr, index.dtype, Index()
-                    ).result
-                    offsets.append(offset)
                     static_sizes.append(ShapedType.get_dynamic_size())
                     if upper is None:
                         upper_expr = build_stmt(ctx, index.upper)
@@ -1152,7 +1150,6 @@ class ASTTransformer(ASTBuilder):
                     size = ASTTransformer.build_cast_op(
                         ctx, size_expr, index.dtype, Index()
                     ).result
-                    sizes.append(size)
                     continue
                 if upper is None:
                     static_sizes.append(ShapedType.get_dynamic_size())
@@ -1163,26 +1160,51 @@ class ASTTransformer(ASTBuilder):
                     size = ASTTransformer.build_cast_op(
                         ctx, size_expr, index.dtype, Index()
                     ).result
-                    sizes.append(size)
                     continue
+                if lower < 0 or upper < 0:
+                    raise RuntimeError("Unsupported negative index")
+                if lower >= size or upper > size:
+                    raise RuntimeError("Index out of range")
+                if step <= 0:
+                    raise RuntimeError("Unsupported negative step")
+                if step > upper - lower:
+                    raise RuntimeError("Step larger than range")
+                static_offsets.append(lower)
+                static_sizes.append((upper - lower) // step)
+                static_strides.append(step)
             elif isinstance(index, (ast.Index, ast.Constant)):
                 lower = (
                     index.value.value if isinstance(index, ast.Index) else index.value
                 )
-                upper = lower + 1
-                step = 1
-            if lower < 0 or upper < 0:
-                raise RuntimeError("Unsupported negative index")
-            if lower > size or upper > size:
-                raise RuntimeError("Index out of range")
-            if step <= 0:
-                raise RuntimeError("Unsupported negative step")
-            if step > upper - lower:
-                raise RuntimeError("Step larger than range")
-            static_offsets.append(lower)
-            static_sizes.append((upper - lower) // step)
-            static_strides.append(step)
-        return static_offsets, static_sizes, static_strides
+                if lower < 0:
+                    raise RuntimeError("Unsupported negative index")
+                if lower >= size:
+                    raise RuntimeError("Index out of range")
+                static_offsets.append(lower)
+                static_sizes.append(1)
+                static_strides.append(1)
+                continue
+            elif isinstance(index, ast.Name):
+                index = build_stmt(ctx, index)
+                if isinstance(index, MockConstant):
+                    lower = index.val
+                    if lower < 0:
+                        raise RuntimeError("Unsupported negative index")
+                    if lower >= size:
+                        raise RuntimeError("Index out of range")
+                    static_offsets.append(lower)
+                    static_sizes.append(1)
+                    static_strides.append(1)
+                    continue
+                # fixme: unverified
+                offsets.append(index)
+                static_offsets.append(-1)
+                static_sizes.append(1)
+                static_strides.append(1)
+                raise ValueError("Not supported. Dynamic offset is incompatible with many builtin opt passes.")
+            else:
+                raise ValueError(f"Unsupported slice index type ({type(index)})")
+        return offsets, sizes, strides, static_offsets, static_sizes, static_strides
 
     @staticmethod
     def build_tensor_access(
@@ -1194,6 +1216,9 @@ class ASTTransformer(ASTBuilder):
             dtype = RankedTensorType(value.result.type).element_type
             in_shape = RankedTensorType(value.result.type).shape
             (
+                offsets,
+                sizes,
+                strides,
                 static_offsets,
                 static_sizes,
                 static_strides,
@@ -1207,9 +1232,9 @@ class ASTTransformer(ASTBuilder):
                     static_sizes=static_sizes,
                     static_strides=static_strides,
                     static_offsets=static_offsets,
-                    offsets=[],
-                    sizes=[],
-                    strides=[],
+                    offsets=offsets,
+                    sizes=sizes,
+                    strides=strides,
                     ip=ctx.get_ip(),
                 )
             else:  # ast.Store
@@ -1254,6 +1279,9 @@ class ASTTransformer(ASTBuilder):
             dtype = MemRefType(value.result.type).element_type
             in_shape = MemRefType(value.result.type).shape
             (
+                offsets,
+                sizes,
+                strides,
                 static_offsets,
                 static_sizes,
                 static_strides,
@@ -1280,21 +1308,31 @@ class ASTTransformer(ASTBuilder):
             new_strides = [
                 orig_strides[i] * static_strides[i] for i in range(len(static_strides))
             ]
-            layout = StridedLayoutAttr.get(new_offset, new_strides)
-            result = MemRefType.get(static_sizes, dtype, layout=layout)
+            result_strides = []
+            result_sizes = []
+            for idx_, size in enumerate(static_sizes):
+                if size > 1:
+                    result_sizes.append(size)
+                    result_strides.append(new_strides[idx_])
+            layout = StridedLayoutAttr.get(new_offset, result_strides)
+            result = MemRefType.get(result_sizes, dtype, layout=layout)
             subview = memref_d.SubViewOp(
                 source=value.result,
                 result=result,
                 static_offsets=static_offsets,
                 static_sizes=static_sizes,
                 static_strides=static_strides,
-                offsets=[],
-                sizes=[],
-                strides=[],
+                offsets=offsets,
+                sizes=sizes,
+                strides=strides,
                 ip=ctx.get_ip(),
             )
             if isinstance(node.ctx, ast.Load):
-                op = subview
+                # copy to another memref type to avoid some annoying type compatibility issue
+                memref_type = MemRefType.get(result_sizes, dtype)
+                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
+                op = alloc_op
             else:
                 op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
         else:
@@ -1351,6 +1389,12 @@ class ASTTransformer(ASTBuilder):
                 )
                 # pylint: disable=redefined-variable-type
                 op = subview
+                if isinstance(node.ctx, ast.Load):
+                    # copy to another memref type to avoid some annoying type compatibility issue
+                    memref_type = MemRefType.get(node.shape, node.dtype.build())
+                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                    memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
+                    op = alloc_op
             elif is_affine:
                 affine_map = AffineMap.get(
                     dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices

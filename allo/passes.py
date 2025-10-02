@@ -743,9 +743,8 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
             for use in value.uses:
                 user = use.owner
                 if user.name == "memref.subview":
-                    result = user.result(0)
-                    subview_map[result] = arg.arg_number
-                    work_list.append(result)
+                    subview_map[user.result] = arg.arg_number
+                    work_list.append(user.result)
 
     # Helper to resolve a value to its original argument index if it's a subview
     def resolve_to_func_arg_index(value):
