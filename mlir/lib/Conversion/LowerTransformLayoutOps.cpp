@@ -64,8 +64,7 @@ bool applyLowerTransformLayoutOps(ModuleOp &mod) {
       Value flatInput = rewriter.create<memref::ReinterpretCastOp>(
           loc, flatType, input, rewriter.getIndexAttr(0), dimAttr, strideAttr);
       // memory access with transformed layout
-      SmallVector<int64_t> lbs(sizes.size(), 0),
-          ubs(sizes.begin(), sizes.end()), steps(sizes.size(), 1);
+      SmallVector<int64_t> lbs(sizes.size(), 0), steps(sizes.size(), 1);
       SmallVector<int64_t> dst_strides;
       int64_t stride = expected_size;
       for (size_t i = 0; i < sizes.size(); ++i) {

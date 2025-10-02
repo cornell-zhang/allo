@@ -9,6 +9,37 @@ import numpy as np
 from allo.memory import Layout
 
 
+def _test_store_slice():
+
+    Ty = int16
+    N = 32
+    Pk = 4
+
+    @df.region()
+    def top():
+        pipe = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
+
+        @df.kernel(mapping=[Pk])
+        def src(A: Ty[N]):
+            pk = df.get_pid()
+            pipe[pk].put(A)
+
+        @df.kernel(mapping=[1])
+        def dst(B: Ty[Pk, N]):
+            with allo.meta_for(Pk) as i:
+                B[i, :] = pipe[i].get()
+
+    mod = df.build(top, target="aie")
+    A = np.random.randint(0, 64, (N)).astype(np.int16)
+    B = np.zeros((Pk, N)).astype(np.int16)
+    mod(A, B)
+    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+    print("PASSED!")
+
+
 def _test_split_k_explicit_gather_gemm_1x1x4():
 
     Ty = int16
@@ -61,7 +92,9 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
+
 if __name__ == "__main__":
     os.environ["FORCE_UNROLL_INDEX"] = "1"
-    _test_split_k_explicit_gather_gemm_1x1x4()
+    _test_store_slice()
+    # _test_split_k_explicit_gather_gemm_1x1x4()
     del os.environ["FORCE_UNROLL_INDEX"]

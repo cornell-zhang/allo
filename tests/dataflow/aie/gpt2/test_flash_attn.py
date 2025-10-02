@@ -270,4 +270,3 @@ if __name__ == "__main__":
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
     del os.environ["FORCE_UNROLL_INDEX"]
-    
