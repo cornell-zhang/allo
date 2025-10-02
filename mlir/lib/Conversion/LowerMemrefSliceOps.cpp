@@ -30,8 +30,8 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       }
     });
     for (auto op : setStoreSliceOps) {
-      Value dst = op->getOperands()[0];
-      Value tile = op->getOperands()[1];
+      Value dst = op->getOperands()[1];
+      Value tile = op->getOperands()[0];
       MemRefType dstType = dst.getType().dyn_cast<MemRefType>();
       MemRefType tileType = tile.getType().dyn_cast<MemRefType>();
       auto tile_shape = tileType.getShape();
@@ -65,7 +65,7 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       tileDimAttr.push_back(rewriter.getIndexAttr(tile_size));
       tileStrideAttr.push_back(rewriter.getIndexAttr(1));
       Value flatTile = rewriter.create<memref::ReinterpretCastOp>(
-          loc, tileFlatType, dst, rewriter.getIndexAttr(0), tileDimAttr,
+          loc, tileFlatType, tile, rewriter.getIndexAttr(0), tileDimAttr,
           tileStrideAttr);
       auto flatType =
           MemRefType::get({flattened_size}, dstType.getElementType());

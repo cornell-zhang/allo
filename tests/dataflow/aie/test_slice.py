@@ -29,10 +29,23 @@ def _test_store_slice():
             with allo.meta_for(Pk) as i:
                 B[i, :] = pipe[i].get()
 
-    mod = df.build(top, target="aie")
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
-    mod(A, B)
+
+    mod_v1 = df.build(top, target="aie")
+    mod_v1(A, B)
+    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+    print("PASSED!")
+
+    mod_v2 = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[("bundle", ["src_0", "src_1", "src_2", "src_3"])],
+    )
+    mod_v2(A, B)
     np.testing.assert_allclose(A, B[0, :], atol=1e-5)
     np.testing.assert_allclose(A, B[1, :], atol=1e-5)
     np.testing.assert_allclose(A, B[2, :], atol=1e-5)
@@ -94,7 +107,5 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 
 if __name__ == "__main__":
-    os.environ["FORCE_UNROLL_INDEX"] = "0"
     _test_store_slice()
-    # _test_split_k_explicit_gather_gemm_1x1x4()
-    del os.environ["FORCE_UNROLL_INDEX"]
+    _test_split_k_explicit_gather_gemm_1x1x4()

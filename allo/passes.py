@@ -797,10 +797,10 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
                     input_indices.add(resolve_to_func_arg_index(op.operands[idx]))
                 for idx in ext_module.output_idx:
                     output_indices.add(resolve_to_func_arg_index(op.operands[idx]))
-            elif op_name in {"memref.load", "affine.load"}:
+            elif op_name in {"memref.load", "affine.load", "allo.load_slice"}:
                 if len(op.operands) > 0:
                     input_indices.add(resolve_to_func_arg_index(op.operands[0]))
-            elif op_name in {"memref.store", "affine.store"}:
+            elif op_name in {"memref.store", "affine.store", "allo.store_slice"}:
                 if len(op.operands) > 1:
                     output_indices.add(resolve_to_func_arg_index(op.operands[1]))
             elif op_name == "memref.copy" and len(op.operands) >= 2:

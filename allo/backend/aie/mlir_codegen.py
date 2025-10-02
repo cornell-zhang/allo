@@ -2237,7 +2237,6 @@ class CodeGenerator:
                         dma_bd_workload[available_shim_for_trace] = set(
                             range(Config.DMA_MAX_BDS - packet_id)
                         )
-                    print(coalesced_tasks_list)
                     while tasks_idx_left < len(coalesced_tasks_list):
                         overload_flag = False
                         fifo_dma_tasks: dict[str, list[DMAMemcpyGroup]] = {}

@@ -1298,24 +1298,26 @@ class ASTTransformer(ASTBuilder):
                         offset_values.append(offsets[dynamic_offset_cnt])
                         dynamic_offset_cnt += 1
                     else:
-                        const_var = arith_d.ConstantOp.create_index(offset, ip=ctx.get_ip())
+                        const_var = arith_d.ConstantOp.create_index(
+                            offset, ip=ctx.get_ip()
+                        )
                         offset_values.append(const_var)
                 stride_values = []
                 assert len(in_shape) == len(static_strides)
                 stride_ = 1
                 for i, org_stride in enumerate(reversed(static_strides)):
                     stride_values.append(org_stride * stride_)
-                    stride_*= in_shape[-i-1]
+                    stride_ *= in_shape[-i - 1]
                 # use dynamic index
                 if isinstance(node.ctx, ast.Load):
                     raise RuntimeError("TODO")
                 else:
                     op = allo_d.store_slice(
-                        value.result,
                         val.result,
+                        value.result,
                         offsets=offset_values,
                         sizes=static_sizes,
-                        strides=list(reversed(stride_values)), # fixme
+                        strides=list(reversed(stride_values)),  # fixme
                         ip=ctx.get_ip(),
                     )
             else:

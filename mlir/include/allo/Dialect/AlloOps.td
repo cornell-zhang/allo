@@ -1089,8 +1089,8 @@ def StoreSliceOp : Allo_Op<"store_slice"> {
   }];
 
   let arguments = (ins
-    AnyStaticShapeMemRef:$destination,
     AnyStaticShapeMemRef:$tile,
+    AnyStaticShapeMemRef:$destination,
     Variadic<Index>:$offsets,
     DenseI64ArrayAttr:$sizes,
     DenseI64ArrayAttr:$strides
