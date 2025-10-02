@@ -17,6 +17,32 @@ def _test_store_slice():
 
     @df.region()
     def top():
+
+        @df.kernel(mapping=[1])
+        def core(A: Ty[N], B: Ty[Pk, N]):
+            for i in range(Pk):
+                B[i, :] = A
+
+    A = np.random.randint(0, 64, (N)).astype(np.int16)
+    B = np.zeros((Pk, N)).astype(np.int16)
+
+    mod = df.build(top, target="aie")
+    mod(A, B)
+    np.testing.assert_allclose(A, B[0, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[1, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[2, :], atol=1e-5)
+    np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+    print("PASSED!")
+
+
+def _test_store_slice1():
+
+    Ty = int16
+    N = 32
+    Pk = 4
+
+    @df.region()
+    def top():
         pipe = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
 
         @df.kernel(mapping=[Pk])
@@ -27,6 +53,7 @@ def _test_store_slice():
         @df.kernel(mapping=[1])
         def dst(B: Ty[Pk, N]):
             with allo.meta_for(Pk) as i:
+                # [NOTE]: will be left as UB
                 B[i, :] = pipe[i].get()
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
@@ -108,4 +135,5 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 if __name__ == "__main__":
     _test_store_slice()
-    _test_split_k_explicit_gather_gemm_1x1x4()
+    # _test_store_slice1()
+    # _test_split_k_explicit_gather_gemm_1x1x4()

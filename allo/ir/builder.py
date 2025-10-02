@@ -1103,8 +1103,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_slices(ctx: ASTContext, node: ast.Subscript, in_shape: list[int]):
-        # TODO: support dynamic.
-        # calculate the static offsets, sizes, strides for ExtractSlice and InsertSlice
+        # calculate the (static) offsets, sizes, strides for ExtractSlice and InsertSlice
         if isinstance(node.slice, ast.Tuple):
             slices = list(node.slice.elts)
         else:
@@ -1202,9 +1201,8 @@ class ASTTransformer(ASTBuilder):
                     static_sizes.append(1)
                     static_strides.append(1)
                     continue
-                # fixme: unverified
                 raise ValueError(
-                    "Not supported. Dynamic offset is incompatible with many builtin opt passes."
+                    f"Index type ({type(index)}) not supported. Dynamic offset is incompatible with many builtin opt passes."
                 )
             else:
                 raise ValueError(f"Unsupported slice index type ({type(index)})")
@@ -1302,12 +1300,15 @@ class ASTTransformer(ASTBuilder):
                             offset, ip=ctx.get_ip()
                         )
                         offset_values.append(const_var)
-                stride_values = []
                 assert len(in_shape) == len(static_strides)
-                stride_ = 1
-                for i, org_stride in enumerate(reversed(static_strides)):
-                    stride_values.append(org_stride * stride_)
-                    stride_ *= in_shape[-i - 1]
+                flattened_stride = []
+                stride_ = np.prod(in_shape)
+                for shape in in_shape:
+                    stride_ //= shape
+                    flattened_stride.append(stride_)
+                stride_values = [
+                    o * i for o, i in zip(static_strides, flattened_stride)
+                ]
                 # use dynamic index
                 if isinstance(node.ctx, ast.Load):
                     raise RuntimeError("TODO")
@@ -1317,7 +1318,7 @@ class ASTTransformer(ASTBuilder):
                         value.result,
                         offsets=offset_values,
                         sizes=static_sizes,
-                        strides=list(reversed(stride_values)),  # fixme
+                        strides=stride_values,  # fixme
                         ip=ctx.get_ip(),
                     )
             else:

@@ -76,6 +76,12 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
           loc, flatType, dst, rewriter.getIndexAttr(0), dimAttr, strideAttr);
       // element-wise store
       SmallVector<int64_t> lbs(sizes.size(), 0), steps(sizes.size(), 1);
+      SmallVector<int64_t> src_strides;
+      int64_t stride = tile_size;
+      for (size_t i = 0; i < sizes.size(); ++i) {
+        stride /= sizes[i];
+        src_strides.push_back(stride);
+      }
       affine::buildAffineLoopNest(
           rewriter, loc, lbs, sizes, steps,
           [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange ivs) {
@@ -95,7 +101,7 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
               mul = nestedBuilder.create<arith::MulIOp>(
                   nestedLoc, ivs[d],
                   nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
-                                                               strides[d]));
+                                                               src_strides[d]));
               srcIdx =
                   nestedBuilder.create<arith::AddIOp>(nestedLoc, srcIdx, mul);
             }
