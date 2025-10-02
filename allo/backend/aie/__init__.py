@@ -246,6 +246,7 @@ class AIE_MLIRModule:
                 in_idx_list, out_idx_list = analyze_read_write_patterns(
                     func, injected_external_kernels
                 )
+                print(in_idx_list, out_idx_list)
                 tag_to_read_write_pattern[tag] = (in_idx_list, out_idx_list)
 
         for orig_name, kernel_instance_info in self.func_instances.items():
@@ -275,6 +276,7 @@ class AIE_MLIRModule:
                             global_idx = self.func_args[self.top_func_name].index(
                                 argument
                             )
+                            print(global_idx, io_type)
                             argument.dtensor.set_global_info(
                                 global_idx, io_type == "in"
                             )
@@ -747,7 +749,7 @@ class AIE_MLIRModule:
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops,lower-store-slice-ops",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:

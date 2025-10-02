@@ -94,7 +94,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 
 if __name__ == "__main__":
-    os.environ["FORCE_UNROLL_INDEX"] = "1"
+    os.environ["FORCE_UNROLL_INDEX"] = "0"
     _test_store_slice()
     # _test_split_k_explicit_gather_gemm_1x1x4()
     del os.environ["FORCE_UNROLL_INDEX"]

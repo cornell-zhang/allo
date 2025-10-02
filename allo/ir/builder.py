@@ -1196,12 +1196,16 @@ class ASTTransformer(ASTBuilder):
                     static_sizes.append(1)
                     static_strides.append(1)
                     continue
+                if isinstance(index, MockArg):
+                    offsets.append(index.val)
+                    static_offsets.append(-1)
+                    static_sizes.append(1)
+                    static_strides.append(1)
+                    continue
                 # fixme: unverified
-                offsets.append(index)
-                static_offsets.append(-1)
-                static_sizes.append(1)
-                static_strides.append(1)
-                raise ValueError("Not supported. Dynamic offset is incompatible with many builtin opt passes.")
+                raise ValueError(
+                    "Not supported. Dynamic offset is incompatible with many builtin opt passes."
+                )
             else:
                 raise ValueError(f"Unsupported slice index type ({type(index)})")
         return offsets, sizes, strides, static_offsets, static_sizes, static_strides
@@ -1286,55 +1290,85 @@ class ASTTransformer(ASTBuilder):
                 static_sizes,
                 static_strides,
             ) = ASTTransformer.build_slices(ctx, node, in_shape)
-            orig_type = value.result.type
-            orig_layout = orig_type.layout
-            if isinstance(orig_layout, StridedLayoutAttr):
-                orig_offset = orig_layout.offset
-                orig_strides = orig_layout.strides
-            elif isinstance(orig_layout, AffineMapAttr):
-                # TODO: need to support non-identity affine map
-                orig_offset = 0
-                orig_strides = []
-                times = 1
-                for i in range(orig_type.rank):
-                    orig_strides.append(times)
-                    times *= orig_type.shape[orig_type.rank - i - 1]
-                orig_strides = list(reversed(orig_strides))
+            if len(offsets) > 0:
+                offset_values = []
+                dynamic_offset_cnt = 0
+                for offset in static_offsets:
+                    if offset < 0:
+                        offset_values.append(offsets[dynamic_offset_cnt])
+                        dynamic_offset_cnt += 1
+                    else:
+                        const_var = arith_d.ConstantOp.create_index(offset, ip=ctx.get_ip())
+                        offset_values.append(const_var)
+                stride_values = []
+                assert len(in_shape) == len(static_strides)
+                stride_ = 1
+                for i, org_stride in enumerate(reversed(static_strides)):
+                    stride_values.append(org_stride * stride_)
+                    stride_*= in_shape[-i-1]
+                # use dynamic index
+                if isinstance(node.ctx, ast.Load):
+                    raise RuntimeError("TODO")
+                else:
+                    op = allo_d.store_slice(
+                        value.result,
+                        val.result,
+                        offsets=offset_values,
+                        sizes=static_sizes,
+                        strides=list(reversed(stride_values)), # fixme
+                        ip=ctx.get_ip(),
+                    )
             else:
-                raise RuntimeError("Unsupported layout type")
-            new_offset = orig_offset + sum(
-                o * s for o, s in zip(static_offsets, orig_strides)
-            )
-            new_strides = [
-                orig_strides[i] * static_strides[i] for i in range(len(static_strides))
-            ]
-            result_strides = []
-            result_sizes = []
-            for idx_, size in enumerate(static_sizes):
-                if size > 1:
-                    result_sizes.append(size)
-                    result_strides.append(new_strides[idx_])
-            layout = StridedLayoutAttr.get(new_offset, result_strides)
-            result = MemRefType.get(result_sizes, dtype, layout=layout)
-            subview = memref_d.SubViewOp(
-                source=value.result,
-                result=result,
-                static_offsets=static_offsets,
-                static_sizes=static_sizes,
-                static_strides=static_strides,
-                offsets=offsets,
-                sizes=sizes,
-                strides=strides,
-                ip=ctx.get_ip(),
-            )
-            if isinstance(node.ctx, ast.Load):
-                # copy to another memref type to avoid some annoying type compatibility issue
-                memref_type = MemRefType.get(result_sizes, dtype)
-                alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
-                op = alloc_op
-            else:
-                op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
+                orig_type = value.result.type
+                orig_layout = orig_type.layout
+                if isinstance(orig_layout, StridedLayoutAttr):
+                    orig_offset = orig_layout.offset
+                    orig_strides = orig_layout.strides
+                elif isinstance(orig_layout, AffineMapAttr):
+                    # TODO: need to support non-identity affine map
+                    orig_offset = 0
+                    orig_strides = []
+                    times = 1
+                    for i in range(orig_type.rank):
+                        orig_strides.append(times)
+                        times *= orig_type.shape[orig_type.rank - i - 1]
+                    orig_strides = list(reversed(orig_strides))
+                else:
+                    raise RuntimeError("Unsupported layout type")
+                new_offset = orig_offset + sum(
+                    o * s for o, s in zip(static_offsets, orig_strides)
+                )
+                new_strides = [
+                    orig_strides[i] * static_strides[i]
+                    for i in range(len(static_strides))
+                ]
+                result_strides = []
+                result_sizes = []
+                for idx_, size in enumerate(static_sizes):
+                    if size > 1:
+                        result_sizes.append(size)
+                        result_strides.append(new_strides[idx_])
+                layout = StridedLayoutAttr.get(new_offset, result_strides)
+                result = MemRefType.get(result_sizes, dtype, layout=layout)
+                subview = memref_d.SubViewOp(
+                    source=value.result,
+                    result=result,
+                    static_offsets=static_offsets,
+                    static_sizes=static_sizes,
+                    static_strides=static_strides,
+                    offsets=offsets,
+                    sizes=sizes,
+                    strides=strides,
+                    ip=ctx.get_ip(),
+                )
+                if isinstance(node.ctx, ast.Load):
+                    # copy to another memref type to avoid some annoying type compatibility issue
+                    memref_type = MemRefType.get(result_sizes, dtype)
+                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
+                    memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
+                    op = alloc_op
+                else:
+                    op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
         else:
             new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
             if len(node.value.shape) > len(new_indices):  # partial access

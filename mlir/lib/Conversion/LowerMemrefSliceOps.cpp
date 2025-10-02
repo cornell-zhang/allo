@@ -59,6 +59,14 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       for (int64_t val : dstType.getShape()) {
         flattened_size *= val;
       }
+      auto tileFlatType =
+          MemRefType::get({tile_size}, dstType.getElementType());
+      SmallVector<OpFoldResult> tileDimAttr, tileStrideAttr;
+      tileDimAttr.push_back(rewriter.getIndexAttr(tile_size));
+      tileStrideAttr.push_back(rewriter.getIndexAttr(1));
+      Value flatTile = rewriter.create<memref::ReinterpretCastOp>(
+          loc, tileFlatType, dst, rewriter.getIndexAttr(0), tileDimAttr,
+          tileStrideAttr);
       auto flatType =
           MemRefType::get({flattened_size}, dstType.getElementType());
       SmallVector<OpFoldResult> dimAttr, strideAttr;
@@ -71,23 +79,29 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       affine::buildAffineLoopNest(
           rewriter, loc, lbs, sizes, steps,
           [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange ivs) {
+            Value srcIdx =
+                nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
             Value dstIdx =
                 nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
             for (unsigned d = 0; d < sizes.size(); ++d) {
-              Value add = nestedBuilder.create<arith::AddIOp>(
-                  nestedLoc, ivs[d],
-                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
-                                                               offsets[d]));
+              Value add = nestedBuilder.create<arith::AddIOp>(nestedLoc, ivs[d],
+                                                              offsets[d]);
               Value mul = nestedBuilder.create<arith::MulIOp>(
                   nestedLoc, add,
                   nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
                                                                strides[d]));
               dstIdx =
                   nestedBuilder.create<arith::AddIOp>(nestedLoc, dstIdx, mul);
+              mul = nestedBuilder.create<arith::MulIOp>(
+                  nestedLoc, ivs[d],
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               strides[d]));
+              srcIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, srcIdx, mul);
             }
             // load from tile
-            Value elem =
-                nestedBuilder.create<memref::LoadOp>(nestedLoc, tile, ivs);
+            Value elem = nestedBuilder.create<memref::LoadOp>(
+                nestedLoc, flatTile, ValueRange{srcIdx});
             // store to the flattened memref
             nestedBuilder.create<memref::StoreOp>(nestedLoc, elem, flatDst,
                                                   ValueRange{dstIdx});

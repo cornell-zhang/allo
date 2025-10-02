@@ -1091,13 +1091,13 @@ def StoreSliceOp : Allo_Op<"store_slice"> {
   let arguments = (ins
     AnyStaticShapeMemRef:$destination,
     AnyStaticShapeMemRef:$tile,
-    DenseI64ArrayAttr:$offsets,
+    Variadic<Index>:$offsets,
     DenseI64ArrayAttr:$sizes,
     DenseI64ArrayAttr:$strides
   );
 
   let assemblyFormat = [{
-    $destination `offsets` `=` $offsets
+    $destination `[` $offsets `]`
       `sizes` `=` $sizes
       `strides` `=` $strides
     `from` $tile
@@ -1115,7 +1115,7 @@ def LoadSliceOp : Allo_Op<"load_slice"> {
 
   let arguments = (ins
     AnyStaticShapeMemRef:$source,
-    DenseI64ArrayAttr:$offsets,
+    Variadic<Index>:$offsets,
     DenseI64ArrayAttr:$sizes,
     DenseI64ArrayAttr:$strides
   );
@@ -1126,7 +1126,7 @@ def LoadSliceOp : Allo_Op<"load_slice"> {
 
   let assemblyFormat = [{
     $source
-      `offsets` `=` $offsets
+      `[` $offsets `]`
       `sizes` `=` $sizes
       `strides` `=` $strides
     attr-dict
