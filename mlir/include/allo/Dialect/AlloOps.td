@@ -1077,4 +1077,61 @@ def TransformLayoutOp : Allo_Op<"transform_layout"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Memref Slice operations
+//===----------------------------------------------------------------------===//
+
+def StoreSliceOp : Allo_Op<"store_slice"> {
+  let summary = "Store a sub-memref into a slice of a larger buffer";
+  let description = [{
+    Stores the contents of a memref tile into a specified slice
+    (defined by offsets/sizes/strides) of a larger buffer.
+  }];
+
+  let arguments = (ins
+    AnyStaticShapeMemRef:$destination,
+    AnyStaticShapeMemRef:$tile,
+    DenseI64ArrayAttr:$offsets,
+    DenseI64ArrayAttr:$sizes,
+    DenseI64ArrayAttr:$strides
+  );
+
+  let assemblyFormat = [{
+    $destination `offsets` `=` $offsets
+      `sizes` `=` $sizes
+      `strides` `=` $strides
+    `from` $tile
+    attr-dict
+    `:` type($destination) `,` type($tile)
+  }];
+}
+
+def LoadSliceOp : Allo_Op<"load_slice"> {
+  let summary = "Load a sub-memref slice from a larger buffer";
+  let description = [{
+    Extracts a sub-memref (defined by offsets/sizes/strides)
+    from a larger buffer.
+  }];
+
+  let arguments = (ins
+    AnyStaticShapeMemRef:$source,
+    DenseI64ArrayAttr:$offsets,
+    DenseI64ArrayAttr:$sizes,
+    DenseI64ArrayAttr:$strides
+  );
+
+  let results = (outs
+    AnyStaticShapeMemRef:$slice
+  );
+
+  let assemblyFormat = [{
+    $source
+      `offsets` `=` $offsets
+      `sizes` `=` $sizes
+      `strides` `=` $strides
+    attr-dict
+    `:` type($source) `->` type($slice)
+  }];
+}
+
 #endif // ALLO_OPS

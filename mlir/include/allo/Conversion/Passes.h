@@ -21,6 +21,8 @@ std::unique_ptr<OperationPass<ModuleOp>> createFixedPointToIntegerPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerCompositeTypePass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerBitOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerTransformLayoutOpsPass();
+std::unique_ptr<OperationPass<ModuleOp>> createLowerStoreSliceOpsPass();
+std::unique_ptr<OperationPass<ModuleOp>> createLowerLoadSliceOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerPrintOpsPass();
 
 bool applyAlloToLLVMLoweringPass(ModuleOp &module, MLIRContext &context);
@@ -28,6 +30,8 @@ bool applyFixedPointToInteger(ModuleOp &module);
 bool applyLowerCompositeType(ModuleOp &module);
 bool applyLowerBitOps(ModuleOp &module);
 bool applyLowerTransformLayoutOps(ModuleOp &module);
+bool applyLowerStoreSliceOps(ModuleOp &module);
+bool applyLowerLoadSliceOps(ModuleOp &module);
 bool applyLowerPrintOps(ModuleOp &module);
 
 /// Registers all Allo conversion passes
