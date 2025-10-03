@@ -35,6 +35,29 @@ def _test_store_slice():
     print("PASSED!")
 
 
+def _test_load_slice():
+
+    Ty = int16
+    N = 32
+    Pk = 4
+
+    @df.region()
+    def top():
+
+        @df.kernel(mapping=[1])
+        def core(A: Ty[Pk, N], B: Ty[Pk, N]):
+            for i in range(Pk):
+                B[i, :] = A[i, :]
+
+    A = np.random.randint(0, 64, (Pk, N)).astype(np.int16)
+    B = np.zeros((Pk, N)).astype(np.int16)
+
+    mod = df.build(top, target="aie")
+    mod(A, B)
+    np.testing.assert_allclose(A, B, atol=1e-5)
+    print("PASSED!")
+
+
 def _test_store_slice1():
 
     Ty = int16
@@ -135,5 +158,6 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 if __name__ == "__main__":
     _test_store_slice()
-    # _test_store_slice1()
-    # _test_split_k_explicit_gather_gemm_1x1x4()
+    _test_load_slice()
+    _test_store_slice1()
+    _test_split_k_explicit_gather_gemm_1x1x4()

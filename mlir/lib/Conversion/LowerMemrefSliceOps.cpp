@@ -55,10 +55,6 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       Location loc = op->getLoc();
       OpBuilder rewriter(op);
       // flatten the dst memref
-      int64_t flattened_size = 1;
-      for (int64_t val : dstType.getShape()) {
-        flattened_size *= val;
-      }
       auto tileFlatType =
           MemRefType::get({tile_size}, dstType.getElementType());
       SmallVector<OpFoldResult> tileDimAttr, tileStrideAttr;
@@ -67,6 +63,10 @@ bool applyLowerStoreSliceOps(ModuleOp &mod) {
       Value flatTile = rewriter.create<memref::ReinterpretCastOp>(
           loc, tileFlatType, tile, rewriter.getIndexAttr(0), tileDimAttr,
           tileStrideAttr);
+      int64_t flattened_size = 1;
+      for (int64_t val : dstType.getShape()) {
+        flattened_size *= val;
+      }
       auto flatType =
           MemRefType::get({flattened_size}, dstType.getElementType());
       SmallVector<OpFoldResult> dimAttr, strideAttr;
@@ -146,8 +146,95 @@ bool applyLowerLoadSliceOps(ModuleOp &mod) {
       }
     });
     for (auto op : setLoadSliceOps) {
-      // TODO
-      return false;
+      Value src = op->getOperands()[0];
+      Value tile = op->getResults()[0];
+      MemRefType srcType = src.getType().dyn_cast<MemRefType>();
+      MemRefType tileType = tile.getType().dyn_cast<MemRefType>();
+      auto tile_shape = tileType.getShape();
+      auto offsets = op.getOffsets();
+      auto sizes = op.getSizes();
+      auto strides = op.getStrides();
+      if (offsets.size() != sizes.size() || sizes.size() != strides.size()) {
+        return false;
+      }
+      int64_t tile_size = 1, slice_size = 1;
+      for (int64_t val : tile_shape) {
+        tile_size *= val;
+      }
+      for (int64_t val : sizes) {
+        slice_size *= val;
+      }
+      if (tile_size != slice_size) {
+        return false;
+      }
+      // lower to load-store
+      Location loc = op->getLoc();
+      OpBuilder rewriter(op);
+      // flatten the memref
+      auto tileFlatType =
+          MemRefType::get({tile_size}, tileType.getElementType());
+      Value flatTile = rewriter.create<memref::AllocOp>(loc, tileFlatType);
+      int64_t flattened_size = 1;
+      for (int64_t val : srcType.getShape()) {
+        flattened_size *= val;
+      }
+      auto flatType =
+          MemRefType::get({flattened_size}, tileType.getElementType());
+      SmallVector<OpFoldResult> dimAttr, strideAttr;
+      dimAttr.push_back(rewriter.getIndexAttr(flattened_size));
+      strideAttr.push_back(rewriter.getIndexAttr(1));
+      Value flatSrc = rewriter.create<memref::ReinterpretCastOp>(
+          loc, flatType, src, rewriter.getIndexAttr(0), dimAttr, strideAttr);
+      // element-wise load
+      SmallVector<int64_t> lbs(sizes.size(), 0), steps(sizes.size(), 1);
+      SmallVector<int64_t> src_strides;
+      int64_t stride = tile_size;
+      for (size_t i = 0; i < sizes.size(); ++i) {
+        stride /= sizes[i];
+        src_strides.push_back(stride);
+      }
+      affine::buildAffineLoopNest(
+          rewriter, loc, lbs, sizes, steps,
+          [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange ivs) {
+            Value srcIdx =
+                nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
+            Value dstIdx =
+                nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc, 0);
+            for (unsigned d = 0; d < sizes.size(); ++d) {
+              Value add = nestedBuilder.create<arith::AddIOp>(nestedLoc, ivs[d],
+                                                              offsets[d]);
+              Value mul = nestedBuilder.create<arith::MulIOp>(
+                  nestedLoc, add,
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               strides[d]));
+              srcIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, srcIdx, mul);
+              mul = nestedBuilder.create<arith::MulIOp>(
+                  nestedLoc, ivs[d],
+                  nestedBuilder.create<arith::ConstantIndexOp>(nestedLoc,
+                                                               src_strides[d]));
+              dstIdx =
+                  nestedBuilder.create<arith::AddIOp>(nestedLoc, dstIdx, mul);
+            }
+            // load from tile
+            Value elem = nestedBuilder.create<memref::LoadOp>(
+                nestedLoc, flatSrc, ValueRange{srcIdx});
+            // store to the flattened memref
+            nestedBuilder.create<memref::StoreOp>(nestedLoc, elem, flatTile,
+                                                  ValueRange{dstIdx});
+          });
+      SmallVector<OpFoldResult> tileDimAttr, tileStrideAttr;
+      stride = tile_size;
+      for (size_t i = 0; i < tile_shape.size(); ++i) {
+        tileDimAttr.push_back(rewriter.getIndexAttr(tile_shape[i]));
+        stride /= tile_shape[i];
+        tileStrideAttr.push_back(rewriter.getIndexAttr(stride));
+      }
+      Value reshapedTile = rewriter.create<memref::ReinterpretCastOp>(
+          loc, tileType, flatTile, rewriter.getIndexAttr(0), tileDimAttr,
+          tileStrideAttr);
+      tile.replaceAllUsesWith(reshapedTile);
+      op->erase();
     }
   }
   return true;

@@ -1288,6 +1288,31 @@ class ASTTransformer(ASTBuilder):
                 static_sizes,
                 static_strides,
             ) = ASTTransformer.build_slices(ctx, node, in_shape)
+            orig_type = value.result.type
+            orig_layout = orig_type.layout
+            if isinstance(orig_layout, StridedLayoutAttr):
+                orig_offset = orig_layout.offset
+                orig_strides = orig_layout.strides
+            elif isinstance(orig_layout, AffineMapAttr):
+                # TODO: need to support non-identity affine map
+                orig_offset = 0
+                orig_strides = []
+                times = 1
+                for i in range(orig_type.rank):
+                    orig_strides.append(times)
+                    times *= orig_type.shape[orig_type.rank - i - 1]
+                orig_strides = list(reversed(orig_strides))
+            else:
+                raise RuntimeError("Unsupported layout type")
+            new_strides = [
+                orig_strides[i] * static_strides[i] for i in range(len(static_strides))
+            ]
+            result_sizes = []
+            result_strides = []
+            for idx_, size in enumerate(static_sizes):
+                if size > 1:
+                    result_sizes.append(size)
+                    result_strides.append(new_strides[idx_])
             if len(offsets) > 0:
                 offset_values = []
                 dynamic_offset_cnt = 0
@@ -1311,46 +1336,30 @@ class ASTTransformer(ASTBuilder):
                 ]
                 # use dynamic index
                 if isinstance(node.ctx, ast.Load):
-                    raise RuntimeError("TODO")
+                    memref_type = MemRefType.get(result_sizes, dtype)
+                    op = allo_d.LoadSliceOp(
+                        memref_type,
+                        value.result,
+                        offsets=offset_values,
+                        sizes=static_sizes,
+                        strides=stride_values,
+                        ip=ctx.get_ip(),
+                    )
                 else:
-                    op = allo_d.store_slice(
+                    op = allo_d.StoreSliceOp(
                         val.result,
                         value.result,
                         offsets=offset_values,
                         sizes=static_sizes,
-                        strides=stride_values,  # fixme
+                        strides=stride_values,
                         ip=ctx.get_ip(),
                     )
             else:
-                orig_type = value.result.type
-                orig_layout = orig_type.layout
-                if isinstance(orig_layout, StridedLayoutAttr):
-                    orig_offset = orig_layout.offset
-                    orig_strides = orig_layout.strides
-                elif isinstance(orig_layout, AffineMapAttr):
-                    # TODO: need to support non-identity affine map
-                    orig_offset = 0
-                    orig_strides = []
-                    times = 1
-                    for i in range(orig_type.rank):
-                        orig_strides.append(times)
-                        times *= orig_type.shape[orig_type.rank - i - 1]
-                    orig_strides = list(reversed(orig_strides))
-                else:
-                    raise RuntimeError("Unsupported layout type")
+
                 new_offset = orig_offset + sum(
                     o * s for o, s in zip(static_offsets, orig_strides)
                 )
-                new_strides = [
-                    orig_strides[i] * static_strides[i]
-                    for i in range(len(static_strides))
-                ]
-                result_strides = []
-                result_sizes = []
-                for idx_, size in enumerate(static_sizes):
-                    if size > 1:
-                        result_sizes.append(size)
-                        result_strides.append(new_strides[idx_])
+
                 layout = StridedLayoutAttr.get(new_offset, result_strides)
                 result = MemRefType.get(result_sizes, dtype, layout=layout)
                 subview = memref_d.SubViewOp(
