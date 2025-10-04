@@ -71,7 +71,6 @@ from .types import (
     UFixed,
     Struct,
     float32,
-    Stream,
 )
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
@@ -1255,11 +1254,7 @@ class ASTTransformer(ASTBuilder):
                     raise RuntimeError("Unsupported step type")
                 assert lower is not None and upper is not None
                 assert (
-                    lower >= 0
-                    and upper >= 0
-                    and step > 0
-                    and lower < size
-                    and upper <= size
+                    0 <= lower < size and 0 <= upper <= size and step > 0
                 ), "Invalid index or step"
                 offsets.append(lower)
                 static_sizes.append((upper - lower) // step)
@@ -1339,6 +1334,7 @@ class ASTTransformer(ASTBuilder):
                 )
         raise RuntimeError("Unsupported load subscript")
 
+    # pylint: disable=redefined-variable-type
     @staticmethod
     def build_memory_access(
         ctx: ASTContext, node: ast.Subscript, val: OpView = None, idx: int = 0
@@ -1503,7 +1499,6 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-                # pylint: disable=redefined-variable-type
                 op = subview
                 if isinstance(node.ctx, ast.Load):
                     # copy to another memref type to avoid some annoying type compatibility issue
@@ -2140,7 +2135,7 @@ class ASTTransformer(ASTBuilder):
             new_name = vid
         return new_name, symbolic_slice, iterator_infos
 
-    # pylint: disable=too-many-return-statements
+    # pylint: disable=too-many-return-statements, too-many-function-args
     @staticmethod
     def build_Call(ctx: ASTContext, node: ast.Call, out_buffer: OpView = None):
         original_func_id = ctx.func_id
@@ -2313,7 +2308,6 @@ class ASTTransformer(ASTBuilder):
             )
             return call_op
 
-        # pylint: disable=too-many-nested-blocks
         if (
             obj.__module__.startswith("allo")
             and not obj.__module__.startswith("allo.library")
@@ -2482,8 +2476,7 @@ class ASTTransformer(ASTBuilder):
                             allo_d.StreamPutOp(stream_op.result, [], op.result)
                     if fn_name == "gather":
                         return alloc_op
-                    else:
-                        return for_op
+                    return for_op
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
