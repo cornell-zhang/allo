@@ -93,13 +93,7 @@ def _test_store_slice1():
 
         @df.kernel(mapping=[1])
         def dst(B: Ty[Pk, N]):
-            # B[:, :] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
-            with allo.meta_for(Pk) as i:
-                # [NOTE]: will be left as UB
-                B[i, :] = pipe[i].get()
-            # """
-            # B[:, :] = allo.gather(pipe[:])
-            # """
+            B[:, :] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -183,7 +177,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 
 if __name__ == "__main__":
-    _test_store_slice()
-    _test_load_slice()
+    # _test_store_slice()
+    # _test_load_slice()
     _test_store_slice1()
-    _test_split_k_explicit_gather_gemm_1x1x4()
+    # _test_split_k_explicit_gather_gemm_1x1x4()

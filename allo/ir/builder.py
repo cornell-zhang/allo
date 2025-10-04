@@ -2574,14 +2574,20 @@ class ASTTransformer(ASTBuilder):
         with ctx.get_ip():
             alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
         # determine the fifo list
+        sample_name, sample_symbolic_slice = None, None
+        fifo_name_attr = []
+        fifo_symbolic_slice_attr = []
         if isinstance(fifo_list, ast.List):
             for elt in fifo_list.elts:
-                print(elt, ast.unparse(elt))
-                fifo_name, symbolic_slice, iterator_infos = ASTTransformer.get_stream_name(ctx, elt)
+                fifo_name, symbolic_slice, iterator_infos = (
+                    ASTTransformer.get_stream_name(ctx, elt)
+                )
                 assert len(iterator_infos) == 0, "Not supported"
-                print(fifo_name)
-
-            raise RuntimeError("TODO")
+                if sample_name is None:
+                    sample_name, sample_symbolic_slice = fifo_name, symbolic_slice
+                fifo_name_attr.append(StringAttr.get(fifo_name))
+                fifo_symbolic_slice_attr.append(StringAttr.get(symbolic_slice))
+                print(fifo_name, symbolic_slice)
         elif isinstance(fifo_list, ast.Subscript):
             # len(static_sizes) may > 1, will be flattened
             array_shape = ctx.get_symbol(fifo_list.value.id)
@@ -2594,6 +2600,55 @@ class ASTTransformer(ASTBuilder):
             raise RuntimeError("TODO")
         else:
             raise RuntimeError("Fail to resolve fifo_list for gather.")
+        stream_op.attributes["name"] = StringAttr.get(sample_name)
+        if sample_symbolic_slice is not None:
+            stream_op.attributes["symbolic_slice"] = StringAttr.get(
+                sample_symbolic_slice
+            )
+        stream_op.attributes["stream_list"] = ArrayAttr.get(fifo_name_attr)
+        stream_op.attributes["stream_symbolic_slice_list"] = ArrayAttr.get(
+            fifo_symbolic_slice_attr
+        )
+        # internally build gather loop
+        with ctx.loop_scope_guard():
+            lb_expr = arith_d.ConstantOp(arith_d.IndexType.get(), 0, ip=ctx.get_ip())
+            ub_expr = arith_d.ConstantOp(
+                arith_d.IndexType.get(), len(fifo_name_attr), ip=ctx.get_ip()
+            )
+            step = arith_d.ConstantOp(arith_d.IndexType.get(), 1, ip=ctx.get_ip())
+            for_op = scf_d.ForOp(
+                lb_expr.result, ub_expr.result, step.result, ip=ctx.get_ip()
+            )
+            op_name = f"S_gather_{str(ctx.loop_band_count)}"
+            for_op.attributes["op_name"] = StringAttr.get(op_name)
+            loop_iter_name = f"gather{str(ctx.loop_band_count)}"
+            for_op.attributes["loop_name"] = StringAttr.get(loop_iter_name)
+            stream_op.attributes["loop_name"] = StringAttr.get(op_name)
+            scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
+            with InsertionPoint(for_op.body.operations[0]):
+                get_op = allo_d.StreamGetOp(
+                    fifo_list.dtype.build(), stream_op.result, []
+                )
+                offset_values = []
+                size_values = []
+                stride_values = []
+                tile_size = np.prod(node.shape)
+                for i, shape in enumerate(node.shape):
+                    if i == 0:
+                        offset_values.append(for_op.induction_variable)
+                        size_values.append(1)
+                    else:
+                        offset_values.append(arith_d.ConstantOp.create_index(0))
+                        size_values.append(shape)
+                    tile_size //= shape
+                    stride_values.append(tile_size)
+                allo_d.StoreSliceOp(
+                    get_op.result,
+                    alloc_op.result,
+                    offsets=offset_values,
+                    sizes=size_values,
+                    strides=stride_values,
+                )
         return alloc_op
 
     @staticmethod
