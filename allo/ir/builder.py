@@ -7,6 +7,7 @@ import gc
 import ast
 import sys
 import copy
+import itertools
 import traceback
 import numpy as np
 from .._mlir.ir import (
@@ -1274,6 +1275,7 @@ class ASTTransformer(ASTBuilder):
                 offsets.append((ind, symbolic_ind, iterator_info))
                 static_sizes.append(1)
                 static_strides.append(1)
+                raise RuntimeError("TODO")
         return offsets, static_sizes, static_strides
 
     @staticmethod
@@ -2582,22 +2584,38 @@ class ASTTransformer(ASTBuilder):
                 fifo_name, symbolic_slice, iterator_infos = (
                     ASTTransformer.get_stream_name(ctx, elt)
                 )
-                assert len(iterator_infos) == 0, "Not supported"
+                assert len(iterator_infos) == 0, "Not supported yet"
                 if sample_name is None:
                     sample_name, sample_symbolic_slice = fifo_name, symbolic_slice
                 fifo_name_attr.append(StringAttr.get(fifo_name))
                 fifo_symbolic_slice_attr.append(StringAttr.get(symbolic_slice))
-                print(fifo_name, symbolic_slice)
         elif isinstance(fifo_list, ast.Subscript):
-            # len(static_sizes) may > 1, will be flattened
+            # if len(static_sizes) may > 1, will be flattened
             array_shape = ctx.get_symbol(fifo_list.value.id)
             (
                 offsets,
                 static_sizes,
                 static_strides,
             ) = ASTTransformer.build_symbolic_slices(ctx, fifo_list, array_shape)
-            print(offsets, static_sizes, static_strides)
-            raise RuntimeError("TODO")
+            assert all(
+                isinstance(offset, int) for offset in offsets
+            ), "Not supported yet"
+            # flattened here
+            for indices in itertools.product(
+                *[
+                    range(o, o + s * st, st)
+                    for o, s, st in zip(offsets, static_sizes, static_strides)
+                ]
+            ):
+                slice_str = "_".join([str(x) for x in indices])
+                fifo_name = f"{fifo_list.value.id}_{slice_str}"
+                symbolic_slice = ",".join([str(x) for x in indices])
+                if sample_name is None:
+                    sample_name, sample_symbolic_slice = fifo_name, symbolic_slice
+                fifo_name_attr.append(StringAttr.get(fifo_name))
+                fifo_symbolic_slice_attr.append(
+                    StringAttr.get(symbolic_slice)
+                )  # fixme: unverfied
         else:
             raise RuntimeError("Fail to resolve fifo_list for gather.")
         stream_op.attributes["name"] = StringAttr.get(sample_name)
