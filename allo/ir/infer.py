@@ -968,7 +968,6 @@ class TypeInferer(ASTVisitor):
             and not obj.__module__.startswith("allo._mlir")
         ):
             # Allo library functions
-            new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # HLS IP, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
@@ -983,19 +982,36 @@ class TypeInferer(ASTVisitor):
                 return node
             fn_name = obj.__name__
             if fn_name == "gather":
-                assert len(new_args) == 1, "Invalid `gather`"
-                if not isinstance(new_args[0].dtype, Stream):
+                assert len(node.args) == 1, "Invalid `gather`"
+                fifo_list = node.args[0]
+                if isinstance(fifo_list, ast.List):
+                    sample = None
+                    for elt in fifo_list.elts:
+                        ele = visit_stmt(ctx, elt)
+                        if sample is None:
+                            sample = ele
+                        else:
+                            assert (
+                                sample.dtype == ele.dtype and len(ele.shape) == 0
+                            ), "Invalid `gather`"
+                    fifo_list.dtype = sample.dtype
+                    fifo_list.shape = (len(fifo_list.elts),)
+                    new_arg = fifo_list
+                else:
+                    new_arg = visit_stmt(ctx, fifo_list)
+                if not isinstance(new_arg.dtype, Stream):
                     raise RuntimeError(
-                        f"Unsupported gather dtype {type(new_args[0].dtype)}"
+                        f"Unsupported gather dtype {type(new_arg.dtype)}"
                     )
-                node.shape = new_args[0].shape + new_args[0].dtype.shape
-                node.dtype = new_args[0].dtype.dtype
+                node.shape = new_arg.shape + new_arg.dtype.shape
+                node.dtype = new_arg.dtype.dtype
                 return node
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 node.shape = tuple()
                 node.dtype = stream
                 return node
+            new_args = visit_stmts(ctx, node.args)
             if fn_name == "array":
                 for kw in node.keywords:
                     if kw.arg == "shape":

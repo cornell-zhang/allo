@@ -93,7 +93,7 @@ def _test_store_slice1():
 
         @df.kernel(mapping=[1])
         def dst(B: Ty[Pk, N]):
-            # B[:, :] = df.gather(pipe[:])
+            # B[:, :] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
             with allo.meta_for(Pk) as i:
                 # [NOTE]: will be left as UB
                 B[i, :] = pipe[i].get()
@@ -152,7 +152,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
                 # [NOTE]: will be left as UB
                 buffer[i, :, :] = pipe[i].get()
             """
-            buffer: Ty[Pk, M, N] = allo.gather(pipe[:])
+            buffer: Ty[Pk, M, N] = allo.gather(pipe[:].get())
             """
             # accumulate
             for i in range(Pk):

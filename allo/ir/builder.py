@@ -60,7 +60,18 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
+from .types import (
+    AlloType,
+    Int,
+    UInt,
+    Index,
+    Float,
+    Fixed,
+    UFixed,
+    Struct,
+    float32,
+    Stream,
+)
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..utils import (
@@ -1212,6 +1223,60 @@ class ASTTransformer(ASTBuilder):
         return offsets, sizes, strides, static_offsets, static_sizes, static_strides
 
     @staticmethod
+    def build_symbolic_slices(
+        ctx: ASTContext, node: ast.Subscript, in_shape: list[int]
+    ):
+        if isinstance(node.slice, ast.Tuple):
+            slices = list(node.slice.elts)
+        else:
+            slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
+        offsets = []
+        static_sizes = []
+        static_strides = []
+        for index, size in zip(slices, in_shape):
+            if isinstance(index, ast.Slice):
+                # fixme: slice lower/upper/step is not constant
+                lower = (
+                    0
+                    if index.lower is None
+                    else ASTResolver.resolve_constant(index.lower, ctx)
+                )
+                upper = (
+                    size
+                    if index.upper is None
+                    else ASTResolver.resolve_constant(index.upper, ctx)
+                )
+                if index.step is None:
+                    step = 1
+                elif isinstance(index.step, ast.Constant):
+                    step = index.step.value
+                else:
+                    raise RuntimeError("Unsupported step type")
+                assert lower is not None and upper is not None
+                assert (
+                    lower >= 0
+                    and upper >= 0
+                    and step > 0
+                    and lower < size
+                    and upper <= size
+                ), "Invalid index or step"
+                offsets.append(lower)
+                static_sizes.append((upper - lower) // step)
+                static_strides.append(step)
+            else:
+                ind = eval(ast.unparse(index), ctx.global_vars)
+                symbolic_ind, iterator_info = get_symbolic_expr(
+                    copy.deepcopy(index),
+                    ctx.symbolic,
+                    ctx.global_vars,
+                    ctx.get_alive_var_names(),
+                )
+                offsets.append((ind, symbolic_ind, iterator_info))
+                static_sizes.append(1)
+                static_strides.append(1)
+        return offsets, static_sizes, static_strides
+
+    @staticmethod
     def build_tensor_access(
         ctx: ASTContext, node: ast.Subscript, val: OpView = None, idx: int = 0
     ):
@@ -2043,6 +2108,36 @@ class ASTTransformer(ASTBuilder):
         ctx.pop_ip()
         return module
 
+    @staticmethod
+    def get_stream_name(ctx: ASTContext, node: ast.expr):
+        vid = node.id if isinstance(node, ast.Name) else node.value.id
+        symbolic_slice = None
+        iterator_infos = {}
+        if isinstance(node, ast.Subscript):
+            # pylint: disable=redefined-builtin
+            slice = eval(ast.unparse(node.slice), ctx.global_vars)
+            symbolic_slice, iterator_info = get_symbolic_expr(
+                copy.deepcopy(node.slice),
+                ctx.symbolic,
+                ctx.global_vars,
+                ctx.get_alive_var_names(),
+            )
+            for info in iterator_info:
+                iterator_infos[info[0]] = ArrayAttr.get(
+                    [IntegerAttr.get(IntegerType.get_signless(64), v) for v in info[1]]
+                )
+            if isinstance(slice, int):
+                slice = tuple([slice])
+            else:
+                slice = tuple(slice) if not isinstance(slice, tuple) else slice
+            # access a specific stream
+            slice_str = "_".join([str(x) for x in slice])
+            new_name = f"{vid}_{slice_str}"
+        else:
+            slice = tuple()
+            new_name = vid
+        return new_name, symbolic_slice, iterator_infos
+
     # pylint: disable=too-many-return-statements
     @staticmethod
     def build_Call(ctx: ASTContext, node: ast.Call, out_buffer: OpView = None):
@@ -2088,44 +2183,9 @@ class ASTTransformer(ASTBuilder):
                 if node.func.attr == "put":
                     stmts = build_stmts(ctx, node.args)
                     assert len(stmts) == 1, "Stream can only have one argument"
-                    vid = (
-                        node.func.value.id
-                        if isinstance(node.func.value, ast.Name)
-                        else node.func.value.value.id
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
                     )
-                    symbolic_slice = None
-                    iterator_infos = {}
-                    if isinstance(node.func.value, ast.Subscript):
-                        # pylint: disable=redefined-builtin
-                        slice = eval(
-                            ast.unparse(node.func.value.slice), ctx.global_vars
-                        )
-                        symbolic_slice, iterator_info = get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice),
-                            ctx.symbolic,
-                            ctx.global_vars,
-                            ctx.get_alive_var_names(),
-                        )
-                        for info in iterator_info:
-                            iterator_infos[info[0]] = ArrayAttr.get(
-                                [
-                                    IntegerAttr.get(IntegerType.get_signless(64), v)
-                                    for v in info[1]
-                                ]
-                            )
-                        if isinstance(slice, int):
-                            slice = tuple([slice])
-                        else:
-                            slice = (
-                                tuple(slice) if not isinstance(slice, tuple) else slice
-                            )
-                        # access a specific stream
-                        slice_str = "_".join([str(x) for x in slice])
-                        new_name = f"{vid}_{slice_str}"
-                    else:
-                        slice = tuple()
-                        new_name = vid
-                    # insert after the last stream construct op to preserve ordering
                     op = None
                     for op in ctx.top_func.entry_block.operations:
                         if not isinstance(op, allo_d.StreamConstructOp):
@@ -2151,42 +2211,9 @@ class ASTTransformer(ASTBuilder):
                         put_op.attributes["unsigned"] = UnitAttr.get()
                     return
                 if node.func.attr == "get":
-                    vid = (
-                        node.func.value.id
-                        if isinstance(node.func.value, ast.Name)
-                        else node.func.value.value.id
+                    new_name, symbolic_slice, iterator_infos = (
+                        ASTTransformer.get_stream_name(ctx, node.func.value)
                     )
-                    symbolic_slice = None
-                    iterator_infos = {}
-                    if isinstance(node.func.value, ast.Subscript):
-                        slice = eval(
-                            ast.unparse(node.func.value.slice), ctx.global_vars
-                        )
-                        symbolic_slice, iterator_info = get_symbolic_expr(
-                            copy.deepcopy(node.func.value.slice),
-                            ctx.symbolic,
-                            ctx.global_vars,
-                            ctx.get_alive_var_names(),
-                        )
-                        for info in iterator_info:
-                            iterator_infos[info[0]] = ArrayAttr.get(
-                                [
-                                    IntegerAttr.get(IntegerType.get_signless(64), v)
-                                    for v in info[1]
-                                ]
-                            )
-                        if isinstance(slice, int):
-                            slice = tuple([slice])
-                        else:
-                            slice = (
-                                tuple(slice) if not isinstance(slice, tuple) else slice
-                            )
-                        # access a specific stream
-                        slice_str = "_".join([str(x) for x in slice])
-                        new_name = f"{vid}_{slice_str}"
-                    else:
-                        slice = tuple()
-                        new_name = vid
                     # insert after the last stream construct op to preserve ordering
                     op = None
                     for op in ctx.top_func.entry_block.operations:
@@ -2334,30 +2361,7 @@ class ASTTransformer(ASTBuilder):
                     results.append(stream_op)
                 return results
             if fn_name == "gather":
-                fifo_list = node.args[0]
-                shape = node.shape
-                dtype = node.dtype
-                with ctx.get_ip():
-                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-                print(shape, dtype)
-                if isinstance(fifo_list, ast.Subscript):
-                    array_shape = ctx.get_symbol(fifo_list.value.id)
-                    (
-                        offsets,
-                        sizes,
-                        strides,
-                        static_offsets,
-                        static_sizes,
-                        static_strides,
-                    ) = ASTTransformer.build_slices(ctx, fifo_list, array_shape)
-                    print(static_offsets, static_sizes, static_strides)
-                    raise RuntimeError("TODO")
-                elif isinstance(fifo_list, ast.Name):
-                    array_shape = ctx.get_symbol(fifo_list.id)
-                    raise RuntimeError("TODO")
-                else:
-                    raise RuntimeError("Fail to resolve fifo_list for gather.")
-                return allo
+                return ASTTransformer.build_gather_op(ctx, node)
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
@@ -2547,6 +2551,50 @@ class ASTTransformer(ASTBuilder):
         )
         ctx.func_id = original_func_id
         return call_op
+
+    @staticmethod
+    def build_gather_op(ctx: ASTContext, node: ast.AST):
+        fifo_list = node.args[0]
+        assert isinstance(fifo_list.dtype, Stream)
+        # insert StreamConstructOp placeholder
+        ip_op = None
+        for ip_op in ctx.top_func.entry_block.operations:
+            if not isinstance(ip_op, allo_d.StreamConstructOp):
+                break
+        ip = (
+            InsertionPoint(ip_op)
+            if ip_op is not None
+            else InsertionPoint.at_block_begin(ctx.top_func.entry_block)
+        )
+        stream_type = allo_d.StreamType.get(
+            fifo_list.dtype.build(), depth=fifo_list.dtype.depth
+        )
+        stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
+        # allocate local buffer for the gathered results
+        with ctx.get_ip():
+            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
+        # determine the fifo list
+        if isinstance(fifo_list, ast.List):
+            for elt in fifo_list.elts:
+                print(elt, ast.unparse(elt))
+                fifo_name, symbolic_slice, iterator_infos = ASTTransformer.get_stream_name(ctx, elt)
+                assert len(iterator_infos) == 0, "Not supported"
+                print(fifo_name)
+
+            raise RuntimeError("TODO")
+        elif isinstance(fifo_list, ast.Subscript):
+            # len(static_sizes) may > 1, will be flattened
+            array_shape = ctx.get_symbol(fifo_list.value.id)
+            (
+                offsets,
+                static_sizes,
+                static_strides,
+            ) = ASTTransformer.build_symbolic_slices(ctx, fifo_list, array_shape)
+            print(offsets, static_sizes, static_strides)
+            raise RuntimeError("TODO")
+        else:
+            raise RuntimeError("Fail to resolve fifo_list for gather.")
+        return alloc_op
 
     @staticmethod
     def build_library_op(

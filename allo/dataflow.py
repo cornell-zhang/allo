@@ -25,7 +25,10 @@ from .ir.types import Stream
 from .passes import df_pipeline
 from .backend import AIE_MLIRModule
 
-def gather(pipes):
+def gather(pipes:list):
+    """
+    Collect all pipe objects from the given list (explicit list or slice) in their original order.
+    """
     raise NotImplementedError("This function should be called in a kernel function.")
 
 
