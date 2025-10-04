@@ -1059,7 +1059,7 @@ class TypeInferer(ASTVisitor):
                     node.dtype = None
                 return node
             if all(len(arg.shape) == 0 for arg in new_args):
-                # element-wisle operation
+                # element-wise operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
                 return node

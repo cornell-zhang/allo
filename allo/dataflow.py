@@ -268,7 +268,6 @@ def move_stream_to_interface(
     s.func_args = new_func_args
     if with_stream_type:
         if with_extra_info:
-            print(extra_stream_info)
             return stream_info, stream_types_dict, extra_stream_info
         return stream_info, stream_types_dict
     return stream_info
