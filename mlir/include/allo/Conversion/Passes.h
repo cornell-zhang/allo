@@ -23,6 +23,7 @@ std::unique_ptr<OperationPass<ModuleOp>> createLowerBitOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerTransformLayoutOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerStoreSliceOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerLoadSliceOpsPass();
+std::unique_ptr<OperationPass<ModuleOp>> createLowerMemrefOpsPass();
 std::unique_ptr<OperationPass<ModuleOp>> createLowerPrintOpsPass();
 
 bool applyAlloToLLVMLoweringPass(ModuleOp &module, MLIRContext &context);

@@ -16,7 +16,7 @@ def _test_store_slice():
     Pk = 4
 
     @df.region()
-    def top():
+    def top_v1():
 
         @df.kernel(mapping=[1])
         def core(A: Ty[N], B: Ty[Pk, N]):
@@ -26,12 +26,30 @@ def _test_store_slice():
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
 
-    mod = df.build(top, target="aie")
+    mod = df.build(top_v1, target="aie")
     mod(A, B)
     np.testing.assert_allclose(A, B[0, :], atol=1e-5)
     np.testing.assert_allclose(A, B[1, :], atol=1e-5)
     np.testing.assert_allclose(A, B[2, :], atol=1e-5)
     np.testing.assert_allclose(A, B[3, :], atol=1e-5)
+    print("PASSED!")
+
+    @df.region()
+    def top_v2():
+
+        @df.kernel(mapping=[1])
+        def core(A: Ty[N], B: Ty[Pk, N]):
+            for i in range(0, Pk, 2):
+                B[i, :] = allo.add(A, 1)
+            for i in range(1, Pk, 2):
+                B[i, :] = allo.add(A, -1)
+
+    mod = df.build(top_v2, target="aie")
+    mod(A, B)
+    np.testing.assert_allclose(A + 1, B[0, :], atol=1e-5)
+    np.testing.assert_allclose(A - 1, B[1, :], atol=1e-5)
+    np.testing.assert_allclose(A + 1, B[2, :], atol=1e-5)
+    np.testing.assert_allclose(A - 1, B[3, :], atol=1e-5)
     print("PASSED!")
 
 
@@ -75,9 +93,13 @@ def _test_store_slice1():
 
         @df.kernel(mapping=[1])
         def dst(B: Ty[Pk, N]):
+            # B[:, :] = df.gather(pipe[:])
             with allo.meta_for(Pk) as i:
                 # [NOTE]: will be left as UB
                 B[i, :] = pipe[i].get()
+            # """
+            # B[:, :] = allo.gather(pipe[:])
+            # """
 
     A = np.random.randint(0, 64, (N)).astype(np.int16)
     B = np.zeros((Pk, N)).astype(np.int16)
@@ -127,7 +149,11 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
             # gather
             buffer: Ty[Pk, M, N]
             with allo.meta_for(Pk) as i:
+                # [NOTE]: will be left as UB
                 buffer[i, :, :] = pipe[i].get()
+            """
+            buffer: Ty[Pk, M, N] = allo.gather(pipe[:])
+            """
             # accumulate
             for i in range(Pk):
                 C_[:, :] += buffer[i]

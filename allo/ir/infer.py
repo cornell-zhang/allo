@@ -982,10 +982,25 @@ class TypeInferer(ASTVisitor):
                 node.dtype = None
                 return node
             fn_name = obj.__name__
+            if fn_name == "gather":
+                assert len(new_args) == 1, "Invalid `gather`"
+                if not isinstance(new_args[0].dtype, Stream):
+                    raise RuntimeError(
+                        f"Unsupported gather dtype {type(new_args[0].dtype)}"
+                    )
+                node.shape = new_args[0].shape + new_args[0].dtype.shape
+                node.dtype = new_args[0].dtype.dtype
+                return node
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 node.shape = tuple()
                 node.dtype = stream
+                return node
+            if fn_name == "array":
+                for kw in node.keywords:
+                    if kw.arg == "shape":
+                        node.shape = eval(ast.unparse(kw.value), ctx.global_vars)
+                node.dtype = new_args[0].dtype
                 return node
             if len(new_args) == 0:
                 # No argument
@@ -997,7 +1012,7 @@ class TypeInferer(ASTVisitor):
                     node.dtype = None
                 return node
             if all(len(arg.shape) == 0 for arg in new_args):
-                # element-wise operation
+                # element-wisle operation
                 node.shape = tuple()
                 node.dtype = new_args[0].dtype
                 return node

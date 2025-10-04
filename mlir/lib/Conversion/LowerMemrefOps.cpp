@@ -372,6 +372,24 @@ struct AlloLowerTransformLayoutOpsTransformation
 };
 } // namespace
 
+namespace {
+struct AlloLowerMemrefOpsTransformation
+    : public LowerMemrefOpsBase<AlloLowerMemrefOpsTransformation> {
+  void runOnOperation() override {
+    auto mod = getOperation();
+    if (!applyLowerStoreSliceOps(mod)) {
+      return signalPassFailure();
+    }
+    if (!applyLowerLoadSliceOps(mod)) {
+      return signalPassFailure();
+    }
+    if (!applyLowerTransformLayoutOps(mod)) {
+      return signalPassFailure();
+    }
+  }
+};
+} // namespace
+
 namespace mlir {
 namespace allo {
 
@@ -385,6 +403,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createLowerLoadSliceOpsPass() {
 
 std::unique_ptr<OperationPass<ModuleOp>> createLowerTransformLayoutOpsPass() {
   return std::make_unique<AlloLowerTransformLayoutOpsTransformation>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createLowerMemrefOpsPass() {
+  return std::make_unique<AlloLowerMemrefOpsTransformation>();
 }
 } // namespace allo
 } // namespace mlir

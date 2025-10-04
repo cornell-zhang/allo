@@ -151,7 +151,7 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
-    def put_symbol(self, name, val, tag=None):
+    def put_symbol(self, name, val, tag: str = None):
         """
         Insert a variable name, value pair into the current scope.
 
@@ -191,7 +191,11 @@ class ASTContext:
         """
         for scope in reversed(self.scopes):
             if name in scope:
-                if isinstance(scope[name], tuple):
+                if (
+                    isinstance(scope[name], tuple)
+                    and len(scope[name]) > 1
+                    and isinstance(scope[name][1], str)
+                ):
                     return scope[name][0]
                 return scope[name]
         if allow_missing:
@@ -202,7 +206,7 @@ class ASTContext:
         names = set()
         for scope in self.scopes:
             for k, v in scope.items():
-                if not isinstance(v, tuple):
+                if not (isinstance(v, tuple) and len(v) > 1 and isinstance(v[1], str)):
                     names.add(k)
         return names
 

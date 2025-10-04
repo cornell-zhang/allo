@@ -927,6 +927,9 @@ class ASTTransformer(ASTBuilder):
                                 ele.attributes["name"] = StringAttr.get(new_name)
                                 ctx.buffers[new_name] = ele
                                 ctx.put_symbol(name=new_name, val=ele)
+                            # placeholder for array of FIFOs
+                            array = eval(ast.unparse(node.value), ctx.global_vars)
+                            ctx.put_symbol(name=target.id, val=array.shape)
                             return rhs
                         if hasattr(rhs, "attributes"):
                             rhs.attributes["name"] = StringAttr.get(target.id)
@@ -2330,6 +2333,31 @@ class ASTTransformer(ASTBuilder):
                     stream_op.attributes["id"] = StringAttr.get("_".join(map(str, dim)))
                     results.append(stream_op)
                 return results
+            if fn_name == "gather":
+                fifo_list = node.args[0]
+                shape = node.shape
+                dtype = node.dtype
+                with ctx.get_ip():
+                    alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
+                print(shape, dtype)
+                if isinstance(fifo_list, ast.Subscript):
+                    array_shape = ctx.get_symbol(fifo_list.value.id)
+                    (
+                        offsets,
+                        sizes,
+                        strides,
+                        static_offsets,
+                        static_sizes,
+                        static_strides,
+                    ) = ASTTransformer.build_slices(ctx, fifo_list, array_shape)
+                    print(static_offsets, static_sizes, static_strides)
+                    raise RuntimeError("TODO")
+                elif isinstance(fifo_list, ast.Name):
+                    array_shape = ctx.get_symbol(fifo_list.id)
+                    raise RuntimeError("TODO")
+                else:
+                    raise RuntimeError("Fail to resolve fifo_list for gather.")
+                return allo
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):

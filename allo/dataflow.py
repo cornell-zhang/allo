@@ -25,10 +25,12 @@ from .ir.types import Stream
 from .passes import df_pipeline
 from .backend import AIE_MLIRModule
 
+def gather(pipes):
+    raise NotImplementedError("This function should be called in a kernel function.")
+
 
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
-
 
 def pipe(dtype, shape=(), depth=2):
     return Stream(dtype, shape, depth)
