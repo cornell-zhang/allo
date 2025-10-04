@@ -122,7 +122,7 @@ def _test_store_slice1():
 def _test_split_k_explicit_gather_gemm_1x1x4():
 
     Ty = int16
-    M, N, K = 32, 32, 64
+    M, N, K = 16, 16, 64
     Pk = 4
 
     LyA = Layout("RS0")
@@ -141,13 +141,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
         def acc(C: Ty[M, N]):
             C_: Ty[M, N] = 0
             # gather
-            buffer: Ty[Pk, M, N]
-            with allo.meta_for(Pk) as i:
-                # [NOTE]: will be left as UB
-                buffer[i, :, :] = pipe[i].get()
-            """
-            buffer: Ty[Pk, M, N] = allo.gather(pipe[:].get())
-            """
+            buffer: Ty[Pk, M, N] = df.gather([pipe[0], pipe[1], pipe[2], pipe[3]])
             # accumulate
             for i in range(Pk):
                 C_[:, :] += buffer[i]
@@ -177,7 +171,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
 
 if __name__ == "__main__":
-    # _test_store_slice()
-    # _test_load_slice()
+    _test_store_slice()
+    _test_load_slice()
     _test_store_slice1()
-    # _test_split_k_explicit_gather_gemm_1x1x4()
+    _test_split_k_explicit_gather_gemm_1x1x4()
