@@ -61,17 +61,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import (
-    AlloType,
-    Int,
-    UInt,
-    Index,
-    Float,
-    Fixed,
-    UFixed,
-    Struct,
-    float32,
-)
+from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..utils import (
