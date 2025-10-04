@@ -7,7 +7,8 @@ set -e
 PYTHON=python3
 
 FILES=(
-    test_cannon.py                   
+    test_cannon.py   
+    test_collective_communication.py                
     test_gemm_temporal_reduction.py  
     test_low_bit_gemm.py
     test_mapping_basic.py       

@@ -151,6 +151,22 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
+    def get_stream_construct_ip(self):
+        """
+        Get the insert point for StreamConstructOp.
+        Insert after the last stream construct op to preserve ordering
+        """
+        ip_op = None
+        for ip_op in self.top_func.entry_block.operations:
+            if not isinstance(ip_op, allo_d.StreamConstructOp):
+                break
+        ip = (
+            InsertionPoint(ip_op)
+            if ip_op is not None
+            else InsertionPoint.at_block_begin(self.top_func.entry_block)
+        )
+        return ip
+
     def put_symbol(self, name, val, tag: str = None):
         """
         Insert a variable name, value pair into the current scope.

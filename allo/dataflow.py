@@ -33,6 +33,14 @@ def gather(pipes: list):
     raise NotImplementedError("This function should be called in a kernel function.")
 
 
+def scatter(buffer, pipes: list):
+    """
+    Distribute data to all pipe objects in the given list (explicit list or slice)
+    in their original order.
+    """
+    raise NotImplementedError("This function should be called in a kernel function.")
+
+
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
 

@@ -999,12 +999,43 @@ class TypeInferer(ASTVisitor):
                     new_arg = fifo_list
                 else:
                     new_arg = visit_stmt(ctx, fifo_list)
+                    # flattened
+                    new_arg.shape = (np.prod(new_arg.shape),)
                 if not isinstance(new_arg.dtype, Stream):
                     raise RuntimeError(
                         f"Unsupported gather dtype {type(new_arg.dtype)}"
                     )
                 node.shape = new_arg.shape + new_arg.dtype.shape
                 node.dtype = new_arg.dtype.dtype
+                return node
+            if fn_name == "scatter":
+                assert len(node.args) == 2, "Invalid `scatter`"
+                buffer, fifo_list = node.args[0], node.args[1]
+                buffer_arg = visit_stmt(ctx, buffer)
+                if isinstance(fifo_list, ast.List):
+                    sample = None
+                    for elt in fifo_list.elts:
+                        ele = visit_stmt(ctx, elt)
+                        if sample is None:
+                            sample = ele
+                        else:
+                            assert (
+                                sample.dtype == ele.dtype and len(ele.shape) == 0
+                            ), "Invalid `scatter`"
+                    fifo_list.dtype = sample.dtype
+                    fifo_list.shape = (len(fifo_list.elts),)
+                    new_arg = fifo_list
+                else:
+                    new_arg = visit_stmt(ctx, fifo_list)
+                    # flattened
+                    new_arg.shape = (np.prod(new_arg.shape),)
+                if not isinstance(new_arg.dtype, Stream):
+                    raise RuntimeError(
+                        f"Unsupported scatter dtype {type(new_arg.dtype)}"
+                    )
+                node.shape = new_arg.shape + new_arg.dtype.shape
+                node.dtype = new_arg.dtype.dtype
+                assert buffer_arg.dtype == node.dtype and buffer_arg.shape == node.shape
                 return node
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
