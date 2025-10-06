@@ -1430,11 +1430,7 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 if isinstance(node.ctx, ast.Load):
-                    # copy to another memref type to avoid some annoying type compatibility issue
-                    memref_type = MemRefType.get(result_sizes, dtype)
-                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                    memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
-                    op = alloc_op
+                    op = subview
                 else:
                     op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
         else:
@@ -1490,12 +1486,6 @@ class ASTTransformer(ASTBuilder):
                     ip=ctx.get_ip(),
                 )
                 op = subview
-                if isinstance(node.ctx, ast.Load):
-                    # copy to another memref type to avoid some annoying type compatibility issue
-                    memref_type = MemRefType.get(node.shape, node.dtype.build())
-                    alloc_op = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                    memref_d.CopyOp(subview.result, alloc_op.result, ip=ctx.get_ip())
-                    op = alloc_op
             elif is_affine:
                 affine_map = AffineMap.get(
                     dim_count=ctx.dim_count, symbol_count=0, exprs=new_indices
