@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int16
+from allo.ir.types import int16, int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -90,6 +90,44 @@ def _test_gather():
     print("PASSED!")
 
 
+def _test_gather_matmul():
+
+    TyI, TyO = int16, int32
+    M, N, K = 32, 32, 16
+    Pk = 2
+
+    @df.region()
+    def top_v1():
+        pipe = df.array(
+            df.pipe(
+                dtype=TyI,
+                shape=(M, K),
+                depth=2,
+            ),
+            shape=(Pk,),
+        )
+
+        @df.kernel(mapping=[Pk])
+        def src(A: TyI[M, K]):
+            pk = df.get_pid()
+            pipe[pk].put(A)
+
+        @df.kernel(mapping=[1])
+        def dst(B: TyI[K, N], C: TyO[M, N]):
+            tmp_A: TyI[Pk, M, K] = df.gather(pipe[:])
+            # [NOTE]: test using buffer slice as mixed precision matmul input
+            C_: TyO[M, N] = allo.matmul(tmp_A[0], B)
+            C[:, :] = C_
+
+    A = np.random.randint(0, 64, (M, K)).astype(np.int16)
+    B = np.random.randint(0, 64, (K, N)).astype(np.int16)
+    C = np.zeros((M, N)).astype(np.int32)
+
+    mod_v1 = df.build(top_v1, target="aie")
+    mod_v1(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+
+
 def _test_split_k_explicit_gather_gemm_1x1x4():
 
     Ty = int16
@@ -156,6 +194,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
             buffer: Ty[Pk, M, N] = df.gather(pipe[:])
             # accumulate
             for i in range(Pk):
+                # [NOTE]: test using buffer slice in builtin external kernel
                 C_[:, :] += buffer[i]
             C[:, :] = C_
 
@@ -257,5 +296,6 @@ def _test_scatter():
 
 if __name__ == "__main__":
     _test_gather()
+    _test_gather_matmul()
     _test_scatter()
     _test_split_k_explicit_gather_gemm_1x1x4()
