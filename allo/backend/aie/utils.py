@@ -365,14 +365,12 @@ def inject_external_kernels(
 
             # 1. customized external kernel
             if isinstance(op, allo_func_d.CallOp):
+                # [NOTE]: in allo/ir/builder.py, when constructing function type, the argument types are static
                 callee_name = op.callee.value
                 used_external_kernels[df_function_tag].add(callee_name)
                 if callee_name in injected_external_kernels:
                     continue
                 external_module = external_kernel_lib[callee_name]
-                # check input/output argument types
-                for v in op.inputs:
-                    print(v, v.type)
                 # register external kernel
                 assert external_module is not None, "external module not found"
                 include_src[callee_name] = f'#include "{external_module.filename}"\n'

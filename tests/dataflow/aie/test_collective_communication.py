@@ -97,7 +97,7 @@ def _test_gather_matmul():
     Pk = 2
 
     @df.region()
-    def top_v1():
+    def top():
         pipe = df.array(
             df.pipe(
                 dtype=TyI,
@@ -123,8 +123,8 @@ def _test_gather_matmul():
     B = np.random.randint(0, 64, (K, N)).astype(np.int16)
     C = np.zeros((M, N)).astype(np.int32)
 
-    mod_v1 = df.build(top_v1, target="aie")
-    mod_v1(A, B, C)
+    mod = df.build(top, target="aie")
+    mod(A, B, C)
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
 
 

@@ -2460,18 +2460,31 @@ class ASTTransformer(ASTBuilder):
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
+                input_idx = obj.input_idx if isinstance(obj, ExternalModule) else None
+                input_types = []
+                call_operands = []
+                for idx, (arg_type, shape) in enumerate(obj.args):
+                    ele_type = get_mlir_dtype_from_str(c2allo_type[arg_type])
+                    if len(shape) != 0:
+                        memref = MemRefType.get(shape, ele_type)
+                    else:
+                        memref = ele_type
+                    input_types.append(memref)
+                    operand = new_args[idx]
+                    if operand.result.type != memref:
+                        assert (
+                            input_idx is not None
+                        ), "IPModule is not well supported yet."
+                        alloc_op = memref_d.AllocOp(memref, [], [], ip=ctx.get_ip())
+                        call_operands.append(alloc_op.result)
+                        if idx in input_idx:
+                            memref_d.CopyOp(operand, alloc_op.result, ip=ctx.get_ip())
+                    else:
+                        call_operands.append(operand.result)
                 # Add HLS IP as external library
                 if obj not in ctx.ext_libs:
                     ctx.ext_libs.append(obj)
                     # Suppose it does not have any return values
-                    input_types = []
-                    for arg_type, shape in obj.args:
-                        ele_type = get_mlir_dtype_from_str(c2allo_type[arg_type])
-                        if len(shape) != 0:
-                            memref = MemRefType.get(shape, ele_type)
-                        else:
-                            memref = ele_type
-                        input_types.append(memref)
                     func_type = FunctionType.get(input_types, [])
                     func_op = func_d.FuncOp(
                         name=obj.top, type=func_type, ip=InsertionPoint(ctx.top_func)
@@ -2480,9 +2493,17 @@ class ASTTransformer(ASTBuilder):
                 call_op = func_d.CallOp(
                     [],
                     FlatSymbolRefAttr.get(obj.top),
-                    [arg.result for arg in new_args],
+                    call_operands,
                     ip=ctx.get_ip(),
                 )
+                for idx, (call_operand, operand_op) in enumerate(
+                    zip(call_operands, new_args)
+                ):
+                    if input_idx is not None and idx not in input_idx:
+                        if call_operand != operand_op.result:
+                            memref_d.CopyOp(
+                                call_operand, operand_op.result, ip=ctx.get_ip()
+                            )
                 return
             if fn_name in {"zeros", "ones"}:
                 shape = node.shape

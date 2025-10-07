@@ -1,12 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import numpy as np
 import allo
 from allo.ir.types import int16
 import allo.dataflow as df
-import numpy as np
-from allo.memory import Layout
 
 
 def _test_store_slice():
