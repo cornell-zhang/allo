@@ -14,7 +14,18 @@ def print_error_message(error, stmt, tree):
     source_code = ast.unparse(tree)
     source_stmt = ast.unparse(stmt)
     strip_lines = [line.strip() for line in source_code.splitlines()]
-    target_idx = strip_lines.index(source_stmt.splitlines()[0].strip())
+    source_stmt_str = source_stmt.splitlines()[0].strip()
+    try:
+        target_idx = strip_lines.index(source_stmt_str)
+    except ValueError:
+        target_idx = -1
+        for idx, s in enumerate(strip_lines):
+            if source_stmt_str in s:  # substring match
+                target_idx = idx
+                break
+        print(
+            f"Warning: '{source_stmt}' not found in source lines, the location may be incorrect"
+        )
     line_number = stmt.lineno
     start_offset = min(target_idx, 5)
     start_idx = max(0, target_idx - 5)

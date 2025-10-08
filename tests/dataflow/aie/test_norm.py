@@ -131,7 +131,7 @@ def _test_single_row_layer_norm():
         def core(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
             for i in range(M):
                 # [NOTE]: test using buffer slice as customized external kernel arguments
-                norm(A[i, :], B, C[i, :])
+                norm(A[i], B, C[i])
 
     input_tensor = torch.randn(M, N, dtype=torch.float32)
     weight = torch.randn(N, dtype=torch.float32)
@@ -148,7 +148,7 @@ def _test_single_row_layer_norm():
 
 
 if __name__ == "__main__":
-    # _test_layer_norm()
-    # _test_rms_norm()
+    _test_layer_norm()
+    _test_rms_norm()
     _test_single_row_layer_norm()
-    # _test_layer_norm(enable_trace=True)
+    _test_layer_norm(enable_trace=True)

@@ -1371,7 +1371,7 @@ class ASTTransformer(ASTBuilder):
                     result_strides.append(new_strides[idx_])
             if len(offsets) > 0:
                 assert (
-                    not ctx.in_call_arg_list
+                    ctx.in_call_arg_list == 0
                 ), "Dynamic slices as call operation arguments are not supported yet"
                 offset_values = []
                 dynamic_offset_cnt = 0

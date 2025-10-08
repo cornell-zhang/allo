@@ -48,11 +48,10 @@ class VisitCallArgListGuard:
         self.ctx = ctx
 
     def __enter__(self):
-        assert not self.ctx.in_call_arg_list
-        self.ctx.in_call_arg_list = True
+        self.ctx.in_call_arg_list += 1
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.ctx.in_call_arg_list = False
+        self.ctx.in_call_arg_list -= 1
 
 
 class ASTContext:
@@ -128,8 +127,8 @@ class ASTContext:
         # used for tensor mapping
         self.rank = 0
         self.mapping = None
-        # True when visiting function call argument expressions
-        self.in_call_arg_list = False
+        # > 0 when visiting function call argument expressions (may have nested call)
+        self.in_call_arg_list = 0
 
     def copy(self):
         ctx = ASTContext(
