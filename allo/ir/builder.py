@@ -1370,6 +1370,9 @@ class ASTTransformer(ASTBuilder):
                     result_sizes.append(size)
                     result_strides.append(new_strides[idx_])
             if len(offsets) > 0:
+                assert (
+                    not ctx.in_call_arg_list
+                ), "Dynamic slices as call operation arguments are not supported yet"
                 offset_values = []
                 dynamic_offset_cnt = 0
                 for offset in static_offsets:
@@ -2279,7 +2282,8 @@ class ASTTransformer(ASTBuilder):
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
             # Build arguments and create call
-            new_args = build_stmts(ctx, node.args)
+            with ctx.visit_call_arg_list_guard():
+                new_args = build_stmts(ctx, node.args)
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(external_module.top),
@@ -2458,7 +2462,8 @@ class ASTTransformer(ASTBuilder):
                         return alloc_op
                     return for_op
             # Allo library functions
-            new_args = build_stmts(ctx, node.args)
+            with ctx.visit_call_arg_list_guard():
+                new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
                 input_idx = obj.input_idx if isinstance(obj, ExternalModule) else None
                 input_types = []
@@ -2631,7 +2636,8 @@ class ASTTransformer(ASTBuilder):
 
         # User-defined subfunction
         func = ctx.global_vars[obj_name]
-        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+        with ctx.visit_call_arg_list_guard():
+            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
         if func_name not in ctx.global_vars or not isinstance(
             ctx.global_vars[func_name], func_d.FuncOp
