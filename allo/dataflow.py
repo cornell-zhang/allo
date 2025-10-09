@@ -324,7 +324,7 @@ def df_primitive_default(s):
     df_pipeline(s.module, rewind=True)
 
 
-def customize(func, opt_default=True, enable_tensor=False):
+def customize(func, enable_tensor=False, opt_default=False):
     global_vars = get_global_vars(func)
     s = _customize(func, global_vars=global_vars, enable_tensor=enable_tensor)
     stream_info = move_stream_to_interface(s)
@@ -343,7 +343,6 @@ def build(
     project="top.prj",
     configs=None,
     wrap_io=True,
-    opt_default=True,
     enable_tensor=False,
     mapping_primitives: list[tuple[str, list]] = None,
     profile=False,
@@ -351,7 +350,7 @@ def build(
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
-    device_type: str = None,
+    device_type: str | None = None,
 ):
     assert not profile or target == "aie", "Profiling is only supported for AIE target"
     assert (
@@ -398,10 +397,10 @@ def build(
         return aie_mod
 
     if target == "simulator":
-        s = customize(func, opt_default)
+        s = customize(func)
         return LLVMOMPModule(s.module, s.top_func_name)
     # FPGA backend
-    s = customize(func, opt_default, enable_tensor=enable_tensor)
+    s = customize(func, enable_tensor=enable_tensor)
     hls_mod = s.build(
         target=target,
         mode=mode,
