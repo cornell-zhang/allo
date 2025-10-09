@@ -4,6 +4,7 @@
 
 import functools
 import os
+from typing import Union
 from ._mlir.ir import (
     InsertionPoint,
     FlatSymbolRefAttr,
@@ -350,7 +351,7 @@ def build(
     num_iters=100,
     trace: list[tuple[str, tuple[int, ...]]] = None,
     trace_size: int = 4096,
-    device_type: str | None = None,
+    device_type: Union[str, None] = None,
 ):
     assert not profile or target == "aie", "Profiling is only supported for AIE target"
     assert (
