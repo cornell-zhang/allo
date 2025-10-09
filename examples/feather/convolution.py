@@ -230,7 +230,7 @@ def test_FEATHER_conv():
     weights = np.random.randint(low=0, high=127, size=(M, C, R, S), dtype=np.int8)
     # weights = np.random.rand(M, C, R, S).astype(np.float32)
     weights_flattened = weights.reshape(M, C, R * S)
-    oActs_row_major = np.zeros((M * P * Q // AW, AW), dtype=np.int8)
+    oActs_row_major = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
 
     sim_mod = df.build(top, target="simulator")
     # Outer loop: for all sliding windows
@@ -263,7 +263,7 @@ def test_FEATHER_conv():
                             sim_mod(iActs_tile, weights_tile, inst, output_buffer)
                     for m in range(mt, mt + Mt):
                         oActs_row_major[
-                            m * P * Q // AW + line_offset, intraline_offset
+                          nt, m * P * Q // AW + line_offset, intraline_offset
                         ] = output_buffer[m - mt, intraline_offset]
 
     ref = convolve_2d_row_major(iActs, weights)
