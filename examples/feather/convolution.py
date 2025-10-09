@@ -263,7 +263,7 @@ def test_FEATHER_conv():
                             sim_mod(iActs_tile, weights_tile, inst, output_buffer)
                     for m in range(mt, mt + Mt):
                         oActs_row_major[
-                          nt, m * P * Q // AW + line_offset, intraline_offset
+                            nt, m * P * Q // AW + line_offset, intraline_offset
                         ] = output_buffer[m - mt, intraline_offset]
 
     ref = convolve_2d_row_major(iActs, weights)
