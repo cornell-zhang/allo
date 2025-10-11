@@ -1201,7 +1201,7 @@ class ASTTransformer(ASTBuilder):
                     continue
                 if isinstance(index, MockArg):
                     offsets.append(index.val)
-                    static_offsets.append(-1)
+                    static_offsets.append(ShapedType.get_dynamic_size())
                     static_sizes.append(1)
                     static_strides.append(1)
                     continue
@@ -1369,73 +1369,30 @@ class ASTTransformer(ASTBuilder):
                 if size > 1:
                     result_sizes.append(size)
                     result_strides.append(new_strides[idx_])
-            if len(offsets) > 0:
-                assert (
-                    ctx.in_call_arg_list == 0
-                ), "Dynamic slices as call operation arguments are not supported yet"
-                offset_values = []
-                dynamic_offset_cnt = 0
-                for offset in static_offsets:
-                    if offset < 0:
-                        offset_values.append(offsets[dynamic_offset_cnt])
-                        dynamic_offset_cnt += 1
-                    else:
-                        const_var = arith_d.ConstantOp.create_index(
-                            offset, ip=ctx.get_ip()
-                        )
-                        offset_values.append(const_var)
-                assert len(in_shape) == len(static_strides)
-                flattened_stride = []
-                stride_ = np.prod(in_shape)
-                for shape in in_shape:
-                    stride_ //= shape
-                    flattened_stride.append(stride_)
-                stride_values = [
-                    o * i for o, i in zip(static_strides, flattened_stride)
-                ]
-                # use dynamic index
-                if isinstance(node.ctx, ast.Load):
-                    memref_type = MemRefType.get(result_sizes, dtype)
-                    op = allo_d.LoadSliceOp(
-                        memref_type,
-                        value.result,
-                        offsets=offset_values,
-                        sizes=static_sizes,
-                        strides=stride_values,
-                        ip=ctx.get_ip(),
-                    )
-                else:
-                    op = allo_d.StoreSliceOp(
-                        val.result,
-                        value.result,
-                        offsets=offset_values,
-                        sizes=static_sizes,
-                        strides=stride_values,
-                        ip=ctx.get_ip(),
-                    )
+            new_offset = orig_offset + sum(
+                o * s for o, s in zip(static_offsets, orig_strides)
+            )
+            if new_offset < 0:
+                new_offset = "?"
+            result = MLIRType.parse(
+                f"memref<{'x'.join([str(x) for x in result_sizes])}x{dtype}"
+                f", strided<{result_strides}, offset: {new_offset}>>"
+            )
+            subview = memref_d.SubViewOp(
+                source=value.result,
+                result=result,
+                static_offsets=static_offsets,
+                static_sizes=static_sizes,
+                static_strides=static_strides,
+                offsets=offsets,
+                sizes=sizes,
+                strides=strides,
+                ip=ctx.get_ip(),
+            )
+            if isinstance(node.ctx, ast.Load):
+                op = subview
             else:
-
-                new_offset = orig_offset + sum(
-                    o * s for o, s in zip(static_offsets, orig_strides)
-                )
-
-                layout = StridedLayoutAttr.get(new_offset, result_strides)
-                result = MemRefType.get(result_sizes, dtype, layout=layout)
-                subview = memref_d.SubViewOp(
-                    source=value.result,
-                    result=result,
-                    static_offsets=static_offsets,
-                    static_sizes=static_sizes,
-                    static_strides=static_strides,
-                    offsets=offsets,
-                    sizes=sizes,
-                    strides=strides,
-                    ip=ctx.get_ip(),
-                )
-                if isinstance(node.ctx, ast.Load):
-                    op = subview
-                else:
-                    op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
+                op = memref_d.CopyOp(val.result, subview.result, ip=ctx.get_ip())
         else:
             new_indices, is_affine = ASTTransformer.build_indices(ctx, node.slice)
             if len(node.value.shape) > len(new_indices):  # partial access
@@ -2422,42 +2379,56 @@ class ASTTransformer(ASTBuilder):
                     scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
                     with InsertionPoint(for_op.body.operations[0]):
                         offset_values = []
+                        static_offsets = []
                         size_values = []
                         stride_values = []
+                        result_sizes = []
+                        result_strides = []
                         tile_size = np.prod(node.shape)
                         for i, shape in enumerate(node.shape):
+                            tile_size //= shape
+                            stride_values.append(1)
                             if i == 0:
                                 offset_values.append(for_op.induction_variable)
+                                static_offsets.append(ShapedType.get_dynamic_size())
                                 size_values.append(1)
                             else:
-                                offset_values.append(arith_d.ConstantOp.create_index(0))
+                                static_offsets.append(0)
                                 size_values.append(shape)
-                            tile_size //= shape
-                            stride_values.append(tile_size)
+                                result_sizes.append(shape)
+                                result_strides.append(tile_size)
+                        subview_result = MLIRType.parse(
+                            f"memref<{'x'.join([str(x) for x in result_sizes])}x{node.dtype}"
+                            f", strided<{result_strides}, offset: ?>>"
+                        )
                         if fn_name == "gather":
                             get_op = allo_d.StreamGetOp(
                                 fifo_list.dtype.build(), stream_op.result, []
                             )
-                            allo_d.StoreSliceOp(
-                                get_op.result,
-                                alloc_op.result,
+                            subview = memref_d.SubViewOp(
+                                source=alloc_op.result,
+                                result=subview_result,
+                                static_offsets=static_offsets,
+                                static_sizes=size_values,
+                                static_strides=stride_values,
                                 offsets=offset_values,
-                                sizes=size_values,
-                                strides=stride_values,
+                                sizes=[],
+                                strides=[],
                             )
+                            # copy to slice
+                            memref_d.CopyOp(get_op.result, subview.result)
                         else:
-                            memref_type = MemRefType.get(
-                                fifo_list.dtype.shape,
-                                MemRefType(buffer.result.type).element_type,
-                            )
-                            op = allo_d.LoadSliceOp(
-                                memref_type,
-                                buffer.result,
+                            subview = memref_d.SubViewOp(
+                                source=buffer.result,
+                                result=subview_result,
+                                static_offsets=static_offsets,
+                                static_sizes=size_values,
+                                static_strides=stride_values,
                                 offsets=offset_values,
-                                sizes=size_values,
-                                strides=stride_values,
+                                sizes=[],
+                                strides=[],
                             )
-                            allo_d.StreamPutOp(stream_op.result, [], op.result)
+                            allo_d.StreamPutOp(stream_op.result, [], subview.result)
                     if fn_name == "gather":
                         return alloc_op
                     return for_op

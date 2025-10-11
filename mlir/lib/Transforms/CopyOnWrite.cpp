@@ -49,8 +49,10 @@ void removeRedundantCopy(func::FuncOp &func) {
 
     // if copy is the last use of src
     if (last_user && last_user == op) {
+      Operation *defOp = dst.getDefiningOp();
       // if dst is local, replace the use of dst with src
-      if (dst.getDefiningOp()) {
+      // TODO: A more precise check should detect actual local def
+      if (defOp && !llvm::isa<memref::SubViewOp>(defOp)) {
         for (auto &use : dst.getUses()) {
           Operation *user = use.getOwner();
           if (user->getBlock() != op->getBlock()) {
