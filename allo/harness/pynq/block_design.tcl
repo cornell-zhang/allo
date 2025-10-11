@@ -1,3 +1,6 @@
+# Copyright Allo authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Block design for baseline (single kernel multiple master)
 # create project in build_vivado directory
 create_project project_1 ./build_vivado -part xczu3eg-sbva484-1-i
