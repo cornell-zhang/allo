@@ -996,7 +996,6 @@ class Schedule:
                     platform = "pynq"
                 case _:
                     platform = "vivado_hls"
-
             return HLSModule(
                 self.module,
                 top_func_name=self.top_func_name,
