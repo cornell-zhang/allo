@@ -1213,57 +1213,6 @@ class ASTTransformer(ASTBuilder):
         return offsets, sizes, strides, static_offsets, static_sizes, static_strides
 
     @staticmethod
-    def build_symbolic_slices(
-        ctx: ASTContext, node: ast.Subscript, in_shape: list[int]
-    ):
-        if isinstance(node.slice, ast.Tuple):
-            slices = list(node.slice.elts)
-        else:
-            slices = node.slice.dims if len(node.shape) > 1 else [node.slice]
-        offsets = []
-        static_sizes = []
-        static_strides = []
-        for index, size in zip(slices, in_shape):
-            if isinstance(index, ast.Slice):
-                # fixme: slice lower/upper/step is not constant
-                lower = (
-                    0
-                    if index.lower is None
-                    else ASTResolver.resolve_constant(index.lower, ctx)
-                )
-                upper = (
-                    size
-                    if index.upper is None
-                    else ASTResolver.resolve_constant(index.upper, ctx)
-                )
-                if index.step is None:
-                    step = 1
-                elif isinstance(index.step, ast.Constant):
-                    step = index.step.value
-                else:
-                    raise RuntimeError("Unsupported step type")
-                assert lower is not None and upper is not None
-                assert (
-                    0 <= lower < size and 0 <= upper <= size and step > 0
-                ), "Invalid index or step"
-                offsets.append(lower)
-                static_sizes.append((upper - lower) // step)
-                static_strides.append(step)
-            else:
-                ind = eval(ast.unparse(index), ctx.global_vars)
-                symbolic_ind, iterator_info = get_symbolic_expr(
-                    copy.deepcopy(index),
-                    ctx.symbolic,
-                    ctx.global_vars,
-                    ctx.get_alive_var_names(),
-                )
-                offsets.append((ind, symbolic_ind, iterator_info))
-                static_sizes.append(1)
-                static_strides.append(1)
-                raise RuntimeError("TODO")
-        return offsets, static_sizes, static_strides
-
-    @staticmethod
     def build_tensor_access(
         ctx: ASTContext, node: ast.Subscript, val: OpView = None, idx: int = 0
     ):
@@ -2075,7 +2024,7 @@ class ASTTransformer(ASTBuilder):
             new_name = vid
         return new_name, symbolic_slice, iterator_infos
 
-    # pylint: disable=too-many-return-statements, too-many-function-args
+    # pylint: disable=too-many-return-statements, too-many-function-args, too-many-nested-blocks
     @staticmethod
     def build_Call(ctx: ASTContext, node: ast.Call, out_buffer: OpView = None):
         original_func_id = ctx.func_id
@@ -2239,8 +2188,7 @@ class ASTTransformer(ASTBuilder):
                 )
                 func_op.attributes["sym_visibility"] = StringAttr.get("private")
             # Build arguments and create call
-            with ctx.visit_call_arg_list_guard():
-                new_args = build_stmts(ctx, node.args)
+            new_args = build_stmts(ctx, node.args)
             call_op = func_d.CallOp(
                 [],
                 FlatSymbolRefAttr.get(external_module.top),
@@ -2309,13 +2257,56 @@ class ASTTransformer(ASTBuilder):
                 elif isinstance(fifo_list, ast.Subscript):
                     # if len(static_sizes) may > 1, will be flattened
                     array_shape = ctx.get_symbol(fifo_list.value.id)
-                    (
-                        offsets,
-                        static_sizes,
-                        static_strides,
-                    ) = ASTTransformer.build_symbolic_slices(
-                        ctx, fifo_list, array_shape
-                    )
+                    if isinstance(fifo_list.slice, ast.Tuple):
+                        slices = list(fifo_list.slice.elts)
+                    else:
+                        slices = (
+                            fifo_list.slice.dims
+                            if len(fifo_list.shape) > 1
+                            else [fifo_list.slice]
+                        )
+                    # offset, size, stride for accessing the stream array
+                    offsets = []
+                    static_sizes = []
+                    static_strides = []
+                    for index, size in zip(slices, array_shape):
+                        if isinstance(index, ast.Slice):
+                            # fixme: slice lower/upper/step is not constant
+                            lower = (
+                                0
+                                if index.lower is None
+                                else ASTResolver.resolve_constant(index.lower, ctx)
+                            )
+                            upper = (
+                                size
+                                if index.upper is None
+                                else ASTResolver.resolve_constant(index.upper, ctx)
+                            )
+                            if index.step is None:
+                                step = 1
+                            elif isinstance(index.step, ast.Constant):
+                                step = index.step.value
+                            else:
+                                raise RuntimeError("Unsupported step type")
+                            assert lower is not None and upper is not None
+                            assert (
+                                0 <= lower < size and 0 <= upper <= size and step > 0
+                            ), "Invalid index or step"
+                            offsets.append(lower)
+                            static_sizes.append((upper - lower) // step)
+                            static_strides.append(step)
+                        else:
+                            ind = eval(ast.unparse(index), ctx.global_vars)
+                            symbolic_ind, iterator_info = get_symbolic_expr(
+                                copy.deepcopy(index),
+                                ctx.symbolic,
+                                ctx.global_vars,
+                                ctx.get_alive_var_names(),
+                            )
+                            offsets.append((ind, symbolic_ind, iterator_info))
+                            static_sizes.append(1)
+                            static_strides.append(1)
+                            raise RuntimeError("TODO")
                     assert all(
                         isinstance(offset, int) for offset in offsets
                     ), "Not supported yet"
@@ -2433,8 +2424,7 @@ class ASTTransformer(ASTBuilder):
                         return alloc_op
                     return for_op
             # Allo library functions
-            with ctx.visit_call_arg_list_guard():
-                new_args = build_stmts(ctx, node.args)
+            new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
                 input_idx = obj.input_idx if isinstance(obj, ExternalModule) else None
                 input_types = []
@@ -2607,8 +2597,7 @@ class ASTTransformer(ASTBuilder):
 
         # User-defined subfunction
         func = ctx.global_vars[obj_name]
-        with ctx.visit_call_arg_list_guard():
-            new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
+        new_args = [stmt.result for stmt in build_stmts(ctx, node.args)]
         func_name = obj_name if ctx.func_id is None else f"{obj_name}_{ctx.func_id}"
         if func_name not in ctx.global_vars or not isinstance(
             ctx.global_vars[func_name], func_d.FuncOp

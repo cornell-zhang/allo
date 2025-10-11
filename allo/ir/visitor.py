@@ -43,17 +43,6 @@ class AffineScopeGuard:
         self.ctx.affine_vars = []
 
 
-class VisitCallArgListGuard:
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        self.ctx.in_call_arg_list += 1
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.ctx.in_call_arg_list -= 1
-
-
 class ASTContext:
     def __init__(
         self,
@@ -127,8 +116,6 @@ class ASTContext:
         # used for tensor mapping
         self.rank = 0
         self.mapping = None
-        # > 0 when visiting function call argument expressions (may have nested call)
-        self.in_call_arg_list = 0
 
     def copy(self):
         ctx = ASTContext(
@@ -247,9 +234,6 @@ class ASTContext:
 
     def affine_scope_guard(self):
         return AffineScopeGuard(self)
-
-    def visit_call_arg_list_guard(self):
-        return VisitCallArgListGuard(self)
 
 
 class ASTVisitor:
