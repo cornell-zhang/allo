@@ -747,7 +747,7 @@ class AIE_MLIRModule:
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-memref-ops",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:

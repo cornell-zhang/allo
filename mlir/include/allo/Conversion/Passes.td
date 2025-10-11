@@ -33,21 +33,6 @@ def LowerTransformLayoutOps : Pass<"lower-transform-layout-ops", "ModuleOp"> {
   let constructor = "mlir::allo::createLowerTransformLayoutOpsPass()";
 }
 
-def LowerStoreSliceOps : Pass<"lower-store-slice-ops", "ModuleOp"> {
-  let summary = "Lower store-slice operations";
-  let constructor = "mlir::allo::createLowerStoreSliceOpsPass()";
-}
-
-def LowerLoadSliceOps : Pass<"lower-load-slice-ops", "ModuleOp"> {
-  let summary = "Lower load-slice operations";
-  let constructor = "mlir::allo::createLowerLoadSliceOpsPass()";
-}
-
-def LowerMemrefOps : Pass<"lower-memref-ops", "ModuleOp"> {
-  let summary = "Lower load-slice&store-slice&transform-layout operations";
-  let constructor = "mlir::allo::createLowerMemrefOpsPass()";
-}
-
 def LowerPrintOps : Pass<"lower-print-ops", "ModuleOp"> {
   let summary = "Lower print operations";
   let constructor = "mlir::allo::createLowerPrintOpsPass()";
