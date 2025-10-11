@@ -1,22 +1,22 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# This file implements the example of Fig. 11 in the paper
-# which performs a 2D convolution and converts the layout
-# from channel-last to row major at the same time.
+# Example from Fig. 11 of the paper:
+# Convolution, Channel-Last -> Row Major
 
-# The FEATHER implementation in this file is generally same
-# as the one in gemm.py except for parameters that describe inputs.
+import argparse, os
 
-import argparse
-from math import log2
-
-import allo
 from allo.ir.types import int8
 import allo.dataflow as df
 import allo.backend.hls as hls
+from examples.feather.feather import (
+    get_feather_top,
+    print_test_config,
+    result_check,
+    compare_sim_hls_result,
+    print_summary,
+)
 import numpy as np
-
 
 parser = argparse.ArgumentParser()
 help_AH = """
@@ -68,135 +68,10 @@ P, Q = H - R + 1, W - S + 1
 Mt, Ct, VN_size = AH, AW, AH
 # Sliding windows are tiled with AW * AH size
 
-# BIRRD parameters
-LOG2_AW = int(log2(AW))
-P0 = 2 * LOG2_AW if AW > 4 else 2 * LOG2_AW - 1  # Number of stages
-P1 = AW // 2  # Number of switches in a stage
-
 PS = 0  # Pass
 AR = 1  # Add Right
 AL = 2  # Add Left
 SW = 3  # Swap
-
-
-def reverse_bits(data: int, bit_range: int) -> int:
-    mask = (1 << bit_range) - 1
-    reversed_bits = 0
-    for i in range(0, bit_range):
-        if data & (1 << i):
-            reversed_bits |= 1 << (bit_range - 1 - i)
-    return (data & ~mask) | reversed_bits
-
-
-@df.region()
-def top():
-    nest_out = df.pipe(dtype=Ty, shape=(AW,), depth=AH)
-
-    @df.kernel(mapping=[1])
-    def NEST(iActs: Ty[VN_size, Ct], weights: Ty[Mt, Ct, VN_size]):
-        # With padding, Qt == Wt, Rt == Ht
-        for m in range(AH):  # Rows, can be pipelined
-            local_result: Ty[AW] = 0
-            for c in range(AW):  # Cols, can be fully parallelized
-                for vn in range(VN_size):  # Iterations of a local reduction
-                    last_res: Ty = 0.0 if vn == 0 else local_result[c]
-                    iAct: Ty = iActs[vn, c]
-                    weight: Ty = weights[m, c, vn]
-                    result: Ty = last_res + iAct * weight
-                    local_result[c] = result
-            nest_out.put(local_result)
-
-    connection = df.array(df.pipe(dtype=Ty, shape=(), depth=1), shape=(P0 + 1, P1 * 2))
-
-    @df.kernel(mapping=[1])
-    def bus():
-        for _ in range(AH):
-            array: Ty[AW] = nest_out.get()
-            with allo.meta_for(AW) as i:
-                connection[0, i].put(array[i])
-
-    inst_input = df.array(df.pipe(dtype=int8, shape=(), depth=1), shape=(P0, P1))
-
-    @df.kernel(mapping=[1])
-    def inst_rw(insts: int8[P0, P1]):
-        with allo.meta_for(P0) as i:
-            with allo.meta_for(P1) as j:
-                inst_input[i, j].put(insts[i, j])
-
-    @df.kernel(mapping=[P0, P1])
-    def BIRRD():
-        i, j = df.get_pid()
-        inst = inst_input[i, j].get()  # Update inst every cycle
-        for _ in range(AH):
-            # The first stage
-            with allo.meta_if(i == 0):
-                in_left: Ty = connection[0, 2 * j].get()
-                in_right: Ty = connection[0, 2 * j + 1].get()
-                out_left: Ty = 0.0
-                out_right: Ty = 0.0
-                if inst == 0:  # Pass
-                    out_left = in_left
-                    out_right = in_right
-                elif inst == 1:  # Add Right
-                    out_left = in_left
-                    out_right = in_left + in_right
-                elif inst == 2:  # Add Left
-                    out_left = in_left + in_right
-                    out_right = in_right
-                else:  # Swap
-                    out_left = in_right
-                    out_right = in_left
-                connection[i + 1, reverse_bits(2 * j, 2)].put(out_left)
-                connection[i + 1, reverse_bits(2 * j + 1, 2)].put(out_right)
-
-            # The last stage
-            with allo.meta_elif(i == P0 - 1):
-                in_left: Ty = connection[P0 - 1, 2 * j].get()
-                in_right: Ty = connection[P0 - 1, 2 * j + 1].get()
-                if inst == 0:  # Pass
-                    connection[P0, 2 * j].put(in_left)
-                    connection[P0, 2 * j + 1].put(in_right)
-                elif inst == 1:  # Add Right
-                    connection[P0, 2 * j].put(in_left)
-                    connection[P0, 2 * j + 1].put(in_left + in_right)
-                elif inst == 2:  # Add Left
-                    connection[P0, 2 * j].put(in_left + in_right)
-                    connection[P0, 2 * j + 1].put(in_right)
-                else:  # Swap
-                    connection[P0, 2 * j].put(in_right)
-                    connection[P0, 2 * j + 1].put(in_left)
-
-            # Stages in the middle
-            with allo.meta_else():
-                in_left: Ty = connection[i, 2 * j].get()
-                in_right: Ty = connection[i, 2 * j + 1].get()
-                out_left: Ty = 0.0
-                out_right: Ty = 0.0
-                if inst == 0:  # Pass
-                    out_left = in_left
-                    out_right = in_right
-                elif inst == 1:  # Add Right
-                    out_left = in_left
-                    out_right = in_left + in_right
-                elif inst == 2:  # Add Left
-                    out_left = in_left + in_right
-                    out_right = in_right
-                else:  # Swap
-                    out_left = in_right
-                    out_right = in_left
-                connection[
-                    i + 1, reverse_bits(2 * j, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
-                ].put(out_left)
-                connection[
-                    i + 1, reverse_bits(2 * j + 1, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
-                ].put(out_right)
-
-    @df.kernel(mapping=[1])
-    def output(output_buffer: Ty[AH, AW]):
-        for d in range(AH):
-            with allo.meta_for(AW) as i:
-                res = connection[P0, i].get()
-                output_buffer[d, i] += res
 
 
 def convolve_2d_row_major(mats: np.ndarray, kernels: np.ndarray) -> np.ndarray:
@@ -221,17 +96,31 @@ def test_FEATHER_conv():
         inst1 = np.array([[AL, AL], [AL, PS], [SW, PS]]).astype(np.int8)
         inst2 = np.array([[AL, AL], [AR, PS], [PS, PS]]).astype(np.int8)
         inst3 = np.array([[AL, AL], [AR, PS], [PS, SW]]).astype(np.int8)
-        insts = inst0, inst1, inst2, inst3
-    iActs = np.random.randint(low=0, high=127, size=(N, C, H, W), dtype=np.int8)
-    # iActs = np.random.rand(N, C, H, W).astype(np.float32)
+        insts = [inst0, inst1, inst2, inst3]
+    iActs = np.random.randint(low=-4, high=4, size=(N, C, H, W), dtype=np.int8)
     iActs_channel_last = np.ascontiguousarray(
         iActs.transpose(0, 2, 3, 1)
     )  # NCHW -> NHWC
-    weights = np.random.randint(low=0, high=127, size=(M, C, R, S), dtype=np.int8)
-    # weights = np.random.rand(M, C, R, S).astype(np.float32)
+    weights = np.random.randint(low=-4, high=4, size=(M, C, R, S), dtype=np.int8)
     weights_flattened = weights.reshape(M, C, R * S)
     oActs_row_major = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
 
+    print_test_config(
+        "Convolution",
+        AH,
+        AW,
+        {"N": N, "C": C, "H": H, "W": W, "M": M, "R": R, "S": S},
+        {"Mt": Mt, "Ct": Ct, "Virtual Neuron size": VN_size},
+        insts,
+        iActs,
+        weights,
+        oActs_row_major,
+        [M // Mt, C // Ct, R * S // VN_size],
+    )
+
+    print("Running Dataflow Simulator...")
+    os.environ["OMP_NUM_THREADS"] = "256"
+    top = get_feather_top(AW, AH, Ty)
     sim_mod = df.build(top, target="simulator")
     # Outer loop: for all sliding windows
     for nt in range(0, N, 1):
@@ -260,15 +149,78 @@ def test_FEATHER_conv():
                                 ]
                             )
                             inst = insts[intraline_offset]
-                            sim_mod(iActs_tile, weights_tile, inst, output_buffer)
+                            output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
+                            sim_mod(iActs_tile, weights_tile, inst, output_buffer_local)
+                            output_buffer += output_buffer_local
                     for m in range(mt, mt + Mt):
                         oActs_row_major[
                             nt, m * P * Q // AW + line_offset, intraline_offset
                         ] = output_buffer[m - mt, intraline_offset]
 
     ref = convolve_2d_row_major(iActs, weights)
-    np.testing.assert_allclose(ref.flatten(), oActs_row_major.flatten())
-    print("Dataflow Simulator Passed!")
+    ref_reshaped = ref.reshape(N * M, P * Q)
+    print(f"Reference computation completed.")
+
+    oActs_compare = oActs_row_major.reshape(N * M, P * Q)
+    test_passed = result_check(oActs_compare, ref_reshaped)
+
+    hls_test_passed, vs_passed = False, False
+    if hls.is_available("vitis_hls"):
+        print("Running Vitis Synthesis and On-Board Execution...")
+        top = get_feather_top(AW, AH, Ty)
+        s = df.customize(top)
+        nest_loop = s.get_loops("NEST_0")["nest"]["i"]
+        s.unroll(nest_loop)
+        s.partition("top:output_buffer", dim=1, factor=AW)
+        csyn_mod = s.build(
+            target="vitis_hls",
+            mode="hw_emu",
+            project=f"feather_convolution_{N}_{C}_{H}_{W}_{M}_{R}_{S}_{AW}_{AH}.prj",
+        )
+        oActs_hls = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
+        # Outer loop: for all sliding windows
+        for nt in range(0, N, 1):
+            for pt in range(0, P, 1):
+                for qt in range(0, Q, 1):
+                    iActs_sliding_window = iActs_channel_last[
+                        nt, pt : pt + R, qt : qt + S, :
+                    ].reshape(R * S, C)
+                    # Inner loop: for all tiles
+                    for mt in range(0, M, Mt):
+                        output_buffer = np.zeros((AH, AW), dtype=np.int8)
+                        line_offset = (
+                            pt * Q + qt
+                        ) // AW  # The actual output line where (pt, qt) is
+                        intraline_offset = (
+                            pt * Q + qt
+                        ) % AW  # The position of (pt, qt) within this line
+                        for ct in range(0, C, Ct):
+                            for vn in range(0, R * S, VN_size):
+                                iActs_tile = np.ascontiguousarray(
+                                    iActs_sliding_window[
+                                        vn : vn + VN_size, ct : ct + Ct
+                                    ]
+                                )
+                                weights_tile = np.ascontiguousarray(
+                                    weights_flattened[
+                                        mt : mt + Mt, ct : ct + Ct, vn : vn + VN_size
+                                    ]
+                                )
+                                inst = insts[intraline_offset]
+                                output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
+                                csyn_mod(
+                                    iActs_tile, weights_tile, inst, output_buffer_local
+                                )
+                                output_buffer += output_buffer_local
+                        for m in range(mt, mt + Mt):
+                            oActs_hls[
+                                nt, m * P * Q // AW + line_offset, intraline_offset
+                            ] = output_buffer[m - mt, intraline_offset]
+        oActs_hls_compare = oActs_hls.reshape(N * M, P * Q)
+        hls_test_passed = result_check(oActs_hls_compare, ref_reshaped, True)
+
+        vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
+    print_summary(test_passed, hls_test_passed, vs_passed)
 
 
 if __name__ == "__main__":

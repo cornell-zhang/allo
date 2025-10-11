@@ -1,27 +1,24 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# FEATHER is an accelerator proposed in paper:
-# Jianming Tong, Anirudh Itagi, Prasanth Chatarasi, Tushar Krishna,
-# "FEATHER: A Reconfigurable Accelerator with Data Reordering
-# Support for Low-Cost On-Chip Dataflow Switching", 2024 ACM/IEEE 51st
-# Annual International Symposium on Computer Architecture (ISCA).
-
-# Paper link: https://arxiv.org/abs/2405.13170
-# Original RTL code: https://github.com/maeri-project/FEATHER
-
-# This file implements the 2nd GEMM example of Fig. 10 of the paper.
-# This implementation doesn't contain the quantization module
-# and ping-pong buffers presented in the original paper.
+# 2nd example from Fig.10 of the paper
+# "Workload A, Change oAct Layout"
 
 from math import log2
 import argparse
 import os
 
-import allo
 from allo.ir.types import int8, UInt
 import allo.dataflow as df
 import allo.backend.hls as hls
+from examples.feather.feather import (
+    get_feather_top,
+    print_test_config,
+    result_check,
+    compare_sim_hls_result,
+    print_summary,
+)
+
 import numpy as np
 
 parser = argparse.ArgumentParser()
@@ -42,7 +39,6 @@ help_K = """K dimension (shared inner). Requirement: K % Kt == 0. Default to 16.
 parser.add_argument("--M", type=int, default=16, required=False, help=help_M)
 parser.add_argument("--N", type=int, default=32, required=False, help=help_N)
 parser.add_argument("--K", type=int, default=16, required=False, help=help_K)
-# AH=AW=16, MNK=8x16x32
 
 args = parser.parse_args()
 
@@ -63,7 +59,7 @@ AL = 2  # Add Left
 SW = 3  # Swap
 
 # Tile size, irrelevant with input size
-Mt, Nt, Kt = AW // 2, AH, 8
+Mt, Nt, Kt = AW // 2, AH, 2 * AH
 M, N, K = args.M, args.N, args.K
 assert K % Kt == 0
 assert N % Nt == 0
@@ -74,203 +70,50 @@ assert N >= Nt
 assert M >= Mt
 
 
-def reverse_bits(data: int, bit_range: int) -> int:
-    mask = (1 << bit_range) - 1
-    reversed_bits = 0
-    for i in range(0, bit_range):
-        if data & (1 << i):
-            reversed_bits |= 1 << (bit_range - 1 - i)
-    return (data & ~mask) | reversed_bits
-
-
-@df.region()
-def top():
-    nest_out = df.pipe(dtype=TyPacked, depth=AH)
-
-    @df.kernel(mapping=[1])
-    def NEST(iActs: Ty[Mt * 2, Kt // 2], weights: Ty[Kt, Nt]):
-        for i in allo.grid(AH, name="nest"):  # Rows, can be pipelined
-            local_result: TyPacked = 0
-            for j in range(AW):  # Cols, can be fully parallelized
-                # FIXME: This multiplication op requires a DSP, leading to II=2
-                start: int8 = j * P_FACTOR
-                end: int8 = start + P_FACTOR
-                for k in range(Kt // 2):  # Iterations of a local reduction
-                    iAct: Ty = iActs[j, k]
-                    weight: Ty = (
-                        weights[k, i] if j < AW // 2 else weights[Kt // 2 + k, i]
-                    )
-                    local_result[start:end] += iAct * weight
-            nest_out.put(local_result)
-
-    connection = df.array(df.pipe(dtype=Ty, shape=(), depth=1), shape=(P0 + 1, P1 * 2))
-
-    @df.kernel(mapping=[1])
-    def bus():
-        for _ in range(Nt):
-            array: TyPacked = nest_out.get()
-            with allo.meta_for(AW) as i:
-                connection[0, i].put(array[i * P_FACTOR : (i + 1) * P_FACTOR])
-
-    inst_input = df.array(df.pipe(dtype=int8, shape=(), depth=1), shape=(P0, P1))
-
-    @df.kernel(mapping=[1])
-    def inst_rw(inst: int8[P0, P1]):
-        with allo.meta_for(P0) as i:
-            with allo.meta_for(P1) as j:
-                inst_input[i, j].put(inst[i, j])
-
-    @df.kernel(mapping=[P0, P1])
-    def BIRRD():
-        i, j = df.get_pid()
-        inst = inst_input[i, j].get()
-        for _ in range(AH):
-            # The first stage
-            with allo.meta_if(i == 0):
-                in_left: Ty = connection[0, 2 * j].get()
-                in_right: Ty = connection[0, 2 * j + 1].get()
-                out_left: Ty = 0.0
-                out_right: Ty = 0.0
-                if inst == 0:  # Pass
-                    out_left = in_left
-                    out_right = in_right
-                elif inst == 1:  # Add Right
-                    out_left = in_left
-                    out_right = in_left + in_right
-                elif inst == 2:  # Add Left
-                    out_left = in_left + in_right
-                    out_right = in_right
-                else:  # Swap
-                    out_left = in_right
-                    out_right = in_left
-                connection[i + 1, reverse_bits(2 * j, 2)].put(out_left)
-                connection[i + 1, reverse_bits(2 * j + 1, 2)].put(out_right)
-
-            # The last stage
-            with allo.meta_elif(i == P0 - 1):
-                in_left: Ty = connection[P0 - 1, 2 * j].get()
-                in_right: Ty = connection[P0 - 1, 2 * j + 1].get()
-                if inst == 0:  # Pass
-                    connection[P0, 2 * j].put(in_left)
-                    connection[P0, 2 * j + 1].put(in_right)
-                elif inst == 1:  # Add Right
-                    connection[P0, 2 * j].put(in_left)
-                    connection[P0, 2 * j + 1].put(in_left + in_right)
-                elif inst == 2:  # Add Left
-                    connection[P0, 2 * j].put(in_left + in_right)
-                    connection[P0, 2 * j + 1].put(in_right)
-                else:  # Swap
-                    connection[P0, 2 * j].put(in_right)
-                    connection[P0, 2 * j + 1].put(in_left)
-
-            # Stages in the middle
-            with allo.meta_else():
-                in_left: Ty = connection[i, 2 * j].get()
-                in_right: Ty = connection[i, 2 * j + 1].get()
-                out_left: Ty = 0.0
-                out_right: Ty = 0.0
-                if inst == 0:  # Pass
-                    out_left = in_left
-                    out_right = in_right
-                elif inst == 1:  # Add Right
-                    out_left = in_left
-                    out_right = in_left + in_right
-                elif inst == 2:  # Add Left
-                    out_left = in_left + in_right
-                    out_right = in_right
-                else:  # Swap
-                    out_left = in_right
-                    out_right = in_left
-                connection[
-                    i + 1, reverse_bits(2 * j, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
-                ].put(out_left)
-                connection[
-                    i + 1, reverse_bits(2 * j + 1, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
-                ].put(out_right)
-
-    @df.kernel(mapping=[1])
-    def output(output_buffer: Ty[AW, AH]):
-        for d in range(AH):
-            with allo.meta_for(AW) as i:
-                # TODO: Do reduction on-chip
-                output_buffer[i, d] = connection[P0, i].get()
-
-
 def iAct_tile_reorder(tile: np.ndarray):
-    assert tile.shape[0] == Mt and tile.shape[1] == Kt
+    assert tile.shape == (Mt, Kt)
     # Split on K dimension for later reduction
-    B_left, B_right = np.hsplit(tile, 2)
-    C_left, C_right = np.vsplit(B_left, 2), np.vsplit(B_right, 2)
-    D = np.vstack([C.flatten() for C in C_left + C_right])
-    # assert D.shape[1] == AW and D.shape[0] == Kt // 2
+    B_left, B_right = np.hsplit(tile, 2)  # AW // 2, AH
+    C = np.hstack([B_left.transpose(), B_right.transpose()])
+    assert C.shape == (AH, AW)
+    return np.ascontiguousarray(C)
+
+
+def weight_make_layout_for_input(tile: np.ndarray):
+    assert tile.shape == (Kt, Nt)  # (2 * AH, AH)
+    B_left, B_right = np.vsplit(tile, 2)
+    C_left = np.array([B_left.transpose()] * (AW // 2))
+    C_right = np.array([B_right.transpose()] * (AW // 2))
+    D = np.vstack([C_left, C_right]).transpose(1, 0, 2)
+    assert D.shape == (AH, AW, AH)
     return np.ascontiguousarray(D)
 
 
-def oAct_make_layout(oActs_raw: np.ndarray):
-    # Divide on N first
-    B = np.hsplit(oActs_raw, N // AH)
-    C = map(lambda b: b.flatten().reshape(P1, -1), B)
-    D = np.concatenate(list(C), axis=1)
-    return np.ascontiguousarray(D)
-
-
-def correctness_check(oActs: np.ndarray, ref: np.ndarray):
+def extract_output_for_compare(oActs: np.ndarray, ref: np.ndarray) -> np.ndarray:
+    oActs = oActs.transpose()
+    extracted_data = np.zeros(shape=ref.shape, dtype=np.int8)
     for m in range(M // Mt):
         if AW == 16:  # Mt == 8
-            np.testing.assert_allclose(ref[m * Mt], oActs[m * 2 * Mt + 8], atol=1e-5)
-            np.testing.assert_allclose(
-                ref[m * Mt + 1], oActs[m * 2 * Mt + 10], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 2], oActs[m * 2 * Mt + 11], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 3], oActs[m * 2 * Mt + 9], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 4], oActs[m * 2 * Mt + 5], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 5], oActs[m * 2 * Mt + 6], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 6], oActs[m * 2 * Mt + 7], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 7], oActs[m * 2 * Mt + 4], atol=1e-5
-            )
+            np.copyto(extracted_data[m * Mt], oActs[m * 2 * Mt + 8])
+            np.copyto(extracted_data[m * Mt + 1], oActs[m * 2 * Mt + 10])
+            np.copyto(extracted_data[m * Mt + 2], oActs[m * 2 * Mt + 11])
+            np.copyto(extracted_data[m * Mt + 3], oActs[m * 2 * Mt + 9])
+            np.copyto(extracted_data[m * Mt + 4], oActs[m * 2 * Mt + 5])
+            np.copyto(extracted_data[m * Mt + 5], oActs[m * 2 * Mt + 6])
+            np.copyto(extracted_data[m * Mt + 6], oActs[m * 2 * Mt + 7])
+            np.copyto(extracted_data[m * Mt + 7], oActs[m * 2 * Mt + 4])
         elif AW == 8:  # Mt == 4
-            np.testing.assert_allclose(ref[m * Mt], oActs[m * 2 * Mt + 6], atol=1e-5)
-            np.testing.assert_allclose(
-                ref[m * Mt + 1], oActs[m * 2 * Mt + 5], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 2], oActs[m * 2 * Mt + 2], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 3], oActs[m * 2 * Mt + 1], atol=1e-5
-            )
-        elif AW == 4:
-            np.testing.assert_allclose(
-                ref[m * Mt + 0], oActs[m * 2 * Mt + 2], atol=1e-5
-            )
-            np.testing.assert_allclose(
-                ref[m * Mt + 1], oActs[m * 2 * Mt + 0], atol=1e-5
-            )
+            np.copyto(extracted_data[m * Mt], oActs[m * 2 * Mt + 6])
+            np.copyto(extracted_data[m * Mt + 1], oActs[m * 2 * Mt + 5])
+            np.copyto(extracted_data[m * Mt + 2], oActs[m * 2 * Mt + 2])
+            np.copyto(extracted_data[m * Mt + 3], oActs[m * 2 * Mt + 1])
+        elif AW == 4:  # Mt == 2
+            np.copyto(extracted_data[m * Mt], oActs[m * 2 * Mt + 2])
+            np.copyto(extracted_data[m * Mt + 1], oActs[m * 2 * Mt])
+    return extracted_data
 
 
 def test_FEATHER_GEMM():
-    print("=" * 80)
-    print(f"FEATHER GEMM Test Configuration")
-    print("=" * 80)
-    print(f"Array Height (AH): {AH}")
-    print(f"Array Width (AW): {AW}")
-    print(f"Matrix dimensions - M: {M}, K: {K}, N: {N}")
-    print(f"Tile dimensions - Mt: {Mt}, Kt: {Kt}, Nt: {Nt}")
-    print(f"Number of stages (P0): {P0}")
-    print(f"Switches per stage (P1): {P1}")
-    print("-" * 80)
-
     if AW == 16:
         inst = np.array(
             [
@@ -299,169 +142,57 @@ def test_FEATHER_GEMM():
         )
     elif AW == 4:
         inst = np.array([[PS, PS], [AR, AL], [SW, PS]], dtype=np.int8)
-
-    print(f"Instruction array shape: {inst.shape}")
-    print(f"Instruction array:\n{inst}")
-    print("-" * 80)
+    insts = [inst]
 
     iActs_no_layout = np.random.randint(-4, 4, size=(M, K)).astype(np.int8)
     weights = np.random.randint(-4, 4, size=(K, N)).astype(np.int8)
-    oActs = np.zeros((2 * M, N), dtype=np.int8)
+    oActs = np.zeros((N, 2 * M), dtype=np.int8)
 
-    print(f"Input activations shape: {iActs_no_layout.shape}")
-    print(f"Weights shape: {weights.shape}")
-    print(f"Output activations shape (allocated): {oActs.shape}")
-    print("-" * 80)
+    print_test_config(
+        "GEMM",
+        AH,
+        AW,
+        {"M": M, "K": K, "N": N},
+        {"Mt": Mt, "Kt": Kt, "Nt": Nt},
+        insts,
+        iActs_no_layout,
+        weights,
+        oActs,
+        [M // Mt, N // Nt, K // Kt],
+    )
 
     print("Running Dataflow Simulator...")
     os.environ["OMP_NUM_THREADS"] = "256"
+    top = get_feather_top(AW, AH, Ty)
     sim_mod = df.build(top, target="simulator")
-    print(f"# of tiles: {N // Nt}, {M // Mt}, {K // Kt}")
     for n in range(N // Nt):
         for m in range(M // Mt):
-            output_buffer = np.zeros((AW, Nt), dtype=np.int8)
+            output_buffer = np.zeros((Nt, 2 * Mt), dtype=np.int8)
             for k in range(K // Kt):
-                weights_tile = np.ascontiguousarray(
-                    weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
-                )
+                output_buffer_tile = np.zeros((Nt, 2 * Mt), dtype=np.int8)
+                weights_tile = weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
+                weights_tile_input = weight_make_layout_for_input(weights_tile)
                 iActs_tile_no_layout = iActs_no_layout[
                     m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
                 ]
                 iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                sim_mod(iActs_tile, weights_tile, inst, output_buffer)
+                sim_mod(iActs_tile, weights_tile_input, inst, output_buffer_tile)
+                output_buffer += output_buffer_tile
             np.copyto(
-                dst=oActs[m * 2 * Mt : (m + 1) * 2 * Mt, n * Nt : (n + 1) * Nt],
+                dst=oActs[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
                 src=output_buffer,
             )
 
     ref = np.dot(iActs_no_layout, weights)  # MxN
+    oActs_compare = extract_output_for_compare(oActs, ref)
     print(f"Reference computation completed.")
-    print("-" * 80)
 
-    print("Verifying Results:")
-    test_passed = True
+    test_passed = result_check(oActs_compare, ref)
 
-    try:
-        correctness_check(oActs, ref)
-        print("🎉 Dataflow Simulator: ALL TESTS PASSED!")
-
-        # Detailed verification for debugging
-        if AW == 16:  # Mt == 8
-            mapping = [(0, 8), (1, 10), (2, 11), (3, 9), (4, 5), (5, 6), (6, 7), (7, 4)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    max_diff = np.max(
-                        np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                    )
-                    print(
-                        f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                    )
-        elif AW == 8:  # Mt == 4
-            mapping = [(0, 6), (1, 5), (2, 2), (3, 1)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    max_diff = np.max(
-                        np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                    )
-                    print(
-                        f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                    )
-        elif AW == 4:
-            mapping = [(0, 2), (1, 0)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    max_diff = np.max(
-                        np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                    )
-                    print(
-                        f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                    )
-
-    except AssertionError as e:
-        print("❌ Dataflow Simulator: SOME TESTS FAILED!")
-        test_passed = False
-
-        # Detailed failure analysis
-        if AW == 16:  # Mt == 8
-            mapping = [(0, 8), (1, 10), (2, 11), (3, 9), (4, 5), (5, 6), (6, 7), (7, 4)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    try:
-                        np.testing.assert_allclose(
-                            ref[actual_ref_idx], oActs[actual_oact_idx], atol=1e-5
-                        )
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-                    except AssertionError:
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✗ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                        )
-        elif AW == 8:  # Mt == 4
-            mapping = [(0, 6), (1, 5), (2, 2), (3, 1)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    try:
-                        np.testing.assert_allclose(
-                            ref[actual_ref_idx], oActs[actual_oact_idx], atol=1e-5
-                        )
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-                    except AssertionError:
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✗ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                        )
-        elif AW == 4:
-            mapping = [(0, 2), (1, 0)]
-            for m in range(M // Mt):
-                for ref_idx, oact_idx in mapping:
-                    actual_ref_idx = m * Mt + ref_idx
-                    actual_oact_idx = m * 2 * Mt + oact_idx
-                    try:
-                        np.testing.assert_allclose(
-                            ref[actual_ref_idx], oActs[actual_oact_idx], atol=1e-5
-                        )
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-                    except AssertionError:
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✗ ref[{actual_ref_idx}] vs oActs[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                        )
-
-    print("-" * 80)
-
+    hls_test_passed, vs_passed = False, False
     if hls.is_available("vitis_hls"):
         print("Running Vitis Synthesis and On-Board Execution...")
+        top = get_feather_top(AW, AH, Ty)
         s = df.customize(top)
         nest_loop = s.get_loops("NEST_0")["nest"]["i"]
         s.unroll(nest_loop)
@@ -471,206 +202,31 @@ def test_FEATHER_GEMM():
             mode="hw_emu",
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}.prj",
         )
-        oActs_hls = np.zeros((2 * M, N), dtype=np.int8)
+        oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
         for n in range(N // Nt):
             for m in range(M // Mt):
-                output_buffer = np.zeros((AW, Nt), dtype=np.int8)
+                output_buffer = np.zeros((Nt, 2 * Mt), dtype=np.int8)
                 for k in range(K // Kt):
-                    weights_tile = np.ascontiguousarray(
-                        weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
-                    )
+                    output_buffer_tile = np.zeros((Nt, 2 * Mt), dtype=np.int8)
+                    weights_tile = weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
+                    weights_tile_input = weight_make_layout_for_input(weights_tile)
                     iActs_tile_no_layout = iActs_no_layout[
                         m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
                     ]
                     iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                    csyn_mod(iActs_tile, weights_tile, inst, output_buffer)
+                    csyn_mod(iActs_tile, weights_tile_input, inst, output_buffer_tile)
+                    output_buffer += output_buffer_tile
                 np.copyto(
-                    dst=oActs_hls[m * 2 * Mt : (m + 1) * 2 * Mt, n * Nt : (n + 1) * Nt],
+                    dst=oActs_hls[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
                     src=output_buffer,
                 )
+        oActs_hls_compare = extract_output_for_compare(oActs_hls, ref)
 
-        print("Verifying HLS Results:")
-        hls_test_passed = True
+        hls_test_passed = result_check(oActs_hls_compare, ref, True)
 
-        try:
-            correctness_check(oActs_hls, ref)
-            print("🎉 Vitis HLS: ALL TESTS PASSED!")
+        vs_passed = compare_sim_hls_result(oActs_compare, oActs_hls_compare)
 
-            # Detailed verification for debugging
-            if AW == 16:  # Mt == 8
-                mapping = [
-                    (0, 8),
-                    (1, 10),
-                    (2, 11),
-                    (3, 9),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 4),
-                ]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-            elif AW == 8:  # Mt == 4
-                mapping = [(0, 6), (1, 5), (2, 2), (3, 1)]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-            elif AW == 4:
-                mapping = [(0, 2), (1, 0)]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        max_diff = np.max(
-                            np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                        )
-                        print(
-                            f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                        )
-
-        except AssertionError as e:
-            print("❌ Vitis HLS: SOME TESTS FAILED!")
-            hls_test_passed = False
-
-            # Detailed failure analysis for HLS
-            if AW == 16:  # Mt == 8
-                mapping = [
-                    (0, 8),
-                    (1, 10),
-                    (2, 11),
-                    (3, 9),
-                    (4, 5),
-                    (5, 6),
-                    (6, 7),
-                    (7, 4),
-                ]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        try:
-                            np.testing.assert_allclose(
-                                ref[actual_ref_idx],
-                                oActs_hls[actual_oact_idx],
-                                atol=1e-5,
-                            )
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                            )
-                        except AssertionError:
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✗ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                            )
-            elif AW == 8:  # Mt == 4
-                mapping = [(0, 6), (1, 5), (2, 2), (3, 1)]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        try:
-                            np.testing.assert_allclose(
-                                ref[actual_ref_idx],
-                                oActs_hls[actual_oact_idx],
-                                atol=1e-5,
-                            )
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                            )
-                        except AssertionError:
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✗ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                            )
-            elif AW == 4:
-                mapping = [(0, 2), (1, 0)]
-                for m in range(M // Mt):
-                    for ref_idx, oact_idx in mapping:
-                        actual_ref_idx = m * Mt + ref_idx
-                        actual_oact_idx = m * 2 * Mt + oact_idx
-                        try:
-                            np.testing.assert_allclose(
-                                ref[actual_ref_idx],
-                                oActs_hls[actual_oact_idx],
-                                atol=1e-5,
-                            )
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✓ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: PASS (max diff: {max_diff:.2e})"
-                            )
-                        except AssertionError:
-                            max_diff = np.max(
-                                np.abs(ref[actual_ref_idx] - oActs_hls[actual_oact_idx])
-                            )
-                            print(
-                                f"  ✗ ref[{actual_ref_idx}] vs oActs_hls[{actual_oact_idx}]: FAIL (max diff: {max_diff:.2e})"
-                            )
-
-        # Compare simulator vs HLS results
-        print("-" * 80)
-        print("Comparing Simulator vs HLS Results:")
-        sim_vs_hls_passed = True
-        max_sim_hls_diff = np.max(np.abs(oActs - oActs_hls))
-        mean_sim_hls_diff = np.mean(np.abs(oActs - oActs_hls))
-
-        try:
-            np.testing.assert_allclose(oActs, oActs_hls, atol=1e-5)
-            print(f"  ✓ Simulator vs HLS: PASS")
-            print(f"    Max difference: {max_sim_hls_diff:.2e}")
-            print(f"    Mean difference: {mean_sim_hls_diff:.2e}")
-        except AssertionError:
-            print(f"  ✗ Simulator vs HLS: FAIL")
-            print(f"    Max difference: {max_sim_hls_diff:.2e}")
-            print(f"    Mean difference: {mean_sim_hls_diff:.2e}")
-            sim_vs_hls_passed = False
-
-    print("=" * 80)
-    print("FINAL SUMMARY:")
-    if test_passed:
-        print("✅ Dataflow Simulator: PASSED")
-    else:
-        print("❌ Dataflow Simulator: FAILED")
-
-    if hls.is_available("vitis_hls"):
-        if hls_test_passed:
-            print("✅ Vitis HLS: PASSED")
-        else:
-            print("❌ Vitis HLS: FAILED")
-
-        if sim_vs_hls_passed:
-            print("✅ Simulator vs HLS Consistency: PASSED")
-        else:
-            print("❌ Simulator vs HLS Consistency: FAILED")
-    else:
-        print("⚠️  Vitis HLS: NOT AVAILABLE")
-    print("=" * 80)
+    print_summary(test_passed, hls_test_passed, vs_passed)
 
 
 if __name__ == "__main__":
