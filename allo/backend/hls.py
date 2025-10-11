@@ -346,10 +346,13 @@ class HLSModule:
                     outfile.write(self.tapa_host)
             else:
                 self.host_code = ""
-            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.hls_code)
-            # with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-            #     outfile.write(self.host_code)
+
+            if backend == "pynq":
+                with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.hls_code)
+            else:
+                with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.host_code)
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp
