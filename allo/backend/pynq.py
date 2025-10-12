@@ -10,6 +10,7 @@ from .utils import format_str, format_code
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 from .vitis import update_makefile, write_tensor_to_file, read_tensor_from_file
+from ..allo.utils import ctype_map
 
 header = """
 import argparse, time, pynq, os
@@ -41,20 +42,7 @@ footer = """
 if __name__ == "__main__":
     main()
 """
-ctype_map_pynq = {
-    "f32": "np.float32",
-    "f64": "np.float64",
-    "i8": "np.int8",
-    "i16": "np.int16",
-    "i32": "np.int32",
-    "i64": "np.int64",
-    "i128": "__int128_t",  # unverified
-    "ui1": "np.bool",
-    "ui8": "np.uint8",
-    "ui16": "np.uint16",
-    "ui32": "np.uint32",
-    "ui64": "np.uint64",
-}
+ctype_map_pynq = ctype_map
 
 def pointer_args_parse(xml_path):
     tree = ET.parse(xml_path)
