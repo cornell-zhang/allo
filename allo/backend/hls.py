@@ -45,8 +45,8 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
-    # Keep explicit checks minimal. For other backends, fall back to
-    # checking for Vitis HLS availability.
+    if backend == "tapa":
+        return os.system("which tapa >> /dev/null") == 0
     return os.system("which vitis_hls >> /dev/null") == 0
 
 
@@ -344,9 +344,6 @@ class HLSModule:
             else:
                 self.host_code = ""
 
-            # The kernel implementation (kernel.cpp) is required by all
-            # backends. Always emit it. Host code (host.cpp) is only
-            # generated for some backends, so write it only when present.
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
 
