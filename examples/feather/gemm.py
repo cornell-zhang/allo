@@ -89,6 +89,28 @@ def weight_make_layout_for_input(tile: np.ndarray):
     return np.ascontiguousarray(D)
 
 
+def call_feather_kernel(
+    iActs: np.ndarray, weights: np.ndarray, oActs: np.ndarray, kernel, inst: np.ndarray
+):
+    for n in range(N // Nt):
+        for m in range(M // Mt):
+            output_buffer = np.zeros((Nt, 2 * Mt), dtype=np.int8)
+            for k in range(K // Kt):
+                output_buffer_tile = np.zeros((Nt, 2 * Mt), dtype=np.int8)
+                weights_tile = weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
+                weights_tile_input = weight_make_layout_for_input(weights_tile)
+                iActs_tile_no_layout = iActs[
+                    m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
+                ]
+                iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
+                kernel(iActs_tile, weights_tile_input, inst, output_buffer_tile)
+                output_buffer += output_buffer_tile
+            np.copyto(
+                dst=oActs[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
+                src=output_buffer,
+            )
+
+
 def extract_output_for_compare(oActs: np.ndarray, ref: np.ndarray) -> np.ndarray:
     oActs = oActs.transpose()
     extracted_data = np.zeros(shape=ref.shape, dtype=np.int8)
@@ -165,23 +187,7 @@ def test_FEATHER_GEMM():
     os.environ["OMP_NUM_THREADS"] = "256"
     top = get_feather_top(AW, AH, Ty)
     sim_mod = df.build(top, target="simulator")
-    for n in range(N // Nt):
-        for m in range(M // Mt):
-            output_buffer = np.zeros((Nt, 2 * Mt), dtype=np.int8)
-            for k in range(K // Kt):
-                output_buffer_tile = np.zeros((Nt, 2 * Mt), dtype=np.int8)
-                weights_tile = weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
-                weights_tile_input = weight_make_layout_for_input(weights_tile)
-                iActs_tile_no_layout = iActs_no_layout[
-                    m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
-                ]
-                iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                sim_mod(iActs_tile, weights_tile_input, inst, output_buffer_tile)
-                output_buffer += output_buffer_tile
-            np.copyto(
-                dst=oActs[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
-                src=output_buffer,
-            )
+    call_feather_kernel(iActs_no_layout, weights, oActs, sim_mod, inst)
 
     ref = np.dot(iActs_no_layout, weights)  # MxN
     oActs_compare = extract_output_for_compare(oActs, ref)
@@ -203,23 +209,7 @@ def test_FEATHER_GEMM():
             project=f"feather_gemm_{M}_{N}_{K}_{AW}_{AH}.prj",
         )
         oActs_hls = np.zeros((N, 2 * M), dtype=np.int8)
-        for n in range(N // Nt):
-            for m in range(M // Mt):
-                output_buffer = np.zeros((Nt, 2 * Mt), dtype=np.int8)
-                for k in range(K // Kt):
-                    output_buffer_tile = np.zeros((Nt, 2 * Mt), dtype=np.int8)
-                    weights_tile = weights[k * Kt : (k + 1) * Kt, n * Nt : (n + 1) * Nt]
-                    weights_tile_input = weight_make_layout_for_input(weights_tile)
-                    iActs_tile_no_layout = iActs_no_layout[
-                        m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
-                    ]
-                    iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                    csyn_mod(iActs_tile, weights_tile_input, inst, output_buffer_tile)
-                    output_buffer += output_buffer_tile
-                np.copyto(
-                    dst=oActs_hls[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
-                    src=output_buffer,
-                )
+        call_feather_kernel(iActs_no_layout, weights, oActs_hls, csyn_mod, inst)
         oActs_hls_compare = extract_output_for_compare(oActs_hls, ref)
 
         hls_test_passed = result_check(oActs_hls_compare, ref, True)

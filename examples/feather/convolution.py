@@ -74,6 +74,47 @@ AL = 2  # Add Left
 SW = 3  # Swap
 
 
+def call_feather_kernel(
+    iActs: np.ndarray,
+    weights: np.ndarray,
+    oActs: np.ndarray,
+    kernel,  # Callable Module
+    insts: list[np.ndarray],
+):
+    # Outer loop: for all sliding windows
+    for nt in range(0, N, 1):
+        for pt in range(0, P, 1):
+            for qt in range(0, Q, 1):
+                iActs_sliding_window = iActs[nt, pt : pt + R, qt : qt + S, :].reshape(
+                    R * S, C
+                )
+                # Inner loop: for all tiles
+                for mt in range(0, M, Mt):
+                    output_buffer = np.zeros((AH, AW), dtype=np.int8)
+                    line_offset = (
+                        pt * Q + qt
+                    ) // AW  # The actual output line where (pt, qt) is
+                    intraline_offset = (
+                        pt * Q + qt
+                    ) % AW  # The position of (pt, qt) within this line
+                    for ct in range(0, C, Ct):
+                        for vn in range(0, R * S, VN_size):
+                            iActs_tile = np.ascontiguousarray(
+                                iActs_sliding_window[vn : vn + VN_size, ct : ct + Ct]
+                            )
+                            weights_tile = np.ascontiguousarray(
+                                weights[mt : mt + Mt, ct : ct + Ct, vn : vn + VN_size]
+                            )
+                            inst = insts[intraline_offset]
+                            output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
+                            kernel(iActs_tile, weights_tile, inst, output_buffer_local)
+                            output_buffer += output_buffer_local
+                    for m in range(mt, mt + Mt):
+                        oActs[nt, m * P * Q // AW + line_offset, intraline_offset] = (
+                            output_buffer[m - mt, intraline_offset]
+                        )
+
+
 def convolve_2d_row_major(mats: np.ndarray, kernels: np.ndarray) -> np.ndarray:
     N, C, H, W = mats.shape
     M, Ck, R, S = kernels.shape
@@ -122,40 +163,9 @@ def test_FEATHER_conv():
     os.environ["OMP_NUM_THREADS"] = "256"
     top = get_feather_top(AW, AH, Ty)
     sim_mod = df.build(top, target="simulator")
-    # Outer loop: for all sliding windows
-    for nt in range(0, N, 1):
-        for pt in range(0, P, 1):
-            for qt in range(0, Q, 1):
-                iActs_sliding_window = iActs_channel_last[
-                    nt, pt : pt + R, qt : qt + S, :
-                ].reshape(R * S, C)
-                # Inner loop: for all tiles
-                for mt in range(0, M, Mt):
-                    output_buffer = np.zeros((AH, AW), dtype=np.int8)
-                    line_offset = (
-                        pt * Q + qt
-                    ) // AW  # The actual output line where (pt, qt) is
-                    intraline_offset = (
-                        pt * Q + qt
-                    ) % AW  # The position of (pt, qt) within this line
-                    for ct in range(0, C, Ct):
-                        for vn in range(0, R * S, VN_size):
-                            iActs_tile = np.ascontiguousarray(
-                                iActs_sliding_window[vn : vn + VN_size, ct : ct + Ct]
-                            )
-                            weights_tile = np.ascontiguousarray(
-                                weights_flattened[
-                                    mt : mt + Mt, ct : ct + Ct, vn : vn + VN_size
-                                ]
-                            )
-                            inst = insts[intraline_offset]
-                            output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
-                            sim_mod(iActs_tile, weights_tile, inst, output_buffer_local)
-                            output_buffer += output_buffer_local
-                    for m in range(mt, mt + Mt):
-                        oActs_row_major[
-                            nt, m * P * Q // AW + line_offset, intraline_offset
-                        ] = output_buffer[m - mt, intraline_offset]
+    call_feather_kernel(
+        iActs_channel_last, weights_flattened, oActs_row_major, sim_mod, insts
+    )
 
     ref = convolve_2d_row_major(iActs, weights)
     ref_reshaped = ref.reshape(N * M, P * Q)
@@ -178,44 +188,9 @@ def test_FEATHER_conv():
             project=f"feather_convolution_{N}_{C}_{H}_{W}_{M}_{R}_{S}_{AW}_{AH}.prj",
         )
         oActs_hls = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
-        # Outer loop: for all sliding windows
-        for nt in range(0, N, 1):
-            for pt in range(0, P, 1):
-                for qt in range(0, Q, 1):
-                    iActs_sliding_window = iActs_channel_last[
-                        nt, pt : pt + R, qt : qt + S, :
-                    ].reshape(R * S, C)
-                    # Inner loop: for all tiles
-                    for mt in range(0, M, Mt):
-                        output_buffer = np.zeros((AH, AW), dtype=np.int8)
-                        line_offset = (
-                            pt * Q + qt
-                        ) // AW  # The actual output line where (pt, qt) is
-                        intraline_offset = (
-                            pt * Q + qt
-                        ) % AW  # The position of (pt, qt) within this line
-                        for ct in range(0, C, Ct):
-                            for vn in range(0, R * S, VN_size):
-                                iActs_tile = np.ascontiguousarray(
-                                    iActs_sliding_window[
-                                        vn : vn + VN_size, ct : ct + Ct
-                                    ]
-                                )
-                                weights_tile = np.ascontiguousarray(
-                                    weights_flattened[
-                                        mt : mt + Mt, ct : ct + Ct, vn : vn + VN_size
-                                    ]
-                                )
-                                inst = insts[intraline_offset]
-                                output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
-                                csyn_mod(
-                                    iActs_tile, weights_tile, inst, output_buffer_local
-                                )
-                                output_buffer += output_buffer_local
-                        for m in range(mt, mt + Mt):
-                            oActs_hls[
-                                nt, m * P * Q // AW + line_offset, intraline_offset
-                            ] = output_buffer[m - mt, intraline_offset]
+        call_feather_kernel(
+            iActs_channel_last, weights_flattened, oActs_hls, csyn_mod, insts
+        )
         oActs_hls_compare = oActs_hls.reshape(N * M, P * Q)
         hls_test_passed = result_check(oActs_hls_compare, ref_reshaped, True)
 
