@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from .utils import format_str, format_code
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
+from .vitis import update_makefile, write_tensor_to_file, read_tensor_from_file
 
 header = """
 import argparse, time, pynq, os
@@ -141,7 +142,6 @@ hw_time_ms = (end_time - start_time) * 1e3
     out_str += format_str(footer, 0, strip=False)
 
     return out_str
-    return out_str
 
 def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
     out_str = ""
@@ -212,31 +212,3 @@ def generate_description_file(top, src_path, dst_path, frequency):
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
 
-
-def update_makefile(file_name, ext_libs):
-    with open(file_name, "r", encoding="utf-8") as f:
-        makefile = f.read()
-    cpp_files = ["kernel.cpp"]
-    for lib in ext_libs:
-        cpp_files.append(lib.impl.split("/")[-1])
-    makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
-    with open(file_name, "w", encoding="utf-8") as outfile:
-        outfile.write(makefile)
-
-
-def write_tensor_to_file(tensor, shape, file_path):
-    with open(file_path, "w", encoding="utf-8") as f:
-        if len(shape) == 0:
-            # scalar
-            f.write(f"{tensor}\n")
-        else:
-            f.write("\n".join([str(i) for i in tensor.flatten()]))
-
-
-def read_tensor_from_file(dtype, shape, file_path):
-    dtype = str(dtype)
-    if dtype == "bf16":
-        # numpy does not support bf16
-        dtype = "f32"
-    arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
-    return arr.reshape(shape)
