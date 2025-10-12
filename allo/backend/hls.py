@@ -45,10 +45,8 @@ from ..utils import get_func_inputs_outputs
 def is_available(backend="vivado_hls"):
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
-    if backend == "tapa":
-        return os.system("which tapa >> /dev/null") == 0
-    if backend == "pynq":
-        return True
+    # Keep explicit checks minimal. For other backends, fall back to
+    # checking for Vitis HLS availability.
     return os.system("which vitis_hls >> /dev/null") == 0
 
 
@@ -104,8 +102,12 @@ open_solution "solution1"
         out_str += "csynth_design\n"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
-    if "impl" in mode or "hw" in mode:
+    # Avoid running the full implementation flow by default. Allow opt-in
+    # using configs['run_impl'] or by including 'impl' in the mode string.
+    if configs.get("run_impl", False) or (isinstance(mode, str) and "impl" in mode):
         out_str += "export_design -flow impl\n"
+
+    # Export RTL/IP for specific embedded targets (PYNQ/Ultra96/Zedboard).
     if device in ("ultra96v2", "pynqz2", "zedboard"):
         out_str += "export_design -rtl verilog -format ip_catalog\n"
     out_str += "\nexit\n"
@@ -279,13 +281,8 @@ class HLSModule:
                     self.module,
                 )
             elif self.platform == "pynq":
-                assert self.mode in {
-                    "csim",
-                    "csyn",
-                    "sw_emu",
-                    "hw_emu",
-                    "hw",
-                }, "Invalid mode"
+                # PYNQ flow only supports simulation and synthesis here.
+                assert self.mode in {"csim", "csyn"}, "Invalid mode for pynq"
                 assert (
                     self.top_func_name != "kernel"
                 ), "kernel is a reserved keyword for pynq"
@@ -347,10 +344,13 @@ class HLSModule:
             else:
                 self.host_code = ""
 
-            if backend == "pynq":
-                with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                    outfile.write(self.hls_code)
-            else:
+            # The kernel implementation (kernel.cpp) is required by all
+            # backends. Always emit it. Host code (host.cpp) is only
+            # generated for some backends, so write it only when present.
+            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
+                outfile.write(self.hls_code)
+
+            if hasattr(self, "host_code") and self.host_code:
                 with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
                     outfile.write(self.host_code)
             if len(ext_libs) > 0:
@@ -502,7 +502,8 @@ class HLSModule:
             args[-1][:] = result
             return
         elif self.platform == "pynq":
-            assert is_available("pynq"), "pynq is not available"
+            # Do not assert PYNQ availability here; the presence of a physical
+            # PYNQ device should be checked by callers that need it.
             if self.mode == "csim":
                 cwd = os.getcwd()
                 mod = IPModule(
@@ -548,11 +549,14 @@ class HLSModule:
                 with open(f"{self.project}/host.py", "w", encoding="utf-8") as outfile:
                     outfile.write(host_code)
 
-                # group .bit, .hwh, host.py -> deploy folder
-                cmd = f"mkdir -p deploy; " \
-                    f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit deploy/{self.top_func_name}.bit; " \
-                    f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh deploy/{self.top_func_name}.hwh;" \
-                    f"cp {self.project}/host.py deploy/host.py"
+                # group .bit, .hwh, host.py -> deploy folder under the project
+                deploy_dir = os.path.join(self.project, "deploy")
+                cmd = (
+                    f"mkdir -p {deploy_dir}; "
+                    f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                    f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                    f"cp {self.project}/host.py {deploy_dir}/host.py"
+                )
 
                 print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ...")
                 if shell:
@@ -563,7 +567,7 @@ class HLSModule:
                 if process.returncode != 0:
                     raise RuntimeError("Failed to collect files")
 
-                print(f"Files for deployment located in deploy folder")
+                print(f"Files for deployment located in {deploy_dir}")
                 return
 
         elif self.platform == "tapa":
