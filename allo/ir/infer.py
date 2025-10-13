@@ -805,7 +805,7 @@ class TypeInferer(ASTVisitor):
         node.shape = None
         return node
 
-    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-branches, too-many-return-statements
     @staticmethod
     def visit_Call(ctx: ASTContext, node: ast.Call):
         original_func_id = ctx.func_id
@@ -968,24 +968,88 @@ class TypeInferer(ASTVisitor):
             and not obj.__module__.startswith("allo._mlir")
         ):
             # Allo library functions
-            new_args = visit_stmts(ctx, node.args)
             if isinstance(obj, IPModule):
                 # HLS IP, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                visit_stmts(ctx, node.args)
                 node.shape = None
                 node.dtype = None
                 return node
             if isinstance(obj, ExternalModule):
                 # AIE external kernel, suppose it does not have return values
                 # Also, it has NO side effect, which means it does not change the shape/dtype of the input
+                visit_stmts(ctx, node.args)
                 node.shape = None
                 node.dtype = None
                 return node
             fn_name = obj.__name__
+            if fn_name == "gather":
+                assert len(node.args) == 1, "Invalid `gather`"
+                fifo_list = node.args[0]
+                if isinstance(fifo_list, ast.List):
+                    sample = None
+                    for elt in fifo_list.elts:
+                        ele = visit_stmt(ctx, elt)
+                        if sample is None:
+                            sample = ele
+                        else:
+                            assert (
+                                sample.dtype == ele.dtype and len(ele.shape) == 0
+                            ), "Invalid `gather`"
+                    fifo_list.dtype = sample.dtype
+                    fifo_list.shape = (len(fifo_list.elts),)
+                    new_arg = fifo_list
+                else:
+                    new_arg = visit_stmt(ctx, fifo_list)
+                    # flattened
+                    new_arg.shape = (np.prod(new_arg.shape),)
+                if not isinstance(new_arg.dtype, Stream):
+                    raise RuntimeError(
+                        f"Unsupported gather dtype {type(new_arg.dtype)}"
+                    )
+                node.shape = new_arg.shape + new_arg.dtype.shape
+                node.dtype = new_arg.dtype.dtype
+                return node
+            if fn_name == "scatter":
+                assert len(node.args) == 2, "Invalid `scatter`"
+                buffer, fifo_list = node.args[0], node.args[1]
+                buffer_arg = visit_stmt(ctx, buffer)
+                if isinstance(fifo_list, ast.List):
+                    sample = None
+                    for elt in fifo_list.elts:
+                        ele = visit_stmt(ctx, elt)
+                        if sample is None:
+                            sample = ele
+                        else:
+                            assert (
+                                sample.dtype == ele.dtype and len(ele.shape) == 0
+                            ), "Invalid `scatter`"
+                    fifo_list.dtype = sample.dtype
+                    fifo_list.shape = (len(fifo_list.elts),)
+                    new_arg = fifo_list
+                else:
+                    new_arg = visit_stmt(ctx, fifo_list)
+                    # flattened
+                    new_arg.shape = (np.prod(new_arg.shape),)
+                if not isinstance(new_arg.dtype, Stream):
+                    raise RuntimeError(
+                        f"Unsupported scatter dtype {type(new_arg.dtype)}"
+                    )
+                node.shape = new_arg.shape + new_arg.dtype.shape
+                node.dtype = new_arg.dtype.dtype
+                assert buffer_arg.dtype == node.dtype and buffer_arg.shape == node.shape
+                return node
             if fn_name == "pipe":
                 stream = eval(ast.unparse(node), ctx.global_vars)
                 node.shape = tuple()
                 node.dtype = stream
+                return node
+            new_args = visit_stmts(ctx, node.args)
+            if fn_name == "array":
+                for kw in node.keywords:
+                    if kw.arg == "shape":
+                        node.shape = eval(ast.unparse(kw.value), ctx.global_vars)
+                node.dtype = new_args[0].dtype
                 return node
             if len(new_args) == 0:
                 # No argument

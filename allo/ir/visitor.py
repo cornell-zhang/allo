@@ -151,7 +151,23 @@ class ASTContext:
     def pop_ip(self):
         return self.ip_stack.pop()
 
-    def put_symbol(self, name, val, tag=None):
+    def get_stream_construct_ip(self):
+        """
+        Get the insert point for StreamConstructOp.
+        Insert after the last stream construct op to preserve ordering
+        """
+        ip_op = None
+        for ip_op in self.top_func.entry_block.operations:
+            if not isinstance(ip_op, allo_d.StreamConstructOp):
+                break
+        ip = (
+            InsertionPoint(ip_op)
+            if ip_op is not None
+            else InsertionPoint.at_block_begin(self.top_func.entry_block)
+        )
+        return ip
+
+    def put_symbol(self, name, val, tag: str = None):
         """
         Insert a variable name, value pair into the current scope.
 
@@ -191,7 +207,11 @@ class ASTContext:
         """
         for scope in reversed(self.scopes):
             if name in scope:
-                if isinstance(scope[name], tuple):
+                if (
+                    isinstance(scope[name], tuple)
+                    and len(scope[name]) > 1
+                    and isinstance(scope[name][1], str)
+                ):
                     return scope[name][0]
                 return scope[name]
         if allow_missing:
@@ -202,7 +222,7 @@ class ASTContext:
         names = set()
         for scope in self.scopes:
             for k, v in scope.items():
-                if not isinstance(v, tuple):
+                if not (isinstance(v, tuple) and len(v) > 1 and isinstance(v[1], str)):
                     names.add(k)
         return names
 

@@ -27,6 +27,21 @@ from .passes import df_pipeline
 from .backend import AIE_MLIRModule
 
 
+def gather(pipes: list):
+    """
+    Collect all pipe objects from the given list (explicit list or slice) in their original order.
+    """
+    raise NotImplementedError("This function should be called in a kernel function.")
+
+
+def scatter(buffer, pipes: list):
+    """
+    Distribute data to all pipe objects in the given list (explicit list or slice)
+    in their original order.
+    """
+    raise NotImplementedError("This function should be called in a kernel function.")
+
+
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
 
@@ -90,9 +105,6 @@ def move_stream_to_interface(
             if isinstance(op, allo_d.StreamConstructOp):
                 stream_ops.append(op)
                 stream_types.append(op.result.type)
-                stream_name = op.attributes["name"].value
-                if with_stream_type and stream_name not in stream_types_dict:
-                    stream_types_dict[stream_name] = op.result.type
                 stream_signed += "u" if "unsigned" in op.attributes else "_"
                 for use in op.result.uses:
                     # get use's parent operation
@@ -102,6 +114,9 @@ def move_stream_to_interface(
                         direction = "out"
                     else:
                         raise ValueError("Stream is not used correctly.")
+                stream_name = op.attributes["name"].value
+                if with_stream_type and stream_name not in stream_types_dict:
+                    stream_types_dict[stream_name] = op.result.type
                 stream_info[func_name].append((stream_name, direction))
                 s_type_str += direction[0]
                 new_args.append(stream_name)
@@ -117,11 +132,12 @@ def move_stream_to_interface(
                                 f"p{idx}": value for idx, value in enumerate(ids_)
                             }
                             loops = []
-                            for name_attr in op.attributes["iterators"]:
-                                rargs = []
-                                for val in name_attr.attr:
-                                    rargs.append(val.value)
-                                loops.append((name_attr.name, range(*rargs)))
+                            if "iterators" in op.attributes:
+                                for name_attr in op.attributes["iterators"]:
+                                    rargs = []
+                                    for val in name_attr.attr:
+                                        rargs.append(val.value)
+                                    loops.append((name_attr.name, range(*rargs)))
 
                             def eval_stream(
                                 symbol_map_,
@@ -130,8 +146,11 @@ def move_stream_to_interface(
                                 org_stream_name,
                                 op_,
                                 arg_idx_,
+                                init_iter_map=None,
                             ):
                                 iter_map = {}
+                                if init_iter_map is not None:
+                                    iter_map.update(init_iter_map)
                                 for k, v in symbol_map_.items():
                                     if k not in pid_map_:
                                         iter_map[k] = v
@@ -159,14 +178,33 @@ def move_stream_to_interface(
                                 new_func_args[func_name_][-1].append(stream_name_)
 
                             if len(loops) == 0:
-                                eval_stream(
-                                    pid_map,
-                                    pid_map_=pid_map,
-                                    symbolic_name_=symbolic_name,
-                                    org_stream_name=stream_name,
-                                    op_=op,
-                                    arg_idx_=arg_idx,
-                                )
+                                if "stream_list" in op.attributes:
+                                    stream_list = op.attributes["stream_list"]
+                                    stream_symbolic_slice_list = op.attributes[
+                                        "stream_symbolic_slice_list"
+                                    ]
+                                    loop_name = op.attributes["loop_name"].value
+                                    for idx, (name_, symbolic_name_) in enumerate(
+                                        zip(stream_list, stream_symbolic_slice_list)
+                                    ):
+                                        eval_stream(
+                                            pid_map,
+                                            pid_map_=pid_map,
+                                            symbolic_name_=symbolic_name_.value,
+                                            org_stream_name=name_.value,
+                                            op_=op,
+                                            arg_idx_=arg_idx,
+                                            init_iter_map={loop_name: idx},
+                                        )
+                                else:
+                                    eval_stream(
+                                        pid_map,
+                                        pid_map_=pid_map,
+                                        symbolic_name_=symbolic_name,
+                                        org_stream_name=stream_name,
+                                        op_=op,
+                                        arg_idx_=arg_idx,
+                                    )
                             else:
                                 for combo in itertools.product(
                                     *[rng for _, rng in loops]

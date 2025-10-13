@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import allo
 from allo.ir.types import int16, int32
 import allo.dataflow as df
@@ -119,6 +120,7 @@ def _test_scatter():
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
+    os.environ["FORCE_UNROLL_INDEX"] = "0"
     mod_v3 = df.build(
         top,
         target="aie",
@@ -128,6 +130,7 @@ def _test_scatter():
         ],
     )
     mod_v3(A, B)
+    del os.environ["FORCE_UNROLL_INDEX"]
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
@@ -172,6 +175,7 @@ def _test_scatter2():
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 
+    os.environ["FORCE_UNROLL_INDEX"] = "0"
     mod_v3 = df.build(
         top,
         target="aie",
@@ -181,6 +185,7 @@ def _test_scatter2():
         ],
     )
     mod_v3(Inc, A, B)
+    del os.environ["FORCE_UNROLL_INDEX"]
     np.testing.assert_allclose(B, A + 1)
     print("PASSED!")
 

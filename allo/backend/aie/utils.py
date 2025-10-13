@@ -18,6 +18,7 @@ from ..._mlir.dialects import (
     allo as allo_d,
     arith as allo_arith_d,
     func as allo_func_d,
+    memref as allo_memref_d,
 )
 
 from ..._mlir.ir import (
@@ -334,14 +335,43 @@ def inject_external_kernels(
 
     def inject_external_kernels_recursive(operations, df_function_tag: str):
         for op in operations:
+
+            def fix_arg_type(operands, input_idx, ip):
+                """
+                Returns:
+                    - operand_types
+                    - call_operands
+                """
+                operand_types = []
+                call_operands = []
+                for operand_idx, operand in enumerate(operands):
+                    if isinstance(operand.type, MemRefType):
+                        memref_type = MemRefType.get(
+                            operand.type.shape, operand.type.element_type
+                        )
+                        operand_types.append(memref_type)
+                        if memref_type != operand.type:
+                            alloc_op = allo_memref_d.AllocOp(memref_type, [], [], ip=ip)
+                            call_operands.append(alloc_op.result)
+                            if operand_idx in input_idx:
+                                allo_memref_d.CopyOp(operand, alloc_op.result, ip=ip)
+                        else:
+                            call_operands.append(operand)
+                    else:
+                        operand_types.append(operand.type)
+                        call_operands.append(operand)
+
+                return operand_types, call_operands
+
             # 1. customized external kernel
             if isinstance(op, allo_func_d.CallOp):
+                # [NOTE]: in allo/ir/builder.py, when constructing function type, the argument types are static
                 callee_name = op.callee.value
                 used_external_kernels[df_function_tag].add(callee_name)
-                # register external kernel
                 if callee_name in injected_external_kernels:
                     continue
                 external_module = external_kernel_lib[callee_name]
+                # register external kernel
                 assert external_module is not None, "external module not found"
                 include_src[callee_name] = f'#include "{external_module.filename}"\n'
                 injected_external_kernels[callee_name] = external_module
@@ -495,10 +525,16 @@ def inject_external_kernels(
                                 kernel.attributes["sym_visibility"] = StringAttr.get(
                                     "private"
                                 )
+                            operand_types, call_operands = fix_arg_type(
+                                operands, [0, 1], InsertionPoint(cast_op)
+                            )
+                            assert (
+                                call_operands[-1] == operands[-1]
+                            ), "The cast op should not have the dynamic memref type issue."
                             call_op = allo_func_d.CallOp(
                                 [],
                                 FlatSymbolRefAttr.get(kernel_name),
-                                operands,
+                                call_operands,
                                 ip=InsertionPoint(cast_op),
                             )
                             call_op.attributes["lib"] = StringAttr.get(kernel_name)
@@ -528,16 +564,27 @@ def inject_external_kernels(
                         op.outputs[0],
                     ]
             if call_builtin:
+                # [NOTE]: add more comment
                 used_external_kernels[df_function_tag].add(kernel_name)
                 if replace_op:
+                    operand_types, call_operands = fix_arg_type(
+                        operands, input_idx, InsertionPoint(op)
+                    )
                     # replace operation
                     call_op = allo_func_d.CallOp(
                         [],
                         FlatSymbolRefAttr.get(kernel_name),
-                        operands,
+                        call_operands,
                         ip=InsertionPoint(op),
                     )
                     call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                    for idx, (call_operand, operand) in enumerate(
+                        zip(call_operands, operands)
+                    ):
+                        if idx in output_idx and call_operand != operand:
+                            allo_memref_d.CopyOp(
+                                call_operand, operand, ip=InsertionPoint(op)
+                            )
                     op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:
@@ -549,7 +596,6 @@ def inject_external_kernels(
                     kernel_code,
                     kernel_header,
                 )
-                operand_types = [x.type for x in operands]
                 func_type = allo_func_d.FunctionType.get(
                     operand_types,
                     [],

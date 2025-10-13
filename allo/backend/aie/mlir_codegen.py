@@ -298,7 +298,8 @@ class CodeGenerator:
                         input_arg_depth[i] if input_arg_depth is not None else 0
                     )
                     # fixme: argument.uses is unordered??
-                    first_use = list(argument.uses)[-1]
+                    arg_use = list(argument.uses)
+                    first_use = arg_use[-1] if len(arg_use) > 0 else None
                     if first_use is not None:
                         first_use_op = first_use.owner
                         # find parenting nest
