@@ -1,0 +1,87 @@
+**.pyc
+**/*.pyc
+**/build
+**/test.ll
+**/*.log
+build
+python/dist
+python/*.egg-info
+test
+**/.pytest_cache
+cscope.*
+tags
+.*.sw?
+docs/source/samples
+docs/source/tutorials
+soda_*
+out
+rapidjson
+project_*
+
+# Downloaded files
+*.params
+*.gz
+
+# Generated files
+project
+rapidjson
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+build
+.vscode
+
+# MLIR intermediate results
+*.opt
+
+# HLS
+*.log
+*.prj
+
+tmp
+*.pyc
+
+.vscode
+*.prj
+*.pdf
+*.dot
+*.egg-info
+*.so
+
+docs/source/gallery
+log
+
+_tmp
+*.txt
+sg_execution_times.rst
