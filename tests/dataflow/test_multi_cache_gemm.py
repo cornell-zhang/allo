@@ -120,9 +120,7 @@ def top():
                     if m == i - 1:
                         packed_c[m * 8 : (m + 1) * 8] = c
                     else:
-                        packed_c[m * 8 : (m + 1) * 8] = packed_tmp[
-                            m * 8 : (m + 1) * 8
-                        ]
+                        packed_c[m * 8 : (m + 1) * 8] = packed_tmp[m * 8 : (m + 1) * 8]
                 L1_C[i - 1, j - 1].put(packed_c)
 
     @df.kernel(mapping=[1])
@@ -172,13 +170,14 @@ def test_large_scale_gemm():
 
     A_packed = serialize_A(A).view(np_type_A)
     B_packed = serialize_B(B).view(np_type_B)
-    # print(A_packed)
-    # print(B_packed)
+    C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
 
-    if hls.is_available("vitis_hls"):        
-        # print(A)
-        # print(B)
-        # C_golden = np.dot(A, B)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A_packed, B_packed, C_packed)
+    C = deserialize_C(C_packed.view(np.int8))
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+
+    if hls.is_available("vitis_hls"):
 
         modc = df.build(
             top,
@@ -197,7 +196,7 @@ def test_large_scale_gemm():
             project=f"hwmulticache-M{M}N{N}K{K}-R{Rt}xC{Ct}.prj",
             wrap_io=False,
         )
-        modhw(A, B, C)
+        modhw(A_packed, B_packed, C_packed)
 
         # # Enable the hw_emu test with data types that OpenCL supports
         # C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
@@ -210,8 +209,7 @@ def test_large_scale_gemm():
         # )
         # mod(A_packed, B_packed, C_packed)
         # C = deserialize_C(C_packed.view(np.int8))
-        # print(C)
-        # print(C_golden)
+        # C_golden = np.dot(A, B)
         # np.testing.assert_allclose(C, C_golden, atol=1e-5)
         # print("Passed hw_emu Test!")
 
