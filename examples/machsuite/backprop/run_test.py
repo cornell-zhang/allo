@@ -38,9 +38,9 @@ if __name__ == "__main__":
     # TODO: Machsuite's benchmark for backprop does not match check.data either
     # Allo's backprop matches output for Machsuite's backprop
 
-    # np.testing.assert_allclose(weights1, weights1_check, rtol=1e-5, atol=1e-5)
-    # np.testing.assert_allclose(weights2, weights2_check, rtol=1e-5, atol=1e-5)
-    # np.testing.assert_allclose(weights3, weights3_check, rtol=1e-5, atol=1e-5)
-    # np.testing.assert_allclose(biases1, biases1_check, rtol=1e-5, atol=1e-5)
-    # np.testing.assert_allclose(biases2, biases2_check, rtol=1e-5, atol=1e-5)
-    # np.testing.assert_allclose(biases3, biases3_check, rtol=1e-5, atol=1e-5)
+    # np.testing.assert_allclose(weights1, weights1_check, rtol=1e-3, atol=1e-3)
+    # np.testing.assert_allclose(weights2, weights2_check, rtol=1e-3, atol=1e-3)
+    # np.testing.assert_allclose(weights3, weights3_check, rtol=1e-3, atol=1e-3)
+    # np.testing.assert_allclose(biases1, biases1_check, rtol=1e-3, atol=1e-3)
+    # np.testing.assert_allclose(biases2, biases2_check, rtol=1e-3, atol=1e-3)
+    # np.testing.assert_allclose(biases3, biases3_check, rtol=1e-3, atol=1e-3)

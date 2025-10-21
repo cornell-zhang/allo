@@ -76,13 +76,8 @@ def kmp(concrete_type, s, p):
 
 
 def test_kmp():
-    setting_path = os.path.join(os.path.dirname(__file__), "psize.json")
-    with open(setting_path, "r") as f:
-        psize = json.load(f)
-
-    test_psize = "large"
-    S = psize["kmp"][test_psize]["Str_len"]
-    P = psize["kmp"][test_psize]["Patt_len"]
+    S = 100
+    P = 100
 
     concrete_type = uint8
     sch = kmp(concrete_type, S, P)
@@ -91,9 +86,6 @@ def test_kmp():
     Input_str  = np.random.randint(1, 5, size = S).astype(np.uint8)
 
     Pattern =  np.random.randint(1, 5, size = P).astype(np.uint8)
-
-
-    print('hello')
 
     KMP_next = np.zeros(P).astype(np.uint8)
     debug_var = np.zeros(S).astype(np.uint8)

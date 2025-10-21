@@ -4,7 +4,7 @@
 # transpose_fft.py
 
 import allo
-from allo.ir.types import float32, int32, float32, int32
+from allo.ir.types import float32, int32, float32, int32, index
 import math
 import numpy as np
 
@@ -296,8 +296,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 2
     tid: int32 = 0
     for tid in range(64):
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         offset: int32 = hi * 8 + lo
         
         smem[0 * sx + offset] = DATA_x[tid * 8 + 0]
@@ -313,7 +314,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 3
     tid: int32 = 0
     for tid in range(64):
-        hi = tid >> 3
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         lo = tid & 7
         offset: int32 = lo * 66 + hi
 
@@ -330,8 +333,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 4
     tid: int32 = 0
     for tid in range(64):
-        hi= tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         offset: int32 = hi * 8 + lo
 
         smem[0 * sx + offset] = DATA_y[tid * 8 + 0]
@@ -355,8 +359,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         data_y[6] = DATA_y[tid * 8 + 6]
         data_y[7] = DATA_y[tid * 8 + 7]
 
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
 
         # BUG: GET CASTING ERRORS WHEN INPUTTING TMP_1 RAW INTO LOADY8
         tmp_1: int32 = lo * 66 + hi
@@ -397,7 +402,8 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         FFT8(data_x, data_y)
 
         # Calculate hi for second twiddle calculation...
-        hi = tid >> 3
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
 
         # Second twiddles calc, use hi and 64 stride version as defined in G80/SHOC...
         twiddles8(data_x, data_y, hi, 64)
@@ -426,8 +432,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 7
     tid: int32 = 0
     for tid in range(64):
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         offset: int32 = hi * 8 + lo
 
         smem[0 * sx + offset] = DATA_x[tid * 8 + 0]
@@ -443,8 +450,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 8
     tid: int32 = 0
     for tid in range(64):
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         offset: int32 = hi * 72 + lo
 
         DATA_x[tid * 8 + 0] = smem[0 * sx + offset]
@@ -460,8 +468,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
     # Loop 9
     tid: int32 = 0
     for tid in range(64):
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         offset: int32 = hi * 8 + lo
 
         smem[0 * sx + offset] = DATA_y[tid * 8 + 0]
@@ -485,8 +494,9 @@ def fft1D_512(work_x: float32[512], work_y: float32[512]):
         data_y[6] = DATA_y[tid * 8 + 6]
         data_y[7] = DATA_y[tid * 8 + 7]
 
-        hi = tid >> 3
-        lo = tid & 7
+        tid_int: int32 = tid
+        hi: index = tid_int >> 3
+        lo: index = tid_int & 7
         tmp_1: int32 = hi * 72 + lo
 
         loady8(data_y, smem, tmp_1, 8)
