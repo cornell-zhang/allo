@@ -29,6 +29,10 @@ def sub(lhs, rhs, name=None):
     return lhs - rhs
 
 
+def mul(lhs, rhs, name=None):
+    return lhs * rhs
+
+
 def div(lhs, rhs, name=None):
     return lhs / rhs
 

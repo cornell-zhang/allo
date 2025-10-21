@@ -72,11 +72,19 @@ def test_tiled_systolic():
     A = np.random.randint(0, 10, (M, K)).astype(np.int32)
     B = np.random.randint(0, 10, (K, N)).astype(np.int32)
     C = np.zeros((M, N), dtype=np.int32)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B, C)
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
+        C = np.zeros((M, N), dtype=np.int32)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")
+
     # test generated module
     global Mt, Nt, P0, P1
     Mt, Nt = 1, 1

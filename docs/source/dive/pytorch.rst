@@ -68,3 +68,5 @@ The default target is LLVM. We can also change the backend to other compilers su
 
     mod = allo.frontend.from_pytorch(model, example_inputs=example_inputs, target="vhls")
     print(mod.hls_code)
+
+For more target device selection, please refer to the `Backend <https://cornell-zhang.github.io/allo/index.html>`_ section of the document.

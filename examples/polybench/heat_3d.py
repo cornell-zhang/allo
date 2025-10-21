@@ -29,39 +29,39 @@ def heat_3d_np(A, B, TSTEPS, N):
                         + 0.125 * (B[i, j, k + 1] - 2.0 * B[i, j, k] + B[i, j, k - 1])
                         + B[i, j, k]
                     )
+    return A, B
+
+
+def kernel_heat_3d[
+    T: (float32, int32), TSTEPS: int32, N: int32
+](A: "T[N, N, N]", B: "T[N, N, N]"):
+    const0: float32 = 0.125
+    const1: float32 = 2.0
+
+    for m in range(TSTEPS):
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                for k in range(1, N - 1):
+                    B[i, j, k] = (
+                        const0 * (A[i + 1, j, k] - const1 * A[i, j, k] + A[i - 1, j, k])
+                        + const0
+                        * (A[i, j + 1, k] - const1 * A[i, j, k] + A[i, j - 1, k])
+                        + const0
+                        * (A[i, j, k + 1] - const1 * A[i, j, k] + A[i, j, k - 1])
+                        + A[i, j, k]
+                    )
+
+                    A[i, j, k] = (
+                        const0 * (B[i + 1, j, k] - const1 * B[i, j, k] + B[i - 1, j, k])
+                        + const0
+                        * (B[i, j + 1, k] - const1 * B[i, j, k] + B[i, j - 1, k])
+                        + const0
+                        * (B[i, j, k + 1] - const1 * B[i, j, k] + B[i, j, k - 1])
+                        + B[i, j, k]
+                    )
 
 
 def heat_3d(concrete_type, tsteps, nn):
-    def kernel_heat_3d[
-        T: (float32, int32), TSTEPS: int32, N: int32
-    ](A: "T[N, N, N]", B: "T[N, N, N]"):
-        const0: float32 = 0.125
-        const1: float32 = 2.0
-
-        for m in range(TSTEPS):
-            for i in range(1, N - 1):
-                for j in range(1, N - 1):
-                    for k in range(1, N - 1):
-                        B[i, j, k] = (
-                            const0
-                            * (A[i + 1, j, k] - const1 * A[i, j, k] + A[i - 1, j, k])
-                            + const0
-                            * (A[i, j + 1, k] - const1 * A[i, j, k] + A[i, j - 1, k])
-                            + const0
-                            * (A[i, j, k + 1] - const1 * A[i, j, k] + A[i, j, k - 1])
-                            + A[i, j, k]
-                        )
-
-                        A[i, j, k] = (
-                            const0
-                            * (B[i + 1, j, k] - const1 * B[i, j, k] + B[i - 1, j, k])
-                            + const0
-                            * (B[i, j + 1, k] - const1 * B[i, j, k] + B[i, j - 1, k])
-                            + const0
-                            * (B[i, j, k + 1] - const1 * B[i, j, k] + B[i, j, k - 1])
-                            + B[i, j, k]
-                        )
-
     s = allo.customize(kernel_heat_3d, instantiate=[concrete_type, tsteps, nn])
     return s.build()
 
@@ -81,7 +81,7 @@ def test_heat_3d():
     B_ref = B.copy()
     mod = heat_3d(float32, TSTEPS, N)
     mod(A, B)
-    heat_3d_np(A_ref, B_ref, TSTEPS, N)
+    A_ref, B_ref = heat_3d_np(A_ref, B_ref, TSTEPS, N)
     np.testing.assert_allclose(A, A_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(B, B_ref, rtol=1e-5, atol=1e-5)
 

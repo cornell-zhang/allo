@@ -108,11 +108,17 @@ class MultiHeadAttention(nn.Module):
         return output
 
 
-vocab_size = 50257
-n_embd = 768
-n_head = 12
-n_layers = 12
-n_seq = 1024
+# Large size
+# vocab_size = 50257
+# n_embd = 768
+# n_head = 12
+# n_layers = 12
+# n_seq = 1024
+vocab_size = 2
+n_embd = 4
+n_head = 2
+n_layers = 1
+n_seq = 4
 batch_size = 2
 
 module = GPT2(vocab_size, n_embd, n_head, n_layers).eval()
@@ -121,10 +127,15 @@ golden = module(*example_inputs)
 llvm_mod = allo.frontend.from_pytorch(
     module,
     example_inputs=example_inputs,
-    verbose=False,
+    verbose=True,
 )
 
 golden = module(*example_inputs)
 np_inputs = [x.detach().numpy() for x in example_inputs]
 res = llvm_mod(*np_inputs)
 np.testing.assert_allclose(res, golden.detach().numpy(), atol=1e-3)
+print("Test passed!")
+
+# generate HLS module
+mod = allo.frontend.from_pytorch(module, example_inputs=example_inputs, target="vhls")
+print(mod.hls_code)

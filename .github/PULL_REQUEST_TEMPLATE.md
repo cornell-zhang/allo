@@ -18,7 +18,8 @@
 
 ## Checklist ##
 
+Please make sure to review and check all of these items:
 - [ ] PR's title starts with a category (e.g. [Bugfix], [IR], [Builder], etc)
-- [ ] Changes are complete (i.e. I finished coding on this PR)
-- [ ] All changes have test coverage (It would be better to provide ~2 different test cases to test the robustness of your code)
+- [ ] All changes have test coverage (It would be good to provide ~2 different test cases to test the robustness of your code)
+- [ ] Pass the [formatting check](https://cornell-zhang.github.io/allo/developer/index.html#id1) locally
 - [ ] Code is well-documented

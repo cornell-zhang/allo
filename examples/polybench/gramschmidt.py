@@ -30,30 +30,32 @@ def gramschmidt_np(A, Q, R):
 
             for i in range(M):
                 A[i, j] -= Q[i, k] * R[k, j]
+    return A, Q, R
+
+
+def kernel_gramschmidt[
+    T: (float32, int32), M: int32, N: int32
+](A: "T[M, N]", Q: "T[M, N]", R: "T[N, N]"):
+    for k in range(N):
+        nrm: T = 0.0
+        for i in range(M):
+            nrm += A[i, k] * A[i, k]
+        # R[k, k] = allo.sqrt(nrm)
+        R[k, k] = nrm
+
+        for i in range(M):
+            Q[i, k] = A[i, k] / R[k, k]
+
+        for j in range(k + 1, N):
+            R[k, j] = 0.0
+            for i in range(M):
+                R[k, j] += Q[i, k] * A[i, j]
+
+            for i in range(M):
+                A[i, j] -= Q[i, k] * R[k, j]
 
 
 def gramschmidt(concrete_type, m, n):
-    def kernel_gramschmidt[
-        T: (float32, int32), M: int32, N: int32
-    ](A: "T[M, N]", Q: "T[M, N]", R: "T[N, N]"):
-        for k in range(N):
-            nrm: T = 0.0
-            for i in range(M):
-                nrm += A[i, k] * A[i, k]
-            # R[k, k] = allo.sqrt(nrm)
-            R[k, k] = nrm
-
-            for i in range(M):
-                Q[i, k] = A[i, k] / R[k, k]
-
-            for j in range(k + 1, N):
-                R[k, j] = 0.0
-                for i in range(M):
-                    R[k, j] += Q[i, k] * A[i, j]
-
-                for i in range(M):
-                    A[i, j] -= Q[i, k] * R[k, j]
-
     s0 = allo.customize(kernel_gramschmidt, instantiate=[concrete_type, m, n])
     return s0.build()
 
@@ -77,7 +79,7 @@ def test_gramschmidt():
     A_ref = A.copy()
     Q_ref = Q.copy()
     R_ref = R.copy()
-    gramschmidt_np(A_ref, Q_ref, R_ref)
+    A_ref, Q_ref, R_ref = gramschmidt_np(A_ref, Q_ref, R_ref)
 
     # run allo
     A_opt = A.copy()

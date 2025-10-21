@@ -81,6 +81,7 @@ def test_wrap_void():
     print("Data Movement (Non-flatten) Passed!")
 
     if hls.is_available("vitis_hls"):
+        C = np.zeros((M, N), dtype=np.float32)
         mod = df.build(top)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), rtol=1e-5, atol=1e-5)

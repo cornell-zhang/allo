@@ -43,6 +43,7 @@ MLIR_CAPI_EXPORTED MlirType alloMlirStreamTypeGet(MlirContext ctx,
                                                   MlirType baseType,
                                                   size_t depth);
 MLIR_CAPI_EXPORTED MlirType alloMlirStreamTypeGetBaseType(MlirType type);
+MLIR_CAPI_EXPORTED unsigned alloMlirStreamTypeGetDepth(MlirType type);
 
 #ifdef __cplusplus
 }

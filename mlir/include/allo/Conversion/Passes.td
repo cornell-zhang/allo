@@ -28,6 +28,11 @@ def LowerBitOps : Pass<"lower-bit-ops", "ModuleOp"> {
   let constructor = "mlir::allo::createLowerBitOpsPass()";
 }
 
+def LowerTransformLayoutOps : Pass<"lower-transform-layout-ops", "ModuleOp"> {
+  let summary = "Lower transform-layout operations";
+  let constructor = "mlir::allo::createLowerTransformLayoutOpsPass()";
+}
+
 def LowerPrintOps : Pass<"lower-print-ops", "ModuleOp"> {
   let summary = "Lower print operations";
   let constructor = "mlir::allo::createLowerPrintOpsPass()";

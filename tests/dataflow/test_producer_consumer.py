@@ -35,6 +35,12 @@ def top():
 def test_producer_consumer():
     A = np.random.rand(M, N).astype(np.float32)
     B = np.zeros((M, N), dtype=np.float32)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B)
+    np.testing.assert_allclose(B, A + 1)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(
         top,
         target="vitis_hls",

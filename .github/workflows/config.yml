@@ -15,13 +15,13 @@ jobs:
     # This job runs on Linux
     runs-on: ubuntu-latest
     container:
-      image: chhzh123/allo:llvm-19.x-py3.12
+      image: chhzh123/allo:latest
 
     steps:
     # https://github.com/actions/checkout/issues/363#issuecomment-1915075699
     - name: Install git in container
       run: |
-        apt-get install git
+        apt-get -y install git
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
       with:
@@ -38,11 +38,31 @@ jobs:
       run: |
         source activate allo
         bash scripts/lint/task_lint.sh
-    - name: Testing
+    - name: Unit tests
       shell: bash
       run: |
         source activate allo
         export PATH=/root/llvm-project/build/bin:${PATH}
-        python3 -m pytest tests -v
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pytest --ignore=tests/dataflow tests -v
+    - name: Tutorial
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest tutorials -v
+    - name: Benchmark
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest examples/polybench -v
+    # no left space!
+    # - name: PyTorch
+    #   shell: bash
+    #   run: |
+    #     source activate allo
+    #     export LLVM_BUILD_DIR=/root/llvm-project/build
+    #     python3 -m pip install torch==2.5.1
+    #     python3 examples/torch/toy.py
+    #     python3 examples/torch/mlp.py

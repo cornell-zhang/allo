@@ -44,72 +44,87 @@ def correlation_np(data, mean, stddev, corr, M, N, N_float, epsilon):
             corr[j, i] = corr[i, j]
 
     corr[M - 1, M - 1] = 1.0
+    return data, mean, stddev, corr
 
 
-def correlation(concrete_type, M, N, N_float, epsilon):
-    def compute_mean[
-        T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", mean: "T[M]"):
-        for x in allo.grid(M):
-            total: T = 0.0
-            for k in allo.grid(N):
-                total += data[k, x]
-            mean[x] = total / N
+def compute_mean[
+    T: (float32, int32), M: int32, N: int32
+](data: "T[N, M]", mean: "T[M]"):
+    for x in allo.grid(M):
+        total: T = 0.0
+        for k in allo.grid(N):
+            total += data[k, x]
+        mean[x] = total / N
 
-    def compute_stddev[
-        T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"):
-        for x in allo.grid(M):
-            variance: T = 0.0
-            for m in allo.grid(N):
-                variance += (data[m, x] - mean[x]) * (data[m, x] - mean[x])
-            stddev[x] = allo.sqrt(variance / N_float)
-            mean_passed_on[x] = mean[x]
-            # This is to avoid a division by zero situation
-            if stddev[x] <= epsilon:
-                stddev[x] = 1.0
 
-    def center_reduce[
-        T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", data_out: "T[N, M]", mean: "T[M]", stddev: "T[M]"):
-        for x in allo.grid(N):
-            for y in allo.grid(M):
-                d: T = data[x, y]
-                d -= mean[y]
-                d /= allo.sqrt(N_float) * stddev[y]
-                data_out[x, y] = d
+def compute_stddev[
+    T: (float32, int32), M: int32, N: int32
+](data: "T[N, M]", mean: "T[M]", mean_passed_on: "T[M]", stddev: "T[M]"):
+    for x in allo.grid(M):
+        variance: T = 0.0
+        for m in allo.grid(N):
+            variance += (data[m, x] - mean[x]) * (data[m, x] - mean[x])
+        stddev[x] = allo.sqrt(variance / N_float)
+        mean_passed_on[x] = mean[x]
+        # This is to avoid a division by zero situation
+        if stddev[x] <= epsilon:
+            stddev[x] = 1.0
 
-    def compute_corr[
-        T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", corr: "T[M, M]"):
-        for i in range(M - 1):
-            corr[i, i] = 1.0
-            for j in range(M):
-                if j > i:
-                    corr_v: T = 0.0
-                    for k in range(N):
-                        corr_v += data[k, i] * data[k, j]
-                    corr[j, i] = corr_v
-                    corr[i, j] = corr_v
 
-        corr[M - 1, M - 1] = 1.0
+def center_reduce[
+    T: (float32, int32), M: int32, N: int32
+](data: "T[N, M]", data_out: "T[N, M]", mean: "T[M]", stddev: "T[M]"):
+    for x in allo.grid(N):
+        for y in allo.grid(M):
+            d: T = data[x, y]
+            d -= mean[y]
+            d /= allo.sqrt(N_float) * stddev[y]
+            data_out[x, y] = d
 
-    def kernel_correlation[
-        T: (float32, int32), M: int32, N: int32
-    ](
-        data_mean: "T[N, M]",
-        data_stddev: "T[N, M]",
-        data_for_center: "T[N, M]",
-        corr: "T[M, M]",
-    ):
-        mean: T[M]
-        mean_passed_on: T[M]
-        stddev: T[M]
-        compute_mean(data_mean, mean)
-        compute_stddev(data_stddev, mean, mean_passed_on, stddev)
-        data_centered: T[N, M]
-        center_reduce(data_for_center, data_centered, mean_passed_on, stddev)
-        compute_corr(data_centered, corr)
+
+def compute_corr[
+    T: (float32, int32), M: int32, N: int32
+](data: "T[N, M]", corr: "T[M, M]"):
+    for i in range(M - 1):
+        corr[i, i] = 1.0
+        for j in range(M):
+            if j > i:
+                corr_v: T = 0.0
+                for k in range(N):
+                    corr_v += data[k, i] * data[k, j]
+                corr[j, i] = corr_v
+                corr[i, j] = corr_v
+
+    corr[M - 1, M - 1] = 1.0
+
+
+def kernel_correlation[
+    T: (float32, int32), M: int32, N: int32
+](
+    data_mean: "T[N, M]",
+    data_stddev: "T[N, M]",
+    data_for_center: "T[N, M]",
+    corr: "T[M, M]",
+):
+    mean: T[M] = 0.0
+    mean_passed_on: T[M] = 0.0
+    stddev: T[M] = 0.0
+    compute_mean(data_mean, mean)
+    compute_stddev(data_stddev, mean, mean_passed_on, stddev)
+    data_centered: T[N, M] = 0.0
+    center_reduce(data_for_center, data_centered, mean_passed_on, stddev)
+    compute_corr(data_centered, corr)
+
+
+# Global constants for kernel functions
+N_float = 0.0
+epsilon = 0.0
+
+
+def correlation(concrete_type, M, N, N_float_val, epsilon_val):
+    global N_float, epsilon
+    N_float = N_float_val
+    epsilon = epsilon_val
 
     s0 = allo.customize(compute_mean, instantiate=[concrete_type, M, N])
     s0.pipeline("x")
@@ -157,7 +172,9 @@ def test_correlation():
     stddev = np.zeros((M,), dtype=np.float32)
     corr = np.zeros((M, M), dtype=np.float32)
     corr_ref = np.zeros((M, M), dtype=np.float32)
-    correlation_np(data.copy(), mean, stddev, corr_ref, M, N, N_float, epsilon)
+    data_ref, mean_ref, stddev_ref, corr_ref = correlation_np(
+        data.copy(), mean.copy(), stddev.copy(), corr_ref, M, N, N_float, epsilon
+    )
     mod = sch.build()
     mod(data.copy(), data.copy(), data.copy(), corr)
     np.testing.assert_allclose(corr, corr_ref, rtol=1e-5, atol=1e-5)

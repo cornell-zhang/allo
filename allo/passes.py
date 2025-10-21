@@ -3,6 +3,7 @@
 # pylint: disable=no-name-in-module, unexpected-keyword-arg, no-value-for-parameter, too-many-nested-blocks
 
 import os
+import re
 import numpy as np
 
 from ._mlir.ir import (
@@ -21,6 +22,7 @@ from ._mlir.ir import (
     IntegerAttr,
     IntegerType,
     Operation,
+    BlockArgument,
 )
 from ._mlir.dialects import (
     allo as allo_d,
@@ -36,7 +38,7 @@ from ._mlir.passmanager import PassManager as mlir_pass_manager
 from .ir.transform import find_func_in_module
 from .ir.transform import wrap_data_movement
 from .ir.utils import MockBuffer
-from .utils import get_mlir_dtype_from_str
+from .utils import get_mlir_dtype_from_str, c2allo_type
 
 
 def _mlir_lower_pipeline(module, **kwargs):
@@ -314,6 +316,8 @@ def generate_input_output_buffers(module, top_func_name, flatten=False, mappings
 # pylint: disable=dangerous-default-value
 def analyze_arg_load_store_in_func(func, mapping={}):
     res = []
+    if func.is_external:
+        return ["in"] * len(func.type.inputs)
     for _, arg in enumerate(func.arguments):
         if not isinstance(arg.type, MemRefType):
             res.append("scalar")
@@ -407,7 +411,7 @@ def call_ext_libs_in_ptr(module, ext_libs):
                 # external functions, reconstruct func type
                 input_types = []
                 for arg_type, shape in obj.args:
-                    ele_type = get_mlir_dtype_from_str(arg_type)
+                    ele_type = get_mlir_dtype_from_str(c2allo_type[arg_type])
                     if len(shape) == 0:
                         memref = ele_type
                     else:
@@ -707,6 +711,196 @@ def analyze_use_def(mod):
     # recover final sets
     res = recover_sets()
     return res
+
+
+def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
+    """
+    Analyze the read/write patterns of function arguments to determine which are inputs and outputs.
+    Handles subview operations and common linalg operations.
+
+    Parameters:
+    -----------
+    mlir_func: An MLIR function operation
+
+    Returns:
+    --------
+    tuple: (input_indices, output_indices) lists of argument indices
+    """
+    input_indices = set()
+    output_indices = set()
+
+    # Track subview operations to map derived views back to original memrefs
+    subview_map = {}  # Maps Value IDs of subviews to their source argument indices
+    for arg in mlir_func.arguments:
+        work_list = [arg]
+        visited = set()
+        while work_list:
+            value = work_list.pop()
+            if value in visited:
+                continue
+            visited.add(value)
+
+            for use in value.uses:
+                user = use.owner
+                if user.name == "memref.subview":
+                    subview_map[user.result] = arg.arg_number
+                    work_list.append(user.result)
+
+    # Helper to resolve a value to its original argument index if it's a subview
+    def resolve_to_func_arg_index(value):
+        if BlockArgument.isinstance(value):
+            arg = BlockArgument(value)
+            if isinstance(arg.owner.owner, func_d.FuncOp):
+                return arg.arg_number
+        if value in subview_map:
+            return subview_map[value]
+        return None
+
+    # Dictionary of common linalg operations and their input/output patterns
+    # Pattern format: (number_of_inputs, number_of_outputs)
+    linalg_op_patterns = {
+        "linalg.broadcast": (1, 1),  # 1 inputs, 1 output
+        "linalg.transpose": (1, 1),  # 1 inputs, 1 output
+        "linalg.matmul": (2, 1),  # 2 inputs, 1 output
+        "linalg.batch_matmul": (2, 1),  # 2 inputs, 1 output
+        "linalg.conv_2d_nchw_fchw": (2, 1),  # 2 inputs, 1 output
+        "linalg.pooling_nchw_max": (2, 1),  # 2 inputs, 1 output
+        "linalg.pooling_nchw_sum": (2, 1),  # 2 inputs, 1 output
+        "linalg.add": (2, 1),  # 2 inputs, 1 output
+        "linalg.mul": (2, 1),  # 2 inputs, 1 output
+        "linalg.div": (2, 1),  # 2 inputs, 1 output
+        "linalg.sub": (2, 1),  # 2 inputs, 1 output
+        "linalg.max": (2, 1),  # 2 inputs, 1 output
+        "linalg.min": (2, 1),  # 2 inputs, 1 output
+        "linalg.fill": (1, 1),  # 1 input (value), 1 output (buffer)
+        "linalg.exp": (1, 1),  # 1 inputs, 1 output
+        "linalg.log": (1, 1),  # 1 inputs, 1 output
+        "linalg.abs": (1, 1),  # 1 inputs, 1 output
+        "linalg.copy": (1, 1),  # 1 input, 1 output
+        "linalg.conv_2d": (2, 1),  # 2 inputs (input, kernel), 1 output
+        "linalg.pooling": (1, 1),  # 1 input, 1 output
+        "linalg.softmax": (1, 1),  # 1 input, 1 output
+        "linalg.generic": None,  # Special handling required
+        "linalg.indexed_generic": None,  # Special handling required
+    }
+
+    # Recursively walk through all operations in the function body
+    def walk_operations(block):
+        for op in block.operations:
+            op_name = str(op.operation.name)
+
+            # user defined external kernel
+            if isinstance(op, func_d.CallOp) and op.callee.value in external_kernel_lib:
+                callee_name = op.callee.value
+                ext_module = external_kernel_lib[callee_name]
+                for idx in ext_module.input_idx:
+                    input_indices.add(resolve_to_func_arg_index(op.operands[idx]))
+                for idx in ext_module.output_idx:
+                    output_indices.add(resolve_to_func_arg_index(op.operands[idx]))
+            elif op_name in {"memref.load", "affine.load", "allo.load_slice"}:
+                if len(op.operands) > 0:
+                    input_indices.add(resolve_to_func_arg_index(op.operands[0]))
+            elif op_name in {"memref.store", "affine.store"}:
+                if len(op.operands) > 1:
+                    output_indices.add(resolve_to_func_arg_index(op.operands[1]))
+            elif op_name == "allo.store_slice":
+                assert len(op.operands) >= 2
+                input_indices.add(resolve_to_func_arg_index(op.operands[0]))
+                output_indices.add(resolve_to_func_arg_index(op.operands[1]))
+            elif op_name == "memref.copy" and len(op.operands) >= 2:
+                # First operand is source, second is destination
+                input_indices.add(resolve_to_func_arg_index(op.operands[0]))
+                output_indices.add(resolve_to_func_arg_index(op.operands[1]))
+            # Handle linalg operations using the pattern dictionary
+            elif op_name.startswith("linalg."):
+                pattern = linalg_op_patterns.get(op_name)
+                # Handle operations with known patterns
+                if pattern is not None:
+                    num_ins, num_outs = pattern
+                    total_operands = len(op.operands)
+                    # First check if the ins/outs are marked explicitly
+                    explicit_ins_outs = False
+                    # Check for explicit ins/outs attributes or regions
+                    if "ins" in op.attributes and "outs" in op.attributes:
+                        explicit_ins_outs = True
+                        ins_attr = op.attributes["ins"]
+                        outs_attr = op.attributes["outs"]
+                        # Parse the attributes to get indices
+                        ins_indices = []
+                        outs_indices = []
+                        if hasattr(ins_attr, "__iter__"):
+                            ins_indices = list(ins_attr)
+                        if hasattr(outs_attr, "__iter__"):
+                            outs_indices = list(outs_attr)
+                        # Check if our argument is used in any of these positions
+                        for idx in ins_indices:
+                            if idx < total_operands:
+                                input_indices.add(
+                                    resolve_to_func_arg_index(op.operands[idx])
+                                )
+
+                        for idx in outs_indices:
+                            if idx < total_operands:
+                                output_indices.add(
+                                    resolve_to_func_arg_index(op.operands[idx])
+                                )
+
+                    # If there are no explicit attributes, use the pattern
+                    if not explicit_ins_outs:
+                        # First num_ins operands are inputs
+                        for i in range(min(num_ins, total_operands)):
+                            input_indices.add(resolve_to_func_arg_index(op.operands[i]))
+                        # Last num_outs operands are outputs
+                        for i in range(
+                            max(0, total_operands - num_outs), total_operands
+                        ):
+                            output_indices.add(
+                                resolve_to_func_arg_index(op.operands[i])
+                            )
+
+                # Special handling for generic operations
+                elif op_name in {"linalg.generic", "linalg.indexed_generic"}:
+                    # These operations have explicit indexing_maps that define inputs and outputs
+                    # We need to look at the string representation to determine usage
+                    op_str = str(op)
+                    arg_refs = re.findall(r"%arg\d+", op_str)
+                    for arg_ref in arg_refs:
+                        index = int(arg_ref.group(1))
+                        if (
+                            "ins(" in op_str
+                            and arg_ref in op_str.split("ins(")[1].split("outs(")[0]
+                        ):
+                            input_indices.add(index)
+                        if (
+                            "outs(" in op_str
+                            and arg_ref in op_str.split("outs(")[1].split(")")[0]
+                        ):
+                            output_indices.add(index)
+
+            # Fallback: Check if any argument is directly used in any other operation
+            else:
+                for operand in op.operands:
+                    input_indices.add(resolve_to_func_arg_index(operand))
+
+            # Recursively process nested regions if any
+            for region in op.regions:
+                for inner_block in region.blocks:
+                    walk_operations(inner_block)
+
+    # Start walking from the function's entry block
+    for block in mlir_func.body.blocks:
+        walk_operations(block)
+
+    memref_input_indices, memref_output_indices = set(), set()
+    for idx in input_indices:
+        if idx is not None and isinstance(mlir_func.arguments[idx].type, MemRefType):
+            memref_input_indices.add(idx)
+    for idx in output_indices:
+        if idx is not None and isinstance(mlir_func.arguments[idx].type, MemRefType):
+            memref_output_indices.add(idx)
+    # Parameters that are both read and written are considered outputs
+    pure_inputs = list(memref_input_indices - memref_output_indices)
+    return pure_inputs, list(memref_output_indices)
 
 
 def df_pipeline(module, initiation_interval=1, rewind=False):

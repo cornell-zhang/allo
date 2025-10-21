@@ -439,5 +439,50 @@ def test_dependent_primitives():
     s.compose(s0)
 
 
+def test_nested_compose():
+    M, K = 8, 8
+
+    def add(A: "float32[M, K]", B: "float32[M, K]", C: "float32[M, K]"):
+        for i, j in allo.grid(M, K, name="add"):
+            C[i, j] = A[i, j] + B[i, j]
+
+    def add_const[N](A: "float32[M, K]", B: "float32[M, K]", C: "float32[M, K]"):
+        add(A, B, C)
+        for i, j in allo.grid(M, K):
+            C[i, j] = C[i, j] + N
+
+    def top() -> "float32[M, K]":
+        A: float32[M, K] = 1
+        B: float32[M, K] = 2
+        C: float32[M, K] = 3
+        add_const[5, "const5"](A, B, C)
+        add_const[7, "const7"](A, B, C)
+        return C
+
+    def schedule_add(add):
+        s = allo.customize(add)
+        s.pipeline("j")
+        return s
+
+    def schedule_const(add_const, N):
+        add_s = schedule_add(add)
+        s = allo.customize(add_const, instantiate=[N])
+        s.compose(add_s)
+        return s
+
+    s_const_5 = schedule_const(add_const, 5)
+    s_const_7 = schedule_const(add_const, 7)
+    s = allo.customize(top)
+    # only apply to one of the add_const
+    s.compose(s_const_5, id="const7")
+    mod = s.build(target="vitis_hls").hls_code
+    assert "add_const5" in mod and "add_const_const5" in mod
+    assert "add_const7" in mod and "add_const_const7" in mod
+    # Count number of pipeline pragmas in the module
+    # including the load/store rewind
+    pipeline_count = str(mod).count("#pragma HLS pipeline II=1")
+    assert pipeline_count == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

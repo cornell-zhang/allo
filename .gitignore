@@ -69,6 +69,9 @@ build
 *.log
 *.prj
 
+# Linear programming files
+*.lp
+
 tmp
 *.pyc
 
@@ -84,3 +87,4 @@ log
 
 _tmp
 *.txt
+sg_execution_times.rst

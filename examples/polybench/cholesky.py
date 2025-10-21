@@ -22,21 +22,23 @@ def cholesky_np(A):
         for k in range(i):
             A[i, i] = A[i, i] - A[i, k] * A[i, k]
         A[i, i] = np.sqrt(A[i, i] * 1.0)
+    return A
+
+
+def kernel_cholesky[T: (int32, float32), N: int32](A: "T[N, N]"):
+    for i in range(N):
+        # Case: j < i
+        for j in range(i):
+            for k in range(j):
+                A[i, j] = A[i, j] - A[i, k] * A[j, k]
+            A[i, j] = A[i, j] / A[j, j]
+        # Case: i == j
+        for k in range(i):
+            A[i, i] = A[i, i] - A[i, k] * A[i, k]
+        A[i, i] = allo.sqrt(A[i, i] * 1.0)
 
 
 def cholesky(concrete_type, n):
-    def kernel_cholesky[T: (int32, float32), N: int32](A: "T[N, N]"):
-        for i in range(N):
-            # Case: j < i
-            for j in range(i):
-                for k in range(j):
-                    A[i, j] = A[i, j] - A[i, k] * A[j, k]
-                A[i, j] = A[i, j] / A[j, j]
-            # Case: i == j
-            for k in range(i):
-                A[i, i] = A[i, i] - A[i, k] * A[i, k]
-            A[i, i] = allo.sqrt(A[i, i] * 1.0)
-
     s = allo.customize(kernel_cholesky, instantiate=[concrete_type, n])
     return s.build()
 
@@ -55,7 +57,7 @@ def test_cholesky():
 
     # run reference
     A_ref = A.copy()
-    cholesky_np(A_ref)
+    A_ref = cholesky_np(A_ref)
 
     # run allo
     A_opt = A.copy()

@@ -6,6 +6,8 @@ import pytest
 import allo
 from allo.ir.types import bool, int8, int32, float32, index
 import allo.backend.hls as hls
+import io
+from contextlib import redirect_stdout
 
 
 def test_grid_for_gemm():
@@ -216,6 +218,23 @@ def test_logic_and_or():
     assert mod(np_A, 0) == kernel(np_A, 0)
     assert mod(np_A, 1) == kernel(np_A, 1)
     assert mod(np_A, 2) == kernel(np_A, 2)
+
+
+def test_multiple_conditions():
+    def multiple_conditions(A: int32[3], b: int32, c: int32) -> int32:
+        r: int32 = 0
+        if A[0] > 0 and A[1] > 0 and A[2] > 0 and b > 0 and c > 0:
+            r = 1
+        return r
+
+    s = allo.customize(multiple_conditions)
+    print(s.module)
+    np_A = np.array([1, 1, -1], dtype=np.int32)
+    mod = s.build()
+    assert mod(np_A, 1, 1) == multiple_conditions(np_A, 1, 1)
+    assert mod(np_A, 1, -1) == multiple_conditions(np_A, 1, -1)
+    assert mod(np_A, -1, 1) == multiple_conditions(np_A, -1, 1)
+    assert mod(np_A, -1, -1) == multiple_conditions(np_A, -1, -1)
 
 
 def test_assign_logic():
@@ -748,6 +767,123 @@ def test_scalar():
     assert mod() == 1
     mod = s.build(target="vhls")
     assert "," not in mod.hls_code
+
+
+def test_line_trace():
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    def get_mlir_string(schedule):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            schedule.module.operation.print(
+                large_elements_limit=2,
+                enable_debug_info=True,
+                use_local_scope=True,
+            )
+        return buffer.getvalue()
+
+    s = allo.customize(gemm)
+    mlir_string = get_mlir_string(s)
+    assert 'loc("' in mlir_string
+    s.split("i", factor=8)
+    mlir_string = get_mlir_string(s)
+    assert 'loc("' in mlir_string
+
+
+def test_dsl_broadcast_binary_ops():
+    def kernel1(A: int32[10]) -> int32[10]:
+        return allo.div(allo.mul(allo.sub(allo.add(A, 3), 1), 2), 2)
+
+    def kernel2(A: int32[10]) -> int32[10]:
+        return allo.sub(50, allo.mul(2, allo.add(3, allo.div(10, A))))
+
+    s1 = allo.customize(kernel1)
+    s2 = allo.customize(kernel2)
+    mod1 = s1.build()
+    mod2 = s2.build()
+    np_A = np.random.randint(1, 10, size=(10,)).astype(np.int32)
+    np_B_1 = mod1(np_A)
+    np_B_2 = mod2(np_A)
+    np.testing.assert_allclose(np_B_1, ((np_A + 3) - 1) * 2 // 2)
+    np.testing.assert_allclose(np_B_2, 50 - 2 * (3 + 10 // np_A))
+
+
+def test_scope():
+    # kernel1: declare local variable r outside the if/else
+    def kernel1(a: int32) -> int32:
+        r: int32 = 0
+        if a == 0:
+            r = 1
+        else:
+            r = 4
+        return r
+
+    s = allo.customize(kernel1)
+    mod = s.build()
+    assert mod(0) == kernel1(0)
+    assert mod(1) == kernel1(1)
+
+    # kernel2: declare r inside each branch -> invalid scope
+    def kernel2(a: int32) -> int32:
+        if a == 0:
+            r: int32 = 1
+        else:
+            r: int32 = 4
+        return r
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel2)
+
+    def kernel3(a: int32) -> int32:
+        r: int32 = 0
+        if a > 0:
+            t: int32 = 1  # t is local to the if-branch
+            r = r + t
+        return r
+
+    s = allo.customize(kernel3)
+    mod = s.build()
+    assert mod(0) == kernel3(0)
+    assert mod(1) == kernel3(1)
+
+    # kernel4: declare tmp inside loop and used outside the loop-> invalid scope
+    def kernel4(n: int32) -> int32:
+        for i in range(n):
+            tmp: int32 = i
+        return tmp
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel4)
+
+    # case 5: inner loop shadows iterator from outer loop
+    def kernel5(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):  # outer loop, iterator is i
+            for i in range(n):  # inner loop reuses the same name i -> shadowing outer i
+                s = s + i  # here i refers to the inner loop variable
+            s = s + i  # here i refers to the outer loop variable
+        return s
+
+    def kernel5_py(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):
+            for j in range(n):
+                s = s + j
+            s = s + i
+        return s
+
+    s = allo.customize(kernel5)
+    mod = s.build()
+    assert mod(4) == kernel5_py(4)
+    assert mod(8) == kernel5_py(8)
+    s = allo.customize(kernel5_py)
+    mod = s.build()
+    assert mod(4) == kernel5_py(4)
+    assert mod(8) == kernel5_py(8)
 
 
 if __name__ == "__main__":

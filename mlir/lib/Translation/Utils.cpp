@@ -66,45 +66,30 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
   return state.nameTable.lookup(val);
 };
 
+Type getUnsignedTypeFromSigned(Type type) {
+  if (auto intType = type.dyn_cast<IntegerType>()) {
+    return IntegerType::get(type.getContext(), intType.getWidth(),
+                            IntegerType::SignednessSemantics::Unsigned);
+  } else if (auto memrefType = type.dyn_cast<MemRefType>()) {
+    Type elt = getUnsignedTypeFromSigned(memrefType.getElementType());
+    return MemRefType::get(memrefType.getShape(), elt, memrefType.getLayout(),
+                           memrefType.getMemorySpace());
+  } else if (auto streamType = type.dyn_cast<StreamType>()) {
+    Type elt = getUnsignedTypeFromSigned(streamType.getBaseType());
+    return StreamType::get(type.getContext(), elt, streamType.getDepth());
+  }
+  return type;
+}
+
 void fixUnsignedType(Value &result, bool isUnsigned) {
-  if (isUnsigned) { // unsigned type
-    if (result.getType().isa<MemRefType>()) {
-      auto arrayType = result.getType().dyn_cast<MemRefType>();
-      Type elt = IntegerType::get(
-          arrayType.getContext(),
-          arrayType.getElementType().cast<IntegerType>().getWidth(),
-          IntegerType::SignednessSemantics::Unsigned);
-      result.setType(MemRefType::get(arrayType.getShape(), elt,
-                                     arrayType.getLayout(),
-                                     arrayType.getMemorySpace()));
-    } else if (result.getType().isa<IntegerType>()) {
-      Type type =
-          IntegerType::get(result.getType().getContext(),
-                           result.getType().cast<IntegerType>().getWidth(),
-                           IntegerType::SignednessSemantics::Unsigned);
-      result.setType(type);
-    }
+  if (isUnsigned) {
+    result.setType(getUnsignedTypeFromSigned(result.getType()));
   }
 }
 
 void fixUnsignedType(memref::GlobalOp &op, bool isUnsigned) {
   if (isUnsigned) { // unsigned type
     auto type = op.getTypeAttr().getValue();
-    if (type.isa<MemRefType>()) {
-      auto arrayType = type.dyn_cast<MemRefType>();
-      Type elt = IntegerType::get(
-          arrayType.getContext(),
-          arrayType.getElementType().cast<IntegerType>().getWidth(),
-          IntegerType::SignednessSemantics::Unsigned);
-      // get a memref type attr
-      op.setTypeAttr(TypeAttr::get(
-          MemRefType::get(arrayType.getShape(), elt, arrayType.getLayout(),
-                          arrayType.getMemorySpace())));
-    } else if (type.isa<IntegerType>()) {
-      Type type = IntegerType::get(type.getContext(),
-                                   type.cast<IntegerType>().getWidth(),
-                                   IntegerType::SignednessSemantics::Unsigned);
-      op.setTypeAttr(TypeAttr::get(type));
-    }
+    op.setTypeAttr(TypeAttr::get(getUnsignedTypeFromSigned(type)));
   }
 }

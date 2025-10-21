@@ -43,4 +43,9 @@ def MemRefDCE : Pass<"memref-dce", "ModuleOp"> {
   let constructor = "mlir::allo::createMemRefDCEPass()";
 }
 
+def CopyOnWrite : Pass<"copy-on-write", "ModuleOp"> {
+  let summary = "Avoid copying data to new buffer until the old buffer have to be modified";
+  let constructor = "mlir::allo::createCopyOnWritePass()";
+}
+
 #endif // ALLO_MLIR_PASSES

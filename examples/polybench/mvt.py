@@ -16,42 +16,46 @@ def mvt_np(A, x1, x2, y1, y2):
         for j in range(N):
             x1[i] += A[i, j] * y1[j]
             x2[i] += A[j, i] * y2[j]
+    return x1, x2
+
+
+def stageA[
+    T: (float32, int32), N: int32
+](x1_in: "T[N]", x1_out: "T[N]", A: "T[N, N]", y1: "T[N]"):
+    for i0 in allo.grid(N, name="A"):
+        x: T = x1_in[i0]
+        for j0 in allo.reduction(N):
+            x += A[i0, j0] * y1[j0]
+        x1_out[i0] = x
+
+
+def stageB[
+    T: (float32, int32), N: int32
+](x2_in: "T[N]", x2_out: "T[N]", A: "T[N, N]", y2: "T[N]"):
+    for i1 in allo.grid(N, name="B"):
+        x: T = x2_in[i1]
+        for j1 in allo.reduction(N):
+            x += A[j1, i1] * y2[j1]
+        x2_out[i1] = x
+
+
+def kernel_mvt[
+    T: (float32, int32), N: int32
+](
+    A: "T[N, N]",
+    A_copy: "T[N, N]",
+    y1: "T[N]",
+    y2: "T[N]",
+    x1: "T[N]",
+    x2: "T[N]",
+    x1_out: "T[N]",
+    x2_out: "T[N]",
+):
+    stageA[T, N](x1, x1_out, A, y1)
+    stageB[T, N](x2, x2_out, A_copy, y2)
 
 
 def mvt(concrete_type, N):
-    def stageA[
-        T: (float32, int32), N: int32
-    ](x1_in: "T[N]", x1_out: "T[N]", A: "T[N, N]", y1: "T[N]"):
-        for i0 in allo.grid(N, name="A"):
-            x: T = x1_in[i0]
-            for j0 in allo.reduction(N):
-                x += A[i0, j0] * y1[j0]
-            x1_out[i0] = x
-
-    def stageB[
-        T: (float32, int32), N: int32
-    ](x2_in: "T[N]", x2_out: "T[N]", A: "T[N, N]", y2: "T[N]"):
-        for i1 in allo.grid(N, name="B"):
-            x: T = x2_in[i1]
-            for j1 in allo.reduction(N):
-                x += A[j1, i1] * y2[j1]
-            x2_out[i1] = x
-
-    def kernel_mvt[
-        T: (float32, int32), N: int32
-    ](
-        A: "T[N, N]",
-        A_copy: "T[N, N]",
-        y1: "T[N]",
-        y2: "T[N]",
-        x1: "T[N]",
-        x2: "T[N]",
-        x1_out: "T[N]",
-        x2_out: "T[N]",
-    ):
-        stageA[T, N](x1, x1_out, A, y1)
-        stageB[T, N](x2, x2_out, A_copy, y2)
-
     sch0 = allo.customize(stageA, instantiate=[concrete_type, N])
     sch0.pipeline("i0")
     sch0.partition(sch0.A, dim=2)
@@ -88,7 +92,7 @@ def test_mvt():
 
     x1_ref = x1.copy()
     x2_ref = x2.copy()
-    mvt_np(A, x1_ref, x2_ref, y1, y2)
+    x1_ref, x2_ref = mvt_np(A, x1_ref, x2_ref, y1, y2)
 
     mod = sch.build()
     mod(A, A.copy(), y1, y2, x1.copy(), x2.copy(), x1, x2)

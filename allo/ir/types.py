@@ -8,6 +8,7 @@ from collections import OrderedDict
 from .._mlir.ir import (
     IntegerType,
     IndexType,
+    BF16Type,
     F16Type,
     F32Type,
     F64Type,
@@ -128,29 +129,35 @@ class Float(AlloType):
     A floating point decimal number.
     """
 
-    def __init__(self, bits):
+    def __init__(self, bits, fracs, name="float"):
         """
         Constructs a floating point decimal number.
 
         Parameters
         ----------
         bits: The bitwidth of the float. This must be either 16, 32, or 64.
+        |--------+------+----------+----------|
+        | Format | Bits | Exponent | Fraction |
+        |--------+------+----------+----------|
+        | FP64   |   64 |       11 |       52 |
+        | FP32   |   32 |        8 |       23 |
+        | FP16   |   16 |        5 |       10 |
+        | BF16   |   16 |        8 |        7 |
+        |--------+------+----------+----------|
         """
-        if bits == 16:
-            super().__init__(16, 10, f"f{bits}")
-            self.exponent = 5
-        elif bits == 32:
-            super().__init__(32, 23, f"f{bits}")
-            self.exponent = 8
-        elif bits == 64:
-            super().__init__(64, 52, f"f{bits}")
-            self.exponent = 11
-        else:
-            raise DTypeError("Only support float16, float32 and float64")
+        assert bits in {
+            16,
+            32,
+            64,
+        }, "Only support bfloat16, float16, float32 and float64"
+        super().__init__(bits, fracs, name)
+        self.exponent = bits - fracs - 1
 
     # pylint: disable=inconsistent-return-statements
     def build(self):
         if self.bits == 16:
+            if self.exponent == 8:
+                return BF16Type.get()
             return F16Type.get()
         if self.bits == 32:
             return F32Type.get()
@@ -311,6 +318,8 @@ uint15 = UInt(15)
 # index type
 index = Index()
 # floating point types
-float16 = Float(16)
-float32 = Float(32)
-float64 = Float(64)
+float16 = Float(16, 10, "f16")
+float32 = Float(32, 23, "f32")
+float64 = Float(64, 52, "f64")
+# brain floating point
+bfloat16 = Float(16, 7, "bf16")

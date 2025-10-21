@@ -1,9 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, bad-builtin
 
+import re
 import ctypes
 import numpy as np
+import ml_dtypes
 from ._mlir.ir import (
     MemRefType,
     RankedTensorType,
@@ -12,13 +14,25 @@ from ._mlir.ir import (
     F16Type,
     F32Type,
     F64Type,
+    BF16Type,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
 from ._mlir.dialects import allo as allo_d
-
+from .ir.types import (
+    Int,
+    UInt,
+    Index,
+    Fixed,
+    UFixed,
+    bfloat16,
+    float16,
+    float32,
+    float64,
+)
 
 np_supported_types = {
+    "bf16": ml_dtypes.bfloat16,
     "f16": np.float16,
     "f32": np.float32,
     "f64": np.float64,
@@ -33,10 +47,13 @@ np_supported_types = {
     "ui64": np.uint64,
 }
 
+np_read_file_types = dict(np_supported_types)
+np_read_file_types["bf16"] = np.uint16
 
 ctype_map = {
     # ctypes.c_float16 does not exist
     # similar implementation in _mlir/runtime/np_to_memref.py/F16
+    "bf16": ctypes.c_int16,
     "f16": ctypes.c_int16,
     "f32": ctypes.c_float,
     "f64": ctypes.c_double,
@@ -50,6 +67,30 @@ ctype_map = {
     "ui32": ctypes.c_uint32,
     "ui64": ctypes.c_uint64,
 }
+
+# https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html
+allo2c_type = {
+    "bfloat16": "bfloat16",
+    "float32": "float",
+    "float64": "double",
+    "int1": "bool",
+    "int8": "int8_t",
+    "int16": "int16_t",
+    "int32": "int",
+    "int64": "int64_t",
+    "int128": "ap_int<128>",
+    # bitwidth larger than 64 is not supported by numpy+pybind11
+    "uint1": "bool",
+    "uint8": "uint8_t",
+    "uint16": "uint16_t",
+    "uint32": "unsigned int",
+    "uint64": "uint64_t",
+    "uint128": "ap_uint<128>",
+}
+
+c2allo_type = {v: k for k, v in allo2c_type.items()}
+c2allo_type["int32_t"] = "int32"
+c2allo_type["uint32_t"] = "uint32"
 
 
 def np_type_to_str(dtype):
@@ -119,13 +160,45 @@ def get_signed_type_by_hint(dtype, hint):
     return dtype
 
 
+def mlir_to_allo_type(mlir_type):
+    """Convert MLIR type to Allo type"""
+    # Handle Integer types
+    if isinstance(mlir_type, IntegerType):
+        width = mlir_type.width
+        if mlir_type.is_unsigned:
+            return UInt(width)
+        return Int(width)
+
+    # Handle Index type
+    if isinstance(mlir_type, IndexType):
+        return Index()
+
+    # Handle Float types
+    if isinstance(mlir_type, BF16Type):
+        return bfloat16
+    if isinstance(mlir_type, F16Type):
+        return float16
+    if isinstance(mlir_type, F32Type):
+        return float32
+    if isinstance(mlir_type, F64Type):
+        return float64
+
+    # Handle Fixed/UFixed types
+    if isinstance(mlir_type, allo_d.FixedType):
+        return Fixed(mlir_type.width, mlir_type.frac)
+    if isinstance(mlir_type, allo_d.UFixedType):
+        return UFixed(mlir_type.width, mlir_type.frac)
+
+    raise TypeError(f"Unsupported MLIR type conversion: {mlir_type}")
+
+
 def get_mlir_dtype_from_str(dtype):
     if dtype.startswith("i"):
         bitwidth = get_bitwidth_from_type("i" + dtype[3:])
         return IntegerType.get_signless(bitwidth)
     if dtype.startswith("ui"):
-        bitwidth = get_bitwidth_from_type("ui" + dtype[3:])
-        return IntegerType.get_unsigned(bitwidth)
+        bitwidth = get_bitwidth_from_type("ui" + dtype[4:])
+        return IntegerType.get_signless(bitwidth)
     if dtype.startswith("fixed"):
         bitwidth, frac = get_bitwidth_and_frac_from_fixed(dtype)
         return allo_d.FixedType.get(bitwidth, frac)
@@ -139,6 +212,8 @@ def get_mlir_dtype_from_str(dtype):
         if bitwidth == 64:
             return F64Type.get()
         raise RuntimeError("Unsupported type")
+    if dtype.startswith("bf"):
+        return BF16Type.get()
     raise RuntimeError("Unsupported type")
 
 
@@ -163,6 +238,8 @@ def get_dtype_and_shape_from_type(dtype):
         return str(F32Type(dtype)), tuple()
     if F64Type.isinstance(dtype):
         return str(F64Type(dtype)), tuple()
+    if BF16Type.isinstance(dtype):
+        return str(BF16Type(dtype)), tuple()
     if allo_d.FixedType.isinstance(dtype):
         dtype = allo_d.FixedType(dtype)
         width, frac = dtype.width, dtype.frac
@@ -182,6 +259,8 @@ def get_func_inputs_outputs(func):
         else "_" * len(func.type.inputs)
     )
     for in_type, in_hint in zip(func.type.inputs, in_hints):
+        if "!allo.stream" in str(in_type):
+            continue
         dtype, shape = get_dtype_and_shape_from_type(in_type)
         in_type = get_signed_type_by_hint(dtype, in_hint)
         inputs.append((in_type, shape))
@@ -393,3 +472,35 @@ def extract_out_np_arrays_from_out_struct(out_struct_ptr_ptr, num_output):
             ranked_memref_to_numpy(getattr(out_struct_ptr_ptr[0][0], f"memref{i}"))
         )
     return out_np_arrays
+
+
+def get_element_type_from_str(element_type_str, context):
+    if element_type_str.startswith("bf"):
+        return BF16Type.get(context)
+    if element_type_str.startswith("f"):
+        bits = int(element_type_str[1:])
+        return F32Type.get(context) if bits == 32 else F64Type.get(context)
+    if element_type_str.startswith("i"):
+        bits = int(element_type_str[1:])
+        return IntegerType.get_signless(bits, context)
+    raise ValueError(f"unknown element_type_str: {element_type_str}")
+
+
+def freeze_list(x):
+    if isinstance(x, list):
+        return tuple(freeze_list(i) for i in x)
+    return x
+
+
+def construct_kernel_name(prefix: str, ids: tuple[int]):
+    return f"{prefix}_{"_".join(map(str, ids))}"
+
+
+def parse_kernel_name(name: str):
+    match = re.match(r"(.+?)(_\d+(?:_\d+)*)$", name)
+    if not match:
+        raise ValueError(f"Invalid format: {name}")
+
+    prefix = match.group(1).rstrip("_")
+    ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
+    return prefix, ids

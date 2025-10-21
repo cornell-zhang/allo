@@ -564,5 +564,98 @@ def test_partition_constant_array():
     print(s.module)
 
 
+def test_partition_single_function_call():
+    """Test partitioning a single function call result"""
+    N = 8
+
+    def plus_one(data: float32[N]) -> float32[N]:
+        """Adds 1 to each element of the input tensor and returns a new tensor"""
+        result: float32[N] = 0.0
+        for i in range(N):
+            result[i] = data[i] + 1.0
+        return result
+
+    def kernel(input: float32[N]) -> float32[N, N]:
+        result: float32[N, N] = 0.0
+        for i in range(N):
+            partial_result = plus_one(input)
+            for j in range(N):
+                result[i, j] = partial_result[j]
+        return result
+
+    s = allo.customize(kernel)
+    s.partition("kernel:partial_result")
+
+
+def test_partition_chained_function_calls():
+    """Test partitioning with chained function calls where output of one function feeds into another"""
+    N = 8
+
+    def plus_one(data: float32[N]) -> float32[N]:
+        """Adds 1 to each element of the input tensor and returns a new tensor"""
+        result: float32[N] = 0.0
+        for i in range(N):
+            result[i] = data[i] + 1.0
+        return result
+
+    def plus_two(data: float32[N]) -> float32[N]:
+        """Adds 2 to each element of the input tensor and returns a new tensor"""
+        result: float32[N] = 0.0
+        for i in range(N):
+            result[i] = data[i] + 2.0
+        return result
+
+    def kernel(input: float32[N]) -> float32[N, N]:
+        result: float32[N, N] = 0.0
+        for i in range(N):
+            partial_result_1 = plus_one(input)
+            partial_result_2 = plus_two(partial_result_1)
+            for j in range(N):
+                result[i, j] = partial_result_2[j]
+        return result
+
+    s = allo.customize(kernel)
+    s.partition("kernel:partial_result_1")
+
+
+def test_partition_nested_function_calls():
+    """Test partitioning with nested function calls where one function calls another internally"""
+    N = 8
+
+    def plus_one(data: float32[N]) -> float32[N]:
+        """Adds 1 to each element of the input tensor and returns a new tensor"""
+        result: float32[N] = 0.0
+        for i in range(N):
+            result[i] = data[i] + 1.0
+        return result
+
+    def plus_two_sub(data: float32[N]) -> float32[N]:
+        """Adds 2 to each element of the input tensor and returns a new tensor"""
+        result: float32[N] = 0.0
+        for i in range(N):
+            result[i] = data[i] + 2.0
+        return result
+
+    def plus_two(data: float32[N]) -> float32[N]:
+        """Adds 2 to each element of the input tensor and returns a new tensor"""
+        a: float32[N] = 0.0
+        for i in range(N):
+            a[i] = data[i] + 2.0
+        result = plus_two_sub(data)
+        return result
+
+    def kernel(input: float32[N]) -> float32[N, N]:
+        result: float32[N, N] = 0.0
+        for i in range(N):
+            partial_result_1 = plus_one(input)
+            partial_result_2 = plus_two(partial_result_1)
+            for j in range(N):
+                result[i, j] = partial_result_2[j]
+        return result
+
+    s = allo.customize(kernel)
+    s.partition("kernel:partial_result_1")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

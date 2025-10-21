@@ -18,7 +18,7 @@ from allo.ir.types import int16, int32, float32, Int, UInt, Float, Fixed
 # Currently, Allo supports three base data types for mathematical operations:
 #
 # - Integers: ``Int(bitwdith)``, ``UInt(bitwidth)``
-# - Floating points: ``Float(bitwidth)`` (only support 16, 32, and 64 bits)
+# - Floating points: ``Float(bitwidth, fracs)`` (we can use float32, float64, etc. as shorthands)
 # - Fixed points: ``Fixed(bitwidth, frac)``, ``UFixed(bitwidth, frac)``
 #
 # For example, one can declare a 15-bit integer as ``Int(15)`` and an unsigned 8-bit fixed-point number with 3 fractional bits as ``UFixed(8, 3)``.

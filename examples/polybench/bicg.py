@@ -18,30 +18,30 @@ def bicg_np(A, s, q, p, r):
         for j in range(M):
             s[j] += r[i] * A[i][j]
             q[i] += A[i][j] * p[j]
+    return s, q
+
+
+def stageS[T: (float32, int32), M: int32, N: int32](A: "T[N, M]", r: "T[N]", s: "T[M]"):
+    for i0 in range(N):  # pipeline
+        r: T = r[i0]
+        for j0 in range(M):  # unroll
+            s[j0] += r * A[i0, j0]
+
+
+def stageQ[T: (float32, int32), M: int32, N: int32](A: "T[N, M]", p: "T[M]", q: "T[N]"):
+    for i1 in range(N):
+        for j1 in range(M):
+            q[i1] += A[i1, j1] * p[j1]
+
+
+def kernel_bicg[
+    T: (float32, int32), M: int32, N: int32
+](A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"):
+    stageS(A, r, s)
+    stageQ(A_copy, p, q)
 
 
 def top_bicg(concrete_type, M, N):
-    def stageS[
-        T: (float32, int32), M: int32, N: int32
-    ](A: "T[N, M]", r: "T[N]", s: "T[M]"):
-        for i0 in range(N):  # pipeline
-            r: T = r[i0]
-            for j0 in range(M):  # unroll
-                s[j0] += r * A[i0, j0]
-
-    def stageQ[
-        T: (float32, int32), M: int32, N: int32
-    ](A: "T[N, M]", p: "T[M]", q: "T[N]"):
-        for i1 in range(N):
-            for j1 in range(M):
-                q[i1] += A[i1, j1] * p[j1]
-
-    def kernel_bicg[
-        T: (float32, int32), M: int32, N: int32
-    ](A: "T[N, M]", A_copy: "T[N, M]", p: "T[M]", r: "T[N]", q: "T[N]", s: "T[M]"):
-        stageS(A, r, s)
-        stageQ(A_copy, p, q)
-
     sch0 = allo.customize(stageS, instantiate=[concrete_type, M, N])
     sch0.pipeline("i0")
     sch0.partition(sch0.A, dim=2)
@@ -80,7 +80,7 @@ def test_bicg():
     q_ref = np.zeros(N).astype(np.float32)
     p = np.random.rand(M).astype(np.float32)
     r = np.random.rand(N).astype(np.float32)
-    bicg_np(A, s_ref, q_ref, p, r)
+    s_ref, q_ref = bicg_np(A, s_ref, q_ref, p, r)
     mod(A, A, p, r, q, s)
     np.testing.assert_allclose(s, s_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(q, q_ref, rtol=1e-5, atol=1e-5)

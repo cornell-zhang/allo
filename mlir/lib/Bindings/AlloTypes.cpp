@@ -106,5 +106,9 @@ void mlir::python::populateAlloIRTypes(py::module &m) {
       .def_property_readonly(
           "base_type",
           [](MlirType type) { return alloMlirStreamTypeGetBaseType(type); },
-          "Returns the base type of the stream object");
+          "Returns the base type of the stream object")
+      .def_property_readonly(
+          "depth",
+          [](MlirType type) { return alloMlirStreamTypeGetDepth(type); },
+          "Returns the depth of the stream");
 }

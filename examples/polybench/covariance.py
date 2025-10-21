@@ -27,26 +27,28 @@ def covariance_np(data, mean, cov, M, N):
                 cov[i, j] += data[k, i] * data[k, j]
             cov[i, j] /= float(N - 1)
             cov[j, i] = cov[i, j]
+    return data, mean, cov
+
+
+def kernel_covariance[
+    T: (float32, int32), M: int32, N: int32
+](data: "T[N, M]", mean: "T[M]", cov: "T[M, M]"):
+    # Compute mean
+    for x in allo.grid(M):
+        total: float32 = 0.0
+        for k in allo.grid(N):
+            total += data[k, x]
+        mean[x] = total / N
+
+    # Compute covariance
+    for i, j in allo.grid(M, M):
+        covariance: float32 = 0.0
+        for p in allo.grid(N):
+            covariance += (data[p, i] - mean[i]) * (data[p, j] - mean[j])
+        cov[i, j] = covariance / (N - 1)
 
 
 def covariance(type, m, n):
-    def kernel_covariance[
-        T: (float32, int32), M: int32, N: int32
-    ](data: "T[N, M]", mean: "T[M]", cov: "T[M, M]"):
-        # Compute mean
-        for x in allo.grid(M):
-            total: float32 = 0.0
-            for k in allo.grid(N):
-                total += data[k, x]
-            mean[x] = total / N
-
-        # Compute covariance
-        for i, j in allo.grid(M, M):
-            covariance: float32 = 0.0
-            for p in allo.grid(N):
-                covariance += (data[p, i] - mean[i]) * (data[p, j] - mean[j])
-            cov[i, j] = covariance / (N - 1)
-
     s = allo.customize(kernel_covariance, instantiate=[type, m, n])
     mod = s.build()
     return mod
@@ -67,7 +69,7 @@ def test_covariance():
     cov = np.zeros((M, M), dtype=np.float32)
     mean_ref = np.zeros((M,), dtype=np.float32)
     cov_ref = np.zeros((M, M), dtype=np.float32)
-    covariance_np(data.copy(), mean_ref, cov_ref, M, N)
+    data_ref, mean_ref, cov_ref = covariance_np(data.copy(), mean_ref, cov_ref, M, N)
     mod(data, mean, cov)
     np.testing.assert_allclose(mean, mean_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(cov, cov_ref, rtol=1e-5, atol=1e-5)

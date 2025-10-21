@@ -74,7 +74,73 @@ void deadAffineLoadElimination(func::FuncOp &func) {
   }
 }
 
-void lowerStructType(func::FuncOp &func) {
+void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
+  bool structAsArg = false;
+  std::map<mlir::detail::ValueImpl *, SmallVector<Value, 8>>
+      structMemRef2fieldMemRefs;
+  // First, process structs variables from function arguments
+  Region::BlockArgListType funcArgs = func.getArguments();
+  uint origFuncArgNum = funcArgs.size();
+  FunctionType functionType = func.getFunctionType();
+  SmallVector<Type, 20> decomposedArgTypes =
+      llvm::to_vector<20>(func.getArgumentTypes()); // The argument type list
+                                                    // after decomposing structs
+  uint argInsertPos = funcArgs.size();
+  std::map<uint, uint> structArgNo2memberArgStartNo;
+  std::map<uint, uint> structArgNo2memberArgNum;
+  for (int i = 0; i < origFuncArgNum; i++) {
+    Region::BlockArgListType funcArgs = func.getArguments();
+    Region &functionBody = func.getFunctionBody(); // Insert argument use this
+    BlockArgument arg = funcArgs[i];
+    // Look for arguments with struct type
+    Type argType = arg.getType();
+    if (const MemRefType memrefArgType = argType.dyn_cast<MemRefType>()) {
+      Type elementType = memrefArgType.getElementType();
+      if (const StructType structArgType = elementType.dyn_cast<StructType>()) {
+        // Confirmed that `arg` is a `memref<Struct>` argument
+        // Append members to function arguments at back
+        uint structArgNo = arg.getArgNumber();
+        uint memberArgStartPos = argInsertPos;
+        structArgNo2memberArgStartNo.insert(
+            std::make_pair(structArgNo, memberArgStartPos));
+        ArrayRef<Type> memberTypes = structArgType.getElementTypes();
+        for (const Type memberType : memberTypes) { // Memref member
+          if (const MemRefType memrefMemberType =
+                  memberType.dyn_cast<MemRefType>()) {
+            functionBody.addArgument(memberType, func.getLoc());
+            decomposedArgTypes.push_back(memrefMemberType);
+          } else { // Create memref pointer for other member type
+            MemRefType memberPtr =
+                MemRefType::get(ArrayRef<int64_t>(), memberType);
+            functionBody.addArgument(memberPtr, func.getLoc());
+            decomposedArgTypes.push_back(memberPtr);
+          }
+          argInsertPos++;
+        }
+        // All members are appended
+        structArgNo2memberArgNum.insert(
+            std::make_pair(structArgNo, argInsertPos - memberArgStartPos));
+        // The original struct argument is not removed yet here
+      }
+    }
+  }
+  // Further actions when struct arguments exist
+  if (decomposedArgTypes.size() > origFuncArgNum) {
+    structAsArg = true;
+    // Collect the map between original struct arguments and newly added member
+    // arguments
+    for (auto pair : structArgNo2memberArgStartNo) {
+      SmallVector<Value, 8> memberArgs;
+      const BlockArgument &structArg = func.getArgument(pair.first);
+      uint memberArgsNum = structArgNo2memberArgNum[pair.first];
+      for (uint i = 0; i < memberArgsNum; i++) {
+        const BlockArgument &memberArg = func.getArgument(i + pair.second);
+        memberArgs.push_back(memberArg);
+      }
+      structMemRef2fieldMemRefs.insert(
+          std::make_pair(structArg.cast<Value>().getImpl(), memberArgs));
+    }
+  }
 
   SmallVector<Operation *, 10> structGetOps;
   func.walk([&](Operation *op) {
@@ -82,9 +148,6 @@ void lowerStructType(func::FuncOp &func) {
       structGetOps.push_back(structGetOp);
     }
   });
-
-  std::map<mlir::detail::ValueImpl *, SmallVector<Value, 8>>
-      structMemRef2fieldMemRefs;
 
   for (auto op : structGetOps) {
     // Collect info from structGetOp
@@ -163,12 +226,21 @@ void lowerStructType(func::FuncOp &func) {
       }
 
       // Step3: replace structGetOp with load from field memrefs
-      OpBuilder load_builder(op);
-      Value loaded_field = load_builder.create<affine::AffineLoadOp>(
-          loc, field_memrefs[index], affine_load.getAffineMap(),
-          affine_load.getIndices());
-      struct_field.replaceAllUsesWith(loaded_field);
+      // Only for non-arguments
+      if (field_memrefs[index].getDefiningOp() != nullptr) {
+        OpBuilder load_builder(op);
+        Value loaded_field = load_builder.create<affine::AffineLoadOp>(
+            loc, field_memrefs[index], affine_load.getAffineMap(),
+            affine_load.getIndices());
+        struct_field.replaceAllUsesWith(loaded_field);
+      } else { // For arguments, just replace with themselves
+        struct_field.replaceAllUsesWith(field_memrefs[index]);
+      }
       op->erase(); // erase structGetOp
+      auto allStructGets = affine_load->getUsers();
+      // Remove the load after no struct_get using it is left
+      if (allStructGets.empty())
+        affine_load->erase();
     } else if (auto structConstructOp = dyn_cast<StructConstructOp>(defOp)) {
       // Case 2: defOp is a struct construction op
       Value replacement = defOp->getOperand(index);
@@ -176,6 +248,81 @@ void lowerStructType(func::FuncOp &func) {
       op->erase(); // erase structGetOp
     } else {
       llvm_unreachable("unexpected defOp for structGetOp");
+    }
+  }
+
+  // Final process of function with struct arguments
+  if (structAsArg) {
+    // Finally remove the struct arguments
+    uint erasedStructArgNum = 0;
+    for (auto pair : structArgNo2memberArgNum) {
+      Region &functionBody = func.getFunctionBody(); // Insert argument use this
+      uint structArgIndex = pair.first - erasedStructArgNum;
+      functionBody.eraseArgument(structArgIndex);
+      decomposedArgTypes.erase(&decomposedArgTypes[structArgIndex]);
+      erasedStructArgNum++; // Shift left the indices after removing one
+                            // argument
+    }
+    // Set the updated function signature
+    FunctionType newFuncType = FunctionType::get(
+        func.getContext(), decomposedArgTypes, func.getResultTypes());
+    func.setType(newFuncType);
+
+    // Update callers of this function
+    // Reference:
+    // https://github.com/llvm/llvm-project/blob/main/mlir/lib/Dialect/MemRef/Transforms/NormalizeMemRefs.cpp
+    llvm::SmallDenseSet<func::FuncOp, 8> funcOpsToUpdate;
+    std::optional<SymbolTable::UseRange> symbolUses = func.getSymbolUses(mod);
+    for (SymbolTable::SymbolUse symbolUse : *symbolUses) {
+      Operation *userOp = symbolUse.getUser();
+      OpBuilder builder(userOp);
+      auto callOp = dyn_cast<func::CallOp>(userOp);
+      if (!callOp)
+        continue;
+
+      Operation::operand_range orig_params = callOp.getArgOperands();
+      // Find parameters of memref<struct> type
+      for (int i = 0; i < origFuncArgNum; i++) {
+        MutableOperandRange parameters = callOp.getArgOperandsMutable();
+        auto &arg = parameters[i];
+        auto value = arg.get();
+        if (!llvm::ValueIsPresent<Value>::isPresent(value)) {
+          continue;
+        }
+        Type type = value.getType();
+        if (MemRefType memrefType = dyn_cast<MemRefType>(type)) {
+          if (StructType structType =
+                  dyn_cast<StructType>(memrefType.getElementType())) {
+            // Struct param found
+            // Find the last store to the memref<struct> before the call
+            // to locate the StructConstruct op
+            Value::user_range memrefUses = value.getUsers();
+            affine::AffineStoreOp *storeOp = nullptr;
+            for (Operation *memrefUse : memrefUses) {
+              if (auto storeOpTest = dyn_cast<affine::AffineStoreOp>(memrefUse))
+                storeOp = &storeOpTest;
+            }
+            assert(storeOp != nullptr);
+            const Value &structStored = storeOp->getValueToStore();
+            // Find the struct members from the construct op
+            StructConstructOp structConOp =
+                dyn_cast<StructConstructOp>(structStored.getDefiningOp());
+            assert(structConOp != nullptr);
+            Operation::operand_range origMembers = structConOp->getOperands();
+            // Pass the original members of the struct
+            for (const Value &member : origMembers) {
+              parameters.append(member);
+            }
+          }
+        }
+      }
+      uint removedParamNum = 0;
+      for (auto pair : structArgNo2memberArgNum) {
+        MutableOperandRange parameters = callOp.getArgOperandsMutable();
+        uint removeIndex = pair.first - removedParamNum;
+        parameters.erase(removeIndex);
+        removedParamNum++;
+      }
     }
   }
 
@@ -287,7 +434,7 @@ bool applyLowerCompositeType(ModuleOp &mod) {
   applyMemRefDCE(mod);
 
   for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
-    lowerStructType(func);
+    lowerStructType(func, mod);
   }
   // Run final DCE pass
   applyMemRefDCE(mod);

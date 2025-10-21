@@ -1,9 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module, inconsistent-return-statements, too-many-function-args
+# pylint: disable=no-name-in-module, inconsistent-return-statements
 
 import os
 import ctypes
+import ml_dtypes
 import numpy as np
 from .._mlir.ir import (
     Context,
@@ -102,17 +103,15 @@ class LLVMModule:
             pm = PassManager.parse("builtin.module(reconcile-unrealized-casts)")
             pm.run(self.module.operation)
             # Add shared library
-            if os.getenv("LLVM_BUILD_DIR") is not None:
-                shared_libs = [
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
-                    ),
-                    os.path.join(
-                        os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
-                    ),
-                ]
-            else:
-                shared_libs = []
+            assert os.getenv("LLVM_BUILD_DIR") is not None, "LLVM_BUILD_DIR is not set"
+            shared_libs = [
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_runner_utils.so"
+                ),
+                os.path.join(
+                    os.getenv("LLVM_BUILD_DIR"), "lib", "libmlir_c_runner_utils.so"
+                ),
+            ]
             shared_libs += [lib.compile_shared_lib() for lib in ext_libs]
             # opt_level should be set to 2 to avoid the following issue
             # https://github.com/cornell-zhang/allo/issues/72
@@ -158,6 +157,9 @@ class LLVMModule:
                     if target_in_type == "f16":
                         c_float_p = ctypes.c_int16 * 1
                         arg = np.float16(arg).view(np.int16)
+                    elif target_in_type == "bf16":
+                        c_float_p = ctypes.c_int16 * 1
+                        arg = ml_dtypes.bfloat16(arg).view(np.int16)
                     elif target_in_type == "f32":
                         c_float_p = ctypes.c_float * 1
                     else:  # f64
@@ -322,6 +324,8 @@ class LLVMModule:
                     )
                 elif result_type == "f16":
                     ret = np.array(ret, dtype=np.int16).view(np.float16)
+                elif result_type == "bf16":
+                    ret = np.array(ret, dtype=np.int16).view(ml_dtypes.bfloat16)
                 elif result_type.startswith("fixed") or result_type.startswith(
                     "ufixed"
                 ):
@@ -340,6 +344,8 @@ class LLVMModule:
                 ret = return_ptr[0]
                 if result_type == "f16":
                     ret = np.int16(ret).view(np.float16)
+                elif result_type == "bf16":
+                    ret = np.int16(ret).view(ml_dtypes.bfloat16)
         else:  # multiple returns, assume all memref
             # INVOKE
             self.execution_engine.invoke(self.top_func_name, return_ptr, *arg_ptrs)
@@ -358,6 +364,8 @@ class LLVMModule:
                     )
                 elif res_type == "f16":
                     ret_i = np.array(np_arr, dtype=np.int16).view(np.float16)
+                elif res_type == "bf16":
+                    ret_i = np.array(np_arr, dtype=np.int16).view(ml_dtypes.bfloat16)
                 elif res_type.startswith("fixed") or res_type.startswith("ufixed"):
                     bitwidth, frac = get_bitwidth_and_frac_from_fixed(res_type)
                     ret_i = struct_array_to_int_array(

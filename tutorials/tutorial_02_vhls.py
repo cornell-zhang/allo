@@ -136,34 +136,49 @@ print(code)
 
 # %%
 # We also provide an easy way to invoke Vitis HLS from Allo. Users can simply provide
-# the synthesis mode that are supported by Vitis HLS (e.g., ``csim``, ``csyn``, ``sw_emu``,
-# ``hw_emu``, and ``hw``), and the target project folder name. Allo will automatically generate
+# the synthesis mode that are supported by Vitis HLS (e.g., ``sw_emu``, ``hw_emu``, and ``hw``),
+# and the target project folder name. Allo will automatically generate
 # the HLS project and invoke the compiler to generate the RTL design.
-
-mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
-
-# %%
-# You will see a ``gemm.prj`` folder is generated in the current directory:
-#
-# - ``host.cpp``: The host (CPU) code that invokes the generated accelerator.
-# - ``kernel.cpp``: The generated accelerator code.
-# - ``Makefile``: Defined some shorthands for compiling the project.
-#
-# To run Vitis HLS, you can simply invoke the built module without passing any arguments into it.
 #
 # .. note::
 #
-#    You need to configure the Vitis HLS environment before running the generated code.
-#    We have the Vitis environment configured on the Zhang group server, so you can directly
-#    ``source /work/shared/common/allo/vitis_2022.1_opt.sh`` to set up the environment, which
+#    - ``sw_emu``: Software emulation mode, which is similar to C simulation that compiles the program using C compiler and runs it on the CPU. Depending on the size of your input data, this mode may take within one minute.
+#    - ``hw_emu``: Hardware emulation mode, which is similar to co-simulation that compiles the program into RTL design using HLS compiler and runs the RTL with the test bench on the FPGA emulator. Since it needs to go through the HLS synthesis flow, it may take several minutes to finish.
+#    - ``hw``: Hardware mode, which compiles the program into RTL design using HLS, goes through placement and routing, generates the bitstream, and finally executes on FPGA. This mode may take several hours to finish.
+
+mod = s.build(target="vitis_hls", mode="hw_emu", project="gemm.prj")
+
+
+# %%
+# After running the above instruction, we can see a ``gemm.prj`` folder is generated in the current directory:
+#
+# - ``host.cpp``: The host (CPU) OpenCL code that invokes the generated accelerator.
+# - ``kernel.cpp``: The generated accelerator code.
+# - ``Makefile``: Defined some shorthands for compiling the project.
+#
+# To generate the hardware design and see the performance estimation, we need to first
+# prepare the input data. Allo supports NumPy inputs even for hardware programs,
+# so we can just create two NumPy arrays ``np_A`` and ``np_B`` for inputs.
+# Since the C++ design cannot support returning a new array, we also need to
+# explicitly create an output array ``allo_C`` and pass it to the function.
+#
+# .. note::
+#
+#    You need to configure the `Vitis HLS <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis/vitis-hls.html>`_ and `XRT <https://github.com/Xilinx/XRT>`_ environment before proceeding to the next step.
+#    For Zhang group students, we have the Vitis environment configured on the server, so you can directly
+#    ``source /work/shared/common/allo/vitis_2023.2_u280.sh`` to set up the environment, which
 #    targets the AMD U280 FPGA board.
 #
 # .. code-block:: python
 #
-#    mod()
+#    np_A = np.random.random((M, K)).astype(np.float32)
+#    np_B = np.random.random((K, N)).astype(np.float32)
+#    allo_C = np.zeros((M, N), dtype=np.float32)
+#    mod(np_A, np_B, allo_C)
+#    np.testing.assert_allclose(allo_C, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
 
 # %%
-# After executing the above command, you can check the following report under ``gemm.prj/out.prj/solution1/syn/report/csynth.rpt``.
+# After executing the above command, you can check the following report under ``gemm.prj/_x.hw_emu.xilinx_u250_gen3x16_xdma_4_1_202210_1/gemm/gemm/gemm/solution/syn/report/csynth.rpt``.
 #
 # .. code-block:: python
 #
@@ -197,19 +212,14 @@ mod = s.build(target="vitis_hls", mode="csyn", project="gemm.prj")
 # the bitstream for FPGA. In Allo, we can directly change the target to ``hw``
 # to launch the backend synthesis job. It may take several hours to generate the final
 # bitstream, so it would be better to run it using `tmux <https://github.com/tmux/tmux/wiki>`_.
-# Also, since the C design cannot support returning a new array, we need to
-# explicitly create an output array and pass it to the function.
 #
 # .. code-block:: python
 #
 #    mod = s.build(target="vitis_hls", mode="hw", project="gemm.prj")
-#    np_A = np.random.random((M, K)).astype(np.float32)
-#    np_B = np.random.random((K, N)).astype(np.float32)
-#    allo_C = np.zeros((M, N), dtype=np.float32)
 #    mod(np_A, np_B, allo_C)
 #    np.testing.assert_allclose(allo_C, np.matmul(np_A, np_B), rtol=1e-5, atol=1e-5)
 #
-# Finally, you should be able to see the generated bitstream under the ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1`` folder
+# Finally, you should be able to see the generated bitstream ``.xclbin`` under the ``gemm.prj/build_dir.hw.xilinx_u280_gen3x16_xdma_1_202211_1`` folder
 # (actual board name may be different), and the above test should pass.
 
 # %%

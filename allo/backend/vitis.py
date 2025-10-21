@@ -53,6 +53,7 @@ dtype_size_map = {
 }
 
 ctype_map = {
+    "bf16": "std::bfloat16_t",
     "f32": "float",
     "f64": "double",
     "i8": "int8_t",
@@ -68,6 +69,7 @@ ctype_map = {
 }
 
 
+# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
@@ -113,7 +115,15 @@ def codegen_host(top, module):
         if len(in_shape) == 0:
             # scalar
             out_str += format_str(f"{in_dtype} source_in{i};")
-            out_str += format_str(f"ifile{i} >> source_in{i};")
+            # Handle 8-bit types by reading as int first and casting
+            if in_dtype in {"int8_t", "uint8_t"}:
+                out_str += format_str(f"int temp_in{i};")
+                out_str += format_str(f"ifile{i} >> temp_in{i};")
+                out_str += format_str(
+                    f"source_in{i} = static_cast<{in_dtype}>(temp_in{i});"
+                )
+            else:
+                out_str += format_str(f"ifile{i} >> source_in{i};")
         else:
             out_str += format_str(
                 f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
@@ -121,7 +131,15 @@ def codegen_host(top, module):
             out_str += format_str(
                 f"for (unsigned i = 0; i < {'*'.join(map(str, in_shape))}; i++) {{"
             )
-            out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
+            # Handle 8-bit types by reading as int first and casting
+            if in_dtype in {"int8_t", "uint8_t"}:
+                out_str += format_str("  int c;", strip=False)
+                out_str += format_str(f"  ifile{i} >> c;", strip=False)
+                out_str += format_str(
+                    f"  in_data_{i}[i] = static_cast<{in_dtype}>(c);", strip=False
+                )
+            else:
+                out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
             out_str += format_str("}")
             out_str += format_str(
                 f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};",
@@ -343,36 +361,45 @@ def codegen_host(top, module):
     return out_str
 
 
-def postprocess_hls_code(hls_code, top=None):
+def postprocess_hls_code(hls_code, top=None, pragma=True):
     out_str = ""
     func_decl = False
     has_endif = False
+    extern_decl = False
     func_args = []
     for line in hls_code.split("\n"):
         if line == "using namespace std;" or line.startswith("#ifndef"):
             out_str += line + "\n"
             # Add external function declaration
             out_str += '\nextern "C" {\n\n'
+            extern_decl = True
         elif line.startswith(f"void {top}"):
             func_decl = True
+            if not extern_decl:
+                out_str += '\nextern "C" {\n\n'
+                extern_decl = True
             out_str += line + "\n"
         elif func_decl and line.startswith(") {"):
             func_decl = False
             out_str += line + "\n"
             # Add extra interfaces
-            for i, arg in enumerate(func_args):
-                out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
+            if pragma:
+                for i, arg in enumerate(func_args):
+                    out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{i}\n"
         elif func_decl:
-            dtype, var = line.strip().rsplit(" ", 1)
-            comma = "," if var[-1] == "," else ""
-            if "[" in var:  # array
-                var = var.split("[")[0]
-                out_str += "  " + dtype + " *" + var + f"{comma}\n"
-                # only add array to interface
-                func_args.append(var)
-            else:  # scalar
-                var = var.split(",")[0]
-                out_str += "  " + dtype + " " + var + f"{comma}\n"
+            if pragma:
+                dtype, var = line.strip().rsplit(" ", 1)
+                comma = "," if var[-1] == "," else ""
+                if "[" in var:  # array
+                    var = var.split("[")[0]
+                    out_str += "  " + dtype + " *" + var + f"{comma}\n"
+                    # only add array to interface
+                    func_args.append(var)
+                else:  # scalar
+                    var = var.split(",")[0]
+                    out_str += "  " + dtype + " " + var + f"{comma}\n"
+            else:
+                out_str += line + "\n"
         elif line.startswith("#endif"):
             out_str += '} // extern "C"\n\n'
             out_str += line + "\n"
@@ -399,8 +426,7 @@ def update_makefile(file_name, ext_libs):
         makefile = f.read()
     cpp_files = ["kernel.cpp"]
     for lib in ext_libs:
-        for impl_path in lib.impls:
-            cpp_files.append(impl_path.split("/")[-1])
+        cpp_files.append(lib.impl.split("/")[-1])
     makefile = makefile.replace("kernel.cpp", " ".join(cpp_files))
     with open(file_name, "w", encoding="utf-8") as outfile:
         outfile.write(makefile)
@@ -416,5 +442,9 @@ def write_tensor_to_file(tensor, shape, file_path):
 
 
 def read_tensor_from_file(dtype, shape, file_path):
+    dtype = str(dtype)
+    if dtype == "bf16":
+        # numpy does not support bf16
+        dtype = "f32"
     arr = np.fromfile(file_path, sep="\n", dtype=np_supported_types[dtype])
     return arr.reshape(shape)

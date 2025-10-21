@@ -16,23 +16,27 @@ def trmm_np(A, B, alpha):
             for k in range(i + 1, A.shape[0]):
                 B[i, j] += A[k, i] * B[k, j]
             B[i, j] *= alpha
+    return B
+
+
+def S0[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
+    for i1, j1 in allo.grid(M, N, name="update"):
+        for k1 in allo.reduction(M):
+            if k1 > i1:
+                B[i1, j1] += A[k1, i1] * B[k1, j1]
+
+
+def S1[T: (float32, int32), M, N](B: "T[M, N]"):
+    for i0, j0 in allo.grid(M, N, name="mul"):
+        B[i0, j0] = B[i0, j0] * alpha
+
+
+def kernel_trmm[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
+    S0[T, M, N](A, B)
+    S1[T, M, N](B)
 
 
 def top_trmm(concrete_type, m, n, alpha=1.5):
-    def S0[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
-        for i1, j1 in allo.grid(M, N, name="update"):
-            for k1 in allo.reduction(M):
-                if k1 > i1:
-                    B[i1, j1] += A[k1, i1] * B[k1, j1]
-
-    def S1[T: (float32, int32), M, N](B: "T[M, N]"):
-        for i0, j0 in allo.grid(M, N, name="mul"):
-            B[i0, j0] = B[i0, j0] * alpha
-
-    def kernel_trmm[T: (float32, int32), M, N](A: "T[M, M]", B: "T[M, N]"):
-        S0[T, M, N](A, B)
-        S1[T, M, N](B)
-
     factor = 20
     s0 = allo.customize(S0, instantiate=[concrete_type, m, n])
     s0.partition(s0.B, dim=2, partition_type=2, factor=factor)  # cyclic
@@ -66,7 +70,7 @@ def test_trmm():
     A = np.random.randint(0, 10, size=(M, M)).astype(np.float32)
     B = np.random.randint(0, 10, size=(M, N)).astype(np.float32)
     B_golden = B.copy()
-    trmm_np(A, B_golden, alpha)
+    B_golden = trmm_np(A, B_golden, alpha)
     mod = s.build()
     mod(A, B)
     np.testing.assert_allclose(B, B_golden, atol=1e-4)

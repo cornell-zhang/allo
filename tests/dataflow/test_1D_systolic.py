@@ -51,8 +51,15 @@ def test_systolic():
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B, C)
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
+        C = np.zeros((M, N), dtype=np.float32)
         mod(A, B, C)
         np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
         print("Passed!")

@@ -21,20 +21,22 @@ def lu_np(A):
         for j in range(i, N):
             for k in range(i):
                 A[i, j] -= A[i, k] * A[k, j]
+    return A
+
+
+def kernel_lu[T: (float32, int32), N: int32](A: "T[N, N]"):
+    for i in range(N):
+        for j in range(i):
+            for k in range(j):
+                A[i, j] -= A[i, k] * A[k, j]
+            A[i, j] /= A[j, j]
+
+        for j in range(i, N):
+            for k in range(i):
+                A[i, j] -= A[i, k] * A[k, j]
 
 
 def lu(concrete_type, n):
-    def kernel_lu[T: (float32, int32), N: int32](A: "T[N, N]"):
-        for i in range(N):
-            for j in range(i):
-                for k in range(j):
-                    A[i, j] -= A[i, k] * A[k, j]
-                A[i, j] /= A[j, j]
-
-            for j in range(i, N):
-                for k in range(i):
-                    A[i, j] -= A[i, k] * A[k, j]
-
     s0 = allo.customize(kernel_lu, instantiate=[concrete_type, n])
     return s0.build()
 
@@ -53,7 +55,7 @@ def test_lu():
 
     # run reference
     A_ref = A.copy()
-    lu_np(A_ref)
+    A_ref = lu_np(A_ref)
 
     # run allo
     A_opt = A.copy()

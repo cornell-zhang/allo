@@ -138,6 +138,7 @@ public:
   void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);
   void emitSubView(memref::SubViewOp op);
+  void emitReshape(memref::ReshapeOp op);
 
   /// Tensor-related statement emitters.
   void emitTensorExtract(tensor::ExtractOp op);
@@ -327,6 +328,7 @@ public:
   bool visitOp(memref::GlobalOp op) { return emitter.emitGlobal(op), true; }
   bool visitOp(memref::DeallocOp op) { return true; }
   bool visitOp(memref::SubViewOp op) { return emitter.emitSubView(op), true; }
+  bool visitOp(memref::ReshapeOp op) { return emitter.emitReshape(op), true; }
 
   /// Tensor-related statements.
   bool visitOp(tensor::ExtractOp op) {
@@ -1563,9 +1565,12 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
   fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << ";\n";
+  indent();
   // generate ap_int types
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
@@ -1573,7 +1578,7 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
   indent();
   emitValue(result);
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp[";
   emitValue(op.getIndex());
   os << "];";
@@ -1582,15 +1587,18 @@ void ModuleEmitter::emitGetBit(allo::GetIntBitOp op) {
 
 void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
+  emitValue(op.getResult());
+  os << ";\n";
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
   // generate bit indexing
   indent();
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp[";
   emitValue(op.getIndex());
   os << "] = ";
@@ -1600,7 +1608,7 @@ void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp;";
   emitInfoAndNewLine(op);
 }
@@ -1608,10 +1616,13 @@ void ModuleEmitter::emitSetBit(allo::SetIntBitOp op) {
 void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   Value result = op.getResult();
+  emitValue(result);
+  os << ";\n";
   fixUnsignedType(result, op->hasAttr("unsigned"));
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
@@ -1619,7 +1630,7 @@ void ModuleEmitter::emitGetSlice(allo::GetIntSliceOp op) {
   indent();
   emitValue(result);
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(result);
   os << "_tmp(";
   emitValue(op.getHi());
   os << ", ";
@@ -1633,15 +1644,18 @@ void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   // T v;
   // v(a, b) = x;
   // c = v; // <- Need to redirect to the updated variable.
+  emitValue(op.getResult());
+  os << ";\n";
   // generate ap_int types
+  indent();
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp = ";
   emitValue(op.getNum());
   os << ";\n";
   // generate bit slicing
   indent();
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp(";
   emitValue(op.getHi());
   os << ", ";
@@ -1653,7 +1667,7 @@ void ModuleEmitter::emitSetSlice(allo::SetIntSliceOp op) {
   indent();
   emitValue(op.getResult());
   os << " = ";
-  emitValue(op.getNum());
+  os << getName(op.getResult());
   os << "_tmp;";
   emitInfoAndNewLine(op);
 }
@@ -1666,6 +1680,30 @@ void ModuleEmitter::emitBitReverse(allo::BitReverseOp op) {
   os << " = ";
   emitValue(op.getNum());
   os << ".reverse();";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitReshape(memref::ReshapeOp op) {
+  auto array = op->getResult(0);
+  assert(!isDeclared(array) && "has been declared before.");
+
+  auto arrayType = array.getType().template cast<ShapedType>();
+  indent() << getTypeName(array) << " (*";
+
+  // Add the new value to nameTable and emit its name.
+  os << addName(array, false);
+  os << ")";
+
+  for (auto &shape : llvm::drop_begin(arrayType.getShape(), 1))
+    os << "[" << shape << "]";
+
+  os << " = (" << getTypeName(array) << "(*)";
+  for (auto &shape : llvm::drop_begin(arrayType.getShape(), 1))
+    os << "[" << shape << "]";
+  os << ") ";
+
+  emitValue(op->getOperand(0));
+  os << ";";
   emitInfoAndNewLine(op);
 }
 
@@ -1796,6 +1834,8 @@ void ModuleEmitter::emitGeneralCast(UnrealizedConversionCastOp op) {
 
 void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle returned value by the callee.
+  // For HLS C++, any function with return values needs those values
+  // declared as variables and passed as pointer arguments.
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
@@ -1821,6 +1861,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   }
 
   // Handle output arguments.
+  // For HLS C++, return values are passed as pointer arguments.
   for (auto result : op.getResults()) {
     // The address should be passed in for scalar result arguments.
     if (result.getType().isa<ShapedType>())
