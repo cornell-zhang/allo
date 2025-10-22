@@ -9,13 +9,14 @@ import allo.backend.hls as hls
 import allo.dsl as dsl
 import numpy as np
 
-M, N, K = 128, 128, 128
-Rt, Ct = 8, 8
-
-# M, N, K = 16, 16, 16
+# M, N, K = 64, 64, 64
+# M, N, K = 128, 128, 128
+# M, N, K = 256, 256, 256
+# M, N, K = 512, 512, 512
+M, N, K = 1024, 1024, 1024
+Rt, Ct = 16, 16
+# Rt, Ct = 8, 8
 # Rt, Ct = 4, 4
-
-# M, N, K = 4, 4, 4
 # Rt, Ct = 2, 2
 P0, P1 = Rt + 2, Ct + 2
 
@@ -110,18 +111,16 @@ def top():
                         fifo_B[i, j - 1].put(b)
 
                 with allo.meta_if(i == 1):
-                    packed_tmp: UInt(M * 8) = 0
+                    packed_tmp: UInt(Rt * 8) = 0
                 with allo.meta_else():
-                    packed_tmp: UInt(M * 8) = L1_C[i - 2, j - 1].get()
+                    packed_tmp: UInt(Rt * 8) = L1_C[i - 2, j - 1].get()
 
-                packed_c: UInt(M * 8) = 0
+                packed_c: UInt(Rt * 8) = 0
                 for m in range(Rt):
                     if m == i - 1:
                         packed_c[m * 8 : (m + 1) * 8] = c
                     else:
-                        packed_c[m * 16 : (m + 1) * 16] = packed_tmp[
-                            m * 16 : (m + 1) * 16
-                        ]
+                        packed_c[m * 8 : (m + 1) * 8] = packed_tmp[m * 8 : (m + 1) * 8]
                 L1_C[i - 1, j - 1].put(packed_c)
 
     @df.kernel(mapping=[1])
@@ -157,13 +156,13 @@ def test_large_scale_gemm():
         return matrix_C
 
     # # TODO: Fix the packing-related issue!
-    # np_type_A = get_np_struct_type(Rt * 8)
-    # np_type_B = get_np_struct_type(Ct * 8)
-    # np_type_C = get_np_struct_type(Rt * 8)
+    np_type_A = get_np_struct_type(Rt * 8)
+    np_type_B = get_np_struct_type(Ct * 8)
+    np_type_C = get_np_struct_type(Rt * 8)
 
-    np_type_A = np.int64
-    np_type_B = np.int64
-    np_type_C = np.int64
+    # np_type_A = np.int64
+    # np_type_B = np.int64
+    # np_type_C = np.int64
 
     A = np.random.randint(-2, 2, (M, K), dtype=np.int8)
     B = np.random.randint(-2, 2, (K, N), dtype=np.int8)
@@ -171,37 +170,48 @@ def test_large_scale_gemm():
 
     A_packed = serialize_A(A).view(np_type_A)
     B_packed = serialize_B(B).view(np_type_B)
-    # print(A_packed)
-    # print(B_packed)
+    C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A_packed, B_packed, C_packed)
+    C = deserialize_C(C_packed.view(np.int8))
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
 
     if hls.is_available("vitis_hls"):
-        print(A)
-        print(B)
-        C_golden = np.dot(A, B)
 
-        C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
-        mod1 = df.build(top, wrap_io=False)
-        mod1(A_packed, B_packed, C_packed)
-        C = deserialize_C(C_packed.view(np.int8))
-        print(C)
-        print(C_golden)
-        np.testing.assert_allclose(C, C_golden, atol=1e-5)
-        print("Passed csim Test!")
-
-        C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
-        mod2 = df.build(
+        modc = df.build(
             top,
             target="vitis_hls",
-            mode="hw_emu",
-            project=f"df-packed-{Rt}x{Ct}.prj",
+            mode="csyn",
+            project=f"multicache-M{M}N{N}K{K}-R{Rt}xC{Ct}.prj",
             wrap_io=False,
         )
-        mod2(A_packed, B_packed, C_packed)
-        C = deserialize_C(C_packed.view(np.int8))
-        print(C)
-        print(C_golden)
-        np.testing.assert_allclose(C, C_golden, atol=1e-5)
-        print("Passed hw_emu Test!")
+        modc()
+
+        C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
+        modhw = df.build(
+            top,
+            target="vitis_hls",
+            mode="hw",
+            project=f"hwmulticache-M{M}N{N}K{K}-R{Rt}xC{Ct}.prj",
+            wrap_io=False,
+        )
+        modhw(A_packed, B_packed, C_packed)
+
+        # # Enable the hw_emu test with data types that OpenCL supports
+        # C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
+        # mod = df.build(
+        #     top,
+        #     target="vitis_hls",
+        #     mode="hw_emu",
+        #     project=f"df-packed-{Rt}x{Ct}.prj",
+        #     wrap_io=False,
+        # )
+        # mod(A_packed, B_packed, C_packed)
+        # C = deserialize_C(C_packed.view(np.int8))
+        # C_golden = np.dot(A, B)
+        # np.testing.assert_allclose(C, C_golden, atol=1e-5)
+        # print("Passed hw_emu Test!")
 
 
 if __name__ == "__main__":
