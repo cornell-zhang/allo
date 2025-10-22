@@ -16,9 +16,9 @@ NZ = int(K // 2)
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=int128, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[int32, 4][P0, P1]
+    fifo_idx: Stream[int32, 4][P0, P1]
+    fifo_B: Stream[int128, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def semm(A_nz: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):

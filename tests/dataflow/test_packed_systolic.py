@@ -23,8 +23,8 @@ else:
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=allo_type, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=allo_type, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[allo_type, 4][P0, P1]
+    fifo_B: Stream[allo_type, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(

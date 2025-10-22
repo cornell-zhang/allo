@@ -48,7 +48,7 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
 
     @df.region()
     def top():
-        nest_out = df.pipe(dtype=TyPacked, depth=AH)
+        nest_out: Stream[TyPacked, AH]
 
         @df.kernel(mapping=[1])
         def NEST(iActs: Ty[AH, AW], weights: Ty[AH, AW, AH]):
@@ -64,9 +64,7 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
                         local_result[start:end] += iAct * weight
                 nest_out.put(local_result)
 
-        connection = df.array(
-            df.pipe(dtype=Ty, shape=(), depth=1), shape=(P0 + 1, P1 * 2)
-        )
+        connection: Stream[Ty, 1][P0 + 1, P1 * 2]
 
         @df.kernel(mapping=[1])
         def bus():
@@ -75,7 +73,7 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
                 with allo.meta_for(AW) as i:
                     connection[0, i].put(array[i * Ty.bits : (i + 1) * Ty.bits])
 
-        inst_input = df.array(df.pipe(dtype=int8, shape=(), depth=1), shape=(P0, P1))
+        inst_input: Stream[int8, 1][P0, P1]
 
         @df.kernel(mapping=[1])
         def inst_rw(inst: int8[P0, P1]):

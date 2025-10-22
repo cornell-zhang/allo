@@ -13,14 +13,14 @@ P0, P1 = M + 2, N + 2
 
 @df.region()
 def top():
-    L2_A = df.array(df.pipe(dtype=UInt(M * 16), shape=(), depth=4), shape=(P0 - 1,))
-    L2_B = df.array(df.pipe(dtype=UInt(N * 16), shape=(), depth=4), shape=(P1 - 1,))
+    L2_A: Stream[UInt(M * 16), 4][P0 - 1]
+    L2_B: Stream[UInt(N * 16), 4][P1 - 1]
 
-    L1_C = df.array(df.pipe(dtype=UInt(M * 16), shape=(), depth=4), shape=(M, N))
-    L2_C = df.array(df.pipe(dtype=UInt(M * 16), shape=(), depth=4), shape=(N,))
+    L1_C: Stream[UInt(M * 16), 4][M, N]
+    L2_C: Stream[UInt(M * 16), 4][N]
 
-    fifo_A = df.array(df.pipe(dtype=int16, shape=(), depth=4), shape=(M, N))
-    fifo_B = df.array(df.pipe(dtype=int16, shape=(), depth=4), shape=(M, N))
+    fifo_A: Stream[int16, 4][M, N]
+    fifo_B: Stream[int16, 4][M, N]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int16[M, K], B: int16[K, N], C: int16[M, N]):
@@ -105,6 +105,12 @@ def test_systolic():
     A = np.random.randint(0, 8, (M, K), dtype=np.int16)
     B = np.random.randint(0, 8, (K, N), dtype=np.int16)
     C = np.zeros((M, N), dtype=np.int16)
+
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B, C)
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
         mod(A, B, C)
