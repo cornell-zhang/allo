@@ -61,7 +61,7 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32
+from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32, Stream
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..utils import (
@@ -1584,8 +1584,31 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_cast_op(
                 ctx, rhs, node.value.dtype, node.dtype, node.value.shape
             )
+        print(shape, dtype, rhs)
         # Store LHS
-        if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
+        if isinstance(dtype, Stream):
+            stream_type = allo_d.StreamType.get(dtype.build(), depth=dtype.depth)
+            if len(shape) == 0:
+                # single stream
+                stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
+                if isinstance(dtype.dtype, UInt):
+                    stream_op.attributes["unsigned"] = UnitAttr.get()
+                stream_op.attributes["name"] = StringAttr.get(node.target.id)
+                ctx.buffers[node.target.id] = stream_op
+                ctx.put_symbol(name=node.target.id, val=stream_op)
+            else:
+                # stream array
+                for dim in np.ndindex(*shape):
+                    stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
+                    if isinstance(dtype.dtype, UInt):
+                        stream_op.attributes["unsigned"] = UnitAttr.get()
+                    new_name = node.target.id + "_" + "_".join(map(str, dim))
+                    stream_op.attributes["name"] = StringAttr.get(new_name)
+                    ctx.buffers[new_name] = stream_op
+                    ctx.put_symbol(name=new_name, val=stream_op)
+                # placeholder for array of FIFOs
+                ctx.put_symbol(name=node.target.id, val=shape)
+        elif isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
             ctx.buffers[node.target.id] = rhs
             ctx.put_symbol(name=node.target.id, val=rhs)
         elif len(shape) > 0:

@@ -19,9 +19,7 @@ def test_cooperative_gemm(Ty):
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
