@@ -1258,6 +1258,8 @@ def customize(
         src = textwrap.dedent("\n".join(src))
         file_name = inspect.getfile(fn)
     tree = parse_ast(src, starting_line_no=starting_line_no, verbose=verbose)
+    # import ast
+    # print(ast.dump(tree, indent=4))
     if instantiate is None:
         instantiate = []
     if global_vars is None:
