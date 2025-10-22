@@ -41,7 +41,7 @@ The design consists of a top-level region that contains two kernels: a producer 
    @df.region()
    def top():
        # Create a pipe with a depth of 4
-       pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+       pipe: Stream[Ty, 4]
 
        @df.kernel(mapping=[1])
        def producer(A: Ty[M, N]):

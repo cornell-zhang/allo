@@ -932,17 +932,6 @@ class ASTTransformer(ASTBuilder):
                     targets = [node.targets[0]]
                 for idx, target in enumerate(targets):
                     if isinstance(target, ast.Name):
-                        if isinstance(rhs, list):
-                            # array of FIFOs
-                            for ele in rhs:
-                                new_name = target.id + "_" + ele.attributes["id"].value
-                                ele.attributes["name"] = StringAttr.get(new_name)
-                                ctx.buffers[new_name] = ele
-                                ctx.put_symbol(name=new_name, val=ele)
-                            # placeholder for array of FIFOs
-                            array = eval(ast.unparse(node.value), ctx.global_vars)
-                            ctx.put_symbol(name=target.id, val=array.shape)
-                            return rhs
                         if hasattr(rhs, "attributes"):
                             rhs.attributes["name"] = StringAttr.get(target.id)
                         exist_target = ctx.get_symbol(target.id, allow_missing=True)
@@ -1612,6 +1601,7 @@ class ASTTransformer(ASTBuilder):
                     stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
                     if isinstance(dtype.dtype, UInt):
                         stream_op.attributes["unsigned"] = UnitAttr.get()
+                    # pylint: disable=bad-builtin
                     new_name = node.target.id + "_" + "_".join(map(str, dim))
                     stream_op.attributes["name"] = StringAttr.get(new_name)
                     ctx.buffers[new_name] = stream_op
@@ -2250,20 +2240,6 @@ class ASTTransformer(ASTBuilder):
                 if not isinstance(obj, (IPModule, ExternalModule))
                 else None
             )
-            if fn_name == "array":
-                # as it directly runs the node inside, this branch is put in the front
-                array = eval(ast.unparse(node), ctx.global_vars)
-                stream_type = allo_d.StreamType.get(
-                    array.element.build(), depth=array.element.depth
-                )
-                # explicitly unravel the array
-                results = []
-                for dim in np.ndindex(*array.shape):
-                    stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
-                    # pylint: disable=bad-builtin
-                    stream_op.attributes["id"] = StringAttr.get("_".join(map(str, dim)))
-                    results.append(stream_op)
-                return results
             if fn_name in {"gather", "scatter"}:
                 fifo_list = node.args[0] if fn_name == "gather" else node.args[1]
                 ip = ctx.get_stream_construct_ip()
@@ -2527,13 +2503,6 @@ class ASTTransformer(ASTBuilder):
                             )
                         )
                 return tuple(res)
-            if fn_name == "pipe":
-                stream = eval(ast.unparse(node), ctx.global_vars)
-                stream_type = allo_d.StreamType.get(stream.build(), depth=stream.depth)
-                stream_op = allo_d.StreamConstructOp(stream_type, ip=ctx.get_ip())
-                if isinstance(stream.dtype, UInt):
-                    stream_op.attributes["unsigned"] = UnitAttr.get()
-                return stream_op
             arg_types = []
             if isinstance(new_args[0].result, OpResultList):
                 for arg in new_args:

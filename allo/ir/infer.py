@@ -826,7 +826,7 @@ class TypeInferer(ASTVisitor):
         node.shape = None
         return node
 
-    # pylint: disable=too-many-branches, too-many-return-statements
+    # pylint: disable=too-many-branches
     @staticmethod
     def visit_Call(ctx: ASTContext, node: ast.Call):
         original_func_id = ctx.func_id
@@ -1060,18 +1060,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_arg.dtype.dtype
                 assert buffer_arg.dtype == node.dtype and buffer_arg.shape == node.shape
                 return node
-            if fn_name == "pipe":
-                stream = eval(ast.unparse(node), ctx.global_vars)
-                node.shape = tuple()
-                node.dtype = stream
-                return node
             new_args = visit_stmts(ctx, node.args)
-            if fn_name == "array":
-                for kw in node.keywords:
-                    if kw.arg == "shape":
-                        node.shape = eval(ast.unparse(kw.value), ctx.global_vars)
-                node.dtype = new_args[0].dtype
-                return node
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":
