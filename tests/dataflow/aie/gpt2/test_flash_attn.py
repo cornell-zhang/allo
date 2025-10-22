@@ -120,35 +120,20 @@ def test_flash_attention(
 
     @df.region()
     def top():
-        q_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(q_chunk_size, HEAD_DIM), depth=2),
-            shape=(Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
-        )
-
-        score_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(q_chunk_size, kv_chunk_size), depth=2),
-            shape=(Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
-        )
-
-        weight_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(q_chunk_size, kv_chunk_size), depth=2),
-            shape=(Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
-        )
-
-        o_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(q_chunk_size, HEAD_DIM), depth=2),
-            shape=(Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size),
-        )
-
-        exp_sum_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(kv_chunk_size,), depth=2),
-            shape=(Q_tile_size // q_chunk_size,),
-        )
-
-        exp_scale_pipe = df.array(
-            df.pipe(dtype=Ty, shape=(kv_chunk_size,), depth=2),
-            shape=(Q_tile_size // q_chunk_size,),
-        )
+        q_pipe: Stream[Ty[q_chunk_size, HEAD_DIM], 2][
+            Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size
+        ]
+        score_pipe: Stream[Ty[q_chunk_size, kv_chunk_size], 2][
+            Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size
+        ]
+        weight_pipe: Stream[Ty[q_chunk_size, kv_chunk_size], 2][
+            Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size
+        ]
+        o_pipe: Stream[Ty[q_chunk_size, HEAD_DIM], 2][
+            Q_tile_size // q_chunk_size, SEQ_LEN // kv_chunk_size
+        ]
+        exp_sum_pipe: Stream[Ty[kv_chunk_size], 2][Q_tile_size // q_chunk_size]
+        exp_scale_pipe: Stream[Ty[kv_chunk_size], 2][Q_tile_size // q_chunk_size]
 
         @df.kernel(mapping=[Q_tile_size // q_chunk_size, 1])
         def send_q(Q: Ty[Q_tile_size, HEAD_DIM] @ Ly_outer):

@@ -20,11 +20,11 @@ def _test_cannon():
 
     @df.region()
     def top():
-        A_init = df.array(df.pipe(dtype=Ty, shape=(m, k), depth=2), shape=(P, P))
-        B_init = df.array(df.pipe(dtype=Ty, shape=(k, n), depth=2), shape=(P, P))
+        A_init: Stream[Ty[m, k], 2][P, P]
+        B_init: Stream[Ty[k, n], 2][P, P]
 
-        A_pipe = df.array(df.pipe(dtype=Ty, shape=(m, k), depth=2), shape=(P, P))
-        B_pipe = df.array(df.pipe(dtype=Ty, shape=(k, n), depth=2), shape=(P, P))
+        A_pipe: Stream[Ty[m, k], 2][P, P]
+        B_pipe: Stream[Ty[k, n], 2][P, P]
 
         @df.kernel(mapping=[P, P])
         def init(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):

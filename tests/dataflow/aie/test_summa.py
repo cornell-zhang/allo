@@ -18,8 +18,8 @@ def _test_summa_2x2():
 
     @df.region()
     def top():
-        row_fifo = df.array(df.pipe(dtype=Ty, shape=(M, N // 2), depth=1), shape=(P0,))
-        final_fifo = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=P0), shape=(P0,))
+        row_fifo: Stream[Ty[M, N // 2], 1][P0]
+        final_fifo: Stream[Ty[M, N], P0][P0]
 
         @df.kernel(mapping=[P0, P1])
         def summa(A: Ty[M, K] @ La, B: Ty[K, N] @ Lb):
@@ -67,9 +67,7 @@ def _test_summa():
 
     @df.region()
     def top():
-        column_fifo = df.array(
-            df.pipe(dtype=Ty, shape=(M, N // P0), depth=1), shape=(P0, P1 - 1)
-        )
+        column_fifo: Stream[Ty[M, N // P0], 1][P0, P1 - 1]
 
         @df.kernel(mapping=[P0, P1])
         def summa(B: Ty[K, N] @ Lb, A: Ty[M, K] @ La, C: Ty[M, N] @ Lc):

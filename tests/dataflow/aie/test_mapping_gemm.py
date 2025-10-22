@@ -84,9 +84,7 @@ def _test_pingpong_gemm_2x2x2():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
@@ -133,9 +131,7 @@ def _test_pingpong_gemm_2x2x2_partial_chain():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
@@ -180,9 +176,7 @@ def _test_pingpong_gemm_1x1x4():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
@@ -240,9 +234,7 @@ def _test_pingpong_gemm_2x2x4():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
@@ -297,9 +289,7 @@ def _test_pingpong_gemm_4x4x4():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
@@ -388,7 +378,7 @@ def _test_split_k_gemm_1x1x4():
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[M, N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
@@ -439,7 +429,7 @@ def _test_split_k_gemm_2x2x4():
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk, Pm, Pn))
+        pipe: Stream[Ty[Mt, Nt], 2][Pk, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):

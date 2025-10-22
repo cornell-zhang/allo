@@ -61,7 +61,18 @@ from .utils import (
     get_func_id_from_param_types,
     resolve_generic_types,
 )
-from .types import AlloType, Int, UInt, Index, Float, Fixed, UFixed, Struct, float32, Stream
+from .types import (
+    AlloType,
+    Int,
+    UInt,
+    Index,
+    Float,
+    Fixed,
+    UFixed,
+    Struct,
+    float32,
+    Stream,
+)
 from .visitor import ASTVisitor, ASTContext, get_symbolic_expr
 from .symbol_resolver import ASTResolver
 from ..utils import (
@@ -1584,7 +1595,6 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_cast_op(
                 ctx, rhs, node.value.dtype, node.dtype, node.value.shape
             )
-        print(shape, dtype, rhs)
         # Store LHS
         if isinstance(dtype, Stream):
             stream_type = allo_d.StreamType.get(dtype.build(), depth=dtype.depth)

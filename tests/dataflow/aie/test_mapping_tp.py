@@ -22,8 +22,8 @@ def _test_tp_v1():
 
     @df.region()
     def top():
-        Y = df.array(df.pipe(dtype=Ty, shape=(M, Nt), depth=2), shape=(P0,))
-        part_Z = df.array(df.pipe(dtype=Ty, shape=(M, L), depth=2), shape=(P0,))
+        Y: Stream[Ty[M, Nt], 2][P0]
+        part_Z: Stream[Ty[M, L], 2][P0]
 
         @df.kernel(mapping=[P0])
         def gemm0(X: Ty[M, K], W1: Ty[K, N] @ LyW1):
@@ -67,8 +67,8 @@ def _test_tp_v2():
 
     @df.region()
     def top():
-        Y = df.array(df.pipe(dtype=Ty, shape=(M, Nt), depth=2), shape=(P0,))
-        part_Z = df.array(df.pipe(dtype=Ty, shape=(M, L), depth=2), shape=(P0,))
+        Y: Stream[Ty[M, Nt], 2][P0]
+        part_Z: Stream[Ty[M, L], 2][P0]
 
         @df.kernel(mapping=[P0])
         def gemm0(X: Ty[M, K], W1: Ty[K, N] @ LyW1):

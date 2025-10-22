@@ -52,9 +52,7 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
     @df.region()
     def top():
-        pipe_a = df.array(
-            df.pipe(dtype=TyO, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe_a: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemma(A: TyI[M, K] @ LyA, B: TyI[K, N] @ LyB, C: TyO[M, N] @ LyC):
@@ -70,9 +68,7 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
             with allo.meta_elif(pk == Pk - 1):
                 C[:, :] = C_out
 
-        pipe_b = df.array(
-            df.pipe(dtype=TyO, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe_b: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemmb(D: TyI[M, K] @ LyA, E: TyI[K, N] @ LyB, F: TyO[M, N] @ LyC):

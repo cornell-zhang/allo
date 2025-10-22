@@ -17,7 +17,7 @@ def _test_gather():
 
     @df.region()
     def top_v1():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def src(A: Ty[N]):
@@ -54,7 +54,7 @@ def _test_gather():
 
     @df.region()
     def top_v2():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def src(A: Ty[N]):
@@ -98,14 +98,7 @@ def _test_gather_matmul():
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(
-                dtype=TyI,
-                shape=(M, K),
-                depth=2,
-            ),
-            shape=(Pk,),
-        )
+        pipe: Stream[TyI[M, K], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def src(A: TyI[M, K]):
@@ -139,7 +132,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
     @df.region()
     def top_v1():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[M, N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
@@ -180,7 +173,7 @@ def _test_split_k_explicit_gather_gemm_1x1x4():
 
     @df.region()
     def top_v2():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[M, N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
@@ -229,8 +222,8 @@ def _test_scatter():
 
     @df.region()
     def top_v1():
-        pipe_1 = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
-        pipe_2 = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
+        pipe_1: Stream[Ty[N], 2][Pk]
+        pipe_2: Stream[Ty[N], 2][Pk]
 
         @df.kernel(mapping=[1])
         def src(A: Ty[Pk, N]):
@@ -262,8 +255,8 @@ def _test_scatter():
 
     @df.region()
     def top_v2():
-        pipe_1 = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
-        pipe_2 = df.array(df.pipe(dtype=Ty, shape=(N,), depth=2), shape=(Pk,))
+        pipe_1: Stream[Ty[N], 2][Pk]
+        pipe_2: Stream[Ty[N], 2][Pk]
 
         @df.kernel(mapping=[1])
         def src(A: Ty[Pk, N]):
