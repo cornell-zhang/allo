@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from allo.ir.types import int16
+from allo.ir.types import int16, Stream
 import allo.dataflow as df
 import numpy as np
 

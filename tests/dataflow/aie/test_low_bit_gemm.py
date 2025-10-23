@@ -4,7 +4,7 @@
 import numpy as np
 import os
 import allo
-from allo.ir.types import int4, int8
+from allo.ir.types import int4, int8, Stream
 import allo.dataflow as df
 from allo.memory import Layout
 

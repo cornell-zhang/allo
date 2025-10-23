@@ -31,7 +31,7 @@ The design consists of a top-level region that contains two kernels: a producer 
 .. code-block:: python
 
    import allo
-   from allo.ir.types import float32
+   from allo.ir.types import float32, Stream
    import allo.dataflow as df
    import numpy as np
 
