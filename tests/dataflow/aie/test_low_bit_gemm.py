@@ -152,9 +152,7 @@ def _test_pingpong_mixed_gemm(M, N, K, Pm, Pn, Pk):
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=TyO, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[TyO[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: TyI[M, K] @ LyA, B: TyI_l[K, N] @ LyB, C: TyO[M, N] @ LyC):

@@ -22,7 +22,6 @@ from .customize import customize as _customize, Schedule
 from .utils import parse_kernel_name, construct_kernel_name
 from .ir.utils import get_global_vars, get_all_df_kernels
 from .backend.simulator import LLVMOMPModule
-from .ir.types import Stream
 from .passes import df_pipeline
 from .backend import AIE_MLIRModule
 
@@ -44,20 +43,6 @@ def scatter(buffer, pipes: list):
 
 def get_pid():
     raise NotImplementedError("This function should be called in a kernel function.")
-
-
-def pipe(dtype, shape=(), depth=2):
-    return Stream(dtype, shape, depth)
-
-
-class Array:
-    def __init__(self, element, shape):
-        self.element = element
-        self.shape = shape
-
-
-def array(element, shape):
-    return Array(element, shape)
 
 
 # pylint: disable=eval-used, bad-builtin, too-many-branches, too-many-nested-blocks

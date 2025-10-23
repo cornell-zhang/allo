@@ -13,8 +13,8 @@ P0 = K + 2
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(2, P0))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(2, P0))
+    fifo_A: Stream[float32, 4][2, P0]
+    fifo_B: Stream[float32, 4][2, P0]
 
     @df.kernel(mapping=[2, P0])
     def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):

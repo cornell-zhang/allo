@@ -12,7 +12,7 @@ def test_uint():
 
     @df.region()
     def top():
-        stream = df.pipe(dtype=UInt(B * 8), shape=(), depth=4)
+        stream: Stream[UInt(B * 8), 4]
 
         @df.kernel(mapping=[1])
         def load(A: UInt(B * 8)[M, N]):
@@ -41,7 +41,7 @@ def test_func_index():
 
     @df.region()
     def top():
-        pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+        pipe: Stream[Ty, 4]
 
         @df.kernel(mapping=[1])
         def producer(A: Ty[M, N]):

@@ -23,19 +23,18 @@ P0, P1 = Rt + 2, Ct + 2
 
 @df.region()
 def top():
+    L3_A: Stream[UInt(Rt * 8), 4]
+    L3_B: Stream[UInt(Ct * 8), 4]
+    L3_C: Stream[UInt(Rt * 8), 4]
 
-    L3_A = df.pipe(dtype=UInt(Rt * 8), shape=(), depth=4)
-    L3_B = df.pipe(dtype=UInt(Ct * 8), shape=(), depth=4)
-    L3_C = df.pipe(dtype=UInt(Rt * 8), shape=(), depth=4)
+    L2_A: Stream[UInt(Rt * 8), 4][P0 - 1]
+    L2_B: Stream[UInt(Ct * 8), 4][P1 - 1]
 
-    L2_A = df.array(df.pipe(dtype=UInt(Rt * 8), shape=(), depth=4), shape=(P0 - 1,))
-    L2_B = df.array(df.pipe(dtype=UInt(Ct * 8), shape=(), depth=4), shape=(P1 - 1,))
+    L1_C: Stream[UInt(Rt * 8), 4][Rt, Ct]
+    L2_C: Stream[UInt(Rt * 8), 4][Ct]
 
-    L1_C = df.array(df.pipe(dtype=UInt(Rt * 8), shape=(), depth=4), shape=(Rt, Ct))
-    L2_C = df.array(df.pipe(dtype=UInt(Rt * 8), shape=(), depth=4), shape=(Ct,))
-
-    fifo_A = df.array(df.pipe(dtype=int8, shape=(), depth=4), shape=(Rt, Ct))
-    fifo_B = df.array(df.pipe(dtype=int8, shape=(), depth=4), shape=(Rt, Ct))
+    fifo_A: Stream[int8, 4][Rt, Ct]
+    fifo_B: Stream[int8, 4][Rt, Ct]
 
     @df.kernel(mapping=[1])
     def offchip_loadA(A_Packed: UInt(Rt * 8)[M * K // Rt]):

@@ -40,7 +40,7 @@ def _test_gather():
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M, N), depth=2), shape=(Pk,))
+        pipe: Stream[Ty[M, N], 2][Pk]
 
         @df.kernel(mapping=[Pk])
         def partial_gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
@@ -88,7 +88,7 @@ def _test_scatter():
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M // P,), depth=2), shape=(P,))
+        pipe: Stream[Ty[M // P], 2][P]
 
         @df.kernel(mapping=[1])
         def prod():
@@ -143,7 +143,7 @@ def _test_scatter2():
 
     @df.region()
     def top():
-        pipe = df.array(df.pipe(dtype=Ty, shape=(M // P,), depth=2), shape=(P,))
+        pipe: Stream[Ty[M // P], 2][P]
 
         @df.kernel(mapping=[1])
         def prod(Inc: Ty[M // P] @ Ly):

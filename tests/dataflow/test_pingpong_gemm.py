@@ -14,7 +14,7 @@ Mt, Nt = M // P0, N // P1
 
 @df.region()
 def top():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(P0, P1))
+    pipe: Stream[Ty[Mt, Nt], 2][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm0(A: Ty[M, K], B: Ty[K, N]):

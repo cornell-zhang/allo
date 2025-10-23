@@ -74,15 +74,36 @@ class TypeInferer(ASTVisitor):
     def visit_type_hint(ctx: ASTContext, node: ast.AST):
         if isinstance(node, ast.Subscript):
             if isinstance(node.value, ast.Call):
+                # e.g., a: UInt(16)[4]
                 dtype = TypeInferer.visit_call_type(ctx, node.value)
+            elif isinstance(node.value, ast.Subscript):
+                # e.g., pipe: Stream[Ty, 4][4]
+                base_type, base_shape, _ = TypeInferer.visit_type_hint(ctx, node.value)
+                assert isinstance(base_type, Stream) and len(base_shape) == 0
+                elts = (
+                    node.slice.elts
+                    if isinstance(node.slice, ast.Tuple)
+                    else [node.slice]
+                )
+                shape = tuple(ASTResolver.resolve(x, ctx.global_vars) for x in elts)
+                assert all(
+                    isinstance(x, (int)) for x in shape
+                ), "stream array shape should be a compile time constant"
+                return base_type, shape, None
             else:
                 dtype = ASTResolver.resolve(node.value, ctx.global_vars)
             if dtype is Stream:
-                # create an actual class instance
-                base_type, base_shape = TypeInferer.visit_type_hint(ctx, node.slice)
-                stream_dtype = Stream(base_type, base_shape)
+                # e.g., pipe: Stream[Ty, 4]
+                assert (
+                    isinstance(node.slice, ast.Tuple) and len(node.slice.elts) == 2
+                ), "Only support `ele_type` and `depth` for now"
+                base_type, base_shape, _ = TypeInferer.visit_type_hint(
+                    ctx, node.slice.elts[0]
+                )
+                depth = ASTResolver.resolve(node.slice.elts[1], ctx.global_vars)
+                stream_dtype = Stream(dtype=base_type, shape=base_shape, depth=depth)
                 shape = tuple()
-                return stream_dtype, shape
+                return stream_dtype, shape, None
             assert dtype is not None, f"Unsupported type `{node.value.id}`"
             size = node.slice.value if isinstance(node.slice, ast.Index) else node.slice
             elts = size.elts if isinstance(size, ast.Tuple) else [size]
@@ -805,7 +826,7 @@ class TypeInferer(ASTVisitor):
         node.shape = None
         return node
 
-    # pylint: disable=too-many-branches, too-many-return-statements
+    # pylint: disable=too-many-branches
     @staticmethod
     def visit_Call(ctx: ASTContext, node: ast.Call):
         original_func_id = ctx.func_id
@@ -1039,18 +1060,7 @@ class TypeInferer(ASTVisitor):
                 node.dtype = new_arg.dtype.dtype
                 assert buffer_arg.dtype == node.dtype and buffer_arg.shape == node.shape
                 return node
-            if fn_name == "pipe":
-                stream = eval(ast.unparse(node), ctx.global_vars)
-                node.shape = tuple()
-                node.dtype = stream
-                return node
             new_args = visit_stmts(ctx, node.args)
-            if fn_name == "array":
-                for kw in node.keywords:
-                    if kw.arg == "shape":
-                        node.shape = eval(ast.unparse(kw.value), ctx.global_vars)
-                node.dtype = new_args[0].dtype
-                return node
             if len(new_args) == 0:
                 # No argument
                 if fn_name == "get_pid":

@@ -97,7 +97,7 @@ def gen_attn_score_primitives():
 
 @df.region()
 def attn_score_kernel():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
+    pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, D] @ LyA, B: Ty[D, N] @ LyB, C: Ty[N, N] @ LyC):
@@ -175,7 +175,7 @@ LyC = Layout("S1S0")
 
 @df.region()
 def top():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
+    pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, N] @ LyA, B: Ty[N, D] @ LyB, C: Ty[N, D] @ LyC):

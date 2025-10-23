@@ -180,9 +180,7 @@ def run(x_fp32: np.ndarray, params: dict):
 
     @df.region()
     def layer_norm_kernel():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1), shape=(NORM_P0,)
-        )
+        pipe: Stream[Ty[NORM_TILE, EMBD], 1][NORM_P0]
 
         @df.kernel(mapping=[NORM_P0])
         def norm_no_bias(

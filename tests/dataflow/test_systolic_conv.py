@@ -31,8 +31,8 @@ def conv2D_lb(A: float32[IR, IC], B: float32[FR, FC]) -> float32[OR, OC]:
 # Convolution kernel with systolic array (basic)
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=FR * FC), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=FR * FC), shape=(P0, P1))
+    fifo_A: Stream[float32, FR * FC][P0, P1]
+    fifo_B: Stream[float32, FR * FC][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def conv_kernel(A: float32[IR, IC], B: float32[FR, FC], C: float32[OR, OC]):

@@ -11,10 +11,10 @@ import numpy as np
 @df.region()
 def unified_gemm_simple():
     # interconnect
-    fifo_R = df.array(df.pipe(dtype=int32, shape=(), depth=16), shape=(P0, P1 - 1))
-    fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=16), shape=(P0 - 1, P1))
-    inst_broad = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P1 - 1,))
-    inst_chain = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P0 - 1, P1))
+    fifo_R: Stream[int32, 16][P0, P1 - 1]
+    fifo_C: Stream[int32, 16][P0 - 1, P1]
+    inst_broad: Stream[bool, 4][P1 - 1]
+    inst_chain: Stream[bool, 4][P0 - 1, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):
@@ -101,20 +101,18 @@ def unified_gemm_simple():
 
 @df.region()
 def unified_gemm_daisy_chain():
-    L2_R = df.array(df.pipe(dtype=UInt(U * 16), shape=(), depth=4), shape=(P0 - 1,))
-    L2_C = df.array(df.pipe(dtype=UInt(N * 16), shape=(), depth=4), shape=(P1 - 1,))
+    L2_R: Stream[UInt(U * 16), 4][P0 - 1]
+    L2_C: Stream[UInt(N * 16), 4][P1 - 1]
 
-    L1_S = df.array(df.pipe(dtype=UInt(U * 16), shape=(), depth=4), shape=(U + 1, N))
-    L2_S_in = df.array(df.pipe(dtype=UInt(U * 16), shape=(), depth=4), shape=(N,))
-    L2_S_out = df.array(df.pipe(dtype=UInt(U * 16), shape=(), depth=4), shape=(N,))
+    L1_S: Stream[UInt(U * 16), 4][U + 1, N]
+    L2_S_in: Stream[UInt(U * 16), 4][N]
+    L2_S_out: Stream[UInt(U * 16), 4][N]
 
-    fifo_R = df.array(df.pipe(dtype=int16, shape=(), depth=4), shape=(U, N))
-    fifo_C = df.array(
-        df.pipe(dtype=int16, shape=(), depth=4), shape=(U + 1, N)
-    )  # Additional one for partial sum in WS
+    fifo_R: Stream[int16, 4][U, N]
+    fifo_C: Stream[int16, 4][U + 1, N]  # Additional one for partial sum in WS
 
-    inst_broad = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P1 - 1,))
-    inst_chain = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P0 - 1, P1))
+    inst_broad: Stream[bool, 4][P1 - 1]
+    inst_chain: Stream[bool, 4][P0 - 1, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int16[M, K], B: int16[K, N], inst: bool, C: int16[M, N]):
@@ -285,10 +283,11 @@ def unified_gemm_daisy_chain():
 @df.region()
 def unified_gemm_tiling():
     # interconnect
-    fifo_R = df.array(df.pipe(dtype=int32, shape=(), depth=16), shape=(P0, P1 - 1))
-    fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=16), shape=(P0 - 1, P1))
-    inst_broad = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P1 - 1,))
-    inst_chain = df.array(df.pipe(dtype=bool, shape=(), depth=4), shape=(P0 - 1, P1))
+    fifo_R: Stream[int32, 16][P0, P1 - 1]
+    fifo_C: Stream[int32, 16][P0 - 1, P1]
+
+    inst_broad: Stream[bool, 4][P1 - 1]
+    inst_chain: Stream[bool, 4][P0 - 1, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int32[M, K], B: int32[K, N], inst: bool, C: int32[M, N]):

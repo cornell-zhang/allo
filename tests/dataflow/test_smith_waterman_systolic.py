@@ -41,9 +41,9 @@ def top():
     # FIFO A goes in increasing j direction
     # FIFO B goes in increasing i direction
     # FIFO C goes in increasing i and j direction
-    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[int32, 4][P0, P1]
+    fifo_B: Stream[int32, 4][P0, P1]
+    fifo_C: Stream[int32, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
