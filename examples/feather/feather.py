@@ -16,7 +16,7 @@
 from math import log2
 
 import allo
-from allo.ir.types import int8, UInt, AlloType, int32
+from allo.ir.types import int8, UInt, AlloType, int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np

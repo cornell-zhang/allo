@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int8, int16, UInt
+from allo.ir.types import Stream, int16, UInt
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
