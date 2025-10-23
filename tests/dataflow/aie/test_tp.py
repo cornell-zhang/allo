@@ -3,7 +3,7 @@
 
 import allo
 import allo.dataflow as df
-from allo.ir.types import int32
+from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
 

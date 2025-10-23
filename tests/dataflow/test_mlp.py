@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from allo.ir.types import float32
+from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls

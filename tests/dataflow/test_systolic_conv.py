@@ -3,7 +3,7 @@
 
 import numpy as np
 import allo
-from allo.ir.types import float32, int32
+from allo.ir.types import float32, int32, Stream
 import allo.dataflow as df
 from allo.backend import hls
 

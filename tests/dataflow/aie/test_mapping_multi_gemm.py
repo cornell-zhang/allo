@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int8, int16, bfloat16
+from allo.ir.types import int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout

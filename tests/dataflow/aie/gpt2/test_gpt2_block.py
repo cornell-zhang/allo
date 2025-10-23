@@ -49,7 +49,7 @@ import torch.nn.functional as F
 import numpy as np
 import allo
 import allo.dataflow as df
-from allo.ir.types import float32, int32
+from allo.ir.types import float32, int32, Stream
 from allo.memory import Layout
 from allo.backend.aie import ExternalModule
 

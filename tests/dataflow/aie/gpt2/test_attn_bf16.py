@@ -5,7 +5,7 @@ import os
 import torch
 import torch.nn.functional as F
 import allo
-from allo.ir.types import bfloat16
+from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
