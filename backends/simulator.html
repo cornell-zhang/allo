@@ -199,7 +199,7 @@
 <span class="nd">@df</span><span class="o">.</span><span class="n">region</span><span class="p">()</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">top</span><span class="p">():</span>
     <span class="c1"># Create a pipe with a depth of 4</span>
-    <span class="n">pipe</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">Ty</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(),</span> <span class="n">depth</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+    <span class="n">pipe</span><span class="p">:</span> <span class="n">Stream</span><span class="p">[</span><span class="n">Ty</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>
 
     <span class="nd">@df</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">mapping</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">producer</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">Ty</span><span class="p">[</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">]):</span>
