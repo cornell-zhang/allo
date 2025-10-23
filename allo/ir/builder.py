@@ -109,12 +109,10 @@ class ASTBuilder(ASTVisitor):
 # pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
-    def build_Name(ctx: ASTContext, node: ast.Name, val=None):
-        if val is not None and isinstance(node.ctx, ast.Store):
-            buffer = ctx.get_symbol(node.id)
-            target = (
-                buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
-            )
+    def build_assignment(ctx: ASTContext, node: ast.Name, buffer, val):
+        target = buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
+        if len(node.shape) == 0:
+            # scalar
             if not ctx.enable_tensor:
                 affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
                 affine_attr = AffineMapAttr.get(affine_map)
@@ -130,8 +128,30 @@ class ASTTransformer(ASTBuilder):
                 )
                 # update StoreOp
                 ctx.get_symbol(node.id).op = store_op
-            store_op.attributes["to"] = StringAttr.get(node.id)
-            return store_op
+        else:
+            # tensor
+            if not ctx.enable_tensor:
+                store_op = memref_d.CopyOp(val.result, target, ip=ctx.get_ip())
+            else:
+                store_op = tensor_d.InsertSliceOp(
+                    source=val.result,
+                    dest=target,
+                    static_offsets=[0] * len(node.shape),
+                    static_sizes=list(node.shape),
+                    static_strides=[1] * len(node.shape),
+                    offsets=[],
+                    sizes=[],
+                    strides=[],
+                    ip=ctx.get_ip(),
+                )
+        store_op.attributes["to"] = StringAttr.get(node.id)
+        return store_op
+
+    @staticmethod
+    def build_Name(ctx: ASTContext, node: ast.Name, val=None):
+        if val is not None and isinstance(node.ctx, ast.Store):
+            buffer = ctx.get_symbol(node.id)
+            return ASTTransformer.build_assignment(ctx, node, buffer, val)
         ret = ctx.get_symbol(node.id, allow_missing=True)
         if ret is not None:
             return ret
@@ -995,12 +1015,13 @@ class ASTTransformer(ASTBuilder):
                 name = node.target.id
             else:
                 name = f"const_{abs(hash(str(node) + str(np_values)))}"
+            name = f"{name}_{ctx.rename_cnt}"
+            ctx.rename_cnt += 1
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(shape, dtype.build())
             type_attr = TypeAttr.get(memref_type)
-            # pylint: disable=redefined-variable-type
-            const_tensor = memref_d.GlobalOp(
+            memref_d.GlobalOp(
                 sym_name=sym_name,
                 type_=type_attr,
                 sym_visibility=sym_visibility,
@@ -1218,6 +1239,7 @@ class ASTTransformer(ASTBuilder):
     ):
         # TODO: Fix tuple idx
         value = build_stmt(ctx, node.value)
+        # access tensor
         if len(node.shape) >= 1:
             dtype = RankedTensorType(value.result.type).element_type
             in_shape = RankedTensorType(value.result.type).shape
@@ -1255,7 +1277,8 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-        if isinstance(node.slice, (ast.Index, ast.Tuple)):
+        # access a element
+        if isinstance(node.slice, (ast.Index, ast.Tuple, ast.Constant)):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             # pylint: disable=no-else-return
             if isinstance(node.ctx, ast.Load):
@@ -1575,8 +1598,16 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, node, node.np_values, dtype=dtype
             )
-            ctx.buffers[node.target.id] = rhs
-            ctx.put_symbol(name=node.target.id, val=rhs)
+            rhs_ = ctx.get_symbol(name=node.target.id, allow_missing=True)
+            if rhs_ is None:
+                # declare
+                ctx.buffers[node.target.id] = rhs
+                ctx.put_symbol(name=node.target.id, val=rhs)
+            else:
+                assert isinstance(
+                    node.target, ast.Name
+                ), "target of AnnAssign must be Name, other type not supported."
+                ASTTransformer.build_assignment(ctx, node.target, buffer=rhs_, val=rhs)
             return
         # Not constant tensor
         rhs = build_stmt(ctx, node.value)

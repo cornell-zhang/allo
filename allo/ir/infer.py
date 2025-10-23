@@ -229,6 +229,10 @@ class TypeInferer(ASTVisitor):
             for iv in ivs:
                 iv.shape = tuple()
                 iv.dtype = Index()
+                iv_ = ctx.get_symbol(iv.id, allow_missing=True)
+                assert (
+                    iv_ is None
+                ), "Please choose a different name for the loop iterator."
                 ctx.put_symbol(name=iv.id, val=iv)
             visit_stmts(ctx, node.iter.args)
             visit_stmts(ctx, node.body)
@@ -365,8 +369,16 @@ class TypeInferer(ASTVisitor):
                             f"df.p{i}"
                         ]
                         ctx.symbolic[ast.unparse(target)] = f"p{i}"
-                    else:
+                    target_ = ctx.get_symbol(target.id, allow_missing=True)
+                    if target_ is None:
+                        # new def
                         ctx.put_symbol(name=target.id, val=target)
+                    else:
+                        # assignment
+                        assert (
+                            target_.dtype == target.dtype
+                            and target_.shape == target.shape
+                        ), f"Invalid assignment to {target.id}, type mismatch."
                 else:
                     lhs = visit_stmt(ctx, target)
             node.dtype = rhs.dtype
@@ -567,9 +579,10 @@ class TypeInferer(ASTVisitor):
             ctx, node.annotation
         )
         if isinstance(node.value, ast.List):
+            # e.g., arr: int32[2, 2] = [[1, 2], [3, 4]]
             values = compile(ast.Expression(node.value), "", "eval")
             # pylint: disable=eval-used
-            values = np.array(eval(values))
+            values = np.array(eval(values, ctx.global_vars))
             assert (
                 target_shape == values.shape
             ), f"Shape mismatch, got {target_shape} and {values.shape}"
@@ -591,7 +604,15 @@ class TypeInferer(ASTVisitor):
             node.value.dtype = target_dtype
         else:
             visit_stmt(ctx, node.value)
-        ctx.put_symbol(name=node.target.id, val=node)
+        target_ = ctx.get_symbol(node.target.id, allow_missing=True)
+        if target_ is None:
+            # new def
+            ctx.put_symbol(name=node.target.id, val=node)
+        else:
+            # assignment
+            assert (
+                target_.dtype == target_dtype and target_.shape == target_shape
+            ), f"Invalid assignment to {node.target.id}, type mismatch."
         node.dtype = target_dtype
         node.shape = target_shape
         visit_stmt(ctx, node.target)
