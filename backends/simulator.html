@@ -189,7 +189,7 @@
 <h2>Dataflow Kernel Definition<a class="headerlink" href="#dataflow-kernel-definition" title="Link to this heading"><span>¶</span></a></h2>
 <p>The design consists of a top-level region that contains two kernels: a producer and a consumer. The producer reads data from an input matrix and sends each element through a pipe, while the consumer receives the data, increments it by one, and writes the result to an output matrix. The following code illustrates the kernel definitions using Allo’s dataflow API:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">allo</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">float32</span><span class="p">,</span> <span class="n">Stream</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">allo.dataflow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">df</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
