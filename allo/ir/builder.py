@@ -874,9 +874,11 @@ class ASTTransformer(ASTBuilder):
         return new_indices, False
 
     @staticmethod
-    def build_assign_stmt(ctx: ASTContext, target: ast.expr, value: ast.expr):
+    def build_assign_stmt(ctx: ASTContext, target: ast.expr, value: ast.expr, val=None):
         # Compute RHS
-        if hasattr(value, "np_values"):
+        if val is not None:
+            rhs = val
+        elif hasattr(value, "np_values"):
             # - np array -> constant tensor
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
@@ -951,6 +953,7 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_Assign(ctx: ASTContext, node: ast.Assign):
         targets, values = [], []
+        rhs_visited = False
         if isinstance(node.targets[0], ast.Tuple):
             targets.extend(node.targets[0].elts)
             if isinstance(node.value, ast.Tuple):
@@ -958,20 +961,27 @@ class ASTTransformer(ASTBuilder):
         else:
             targets.append(node.targets[0])
             values.append(node.value)
-        # one special case: the builtin get_pid()
-        if (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Attribute)
-            and node.value.func.attr == "get_pid"
-        ):
-            for i, target in enumerate(targets):
-                # TODO: add target symbol for pid??
-                pid = MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
-                ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
-                ctx.symbolic[ast.unparse(target)] = f"p{i}"
-            return None
-        for target, value in zip(targets, values):
-            ASTTransformer.build_assign_stmt(ctx, target, value)
+        if isinstance(node.value, ast.Call):
+            # special case: the builtin get_pid()
+            if (
+                isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "get_pid"
+            ):
+                for i, target in enumerate(targets):
+                    # TODO: add target symbol for pid??
+                    pid = MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
+                    ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
+                    ctx.symbolic[ast.unparse(target)] = f"p{i}"
+                return None
+            else:
+                rhs = build_stmt(ctx, node.value)
+                rhs_visited = True
+        for idx, target in enumerate(targets):
+            if rhs_visited:
+                # fixme
+                ASTTransformer.build_assign_stmt(ctx, target, None, val=rhs[idx])
+            else:
+                ASTTransformer.build_assign_stmt(ctx, target, values[idx])
         return None
 
     @staticmethod
