@@ -371,6 +371,7 @@ class TypeInferer(ASTVisitor):
                 )
                 if target_ is None:
                     # new def
+                    print(target.id)
                     ctx.put_symbol(name=target.id, val=target)
                     target.dtype = rhs.dtype
                     target.shape = rhs.shape
@@ -383,18 +384,20 @@ class TypeInferer(ASTVisitor):
                     assert (
                         final_shape == target_shape
                     ), f"Shape mismatch, got {final_shape} and {target_shape}"
-                    target.dims = (lhs_dims, rhs_dims)
+                    node.dims = target.dims = (lhs_dims, rhs_dims)
             else:
                 # assign
+                rhs = visit_stmt(ctx, value)
                 lhs = visit_stmt(ctx, target)
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                    ctx, node.targets[0], node.value, match_lhs=True
+                    ctx, lhs, rhs, match_lhs=True
                 )
                 assert (
                     final_shape == lhs.shape
                 ), f"Shape mismatch, got {final_shape} and {lhs.shape}"
                 target.dtype, target.shape = lhs.dtype, lhs.shape
-                target.dims = (lhs_dims, rhs_dims)
+                node.dims = target.dims = (lhs_dims, rhs_dims)
+            node.dtype, node.shape = target.dtype, target.shape
         return node
 
     @staticmethod
@@ -427,6 +430,8 @@ class TypeInferer(ASTVisitor):
             lhs = visit_stmt(ctx, node.target)
         elif isinstance(node.target, ast.Name):  # scalar
             lhs = ctx.get_symbol(node.target.id)
+            assert lhs is not None
+            node.target.dtype, node.target.shape = lhs.dtype, lhs.shape
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
@@ -473,6 +478,7 @@ class TypeInferer(ASTVisitor):
     @staticmethod
     def visit_Subscript(ctx: ASTContext, node: ast.Subscript):
         value = visit_stmt(ctx, node.value)
+        print(value.shape, value.dtype)
         # Handle struct field access
         if len(value.shape) == 0 and isinstance(value.dtype, Struct):
             if not isinstance(node.slice, ast.Constant) or not isinstance(

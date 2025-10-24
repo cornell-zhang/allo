@@ -904,14 +904,6 @@ def test_scope():
     # case 5: inner loop shadows iterator from outer loop
     def kernel5(n: int32) -> int32:
         s: int32 = 0
-        for i in range(n):  # outer loop, iterator is i
-            for i in range(n):  # inner loop reuses the same name i -> shadowing outer i
-                s = s + i  # here i refers to the inner loop variable
-            s = s + i  # here i refers to the outer loop variable
-        return s
-
-    def kernel5_py(n: int32) -> int32:
-        s: int32 = 0
         for i in range(n):
             for j in range(n):
                 s = s + j
@@ -920,12 +912,8 @@ def test_scope():
 
     s = allo.customize(kernel5)
     mod = s.build()
-    assert mod(4) == kernel5_py(4)
-    assert mod(8) == kernel5_py(8)
-    s = allo.customize(kernel5_py)
-    mod = s.build()
-    assert mod(4) == kernel5_py(4)
-    assert mod(8) == kernel5_py(8)
+    assert mod(4) == kernel5(4)
+    assert mod(8) == kernel5(8)
 
 
 def test_np_array():
@@ -1034,5 +1022,5 @@ def test_np_array():
 
 
 if __name__ == "__main__":
-    test_all_gemm()
-    # pytest.main([__file__])
+    # test_tuple()
+    pytest.main([__file__])

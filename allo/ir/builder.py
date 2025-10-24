@@ -149,6 +149,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Name(ctx: ASTContext, node: ast.Name, val=None):
+        print(node.id, node.shape)
         if val is not None and isinstance(node.ctx, ast.Store):
             buffer = ctx.get_symbol(node.id)
             assert (
@@ -660,11 +661,7 @@ class ASTTransformer(ASTBuilder):
             # Get zero-rank memref for constant
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
-                op_result = op.result
-                if hasattr(op.result.type, "shape"):
-                    assert len(op.result.type.shape) == 0
-                    op_result = ASTTransformer.build_scalar(ctx, op.result)
-                fill = linalg_d.fill(op_result, outs=[in_cst.result])
+                fill = linalg_d.fill(op.result, outs=[in_cst.result])
             op = fill.owner if ctx.enable_tensor else in_cst
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
@@ -902,11 +899,7 @@ class ASTTransformer(ASTBuilder):
                     if isinstance(rhs, (memref_d.AllocOp, MockArg)):
                         linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
                     elif rhs is not None:
-                        rhs_result = rhs.result
-                        if hasattr(rhs.result.type, "shape"):
-                            assert len(rhs.result.type.shape) == 0
-                            rhs_result = ASTTransformer.build_scalar(ctx, rhs.result)
-                        linalg_op = linalg_d.fill(rhs_result, outs=[alloc_op.result])
+                        linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
                     else:
                         linalg_op = alloc_op.result
                 rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
@@ -921,33 +914,36 @@ class ASTTransformer(ASTBuilder):
                         target.shape,
                         target.dims[1],  # rhs
                     )
-        target_ = ctx.get_symbol(name=target.id, allow_missing=True)
-        if target_ is None:
-            # declare
-            # - if rhs is constant, allocate on stack to make it a real variable
-            if not isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
-                if not ctx.enable_tensor:
-                    alloc_op = ASTTransformer.build_array(
-                        ctx, target.dtype, target.shape
-                    )
-                    ctx.buffers[target.id] = alloc_op
-                    ctx.put_symbol(name=target.id, val=alloc_op)
-                    ASTTransformer.build_assign_value(
-                        ctx, target, buffer=alloc_op, val=rhs
-                    )
+        if isinstance(target, ast.Name):
+            target_ = ctx.get_symbol(name=target.id, allow_missing=True)
+            if target_ is None:
+                # declare
+                # - if rhs is constant, allocate on stack to make it a real variable
+                if rhs is None or not isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
+                    if not ctx.enable_tensor:
+                        alloc_op = ASTTransformer.build_array(
+                            ctx, target.dtype, target.shape
+                        )
+                        ctx.buffers[target.id] = alloc_op
+                        ctx.put_symbol(name=target.id, val=alloc_op)
+                        if rhs is not None:
+                            ASTTransformer.build_assign_value(
+                                ctx, target, buffer=alloc_op, val=rhs
+                            )
+                    else:
+                        raise RuntimeError(
+                            "MLIR tensors are immutable data structures, fail to resolve"
+                        )
                 else:
-                    raise RuntimeError(
-                        "MLIR tensors are immutable data structures, fail to resolve"
-                    )
+                    ctx.buffers[target.id] = rhs
+                    ctx.put_symbol(name=target.id, val=rhs)
             else:
-                ctx.buffers[target.id] = rhs
-                ctx.put_symbol(name=target.id, val=rhs)
+                assert (
+                    not ctx.enable_tensor
+                ), "MLIR tensors are immutable data structures, fail to resolve"
+                ASTTransformer.build_assign_value(ctx, target, buffer=target_, val=rhs)
         else:
-            # node.target is Name (checked in TypeInferer)
-            assert (
-                not ctx.enable_tensor
-            ), "MLIR tensors are immutable data structures, fail to resolve"
-            ASTTransformer.build_assign_value(ctx, target, buffer=target_, val=rhs)
+            build_stmt(ctx, target, val=rhs)
         return None
 
     @staticmethod
@@ -2990,9 +2986,6 @@ class ASTTransformer(ASTBuilder):
                 )
                 ret = alloc_op
                 res = ret.result
-        elif hasattr(res.type, "shape") and len(res.type.shape) == 0:
-            assert type(res.type.element_type) is type(ctx.top_func.type.results[0])
-            res = ASTTransformer.build_scalar(ctx, res)
         else:
             raise RuntimeError("Fail to resolve return value")
         return func_d.ReturnOp([res], ip=ctx.pop_ip())
