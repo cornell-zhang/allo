@@ -111,6 +111,8 @@ class ASTTransformer(ASTBuilder):
     @staticmethod
     def build_assign_value(ctx: ASTContext, node: ast.Name, buffer, val):
         target = buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
+        # FIXME (Shihan): We may need to look for some workarounds to support such cases.
+        assert not ctx.enable_tensor, "MLIR tensors are immutable data structures, fail to resolve."
         if len(node.shape) == 0:
             # scalar
             if not ctx.enable_tensor:
@@ -151,6 +153,7 @@ class ASTTransformer(ASTBuilder):
     def build_Name(ctx: ASTContext, node: ast.Name, val=None):
         if val is not None and isinstance(node.ctx, ast.Store):
             buffer = ctx.get_symbol(node.id)
+            # FIXME (Shihan): We may need to look for some workarounds to support such cases.
             assert (
                 not ctx.enable_tensor
             ), "MLIR tensors are immutable data structures, fail to resolve"
@@ -910,7 +913,6 @@ class ASTTransformer(ASTBuilder):
                 pass
             elif len(target.shape) > 0:
                 alloc_op = ASTTransformer.build_array(ctx, target.dtype, target.shape)
-                alloc_op.attributes["name"] = StringAttr.get(target.id)
                 with ctx.get_ip():
                     if rhs is not None:
                         # for some OpView (e.g., linalg.transpose), op.result return a OpResultList
@@ -964,14 +966,18 @@ class ASTTransformer(ASTBuilder):
                                 ctx, target, buffer=alloc_op, val=rhs_value
                             )
                     else:
-                        raise RuntimeError(
-                            "MLIR tensors are immutable data structures, fail to resolve"
-                        )
+                        if rhs is None:
+                            alloc_op = ASTTransformer.build_array( ctx, target.dtype, target.shape)
+                        else:
+                            alloc_op = rhs
+                        ctx.buffers[target.id] = alloc_op
+                        ctx.put_symbol(name=target.id, val=alloc_op)
                 else:
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
                     ctx.put_symbol(name=target.id, val=rhs)
             else:
+                # FIXME (Shihan): We may need to look for some workarounds to support such cases.
                 assert (
                     not ctx.enable_tensor
                 ), "MLIR tensors are immutable data structures, fail to resolve"

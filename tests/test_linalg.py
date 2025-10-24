@@ -257,6 +257,7 @@ def test_linalg_softmax():
     B = np.random.uniform(size=(K, N)).astype(np.float32)
     np.testing.assert_allclose(f(A, B), kernel(A, B), atol=1e-3)
 
+
 @pytest.mark.skip(reason="Feature not implemented yet (lower_linalg=True)")
 def test_linalg_Linear_layer():
     inp_num = 12

@@ -1068,5 +1068,24 @@ def test_np_array():
     # assert mod() == a
 
 
+def test_slice():
+    def slice(A: int32[6, 6]) -> int32[6, 6]:
+        B: int32[2, 3] = 0
+        B[0, 0] = 1
+        A[0:2, 0:3] = B
+        return A
+
+    s = allo.customize(slice)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(6, 6)).astype(np.int32)
+    np_A_slice = np_A.copy()
+    np_B = np.zeros((2, 3)).astype(np.int32)
+    np_B[0, 0] = 1
+    np_A_slice[0:2, 0:3] = np_B
+    mod = s.build()
+    np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
