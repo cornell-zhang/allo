@@ -161,9 +161,7 @@ class ASTTransformer(ASTBuilder):
                 isinstance(ret.result.type, (MemRefType, RankedTensorType))
                 and len(ret.result.type.shape) == 0
             ):
-                print(ret, node.dtype)
                 op_ = ASTTransformer.build_scalar(ctx, ret)
-                print(op_)
                 return op_
             return ret
         if node.id in ctx.global_vars:
@@ -911,10 +909,15 @@ class ASTTransformer(ASTBuilder):
                 alloc_op = ASTTransformer.build_array(ctx, target.dtype, target.shape)
                 alloc_op.attributes["name"] = StringAttr.get(target.id)
                 with ctx.get_ip():
-                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                        linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
-                    elif rhs is not None:
-                        linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
+                    if rhs is not None:
+                        if isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
+                            linalg_op = linalg_d.copy(
+                                rhs.result, outs=[alloc_op.result]
+                            )
+                        else:
+                            linalg_op = linalg_d.fill(
+                                rhs.result, outs=[alloc_op.result]
+                            )
                     else:
                         linalg_op = alloc_op.result
                 rhs = linalg_op.owner if ctx.enable_tensor else alloc_op

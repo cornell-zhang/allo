@@ -391,13 +391,13 @@ class TypeInferer(ASTVisitor):
                 else:
                     # assign
                     target.dtype, target.shape = target_dtype, target_shape
-                    final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                        ctx, target, rhs_shape=rhs_shape, match_lhs=True
-                    )
-                    assert (
-                        final_shape == target_shape
-                    ), f"Shape mismatch, got {final_shape} and {target_shape}"
-                    node.dims = target.dims = (lhs_dims, rhs_dims)
+                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+                    ctx, target, rhs_shape=rhs_shape, match_lhs=True
+                )
+                assert (
+                    final_shape == target.shape
+                ), f"Shape mismatch, got {final_shape} and {target.shape}"
+                node.dims = target.dims = (lhs_dims, rhs_dims)
             else:
                 # assign
                 if not rhs_visited:
