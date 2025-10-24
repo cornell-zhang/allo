@@ -560,7 +560,6 @@ def test_partition_constant_array():
         return A
 
     s = allo.customize(kernel)
-    print(s.module)
     s.partition(s.A)
     print(s.module)
 
@@ -659,5 +658,4 @@ def test_partition_nested_function_calls():
 
 
 if __name__ == "__main__":
-    test_partition_constant_array()
-    # pytest.main([__file__])
+    pytest.main([__file__])

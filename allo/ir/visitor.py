@@ -81,8 +81,6 @@ class ASTContext:
         self.nested_loops = 0
         # used to avoid loop band naming conflict
         self.loop_band_count = 0
-        # used to avoid naming conflict (general to all renaming cases)
-        self.rename_cnt = 0
         # used for AffineExpr dim counting
         self.dim_count = 0
         self.unnamed_linalg_op_count = 0

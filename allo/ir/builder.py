@@ -108,6 +108,9 @@ class ASTBuilder(ASTVisitor):
 
 # pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
+    # to resolve global variable naming conflict
+    global_var_cnt: dict[str, int] = {}
+
     @staticmethod
     def build_assign_value(ctx: ASTContext, node: ast.Name, buffer, val):
         target = buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
@@ -901,7 +904,6 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
             )
-            print("rhs", rhs)
         else:
             # - other
             rhs = build_stmt(ctx, value)
@@ -983,11 +985,11 @@ class ASTTransformer(ASTBuilder):
                 else:
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
-                    # # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may
-                    # if "name" in rhs.attributes and rhs.attributes["name"].value != target.id:
-                    #     rhs.attributes["val_name"] = StringAttr.get(target.id)
-                    # else:
-                    rhs.attributes["name"] = StringAttr.get(target.id)
+                    # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may
+                    if "name" in rhs.attributes:
+                        assert rhs.attributes["name"].value == target.id
+                    else:
+                        rhs.attributes["name"] = StringAttr.get(target.id)
                     ctx.put_symbol(name=target.id, val=rhs)
             else:
                 # FIXME (Shihan): We may need to look for some workarounds to support such cases.
@@ -1064,8 +1066,12 @@ class ASTTransformer(ASTBuilder):
                 name = node.id
             else:
                 name = f"const_{abs(hash(str(np_values)))}"
-            name = f"{name}_{ctx.rename_cnt}"
-            ctx.rename_cnt += 1
+            if name not in ASTTransformer.global_var_cnt:
+                ASTTransformer.global_var_cnt[name] = 0
+            else:
+                cnt = ASTTransformer.global_var_cnt[name]
+                ASTTransformer.global_var_cnt[name] = cnt + 1
+                name = f"{name}_{cnt}"
             sym_name = StringAttr.get(name)
             sym_visibility = StringAttr.get("private")
             memref_type = MemRefType.get(shape, dtype.build())
@@ -2044,6 +2050,7 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_Module(ctx: ASTContext, node: ast.Module):
+        ASTTransformer.global_var_cnt.clear()
         with ctx.mlir_ctx:
             module = Module.create()
         ctx.set_ip(module.body)
