@@ -800,6 +800,16 @@ def test_scalar():
     mod = s.build()
     assert mod() == a + 1
 
+    def kernel3() -> int32:
+        a_: int32 = a
+        b_: int32 = a + 1
+        a_, b_ = a + 1, a + 2
+        return a_ + b_
+
+    s = allo.customize(kernel3)
+    mod = s.build()
+    assert mod() == a * 2 + 3
+
 
 def test_line_trace():
     def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
@@ -1024,5 +1034,5 @@ def test_np_array():
 
 
 if __name__ == "__main__":
-    # test_np_array()
-    pytest.main([__file__])
+    test_all_gemm()
+    # pytest.main([__file__])

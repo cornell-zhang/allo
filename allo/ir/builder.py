@@ -157,6 +157,11 @@ class ASTTransformer(ASTBuilder):
             return ASTTransformer.build_assign_value(ctx, node, buffer, val)
         ret = ctx.get_symbol(node.id, allow_missing=True)
         if ret is not None:
+            if (
+                isinstance(ret.result.type, (MemRefType, RankedTensorType))
+                and len(ret.result.type.shape) == 0
+            ):
+                return ASTTransformer.build_scalar(ctx, ret)
             return ret
         if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
