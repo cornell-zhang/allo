@@ -61,10 +61,10 @@ def _mlir_lower_pipeline(module, **kwargs):
 
 def lower_linalg_and_attach_names(module):
     """
-    FIXME (Shihan): 
-        This function is intended to lower Linalg operations into Affine operations and 
+    FIXME (Shihan):
+        This function is intended to lower Linalg operations into Affine operations and
         attach attributes to the resulting Affine loops for identification during scheduling.
-        However, the current logic of this function does not seem to make complete sense, 
+        However, the current logic of this function does not seem to make complete sense,
         and it likely requires some refactoring and cleanup to ensure correctness and clarity.
     """
 

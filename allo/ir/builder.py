@@ -112,7 +112,9 @@ class ASTTransformer(ASTBuilder):
     def build_assign_value(ctx: ASTContext, node: ast.Name, buffer, val):
         target = buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
         # FIXME (Shihan): We may need to look for some workarounds to support such cases.
-        assert not ctx.enable_tensor, "MLIR tensors are immutable data structures, fail to resolve."
+        assert (
+            not ctx.enable_tensor
+        ), "MLIR tensors are immutable data structures, fail to resolve."
         if len(node.shape) == 0:
             # scalar
             if not ctx.enable_tensor:
@@ -967,7 +969,9 @@ class ASTTransformer(ASTBuilder):
                             )
                     else:
                         if rhs is None:
-                            alloc_op = ASTTransformer.build_array( ctx, target.dtype, target.shape)
+                            alloc_op = ASTTransformer.build_array(
+                                ctx, target.dtype, target.shape
+                            )
                         else:
                             alloc_op = rhs
                         ctx.buffers[target.id] = alloc_op

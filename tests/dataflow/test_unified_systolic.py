@@ -30,10 +30,11 @@ def unified_gemm_simple():
             inst_chain[i, j].put(tag)
 
         with allo.meta_else():
+            flowtag: bool
             with allo.meta_if(i == 0):
-                flowtag: bool = inst_broad[j - 1].get()
+                flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
-                flowtag: bool = inst_chain[i - 1, j].get()
+                flowtag = inst_chain[i - 1, j].get()
 
             with allo.meta_if(i == 0 and j != P1 - 1):
                 inst_broad[j].put(flowtag)
@@ -134,10 +135,11 @@ def unified_gemm_daisy_chain():
             inst_chain[i, j].put(flowtag)
 
         with allo.meta_else():
+            flowtag: bool
             with allo.meta_if(i == 0):
-                flowtag: bool = inst_broad[j - 1].get()
+                flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
-                flowtag: bool = inst_chain[i - 1, j].get()
+                flowtag = inst_chain[i - 1, j].get()
 
             with allo.meta_if(i == 0 and j != P1 - 1):
                 inst_broad[j].put(flowtag)
@@ -303,10 +305,11 @@ def unified_gemm_tiling():
             inst_chain[i, j].put(tag)
 
         with allo.meta_else():
+            flowtag: bool
             with allo.meta_if(i == 0):
-                flowtag: bool = inst_broad[j - 1].get()
+                flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
-                flowtag: bool = inst_chain[i - 1, j].get()
+                flowtag = inst_chain[i - 1, j].get()
 
             with allo.meta_if(i == 0 and j != P1 - 1):
                 inst_broad[j].put(flowtag)
