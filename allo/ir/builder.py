@@ -161,7 +161,10 @@ class ASTTransformer(ASTBuilder):
                 isinstance(ret.result.type, (MemRefType, RankedTensorType))
                 and len(ret.result.type.shape) == 0
             ):
-                return ASTTransformer.build_scalar(ctx, ret)
+                print(ret, node.dtype)
+                op_ = ASTTransformer.build_scalar(ctx, ret)
+                print(op_)
+                return op_
             return ret
         if node.id in ctx.global_vars:
             return MockConstant(ctx.global_vars[node.id], ctx)
@@ -199,7 +202,11 @@ class ASTTransformer(ASTBuilder):
         if ctx.enable_tensor:
             res = tensor_d.ExtractOp(tensor=res, indices=[], ip=ctx.get_ip())
         else:
-            res = memref_d.LoadOp(res, [], ip=ctx.get_ip())
+            affine_map = AffineMap.get_identity(0)
+            affine_attr = AffineMapAttr.get(affine_map)
+            res = affine_d.AffineLoadOp(
+                res.result.type.element_type, res, [], affine_attr, ip=ctx.get_ip()
+            )
         return res
 
     @staticmethod
