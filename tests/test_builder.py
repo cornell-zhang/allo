@@ -725,6 +725,53 @@ def test_tuple():
     np.testing.assert_allclose(np_C, np_C_ref)
     np.testing.assert_allclose(np_D, np_D_ref)
 
+    def kernel2(A: float32[1], B: float32[1]) -> float32:
+        C: float32
+        D: float32
+        # assign with func call results (a tuple)
+        C, D = callee(A[0], B[0])
+        return C + D
+
+    s = allo.customize(kernel2)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref + np_D_ref)
+
+    def kernel3(A: float32[1], B: float32[1]) -> float32:
+        # define with func call results (a tuple)
+        C, D = callee(
+            A[0], B[0]
+        )  # valid (as the type can be inferred) but not suggested
+        return C + D
+
+    s = allo.customize(kernel3)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref + np_D_ref)
+
+    def kernel4(A: float32[1], B: float32[1]) -> float32:
+        C, _ = callee(
+            A[0], B[0]
+        )  # valid (as the type can be inferred) but not suggested
+        return C
+
+    s = allo.customize(kernel4)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref)
+
 
 @pytest.mark.parametrize("T", [int8, int32, float32])
 def test_minmax(T):
