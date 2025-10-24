@@ -919,7 +919,9 @@ class ASTTransformer(ASTBuilder):
             if target_ is None:
                 # declare
                 # - if rhs is constant, allocate on stack to make it a real variable
-                if rhs is None or not isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
+                if rhs is None or not isinstance(
+                    rhs.result.type, (MemRefType, RankedTensorType)
+                ):
                     if not ctx.enable_tensor:
                         alloc_op = ASTTransformer.build_array(
                             ctx, target.dtype, target.shape
