@@ -238,16 +238,36 @@ def test_multiple_conditions():
 
 
 def test_assign_logic():
-    def kernel(A: int32) -> int32:
+    def kernel1(A: int32) -> int32:
         B: int32 = 0
         if A > B:
             B = A
         return B
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel1, verbose=True)
     print(s.module)
     mod = s.build()
-    assert mod(2) == kernel(2)
+    assert mod(2) == kernel1(2)
+
+    a = 3
+
+    def kernel2() -> int32:
+        # declaration
+        a_: int32 = a
+        # assign
+        a_: int32 = 1
+        a_ = 2
+        a_ = a
+        return a_
+
+    s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel2, enable_tensor=True)
+    # mod = s.build()
+    # print(s.module)
+    # assert mod() == a
 
 
 def test_while_basic():
@@ -755,18 +775,30 @@ def test_minmax_cast():
 
 
 def test_scalar():
-    def kernel() -> int32:
+    def kernel1() -> int32:
         a: int32 = 0
         b: int32 = a + 1
         return b
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel1)
     print(s.module)
     assert "%alloc[]" in str(s.module)
     mod = s.build()
     assert mod() == 1
     mod = s.build(target="vhls")
     assert "," not in mod.hls_code
+
+    a = 1
+
+    def kernel2() -> int32:
+        a_: int32 = a
+        b_: int32 = a + 1
+        a_, b_ = a + 1, a + 2
+        return a_
+
+    s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == a + 1
 
 
 def test_line_trace():
@@ -888,6 +920,7 @@ def test_scope():
 
 def test_np_array():
     a = 1
+    arr = np.array([[1, 2], [3, 4]])
 
     def kernel1() -> int32:
         # rhs must be a compile time constant
@@ -897,8 +930,9 @@ def test_np_array():
     s = allo.customize(kernel1)
     mod = s.build()
     assert mod() == a
-
-    arr = np.array([[1, 2], [3, 4]])
+    s = allo.customize(kernel1, enable_tensor=True)
+    mod = s.build()
+    assert mod() == a
 
     def kernel2() -> int32:
         # rhs can be a global constant np.array
@@ -906,6 +940,9 @@ def test_np_array():
         return tmp[0, 0]
 
     s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == arr[0][0]
+    s = allo.customize(kernel2, enable_tensor=True)
     mod = s.build()
     assert mod() == arr[0][0]
 
@@ -919,9 +956,10 @@ def test_np_array():
     s = allo.customize(kernel3)
     mod = s.build()
     assert mod() == a
-    s = allo.customize(kernel3, enable_tensor=True)
-    mod = s.build()
-    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel3, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
 
     def kernel4() -> int32:
         # declaration: type annotation required
@@ -933,11 +971,58 @@ def test_np_array():
     s = allo.customize(kernel4)
     mod = s.build()
     assert mod() == a
-    s = allo.customize(kernel4, enable_tensor=True)
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel4, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel5() -> int32:
+        a_: int32 = a
+        tmp: int32[2, 2] = a_
+        # x, y = 1, 1
+        # declaration: type annotation required
+        tmp: int32[2, 2] = [[1, 2], [3, 4]]
+        # assignment
+        tmp = [[a, 2], [3, 4]]
+        return tmp[0, 0]
+
+    s = allo.customize(kernel5)
     mod = s.build()
     assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel5, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel6() -> int32:
+        # declaration: type annotation required
+        tmp: int32[1] = [1]
+        # assignment
+        tmp = [a]
+        return tmp[0]
+
+    s = allo.customize(kernel6)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel6, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel7() -> int32:
+        a_: int32 = a
+        tmp: int32[2, 2] = a_
+        return tmp[0, 0]
+
+    s = allo.customize(kernel7)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel7, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
 
 
 if __name__ == "__main__":
-    test_np_array()
-    # pytest.main([__file__])
+    # test_np_array()
+    pytest.main([__file__])

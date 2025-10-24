@@ -109,7 +109,7 @@ class ASTBuilder(ASTVisitor):
 # pylint: disable=too-many-public-methods
 class ASTTransformer(ASTBuilder):
     @staticmethod
-    def build_assignment(ctx: ASTContext, node: ast.Name, buffer, val):
+    def build_assign_value(ctx: ASTContext, node: ast.Name, buffer, val):
         target = buffer.op.result if isinstance(buffer, MockScalar) else buffer.result
         if len(node.shape) == 0:
             # scalar
@@ -151,7 +151,10 @@ class ASTTransformer(ASTBuilder):
     def build_Name(ctx: ASTContext, node: ast.Name, val=None):
         if val is not None and isinstance(node.ctx, ast.Store):
             buffer = ctx.get_symbol(node.id)
-            return ASTTransformer.build_assignment(ctx, node, buffer, val)
+            assert (
+                not ctx.enable_tensor
+            ), "MLIR tensors are immutable data structures, fail to resolve"
+            return ASTTransformer.build_assign_value(ctx, node, buffer, val)
         ret = ctx.get_symbol(node.id, allow_missing=True)
         if ret is not None:
             return ret
@@ -185,6 +188,14 @@ class ASTTransformer(ASTBuilder):
                 alloc_op.attributes["unsigned"] = UnitAttr.get()
             return alloc_op
         return tensor_d.EmptyOp(shape, dtype.build(), ip=ctx.get_ip())
+
+    @staticmethod
+    def build_scalar(ctx: ASTContext, res):
+        if ctx.enable_tensor:
+            res = tensor_d.ExtractOp(tensor=res, indices=[], ip=ctx.get_ip())
+        else:
+            res = memref_d.LoadOp(res, [], ip=ctx.get_ip())
+        return res
 
     @staticmethod
     def attach_op_name(
@@ -644,7 +655,11 @@ class ASTTransformer(ASTBuilder):
             # Get zero-rank memref for constant
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
-                fill = linalg_d.fill(op.result, outs=[in_cst.result])
+                op_result = op.result
+                if hasattr(op.result.type, "shape"):
+                    assert len(op.result.type.shape) == 0
+                    op_result = ASTTransformer.build_scalar(ctx, op.result)
+                fill = linalg_d.fill(op_result, outs=[in_cst.result])
             op = fill.owner if ctx.enable_tensor else in_cst
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
@@ -857,164 +872,125 @@ class ASTTransformer(ASTBuilder):
         return new_indices, False
 
     @staticmethod
+    def build_assign_stmt(ctx: ASTContext, target: ast.expr, value: ast.expr):
+        # Compute RHS
+        if hasattr(value, "np_values"):
+            # - np array -> constant tensor
+            rhs = ASTTransformer.build_constant_tensor(
+                ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
+            )
+        else:
+            # - other
+            rhs = build_stmt(ctx, value)
+            if rhs is not None:
+                # dtype cast
+                rhs = ASTTransformer.build_cast_op(
+                    ctx, rhs, value.dtype, target.dtype, value.shape
+                )
+            # Store LHS
+            if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
+                pass
+            elif len(target.shape) > 0:
+                alloc_op = ASTTransformer.build_array(ctx, target.dtype, target.shape)
+                alloc_op.attributes["name"] = StringAttr.get(target.id)
+                with ctx.get_ip():
+                    if isinstance(rhs, (memref_d.AllocOp, MockArg)):
+                        linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
+                    elif rhs is not None:
+                        rhs_result = rhs.result
+                        if hasattr(rhs.result.type, "shape"):
+                            assert len(rhs.result.type.shape) == 0
+                            rhs_result = ASTTransformer.build_scalar(ctx, rhs.result)
+                        linalg_op = linalg_d.fill(rhs_result, outs=[alloc_op.result])
+                    else:
+                        linalg_op = alloc_op.result
+                rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
+            else:
+                # scalar
+                if rhs is not None:
+                    rhs = ASTTransformer.build_broadcast_op(
+                        ctx,
+                        rhs,
+                        target.dtype,
+                        value.shape,
+                        target.shape,
+                        target.dims[1],  # rhs
+                    )
+        target_ = ctx.get_symbol(name=target.id, allow_missing=True)
+        if target_ is None:
+            # declare
+            # - if rhs is constant, allocate on stack to make it a real variable
+            if not isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
+                if not ctx.enable_tensor:
+                    alloc_op = ASTTransformer.build_array(
+                        ctx, target.dtype, target.shape
+                    )
+                    ctx.buffers[target.id] = alloc_op
+                    ctx.put_symbol(name=target.id, val=alloc_op)
+                    ASTTransformer.build_assign_value(
+                        ctx, target, buffer=alloc_op, val=rhs
+                    )
+                else:
+                    raise RuntimeError(
+                        "MLIR tensors are immutable data structures, fail to resolve"
+                    )
+            else:
+                ctx.buffers[target.id] = rhs
+                ctx.put_symbol(name=target.id, val=rhs)
+        else:
+            # node.target is Name (checked in TypeInferer)
+            assert (
+                not ctx.enable_tensor
+            ), "MLIR tensors are immutable data structures, fail to resolve"
+            ASTTransformer.build_assign_value(ctx, target, buffer=target_, val=rhs)
+        return None
+
+    @staticmethod
     def build_Assign(ctx: ASTContext, node: ast.Assign):
-        # Remove redundant array building
-        # TODO: overload standard binop (e.g. +/-/*) to avoid redundant array building
-        # pylint: disable=too-many-boolean-expressions
+        targets, values = [], []
+        if isinstance(node.targets[0], ast.Tuple):
+            targets.extend(node.targets[0].elts)
+            if isinstance(node.value, ast.Tuple):
+                values.extend(node.value.elts)
+        else:
+            targets.append(node.targets[0])
+            values.append(node.value)
+        # one special case: the builtin get_pid()
         if (
             isinstance(node.value, ast.Call)
             and isinstance(node.value.func, ast.Attribute)
-            and isinstance(node.targets[0], ast.Subscript)
-            and isinstance(node.targets[0].value, ast.Name)
+            and node.value.func.attr == "get_pid"
         ):
-            val = ctx.get_symbol(node.targets[0].value.id, allow_missing=True)
-            if (
-                val is not None
-                and (
-                    (
-                        isinstance(node.targets[0].slice, ast.Tuple)
-                        and all(
-                            isinstance(x, ast.Slice)
-                            and x.lower is None
-                            and x.upper is None
-                            for x in node.targets[0].slice.elts
-                        )
-                    )
-                    or (
-                        isinstance(node.targets[0].slice, ast.Slice)
-                        and node.targets[0].slice.lower is None
-                        and node.targets[0].slice.upper is None
-                    )
-                )
-                and node.value.func.attr
-                in {
-                    "matmul",
-                    "bmm",
-                    "softmax",
-                    "exp",
-                    "abs",
-                    "log",
-                    "add",
-                    "sub",
-                    "mul",
-                    "div",
-                    "relu",
-                    "conv2d",
-                    "maxpool",
-                    "sumpool",
-                    "copy",
-                    "transpose",
-                    "linear",
-                    "view",
-                    "concat",
-                }
-            ):
-                rhs = ASTTransformer.build_Call(ctx, node.value, val)
-                return rhs
-        # Compute RHS
-        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, int):
-            if len(node.shape) > 0:
-                if ctx.enable_tensor:
-                    rhs = tensor_d.EmptyOp(
-                        list(node.shape), node.dtype.build(), ip=ctx.get_ip()
-                    )
-                else:
-                    memref_type = MemRefType.get(list(node.shape), node.dtype.build())
-                    rhs = memref_d.AllocOp(memref_type, [], [], ip=ctx.get_ip())
-                val = MockConstant(node.value.value, ctx)
-                # [NOTE]: wired bug, `ip=ctx.get_ip()` not work
-                with ctx.get_ip():
-                    fill_op = linalg_d.fill(val.result, outs=[rhs.result])
-                    if ctx.enable_tensor:
-                        rhs = fill_op.owner
-            else:
-                constant = MockConstant(node.value.value, ctx)
-                cast = ASTTransformer.build_cast_op(
-                    ctx, constant, node.value.dtype, node.dtype, node.value.shape
-                )
-                rhs = ASTTransformer.build_broadcast_op(
-                    ctx,
-                    cast,
-                    node.dtype,
-                    node.value.shape,
-                    node.shape,
-                    node.dims[1],  # rhs
-                )
-        else:
-            rhs = build_stmt(ctx, node.value)
-            if (
-                isinstance(node.value, ast.Call) or len(node.value.shape) > 0
-            ) and not isinstance(node.targets[0], ast.Subscript):
-                targets = []
-                if isinstance(node.targets[0], ast.Tuple):
-                    targets = node.targets[0].elts
-                else:
-                    targets = [node.targets[0]]
-                for idx, target in enumerate(targets):
-                    if isinstance(target, ast.Name):
-                        if hasattr(rhs, "attributes"):
-                            rhs.attributes["name"] = StringAttr.get(target.id)
-                        exist_target = ctx.get_symbol(target.id, allow_missing=True)
-                        if exist_target is not None:
-                            raise RuntimeError(
-                                f"Variable `{target.id}` has already been defined, please use a different name"
-                            )
-                        if (
-                            isinstance(node.value, ast.Call)
-                            and isinstance(node.value.func, ast.Attribute)
-                            and node.value.func.attr == "get_pid"
-                        ):
-                            ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
-                                f"df.p{idx}"
-                            ]
-                            ctx.symbolic[ast.unparse(target)] = f"p{idx}"
-                        else:
-                            ctx.buffers[target.id] = (
-                                rhs[idx] if isinstance(rhs, tuple) else rhs
-                            )
-                            ctx.put_symbol(name=target.id, val=ctx.buffers[target.id])
-                    else:
-                        store_op = build_stmt(ctx, target, val=rhs, idx=idx)
-                return rhs
-            # Store LHS
-            rhs = ASTTransformer.build_cast_op(
-                ctx, rhs, node.value.dtype, node.dtype, node.value.shape
-            )
-            rhs = ASTTransformer.build_broadcast_op(
-                ctx, rhs, node.dtype, node.value.shape, node.shape, node.dims[1]  # rhs
-            )
-        store_op = build_stmt(ctx, node.targets[0], val=rhs)
-        # Since tensor operations returns a new tensor, we also need to update the buffer
-        if (
-            not isinstance(store_op, (MockScalar, MockConstant))
-            and len(store_op.results) > 0
-            and isinstance(store_op.result.type, RankedTensorType)
-        ):
-            ctx.buffers[node.targets[0].value.id] = store_op
-            ctx.put_symbol(name=node.targets[0].value.id, val=store_op)
-        return store_op
+            for i, target in enumerate(targets):
+                # TODO: add target symbol for pid??
+                pid = MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
+                ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
+                ctx.symbolic[ast.unparse(target)] = f"p{i}"
+            return None
+        for target, value in zip(targets, values):
+            ASTTransformer.build_assign_stmt(ctx, target, value)
+        return None
 
     @staticmethod
     def build_constant_tensor(
         ctx: ASTContext,
         node: ast.AST,
         np_values: np.array,
-        dtype: AlloType = None,
-        shape: list[int] = None,
+        dtype: AlloType,
+        shape: list[int],
         constant: bool = False,
     ):
         value_attr = DenseElementsAttr.get(np_values, type=dtype.build())
-        dtype = dtype if dtype is not None else node.dtype
-        shape = shape if shape is not None else node.shape
+        assert dtype is not None and shape is not None
         if ctx.enable_tensor:
             tensor_type = RankedTensorType.get(shape, dtype.build())
             # pylint: disable=too-many-function-args
             const_tensor = arith_d.ConstantOp(tensor_type, value_attr, ip=ctx.get_ip())
         else:
-            if hasattr(node, "target"):
-                name = node.target.id
+            if hasattr(node, "id"):
+                name = node.id
             else:
-                name = f"const_{abs(hash(str(node) + str(np_values)))}"
+                name = f"const_{abs(hash(str(np_values)))}"
             name = f"{name}_{ctx.rename_cnt}"
             ctx.rename_cnt += 1
             sym_name = StringAttr.get(name)
@@ -1592,30 +1568,9 @@ class ASTTransformer(ASTBuilder):
 
     @staticmethod
     def build_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
-        shape, dtype = node.shape, node.dtype
-        # Compute RHS
-        if hasattr(node, "np_values"):
-            rhs = ASTTransformer.build_constant_tensor(
-                ctx, node, node.np_values, dtype=dtype
-            )
-            rhs_ = ctx.get_symbol(name=node.target.id, allow_missing=True)
-            if rhs_ is None:
-                # declare
-                ctx.buffers[node.target.id] = rhs
-                ctx.put_symbol(name=node.target.id, val=rhs)
-            else:
-                assert isinstance(
-                    node.target, ast.Name
-                ), "target of AnnAssign must be Name, other type not supported."
-                ASTTransformer.build_assignment(ctx, node.target, buffer=rhs_, val=rhs)
-            return
-        # Not constant tensor
-        rhs = build_stmt(ctx, node.value)
-        if rhs is not None:
-            rhs = ASTTransformer.build_cast_op(
-                ctx, rhs, node.value.dtype, node.dtype, node.value.shape
-            )
-        # Store LHS
+        shape, dtype = node.target.shape, node.target.dtype
+        # stream can only be declared with annotated assign stmt
+        # TODO: guard, stream declaration has no rhs
         if isinstance(dtype, Stream):
             stream_type = allo_d.StreamType.get(dtype.build(), depth=dtype.depth)
             if len(shape) == 0:
@@ -1625,6 +1580,9 @@ class ASTTransformer(ASTBuilder):
                     stream_op.attributes["unsigned"] = UnitAttr.get()
                 stream_op.attributes["name"] = StringAttr.get(node.target.id)
                 ctx.buffers[node.target.id] = stream_op
+                assert (
+                    ctx.get_symbol(name=node.target.id, allow_missing=True) is None
+                ), f"Stream name {node.target.id} conflict"
                 ctx.put_symbol(name=node.target.id, val=stream_op)
             else:
                 # stream array
@@ -1636,44 +1594,17 @@ class ASTTransformer(ASTBuilder):
                     new_name = node.target.id + "_" + "_".join(map(str, dim))
                     stream_op.attributes["name"] = StringAttr.get(new_name)
                     ctx.buffers[new_name] = stream_op
+                    assert (
+                        ctx.get_symbol(name=new_name, allow_missing=True) is None
+                    ), f"Stream name {new_name} conflict"
                     ctx.put_symbol(name=new_name, val=stream_op)
                 # placeholder for array of FIFOs
+                assert (
+                    ctx.get_symbol(name=node.target.id, allow_missing=True) is None
+                ), f"Stream name {node.target.id} conflict"
                 ctx.put_symbol(name=node.target.id, val=shape)
-        elif isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
-            ctx.buffers[node.target.id] = rhs
-            ctx.put_symbol(name=node.target.id, val=rhs)
-        elif len(shape) > 0:
-            alloc_op = ASTTransformer.build_array(ctx, dtype, shape)
-            alloc_op.attributes["name"] = StringAttr.get(node.target.id)
-            with ctx.get_ip():
-                if isinstance(rhs, (memref_d.AllocOp, MockArg)):
-                    linalg_op = linalg_d.copy(rhs.result, outs=[alloc_op.result])
-                elif rhs is not None:
-                    linalg_op = linalg_d.fill(rhs.result, outs=[alloc_op.result])
-                else:
-                    linalg_op = alloc_op.result
-            ctx.buffers[node.target.id] = (
-                linalg_op.owner if ctx.enable_tensor else alloc_op
-            )
-            ctx.put_symbol(name=node.target.id, val=ctx.buffers[node.target.id])
-        else:
-            ctx.buffers[node.target.id] = MockScalar(
-                node.target.id,
-                node.dtype,
-                ctx,
-                value=node.value,
-            )
-            ctx.put_symbol(name=node.target.id, val=ctx.buffers[node.target.id])
-            if rhs is not None:
-                rhs = ASTTransformer.build_broadcast_op(
-                    ctx,
-                    rhs,
-                    node.dtype,
-                    node.value.shape,
-                    node.target.shape,
-                    node.dims[1],  # rhs
-                )
-                build_stmt(ctx, node.target, val=rhs)
+            return None
+        return ASTTransformer.build_assign_stmt(ctx, node.target, node.value)
 
     @staticmethod
     def build_FunctionDef(ctx: ASTContext, node: ast.FunctionDef):
@@ -3040,19 +2971,25 @@ class ASTTransformer(ASTBuilder):
             ctx, ret, node.dtype, ctx.top_func_tree.dtype, ctx.top_func_tree.shape
         )
         res = ret.result if not isinstance(ret.result, OpResultList) else ret.result[0]
-        if (
-            isinstance(res.type, MemRefType)
-            and res.type.layout != ctx.top_func.type.results[0].layout
-        ):
-            # memref.subview is involved, we need to copy the values from the original buffer
-            alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
-            memref_d.CopyOp(
-                res,
-                alloc_op.result,
-                ip=ctx.get_ip(),
-            )
-            ret = alloc_op
-            res = ret.result
+        if type(res.type) is type(ctx.top_func.type.results[0]):
+            if (
+                isinstance(res.type, MemRefType)
+                and res.type.layout != ctx.top_func.type.results[0].layout
+            ):
+                # memref.subview is involved, we need to copy the values from the original buffer
+                alloc_op = ASTTransformer.build_array(ctx, node.dtype, node.shape)
+                memref_d.CopyOp(
+                    res,
+                    alloc_op.result,
+                    ip=ctx.get_ip(),
+                )
+                ret = alloc_op
+                res = ret.result
+        elif hasattr(res.type, "shape") and len(res.type.shape) == 0:
+            assert type(res.type.element_type) is type(ctx.top_func.type.results[0])
+            res = ASTTransformer.build_scalar(ctx, res)
+        else:
+            raise RuntimeError("Fail to resolve return value")
         return func_d.ReturnOp([res], ip=ctx.pop_ip())
 
     @staticmethod

@@ -36,6 +36,11 @@ echo "Running ${#FILES[@]} Python scripts..."
 for file in "${FILES[@]}"; do
     echo "=== Running $file ==="
     $PYTHON "$file"
+    status=$?
+    if [ $status -ne 0 ]; then
+        echo "Test failed: $file"
+        exit $status
+    fi
     echo "--- Finished $file ---"
 done
 
