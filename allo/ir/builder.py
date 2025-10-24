@@ -887,8 +887,10 @@ class ASTTransformer(ASTBuilder):
         Type casting is currently not supported for this kind of case.
         """
         # Compute RHS
+        conversion_enabled = False
         if val is not None:
             rhs = val
+            conversion_enabled = idx is None
         elif hasattr(value, "np_values"):
             # - np array -> constant tensor
             rhs = ASTTransformer.build_constant_tensor(
@@ -897,12 +899,13 @@ class ASTTransformer(ASTBuilder):
         else:
             # - other
             rhs = build_stmt(ctx, value)
+            conversion_enabled = True
+        if conversion_enabled:
             if rhs is not None:
                 # dtype cast
                 rhs = ASTTransformer.build_cast_op(
                     ctx, rhs, value.dtype, target.dtype, value.shape
                 )
-            # Store LHS
             if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
                 pass
             elif len(target.shape) > 0:
@@ -910,13 +913,19 @@ class ASTTransformer(ASTBuilder):
                 alloc_op.attributes["name"] = StringAttr.get(target.id)
                 with ctx.get_ip():
                     if rhs is not None:
-                        if isinstance(rhs.result.type, (MemRefType, RankedTensorType)):
+                        # for some OpView (e.g., linalg.transpose), op.result return a OpResultList
+                        rhs_result = (
+                            rhs.result[0]
+                            if isinstance(rhs.result, OpResultList)
+                            else rhs.result
+                        )
+                        if isinstance(rhs_result.type, (MemRefType, RankedTensorType)):
                             linalg_op = linalg_d.copy(
-                                rhs.result, outs=[alloc_op.result]
+                                rhs_result, outs=[alloc_op.result]
                             )
                         else:
                             linalg_op = linalg_d.fill(
-                                rhs.result, outs=[alloc_op.result]
+                                rhs_result, outs=[alloc_op.result]
                             )
                     else:
                         linalg_op = alloc_op.result
@@ -983,6 +992,8 @@ class ASTTransformer(ASTBuilder):
             targets.extend(node.targets[0].elts)
             if isinstance(node.value, ast.Tuple):
                 values.extend(node.value.elts)
+            else:
+                values.append(node.value)
         else:
             targets.append(node.targets[0])
             values.append(node.value)
@@ -1002,8 +1013,14 @@ class ASTTransformer(ASTBuilder):
                 rhs = build_stmt(ctx, node.value)
                 rhs_visited = True
         for idx, target in enumerate(targets):
-            if rhs_visited and len(targets) > 1:
-                ASTTransformer.build_assign_stmt(ctx, target, None, val=rhs, idx=idx)
+            if rhs_visited:
+                ASTTransformer.build_assign_stmt(
+                    ctx,
+                    target,
+                    values[0],
+                    val=rhs,
+                    idx=idx if len(targets) > 1 else None,
+                )
             else:
                 ASTTransformer.build_assign_stmt(ctx, target, values[idx])
         return None
@@ -2581,6 +2598,7 @@ class ASTTransformer(ASTBuilder):
                 arg_results = [arg.result for arg in new_args]
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
+                print(f"{fn_name}_{abs(hash(node))}")
                 func_op = func_d.FuncOp(
                     name=f"{fn_name}_{abs(hash(node))}",
                     type=FunctionType.get(input_types, output_types),
