@@ -1022,5 +1022,4 @@ def test_np_array():
 
 
 if __name__ == "__main__":
-    test_tuple()
-    # pytest.main([__file__])
+    pytest.main([__file__])
