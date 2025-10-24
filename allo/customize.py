@@ -353,6 +353,7 @@ class Schedule:
                         buf_name = self.func_args[path][int(buf_name)].name
                     else:
                         buf_name = self.func_args[path][int(buf_name)]
+                print(path, buf_name)
                 recursive_partition(MockBuffer(path, buf_name))
             # calling the same function
             if isinstance(mlir_target, func_d.CallOp):

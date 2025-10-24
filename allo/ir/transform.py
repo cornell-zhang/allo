@@ -133,8 +133,10 @@ def find_buffer(module, target, func_args):
                 return target_func, -1, op
 
             # Check for GetGlobalOp
-            if isinstance(op, memref_d.GetGlobalOp) and op.name.value == target_name:
-                return target_func, -1, op
+            if isinstance(op, memref_d.GetGlobalOp):
+                print(op)
+                if op.name.value == target_name:
+                    return target_func, -1, op
 
             # Recursively search nested operations
             if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):

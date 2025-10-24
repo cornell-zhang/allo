@@ -901,6 +901,7 @@ class ASTTransformer(ASTBuilder):
             rhs = ASTTransformer.build_constant_tensor(
                 ctx, target, value.np_values, dtype=target.dtype, shape=target.shape
             )
+            print("rhs", rhs)
         else:
             # - other
             rhs = build_stmt(ctx, value)
@@ -952,6 +953,7 @@ class ASTTransformer(ASTBuilder):
         if isinstance(target, ast.Name):
             target_ = ctx.get_symbol(name=target.id, allow_missing=True)
             if target_ is None:
+                print("----", rhs)
                 # declare
                 # - if rhs is constant, allocate on stack to make it a real variable
                 if rhs_value is None or not isinstance(
@@ -962,6 +964,7 @@ class ASTTransformer(ASTBuilder):
                             ctx, target.dtype, target.shape
                         )
                         ctx.buffers[target.id] = alloc_op
+                        alloc_op.attributes["name"] = StringAttr.get(target.id)
                         ctx.put_symbol(name=target.id, val=alloc_op)
                         if rhs_value is not None:
                             ASTTransformer.build_assign_value(
@@ -975,10 +978,16 @@ class ASTTransformer(ASTBuilder):
                         else:
                             alloc_op = rhs
                         ctx.buffers[target.id] = alloc_op
+                        alloc_op.attributes["name"] = StringAttr.get(target.id)
                         ctx.put_symbol(name=target.id, val=alloc_op)
                 else:
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
+                    # # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may
+                    # if "name" in rhs.attributes and rhs.attributes["name"].value != target.id:
+                    #     rhs.attributes["val_name"] = StringAttr.get(target.id)
+                    # else:
+                    rhs.attributes["name"] = StringAttr.get(target.id)
                     ctx.put_symbol(name=target.id, val=rhs)
             else:
                 # FIXME (Shihan): We may need to look for some workarounds to support such cases.
