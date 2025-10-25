@@ -269,6 +269,17 @@ def test_assign_logic():
     # print(s.module)
     # assert mod() == a
 
+    def kernel3() -> int32:
+        # declaration
+        a_: int32 = a
+        # assign type mismatch
+        a_: int32[2] = [2, 2]
+        a_ = a
+        return a_
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel3)
+
 
 def test_while_basic():
     def kernel(A: int32[10]):
@@ -411,11 +422,11 @@ def test_index_arg():
     def kernel(A: int32[10]) -> int32[10]:
         B: int32[10] = 0
 
-        def foo(A: int32[10], x: index) -> int32:
+        def foo(A_: int32[10], x: index) -> int32:
             y: int32 = 0
             C: int32[10] = 0
             for i in range(10):
-                C[i] = A[i] + 1
+                C[i] = A_[i] + 1
             y = C[x]
             return y
 
@@ -948,7 +959,7 @@ def test_scope():
     with pytest.raises(SystemExit):
         s = allo.customize(kernel4)
 
-    # case 5: inner loop shadows iterator from outer loop
+    # case 5: nested loops
     def kernel5(n: int32) -> int32:
         s: int32 = 0
         for i in range(n):
@@ -961,6 +972,18 @@ def test_scope():
     mod = s.build()
     assert mod(4) == kernel5(4)
     assert mod(8) == kernel5(8)
+
+    def kernel6(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):
+            # invalid: redefine `i`
+            for i in range(n):
+                s = s + i
+            s = s + i
+        return s
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel6)
 
 
 def test_np_array():
@@ -1085,6 +1108,61 @@ def test_slice():
     np_A_slice[0:2, 0:3] = np_B
     mod = s.build()
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
+
+
+def test_symbol_table():
+    def kernel1(A: int32[10]) -> int32[10]:
+        B: int32[10] = 0
+
+        # invalid: argument name conflict
+        def foo(A: int32[10], x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            for i in range(10):
+                C[i] = A[i] + 1
+            y = C[x]
+            return y
+
+        for i in range(10):
+            B[i] = foo(A, i)
+        return B
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel1)
+
+    def kernel2(A: int32[10]) -> int32[10]:
+        # invalid: argument name conflict
+        def foo(x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            y = C[x]
+            return y
+
+        for i in range(10):
+            A[i] = foo(i)
+        return A
+
+    s = allo.customize(kernel2)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
+    np_B = mod(np_A)
+    assert np.array_equal(np_B, np.zeros((10,)))
+
+    def kernel3(A: int32[10]) -> int32[10]:
+        # invalid: function name conflict
+        def A(x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            y = C[x]
+            return y
+
+        for i in range(10):
+            A[i] = A(i)
+        return A
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel3)
 
 
 if __name__ == "__main__":

@@ -776,6 +776,7 @@ class TypeInferer(ASTVisitor):
                 )
                 # update shape
                 arg.shape = arg.dtensor.get_local_shape()
+                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None
                 ctx.put_symbol(name=arg.arg, val=arg)
 
             func_name = (
@@ -803,6 +804,7 @@ class TypeInferer(ASTVisitor):
                     node.returns.dtype, node.returns.shape, node.returns.spec = (
                         TypeInferer.visit_type_hint(ctx, node.returns)
                     )
+                assert ctx.get_symbol(name=func_name, allow_missing=True) is None
                 ctx.put_symbol(name=func_name, val=node)
 
             # set context
