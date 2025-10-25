@@ -29,8 +29,8 @@ def unified_gemm_simple():
             inst_broad[j].put(tag)
             inst_chain[i, j].put(tag)
 
+        flowtag: bool
         with allo.meta_else():
-            flowtag: bool
             with allo.meta_if(i == 0):
                 flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
