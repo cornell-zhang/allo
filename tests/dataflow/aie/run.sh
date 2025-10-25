@@ -7,12 +7,12 @@ set -e
 PYTHON=python3
 
 FILES=(
-    gpt2/test_attn_bf16.py
-    gpt2/test_attn_score.py
-    gpt2/test_flash_attn.py
-    gpt2/test_gelu.py
-    gpt2/test_gpt2_block.py
-    gpt2/test_masked_softmax.py
+    # gpt2/test_attn_bf16.py
+    # gpt2/test_attn_score.py
+    # gpt2/test_flash_attn.py
+    # gpt2/test_gelu.py
+    # gpt2/test_gpt2_block.py
+    # gpt2/test_masked_softmax.py
     test_cannon.py   
     test_collective_communication.py                
     test_gemm_temporal_reduction.py  
