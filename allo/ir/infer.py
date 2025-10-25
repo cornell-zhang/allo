@@ -362,11 +362,10 @@ class TypeInferer(ASTVisitor):
                     ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
                     ctx.symbolic[ast.unparse(target)] = f"p{i}"
                 return node
-            else:
-                rhs = visit_stmt(ctx, node.value)
-                rhs_visited = True
-                rhs_dtypes = [rhs.dtype] if len(targets) == 1 else list(rhs.dtype)
-                rhs_shapes = [rhs.shape] if len(targets) == 1 else list(rhs.shape)
+            rhs = visit_stmt(ctx, node.value)
+            rhs_visited = True
+            rhs_dtypes = [rhs.dtype] if len(targets) == 1 else list(rhs.dtype)
+            rhs_shapes = [rhs.shape] if len(targets) == 1 else list(rhs.shape)
         assert len(targets) == len(values) or len(targets) == len(rhs_dtypes) == len(
             rhs_shapes
         )
