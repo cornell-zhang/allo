@@ -1305,7 +1305,7 @@ class ASTTransformer(ASTBuilder):
                     strides=[],
                     ip=ctx.get_ip(),
                 )
-        # access a element
+        # access an element
         if isinstance(node.slice, (ast.Index, ast.Tuple, ast.Constant)):
             index_exprs, _ = ASTTransformer.build_indices(ctx, node.slice)
             # pylint: disable=no-else-return
@@ -1632,9 +1632,6 @@ class ASTTransformer(ASTBuilder):
                     stream_op.attributes["unsigned"] = UnitAttr.get()
                 stream_op.attributes["name"] = StringAttr.get(node.target.id)
                 ctx.buffers[node.target.id] = stream_op
-                assert (
-                    ctx.get_symbol(name=node.target.id, allow_missing=True) is None
-                ), f"Stream name {node.target.id} conflict"
                 ctx.put_symbol(name=node.target.id, val=stream_op)
             else:
                 # stream array
@@ -1646,14 +1643,12 @@ class ASTTransformer(ASTBuilder):
                     new_name = node.target.id + "_" + "_".join(map(str, dim))
                     stream_op.attributes["name"] = StringAttr.get(new_name)
                     ctx.buffers[new_name] = stream_op
-                    assert (
-                        ctx.get_symbol(name=new_name, allow_missing=True) is None
-                    ), f"Stream name {new_name} conflict"
+                    assert ctx.get_symbol(name=new_name, allow_missing=True) is None, (
+                        f"Instantiated stream name '{new_name}' conflicts with an existing symbol. "
+                        f"Please choose a different name to avoid the conflict."
+                    )
                     ctx.put_symbol(name=new_name, val=stream_op)
                 # placeholder for array of FIFOs
-                assert (
-                    ctx.get_symbol(name=node.target.id, allow_missing=True) is None
-                ), f"Stream name {node.target.id} conflict"
                 ctx.put_symbol(name=node.target.id, val=shape)
             return None
         return ASTTransformer.build_assign_stmt(ctx, node.target, node.value)
@@ -2597,7 +2592,6 @@ class ASTTransformer(ASTBuilder):
                 arg_results = [arg.result for arg in new_args]
                 input_types = [arg.type for arg in arg_results]
                 output_types = [input_types[0]]
-                print(f"{fn_name}_{abs(hash(node))}")
                 func_op = func_d.FuncOp(
                     name=f"{fn_name}_{abs(hash(node))}",
                     type=FunctionType.get(input_types, output_types),

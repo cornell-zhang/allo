@@ -341,6 +341,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Assign(ctx: ASTContext, node: ast.Assign):
+        print(ast.dump(node, indent=4))
         assert len(node.targets) == 1, "chained assignment not supported"
         targets, values, rhs_dtypes, rhs_shapes = [], [], None, None
         rhs_visited = False
@@ -439,6 +440,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AugAssign(ctx: ASTContext, node: ast.AugAssign):
+        print(ast.dump(node, indent=4))
         # visit RHS
         rhs = visit_stmt(ctx, node.value)
         # load LHS
@@ -631,6 +633,7 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
+        print(ast.dump(node, indent=4))
         target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
             ctx, node.annotation
         )
@@ -639,6 +642,9 @@ class TypeInferer(ASTVisitor):
         ), "target of AnnAssign must be Name, other type not supported."
         target_ = ctx.get_symbol(node.target.id, allow_missing=True)
         if target_ is not None:
+            assert (
+                node.value is not None
+            ), "Unsupported annotated assignment without a value."
             # assignment
             assert (
                 target_.dtype == target_dtype and target_.shape == target_shape
@@ -775,7 +781,10 @@ class TypeInferer(ASTVisitor):
                 )
                 # update shape
                 arg.shape = arg.dtensor.get_local_shape()
-                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None
+                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
+                    f"Argument name '{arg.arg}' conflicts with an existing symbol. "
+                    f"Please choose a different name to avoid the conflict."
+                )
                 ctx.put_symbol(name=arg.arg, val=arg)
 
             func_name = (
@@ -803,7 +812,10 @@ class TypeInferer(ASTVisitor):
                     node.returns.dtype, node.returns.shape, node.returns.spec = (
                         TypeInferer.visit_type_hint(ctx, node.returns)
                     )
-                assert ctx.get_symbol(name=func_name, allow_missing=True) is None
+                assert ctx.get_symbol(name=func_name, allow_missing=True) is None, (
+                    f"Function name '{func_name}' conflicts with an existing symbol. "
+                    f"Please choose a different name to avoid the conflict."
+                )
                 ctx.put_symbol(name=func_name, val=node)
 
             # set context
