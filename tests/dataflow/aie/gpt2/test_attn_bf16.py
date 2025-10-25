@@ -39,7 +39,9 @@ def scaled_dot_product_attention(q, k, v):
 # ===============================================================================
 # Allo Version
 # ===============================================================================
-KERNEL_LIB_PATH = "../../../../allo/library/aie/"
+KERNEL_LIB_PATH = os.path.join(
+    os.path.dirname(__file__), "../../../../allo/library/aie/"
+)
 Ty = bfloat16
 softmax = ExternalModule(
     top="softmax_bf16",

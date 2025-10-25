@@ -18,7 +18,7 @@ jobs:
     steps:
     - name: Init
       run: |
-        echo "📁 HOME is $HOME"
+        echo "HOME is $HOME"
 
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -45,6 +45,7 @@ jobs:
       run: |
         cd tests/dataflow/aie
         echo "🧪 Running tests..."
-        python3 test_vector.py
-        python3 test_pingpong_gemm.py
+        source run.sh
+        # python3 test_vector.py
+        # python3 test_pingpong_gemm.py
 
