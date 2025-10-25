@@ -979,7 +979,8 @@ class ASTTransformer(ASTBuilder):
                         else:
                             alloc_op = rhs
                         ctx.buffers[target.id] = alloc_op
-                        alloc_op.attributes["name"] = StringAttr.get(target.id)
+                        if isinstance(alloc_op, OpView):
+                            alloc_op.attributes["name"] = StringAttr.get(target.id)
                         ctx.put_symbol(name=target.id, val=alloc_op)
                 else:
                     assert idx is None, "Not Supported"
