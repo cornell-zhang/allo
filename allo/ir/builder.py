@@ -955,7 +955,6 @@ class ASTTransformer(ASTBuilder):
         if isinstance(target, ast.Name):
             target_ = ctx.get_symbol(name=target.id, allow_missing=True)
             if target_ is None:
-                print("----", rhs)
                 # declare
                 # - if rhs is constant, allocate on stack to make it a real variable
                 if rhs_value is None or not isinstance(
