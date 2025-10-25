@@ -120,37 +120,14 @@ class ASTTransformer(ASTBuilder):
         ), "MLIR tensors are immutable data structures, fail to resolve."
         if len(node.shape) == 0:
             # scalar
-            if not ctx.enable_tensor:
-                affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
-                affine_attr = AffineMapAttr.get(affine_map)
-                store_op = affine_d.AffineStoreOp(
-                    val, target, [], affine_attr, ip=ctx.get_ip()
-                )
-            else:
-                store_op = tensor_d.InsertOp(
-                    scalar=val,
-                    dest=target,
-                    indices=[],
-                    ip=ctx.get_ip(),
-                )
-                # update StoreOp
-                ctx.get_symbol(node.id).op = store_op
+            affine_map = AffineMap.get(dim_count=0, symbol_count=0, exprs=[])
+            affine_attr = AffineMapAttr.get(affine_map)
+            store_op = affine_d.AffineStoreOp(
+                val, target, [], affine_attr, ip=ctx.get_ip()
+            )
         else:
             # tensor
-            if not ctx.enable_tensor:
-                store_op = memref_d.CopyOp(val, target, ip=ctx.get_ip())
-            else:
-                store_op = tensor_d.InsertSliceOp(
-                    source=val,
-                    dest=target,
-                    static_offsets=[0] * len(node.shape),
-                    static_sizes=list(node.shape),
-                    static_strides=[1] * len(node.shape),
-                    offsets=[],
-                    sizes=[],
-                    strides=[],
-                    ip=ctx.get_ip(),
-                )
+            store_op = memref_d.CopyOp(val, target, ip=ctx.get_ip())
         store_op.attributes["to"] = StringAttr.get(node.id)
         return store_op
 
@@ -937,17 +914,16 @@ class ASTTransformer(ASTBuilder):
                     else:
                         linalg_op = alloc_op.result
                 rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
-            else:
+            elif rhs is not None:
                 # scalar
-                if rhs is not None:
-                    rhs = ASTTransformer.build_broadcast_op(
-                        ctx,
-                        rhs,
-                        target.dtype,
-                        value.shape,
-                        target.shape,
-                        target.dims[1],  # rhs
-                    )
+                rhs = ASTTransformer.build_broadcast_op(
+                    ctx,
+                    rhs,
+                    target.dtype,
+                    value.shape,
+                    target.shape,
+                    target.dims[1],  # rhs
+                )
         if rhs is None:
             rhs_value = None
         else:
@@ -1003,7 +979,6 @@ class ASTTransformer(ASTBuilder):
             build_stmt(ctx, target, val=rhs, idx=idx)
         else:
             build_stmt(ctx, target, val=rhs)
-        return None
 
     @staticmethod
     def build_Assign(ctx: ASTContext, node: ast.Assign):
@@ -1025,14 +1000,12 @@ class ASTTransformer(ASTBuilder):
                 and node.value.func.attr == "get_pid"
             ):
                 for i, target in enumerate(targets):
-                    # TODO: add target symbol for pid??
-                    pid = MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
+                    # TODO: add target symbol for pid?? # pid = MockConstant(ctx.global_vars[f"df.p{i}"], ctx, dtype=Index())
                     ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
                     ctx.symbolic[ast.unparse(target)] = f"p{i}"
                 return None
-            else:
-                rhs = build_stmt(ctx, node.value)
-                rhs_visited = True
+            rhs = build_stmt(ctx, node.value)
+            rhs_visited = True
         for idx, target in enumerate(targets):
             if rhs_visited:
                 ASTTransformer.build_assign_stmt(
