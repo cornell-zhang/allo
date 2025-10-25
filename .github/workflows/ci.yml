@@ -41,10 +41,11 @@ jobs:
         echo "Install allo"
         python3 -m pip install -v -e .
 
-    # - name: Run unit tests
-    #   shell: bash
-    #   run: |
-    #     cd $TARGET_DIR/allo/tests/dataflow/aie
-    #     echo "🧪 Running tests..."
-    #     python3 test_vector.py
+    - name: Run unit tests
+      shell: bash
+      run: |
+        cd $TARGET_DIR/allo/tests/dataflow/aie
+        echo "🧪 Running tests..."
+        python3 test_vector.py
+        python3 test_pingpong_gemm.py
 
