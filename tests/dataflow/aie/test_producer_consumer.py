@@ -1,11 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import allo
 from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import numpy as np
+from allo.backend.aie import is_available
 
 Ty = int32
 M, N, K = 16, 16, 16
@@ -41,7 +41,7 @@ def test_producer_consumer():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(top, target="aie")
         mod(A, B)
         np.testing.assert_allclose(A + 1, B, atol=1e-5)

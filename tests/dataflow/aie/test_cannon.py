@@ -6,13 +6,14 @@ import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
 
 LyA = Layout("S0S1")
 LyB = Layout("S0S1")
 LyC = Layout("S0S1")
 
 
-def _test_cannon():
+def test_cannon():
     Ty = int32
     M, K, N = 32, 32, 32
     P = 2
@@ -58,12 +59,14 @@ def _test_cannon():
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)
     C = np.zeros((M, N)).astype(np.int32)
 
-    mod = df.build(top, target="aie")
-
-    mod(A, B, C)
-    np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        mod(A, B, C)
+        np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
-    _test_cannon()
+    test_cannon()

@@ -7,6 +7,7 @@ from allo.ir.types import float32
 import allo.dataflow as df
 from allo.backend.aie.vliw import create_vliw_module
 from allo.backend.aie import vliw
+from allo.backend.aie import is_available
 
 
 def test_simple_add():
@@ -34,14 +35,17 @@ def test_simple_add():
         ):
             simple_add_ext(A, B, C)
 
-    aie_module = df.build(my_aie_design, target="aie")
-    A = np.random.rand(16).astype(np.float32)
-    B = np.random.rand(16).astype(np.float32)
-    C = np.zeros(16).astype(np.float32)
-    aie_module(A, B, C)
-    # verify the result
-    np.testing.assert_allclose(C, A + B)
-    print("✓ AIE design verification successful")
+    if is_available():
+        aie_module = df.build(my_aie_design, target="aie")
+        A = np.random.rand(16).astype(np.float32)
+        B = np.random.rand(16).astype(np.float32)
+        C = np.zeros(16).astype(np.float32)
+        aie_module(A, B, C)
+        # verify the result
+        np.testing.assert_allclose(C, A + B)
+        print("✓ AIE design verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def test_matrix_multiply():
@@ -71,15 +75,18 @@ def test_matrix_multiply():
         ):
             matmul_ext(A, B, C)
 
-    matmul_aie_module = df.build(matmul_aie_design, target="aie")
-    A_mat = np.random.rand(4, 4).astype(np.float32)
-    B_mat = np.random.rand(4, 4).astype(np.float32)
-    C_mat = np.zeros((4, 4)).astype(np.float32)
-    matmul_aie_module(A_mat, B_mat, C_mat)
-    # verify the result
-    expected_mat = np.matmul(A_mat, B_mat)
-    np.testing.assert_allclose(C_mat, expected_mat, rtol=1e-5)
-    print("✓ Matrix multiply AIE design verification successful")
+    if is_available():
+        matmul_aie_module = df.build(matmul_aie_design, target="aie")
+        A_mat = np.random.rand(4, 4).astype(np.float32)
+        B_mat = np.random.rand(4, 4).astype(np.float32)
+        C_mat = np.zeros((4, 4)).astype(np.float32)
+        matmul_aie_module(A_mat, B_mat, C_mat)
+        # verify the result
+        expected_mat = np.matmul(A_mat, B_mat)
+        np.testing.assert_allclose(C_mat, expected_mat, rtol=1e-5)
+        print("✓ Matrix multiply AIE design verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def test_conv2d():
@@ -116,23 +123,26 @@ def test_conv2d():
         ):
             conv2d_ext(Input, Kernel, Output)
 
-    conv2d_aie_module = df.build(conv2d_aie_design, target="aie")
-    Input_img = np.random.rand(4, 4).astype(np.float32)  # Input image
-    Kernel_weights = np.random.rand(3, 3).astype(np.float32)  # Convolution kernel
-    Output_conv = np.zeros((2, 2)).astype(np.float32)
-    conv2d_aie_module(Input_img, Kernel_weights, Output_conv)
+    if is_available():
+        conv2d_aie_module = df.build(conv2d_aie_design, target="aie")
+        Input_img = np.random.rand(4, 4).astype(np.float32)  # Input image
+        Kernel_weights = np.random.rand(3, 3).astype(np.float32)  # Convolution kernel
+        Output_conv = np.zeros((2, 2)).astype(np.float32)
+        conv2d_aie_module(Input_img, Kernel_weights, Output_conv)
 
-    # verify the result with native numpy implementation
-    def conv2d_reference(input_img, kernel):
-        output = np.zeros((2, 2), dtype=np.float32)
-        for i in range(2):
-            for j in range(2):
-                output[i, j] = np.sum(input_img[i : i + 3, j : j + 3] * kernel)
-        return output
+        # verify the result with native numpy implementation
+        def conv2d_reference(input_img, kernel):
+            output = np.zeros((2, 2), dtype=np.float32)
+            for i in range(2):
+                for j in range(2):
+                    output[i, j] = np.sum(input_img[i : i + 3, j : j + 3] * kernel)
+            return output
 
-    expected_conv = conv2d_reference(Input_img, Kernel_weights)
-    np.testing.assert_allclose(Output_conv, expected_conv, rtol=1e-5)
-    print("✓ 2D Convolution AIE design verification successful")
+        expected_conv = conv2d_reference(Input_img, Kernel_weights)
+        np.testing.assert_allclose(Output_conv, expected_conv, rtol=1e-5)
+        print("✓ 2D Convolution AIE design verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def test_simple_add_with_decorator():
@@ -157,14 +167,17 @@ def test_simple_add_with_decorator():
         ):
             simple_add(A, B, C)  # Direct call!
 
-    aie_module = df.build(my_aie_design, target="aie")
-    A = np.random.rand(16).astype(np.float32)
-    B = np.random.rand(16).astype(np.float32)
-    C = np.zeros(16).astype(np.float32)
-    aie_module(A, B, C)
-    # verify the result
-    np.testing.assert_allclose(C, A + B)
-    print("✓ AIE design with @vliw.kernel decorator verification successful")
+    if is_available():
+        aie_module = df.build(my_aie_design, target="aie")
+        A = np.random.rand(16).astype(np.float32)
+        B = np.random.rand(16).astype(np.float32)
+        C = np.zeros(16).astype(np.float32)
+        aie_module(A, B, C)
+        # verify the result
+        np.testing.assert_allclose(C, A + B)
+        print("✓ AIE design with @vliw.kernel decorator verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def test_vliw_decorator_matrix_multiply():
@@ -191,15 +204,18 @@ def test_vliw_decorator_matrix_multiply():
         ):
             matrix_multiply(A, B, C)
 
-    matmul_aie_module = df.build(matmul_aie_design, target="aie")
-    A_mat = np.random.rand(4, 4).astype(np.float32)
-    B_mat = np.random.rand(4, 4).astype(np.float32)
-    C_mat = np.zeros((4, 4)).astype(np.float32)
-    matmul_aie_module(A_mat, B_mat, C_mat)
-    # verify the result
-    expected_mat = np.matmul(A_mat, B_mat)
-    np.testing.assert_allclose(C_mat, expected_mat, rtol=1e-5)
-    print("✓ VLIW decorator matrix multiply verification successful")
+    if is_available():
+        matmul_aie_module = df.build(matmul_aie_design, target="aie")
+        A_mat = np.random.rand(4, 4).astype(np.float32)
+        B_mat = np.random.rand(4, 4).astype(np.float32)
+        C_mat = np.zeros((4, 4)).astype(np.float32)
+        matmul_aie_module(A_mat, B_mat, C_mat)
+        # verify the result
+        expected_mat = np.matmul(A_mat, B_mat)
+        np.testing.assert_allclose(C_mat, expected_mat, rtol=1e-5)
+        print("✓ VLIW decorator matrix multiply verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 def test_vliw_decorator_conv2d():
@@ -232,23 +248,26 @@ def test_vliw_decorator_conv2d():
         ):
             conv2d(Input, Kernel, Output)
 
-    conv2d_aie_module = df.build(conv2d_aie_design, target="aie")
-    Input_img = np.random.rand(4, 4).astype(np.float32)
-    Kernel_weights = np.random.rand(3, 3).astype(np.float32)
-    Output_conv = np.zeros((2, 2)).astype(np.float32)
-    conv2d_aie_module(Input_img, Kernel_weights, Output_conv)
+    if is_available():
+        conv2d_aie_module = df.build(conv2d_aie_design, target="aie")
+        Input_img = np.random.rand(4, 4).astype(np.float32)
+        Kernel_weights = np.random.rand(3, 3).astype(np.float32)
+        Output_conv = np.zeros((2, 2)).astype(np.float32)
+        conv2d_aie_module(Input_img, Kernel_weights, Output_conv)
 
-    # verify the result with native numpy implementation
-    def conv2d_reference(input_img, kernel):
-        output = np.zeros((2, 2), dtype=np.float32)
-        for i in range(2):
-            for j in range(2):
-                output[i, j] = np.sum(input_img[i : i + 3, j : j + 3] * kernel)
-        return output
+        # verify the result with native numpy implementation
+        def conv2d_reference(input_img, kernel):
+            output = np.zeros((2, 2), dtype=np.float32)
+            for i in range(2):
+                for j in range(2):
+                    output[i, j] = np.sum(input_img[i : i + 3, j : j + 3] * kernel)
+            return output
 
-    expected_conv = conv2d_reference(Input_img, Kernel_weights)
-    np.testing.assert_allclose(Output_conv, expected_conv, rtol=1e-5)
-    print("✓ VLIW decorator 2D convolution verification successful")
+        expected_conv = conv2d_reference(Input_img, Kernel_weights)
+        np.testing.assert_allclose(Output_conv, expected_conv, rtol=1e-5)
+        print("✓ VLIW decorator 2D convolution verification successful")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":

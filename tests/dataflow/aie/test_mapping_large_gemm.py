@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import allo
 from allo.ir.types import int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
-
-COL_NUM = 8 if os.getenv("NPU2") == "1" else 4
+from allo.backend.aie import is_available
 
 
 def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
@@ -43,7 +43,13 @@ def gen_gemm_mapping_primitive(Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
-def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
+@pytest.mark.parametrize(
+    "M, N, K, Pm, Pn, Pk, TyI, TyO",
+    [
+        (2048, 2048, 2048, 2048 // 64, 2048 // 64, 2048 // 64, int16, int16),
+    ],
+)
+def test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO
     Mt, Nt = M // Pm, N // Pn
 
@@ -71,51 +77,54 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
 
     mapping_primitives = gen_gemm_mapping_primitive(Pm, Pn, Pk)
 
-    mod = df.build(
-        top,
-        project="top.prj",
-        target="aie",
-        mapping_primitives=mapping_primitives,
-        profile=True,
-        warmup=200,
-        num_iters=1000,
-        device_type="npu1_4col",
-    )
-    if TyI is bfloat16:
-        A = (np.random.random((M, K)) * 0.1).astype(np_bfloat16)
-        B = (np.random.random((K, N)) * 0.1).astype(np_bfloat16)
-        C = np.zeros((M, N)).astype(np_bfloat16)
-    elif TyI is int8:
-        A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
-        B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
-        C = np.zeros((M, N)).astype(np.int8)
-    elif TyI is int16:
-        A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-        B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
-        C = np.zeros((M, N)).astype(np.int16)
-    else:
-        raise ValueError(f"unsupported data type {TyI}")
-    mod(A, B, C)
-    if TyI is bfloat16:
-        np.testing.assert_allclose(
-            C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-1
+    if is_available():
+        mod = df.build(
+            top,
+            project="top.prj",
+            target="aie",
+            mapping_primitives=mapping_primitives,
+            profile=True,
+            warmup=200,
+            num_iters=1000,
+            device_type="npu1_4col",
         )
+        if TyI is bfloat16:
+            A = (np.random.random((M, K)) * 0.1).astype(np_bfloat16)
+            B = (np.random.random((K, N)) * 0.1).astype(np_bfloat16)
+            C = np.zeros((M, N)).astype(np_bfloat16)
+        elif TyI is int8:
+            A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
+            B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+            C = np.zeros((M, N)).astype(np.int8)
+        elif TyI is int16:
+            A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+            B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+            C = np.zeros((M, N)).astype(np.int16)
+        else:
+            raise ValueError(f"unsupported data type {TyI}")
+        mod(A, B, C)
+        if TyI is bfloat16:
+            np.testing.assert_allclose(
+                C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-1
+            )
+        else:
+            np.testing.assert_allclose(C, A @ B, atol=1e-5)
+        print("PASSED!")
     else:
-        np.testing.assert_allclose(C, A @ B, atol=1e-5)
-    print("PASSED!")
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
     M, N, K = 2048, 2048, 2048
     m, n, k = 64, 64, 64
     # - i8
-    _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
+    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int8, int8)
 
     # - i16
-    _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
+    test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int16, int16)
 
     # - bf16
     try:
-        _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
+        test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")

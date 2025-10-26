@@ -79,7 +79,7 @@ def gen_bundle(prefix, idx, total):
     return ("bundle", nodes)
 
 
-def test_flash_attention(
+def _test_flash_attention(
     SEQ_LEN, HEAD_DIM, Q_tile_size, q_chunk_size=32, kv_chunk_size=32
 ):
     KERNEL_LIB_PATH = os.getenv("ALLO_EXTERNAL_KERNEL_DIR")
@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
     seq_len_list = [64, 128]
     for seq_len in seq_len_list:
-        test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
+        _test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
 
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]

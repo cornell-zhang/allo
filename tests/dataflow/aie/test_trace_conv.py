@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import torch
 import torch.nn.functional as F
 from typing import Annotated
@@ -10,8 +11,7 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
-
-KERNEL_LIB_PATH = "../../../allo/library/aie/"
+from allo.backend.aie import is_available
 
 Ly = Layout("RR")
 
@@ -49,7 +49,17 @@ def conv2d_simple(
 # PyTorch reference code ends
 
 
-def _trace_conv2d(kernel_path: str):
+def kernel_paths():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    kernel_dir = os.path.join(dir_path, "../../../allo/library/aie/")
+    return [
+        os.path.join(kernel_dir, "conv_small_scalar.cc"),
+        os.path.join(kernel_dir, "conv_small_vector.cc"),
+    ]
+
+
+@pytest.mark.parametrize("kernel_path", kernel_paths())
+def test_trace_conv2d(kernel_path: str):
 
     conv = ExternalModule(
         top="conv2d_int32",
@@ -77,7 +87,7 @@ def _trace_conv2d(kernel_path: str):
     )  # Smaller kernel values
     output = conv2d_simple(input_tensor, kernel_tensor).to(torch.int32)
 
-    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+    if is_available():
         mod = df.build(
             top,
             target="aie",
@@ -102,5 +112,7 @@ def _trace_conv2d(kernel_path: str):
 
 
 if __name__ == "__main__":
-    _trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
-    _trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    KERNEL_LIB_PATH = f"{dir_path}/../../../allo/library/aie/"
+    test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_scalar.cc")
+    test_trace_conv2d(KERNEL_LIB_PATH + "conv_small_vector.cc")
