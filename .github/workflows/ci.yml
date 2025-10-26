@@ -43,6 +43,5 @@ jobs:
     - name: Run unit tests
       shell: bash
       run: |
-        cd tests/dataflow/aie
         echo "🧪 Running tests..."
-        python3 -m pytest --ignore=aie/gpt2 aie -v
+        python3 -m pytest --ignore=tests/dataflow/aie/gpt2 tests/dataflow/aie -v
