@@ -33,10 +33,11 @@ def layernorm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch
 
 @pytest.mark.parametrize("enable_trace", [False, True])
 def test_layer_norm(enable_trace: bool):
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="layer_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -84,10 +85,11 @@ class RMSNorm(nn.Module):
 
 
 def test_rms_norm():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="rms_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
@@ -117,10 +119,11 @@ def test_rms_norm():
 
 
 def test_single_row_layer_norm():
+    dir_path = os.path.dirname(os.path.abspath(__file__))
 
     norm = ExternalModule(
         top="single_row_layer_norm",
-        impl_path="norm.cc",
+        impl_path=f"{dir_path}/norm.cc",
         input_idx=[0, 1],
         output_idx=[2],
     )
