@@ -341,7 +341,6 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Assign(ctx: ASTContext, node: ast.Assign):
-        print(ast.dump(node, indent=4))
         assert len(node.targets) == 1, "chained assignment not supported"
         targets, values, rhs_dtypes, rhs_shapes = [], [], None, None
         rhs_visited = False
@@ -440,7 +439,6 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AugAssign(ctx: ASTContext, node: ast.AugAssign):
-        print(ast.dump(node, indent=4))
         # visit RHS
         rhs = visit_stmt(ctx, node.value)
         # load LHS
@@ -633,7 +631,6 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
-        print(ast.dump(node, indent=4))
         target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
             ctx, node.annotation
         )

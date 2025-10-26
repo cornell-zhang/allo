@@ -961,7 +961,7 @@ class ASTTransformer(ASTBuilder):
                 else:
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
-                    # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may
+                    # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may have assignment conflict
                     if "name" in rhs.attributes:
                         assert rhs.attributes["name"].value == target.id
                     else:
