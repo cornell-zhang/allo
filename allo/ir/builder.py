@@ -38,7 +38,6 @@ from .._mlir.ir import (
     OpResultList,
     StridedLayoutAttr,
 )
-from .._mlir.ir import Type as MLIRType
 from .._mlir.dialects import (
     allo as allo_d,
     func as func_d,
@@ -1374,9 +1373,17 @@ class ASTTransformer(ASTBuilder):
             )
             if new_offset < 0:
                 new_offset = "?"
-            result = MLIRType.parse(
-                f"memref<{'x'.join([str(x) for x in result_sizes])}x{dtype}"
-                f", strided<{result_strides}, offset: {new_offset}>>"
+            result = MemRefType.get(
+                shape=result_sizes,
+                element_type=dtype,
+                layout=StridedLayoutAttr.get(
+                    offset=(
+                        ShapedType.get_dynamic_stride_or_offset()
+                        if new_offset == "?"
+                        else new_offset
+                    ),
+                    strides=result_strides,
+                ),
             )
             subview = memref_d.SubViewOp(
                 source=value.result,
@@ -1430,9 +1437,17 @@ class ASTTransformer(ASTBuilder):
                 strides = [1]
                 for i in range(len(node.shape) - 2, -1, -1):
                     strides.insert(0, strides[-1] * node.shape[i + 1])
-                result = MLIRType.parse(
-                    f"memref<{'x'.join([str(x) for x in node.shape])}x{node.dtype.build()}"
-                    f", strided<{strides}, offset: {offset}>>"
+                result = MemRefType.get(
+                    shape=node.shape,
+                    element_type=node.dtype.build(),
+                    layout=StridedLayoutAttr.get(
+                        offset=(
+                            ShapedType.get_dynamic_stride_or_offset()
+                            if offset == "?"
+                            else offset
+                        ),
+                        strides=strides,
+                    ),
                 )
                 subview = memref_d.SubViewOp(
                     source=value.result,
@@ -2407,9 +2422,13 @@ class ASTTransformer(ASTBuilder):
                                 size_values.append(shape)
                                 result_sizes.append(shape)
                                 result_strides.append(tile_size)
-                        subview_result = MLIRType.parse(
-                            f"memref<{'x'.join([str(x) for x in result_sizes])}x{node.dtype}"
-                            f", strided<{result_strides}, offset: ?>>"
+                        subview_result = MemRefType.get(
+                            shape=result_sizes,
+                            element_type=node.dtype.build(),
+                            layout=StridedLayoutAttr.get(
+                                offset=ShapedType.get_dynamic_stride_or_offset(),
+                                strides=result_strides,
+                            ),
                         )
                         if fn_name == "gather":
                             get_op = allo_d.StreamGetOp(
@@ -2709,17 +2728,14 @@ class ASTTransformer(ASTBuilder):
                 memref_offsets = 1
                 for size in concat_shape[0][axis:]:
                     memref_offsets *= size
-                result = [
-                    MLIRType.parse(
-                        f"memref<{'x'.join([str(x) for x in concat_shape[0]])}x{dtype}, strided<{memref_strides}>>"
-                    ),
-                    MLIRType.parse(
-                        f"memref<{'x'.join([str(x) for x in concat_shape[1]])}x{dtype}, strided<{memref_strides}, offset: {memref_offsets}>>"
-                    ),
-                ]
+                result0 = MemRefType.get(
+                    shape=concat_shape[0],
+                    element_type=dtype.build(),
+                    layout=StridedLayoutAttr.get(offset=0, strides=memref_strides),
+                )
                 op_ = memref_d.SubViewOp(
                     source=buf_op,
-                    result=result[0],
+                    result=result0,
                     static_offsets=offsets,
                     static_sizes=list(node.args[0].shape),
                     static_strides=strides,
@@ -2733,9 +2749,16 @@ class ASTTransformer(ASTBuilder):
                     op_,
                     ip=ctx.get_ip(),
                 )
+                result1 = MemRefType.get(
+                    shape=concat_shape[1],
+                    element_type=dtype.build(),
+                    layout=StridedLayoutAttr.get(
+                        offset=memref_offsets, strides=memref_strides
+                    ),
+                )
                 view_op = memref_d.SubViewOp(
                     source=buf_op,
-                    result=result[1],
+                    result=result1,
                     static_offsets=new_offsets,
                     static_sizes=list(node.args[1].shape),
                     static_strides=strides,
