@@ -175,6 +175,7 @@ def test_large_scale_gemm():
     sim_mod(A_packed, B_packed, C_packed)
     C = deserialize_C(C_packed.view(np.int8))
     np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
 
