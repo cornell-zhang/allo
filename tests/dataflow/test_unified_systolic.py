@@ -264,7 +264,7 @@ def unified_gemm_daisy_chain():
                         fifo_C[i, j - 1].put(accu)
 
             # Stationary Cache-Out
-            packed_tmp: UInt(U * 16) 
+            packed_tmp: UInt(U * 16)
             if flowtag:
                 with allo.meta_if(i == 1):
                     packed_tmp: UInt(U * 16) = 0
