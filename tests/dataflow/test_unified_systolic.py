@@ -128,14 +128,13 @@ def unified_gemm_daisy_chain():
 
         # --------------------------------------------------------
         # Instruction Decode and Dispatch
-
+        flowtag: bool
         with allo.meta_if(i == 0 and j == 0):
             flowtag: bool = inst
             inst_broad[j].put(flowtag)
             inst_chain[i, j].put(flowtag)
 
         with allo.meta_else():
-            flowtag: bool
             with allo.meta_if(i == 0):
                 flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
@@ -265,6 +264,7 @@ def unified_gemm_daisy_chain():
                         fifo_C[i, j - 1].put(accu)
 
             # Stationary Cache-Out
+            packed_tmp: UInt(U * 16) 
             if flowtag:
                 with allo.meta_if(i == 1):
                     packed_tmp: UInt(U * 16) = 0
@@ -304,8 +304,8 @@ def unified_gemm_tiling():
             inst_broad[j].put(tag)
             inst_chain[i, j].put(tag)
 
+        flowtag: bool
         with allo.meta_else():
-            flowtag: bool
             with allo.meta_if(i == 0):
                 flowtag = inst_broad[j - 1].get()
             with allo.meta_else():
