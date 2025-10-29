@@ -10,11 +10,13 @@ import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
 
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_env():
     os.environ["OMP_NUM_THREADS"] = "64"
     yield
     del os.environ["OMP_NUM_THREADS"]
+
 
 # M, N, K = 512, 512, 512
 # Mt, Nt = 16, 16
