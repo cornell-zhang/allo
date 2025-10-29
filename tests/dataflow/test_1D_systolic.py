@@ -1,11 +1,19 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import pytest
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    os.environ["OMP_NUM_THREADS"] = "128"
+    yield
+    del os.environ["OMP_NUM_THREADS"]
 
 M, N, K = 16, 16, 16
 P0 = K + 2
@@ -66,4 +74,7 @@ def test_systolic():
 
 
 if __name__ == "__main__":
+    # we need to set OMP_NUM_THREADS to a large number here for simulator
+    os.environ["OMP_NUM_THREADS"] = "128"
     test_systolic()
+    del os.environ["OMP_NUM_THREADS"]
