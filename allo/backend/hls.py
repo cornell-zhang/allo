@@ -5,9 +5,9 @@
 import os
 import re
 import io
-import numpy as np
 import subprocess
 import time
+import numpy as np
 from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import (
     Context,
@@ -137,7 +137,16 @@ def separate_header(hls_code, top=None):
             _, var = arg_type.rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            allo_type = c2allo_type[ele_type]
+            allo_type = None
+            if ele_type in c2allo_type:
+                allo_type = c2allo_type[ele_type]
+            else:
+                pattern = r"^ap_(u?)int<(\d+)>$"
+                match = re.match(pattern, ele_type)
+                if not match:
+                    raise ValueError(f"Fail to resolve ctype {ele_type}")
+                unsigned_flag, width = match.groups()
+                allo_type = f"{'u' if unsigned_flag else ''}int{int(width)}"
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((allo_type, shape))
             if "[" in var:  # array
@@ -459,9 +468,8 @@ class HLSModule:
             # suppose the last argument is the output tensor
             if np.isscalar(args[-1]):
                 raise RuntimeError("The output must be a tensor")
-            else:
-                arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
-                args[-1][:] = arr.reshape(args[-1].shape)
+            arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
+            args[-1][:] = arr.reshape(args[-1].shape)
             return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"

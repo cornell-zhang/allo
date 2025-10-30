@@ -1,18 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=bad-builtin
 
 import json
 import numpy as np
 
 from .utils import format_str
 from ..ir.transform import find_func_in_module
-from ..utils import (
-    get_func_inputs_outputs,
-    get_clostest_pow2,
-    np_supported_types,
-    get_bitwidth_from_type,
-)
+from ..utils import get_func_inputs_outputs, np_supported_types, get_bitwidth_from_type
 
 header = """
 //=============================================================================
@@ -74,7 +68,6 @@ ctype_map = {
 }
 
 
-# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
