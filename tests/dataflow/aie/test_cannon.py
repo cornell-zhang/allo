@@ -46,8 +46,14 @@ def _test_cannon():
             B_pipe[pi, (pj - 1) % P].put(B_out)
 
             for _ in range(P - 1):
-                # Using an already created variable (A_out) is also valid,
-                # but the compiler currently performs better optimization when using a new variable here.
+                """
+                Using an already created variable (A_out) is also valid,
+                but the compiler currently performs better optimization when using a new variable here.
+
+                    [NOTE] (Shihan): The main reason is that the 'buffer elimination pass' (`copy_on_writ`) is not very strong,
+                            Defining a new variable simplifies the use-def chain, so the pass can better identify redundant buffers.
+                            We may need to strengthen this pass to improve its optimization capability.
+                """
                 A_out_: Ty[m, k] = A_pipe[pi, pj].get()
                 B_out_: Ty[k, n] = B_pipe[pi, pj].get()
                 C[:, :] += allo.matmul(A_out_, B_out_)

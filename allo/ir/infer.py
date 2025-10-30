@@ -257,7 +257,10 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_broadcast(
-        ctx: ASTContext, lhs: ast.expr, rhs_shape: list[int], match_lhs: bool = False
+        ctx: ASTContext,
+        lhs_shape: list[int],
+        rhs_shape: list[int],
+        match_lhs: bool = False,
     ):
         # See the broadcasting rules in NumPy
         # https://numpy.org/doc/stable/user/basics.broadcasting.html
@@ -267,11 +270,11 @@ class TypeInferer(ASTVisitor):
         # 1. they are equal, or
         # 2. one of them is 1.
         if rhs_shape is None:
-            return lhs.shape, [], []
-        tmp_lhs_shape = list(lhs.shape)
+            return lhs_shape, [], []
+        tmp_lhs_shape = list(lhs_shape)
         tmp_rhs_shape = list(rhs_shape)
         if match_lhs and len(tmp_lhs_shape) < len(tmp_rhs_shape):
-            raise RuntimeError(f"Cannot broadcast {rhs_shape} to {lhs.shape}")
+            raise RuntimeError(f"Cannot broadcast {rhs_shape} to {lhs_shape}")
         # match larger shape
         lhs_dims, rhs_dims = set(), set()
         if len(tmp_lhs_shape) < len(tmp_rhs_shape):
@@ -290,7 +293,7 @@ class TypeInferer(ASTVisitor):
                 if tmp_rhs_shape[i] != 1:
                     if match_lhs:
                         raise RuntimeError(
-                            f"Cannot broadcast {rhs_shape} to {lhs.shape}"
+                            f"Cannot broadcast {rhs_shape} to {lhs_shape}"
                         )
                     lhs_dims.add(i)
             elif tmp_rhs_shape[i] == 1:
@@ -300,7 +303,7 @@ class TypeInferer(ASTVisitor):
             else:
                 assert (
                     tmp_lhs_shape[i] == tmp_rhs_shape[i]
-                ), f"Shape mismatch, got {lhs.shape} and {rhs_shape}, and cannot be broadcasted"
+                ), f"Shape mismatch, got {lhs_shape} and {rhs_shape}, and cannot be broadcasted"
         assert tmp_lhs_shape == tmp_rhs_shape
         return tuple(tmp_lhs_shape), list(lhs_dims), list(rhs_dims)
 
@@ -312,7 +315,7 @@ class TypeInferer(ASTVisitor):
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-            ctx, lhs, rhs_shape=None if rhs is None else rhs.shape
+            ctx, lhs.shape, rhs_shape=None if rhs is None else rhs.shape
         )
         node.shape = final_shape
         node.dims = (lhs_dims, rhs_dims)
@@ -391,7 +394,7 @@ class TypeInferer(ASTVisitor):
                     # assign
                     target.dtype, target.shape = target_dtype, target_shape
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                    ctx, target, rhs_shape=rhs_shape, match_lhs=True
+                    ctx, target.shape, rhs_shape=rhs_shape, match_lhs=True
                 )
                 assert (
                     final_shape == target.shape
@@ -406,7 +409,7 @@ class TypeInferer(ASTVisitor):
                     rhs_shape = rhs_shapes[idx]
                 lhs = visit_stmt(ctx, target)
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                    ctx, lhs, rhs_shape=rhs_shape, match_lhs=True
+                    ctx, lhs.shape, rhs_shape=rhs_shape, match_lhs=True
                 )
                 assert (
                     final_shape == lhs.shape
@@ -657,7 +660,7 @@ class TypeInferer(ASTVisitor):
         node.target.shape = node.shape = target_shape
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
             ctx,
-            node.target,
+            node.target.shape,
             rhs_shape=None if rhs is None else rhs.shape,
             match_lhs=True,
         )
@@ -1199,7 +1202,7 @@ class TypeInferer(ASTVisitor):
             # Element-wise operation
             if op_name in {"add", "sub", "mul", "div"}:
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                    ctx, new_args[0], new_args[1].shape
+                    ctx, new_args[0].shape, new_args[1].shape
                 )
                 node.dims = (lhs_dims, rhs_dims)
                 node.shape = final_shape
