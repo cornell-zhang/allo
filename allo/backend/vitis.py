@@ -1,13 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=bad-builtin
 
 import json
 import numpy as np
 
 from .utils import format_str
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
+from ..utils import get_func_inputs_outputs, np_supported_types, get_bitwidth_from_type
 
 header = """
 //=============================================================================
@@ -69,7 +68,6 @@ ctype_map = {
 }
 
 
-# pylint: disable=too-many-branches
 def codegen_host(top, module):
     # Reference: https://github.com/Xilinx/Vitis_Accel_Examples/blob/main/sys_opt/kernel_swap/src/host.cpp
     func = find_func_in_module(module, top)
@@ -90,85 +88,57 @@ def codegen_host(top, module):
         """
     )
     # Generate in/out buffers
+    buffer_bytes: list[int] = []
     for i, (in_dtype, in_shape) in enumerate(inputs):
-        if in_dtype in ctype_map:
-            in_dtype = ctype_map[in_dtype]
-        elif in_dtype.startswith("i") or in_dtype.startswith("ui"):
-            prefix, bitwidth = in_dtype.split("i")
-            if int(bitwidth) == 1:
-                in_dtype = "bool"
-            else:
-                new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
-                in_dtype = ctype_map[new_int_type]
-        elif in_dtype.startswith("fixed") or in_dtype.startswith("ufixed"):
-            in_dtype = "float"
-        else:
-            raise ValueError(f"Unsupported input type: {in_dtype}")
-        out_str += format_str(f'std::ifstream ifile{i}("input{i}.data");')
+        ele_bitwidth = get_bitwidth_from_type(in_dtype)
+        # bool -> 1 byte
+        ele_bytes = 1 if ele_bitwidth == 1 else ele_bitwidth // 8
+        # read file
+        out_str += format_str(
+            f'std::ifstream ifile{i}("input{i}.data", std::ios::binary);'
+        )
         out_str += format_str(f"if (!ifile{i}.is_open()) {{")
         out_str += format_str(
             '  std::cerr << "Error: Could not open input file.\\n";', strip=False
         )
         out_str += format_str("  return 1;", strip=False)
         out_str += format_str("}")
-        in_shape = [str(i) for i in in_shape]
+        size = np.prod(in_shape) if len(in_shape) > 0 else 1
+        byte_num = size * ele_bytes
+        buffer_bytes.append(byte_num)
+        # check if the input file has expected bytes
+        out_str += format_str(f"ifile{i}.seekg(0, std::ios::end);")
+        out_str += format_str(f"auto ifile{i}_size = ifile{i}.tellg();")
+        out_str += format_str(f"ifile{i}.seekg(0, std::ios::beg);")
+        out_str += format_str(f"if (ifile{i}_size != {byte_num}) {{")
+        out_str += format_str(
+            '  std::cerr << "Error: Invalid input file, byte number mismatch.\\n";',
+            strip=False,
+        )
+        out_str += format_str("  return 1;", strip=False)
+        out_str += format_str("}")
         if len(in_shape) == 0:
-            # scalar
-            out_str += format_str(f"{in_dtype} source_in{i};")
-            # Handle 8-bit types by reading as int first and casting
-            if in_dtype in {"int8_t", "uint8_t"}:
-                out_str += format_str(f"int temp_in{i};")
-                out_str += format_str(f"ifile{i} >> temp_in{i};")
-                out_str += format_str(
-                    f"source_in{i} = static_cast<{in_dtype}>(temp_in{i});"
-                )
-            else:
-                out_str += format_str(f"ifile{i} >> source_in{i};")
+            out_str += format_str(f"std::vector<uint8_t>  source_in{i}_({byte_num});")
+            out_str += format_str(
+                f"ifile{i}.read(reinterpret_cast<char*>(source_in{i}_.data()), {byte_num});"
+            )
+            scalar_type = ctype_map[in_dtype]
+            out_str += format_str(
+                f"{scalar_type} source_in{i} = *reinterpret_cast<{scalar_type}*>(source_in{i}_.data());"
+            )
         else:
+            out_str += format_str(f"std::vector<uint8_t>  source_in{i}({byte_num});")
             out_str += format_str(
-                f"{in_dtype} in_data_{i}[{'*'.join(map(str, in_shape))}];"
-            )
-            out_str += format_str(
-                f"for (unsigned i = 0; i < {'*'.join(map(str, in_shape))}; i++) {{"
-            )
-            # Handle 8-bit types by reading as int first and casting
-            if in_dtype in {"int8_t", "uint8_t"}:
-                out_str += format_str("  int c;", strip=False)
-                out_str += format_str(f"  ifile{i} >> c;", strip=False)
-                out_str += format_str(
-                    f"  in_data_{i}[i] = static_cast<{in_dtype}>(c);", strip=False
-                )
-            else:
-                out_str += format_str(f"  ifile{i} >> in_data_{i}[i];", strip=False)
-            out_str += format_str("}")
-            out_str += format_str(
-                f"size_t size_bytes_in{i} = sizeof({in_dtype}) * {' * '.join(in_shape)};",
-                strip=False,
-            )
-            out_str += format_str(
-                f"std::vector<{in_dtype}, aligned_allocator<{in_dtype}> > source_in{i}(in_data_{i}, in_data_{i} + {' * '.join(in_shape)});",
-                strip=False,
+                f"ifile{i}.read(reinterpret_cast<char*>(source_in{i}.data()), {byte_num});"
             )
     for i, (out_dtype, out_shape) in enumerate(outputs):
-        if out_dtype in ctype_map:
-            out_dtype = ctype_map[out_dtype]
-        elif out_dtype.startswith("i") or out_dtype.startswith("ui"):
-            prefix, bitwidth = out_dtype.split("i")
-            new_int_type = f"{prefix}i{max(get_clostest_pow2(int(bitwidth)), 8)}"
-            out_dtype = ctype_map[new_int_type]
-        elif out_dtype.startswith("fixed") or out_dtype.startswith("ufixed"):
-            out_dtype = "float"
-        else:
-            raise ValueError(f"Unsupported input type: {out_dtype}")
-        out_shape = [str(i) for i in out_shape]
-        out_str += format_str(
-            f"size_t size_bytes_out{i} = sizeof({out_dtype}) * {' * '.join(out_shape)};\n",
-            strip=False,
-        )
-        out_str += format_str(
-            f"std::vector<{out_dtype}, aligned_allocator<{out_dtype}> > source_out{i}({' * '.join(out_shape)});\n",
-            strip=False,
-        )
+        ele_bitwidth = get_bitwidth_from_type(out_dtype)
+        # bool -> 1 byte
+        ele_bytes = 1 if ele_bitwidth == 1 else ele_bitwidth // 8
+        size = np.prod(out_shape) if len(out_shape) > 0 else 1
+        byte_num = size * ele_bytes
+        buffer_bytes.append(byte_num)
+        out_str += format_str(f"std::vector<uint8_t>  source_out{i}({byte_num});")
         out_str += format_str(
             f"std::fill(source_out{i}.begin(), source_out{i}.end(), 0);\n", strip=False
         )
@@ -229,12 +199,12 @@ def codegen_host(top, module):
             flag = "CL_MEM_READ_ONLY"
         if len(in_shape) != 0:
             out_str += format_str(
-                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, size_bytes_in{i}, source_in{i}.data(), &err));",
+                f"OCL_CHECK(err, cl::Buffer buffer_in{i}(context, CL_MEM_USE_HOST_PTR | {flag}, {buffer_bytes[i]}, source_in{i}.data(), &err));",
                 strip=False,
             )
     for i in range(len(outputs)):
         out_str += format_str(
-            f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_bytes_out{i}, source_out{i}.data(), &err));",
+            f"OCL_CHECK(err, cl::Buffer buffer_out{i}(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, {buffer_bytes[i + len(inputs)]}, source_out{i}.data(), &err));",
             strip=False,
         )
     out_str += "\n"
@@ -260,12 +230,13 @@ def codegen_host(top, module):
         )
     out_str += format_str("// Copy input data to device global memory", strip=False)
     buf_str = buf_str.strip(", ")
-    out_str += format_str(
-        "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
-        + buf_str
-        + "}, 0 /* 0 means from host*/));",
-        strip=False,
-    )
+    if len(buf_str) > 0:
+        out_str += format_str(
+            "OCL_CHECK(err, err = q.enqueueMigrateMemObjects({"
+            + buf_str
+            + "}, 0 /* 0 means from host*/));",
+            strip=False,
+        )
     out_str += "\n"
     out_str += format_str(
         """
@@ -340,17 +311,16 @@ def codegen_host(top, module):
         out_buf = "source_in" + str(len(inputs) - 1)
     else:
         out_buf = "source_out" + str(len(outputs) - 1)
+        # raise RuntimeError("TODO: output is not the last argument")
     out_str += format_str(
         f"""    // Write the output data to file
     std::ofstream ofile;
-    ofile.open("output.data");
+    ofile.open("output.data", std::ios::binary);
     if (!ofile) {{
         std::cerr << "Failed to open output file!" << std::endl;
         return EXIT_FAILURE;
     }}
-    for (unsigned i = 0; i < {out_buf}.size(); i++) {{
-        ofile << {out_buf}[i] << std::endl;
-    }}
+    ofile.write(reinterpret_cast<const char*>({out_buf}.data()), {buffer_bytes[-1]});
     ofile.close();
     """,
         strip=False,
