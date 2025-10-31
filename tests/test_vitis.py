@@ -130,10 +130,11 @@ def test_scalar():
     assert mod(1) == 2
     print("Passed CPU simulation!")
     mod = s.build(target="vitis_hls", mode="sw_emu", project="test_scalar_sw_emu.prj")
-    ret = np.zeros((1,), dtype=np.int32)
-    mod(1, ret)
-    assert ret == 2
-    print("Passed!")
+    if hls.is_available("vitis_hls"):
+        ret = np.zeros((1,), dtype=np.int32)
+        mod(1, ret)
+        assert ret == 2
+        print("Passed!")
 
 
 def test_pointer_generation():
