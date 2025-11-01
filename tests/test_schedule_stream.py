@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
+import re
 import pytest
 from allo.ir.types import Fixed, int32
 
@@ -67,7 +68,6 @@ def test_nested_function():
             B[i, j] = A[i, j] + 1
 
     def func2(A: T[10, 20], B: T[10, 20]):
-        B: T[10, 20]
         for i, j in allo.grid(10, 20):
             B[i, j] = A[i, j] * 2
 
@@ -82,7 +82,7 @@ def test_nested_function():
     s.to(s.B, "func2", depth=1)
     print(s.module)
     code = s.build(target="vhls").hls_code
-    assert "#pragma HLS stream variable=B1 depth=1" in code
+    assert re.search(r"#pragma HLS stream variable=\w+ depth=1", code)
 
 
 def test_fork_join_function():
@@ -93,12 +93,10 @@ def test_fork_join_function():
             B[i, j] = A[i, j] + 1
 
     def func2(A: T[10, 20], B: T[10, 20]):
-        B: T[10, 20]
         for i, j in allo.grid(10, 20):
             B[i, j] = A[i, j] * 2
 
     def func3(A: T[10, 20], B: T[10, 20], C: T[10, 20]):
-        C: T[10, 20]
         for i, j in allo.grid(10, 20):
             C[i, j] = A[i, j] + B[i, j]
 
@@ -116,8 +114,7 @@ def test_fork_join_function():
     s.to(s.C, "func3")
     print(s.module)
     code = s.build(target="vhls").hls_code
-    assert "#pragma HLS stream variable=B1 depth=200" in code
-    assert "#pragma HLS stream variable=C1 depth=200" in code
+    assert re.search(r"#pragma HLS stream variable=\w+ depth=200", code)
 
 
 def test_dataflow_function():

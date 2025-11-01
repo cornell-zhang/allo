@@ -23,9 +23,9 @@ def bicg_np(A, s, q, p, r):
 
 def stageS[T: (float32, int32), M: int32, N: int32](A: "T[N, M]", r: "T[N]", s: "T[M]"):
     for i0 in range(N):  # pipeline
-        r: T = r[i0]
+        local_r: T = r[i0]
         for j0 in range(M):  # unroll
-            s[j0] += r * A[i0, j0]
+            s[j0] += local_r * A[i0, j0]
 
 
 def stageQ[T: (float32, int32), M: int32, N: int32](A: "T[N, M]", p: "T[M]", q: "T[N]"):

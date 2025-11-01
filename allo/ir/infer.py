@@ -229,6 +229,10 @@ class TypeInferer(ASTVisitor):
             for iv in ivs:
                 iv.shape = tuple()
                 iv.dtype = Index()
+                iv_ = ctx.get_symbol(iv.id, allow_missing=True)
+                assert (
+                    iv_ is None
+                ), "Please choose a different name for the loop iterator."
                 ctx.put_symbol(name=iv.id, val=iv)
             visit_stmts(ctx, node.iter.args)
             visit_stmts(ctx, node.body)
@@ -253,7 +257,10 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_broadcast(
-        ctx: ASTContext, lhs: ast.expr, rhs: ast.expr, match_lhs: bool = False
+        ctx: ASTContext,
+        lhs_shape: list[int],
+        rhs_shape: list[int],
+        match_lhs: bool = False,
     ):
         # See the broadcasting rules in NumPy
         # https://numpy.org/doc/stable/user/basics.broadcasting.html
@@ -262,12 +269,12 @@ class TypeInferer(ASTVisitor):
         # Two dimensions are compatible when
         # 1. they are equal, or
         # 2. one of them is 1.
-        if rhs is None:
-            return lhs.shape, [], []
-        tmp_lhs_shape = list(lhs.shape)
-        tmp_rhs_shape = list(rhs.shape)
+        if rhs_shape is None:
+            return lhs_shape, [], []
+        tmp_lhs_shape = list(lhs_shape)
+        tmp_rhs_shape = list(rhs_shape)
         if match_lhs and len(tmp_lhs_shape) < len(tmp_rhs_shape):
-            raise RuntimeError(f"Cannot broadcast {rhs.shape} to {lhs.shape}")
+            raise RuntimeError(f"Cannot broadcast {rhs_shape} to {lhs_shape}")
         # match larger shape
         lhs_dims, rhs_dims = set(), set()
         if len(tmp_lhs_shape) < len(tmp_rhs_shape):
@@ -286,7 +293,7 @@ class TypeInferer(ASTVisitor):
                 if tmp_rhs_shape[i] != 1:
                     if match_lhs:
                         raise RuntimeError(
-                            f"Cannot broadcast {rhs.shape} to {lhs.shape}"
+                            f"Cannot broadcast {rhs_shape} to {lhs_shape}"
                         )
                     lhs_dims.add(i)
             elif tmp_rhs_shape[i] == 1:
@@ -296,7 +303,7 @@ class TypeInferer(ASTVisitor):
             else:
                 assert (
                     tmp_lhs_shape[i] == tmp_rhs_shape[i]
-                ), f"Shape mismatch, got {lhs.shape} and {rhs.shape}, and cannot be broadcasted"
+                ), f"Shape mismatch, got {lhs_shape} and {rhs_shape}, and cannot be broadcasted"
         assert tmp_lhs_shape == tmp_rhs_shape
         return tuple(tmp_lhs_shape), list(lhs_dims), list(rhs_dims)
 
@@ -307,7 +314,9 @@ class TypeInferer(ASTVisitor):
         typing_rule = get_typing_rule(type(node.op))
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
-        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(ctx, lhs, rhs)
+        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+            ctx, lhs.shape, rhs_shape=None if rhs is None else rhs.shape
+        )
         node.shape = final_shape
         node.dims = (lhs_dims, rhs_dims)
         if ctx.verbose:
@@ -335,59 +344,84 @@ class TypeInferer(ASTVisitor):
 
     @staticmethod
     def visit_Assign(ctx: ASTContext, node: ast.Assign):
-        # Compute RHS
-        rhs = visit_stmt(ctx, node.value)
-        if (isinstance(rhs, ast.Call) or len(rhs.shape) > 0) and not isinstance(
-            node.targets[0], ast.Subscript
-        ):
-            targets = []
-            if isinstance(node.targets[0], ast.Tuple):
-                targets = node.targets[0].elts
-            else:
-                targets = [node.targets[0]]
-            for i, target in enumerate(targets):
-                if isinstance(target, ast.Name):
-                    target.dtype = (
-                        rhs.dtype[i] if isinstance(rhs.dtype, tuple) else rhs.dtype
-                    )
-                    # notice here needs to test whether dtype is a tuple instead of shape
-                    # as shape is always a tuple
-                    target.shape = (
-                        rhs.shape[i] if isinstance(rhs.dtype, tuple) else rhs.shape
-                    )
-                    # update global variables for metaprogramming
-                    if (
-                        isinstance(node.value, ast.Call)
-                        and isinstance(node.value.func, ast.Attribute)
-                        and node.value.func.attr == "get_pid"
-                    ):
-                        ctx.global_vars[ast.unparse(target)] = ctx.global_vars[
-                            f"df.p{i}"
-                        ]
-                        ctx.symbolic[ast.unparse(target)] = f"p{i}"
-                    else:
-                        ctx.put_symbol(name=target.id, val=target)
-                else:
-                    lhs = visit_stmt(ctx, target)
-            node.dtype = rhs.dtype
-            node.shape = rhs.shape
-            return rhs
-        # store LHS
-        lhs = visit_stmt(ctx, node.targets[0])
-        final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-            ctx, node.targets[0], node.value, match_lhs=True
+        assert len(node.targets) == 1, "chained assignment not supported"
+        targets, values, rhs_dtypes, rhs_shapes = [], [], None, None
+        rhs_visited = False
+        if isinstance(node.targets[0], ast.Tuple):
+            targets.extend(node.targets[0].elts)
+            if isinstance(node.value, ast.Tuple):
+                values.extend(node.value.elts)
+        else:
+            targets.append(node.targets[0])
+            values.append(node.value)
+        if isinstance(node.value, ast.Call):
+            # special case: the builtin get_pid()
+            if (
+                isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "get_pid"
+            ):
+                for i, target in enumerate(targets):
+                    # TODO: add target symbol for pid??
+                    ctx.global_vars[ast.unparse(target)] = ctx.global_vars[f"df.p{i}"]
+                    ctx.symbolic[ast.unparse(target)] = f"p{i}"
+                return node
+            rhs = visit_stmt(ctx, node.value)
+            rhs_visited = True
+            rhs_dtypes = [rhs.dtype] if len(targets) == 1 else list(rhs.dtype)
+            rhs_shapes = [rhs.shape] if len(targets) == 1 else list(rhs.shape)
+        assert len(targets) == len(values) or len(targets) == len(rhs_dtypes) == len(
+            rhs_shapes
         )
-        assert (
-            final_shape == lhs.shape
-        ), f"Shape mismatch, got {final_shape} and {lhs.shape}"
-        node.dtype = lhs.dtype
-        node.shape = lhs.shape
-        node.dims = (lhs_dims, rhs_dims)
+        for idx, target in enumerate(targets):
+            if isinstance(target, ast.Name):
+                target_ = ctx.get_symbol(target.id, allow_missing=True)
+                target_shape, target_dtype = None, None
+                if target_ is not None:
+                    target_shape, target_dtype = target_.shape, target_.dtype
+                if not rhs_visited:
+                    rhs = TypeInferer.visit_assignment_val(
+                        ctx, values[idx], target_shape, target_dtype
+                    )
+                    rhs_shape, rhs_dtype = rhs.shape, rhs.dtype
+                else:
+                    rhs_shape, rhs_dtype = rhs_shapes[idx], rhs_dtypes[idx]
+                if target_ is None:
+                    # new def
+                    ctx.put_symbol(name=target.id, val=target)
+                    target.dtype = rhs_dtype
+                    target.shape = rhs_shape
+                else:
+                    # assign
+                    target.dtype, target.shape = target_dtype, target_shape
+                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+                    ctx, target.shape, rhs_shape=rhs_shape, match_lhs=True
+                )
+                assert (
+                    final_shape == target.shape
+                ), f"Shape mismatch, got {final_shape} and {target.shape}"
+                node.dims = target.dims = (lhs_dims, rhs_dims)
+            else:
+                # assign
+                if not rhs_visited:
+                    rhs = visit_stmt(ctx, values[idx])
+                    rhs_shape = None if rhs is None else rhs.shape
+                else:
+                    rhs_shape = rhs_shapes[idx]
+                lhs = visit_stmt(ctx, target)
+                final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
+                    ctx, lhs.shape, rhs_shape=rhs_shape, match_lhs=True
+                )
+                assert (
+                    final_shape == lhs.shape
+                ), f"Shape mismatch, got {final_shape} and {lhs.shape}"
+                target.dtype, target.shape = lhs.dtype, lhs.shape
+                node.dims = target.dims = (lhs_dims, rhs_dims)
+            node.dtype, node.shape = target.dtype, target.shape
         return node
 
     @staticmethod
     def visit_constant_tensor(
-        ctx: ASTContext, node: ast.AnnAssign, np_values: np.array, dtype: AlloType
+        ctx: ASTContext, node: ast.expr, np_values: np.array, dtype: AlloType
     ):
         dtype = str(dtype)
         if is_anywidth_int_type_and_not_np(dtype):
@@ -415,6 +449,8 @@ class TypeInferer(ASTVisitor):
             lhs = visit_stmt(ctx, node.target)
         elif isinstance(node.target, ast.Name):  # scalar
             lhs = ctx.get_symbol(node.target.id)
+            assert lhs is not None
+            node.target.dtype, node.target.shape = lhs.dtype, lhs.shape
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
@@ -562,46 +598,76 @@ class TypeInferer(ASTVisitor):
         return node
 
     @staticmethod
+    def visit_assignment_val(
+        ctx: ASTContext,
+        value: ast.expr,
+        target_shape: list[int],
+        target_dtype: AlloType,
+    ):
+        if isinstance(value, ast.List):
+            assert target_shape is not None and target_dtype is not None
+            # e.g., arr: int32[2, 2] = [[1, 2], [3, 4]]
+            values = compile(ast.Expression(value), "", "eval")
+            # pylint: disable=eval-used
+            values = np.array(eval(values, ctx.global_vars))
+            assert (
+                target_shape == values.shape
+            ), f"Shape mismatch, got {target_shape} and {values.shape}"
+            TypeInferer.visit_constant_tensor(ctx, value, values, dtype=target_dtype)
+            value.dtype = target_dtype
+        elif (
+            isinstance(value, ast.Name)
+            and value.id in ctx.global_vars
+            and isinstance(ctx.global_vars[value.id], np.ndarray)
+        ):
+            assert target_shape is not None and target_dtype is not None
+            assert (
+                ctx.global_vars[value.id].shape == target_shape
+            ), f"`{value.id}` shape mismatch, got {ctx.global_vars[value.id].shape} and {target_shape}"
+            TypeInferer.visit_constant_tensor(
+                ctx, value, ctx.global_vars[value.id], dtype=target_dtype
+            )
+            value.dtype = target_dtype
+        else:
+            visit_stmt(ctx, value)
+        return value
+
+    @staticmethod
     def visit_AnnAssign(ctx: ASTContext, node: ast.AnnAssign):
         target_dtype, target_shape, _ = TypeInferer.visit_type_hint(
             ctx, node.annotation
         )
-        if isinstance(node.value, ast.List):
-            values = compile(ast.Expression(node.value), "", "eval")
-            # pylint: disable=eval-used
-            values = np.array(eval(values))
+        assert isinstance(
+            node.target, ast.Name
+        ), "target of AnnAssign must be Name, other type not supported."
+        target_ = ctx.get_symbol(node.target.id, allow_missing=True)
+        if target_ is not None:
             assert (
-                target_shape == values.shape
-            ), f"Shape mismatch, got {target_shape} and {values.shape}"
-            TypeInferer.visit_constant_tensor(ctx, node, values, dtype=target_dtype)
-            node.value.shape = values.shape
-            node.value.dtype = target_dtype
-        elif (
-            isinstance(node.value, ast.Name)
-            and node.value.id in ctx.global_vars
-            and isinstance(ctx.global_vars[node.value.id], np.ndarray)
-        ):
+                node.value is not None
+            ), "Unsupported annotated assignment without a value."
+            # assignment
             assert (
-                ctx.global_vars[node.value.id].shape == target_shape
-            ), f"`{node.value.id}` shape mismatch, got {ctx.global_vars[node.value.id].shape} and {target_shape}"
-            TypeInferer.visit_constant_tensor(
-                ctx, node, ctx.global_vars[node.value.id], dtype=target_dtype
-            )
-            node.value.shape = node.np_values.shape
-            node.value.dtype = target_dtype
-        else:
-            visit_stmt(ctx, node.value)
-        ctx.put_symbol(name=node.target.id, val=node)
-        node.dtype = target_dtype
-        node.shape = target_shape
-        visit_stmt(ctx, node.target)
+                target_.dtype == target_dtype and target_.shape == target_shape
+            ), f"Invalid assignment to {node.target.id}, type mismatch."
+        # rhs
+        rhs = TypeInferer.visit_assignment_val(
+            ctx, node.value, target_shape, target_dtype
+        )
+        if target_ is None:
+            # new def
+            ctx.put_symbol(name=node.target.id, val=node.target)
+        node.target.dtype = node.dtype = target_dtype
+        node.target.shape = node.shape = target_shape
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-            ctx, node.target, node.value, match_lhs=True
+            ctx,
+            node.target.shape,
+            rhs_shape=None if rhs is None else rhs.shape,
+            match_lhs=True,
         )
         assert (
             final_shape == target_shape
         ), f"Shape mismatch, got {final_shape} and {target_shape}"
-        node.dims = (lhs_dims, rhs_dims)
+        node.target.dims = node.dims = (lhs_dims, rhs_dims)
         return node
 
     @staticmethod
@@ -715,6 +781,10 @@ class TypeInferer(ASTVisitor):
                 )
                 # update shape
                 arg.shape = arg.dtensor.get_local_shape()
+                assert ctx.get_symbol(name=arg.arg, allow_missing=True) is None, (
+                    f"Argument name '{arg.arg}' conflicts with an existing symbol. "
+                    f"Please choose a different name to avoid the conflict."
+                )
                 ctx.put_symbol(name=arg.arg, val=arg)
 
             func_name = (
@@ -742,6 +812,10 @@ class TypeInferer(ASTVisitor):
                     node.returns.dtype, node.returns.shape, node.returns.spec = (
                         TypeInferer.visit_type_hint(ctx, node.returns)
                     )
+                assert ctx.get_symbol(name=func_name, allow_missing=True) is None, (
+                    f"Function name '{func_name}' conflicts with an existing symbol. "
+                    f"Please choose a different name to avoid the conflict."
+                )
                 ctx.put_symbol(name=func_name, val=node)
 
             # set context
@@ -1128,7 +1202,7 @@ class TypeInferer(ASTVisitor):
             # Element-wise operation
             if op_name in {"add", "sub", "mul", "div"}:
                 final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
-                    ctx, new_args[0], new_args[1]
+                    ctx, new_args[0].shape, new_args[1].shape
                 )
                 node.dims = (lhs_dims, rhs_dims)
                 node.shape = final_shape

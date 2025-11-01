@@ -109,10 +109,11 @@ def top():
                     with allo.meta_if(i < Rt):
                         fifo_B[i, j - 1].put(b)
 
+                packed_tmp: UInt(Rt * 8)
                 with allo.meta_if(i == 1):
-                    packed_tmp: UInt(Rt * 8) = 0
+                    packed_tmp = 0
                 with allo.meta_else():
-                    packed_tmp: UInt(Rt * 8) = L1_C[i - 2, j - 1].get()
+                    packed_tmp = L1_C[i - 2, j - 1].get()
 
                 packed_c: UInt(Rt * 8) = 0
                 for m in range(Rt):
