@@ -10,7 +10,7 @@ from .utils import format_str, format_code
 from ..ir.transform import find_func_in_module
 from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
 from .vitis import update_makefile, write_tensor_to_file, read_tensor_from_file
-from ..allo.utils import ctype_map
+from ..utils import ctype_map
 
 header = """
 import argparse, time, pynq, os
