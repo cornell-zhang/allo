@@ -185,14 +185,11 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
                 # Pointer/array detection
                 is_pointer = ("[" in var_clean) or ("*" in dtype) or ("*" in var_clean)
                 if is_pointer:
-                    # Remove all pointer/array symbols to get the variable name
+                    # Extract base variable name (e.g. v12 from v12[128]) to avoid
+                    # concatenating array sizes into the identifier (v12128).
+                    base = var_clean.split("[")[0]
                     arg_name = (
-                        var_clean.replace("*", "")
-                        .replace("&", "")
-                        .replace("[", "")
-                        .replace("]", "")
-                        .replace(",", "")
-                        .strip()
+                        base.replace("*", "").replace("&", "").replace(",", "").strip()
                     )
                     out_str += f"  {dtype} {var_clean},\n"
                     func_args.append((arg_name, "pointer"))

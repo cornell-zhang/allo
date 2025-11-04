@@ -182,7 +182,7 @@ class HLSModule:
         configs=None,
         func_args=None,
         wrap_io=True,
-        custom_bd_tcl=None
+        custom_bd_tcl=None,
     ):
         self.top_func_name = top_func_name
         self.mode = mode
@@ -201,6 +201,8 @@ class HLSModule:
             configs = DEFAULT_CONFIG
         if self.mode is not None:
             configs["mode"] = self.mode
+        # persist configs on the instance so runtime steps can inspect user intent
+        self.configs = configs
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -250,7 +252,7 @@ class HLSModule:
 
                 if platform == "pynq" and self.custom_bd_tcl:
                     default_bd = os.path.join(project, "block_design.tcl")
-                    if(os.path.exists(default_bd)):
+                    if os.path.exists(default_bd):
                         os.remove(default_bd)
 
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
@@ -311,7 +313,9 @@ class HLSModule:
 
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
-                self.hls_code = postprocess_hls_code_pynq(self.hls_code, self.top_func_name)
+                self.hls_code = postprocess_hls_code_pynq(
+                    self.hls_code, self.top_func_name
+                )
                 for lib in self.ext_libs:
                     cpp_file = lib.impl.split("/")[-1]
                     with open(f"{project}/{cpp_file}", "r", encoding="utf-8") as infile:
@@ -323,7 +327,6 @@ class HLSModule:
                     ) as outfile:
                         outfile.write(new_code)
 
-                
             elif self.platform == "tapa":
                 assert self.mode in {
                     "csim",
@@ -548,18 +551,35 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to synthesize the design")
+                # only run block deisgn if configs['run_impl'] or mode contains 'impl')
+                do_impl = False
+                try:
+                    do_impl = bool(self.configs.get("run_impl", False))
+                except Exception:
+                    do_impl = False
+                if not do_impl and not (
+                    isinstance(self.mode, str) and "impl" in self.mode
+                ):
+                    # return early if not running impl
+                    return
 
                 # vivado block design
-                bd_script = self.custom_bd_tcl if self.custom_bd_tcl else "block_design.tcl"
+                bd_script = (
+                    self.custom_bd_tcl if self.custom_bd_tcl else "block_design.tcl"
+                )
                 cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
-                print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ...")
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
+                )
                 if shell:
                     process = subprocess.Popen(cmd, shell=True)
                 else:
                     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
                 process.wait()
                 if process.returncode != 0:
-                    raise RuntimeError("Failed to create block design/generate bitstream")
+                    raise RuntimeError(
+                        "Failed to create block design/generate bitstream"
+                    )
 
                 # produce host code
                 host_code = codegen_pynq_host(
@@ -580,7 +600,9 @@ class HLSModule:
                     f"cp {self.project}/host.py {deploy_dir}/host.py"
                 )
 
-                print(f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ...")
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
+                )
                 if shell:
                     process = subprocess.Popen(cmd, shell=True)
                 else:
