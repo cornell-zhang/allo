@@ -885,38 +885,15 @@ class ASTTransformer(ASTBuilder):
         else:
             # - other
             rhs = build_stmt(ctx, value)
-            conversion_enabled = True
+            conversion_enabled = rhs is not None
         if conversion_enabled:
-            if rhs is not None:
-                # dtype cast
-                rhs = ASTTransformer.build_cast_op(
-                    ctx, rhs, value.dtype, target.dtype, value.shape
-                )
+            # dtype cast
+            rhs = ASTTransformer.build_cast_op(
+                ctx, rhs, value.dtype, target.dtype, value.shape
+            )
             if isinstance(rhs, (allo_d.StreamConstructOp, allo_d.StreamGetOp)):
                 pass
-            elif len(target.shape) > 0:
-                alloc_op = ASTTransformer.build_array(ctx, target.dtype, target.shape)
-                with ctx.get_ip():
-                    if rhs is not None:
-                        # for some OpView (e.g., linalg.transpose), op.result return a OpResultList
-                        rhs_result = (
-                            rhs.result[0]
-                            if isinstance(rhs.result, OpResultList)
-                            else rhs.result
-                        )
-                        if isinstance(rhs_result.type, (MemRefType, RankedTensorType)):
-                            linalg_op = linalg_d.copy(
-                                rhs_result, outs=[alloc_op.result]
-                            )
-                        else:
-                            linalg_op = linalg_d.fill(
-                                rhs_result, outs=[alloc_op.result]
-                            )
-                    else:
-                        linalg_op = alloc_op.result
-                rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
-            elif rhs is not None:
-                # scalar
+            else:
                 rhs = ASTTransformer.build_broadcast_op(
                     ctx,
                     rhs,
@@ -934,9 +911,7 @@ class ASTTransformer(ASTBuilder):
             if target_ is None:
                 # declare
                 # - if rhs is constant, allocate on stack to make it a real variable
-                if rhs_value is None or not isinstance(
-                    rhs_value.type, (MemRefType, RankedTensorType)
-                ):
+                if rhs_value is None:
                     if not ctx.enable_tensor:
                         alloc_op = ASTTransformer.build_array(
                             ctx, target.dtype, target.shape
