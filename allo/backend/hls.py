@@ -109,14 +109,19 @@ open_solution "solution1"
         out_str += "csynth_design\n"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
-    # Avoid running the full implementation flow by default. Allow opt-in
-    # using configs['run_impl'] or by including 'impl' in the mode string.
-    if configs.get("run_impl", False) or (isinstance(mode, str) and "impl" in mode):
-        out_str += "export_design -flow impl\n"
 
-    # Export RTL/IP for specific embedded targets (PYNQ/Ultra96/Zedboard).
+    # For embedded targets (PYNQ/Ultra96v2/Zedboard), only export RTL/IP in TCL.
+    # Impl (Vivado block design) is handled separately by the Python backend.
+    # For other devices (Zynq/Versal/Alveo), run full impl in TCL when requested.
     if device in ("ultra96v2", "pynqz2", "zedboard"):
         out_str += "export_design -rtl verilog -format ip_catalog\n"
+    else:
+        # Other devices: run full impl when explicitly requested or when mode
+        # contains 'impl' or 'hw'
+        if configs.get("run_impl", False) or (
+            isinstance(mode, str) and ("impl" in mode or "hw" in mode)
+        ):
+            out_str += "export_design -flow impl\n"
     out_str += "\nexit\n"
     return out_str
 
