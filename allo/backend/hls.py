@@ -113,15 +113,14 @@ open_solution "solution1"
     # For embedded targets (PYNQ/Ultra96v2/Zedboard), only export RTL/IP in TCL.
     # Impl (Vivado block design) is handled separately by the Python backend.
     # For other devices (Zynq/Versal/Alveo), run full impl in TCL when requested.
-    if device in ("ultra96v2", "pynqz2", "zedboard"):
+    if device in {"ultra96v2", "pynqz2", "zedboard"}:
         out_str += "export_design -rtl verilog -format ip_catalog\n"
-    else:
-        # Other devices: run full impl when explicitly requested or when mode
-        # contains 'impl' or 'hw'
-        if configs.get("run_impl", False) or (
-            isinstance(mode, str) and ("impl" in mode or "hw" in mode)
-        ):
-            out_str += "export_design -flow impl\n"
+    # Other devices: run full impl when explicitly requested or when mode
+    # contains 'impl' or 'hw'
+    elif configs.get("run_impl", False) or (
+        isinstance(mode, str) and ("impl" in mode or "hw" in mode)
+    ):
+        out_str += "export_design -flow impl\n"
     out_str += "\nexit\n"
     return out_str
 
