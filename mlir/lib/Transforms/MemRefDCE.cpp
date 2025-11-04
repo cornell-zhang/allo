@@ -58,6 +58,12 @@ void removeNeverLoadedMemRef(func::FuncOp &func) {
       } else if (isa<StructConstructOp>(u)) {
         loaded_from = true;
         break;
+      } else if (isa<memref::CopyOp>(u)) {
+        loaded_from = true;
+        break;
+      } else if (isa<memref::ReinterpretCastOp>(u)) {
+        loaded_from = true;
+        break;
       }
     }
     if (!loaded_from) {

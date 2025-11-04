@@ -13,6 +13,7 @@ import numpy as np
 from .._mlir.ir import (
     OpView,
     Module,
+    Block,
     Location,
     InsertionPoint,
     FunctionType,
@@ -2246,23 +2247,28 @@ class ASTTransformer(ASTBuilder):
                 stream_type = allo_d.StreamType.get(
                     fifo_list.dtype.build(), depth=fifo_list.dtype.depth
                 )
-                stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
-                sample_name, sample_symbolic_slice = None, None
-                fifo_name_attr = []
-                fifo_symbolic_slice_attr = []
+                if not ctx.unroll:
+                    stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
+                    # sample_name, sample_symbolic_slice = None, None
+                    fifo_name_attrs = []
+                    fifo_symbolic_slice_attrs = []
+                else:
+                    stream_ops = []
                 if isinstance(fifo_list, ast.List):
                     for elt in fifo_list.elts:
                         fifo_name, symbolic_slice, iterator_infos = (
                             ASTTransformer.get_stream_name(ctx, elt)
                         )
                         assert len(iterator_infos) == 0, "Not supported yet"
-                        if sample_name is None:
-                            sample_name, sample_symbolic_slice = (
-                                fifo_name,
-                                symbolic_slice,
+                        if not ctx.unroll:
+                            fifo_name_attrs.append(StringAttr.get(fifo_name))
+                            fifo_symbolic_slice_attrs.append(
+                                StringAttr.get(symbolic_slice)
                             )
-                        fifo_name_attr.append(StringAttr.get(fifo_name))
-                        fifo_symbolic_slice_attr.append(StringAttr.get(symbolic_slice))
+                        else:  # Unroll
+                            stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
+                            stream_op.attributes["name"] = StringAttr.get(fifo_name)
+                            stream_ops.append(stream_op)
                 elif isinstance(fifo_list, ast.Subscript):
                     # if len(static_sizes) may > 1, will be flattened
                     array_shape = ctx.get_symbol(fifo_list.value.id)
@@ -2328,27 +2334,28 @@ class ASTTransformer(ASTBuilder):
                     ):
                         slice_str = "_".join([str(x) for x in indices])
                         fifo_name = f"{fifo_list.value.id}_{slice_str}"
-                        symbolic_slice = ",".join([str(x) for x in indices])
-                        if sample_name is None:
-                            sample_name, sample_symbolic_slice = (
-                                fifo_name,
-                                symbolic_slice,
-                            )
-                        fifo_name_attr.append(StringAttr.get(fifo_name))
-                        fifo_symbolic_slice_attr.append(
-                            StringAttr.get(symbolic_slice)
-                        )  # fixme: unverfied
+                        if not ctx.unroll:
+                            symbolic_slice = ",".join([str(x) for x in indices])
+                            fifo_name_attrs.append(StringAttr.get(fifo_name))
+                            fifo_symbolic_slice_attrs.append(
+                                StringAttr.get(symbolic_slice)
+                            )  # FIXME: unverfied
+                        else:  # Unroll
+                            stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
+                            stream_op.attributes["name"] = StringAttr.get(fifo_name)
+                            stream_ops.append(stream_op)
                 else:
                     raise RuntimeError(f"Fail to resolve fifo_list for {fn_name}.")
-                stream_op.attributes["name"] = StringAttr.get(sample_name)
-                if sample_symbolic_slice is not None:
-                    stream_op.attributes["symbolic_slice"] = StringAttr.get(
-                        sample_symbolic_slice
+                if not ctx.unroll:
+                    stream_op.attributes["name"] = fifo_name_attrs[0]
+                    if len(fifo_symbolic_slice_attrs) > 0:
+                        stream_op.attributes["symbolic_slice"] = (
+                            fifo_symbolic_slice_attrs[0]
+                        )
+                    stream_op.attributes["stream_list"] = ArrayAttr.get(fifo_name_attrs)
+                    stream_op.attributes["stream_symbolic_slice_list"] = ArrayAttr.get(
+                        fifo_symbolic_slice_attrs
                     )
-                stream_op.attributes["stream_list"] = ArrayAttr.get(fifo_name_attr)
-                stream_op.attributes["stream_symbolic_slice_list"] = ArrayAttr.get(
-                    fifo_symbolic_slice_attr
-                )
                 if fn_name == "gather":
                     # allocate local buffer for the gathered results
                     with ctx.get_ip():
@@ -2359,26 +2366,44 @@ class ASTTransformer(ASTBuilder):
                     buffer = build_stmt(ctx, node.args[0])
                 # internally build gather loop
                 with ctx.loop_scope_guard():
-                    lb_expr = arith_d.ConstantOp(
-                        arith_d.IndexType.get(), 0, ip=ctx.get_ip()
-                    )
-                    ub_expr = arith_d.ConstantOp(
-                        arith_d.IndexType.get(), len(fifo_name_attr), ip=ctx.get_ip()
-                    )
-                    step = arith_d.ConstantOp(
-                        arith_d.IndexType.get(), 1, ip=ctx.get_ip()
-                    )
-                    for_op = scf_d.ForOp(
-                        lb_expr.result, ub_expr.result, step.result, ip=ctx.get_ip()
-                    )
-                    op_name = f"S_{fn_name}_{str(ctx.loop_band_count)}"
-                    for_op.attributes["op_name"] = StringAttr.get(op_name)
-                    loop_iter_name = f"{fn_name}{str(ctx.loop_band_count)}"
-                    for_op.attributes["loop_name"] = StringAttr.get(loop_iter_name)
-                    stream_op.attributes["loop_name"] = StringAttr.get(op_name)
-                    scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
-                    with InsertionPoint(for_op.body.operations[0]):
-                        offset_values = []
+                    if not ctx.unroll:
+                        lb_expr = arith_d.ConstantOp(
+                            arith_d.IndexType.get(), 0, ip=ctx.get_ip()
+                        )
+                        ub_expr = arith_d.ConstantOp(
+                            arith_d.IndexType.get(),
+                            len(fifo_name_attrs),
+                            ip=ctx.get_ip(),
+                        )
+                        step = arith_d.ConstantOp(
+                            arith_d.IndexType.get(), 1, ip=ctx.get_ip()
+                        )
+                        for_op = scf_d.ForOp(
+                            lb_expr.result, ub_expr.result, step.result, ip=ctx.get_ip()
+                        )
+                        op_name = f"S_{fn_name}_{str(ctx.loop_band_count)}"
+                        for_op.attributes["op_name"] = StringAttr.get(op_name)
+                        loop_iter_name = f"{fn_name}{str(ctx.loop_band_count)}"
+                        for_op.attributes["loop_name"] = StringAttr.get(loop_iter_name)
+                        stream_op.attributes["loop_name"] = StringAttr.get(op_name)
+                        scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
+                        ip = for_op.body.operations[0]
+                        num_iterations = 1
+                    else:  # Unroll, create an scf.execute_region operation
+                        indices = []  # Static indices
+                        for i in range(len(stream_ops)):
+                            index_const_expr = arith_d.ConstantOp(
+                                arith_d.IndexType.get(), i, ip=ctx.get_ip()
+                            )
+                            indices.append(index_const_expr)
+                        exec_region_op = scf_d.ExecuteRegionOp([], ip=ctx.get_ip())
+                        op_name = f"S_{fn_name}"
+                        exec_region_op.attributes["op_name"] = StringAttr.get(op_name)
+                        block = Block.create_at_start(exec_region_op.region, [])
+                        scf_d.YieldOp([], ip=InsertionPoint(block))
+                        ip = InsertionPoint(block.operations[0])
+                        num_iterations = len(stream_ops)
+                    with ip:
                         static_offsets = []
                         size_values = []
                         stride_values = []
@@ -2389,7 +2414,6 @@ class ASTTransformer(ASTBuilder):
                             tile_size //= shape
                             stride_values.append(1)
                             if i == 0:
-                                offset_values.append(for_op.induction_variable)
                                 static_offsets.append(ShapedType.get_dynamic_size())
                                 size_values.append(1)
                             else:
@@ -2401,37 +2425,46 @@ class ASTTransformer(ASTBuilder):
                             f"memref<{'x'.join([str(x) for x in result_sizes])}x{node.dtype}"
                             f", strided<{result_strides}, offset: ?>>"
                         )
-                        if fn_name == "gather":
-                            get_op = allo_d.StreamGetOp(
-                                fifo_list.dtype.build(), stream_op.result, []
+                        for iteration in range(num_iterations):
+                            offset_values = (
+                                [indices[iteration]]
+                                if ctx.unroll
+                                else [for_op.induction_variable]
                             )
-                            subview = memref_d.SubViewOp(
-                                source=alloc_op.result,
-                                result=subview_result,
-                                static_offsets=static_offsets,
-                                static_sizes=size_values,
-                                static_strides=stride_values,
-                                offsets=offset_values,
-                                sizes=[],
-                                strides=[],
+                            stream_op = (
+                                stream_ops[iteration] if ctx.unroll else stream_op
                             )
-                            # copy to slice
-                            memref_d.CopyOp(get_op.result, subview.result)
-                        else:
-                            subview = memref_d.SubViewOp(
-                                source=buffer.result,
-                                result=subview_result,
-                                static_offsets=static_offsets,
-                                static_sizes=size_values,
-                                static_strides=stride_values,
-                                offsets=offset_values,
-                                sizes=[],
-                                strides=[],
-                            )
-                            allo_d.StreamPutOp(stream_op.result, [], subview.result)
+                            if fn_name == "gather":
+                                get_op = allo_d.StreamGetOp(
+                                    fifo_list.dtype.build(), stream_op.result, []
+                                )
+                                subview = memref_d.SubViewOp(
+                                    source=alloc_op.result,
+                                    result=subview_result,
+                                    static_offsets=static_offsets,
+                                    static_sizes=size_values,
+                                    static_strides=stride_values,
+                                    offsets=offset_values,
+                                    sizes=[],
+                                    strides=[],
+                                )
+                                # copy to slice
+                                memref_d.CopyOp(get_op.result, subview.result)
+                            else:
+                                subview = memref_d.SubViewOp(
+                                    source=buffer.result,
+                                    result=subview_result,
+                                    static_offsets=static_offsets,
+                                    static_sizes=size_values,
+                                    static_strides=stride_values,
+                                    offsets=offset_values,
+                                    sizes=[],
+                                    strides=[],
+                                )
+                                allo_d.StreamPutOp(stream_op.result, [], subview.result)
                     if fn_name == "gather":
                         return alloc_op
-                    return for_op
+                    return for_op if not ctx.unroll else exec_region_op
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
