@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=consider-using-with, no-name-in-module, too-many-branches
+# pylint: disable=consider-using-with, no-name-in-module, too-many-branches, \
+# pylint: disable=too-many-instance-attributes, too-many-arguments
 
 import os
 import re
@@ -207,7 +208,7 @@ class HLSModule:
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
-            if platform == "vitis_hls" or platform == "pynq":
+            if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
                 if wrap_io:
                     generate_input_output_buffers(
@@ -551,12 +552,11 @@ class HLSModule:
                 process.wait()
                 if process.returncode != 0:
                     raise RuntimeError("Failed to synthesize the design")
-                # only run block deisgn if configs['run_impl'] or mode contains 'impl')
+                # only run block design if configs['run_impl'] or mode contains
+                # 'impl'. Use safe checks instead of catching broad exceptions.
                 do_impl = False
-                try:
+                if isinstance(self.configs, dict):
                     do_impl = bool(self.configs.get("run_impl", False))
-                except Exception:
-                    do_impl = False
                 if not do_impl and not (
                     isinstance(self.mode, str) and "impl" in self.mode
                 ):

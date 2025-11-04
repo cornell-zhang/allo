@@ -1,15 +1,12 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=bad-builtin
-
+# (Removed a useless pylint suppression)
 import json
-import numpy as np
 import xml.etree.ElementTree as ET
 
 from .utils import format_str, format_code
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, get_clostest_pow2, np_supported_types
-from .vitis import update_makefile, write_tensor_to_file, read_tensor_from_file
+from ..utils import get_func_inputs_outputs
 from ..utils import ctype_map
 
 header = """
@@ -91,7 +88,7 @@ def codegen_pynq_host(top, module, project):
 
         # top function overlay
         out_str += format_str(f"top_hw = overlay.{top}_0")
-        out_str += format_str(f"top_hw.register_map.CTRL.AP_START = 0")
+        out_str += format_str("top_hw.register_map.CTRL.AP_START = 0")
         out_str += "\n"
 
         all_args = inputs + outputs
