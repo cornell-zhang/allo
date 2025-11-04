@@ -146,6 +146,8 @@ class ASTTransformer(ASTBuilder):
                 and len(ret.result.type.shape) == 0
             ):
                 op_ = ASTTransformer.build_scalar(ctx, ret)
+                if not ctx.enable_tensor:
+                    op_.attributes["from"] = StringAttr.get(node.id)
                 return op_
             return ret
         if node.id in ctx.global_vars:
