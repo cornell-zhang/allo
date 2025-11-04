@@ -4,7 +4,7 @@
 
 import json
 import numpy as np
-import xml.etree.ElementTree as ET 
+import xml.etree.ElementTree as ET
 
 from .utils import format_str, format_code
 from ..ir.transform import find_func_in_module
@@ -44,6 +44,7 @@ if __name__ == "__main__":
 """
 ctype_map_pynq = ctype_map
 
+
 def pointer_args_parse(xml_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -59,6 +60,7 @@ def pointer_args_parse(xml_path):
                 base_names.append(base)
     return base_names
 
+
 # for scalar args but not sure if we need this right now
 def scalar_args_parse(xml_path):
     tree = ET.parse(xml_path)
@@ -69,11 +71,16 @@ def scalar_args_parse(xml_path):
     base_names = []
     for reg in reg_elems:
         name = reg.find("spirit:name", ns).text
-        if not (name.endswith("_1") or name.endswith("_2") or name in {'CTRL', 'GIER', 'IP_IER', 'IP_ISR'}):
+        if not (
+            name.endswith("_1")
+            or name.endswith("_2")
+            or name in {"CTRL", "GIER", "IP_IER", "IP_ISR"}
+        ):
             if name not in base_names:
                 base_names.append(name)
     return base_names
-    
+
+
 def codegen_pynq_host(top, module, project):
     out_str = header
 
@@ -86,18 +93,22 @@ def codegen_pynq_host(top, module, project):
         out_str += format_str(f"top_hw = overlay.{top}_0")
         out_str += format_str(f"top_hw.register_map.CTRL.AP_START = 0")
         out_str += "\n"
-        
+
         all_args = inputs + outputs
 
         # extract pointer args TODO: need to replace hardcoded xml path
-        ptr_names = pointer_args_parse(f"{project}/out.prj/solution1/impl/ip/component.xml")
-        
+        ptr_names = pointer_args_parse(
+            f"{project}/out.prj/solution1/impl/ip/component.xml"
+        )
+
         # generate input/output buffers
         argidx = 0
         for name in ptr_names:
             dtype, shape = all_args[argidx]
             np_dtype = ctype_map_pynq[dtype]
-            out_str += format_str(f"{name}: PynqBuffer = pynq.allocate({shape}, dtype = {np_dtype})")
+            out_str += format_str(
+                f"{name}: PynqBuffer = pynq.allocate({shape}, dtype = {np_dtype})"
+            )
             argidx += 1
 
         out_str += "\n"
@@ -112,9 +123,12 @@ def codegen_pynq_host(top, module, project):
         for name in ptr_names:
             addr = f"{name}.physical_address"
             out_str += format_str(f"top_hw.register_map.{name}_1 = {addr}")
-            out_str += format_str(f"top_hw.register_map.{name}_2 = ({addr} >> 32) & 0xFFFFFFFF")
-            
-        out_str += format_str("""
+            out_str += format_str(
+                f"top_hw.register_map.{name}_2 = ({addr} >> 32) & 0xFFFFFFFF"
+            )
+
+        out_str += format_str(
+            """
                               
 top_hw.register_map.CTRL.AP_START = 1
 start_time = time.perf_counter()
@@ -122,14 +136,17 @@ while not top_hw.register_map.CTRL.AP_DONE:
     pass
 end_time = time.perf_counter()
 hw_time_ms = (end_time - start_time) * 1e3
-        """, strip=False)
-        
+        """,
+            strip=False,
+        )
+
         for i in range(len(inputs), len(ptr_names)):
             out_str += format_str(f"{ptr_names[i]}.sync_from_device()")
-    
+
     out_str += format_str(footer, 0, strip=False)
 
     return out_str
+
 
 def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
     out_str = ""
@@ -155,11 +172,11 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
             if pragma:
                 gmem_idx = 0
                 for arg, argtype in func_args:
-                    if argtype == 'pointer':
+                    if argtype == "pointer":
                         out_str += f"  #pragma HLS interface m_axi port={arg} offset=slave bundle=gmem{gmem_idx}\n"
                         out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
                         gmem_idx += 1
-                    elif argtype == 'scalar':
+                    elif argtype == "scalar":
                         out_str += f"  #pragma HLS interface s_axilite port={arg} bundle=control\n"
         elif func_decl:
             if pragma:
@@ -169,13 +186,20 @@ def postprocess_hls_code_pynq(hls_code, top=None, pragma=True):
                 is_pointer = ("[" in var_clean) or ("*" in dtype) or ("*" in var_clean)
                 if is_pointer:
                     # Remove all pointer/array symbols to get the variable name
-                    arg_name = var_clean.replace("*", "").replace("&", "").replace("[", "").replace("]", "").replace(",", "").strip()
+                    arg_name = (
+                        var_clean.replace("*", "")
+                        .replace("&", "")
+                        .replace("[", "")
+                        .replace("]", "")
+                        .replace(",", "")
+                        .strip()
+                    )
                     out_str += f"  {dtype} {var_clean},\n"
-                    func_args.append((arg_name, 'pointer'))
+                    func_args.append((arg_name, "pointer"))
                 else:
                     arg_name = var_clean.replace("&", "").strip()
                     out_str += f"  {dtype} {var_clean},\n"
-                    func_args.append((arg_name, 'scalar'))
+                    func_args.append((arg_name, "scalar"))
             else:
                 out_str += line + "\n"
         elif line.startswith("#endif"):
@@ -199,4 +223,3 @@ def generate_description_file(top, src_path, dst_path, frequency):
     desc["containers"][0]["ldclflags"] += f"  --kernel_frequency {frequency}"
     with open(dst_path, "w", encoding="utf-8") as outfile:
         json.dump(desc, outfile, indent=4)
-
