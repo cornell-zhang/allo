@@ -115,11 +115,11 @@ open_solution "solution1"
     # For other devices (Zynq/Versal/Alveo), run full impl in TCL when requested.
             out_str += "export_design -rtl verilog -format ip_catalog\n"  
         else:  
+            out_str += "export_design -flow impl\n" 
+
     # Other devices: run full impl when explicitly requested or when mode
     # contains 'impl' or 'hw'
-    elif configs.get("run_impl", False) or (
-        isinstance(mode, str) and ("impl" in mode or "hw" in mode)
-    ):
+    elif isinstance(mode, str) and (mode == "impl" or mode == "hw"):
         out_str += "export_design -flow impl\n"
     out_str += "\nexit\n"
     return out_str
