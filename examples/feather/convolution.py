@@ -108,7 +108,12 @@ def call_feather_kernel(
                             inst = insts[intraline_offset]
                             inst_flattened = inst.flatten()
                             output_buffer_local = np.zeros((AH, AW), dtype=np.int8)
-                            kernel(iActs_tile, weights_tile, inst_flattened, output_buffer_local)
+                            kernel(
+                                iActs_tile,
+                                weights_tile,
+                                inst_flattened,
+                                output_buffer_local,
+                            )
                             output_buffer += output_buffer_local
                     for m in range(mt, mt + Mt):
                         oActs[nt, m * P * Q // AW + line_offset, intraline_offset] = (

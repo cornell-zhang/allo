@@ -104,7 +104,9 @@ def call_feather_kernel(
                     m * Mt : (m + 1) * Mt, k * Kt : (k + 1) * Kt
                 ]
                 iActs_tile = iAct_tile_reorder(iActs_tile_no_layout)
-                kernel(iActs_tile, weights_tile_input, inst_flattened, output_buffer_tile)
+                kernel(
+                    iActs_tile, weights_tile_input, inst_flattened, output_buffer_tile
+                )
                 output_buffer += output_buffer_tile
             np.copyto(
                 dst=oActs[n * Nt : (n + 1) * Nt, m * 2 * Mt : (m + 1) * 2 * Mt],
