@@ -1,6 +1,5 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# (Removed a useless pylint suppression)
 import json
 import xml.etree.ElementTree as ET
 
