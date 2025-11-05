@@ -257,8 +257,8 @@ class HLSModule:
 
                 if platform == "pynq" and self.custom_bd_tcl:
                     default_bd = os.path.join(project, "block_design.tcl")
-                    if os.path.exists(default_bd):
-                        os.remove(default_bd)
+                    outfile.write(codegen_tcl(top_func_name, configs))
+            copy_ext_libs(ext_libs, project)
 
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
