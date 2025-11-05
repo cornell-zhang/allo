@@ -201,6 +201,8 @@ class HLSModule:
             configs["mode"] = self.mode
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
+        with Context() as ctx, Location.unknown():
+            allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
             self.func = find_func_in_module(self.module, top_func_name)
             if platform in {"vitis_hls", "pynq"}:
