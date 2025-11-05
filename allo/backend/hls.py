@@ -206,8 +206,8 @@ class HLSModule:
             configs = DEFAULT_CONFIG
         if self.mode is not None:
             configs["mode"] = self.mode
-        # persist configs on the instance so runtime steps can inspect user intent
-        self.configs = configs
+        with Context() as ctx, Location.unknown():
+            allo_d.register_dialect(ctx)
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
