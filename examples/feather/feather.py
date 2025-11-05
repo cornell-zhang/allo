@@ -76,10 +76,8 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
         inst_input: Stream[int8, 1][P0, P1]
 
         @df.kernel(mapping=[1])
-        def inst_rw(inst: int8[P0, P1]):
-            with allo.meta_for(P0) as i:
-                with allo.meta_for(P1) as j:
-                    inst_input[i, j].put(inst[i, j])
+        def inst_rw(inst: int8[P0 * P1]):
+            df.scatter(inst, inst_input[:, :])
 
         @df.kernel(mapping=[P0, P1])
         def BIRRD():

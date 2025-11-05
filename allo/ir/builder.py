@@ -2421,7 +2421,7 @@ class ASTTransformer(ASTBuilder):
                                 result_sizes.append(shape)
                                 result_strides.append(tile_size)
                         subview_result = MLIRType.parse(
-                            f"memref<{'x'.join([str(x) for x in result_sizes])}x{node.dtype}"
+                            f"memref<{''.join([f"{str(x)}x" for x in result_sizes])}{node.dtype}"
                             f", strided<{result_strides}, offset: ?>>"
                         )
                         for iteration in range(num_iterations):
