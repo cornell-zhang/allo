@@ -2249,7 +2249,6 @@ class ASTTransformer(ASTBuilder):
                 )
                 if not ctx.unroll:
                     stream_op = allo_d.StreamConstructOp(stream_type, ip=ip)
-                    # sample_name, sample_symbolic_slice = None, None
                     fifo_name_attrs = []
                     fifo_symbolic_slice_attrs = []
                 else:
@@ -2387,7 +2386,7 @@ class ASTTransformer(ASTBuilder):
                         for_op.attributes["loop_name"] = StringAttr.get(loop_iter_name)
                         stream_op.attributes["loop_name"] = StringAttr.get(op_name)
                         scf_d.YieldOp([], ip=InsertionPoint(for_op.body))
-                        ip = for_op.body.operations[0]
+                        ip = InsertionPoint(for_op.body.operations[0])
                         num_iterations = 1
                     else:  # Unroll, create an scf.execute_region operation
                         indices = []  # Static indices
