@@ -238,16 +238,47 @@ def test_multiple_conditions():
 
 
 def test_assign_logic():
-    def kernel(A: int32) -> int32:
+    def kernel1(A: int32) -> int32:
         B: int32 = 0
         if A > B:
             B = A
         return B
 
-    s = allo.customize(kernel, verbose=True)
+    s = allo.customize(kernel1, verbose=True)
     print(s.module)
     mod = s.build()
-    assert mod(2) == kernel(2)
+    assert mod(2) == kernel1(2)
+
+    a = 3
+
+    def kernel2() -> int32:
+        # declaration
+        a_: int32 = a
+        # assign
+        a_: int32 = 1
+        a_ = 2
+        a_ = a
+        return a_
+
+    s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel2, enable_tensor=True)
+    # mod = s.build()
+    # print(s.module)
+    # assert mod() == a
+
+    def kernel3() -> int32:
+        # declaration
+        a_: int32 = a
+        # assign type mismatch
+        a_: int32[2] = [2, 2]
+        a_ = a
+        return a_
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel3)
 
 
 def test_while_basic():
@@ -391,11 +422,11 @@ def test_index_arg():
     def kernel(A: int32[10]) -> int32[10]:
         B: int32[10] = 0
 
-        def foo(A: int32[10], x: index) -> int32:
+        def foo(A_: int32[10], x: index) -> int32:
             y: int32 = 0
             C: int32[10] = 0
             for i in range(10):
-                C[i] = A[i] + 1
+                C[i] = A_[i] + 1
             y = C[x]
             return y
 
@@ -705,6 +736,53 @@ def test_tuple():
     np.testing.assert_allclose(np_C, np_C_ref)
     np.testing.assert_allclose(np_D, np_D_ref)
 
+    def kernel2(A: float32[1], B: float32[1]) -> float32:
+        C: float32
+        D: float32
+        # assign with func call results (a tuple)
+        C, D = callee(A[0], B[0])
+        return C + D
+
+    s = allo.customize(kernel2)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref + np_D_ref)
+
+    def kernel3(A: float32[1], B: float32[1]) -> float32:
+        # define with func call results (a tuple)
+        C, D = callee(
+            A[0], B[0]
+        )  # valid (as the type can be inferred) but not suggested
+        return C + D
+
+    s = allo.customize(kernel3)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref + np_D_ref)
+
+    def kernel4(A: float32[1], B: float32[1]) -> float32:
+        C, _ = callee(
+            A[0], B[0]
+        )  # valid (as the type can be inferred) but not suggested
+        return C
+
+    s = allo.customize(kernel4)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.random((1,)).astype(np.float32)
+    np_B = np.random.random((1,)).astype(np.float32)
+    np_C = mod(np_A, np_B)
+    np_C_ref, np_D_ref = callee(np_A[0], np_B[0])
+    np.testing.assert_allclose(np_C, np_C_ref)
+
 
 @pytest.mark.parametrize("T", [int8, int32, float32])
 def test_minmax(T):
@@ -755,18 +833,40 @@ def test_minmax_cast():
 
 
 def test_scalar():
-    def kernel() -> int32:
+    def kernel1() -> int32:
         a: int32 = 0
         b: int32 = a + 1
         return b
 
-    s = allo.customize(kernel)
+    s = allo.customize(kernel1)
     print(s.module)
     assert "%alloc[]" in str(s.module)
     mod = s.build()
     assert mod() == 1
     mod = s.build(target="vhls")
     assert "," not in mod.hls_code
+
+    a = 1
+
+    def kernel2() -> int32:
+        a_: int32 = a
+        b_: int32 = a + 1
+        a_, b_ = a + 1, a + 2
+        return a_
+
+    s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == a + 1
+
+    def kernel3() -> int32:
+        a_: int32 = a
+        b_: int32 = a + 1
+        a_, b_ = a + 1, a + 2
+        return a_ + b_
+
+    s = allo.customize(kernel3)
+    mod = s.build()
+    assert mod() == a * 2 + 3
 
 
 def test_line_trace():
@@ -859,16 +959,8 @@ def test_scope():
     with pytest.raises(SystemExit):
         s = allo.customize(kernel4)
 
-    # case 5: inner loop shadows iterator from outer loop
+    # case 5: nested loops
     def kernel5(n: int32) -> int32:
-        s: int32 = 0
-        for i in range(n):  # outer loop, iterator is i
-            for i in range(n):  # inner loop reuses the same name i -> shadowing outer i
-                s = s + i  # here i refers to the inner loop variable
-            s = s + i  # here i refers to the outer loop variable
-        return s
-
-    def kernel5_py(n: int32) -> int32:
         s: int32 = 0
         for i in range(n):
             for j in range(n):
@@ -878,12 +970,199 @@ def test_scope():
 
     s = allo.customize(kernel5)
     mod = s.build()
-    assert mod(4) == kernel5_py(4)
-    assert mod(8) == kernel5_py(8)
-    s = allo.customize(kernel5_py)
+    assert mod(4) == kernel5(4)
+    assert mod(8) == kernel5(8)
+
+    def kernel6(n: int32) -> int32:
+        s: int32 = 0
+        for i in range(n):
+            # invalid: redefine `i`
+            for i in range(n):
+                s = s + i
+            s = s + i
+        return s
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel6)
+
+
+def test_np_array():
+    a = 1
+    arr = np.array([[1, 2], [3, 4]])
+
+    def kernel1() -> int32:
+        # rhs must be a compile time constant
+        tmp: int32[2, 2] = [[a, 2], [3, 4]]
+        return tmp[0, 0]
+
+    s = allo.customize(kernel1)
     mod = s.build()
-    assert mod(4) == kernel5_py(4)
-    assert mod(8) == kernel5_py(8)
+    assert mod() == a
+    s = allo.customize(kernel1, enable_tensor=True)
+    mod = s.build()
+    assert mod() == a
+
+    def kernel2() -> int32:
+        # rhs can be a global constant np.array
+        tmp: int32[2, 2] = arr
+        return tmp[0, 0]
+
+    s = allo.customize(kernel2)
+    mod = s.build()
+    assert mod() == arr[0][0]
+    s = allo.customize(kernel2, enable_tensor=True)
+    mod = s.build()
+    assert mod() == arr[0][0]
+
+    def kernel3() -> int32:
+        # declaration: type annotation required
+        tmp: int32[2, 2] = [[1, 2], [3, 4]]
+        # assignment
+        tmp: int32[2, 2] = [[a, 2], [3, 4]]
+        return tmp[0, 0]
+
+    s = allo.customize(kernel3)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel3, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel4() -> int32:
+        # declaration: type annotation required
+        tmp: int32[1] = [1]
+        # assignment
+        tmp: int32[1] = [a]
+        return tmp[0]
+
+    s = allo.customize(kernel4)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel4, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel5() -> int32:
+        a_: int32 = a
+        tmp: int32[2, 2] = a_
+        # x, y = 1, 1
+        # declaration: type annotation required
+        tmp: int32[2, 2] = [[1, 2], [3, 4]]
+        # assignment
+        tmp = [[a, 2], [3, 4]]
+        return tmp[0, 0]
+
+    s = allo.customize(kernel5)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel5, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel6() -> int32:
+        # declaration: type annotation required
+        tmp: int32[1] = [1]
+        # assignment
+        tmp = [a]
+        return tmp[0]
+
+    s = allo.customize(kernel6)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel6, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+    def kernel7() -> int32:
+        a_: int32 = a
+        tmp: int32[2, 2] = a_
+        return tmp[0, 0]
+
+    s = allo.customize(kernel7)
+    mod = s.build()
+    assert mod() == a
+    # [NOTE]:expected to fail for now
+    # s = allo.customize(kernel7, enable_tensor=True)
+    # mod = s.build()
+    # assert mod() == a
+
+
+def test_slice():
+    def slice(A: int32[6, 6]) -> int32[6, 6]:
+        B: int32[2, 3] = 0
+        B[0, 0] = 1
+        A[0:2, 0:3] = B
+        return A
+
+    s = allo.customize(slice)
+    print(s.module)
+
+    np_A = np.random.randint(0, 10, size=(6, 6)).astype(np.int32)
+    np_A_slice = np_A.copy()
+    np_B = np.zeros((2, 3)).astype(np.int32)
+    np_B[0, 0] = 1
+    np_A_slice[0:2, 0:3] = np_B
+    mod = s.build()
+    np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
+
+
+def test_symbol_table():
+    def kernel1(A: int32[10]) -> int32[10]:
+        B: int32[10] = 0
+
+        # invalid: argument name conflict
+        def foo(A: int32[10], x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            for i in range(10):
+                C[i] = A[i] + 1
+            y = C[x]
+            return y
+
+        for i in range(10):
+            B[i] = foo(A, i)
+        return B
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel1)
+
+    def kernel2(A: int32[10]) -> int32[10]:
+        # invalid: argument name conflict
+        def foo(x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            y = C[x]
+            return y
+
+        for i in range(10):
+            A[i] = foo(i)
+        return A
+
+    s = allo.customize(kernel2)
+    print(s.module)
+    mod = s.build()
+    np_A = np.random.randint(0, 10, size=(10,)).astype(np.int32)
+    np_B = mod(np_A)
+    assert np.array_equal(np_B, np.zeros((10,)))
+
+    def kernel3(A: int32[10]) -> int32[10]:
+        # invalid: function name conflict
+        def A(x: index) -> int32:
+            y: int32 = 0
+            C: int32[10] = 0
+            y = C[x]
+            return y
+
+        for i in range(10):
+            A[i] = A(i)
+        return A
+
+    with pytest.raises(SystemExit):
+        s = allo.customize(kernel3)
 
 
 if __name__ == "__main__":

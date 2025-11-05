@@ -22,6 +22,7 @@ from ._mlir.ir import (
     IntegerAttr,
     IntegerType,
     Operation,
+    OpView,
     BlockArgument,
 )
 from ._mlir.dialects import (
@@ -60,6 +61,14 @@ def _mlir_lower_pipeline(module, **kwargs):
 
 
 def lower_linalg_and_attach_names(module):
+    """
+    FIXME (Shihan):
+        This function is intended to lower Linalg operations into Affine operations and
+        attach attributes to the resulting Affine loops for identification during scheduling.
+        However, the current logic of this function does not seem to make complete sense,
+        and it likely requires some refactoring and cleanup to ensure correctness and clarity.
+    """
+
     op_names = []
     cnt_loop_nests = 0
 
@@ -685,13 +694,17 @@ def analyze_use_def(mod):
             uf_add(arg_name)
             add_use(arg, arg_name)
         for op in func.entry_block.operations:
-            if isinstance(op, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)):
+            if isinstance(op, OpView) and len(op.results) > 0:
                 if "name" in op.attributes:
                     buf_name = f"{func_name}:{op.attributes['name'].value}"
                 elif " = " in str(op):
-                    buf_name = f"{func_name}:{str(op).split(' = ', maxsplit=1)[0]}"
+                    if "from" in op.attributes:
+                        continue
+                    op_name = str(op).split(" = ", maxsplit=1)[0]
+                    buf_name = f"{func_name}:{op_name}"
+                    op.attributes["name"] = StringAttr.get(op_name, context=mod.context)
                 else:
-                    # call op does not have return value
+                    # op without return value
                     continue
                 uf_add(buf_name)
                 add_use(op.result, buf_name)

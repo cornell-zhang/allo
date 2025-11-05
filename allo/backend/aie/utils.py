@@ -260,6 +260,7 @@ external_kernel_aie2c_type = {
     "bf16": "bfloat16",
     "f32": "float",
     "f64": "double",
+    "i4": "int8_t",  # invalid, only a placeholder
     "i8": "int8_t",
     "i16": "short",
     "i32": "int",

@@ -15,6 +15,7 @@ from ._mlir.ir import (
     F32Type,
     F64Type,
     BF16Type,
+    OpResultList,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
@@ -502,3 +503,10 @@ def parse_kernel_name(name: str):
     prefix = match.group(1).rstrip("_")
     ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, ids
+
+
+def get_mlir_op_result(op):
+    if isinstance(op.result, OpResultList):
+        assert len(op.result) == 1
+        return op.result[0]
+    return op.result
