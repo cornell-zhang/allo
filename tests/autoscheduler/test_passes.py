@@ -20,11 +20,11 @@ MODE = "sw_emu"
 @pytest.mark.parametrize("kind", kinds)
 def test_simple(debug_point, kind):
     def simple(v: int32[10, 10]) -> int32[10, 10]:
-        def stageA(v: int32[10, 10]) -> int32[10, 10]:
+        def stageA(v_: int32[10, 10]) -> int32[10, 10]:
             A: int32[10, 10]
             for j in range(10):
                 for i in range(10):
-                    A[i, j] = i + j + v[i, j]
+                    A[i, j] = i + j + v_[i, j]
             return A
 
         def stageB(A: int32[10, 10]) -> int32[10, 10]:
