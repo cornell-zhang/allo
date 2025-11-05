@@ -1166,4 +1166,5 @@ def test_symbol_table():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_copy_arg()
+    # pytest.main([__file__])
