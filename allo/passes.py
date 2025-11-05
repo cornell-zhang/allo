@@ -698,11 +698,13 @@ def analyze_use_def(mod):
                 if "name" in op.attributes:
                     buf_name = f"{func_name}:{op.attributes['name'].value}"
                 elif " = " in str(op):
+                    if "from" in op.attributes:
+                        continue
                     op_name = str(op).split(" = ", maxsplit=1)[0]
                     buf_name = f"{func_name}:{op_name}"
                     op.attributes["name"] = StringAttr.get(op_name, context=mod.context)
                 else:
-                    # call op does not have return value
+                    # op without return value
                     continue
                 uf_add(buf_name)
                 add_use(op.result, buf_name)
