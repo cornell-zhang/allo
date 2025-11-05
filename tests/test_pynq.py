@@ -66,7 +66,6 @@ def test_add_pynq():
     shutil.rmtree(project_dir)
 
 
-def test_vvadd_llvm():
     # Vector-vector add example
     from allo.ir.types import float32
 
