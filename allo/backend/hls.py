@@ -183,7 +183,7 @@ class HLSModule:
         func_args=None,
         wrap_io=True,
         custom_bd_tcl="block_design.tcl",
-    ):
+    ):  # pylint: disable=too-many-arguments
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
@@ -204,7 +204,6 @@ class HLSModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
-            self.func = find_func_in_module(self.module, top_func_name)
             if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
                 if wrap_io:
@@ -247,10 +246,6 @@ class HLSModule:
             path = os.path.join(path, "../harness/")
             if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
-
-                if platform == "pynq" and self.custom_bd_tcl:
-                    default_bd = os.path.join(project, "block_design.tcl")
-
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
             copy_ext_libs(ext_libs, project)
@@ -354,9 +349,7 @@ class HLSModule:
                         outfile.write(self.hls_code)
                     # CHANGE
 
-                    process = subprocess.Popen(
-                        cmd, shell=True
-                    )  # pylint: disable=consider-using-with
+                    process = subprocess.Popen(cmd, shell=True)
                     process.wait()
                     if process.returncode != 0:
                         raise RuntimeError("Failed to synthesize the design")
@@ -368,9 +361,7 @@ class HLSModule:
                     print(
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
                     )
-                    process = subprocess.Popen(
-                        cmd, shell=True
-                    )  # pylint: disable=consider-using-with
+                    process = subprocess.Popen(cmd, shell=True)
                     process.wait()
                     if process.returncode != 0:
                         raise RuntimeError(
@@ -399,9 +390,7 @@ class HLSModule:
                     print(
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
                     )
-                    process = subprocess.Popen(
-                        cmd, shell=True
-                    )  # pylint: disable=consider-using-with
+                    process = subprocess.Popen(cmd, shell=True)
                     process.wait()
                     if process.returncode != 0:
                         raise RuntimeError("Failed to collect files")
@@ -584,7 +573,7 @@ class HLSModule:
                 )
                 mod(*args)
                 return
-            if self.mode == "csyn" or self.mode == "impl":
+            if self.mode in {"csyn", "impl"}:
                 return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
