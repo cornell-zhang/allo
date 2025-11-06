@@ -13,7 +13,6 @@ import numpy as np
 from .._mlir.ir import (
     OpView,
     Module,
-    Block,
     Location,
     InsertionPoint,
     FunctionType,
