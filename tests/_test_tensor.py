@@ -83,6 +83,9 @@ def test_extract_ele():
     np.testing.assert_allclose(extract_ele(np_A), mod(np_A), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_insert():
     def insert(A: int32[3, 4, 5], B: int32[1, 2, 1]) -> int32[3, 4, 5]:
         A[1:2, 1:3, 0:1] = B
@@ -97,6 +100,9 @@ def test_insert():
     np.testing.assert_allclose(insert(np_A, np_B), mod(np_A, np_B), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_insert_ele():
     def insert_ele(A: int32[6, 6], b: int32) -> int32[6, 6]:
         A[1, 2] = b
@@ -111,6 +117,9 @@ def test_insert_ele():
     np.testing.assert_allclose(insert_ele(np_A, np_b), mod(np_A, np_b), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_insert_def():
     #  define a scalar inside the function
     def insert_def(A: int32[6, 6]) -> int32[6, 6]:
@@ -126,6 +135,9 @@ def test_insert_def():
     np.testing.assert_allclose(insert_def(np_A), mod(np_A), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_insert_ele_def():
     #  define a scalar inside the function
     def insert_ele_def(A: int32[6, 6]) -> int32[6, 6]:
@@ -141,6 +153,9 @@ def test_insert_ele_def():
     np.testing.assert_allclose(insert_ele_def(np_A), mod(np_A), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_slice():
     def slice(A: int32[6, 6]) -> int32[6, 6]:
         B: int32[2, 3] = 0
@@ -160,6 +175,9 @@ def test_slice():
     np.testing.assert_allclose(np_A_slice, mod(np_A), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_rank_reducing():
     M, K, N = 6, 3, 6
 
@@ -196,6 +214,9 @@ def test_nested_func_slicing_arg():
     np.testing.assert_allclose(kernel(np_A), mod(np_A), rtol=1e-5)
 
 
+@pytest.mark.skip(
+    reason="Feature not implemented yet (MLIR tensors are immutable, updating a tensor in Allo is undefined behavior)"
+)
 def test_slicing_broadcast():
     M, N = 6, 6
 

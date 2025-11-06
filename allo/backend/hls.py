@@ -7,6 +7,7 @@ import re
 import io
 import subprocess
 import time
+import numpy as np
 from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import (
     Context,
@@ -35,7 +36,12 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, c2allo_type
+from ..utils import (
+    get_func_inputs_outputs,
+    c2allo_type,
+    get_bitwidth_from_type,
+    np_supported_types,
+)
 
 
 def is_available(backend="vivado_hls"):
@@ -131,7 +137,16 @@ def separate_header(hls_code, top=None):
             _, var = arg_type.rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            allo_type = c2allo_type[ele_type]
+            allo_type = None
+            if ele_type in c2allo_type:
+                allo_type = c2allo_type[ele_type]
+            else:
+                pattern = r"^ap_(u?)int<(\d+)>$"
+                match = re.match(pattern, ele_type)
+                if not match:
+                    raise ValueError(f"Fail to resolve ctype {ele_type}")
+                unsigned_flag, width = match.groups()
+                allo_type = f"{'u' if unsigned_flag else ''}int{int(width)}"
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((allo_type, shape))
             if "[" in var:  # array
@@ -281,6 +296,7 @@ class HLSModule:
                 )
                 self.args = []
                 generate_makefile(dst_path, project, self.platform)
+                # [NOTE] (Shihan): I guess tapa backend do not use this one. I modified codegen_host for vitis, similar logic should be updated for tapa if self.host_code is useful here
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -405,12 +421,21 @@ class HLSModule:
             assert len(args) == len(inputs) + len(
                 outputs
             ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
-            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
-                write_tensor_to_file(
-                    arg,
-                    in_shape,
-                    f"{self.project}/input{i}.data",
-                )
+            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                assert (len(in_shape) == 0 and np.isscalar(arg)) or np.prod(
+                    arg.shape
+                ) == np.prod(
+                    in_shape
+                ), f"invalid arguemnt {i}, {np.asarray(arg).shape}-{in_shape}"
+                ele_bitwidth = get_bitwidth_from_type(in_dtype)
+                assert (
+                    ele_bitwidth == 1 or ele_bitwidth % 8 == 0
+                ), "can only handle bytes"
+                # store as byte stream
+                with open(f"{self.project}/input{i}.data", "wb") as f:
+                    if np.isscalar(arg):
+                        arg = np.array(arg, dtype=np_supported_types[in_dtype])
+                    f.write(arg.tobytes())
             # check if the build folder exists
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
             if not os.path.exists(
@@ -441,10 +466,10 @@ class HLSModule:
                 if process.returncode != 0:
                     raise RuntimeError("Failed to run the executable")
             # suppose the last argument is the output tensor
-            result = read_tensor_from_file(
-                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
-            )
-            args[-1][:] = result
+            if np.isscalar(args[-1]):
+                raise RuntimeError("The output must be a tensor")
+            arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
+            args[-1][:] = arr.reshape(args[-1].shape)
             return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
