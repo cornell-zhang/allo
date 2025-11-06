@@ -51,7 +51,6 @@ def _verify_pynq_project(project_dir, top_func_name=None):
 
 def test_add_pynq():
     # Simple scalar add
-
     def add(A: float32, B: float32) -> float32:
         C: float32 = 0.0
         C = A + B
@@ -70,10 +69,18 @@ def test_add_pynq():
 
 def test_vvadd_pynq():
     # Vector-vector add example
+    def vvadd(A: float32[16], B: float32[16]) -> float32[16]:
+        C: float32[16] = 0
+        for i in range(16):
+            C[i] = A[i] + B[i]
+        return C
 
+    s = allo.customize(vvadd)
     # Make the test generate the PYNQ HLS scaffolding and verify files instead of running LLVM binaries.
     project_dir = os.path.join(tempfile.gettempdir(), "allo_test_pynq_prj")
     os.makedirs(project_dir, exist_ok=True)
     hls_mod = s.build(
         target="pynq", mode="impl", project=project_dir, configs={"device": "ultra96v2"}
     )
+
+    _verify_pynq_project(project_dir, s.top_func_name)

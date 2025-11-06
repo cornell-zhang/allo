@@ -323,6 +323,13 @@ class HLSModule:
                     outfile.write(self.tapa_host)
             elif self.platform == "pynq":
                 assert self.mode in {"csim", "csyn", "impl"}, "Invalid mode for pynq"
+                kernel_h = os.path.join(project, "kernel.h")
+
+                # Generate kernel.h
+                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                with open(kernel_h, "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+
                 if self.mode == "impl":
                     # HLS synth
                     cmd = f"cd {self.project}; vitis_hls -f run.tcl"
@@ -330,7 +337,7 @@ class HLSModule:
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                     )
 
-                    # Ensure kernel files exist BEFORE HLS runs
+                    # Ensure kernel files exist before HLS runs
                     header, self.args = separate_header(
                         self.hls_code, self.top_func_name
                     )
@@ -347,7 +354,6 @@ class HLSModule:
                         f"{self.project}/kernel.cpp", "w", encoding="utf-8"
                     ) as outfile:
                         outfile.write(self.hls_code)
-                    # CHANGE
 
                     process = subprocess.Popen(cmd, shell=True)
                     process.wait()
