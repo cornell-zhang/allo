@@ -396,7 +396,6 @@ class HLSModule:
                         f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
                         f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
                     )
-
                     print(
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
                     )
