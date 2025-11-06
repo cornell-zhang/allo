@@ -2456,12 +2456,7 @@ class ASTTransformer(ASTBuilder):
                                 arith_d.IndexType.get(), i, ip=ctx.get_ip()
                             )
                             indices.append(index_const_expr)
-                        exec_region_op = scf_d.ExecuteRegionOp([], ip=ctx.get_ip())
-                        op_name = f"S_{fn_name}"
-                        exec_region_op.attributes["op_name"] = StringAttr.get(op_name)
-                        block = Block.create_at_start(exec_region_op.region, [])
-                        scf_d.YieldOp([], ip=InsertionPoint(block))
-                        ip = InsertionPoint(block.operations[0])
+                        ip = ctx.get_ip()
                         num_iterations = len(stream_ops)
                     with ip:
                         static_offsets = []
@@ -2528,7 +2523,7 @@ class ASTTransformer(ASTBuilder):
                                 allo_d.StreamPutOp(stream_op.result, [], subview.result)
                     if fn_name == "gather":
                         return alloc_op
-                    return for_op if not ctx.unroll else exec_region_op
+                    return for_op if not ctx.unroll else None
             # Allo library functions
             new_args = build_stmts(ctx, node.args)
             if isinstance(obj, (IPModule, ExternalModule)):
