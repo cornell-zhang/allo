@@ -45,6 +45,7 @@ from ..utils import (
 
 
 def is_available(backend="vivado_hls"):
+    return False
     if backend == "vivado_hls":
         return os.system("which vivado_hls >> /dev/null") == 0
     if backend == "tapa":
