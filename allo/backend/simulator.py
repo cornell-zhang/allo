@@ -294,7 +294,6 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                             # May get StructType involved in the future
                             raise NotImplementedError()
                         rank = data.type.rank
-                        assert rank > 0
                         for_ip = replace_ip
                         for_induction_vars = []
                         for_ips: list[InsertionPoint] = (
@@ -314,7 +313,7 @@ def build_dataflow_simulator(module: Module, top_func_name: str):
                         )
                         element_load_op = affine_d.AffineLoadOp(
                             result=element_type,
-                            memref=data.owner,
+                            memref=data,
                             indices=for_induction_vars,
                             map=AffineMapAttr.get(element_dim_map),
                             ip=for_ip,
