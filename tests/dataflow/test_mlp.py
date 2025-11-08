@@ -10,13 +10,6 @@ import allo.backend.hls as hls
 import numpy as np
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_env():
-    os.environ["OMP_NUM_THREADS"] = "128"
-    yield
-    del os.environ["OMP_NUM_THREADS"]
-
-
 Ty = float32
 BS = 2
 M0, M1, M2 = 256, 128, 64

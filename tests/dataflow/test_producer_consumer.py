@@ -48,10 +48,9 @@ def test_producer_consumer():
             mode="csim",
             project="producer_consumer.prj",
         )
-        if hls.is_available("vitis_hls"):
-            mod(A, B)
-            np.testing.assert_allclose(A + 1, B)
-            print("Passed!")
+        mod(A, B)
+        np.testing.assert_allclose(A + 1, B)
+        print("Passed!")
 
 
 if __name__ == "__main__":
