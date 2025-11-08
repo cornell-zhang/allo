@@ -38,6 +38,18 @@ def _test_gemm_2D_v1():
     np.testing.assert_allclose(C, A @ B, atol=1e-5)
     print("PASSED!")
 
+    mod = df.build(
+        top,
+        target="aie",
+        mapping_primitives=[
+            ("bundle-multi", [("gemm_0_0", "gemm_1_0"), ("gemm_0_1", "gemm_1_1")]),
+        ],
+    )
+    C = np.zeros((M, N)).astype(np.int32)
+    mod(A, B, C)
+    np.testing.assert_allclose(C, A @ B, atol=1e-5)
+    print("PASSED!")
+
 
 def _test_gemm_2D_v2():
     LyA = Layout("S0R")
