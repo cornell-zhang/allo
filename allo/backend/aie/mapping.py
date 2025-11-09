@@ -715,22 +715,51 @@ class ComputationGraph:
             len(t) == len(node_name_lists[0]) for t in node_name_lists
         ), "Expect to bundle isomorphic nodes"
         node_lists: list[list[NodeBase]] = []
+        sample_op_tag_list, sample_input_patterns, sample_output_patterns = (
+            None,
+            None,
+            None,
+        )
         for name_list in node_name_lists:
             node_list: list[NodeBase] = []
+            op_tag_list: list[str] = []
+            input_patterns: list[Counter] = []
+            output_patterns: list[Counter] = []
             for name in name_list:
                 assert name in self.nodes, f"Node({name}) not found"
-                node_list.append(self.nodes.pop(name))
+                node = self.nodes.pop(name)
+                node_list.append(node)
+                op_tag_list.append(node.meta_data.op_tag)
+                input_streams, output_streams = [], []
+                for s in node.meta_data.input_streams:
+                    if s.src in name_list:
+                        input_streams.append((name_list.index(s.src), s.type_str))
+                    else:
+                        input_streams.append((s.src, s.type_str))
+                for s in node.meta_data.output_streams:
+                    if s.dst in name_list:
+                        output_streams.append((name_list.index(s.dst), s.type_str))
+                    else:
+                        output_streams.append((s.dst, s.type_str))
+                input_patterns.append(Counter(input_streams))
+                output_patterns.append(Counter(output_streams))
             node_lists.append(node_list)
+            if sample_op_tag_list is None:
+                sample_op_tag_list = op_tag_list
+                sample_input_patterns = input_patterns
+                sample_output_patterns = output_patterns
+            else:
+                assert (
+                    sample_op_tag_list == op_tag_list
+                    and sample_input_patterns == input_patterns
+                    and sample_output_patterns == output_patterns
+                ), f"Expect to bundle isomorphic nodes, Node({node_list[i].meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
         bundled_node_list: list[CollocatedNode] = []
         bundle_size = len(node_name_lists[0])
         for i in range(bundle_size):
             sample_node: NodeBase = node_lists[0][i]
             orig_nodes, orig_node_names = [], []
             for node_list in node_lists:
-                # if not sample_node.is_isomorphic_to(node_list[i]):
-                #     raise ValueError(
-                #         f"Expect to bundle isomorphic nodes, Node({node_list[i].meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                #     )
                 orig_nodes.append(node_list[i])
                 orig_node_names.append(node_list[i].meta_data.name)
             bundled_node = CollocatedNode(
@@ -755,15 +784,28 @@ class ComputationGraph:
                     if arg[0].stream is not None:
                         for name in orig_node_names:
                             if name != sample_node.meta_data.name:
-                                self.edges.pop(self.func_args[name][idx][0].stream.name)
-                            self.func_args[name][idx][0].stream.name = arg[0].stream.name
+                                if (
+                                    self.func_args[name][idx][0].stream.name
+                                    in self.edges
+                                ):
+                                    self.edges.pop(
+                                        self.func_args[name][idx][0].stream.name
+                                    )
+                            else:
+                                self.func_args[name][idx][0].stream.name = arg[
+                                    0
+                                ].stream.name
                 else:
                     # stream list
                     for name in orig_node_names:
-                        for arg_idx, stream_arg in enumerate(self.func_args[name][idx][0]):
+                        for arg_idx, stream_arg in enumerate(
+                            self.func_args[name][idx][0]
+                        ):
                             if name != sample_node.meta_data.name:
-                                self.edges.pop(stream_arg.stream.name)
-                            stream_arg.stream.name = arg[0][arg_idx].stream.name
+                                if stream_arg.stream.name in self.edges:
+                                    self.edges.pop(stream_arg.stream.name)
+                            else:
+                                stream_arg.stream.name = arg[0][arg_idx].stream.name
             self.func_args[bundled_node.meta_data.name] = self.func_args[
                 sample_node.meta_data.name
             ]
