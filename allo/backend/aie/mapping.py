@@ -753,7 +753,7 @@ class ComputationGraph:
                     sample_op_tag_list == op_tag_list
                     and sample_input_patterns == input_patterns
                     and sample_output_patterns == output_patterns
-                ), f"Expect to bundle isomorphic nodes, Node({node_list[i].meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
+                ), f"Expect to bundle isomorphic nodes."
         bundled_node_list: list[CollocatedNode] = []
         bundle_size = len(node_name_lists[0])
         for i in range(bundle_size):
