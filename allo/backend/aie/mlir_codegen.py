@@ -1505,9 +1505,7 @@ class CodeGenerator:
         }
         for func_name, interface_map in mapped_interface.items():
             dict_: dict[int, FIFO] = {}
-            print(func_name)
             for idx, interface in arg_idx_to_interface[func_name].items():
-                print(idx, interface, interface_map)
                 dict_[idx] = interface_map[interface]
             global_arg_idx_to_interface[func_name] = dict_
         return global_arg_idx_to_interface
