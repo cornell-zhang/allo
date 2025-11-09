@@ -578,7 +578,7 @@ class ComputationGraph:
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.dependencies: dict[str, set[str]] = defaultdict(set)
+        self.dependencies: dict[str, dict[str, int]] = {}
         self.tag_to_func: dict[str, func_d.FuncOp] = {}
 
         df_kernels = []
@@ -637,10 +637,10 @@ class ComputationGraph:
                         live_dtensor_tile.last_use = 9
                         node.global_interfaces[idx].append(live_dtensor_tile)
                 self.nodes[func_name] = node
-                self.dependencies[func_name] = set()
+                self.dependencies[func_name] = defaultdict(int)
         # initiate dependencies
         for stream in self.edges.values():
-            self.dependencies[stream.dst].add(stream.src)
+            self.dependencies[func_name][stream.src] += 1
 
     # ------------------------------------------------------------
     # Transformation Primitives
@@ -667,16 +667,25 @@ class ComputationGraph:
             name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
             length=sample_node.meta_data.length * len(node_name_list),
         )
+        self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
         bundled_node.init_for_bundle(node_list)
         # update stream
         for name, stream in self.edges.items():
             if stream.src in node_name_list:
-                self.dependencies[stream.dst].remove(stream.src)
-                stream.src = bundled_node.meta_data.name
-                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
+                self.dependencies[stream.dst][stream.src] -= 1
+                if self.dependencies[stream.dst][stream.src] == 0:
+                    del self.dependencies[stream.dst][stream.src]
+                if stream.src == sample_node.meta_data.name:
+                    stream.src = bundled_node.meta_data.name
+                    self.dependencies[stream.dst][bundled_node.meta_data.name] += 1
+                else:
+                    self.nodes[stream.dst].meta_data.input_streams.remove(stream)
             if stream.dst in node_name_list:
-                stream.dst = bundled_node.meta_data.name
-                self.dependencies[bundled_node.meta_data.name].add(stream.src)
+                if stream.dst == sample_node.meta_data.name:
+                    stream.dst = bundled_node.meta_data.name
+                    self.dependencies[bundled_node.meta_data.name][stream.src] += 1
+                else:
+                    self.nodes[stream.src].meta_data.output_streams.remove(stream)
         # update nodes and remove bundled function
         for idx, arg in self.func_args[sample_node.meta_data.name].items():
             if isinstance(arg[0], Argument):
@@ -767,17 +776,32 @@ class ComputationGraph:
                 name=f"{sample_node.meta_data.name}x{bundle_size}",
                 length=sample_node.meta_data.length * bundle_size,
             )
+            self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
             bundled_node.init_for_bundle(orig_nodes)
             bundled_node_list.append(bundled_node)
             # update stream
             for name, stream in self.edges.items():
                 if stream.src in orig_node_names:
-                    self.dependencies[stream.dst].remove(stream.src)
-                    stream.src = bundled_node.meta_data.name
-                    self.dependencies[stream.dst].add(bundled_node.meta_data.name)
+                    self.dependencies[stream.dst][stream.src] -= 1
+                    if self.dependencies[stream.dst][stream.src] == 0:
+                        del self.dependencies[stream.dst][stream.src]
+                    if stream.src == sample_node.meta_data.name:
+                        stream.src = bundled_node.meta_data.name
+                        self.dependencies[stream.dst][bundled_node.meta_data.name] += 1
+                    elif (
+                        stream.dst
+                        not in node_name_lists[orig_node_names.index(stream.src)]
+                    ):
+                        self.nodes[stream.dst].meta_data.input_streams.remove(stream)
                 if stream.dst in orig_node_names:
-                    stream.dst = bundled_node.meta_data.name
-                    self.dependencies[bundled_node.meta_data.name].add(stream.src)
+                    if stream.dst == sample_node.meta_data.name:
+                        stream.dst = bundled_node.meta_data.name
+                        self.dependencies[bundled_node.meta_data.name][stream.src] += 1
+                    elif (
+                        stream.src
+                        not in node_name_lists[orig_node_names.index(stream.dst)]
+                    ):
+                        self.nodes[stream.src].meta_data.output_streams.remove(stream)
             # update nodes and remove bundled function
             for idx, arg in self.func_args[sample_node.meta_data.name].items():
                 if isinstance(arg[0], Argument):
@@ -835,6 +859,7 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
+        self.dependencies[chained_node.meta_data.name] = defaultdict(int)
         chained_node.init_for_chain(node_a, node_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         node_a.meta_data.output_streams = [
@@ -898,16 +923,16 @@ class ComputationGraph:
         self.func_args[chained_node.meta_data.name] = param_a
         for key, value in param_b.items():
             self.func_args[chained_node.meta_data.name][arg_idx_offset + key] = value
-        dep = self.dependencies.pop(node_name_a)
-        dep.update(self.dependencies.pop(node_name_b))
-        self.dependencies[chained_node.meta_data.name] = dep
+        dep_a = self.dependencies.pop(node_name_a)
+        dep_b = self.dependencies.pop(node_name_b)
+        for k, v in dep_b.items():
+            dep_a[k] += v
+        self.dependencies[chained_node.meta_data.name] = dep_a
         for deps in self.dependencies.values():
             if node_name_a in deps:
-                deps.remove(node_name_a)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_a)
             if node_name_b in deps:
-                deps.remove(node_name_b)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_b)
         for stream in self.edges.values():
             if stream.src in (node_name_a, node_name_b):
                 stream.src = chained_node.meta_data.name

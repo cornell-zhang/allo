@@ -188,6 +188,7 @@ def test_flash_attention(
             scale_attn_output(attn_output, exp_sum_pipe[po].get(), O)
 
     mapping_primitives_ = []
+    sub_graphs = []
     for idx in range(iteration):
         if SEQ_LEN // kv_chunk_size > 1:
             nodes = [
@@ -205,10 +206,24 @@ def test_flash_attention(
                     ],
                 )
             )
+            sub_graphs.append(
+                (
+                    f"send_q_{idx}_0-cal_attn_score_{idx}_0x{SEQ_LEN // kv_chunk_size}",
+                    f"cal_softmax_{idx}_0",
+                    f"attn_{idx}_0x{SEQ_LEN // kv_chunk_size}",
+                    f"acc_{idx}_0",
+                )
+            )
         else:
             mapping_primitives_.append(
                 ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
+            sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
+    col_num = 2
+    if iteration > col_num:
+        for idx in range(col_num):
+            nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
+            mapping_primitives_.append(("bundle-multi", nodes))
 
     mod = df.build(
         top,
