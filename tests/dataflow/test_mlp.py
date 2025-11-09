@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
+
 
 Ty = float32
 BS = 2
@@ -140,4 +142,7 @@ def test_mlp():
 
 
 if __name__ == "__main__":
+    # we need to set OMP_NUM_THREADS to a large number here for simulator
+    os.environ["OMP_NUM_THREADS"] = "128"
     test_mlp()
+    del os.environ["OMP_NUM_THREADS"]

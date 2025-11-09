@@ -78,6 +78,15 @@ def test_packed_systolic():
         np.ascontiguousarray(W_A_cst.transpose()).view(np_type).transpose()
     )
     Z_packed = np.zeros((M // PP, N), dtype=np_type)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(packed_X, W_A_packed, Z_packed)
+    np_C = X @ W_A_cst
+    np_C_packed = np.ascontiguousarray(
+        np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
+    )
+    np.testing.assert_allclose(Z_packed, np_C_packed, atol=1e-3)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
         mod(packed_X, W_A_packed, Z_packed)

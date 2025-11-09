@@ -45,6 +45,9 @@ jobs:
         export PATH=/root/llvm-project/build/bin:${PATH}
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest --ignore=tests/dataflow tests -v
+        export OMP_NUM_THREADS=128
+        python3 -m pytest --ignore=tests/dataflow/aie tests/dataflow -v
+        unset OMP_NUM_THREADS
     - name: Tutorial
       shell: bash
       run: |

@@ -1,12 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import pytest
 import numpy as np
 import allo
 from allo.ir.types import uint1, uint2, int32, uint8, uint32, UInt, float16, float32
 import allo.dataflow as df
-import allo.backend.hls as hls
 
 
 @df.region()

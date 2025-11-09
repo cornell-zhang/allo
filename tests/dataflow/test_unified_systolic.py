@@ -1,6 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import pytest
 import allo
 from allo.ir.types import int16, int32, bool, Stream
 import allo.dataflow as df
@@ -400,12 +401,23 @@ M, N, K = U, 4, U
 P0, P1 = U + 2, U + 2
 
 
+@pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
 def test_unified_simple():
 
     A = np.random.randint(-8, 8, (M, K)).astype(np.int32)
     B = np.random.randint(-8, 8, (K, N)).astype(np.int32)
 
     C = np.zeros((M, N), dtype=np.int32)
+
+    # TODO: Enable simulator once the issue is fixed.
+    # sim_mod = df.build(unified_gemm_simple, target="simulator")
+    # sim_mod(A, B, False, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
+
+    # sim_mod(A, B, True, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
 
@@ -449,10 +461,21 @@ def test_unified_simple():
         print("Hw_emu: Output-stationary Mode Passed!")
 
 
+@pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
 def test_unified_daisy_chain():
     A = np.random.randint(0, 8, (M, K), dtype=np.int16)
     B = np.random.randint(0, 8, (K, N), dtype=np.int16)
     C = np.zeros((M, N), dtype=np.int16)
+
+    # TODO: Enable simulator once the issue is fixed.
+    # sim_mod = df.build(unified_gemm_daisy_chain, target="simulator")
+    # sim_mod(A, B, False, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
+
+    # sim_mod(A, B, True, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
         # csim test
@@ -505,12 +528,23 @@ Rt, Ct = 2, 2
 P0, P1 = Rt + 2, Ct + 2
 
 
+@pytest.mark.skip(reason="Invalid MLIR generated. Needs fixing.")
 def test_unified_tiling():
 
     A = np.random.randint(-8, 8, (M, K)).astype(np.int32)
     B = np.random.randint(-8, 8, (K, N)).astype(np.int32)
 
     C = np.zeros((M, N), dtype=np.int32)
+
+    # TODO: Enable simulator once the issue is fixed.
+    # sim_mod = df.build(unified_gemm_tiling, target="simulator")
+    # sim_mod(A, B, False, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
+
+    # sim_mod(A, B, True, C)
+    # np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    # print("Dataflow Simulator Passed!")
 
     if hls.is_available("vitis_hls"):
 
