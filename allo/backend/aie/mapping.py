@@ -729,7 +729,8 @@ class ComputationGraph:
             None,
             None,
         )
-        for name_list in node_name_lists:
+        for bundle_idx, name_list in enumerate(node_name_lists):
+            new_token = f"bundled-{name_list[0]}-{bundle_idx}"
             node_list: list[NodeBase] = []
             op_tag_list: list[str] = []
             input_patterns: list[Counter] = []
@@ -752,6 +753,9 @@ class ComputationGraph:
                         output_streams.append((s.dst, s.type_str))
                 input_patterns.append(Counter(input_streams))
                 output_patterns.append(Counter(output_streams))
+                for live_tile_list in node.global_interfaces.values():
+                    for live_tile in live_tile_list:
+                        live_tile.token = new_token
             node_lists.append(node_list)
             if sample_op_tag_list is None:
                 sample_op_tag_list = op_tag_list

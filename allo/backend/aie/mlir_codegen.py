@@ -2251,6 +2251,8 @@ class CodeGenerator:
                                 for shim_tile in self.used_shim_tiles
                             }
                             for global_dma in coalesced_tasks_list[tasks_idx_right]:
+                                if global_dma.dtensor.global_id == 1:
+                                    global_dma.print()
                                 offset, size, stride = global_dma.transfer_pattern()
                                 if (
                                     global_dma.io_port.fifo.name
@@ -2259,40 +2261,40 @@ class CodeGenerator:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
-                                # else:
-                                #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
-                                #         global_dma.io_port.fifo.name
-                                #     ][-1]
-                                # the same global tensor must be tiled in the same way
-                                # if (
-                                #     global_dma.dtensor.global_id
-                                #     == prev_task.dtensor_global_id
-                                #     and size[0] == 1
-                                # ):
-                                #     diff = [
-                                #         x - y
-                                #         for x, y in zip(
-                                #             offset,
-                                #             prev_task.dma_tasks[-1][0],
-                                #         )
-                                #     ]
-                                #     # fixme: can be relaxed
-                                #     if prev_task.diff is None and (
-                                #         all(x >= 0 for x in diff)
-                                #         and sum(1 for x in diff if x != 0) <= 1
-                                #     ):
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.diff = diff
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
-                                #     if prev_task.diff == diff:
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
+                                elif os.getenv("COALESCE_MORE") is not None:
+                                    prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
+                                        global_dma.io_port.fifo.name
+                                    ][-1]
+                                    # the same global tensor must be tiled in the same way
+                                    if (
+                                        global_dma.dtensor.global_id
+                                        == prev_task.dtensor_global_id
+                                        and size[0] == 1
+                                    ):
+                                        diff = [
+                                            x - y
+                                            for x, y in zip(
+                                                offset,
+                                                prev_task.dma_tasks[-1][0],
+                                            )
+                                        ]
+                                        # fixme: can be relaxed
+                                        if prev_task.diff is None and (
+                                            all(x >= 0 for x in diff)
+                                            and sum(1 for x in diff if x != 0) <= 1
+                                        ):
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.diff = diff
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
+                                        if prev_task.diff == diff:
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
 
                                 used_shim = (
                                     global_dma.io_port.fifo.src

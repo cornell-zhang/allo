@@ -219,7 +219,7 @@ def test_flash_attention(
                 ("chain", [f"send_q_{idx}_0", f"cal_attn_score_{idx}_0"])
             )
             sub_graphs.append((f"send_q_{idx}_0-cal_attn_score_{idx}_0",))
-    col_num = 2
+    col_num = 4
     if iteration > col_num:
         for idx in range(col_num):
             nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
@@ -230,7 +230,7 @@ def test_flash_attention(
         project=f"fa_{SEQ_LEN}.prj",
         target="aie",
         mapping_primitives=mapping_primitives_,
-        profile=False,
+        profile=True,
         warmup=20,
         num_iters=100,
         # device_type="npu1_2col",
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
     os.environ["FORCE_UNROLL_INDEX"] = "0"
 
-    seq_len_list = [64, 128]
+    seq_len_list = [64, 128, 256, 512, 1024, 2048]
     for seq_len in seq_len_list:
         test_flash_attention(seq_len, 64, seq_len, q_chunk_size=32, kv_chunk_size=32)
 
