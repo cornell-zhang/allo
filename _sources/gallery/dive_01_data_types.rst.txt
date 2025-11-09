@@ -167,27 +167,32 @@ Another example is shown below:
         %0 = arith.sitofp %arg0 : i32 to f32
         %alloc = memref.alloc() {name = "b"} : memref<f32>
         affine.store %0, %alloc[] {to = "b"} : memref<f32>
+        %1 = affine.load %alloc[] {from = "b"} : memref<f32>
         %c2_i32 = arith.constant 2 : i32
-        %1 = arith.sitofp %c2_i32 : i32 to f32
-        %2 = affine.load %alloc[] {from = "b"} : memref<f32>
-        %3 = arith.mulf %2, %1 : f32
-        %alloc_0 = memref.alloc() {name = "c"} : memref<f32>
-        affine.store %3, %alloc_0[] {to = "c"} : memref<f32>
-        %4 = arith.sitofp %arg0 : i32 to f32
+        %c2_i32_0 = arith.constant 2 : i32
         %c2_i32_1 = arith.constant 2 : i32
-        %5 = arith.sitofp %c2_i32_1 : i32 to f32
+        %c2_i32_2 = arith.constant 2 : i32
+        %2 = arith.sitofp %c2_i32_2 : i32 to f32
+        %3 = arith.mulf %1, %2 : f32
+        %alloc_3 = memref.alloc() {name = "c"} : memref<f32>
+        affine.store %3, %alloc_3[] {to = "c"} : memref<f32>
+        %4 = arith.sitofp %arg0 : i32 to f32
+        %c2_i32_4 = arith.constant 2 : i32
+        %c2_i32_5 = arith.constant 2 : i32
+        %c2_i32_6 = arith.constant 2 : i32
+        %c2_i32_7 = arith.constant 2 : i32
+        %5 = arith.sitofp %c2_i32_7 : i32 to f32
         %6 = arith.mulf %4, %5 : f32
-        %alloc_2 = memref.alloc() {name = "d"} : memref<f32>
-        affine.store %6, %alloc_2[] {to = "d"} : memref<f32>
-        %7 = affine.load %alloc_0[] {from = "c"} : memref<f32>
-        %8 = affine.load %alloc_2[] {from = "d"} : memref<f32>
+        %alloc_8 = memref.alloc() {name = "d"} : memref<f32>
+        affine.store %6, %alloc_8[] {to = "d"} : memref<f32>
+        %7 = affine.load %alloc_3[] {from = "c"} : memref<f32>
+        %8 = affine.load %alloc_8[] {from = "d"} : memref<f32>
         %9 = arith.addf %7, %8 : f32
         %10 = arith.fptosi %9 : f32 to i16
-        %alloc_3 = memref.alloc() {name = "e"} : memref<i16>
-        affine.store %10, %alloc_3[] {to = "e"} : memref<i16>
-        %11 = affine.load %alloc_3[] {from = "e"} : memref<i16>
-        %12 = affine.load %alloc_3[] {from = "e"} : memref<i16>
-        return %12 : i16
+        %alloc_9 = memref.alloc() {name = "e"} : memref<i16>
+        affine.store %10, %alloc_9[] {to = "e"} : memref<i16>
+        %11 = affine.load %alloc_9[] {from = "e"} : memref<i16>
+        return %11 : i16
       }
     }
 
@@ -237,7 +242,7 @@ Not only constant values are supported, but also variables can be used as the in
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.190 seconds)
+   **Total running time of the script:** (0 minutes 0.124 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_01_data_types.py:

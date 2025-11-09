@@ -164,9 +164,10 @@ represent the program, and we can directly print out the IR by using
 
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         %c0_i32 = arith.constant 0 : i32
-        linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
+        %c0_i32_0 = arith.constant 0 : i32
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
+        linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 32 {
           affine.for %arg3 = 0 to 32 {
             affine.for %arg4 = 0 to 32 {
@@ -257,8 +258,8 @@ We can print out the IR again to see the effect of the transformation.
     #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         %c0_i32 = arith.constant 0 : i32
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 4 {
           affine.for %arg3 = 0 to 8 {
@@ -314,8 +315,8 @@ Similarly, we can split the ``j`` loop:
     #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         %c0_i32 = arith.constant 0 : i32
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 4 {
           affine.for %arg3 = 0 to 8 {
@@ -372,8 +373,8 @@ loops together.
     #map = affine_map<(d0, d1) -> (d0 + d1 * 8)>
     module {
       func.func @gemm(%arg0: memref<32x32xi32>, %arg1: memref<32x32xi32>) -> memref<32x32xi32> attributes {itypes = "ss", otypes = "s"} {
-        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         %c0_i32 = arith.constant 0 : i32
+        %alloc = memref.alloc() {name = "C"} : memref<32x32xi32>
         linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref<32x32xi32>)
         affine.for %arg2 = 0 to 4 {
           affine.for %arg3 = 0 to 4 {
@@ -518,7 +519,7 @@ Finally, we can do a sanity check to see if the results are correct.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.212 seconds)
+   **Total running time of the script:** (0 minutes 0.160 seconds)
 
 
 .. _sphx_glr_download_gallery_tutorial_01_get_started.py:

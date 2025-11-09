@@ -231,6 +231,42 @@
 </pre></div>
 </div>
 <p>The simulator is implemented using the <a class="reference external" href="https://mlir.llvm.org/docs/Dialects/OpenMPDialect/">OMP dialect</a> in MLIR, so it can natively support multi-threaded execution on CPU, which greatly speeds up functional testing at the first place.</p>
+<section id="controlling-openmp-threads-in-simulator-tests">
+<h3>Controlling OpenMP Threads in Simulator Tests<a class="headerlink" href="#controlling-openmp-threads-in-simulator-tests" title="Link to this heading"><span>¶</span></a></h3>
+<p>When running simulations or tests that use the simulator backend, the number of threads created by OpenMP can be controlled via the <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code> environment variable. This variable controls the number of CPU threads OpenMP uses for parallel execution.</p>
+<p>Some dataflow designs may require a large number of threads to simulate properly (otherwise, you might experience “hang” or “stuck”). In such cases, please set <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code> to a larger value.</p>
+<p>For example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">OMP_NUM_THREADS</span><span class="o">=</span><span class="m">64</span>
+python3<span class="w"> </span>tests/dataflow/test_1D_systolic.py
+</pre></div>
+</div>
+<p>The OpenMP runtime determines the size of its thread pool during initialization based on the value of <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code>.
+Once the thread pool has been created, modifying <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code> afterward will <strong>not</strong> affect the existing pool size.</p>
+<p><strong>Please ensure that the thread pool is large enough when running the simulator.</strong></p>
+<p>You can either export <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code> to a sufficiently large value before running all simulators,
+or adjust it individually within each process as needed.</p>
+<p><strong>Tip:</strong> If you are using <code class="docutils literal notranslate"><span class="pre">pytest</span></code> to run multiple tests and have not pre-exported a large enough <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code>,
+be sure to use the <code class="docutils literal notranslate"><span class="pre">--forked</span></code> option so that each test runs in a separate process and the <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code> setting in <code class="docutils literal notranslate"><span class="pre">setup_env</span></code> takes effect.</p>
+<p>Example: To ensure that each test runs in a separate process and the thread pool is recreated according to <code class="docutils literal notranslate"><span class="pre">OMP_NUM_THREADS</span></code>, you can add the following code to each test file in the target folder:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">,</span> <span class="n">autouse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">setup_env</span><span class="p">():</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OMP_NUM_THREADS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;128&quot;</span>
+    <span class="k">yield</span>
+    <span class="k">del</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OMP_NUM_THREADS&quot;</span><span class="p">]</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_xxx</span><span class="p">():</span>
+    <span class="c1"># your test code here</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p>Then run the tests with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>--forked<span class="w"> </span>/path/to/tests/folder<span class="w"> </span>-v
+</pre></div>
+</div>
+</section>
 </section>
 </section>
 
@@ -250,7 +286,10 @@
                 <ul>
 <li><a class="reference internal" href="#">Multi-Threaded Simulator (CPU)</a><ul>
 <li><a class="reference internal" href="#dataflow-kernel-definition">Dataflow Kernel Definition</a></li>
-<li><a class="reference internal" href="#simulation-and-testing">Simulation and Testing</a></li>
+<li><a class="reference internal" href="#simulation-and-testing">Simulation and Testing</a><ul>
+<li><a class="reference internal" href="#controlling-openmp-threads-in-simulator-tests">Controlling OpenMP Threads in Simulator Tests</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

@@ -230,8 +230,8 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
@@ -259,8 +259,8 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xi32&gt;
@@ -297,9 +297,10 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
-    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
+    %c0_i32_0 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+    linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 32 {
         affine.for %arg4 = 0 to 32 {
@@ -318,15 +319,19 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
     return %alloc : memref&lt;32x32xi32&gt;
   }
   func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
-    linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
+    %c0_i32_0 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
+    linalg.fill ins(%c0_i32_0 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
         %0 = affine.load %arg0[%arg1, %arg2] {from = &quot;A&quot;} : memref&lt;32x32xi32&gt;
         %1 = arith.extsi %0 : i32 to i33
         %c1_i32 = arith.constant 1 : i32
-        %2 = arith.extsi %c1_i32 : i32 to i33
+        %c1_i32_1 = arith.constant 1 : i32
+        %c1_i32_2 = arith.constant 1 : i32
+        %c1_i32_3 = arith.constant 1 : i32
+        %2 = arith.extsi %c1_i32_3 : i32 to i33
         %3 = arith.addi %1, %2 : i33
         %4 = arith.trunci %3 : i33 to i32
         affine.store %4, %alloc[%arg1, %arg2] {to = &quot;B&quot;} : memref&lt;32x32xi32&gt;
@@ -350,8 +355,8 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @gemm(%arg0: memref&lt;32x32xi32&gt;, %arg1: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;ss&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;C&quot;} : memref&lt;32x32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg2 = 0 to 32 {
       %alloc_0 = memref.alloc() : memref&lt;32xi32&gt;
@@ -379,8 +384,8 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
     return %alloc : memref&lt;32x32xi32&gt;
   }
   func.func @matrix_add(%arg0: memref&lt;32x32xi32&gt;) -&gt; memref&lt;32x32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32x32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32x32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       affine.for %arg2 = 0 to 32 {
@@ -436,8 +441,8 @@ We also customize the two template kernels with different optimizations first.</
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
@@ -481,8 +486,8 @@ module {
 </div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>module {
   func.func @kernel_K1(%arg0: memref&lt;32xi32&gt;) -&gt; memref&lt;32xi32&gt; attributes {itypes = &quot;s&quot;, otypes = &quot;s&quot;} {
-    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
     %c0_i32 = arith.constant 0 : i32
+    %alloc = memref.alloc() {name = &quot;B&quot;} : memref&lt;32xi32&gt;
     linalg.fill ins(%c0_i32 : i32) outs(%alloc : memref&lt;32xi32&gt;)
     affine.for %arg1 = 0 to 32 {
       %0 = affine.load %arg0[%arg1] {from = &quot;A&quot;} : memref&lt;32xi32&gt;
@@ -520,7 +525,7 @@ module {
 </pre></div>
 </div>
 <p>We can see from the printed module that the loop in the first kernel is unrolled by a factor of 4, and the loop in the second kernel is pipelined.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.000 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.651 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-03-composition-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/39c6904b3f007c07e3d59200d0bf98b4/dive_03_composition.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_03_composition.ipynb</span></code></a></p>
