@@ -471,11 +471,11 @@ def generate_call_module(target_op, func_op, name):
     if name == "softmax":
         sym_name = f"{name}_{hash(target_op)}"
         args = func.arguments
+        org_input_type = args[0].type
         args[0].set_type(target_op.input.type)
-        args[1].set_type(target_op.output.type)
-        in_types = [args[0].type, args[1].type]
-        out_types = [args[1].type]
-        operands = [target_op.input, target_op.output]
+        in_types = [args[0].type]
+        out_types = [target_op.output.type]
+        operands = [target_op.input]
     elif name in {"gelu", "layernorm", "tril"}:
         sym_name = target_op.attributes["callee"].value
         in_types = [arg.type for arg in target_op.operands_]
@@ -493,6 +493,10 @@ def generate_call_module(target_op, func_op, name):
         operands,
         ip=InsertionPoint(target_op),
     )
+    if name in {"softmax"}:
+        result_def_op = target_op.output.owner
+        result_def_op.result.replace_all_uses_with(call_op.result)
+        result_def_op.erase()
     if name in {"gelu", "layernorm", "tril"}:
         target_op.result.replace_all_uses_with(call_op.result)
 
@@ -500,15 +504,26 @@ def generate_call_module(target_op, func_op, name):
         shape = MemRefType(out_types[0]).shape
         if name == "softmax":
             if isinstance(op, memref_d.AllocOp):
-                alloc_op = memref_d.AllocOp(
-                    MemRefType.get(
-                        shape[:-1],
-                        MemRefType(in_types[0]).element_type,
-                    ),
-                    [],
-                    [],
-                    ip=InsertionPoint(op),
-                )
+                if op.result.type == org_input_type:
+                    alloc_op = memref_d.AllocOp(
+                        MemRefType.get(
+                            shape,
+                            MemRefType(in_types[0]).element_type,
+                        ),
+                        [],
+                        [],
+                        ip=InsertionPoint(op),
+                    )
+                else:
+                    alloc_op = memref_d.AllocOp(
+                        MemRefType.get(
+                            shape[:-1],
+                            MemRefType(in_types[0]).element_type,
+                        ),
+                        [],
+                        [],
+                        ip=InsertionPoint(op),
+                    )
                 op.result.replace_all_uses_with(alloc_op.result)
                 op_to_remove.append(op)
 
