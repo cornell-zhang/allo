@@ -373,35 +373,41 @@ class CodeGenerator:
                                     fifo = fifo[0 if is_put else 1]
                                 if is_put:
                                     # if False:
-                                    if len(list(op.operands[1].uses)) == 1:
-                                        # put once
+                                    if (
+                                        op.name == "memref.copy"
+                                        and len(list(op.operands[1].uses)) == 1
+                                    ):
                                         alloc_op = op.operands[0].owner
-                                        uses = list(op.operands[0].uses)
-                                        with aie_ir.InsertionPoint(alloc_op):
-                                            acquired = fifo.acquire(0, 1)
-                                        for use in uses:
-                                            for i, v in enumerate(use.owner.operands):
-                                                if (
-                                                    v.type == alloc_op.result.type
-                                                    and v == alloc_op.result
+                                        # put once
+                                        if alloc_op.name == "memref.alloc":
+                                            uses = list(op.operands[0].uses)
+                                            with aie_ir.InsertionPoint(alloc_op):
+                                                acquired = fifo.acquire(0, 1)
+                                            for use in uses:
+                                                for i, v in enumerate(
+                                                    use.owner.operands
                                                 ):
-                                                    use.owner.operands[i] = acquired
-                                        with aie_ir.InsertionPoint.at_block_terminator(
-                                            alloc_op.parent.regions[0].blocks[0]
-                                        ):
-                                            fifo.release(0, 1)
-                                        op.erase()
-                                        alloc_op.erase()
-                                        continue
-                                    else:
-                                        op.operands[1] = fifo.acquire(0, 1)
-                                        new_op = (
-                                            op.clone()
-                                        )  # no use, no need to replace
-                                        fifo.release(0, 1)
+                                                    if (
+                                                        v.type == alloc_op.result.type
+                                                        and v == alloc_op.result
+                                                    ):
+                                                        use.owner.operands[i] = acquired
+                                            with aie_ir.InsertionPoint.at_block_terminator(
+                                                alloc_op.parent.regions[0].blocks[0]
+                                            ):
+                                                fifo.release(0, 1)
+                                            op.erase()
+                                            alloc_op.erase()
+                                            continue
+                                    op.operands[1] = fifo.acquire(0, 1)
+                                    new_op = op.clone()  # no use, no need to replace
+                                    fifo.release(0, 1)
                                 else:
-                                    # if False:
-                                    if len(list(op.operands[0].uses)) == 1:
+                                    # an optimize to reduce memref.copy
+                                    if (
+                                        is_tensor
+                                        and len(list(op.operands[0].uses)) == 1
+                                    ):
                                         # get once
                                         replaced = op.operands[1]
                                         uses = list(replaced.uses)

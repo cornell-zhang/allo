@@ -261,6 +261,7 @@ if __name__ == "__main__":
     dir_path = os.path.dirname(os.path.abspath(__file__))
     os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../../allo/library/aie/"
     os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
+    os.environ["COALESCE_MORE"] = "1"
     os.environ["FORCE_UNROLL_INDEX"] = "0"
 
     seq_len_list = [64, 128, 256, 512, 1024, 2048]
@@ -269,4 +270,5 @@ if __name__ == "__main__":
 
     del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
     del os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"]
+    del os.environ["COALESCE_MORE"]
     del os.environ["FORCE_UNROLL_INDEX"]
