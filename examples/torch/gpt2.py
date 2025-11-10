@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
+from allo.backend import hls
 import torch
 import math
 import numpy as np
@@ -124,14 +125,13 @@ batch_size = 2
 module = GPT2(vocab_size, n_embd, n_head, n_layers).eval()
 example_inputs = [torch.rand(batch_size, n_seq, n_embd)]
 golden = module(*example_inputs)
+np_inputs = [x.detach().numpy() for x in example_inputs]
+
 llvm_mod = allo.frontend.from_pytorch(
     module,
     example_inputs=example_inputs,
     verbose=True,
 )
-
-golden = module(*example_inputs)
-np_inputs = [x.detach().numpy() for x in example_inputs]
 res = llvm_mod(*np_inputs)
 np.testing.assert_allclose(res, golden.detach().numpy(), atol=1e-3)
 print("Test passed!")
@@ -139,3 +139,12 @@ print("Test passed!")
 # generate HLS module
 mod = allo.frontend.from_pytorch(module, example_inputs=example_inputs, target="vhls")
 print(mod.hls_code)
+
+if hls.is_available("vitis_hls"):
+    allo_C = output = np.zeros((batch_size, n_seq, vocab_size), dtype=np.float32)
+    mod = allo.frontend.from_pytorch(
+        module, example_inputs=example_inputs, target="vitis_hls", mode="csim"
+    )
+    mod(*np_inputs, allo_C)
+    np.testing.assert_allclose(allo_C, golden.detach().numpy(), atol=1e-3)
+    print("Test passed!")
