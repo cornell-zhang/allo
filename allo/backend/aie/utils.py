@@ -819,6 +819,21 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
                     init_zero_op.erase()
                     acc_op.operands[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
+    # similar optimization apply to lib function like 'add' (the root cause is the mismatch between allo interface and lib function interface)
+    acc_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "add")
+    for call_add_op in acc_ops:
+        output = call_add_op.operands[-1]
+        uses = list(output.uses)
+        if (
+            isinstance(output.owner, allo_ir.ir.Operation)
+            and output.owner.name == "memref.alloc"
+            and len(uses) == 2
+        ):
+            copy_op = allo_d.get_last_use_in_function(output, function)
+            if copy_op.name == "memref.copy":
+                call_add_op.operands[-1] = copy_op.operands[1]
+                copy_op.erase()
+                output.owner.erase()
 
 
 # ############################################################

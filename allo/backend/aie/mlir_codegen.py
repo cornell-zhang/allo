@@ -371,17 +371,64 @@ class CodeGenerator:
                             if compact_flag:
                                 if isinstance(fifo, tuple):
                                     fifo = fifo[0 if is_put else 1]
-                                acquired = fifo.acquire(0 if is_put else 1, 1)
                                 if is_put:
-                                    op.operands[1] = acquired
-                                    new_op = op.clone()  # no use, no need to replace
+                                    # if False:
+                                    if len(list(op.operands[1].uses)) == 1:
+                                        # put once
+                                        alloc_op = op.operands[0].owner
+                                        uses = list(op.operands[0].uses)
+                                        with aie_ir.InsertionPoint(alloc_op):
+                                            acquired = fifo.acquire(0, 1)
+                                        for use in uses:
+                                            for i, v in enumerate(use.owner.operands):
+                                                if (
+                                                    v.type == alloc_op.result.type
+                                                    and v == alloc_op.result
+                                                ):
+                                                    use.owner.operands[i] = acquired
+                                        with aie_ir.InsertionPoint.at_block_terminator(
+                                            alloc_op.parent.regions[0].blocks[0]
+                                        ):
+                                            fifo.release(0, 1)
+                                        op.erase()
+                                        alloc_op.erase()
+                                        continue
+                                    else:
+                                        op.operands[1] = fifo.acquire(0, 1)
+                                        new_op = (
+                                            op.clone()
+                                        )  # no use, no need to replace
+                                        fifo.release(0, 1)
                                 else:
-                                    op.operands[0] = acquired
-                                    new_op = op.clone()
-                                    if not is_tensor:
-                                        for old, new in zip(op.results, new_op.results):
-                                            old.replace_all_uses_with(new)
-                                fifo.release(0 if is_put else 1, 1)
+                                    # if False:
+                                    if len(list(op.operands[0].uses)) == 1:
+                                        # get once
+                                        replaced = op.operands[1]
+                                        uses = list(replaced.uses)
+                                        with aie_ir.InsertionPoint(op):
+                                            acquired = fifo.acquire(1, 1)
+                                        for use in uses:
+                                            for i, v in enumerate(use.owner.operands):
+                                                if (
+                                                    v.type == replaced.type
+                                                    and v == replaced
+                                                ):
+                                                    use.owner.operands[i] = acquired
+
+                                        with aie_ir.InsertionPoint.at_block_terminator(
+                                            op.parent.regions[0].blocks[0]
+                                        ):
+                                            fifo.release(1, 1)
+                                    else:
+                                        acquired = fifo.acquire(1, 1)
+                                        op.operands[0] = acquired
+                                        new_op = op.clone()
+                                        if not is_tensor:
+                                            for old, new in zip(
+                                                op.results, new_op.results
+                                            ):
+                                                old.replace_all_uses_with(new)
+                                        fifo.release(1, 1)
                             else:
                                 assert len(loop_nests) == 1, "To be implemented..."
                                 loop_name = list(loop_nests.keys())[0]
@@ -2251,8 +2298,6 @@ class CodeGenerator:
                                 for shim_tile in self.used_shim_tiles
                             }
                             for global_dma in coalesced_tasks_list[tasks_idx_right]:
-                                if global_dma.dtensor.global_id == 1:
-                                    global_dma.print()
                                 offset, size, stride = global_dma.transfer_pattern()
                                 if (
                                     global_dma.io_port.fifo.name
