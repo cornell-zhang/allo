@@ -1263,7 +1263,7 @@ def customize(
         instantiate = []
     if global_vars is None:
         global_vars = get_global_vars(fn)
-    use_less_casting = True if os.getenv("USE_LESS_CASTING") == "1" else False
+    use_less_casting = os.getenv("USE_LESS_CASTING") == "1"
     # Type construction
     ctx_type_inf = ASTContext(
         tree=tree,

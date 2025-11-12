@@ -789,22 +789,14 @@ def binary_arith_rule():
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
         (Int, UInt): lambda t1, t2: (
-            (
-                lambda bits_signed, bits_unsigned: (
-                    # Case 1: unsigned rank >= signed rank
-                    UInt(bits_unsigned)
-                    if bits_unsigned >= bits_signed
-                    # Case 2: signed type can represent all unsigned values
-                    else Int(bits_signed)
-                )
-            )(t1.bits, t2.bits)
+            (UInt(t2.bits) if t2.bits >= t1.bits else Int(t1.bits))
             if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
             else (_ for _ in ()).throw(
                 TypeError(f"{t1}, {t2} fail binary arithmetic rule")
             )
         ),
         (Int, Index): lambda t1, t2: (
-            (Index() if 32 >= t1.bits else Int(t1.bits))
+            Int(max(t1.bits, t2.bits))
             if t1.bits in {8, 16, 32, 64}
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
@@ -816,15 +808,7 @@ def binary_arith_rule():
     }
     uint_rules = {
         (UInt, Int): lambda t1, t2: (
-            (
-                lambda bits_signed, bits_unsigned: (
-                    # Case 1: unsigned rank >= signed rank
-                    UInt(bits_unsigned)
-                    if bits_unsigned >= bits_signed
-                    # Case 2: signed type can represent all unsigned values
-                    else Int(bits_signed)
-                )
-            )(t2.bits, t1.bits)
+            (UInt(t1.bits) if t1.bits >= t2.bits else Int(t2.bits))
             if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
             else (_ for _ in ()).throw(
                 TypeError(f"{t1}, {t2} fail binary arithmetic rule")
@@ -836,7 +820,7 @@ def binary_arith_rule():
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
         (UInt, Index): lambda t1, t2: (
-            Int(max(t1.bits, t2.bits))
+            (UInt(t1.bits) if t1.bits >= 32 else Index())
             if t1.bits in {8, 16, 32, 64}
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
@@ -848,12 +832,12 @@ def binary_arith_rule():
     }
     index_rules = {
         (Index, Int): lambda t1, t2: (
-            (Index() if 32 >= t2.bits else Int(t2.bits))
+            Int(max(t1.bits, t2.bits))
             if t2.bits in {8, 16, 32, 64}
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
         (Index, UInt): lambda t1, t2: (
-            Int(max(t1.bits, t2.bits))
+            (UInt(t2.bits) if t2.bits >= 32 else Index())
             if t2.bits in {8, 16, 32, 64}
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
