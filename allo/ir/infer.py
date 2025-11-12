@@ -311,7 +311,7 @@ class TypeInferer(ASTVisitor):
     def visit_general_binop(
         ctx: ASTContext, node: ast.AugAssign | ast.BinOp, lhs: ast.expr, rhs: ast.expr
     ):
-        typing_rule = get_typing_rule(type(node.op))
+        typing_rule = get_typing_rule(type(node.op), ctx.use_less_casting)
         res_type = typing_rule(lhs.dtype, rhs.dtype)
         node.dtype = res_type
         final_shape, lhs_dims, rhs_dims = TypeInferer.visit_broadcast(
@@ -843,7 +843,7 @@ class TypeInferer(ASTVisitor):
         lhs = visit_stmt(ctx, node.left)
         assert len(node.comparators) == 1, "Only support one comparator for now"
         rhs = visit_stmt(ctx, node.comparators[0])
-        typing_rule = get_typing_rule(type(node.ops[0]))
+        typing_rule = get_typing_rule(type(node.ops[0]), ctx.use_less_casting)
         res_type = typing_rule(lhs.dtype, rhs.dtype)[0]
         node.dtype = res_type
         node.shape = tuple()
@@ -861,7 +861,7 @@ class TypeInferer(ASTVisitor):
         visit_stmt(ctx, node.test)
         visit_stmt(ctx, node.body)
         visit_stmt(ctx, node.orelse)
-        typing_rule = get_typing_rule(ast.IfExp)
+        typing_rule = get_typing_rule(ast.IfExp, ctx.use_less_casting)
         res_type = typing_rule(node.body.dtype, node.orelse.dtype)
         node.dtype = res_type
         node.shape = node.body.shape
@@ -1026,7 +1026,7 @@ class TypeInferer(ASTVisitor):
                     len(node.args) == 2
                 ), "Only support two arguments for `min` and `max`"
                 new_args = visit_stmts(ctx, node.args)
-                typing_rule = get_typing_rule("minmax")
+                typing_rule = get_typing_rule("minmax", ctx.use_less_casting)
                 res_type = typing_rule(new_args[0].dtype, new_args[1].dtype)
                 node.dtype = res_type
                 node.shape = new_args[0].shape
