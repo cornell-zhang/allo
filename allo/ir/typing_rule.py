@@ -815,7 +815,7 @@ def binary_arith_rule():
             )
         ),
         (UInt, UInt): lambda t1, t2: (
-            Int(max(t1.bits, t2.bits))
+            UInt(max(t1.bits, t2.bits))
             if all(t.bits in {8, 16, 32, 64} for t in (t1, t2))
             else TypeError(f"{t1}, {t2} fail binary arithmetic rule")
         ),
