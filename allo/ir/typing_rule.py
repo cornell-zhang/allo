@@ -775,8 +775,7 @@ registry = {
 # - types:
 #       - int8, int16, int32, int64
 #       - uint8, uint16, uint32, uint64
-#       - index (uint32)
-#       - bool (uint1)
+#       - index (int32)
 #       - bfloat16, float16, float32, float64
 # ----------------------------------------------------
 
