@@ -38,8 +38,7 @@ def reverse_bits(data: int, bit_range: int) -> int:
 
 
 def get_feather_top(AW: int, AH: int, Ty: AlloType):
-    P_FACTOR = 16
-    TyPacked = UInt(Ty.bits * P_FACTOR)
+    TyPacked = UInt(Ty.bits * AW)
 
     # BIRRD params
     LOG2_AW = int(log2(AW))
@@ -53,15 +52,19 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
         @df.kernel(mapping=[1])
         def NEST(iActs: Ty[AH, AW], weights: Ty[AH, AW, AH]):
             for i in allo.grid(AH, name="nest"):  # Rows, can be pipelined
-                local_result: TyPacked = 0
+                local_buffer: Ty[AW] = 0
                 for j in range(AW):  # Cols, can be fully parallelized
-                    # FIXME: This multiplication op requires a DSP, leading to II=2
-                    start: int32 = j * Ty.bits
-                    end: int32 = start + Ty.bits
+                    start: int8 = j * Ty.bits  # TODO: Use shift operation
+                    end: int8 = start + Ty.bits
+                    temp: Ty = 0
                     for k in range(AH):  # Iterations of a local reduction
                         iAct: Ty = iActs[k, j]
                         weight: Ty = weights[i, j, k]
-                        local_result[start:end] += iAct * weight
+                        temp += iAct * weight
+                    local_buffer[j] = temp
+                local_result: TyPacked = 0
+                for j in range(AW):
+                    local_result[j * Ty.bits : (j + 1) * Ty.bits] = local_buffer[j]
                 nest_out.put(local_result)
 
         connection: Stream[Ty, 1][P0 + 1, P1 * 2]
@@ -76,77 +79,50 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
         inst_input: Stream[int8, 1][P0, P1]
 
         @df.kernel(mapping=[1])
-        def inst_rw(inst: int8[P0 * P1]):
-            df.scatter(inst, inst_input[:, :])
+        def inst_rw(inst: int8[P0, P1]):
+            with allo.meta_for(P0) as i:
+                with allo.meta_for(P1) as j:
+                    inst_input[i, j].put(inst[i, j])
 
         @df.kernel(mapping=[P0, P1])
         def BIRRD():
             i, j = df.get_pid()
             inst = inst_input[i, j].get()
             for _ in range(AH):
-                # The first stage
-                with allo.meta_if(i == 0):
-                    in_left: Ty = connection[0, 2 * j].get()
-                    in_right: Ty = connection[0, 2 * j + 1].get()
-                    out_left: Ty = 0.0
-                    out_right: Ty = 0.0
-                    if inst == 0:  # Pass
-                        out_left = in_left
-                        out_right = in_right
-                    elif inst == 1:  # Add Right
-                        out_left = in_left
-                        out_right = in_left + in_right
-                    elif inst == 2:  # Add Left
-                        out_left = in_left + in_right
-                        out_right = in_right
-                    else:  # Swap
-                        out_left = in_right
-                        out_right = in_left
-                    connection[i + 1, reverse_bits(2 * j, 2)].put(out_left)
-                    connection[i + 1, reverse_bits(2 * j + 1, 2)].put(out_right)
-
-                # The last stage
-                with allo.meta_elif(i == P0 - 1):
-                    in_left: Ty = connection[P0 - 1, 2 * j].get()
-                    in_right: Ty = connection[P0 - 1, 2 * j + 1].get()
-                    if inst == 0:  # Pass
-                        connection[P0, 2 * j].put(in_left)
-                        connection[P0, 2 * j + 1].put(in_right)
-                    elif inst == 1:  # Add Right
-                        connection[P0, 2 * j].put(in_left)
-                        connection[P0, 2 * j + 1].put(in_left + in_right)
-                    elif inst == 2:  # Add Left
-                        connection[P0, 2 * j].put(in_left + in_right)
-                        connection[P0, 2 * j + 1].put(in_right)
-                    else:  # Swap
-                        connection[P0, 2 * j].put(in_right)
-                        connection[P0, 2 * j + 1].put(in_left)
-
-                # Stages in the middle
-                with allo.meta_else():
-                    in_left: Ty = connection[i, 2 * j].get()
-                    in_right: Ty = connection[i, 2 * j + 1].get()
-                    out_left: Ty = 0.0
-                    out_right: Ty = 0.0
-                    if inst == 0:  # Pass
-                        out_left = in_left
-                        out_right = in_right
-                    elif inst == 1:  # Add Right
-                        out_left = in_left
-                        out_right = in_left + in_right
-                    elif inst == 2:  # Add Left
-                        out_left = in_left + in_right
-                        out_right = in_right
-                    else:  # Swap
-                        out_left = in_right
-                        out_right = in_left
+                in_left: Ty = connection[i, 2 * j].get()
+                in_right: Ty = connection[i, 2 * j + 1].get()
+                out_left: Ty = 0
+                out_right: Ty = 0
+                if inst == 0:  # pass
+                    out_left = in_left
+                    out_right = in_right
+                elif inst == 1:  # add-right
+                    out_left = in_left
+                    out_right = in_left + in_right
+                elif inst == 2:  # add-left
+                    out_left = in_left + in_right
+                    out_right = in_right
+                else:  # swap
+                    out_left = in_right
+                    out_right = in_left
+                with allo.meta_if(i != P0 - 1):
                     connection[
-                        i + 1, reverse_bits(2 * j, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i))
+                        i + 1,
+                        # TODO: Create constant expression
+                        reverse_bits(
+                            2 * j, 2 if i == 0 else min(LOG2_AW, 2 + i, 2 * LOG2_AW - i)
+                        ),
                     ].put(out_left)
                     connection[
                         i + 1,
-                        reverse_bits(2 * j + 1, min(LOG2_AW, 2 + i, 2 * LOG2_AW - i)),
+                        reverse_bits(
+                            2 * j + 1,
+                            2 if i == 0 else min(LOG2_AW, 2 + i, 2 * LOG2_AW - i),
+                        ),
                     ].put(out_right)
+                with allo.meta_else():
+                    connection[P0, 2 * j].put(out_left)
+                    connection[P0, 2 * j + 1].put(out_right)
 
         @df.kernel(mapping=[1])
         def output(output_buffer: Ty[AH, AW]):
@@ -156,6 +132,17 @@ def get_feather_top(AW: int, AH: int, Ty: AlloType):
                     output_buffer[d, i] = connection[P0, i].get()
 
     return top
+
+
+def get_scheduled_feather(AW: int, AH: int, Ty: AlloType):
+    s = df.customize(get_feather_top(AW, AH, Ty))
+    nest_loop = s.get_loops("NEST_0")["nest"]["i"]
+    s.pipeline(nest_loop)
+    s.partition("top:output_buffer", dim=1, factor=AW)
+    s.partition("top:iActs", dim=1, factor=AH)
+    s.partition("top:weights", dim=2, factor=AW)
+    s.partition("top:weights", dim=3, factor=AH)
+    return s
 
 
 def print_test_config(
