@@ -181,7 +181,7 @@ class HLSModule:
         configs=None,
         func_args=None,
         wrap_io=True,
-    ):  # pylint: disable=too-many-arguments
+    ):
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
@@ -337,7 +337,6 @@ class HLSModule:
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                     )
 
-
                     process = subprocess.Popen(cmd, shell=True)
                     process.wait()
                     if process.returncode != 0:
@@ -489,7 +488,9 @@ class HLSModule:
                     f.write(arg.tobytes())
             # check if the build folder exists
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
-            if not os.path.exists(os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")):
+            if not os.path.exists(
+                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
+            ):
                 cmd = (
                     f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
                 )
@@ -548,14 +549,14 @@ class HLSModule:
                     raise RuntimeError(
                         "Failed to create block design / generate bitstream"
                     )
-                    
+
                 # Deploy only if implementation mode
                 cmd = (
-                        f"mkdir -p {deploy_dir}; "
-                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
-                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
-                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
-                    )
+                    f"mkdir -p {deploy_dir}; "
+                    f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                    f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                    f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
+                )
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
                 )
