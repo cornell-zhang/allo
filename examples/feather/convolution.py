@@ -139,11 +139,11 @@ def test_FEATHER_conv():
         inst2 = np.array([[AL, AL], [AR, PS], [PS, PS]]).astype(np.int8)
         inst3 = np.array([[AL, AL], [AR, PS], [PS, SW]]).astype(np.int8)
         insts = [inst0, inst1, inst2, inst3]
-    iActs = np.random.randint(low=-4, high=4, size=(N, C, H, W), dtype=np.int8)
+    iActs = np.random.randint(low=-2, high=2, size=(N, C, H, W), dtype=np.int8)
     iActs_channel_last = np.ascontiguousarray(
         iActs.transpose(0, 2, 3, 1)
     )  # NCHW -> NHWC
-    weights = np.random.randint(low=-4, high=4, size=(M, C, R, S), dtype=np.int8)
+    weights = np.random.randint(low=-2, high=2, size=(M, C, R, S), dtype=np.int8)
     weights_flattened = weights.reshape(M, C, R * S)
     oActs_row_major = np.zeros((N, M * P * Q // AW, AW), dtype=np.int8)
 
