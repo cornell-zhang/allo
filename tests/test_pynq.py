@@ -6,9 +6,7 @@ import tempfile
 import shutil
 
 import allo
-from allo.primitives.unify import unify
-from allo.ir.types import int8
-from allo.ir.types import float32
+from allo.ir.types import int8, float32
 
 import warnings
 import numpy as np

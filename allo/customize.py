@@ -1213,7 +1213,6 @@ class Schedule:
         project=None,
         configs=None,
         wrap_io=True,
-        custom_bd_tcl=None,
     ):
         if target is None or target == "llvm":
             target = "llvm"
@@ -1244,7 +1243,6 @@ class Schedule:
                 configs=configs,
                 func_args=self.func_args,
                 wrap_io=wrap_io,
-                custom_bd_tcl=custom_bd_tcl,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 

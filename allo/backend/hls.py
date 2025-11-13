@@ -109,7 +109,6 @@ open_solution "solution1"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
     if "impl" in mode or "hw" in mode:
-        out_str += "csynth_design\n"
         if device in {"ultra96v2", "pynqz2", "zedboard"}:
             # Embedded boards: export IP only, bitstream happens in Python/Vivado later
             out_str += "export_design -rtl verilog -format ip_catalog\n"
@@ -182,14 +181,12 @@ class HLSModule:
         configs=None,
         func_args=None,
         wrap_io=True,
-        custom_bd_tcl="block_design.tcl",
     ):  # pylint: disable=too-many-arguments
         self.top_func_name = top_func_name
         self.mode = mode
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
-        self.custom_bd_tcl = custom_bd_tcl
 
         if configs is not None:
             new_configs = DEFAULT_CONFIG
@@ -199,8 +196,6 @@ class HLSModule:
             configs = DEFAULT_CONFIG
         if self.mode is not None:
             configs["mode"] = self.mode
-        with Context() as ctx, Location.unknown():
-            allo_d.register_dialect(ctx)
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
@@ -330,6 +325,11 @@ class HLSModule:
                 with open(kernel_h, "w", encoding="utf-8") as outfile:
                     outfile.write(header)
 
+                # Apply PYNQ-specific HLS code tweaks and write kernel.cpp
+                self.hls_code = postprocess_hls_code_pynq(
+                    self.hls_code, self.top_func_name
+                )
+
                 if self.mode == "impl":
                     # HLS synth
                     cmd = f"cd {self.project}; vitis_hls -f run.tcl"
@@ -337,42 +337,11 @@ class HLSModule:
                         f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
                     )
 
-                    # Ensure kernel files exist before HLS runs
-                    header, self.args = separate_header(
-                        self.hls_code, self.top_func_name
-                    )
-                    with open(
-                        f"{self.project}/kernel.h", "w", encoding="utf-8"
-                    ) as outfile:
-                        outfile.write(header)
-
-                    # Apply PYNQ-specific HLS code tweaks and write kernel.cpp
-                    self.hls_code = postprocess_hls_code_pynq(
-                        self.hls_code, self.top_func_name
-                    )
-                    with open(
-                        f"{self.project}/kernel.cpp", "w", encoding="utf-8"
-                    ) as outfile:
-                        outfile.write(self.hls_code)
 
                     process = subprocess.Popen(cmd, shell=True)
                     process.wait()
                     if process.returncode != 0:
                         raise RuntimeError("Failed to synthesize the design")
-
-                    # Vivado block design
-                    bd_script = self.custom_bd_tcl or "block_design.tcl"
-                    bd_script = os.path.basename(bd_script)
-                    cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
-                    print(
-                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
-                    )
-                    process = subprocess.Popen(cmd, shell=True)
-                    process.wait()
-                    if process.returncode != 0:
-                        raise RuntimeError(
-                            "Failed to create block design / generate bitstream"
-                        )
 
                     # Produce host (deploy.py)
                     host_code = codegen_pynq_host(
@@ -387,29 +356,14 @@ class HLSModule:
 
                     # Package .bit / .hwh / deploy.py into deploy/ folder
                     deploy_dir = os.path.join(self.project, "deploy")
-                    cmd = (
-                        f"mkdir -p {deploy_dir}; "
-                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
-                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
-                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
-                    )
-                    print(
-                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
-                    )
-                    process = subprocess.Popen(cmd, shell=True)
-                    process.wait()
-                    if process.returncode != 0:
-                        raise RuntimeError("Failed to collect files")
-
                     print(f"Files for deployment located in {deploy_dir}")
             else:
                 self.host_code = ""
-            if not (self.platform == "pynq" and self.mode == "impl"):
-                with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
-                    outfile.write(self.hls_code)
-                if hasattr(self, "host_code") and self.host_code:
-                    with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                        outfile.write(self.host_code)
+            with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
+                outfile.write(self.hls_code)
+            if hasattr(self, "host_code") and self.host_code:
+                with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.host_code)
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp
@@ -446,6 +400,7 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, *args, shell=True):
+
         if self.platform == "vivado_hls":
             assert is_available("vivado_hls"), "vivado_hls is not available"
             ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
@@ -534,9 +489,7 @@ class HLSModule:
                     f.write(arg.tobytes())
             # check if the build folder exists
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
-            if not os.path.exists(
-                os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")
-            ):
+            if not os.path.exists(os.path.join(bitstream_folder, f"{self.top_func_name}.xclbin")):
                 cmd = (
                     f"cd {self.project}; make run TARGET={self.mode} PLATFORM=$XDEVICE"
                 )
@@ -579,7 +532,37 @@ class HLSModule:
                 )
                 mod(*args)
                 return
-            if self.mode in {"csyn", "impl"}:
+            if self.mode == "csyn":
+                return
+            if self.mode == "impl":
+                # Vivado block design
+                bd_script = "block_design.tcl"
+                bd_script = os.path.basename(bd_script)
+                cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
+                )
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        "Failed to create block design / generate bitstream"
+                    )
+                    
+                # Deploy only if implementation mode
+                cmd = (
+                        f"mkdir -p {deploy_dir}; "
+                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
+                    )
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
+                )
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to collect files")
                 return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
