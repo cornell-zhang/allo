@@ -41,13 +41,13 @@ def test_producer_consumer():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
-    mod = df.build(
-        top,
-        target="vitis_hls",
-        mode="csim",
-        project="producer_consumer.prj",
-    )
     if hls.is_available("vitis_hls"):
+        mod = df.build(
+            top,
+            target="vitis_hls",
+            mode="csim",
+            project="producer_consumer.prj",
+        )
         mod(A, B)
         np.testing.assert_allclose(A + 1, B)
         print("Passed!")

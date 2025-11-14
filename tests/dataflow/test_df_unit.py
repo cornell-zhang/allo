@@ -60,7 +60,7 @@ def test_func_index():
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, B)
     np.testing.assert_allclose(A + 1, B)
-    print("Passed!")
+    print("Dataflow Simulator Passed!")
 
 
 if __name__ == "__main__":
