@@ -382,19 +382,6 @@ class NodeMetaData:
         self.input_streams: list[Stream] = []
         self.output_streams: list[Stream] = []
 
-    def test_isomorphism(self, other: "NodeMetaData") -> bool:
-        if self.op_tag != other.op_tag:
-            return False
-        in1 = Counter((s.src, s.type_str) for s in self.input_streams)
-        in2 = Counter((s.src, s.type_str) for s in other.input_streams)
-        if in1 != in2:
-            return False
-        out1 = Counter((s.dst, s.type_str) for s in self.output_streams)
-        out2 = Counter((s.dst, s.type_str) for s in other.output_streams)
-        if out1 != out2:
-            return False
-        return True
-
 
 class NodeBase:
     def __init__(
@@ -428,12 +415,6 @@ class NodeBase:
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
         self.buffered_stream: dict[Stream, BufferedStream] = {}
-
-    def is_isomorphic_to(self, other: "NodeBase") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
-        return self.meta_data.test_isomorphism(other.meta_data)
 
     def __str__(self) -> str:
         def fmt_list(lst: list) -> str:
@@ -645,74 +626,7 @@ class ComputationGraph:
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
-    def bundle(self, node_name_list: list[str]):
-        """
-        [A] [B] [C] [D]  => [A] x 4
-
-        TODO: bundled nodes can be safely reordered
-        """
-        assert len(node_name_list) >= 2, "bundle at least two nodes"
-        node_list: list[NodeBase] = []
-        for name in node_name_list:
-            assert name in self.nodes, f"Node({name}) not found"
-            node_list.append(self.nodes.pop(name))
-        sample_node: NodeBase = node_list[0]
-        for node in node_list:
-            if not sample_node.is_isomorphic_to(node):
-                raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                )
-        bundled_node = CollocatedNode(
-            tag=sample_node.meta_data.op_tag,
-            name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
-            length=sample_node.meta_data.length * len(node_name_list),
-        )
-        self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
-        bundled_node.init_for_bundle(node_list)
-        # update stream
-        for name, stream in self.edges.items():
-            if stream.src in node_name_list:
-                self.dependencies[stream.dst][stream.src] -= 1
-                if self.dependencies[stream.dst][stream.src] == 0:
-                    del self.dependencies[stream.dst][stream.src]
-                if stream.src == sample_node.meta_data.name:
-                    stream.src = bundled_node.meta_data.name
-                    self.dependencies[stream.dst][bundled_node.meta_data.name] += 1
-                else:
-                    self.nodes[stream.dst].meta_data.input_streams.remove(stream)
-            if stream.dst in node_name_list:
-                if stream.dst == sample_node.meta_data.name:
-                    stream.dst = bundled_node.meta_data.name
-                    self.dependencies[bundled_node.meta_data.name][stream.src] += 1
-                else:
-                    self.nodes[stream.src].meta_data.output_streams.remove(stream)
-        # update nodes and remove bundled function
-        for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            if isinstance(arg[0], Argument):
-                if arg[0].stream is not None:
-                    for name in node_name_list:
-                        if name != sample_node.meta_data.name:
-                            self.edges.pop(self.func_args[name][idx][0].stream.name)
-                        self.func_args[name][idx][0].stream.name = arg[0].stream.name
-            else:
-                # stream list
-                for name in node_name_list:
-                    for arg_idx, stream_arg in enumerate(self.func_args[name][idx][0]):
-                        if name != sample_node.meta_data.name:
-                            self.edges.pop(stream_arg.stream.name)
-                        stream_arg.stream.name = arg[0][arg_idx].stream.name
-        self.func_args[bundled_node.meta_data.name] = self.func_args[
-            sample_node.meta_data.name
-        ]
-        self.dependencies[bundled_node.meta_data.name] = self.dependencies[
-            sample_node.meta_data.name
-        ]
-        for name in node_name_list:
-            self.func_args.pop(name)
-            self.dependencies.pop(name)
-        self.nodes[bundled_node.meta_data.name] = bundled_node
-        return bundled_node.meta_data.name
-
+    # pylint: disable=too-many-branches
     def bundle_multi(self, node_name_lists: list[tuple[str]]):
         """
         [A1, A2] [B1, B2] [C1, C2] [D1, D2]  => [A1, A2] x 4
@@ -766,7 +680,7 @@ class ComputationGraph:
                     sample_op_tag_list == op_tag_list
                     and sample_input_patterns == input_patterns
                     and sample_output_patterns == output_patterns
-                ), f"Expect to bundle isomorphic nodes."
+                ), "Expect to bundle isomorphic nodes."
         bundled_node_list: list[CollocatedNode] = []
         bundle_size = len(node_name_lists[0])
         for i in range(bundle_size):
@@ -777,8 +691,8 @@ class ComputationGraph:
                 orig_node_names.append(node_list[i].meta_data.name)
             bundled_node = CollocatedNode(
                 tag=sample_node.meta_data.op_tag,
-                name=f"{sample_node.meta_data.name}x{bundle_size}",
-                length=sample_node.meta_data.length * bundle_size,
+                name=f"{sample_node.meta_data.name}x{len(node_name_lists)}",
+                length=sample_node.meta_data.length * len(node_name_lists),
             )
             self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
             bundled_node.init_for_bundle(orig_nodes)

@@ -128,5 +128,5 @@ if __name__ == "__main__":
     """
     os.environ["FORCE_UNROLL_INDEX"] = "1"
     _test_tp_v1()
-    # _test_tp_v2()
     del os.environ["FORCE_UNROLL_INDEX"]
+    _test_tp_v2()

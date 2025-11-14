@@ -724,9 +724,8 @@ class AIE_MLIRModule:
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
                     if isinstance(arg_list[0], str):
-                        self.virtual_computation_graph.bundle(arg_list)
-                    else:
-                        self.virtual_computation_graph.bundle_multi(arg_list)
+                        arg_list = [(x,) for x in arg_list]
+                    self.virtual_computation_graph.bundle_multi(arg_list)
             if os.getenv("DEBUG") == "1":
                 self.virtual_computation_graph.dump(self.project_dir, "after_mapping")
 
