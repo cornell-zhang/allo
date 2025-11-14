@@ -76,7 +76,6 @@ class CodeGenerator:
     AIE dialect of MLIR.
     """
 
-    # pylint: disable=unsupported-binary-operation
     def __init__(
         self,
         device_type: str,
@@ -402,39 +401,33 @@ class CodeGenerator:
                                     op.operands[1] = fifo.acquire(0, 1)
                                     new_op = op.clone()  # no use, no need to replace
                                     fifo.release(0, 1)
-                                else:
+                                elif is_tensor and len(list(op.operands[0].uses)) == 1:
                                     # an optimize to reduce memref.copy
-                                    if (
-                                        is_tensor
-                                        and len(list(op.operands[0].uses)) == 1
-                                    ):
-                                        # get once
-                                        replaced = op.operands[1]
-                                        uses = list(replaced.uses)
-                                        with aie_ir.InsertionPoint(op):
-                                            acquired = fifo.acquire(1, 1)
-                                        for use in uses:
-                                            for i, v in enumerate(use.owner.operands):
-                                                if (
-                                                    v.type == replaced.type
-                                                    and v == replaced
-                                                ):
-                                                    use.owner.operands[i] = acquired
-
-                                        with aie_ir.InsertionPoint.at_block_terminator(
-                                            op.parent.regions[0].blocks[0]
-                                        ):
-                                            fifo.release(1, 1)
-                                    else:
+                                    # get once
+                                    replaced = op.operands[1]
+                                    uses = list(replaced.uses)
+                                    with aie_ir.InsertionPoint(op):
                                         acquired = fifo.acquire(1, 1)
-                                        op.operands[0] = acquired
-                                        new_op = op.clone()
-                                        if not is_tensor:
-                                            for old, new in zip(
-                                                op.results, new_op.results
+                                    for use in uses:
+                                        for i, v in enumerate(use.owner.operands):
+                                            if (
+                                                v.type == replaced.type
+                                                and v == replaced
                                             ):
-                                                old.replace_all_uses_with(new)
+                                                use.owner.operands[i] = acquired
+
+                                    with aie_ir.InsertionPoint.at_block_terminator(
+                                        op.parent.regions[0].blocks[0]
+                                    ):
                                         fifo.release(1, 1)
+                                else:
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    if not is_tensor:
+                                        for old, new in zip(op.results, new_op.results):
+                                            old.replace_all_uses_with(new)
+                                    fifo.release(1, 1)
                             else:
                                 assert len(loop_nests) == 1, "To be implemented..."
                                 loop_name = list(loop_nests.keys())[0]
