@@ -329,33 +329,6 @@ class HLSModule:
                 self.hls_code = postprocess_hls_code_pynq(
                     self.hls_code, self.top_func_name
                 )
-
-                if self.mode == "impl":
-                    # HLS synth
-                    cmd = f"cd {self.project}; vitis_hls -f run.tcl"
-                    print(
-                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
-                    )
-
-                    process = subprocess.Popen(cmd, shell=True)
-                    process.wait()
-                    if process.returncode != 0:
-                        raise RuntimeError("Failed to synthesize the design")
-
-                    # Produce host (deploy.py)
-                    host_code = codegen_pynq_host(
-                        self.top_func_name,
-                        self.module,
-                        self.project,
-                    )
-                    with open(
-                        f"{self.project}/deploy.py", "w", encoding="utf-8"
-                    ) as outfile:
-                        outfile.write(host_code)
-
-                    # Package .bit / .hwh / deploy.py into deploy/ folder
-                    deploy_dir = os.path.join(self.project, "deploy")
-                    print(f"Files for deployment located in {deploy_dir}")
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
@@ -536,6 +509,27 @@ class HLSModule:
             if self.mode == "csyn":
                 return
             if self.mode == "impl":
+                # HLS synthesis
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
+
+                # Produce host (deploy.py)
+                host_code = codegen_pynq_host(
+                    self.top_func_name,
+                    self.module,
+                    self.project,
+                )
+                with open(
+                    f"{self.project}/deploy.py", "w", encoding="utf-8"
+                ) as outfile:
+                    outfile.write(host_code)
+
                 # Vivado block design
                 bd_script = "block_design.tcl"
                 bd_script = os.path.basename(bd_script)
@@ -550,7 +544,8 @@ class HLSModule:
                         "Failed to create block design / generate bitstream"
                     )
 
-                # Deploy only if implementation mode
+                # Package .bit / .hwh / deploy.py into deploy/ folder
+                deploy_dir = os.path.join(self.project, "deploy")
                 cmd = (
                     f"mkdir -p {deploy_dir}; "
                     f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
@@ -560,6 +555,7 @@ class HLSModule:
                 print(
                     f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
                 )
+                print(f"Files for deployment located in {deploy_dir}")
                 process = subprocess.Popen(cmd, shell=True)
                 process.wait()
                 if process.returncode != 0:
