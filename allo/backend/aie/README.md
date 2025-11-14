@@ -395,6 +395,12 @@ If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or oth
 ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
 ```
 
+#### `COALESCE_MORE`
+
+This variable controls the DMA scheduling behavior. If you want the compiler to generate fewer `dma_memcpy_nd` operations in `aiex.runtime_sequence` (e.g., to reduce buffer descriptor usage), set `COALESCE_MORE=1`.
+
+Note that avoiding using single `dma_memcpy_nd` operation for multiple transfer epochs (the default behavior) usually leads to better performance due to some optimizations we have for overlapping communication and computation.
+
 ### New Feature
 #### Profiling
 A new timing-based profiling feature has been added to help measure the performance of the module during execution. 
