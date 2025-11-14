@@ -76,7 +76,7 @@ def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
                 for p in range(Pm // row_num):
                     for q in range(Pn // col_num):
                         bundle_list.append(bases[i + row_num * p][j + col_num * q])
-                mapping_primitives.append(("bundle-multi", bundle_list))
+                mapping_primitives.append(("bundle", bundle_list))
 
     return mapping_primitives
 

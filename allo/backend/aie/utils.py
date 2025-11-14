@@ -831,9 +831,15 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
         ):
             copy_op = allo_d.get_last_use_in_function(output, function)
             if copy_op.name == "memref.copy":
-                call_add_op.operands[-1] = copy_op.operands[1]
-                copy_op.erase()
-                output.owner.erase()
+                dst = copy_op.operands[1]
+                # filter out a special case, a better solution is to move the memref.subview operation before function call
+                if (
+                    isinstance(dst.owner, allo_ir.ir.Operation)
+                    and dst.owner.name != "memref.subview"
+                ):
+                    call_add_op.operands[-1] = copy_op.operands[1]
+                    copy_op.erase()
+                    output.owner.erase()
 
 
 # ############################################################

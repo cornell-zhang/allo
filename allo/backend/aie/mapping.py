@@ -811,18 +811,18 @@ class ComputationGraph:
                 if isinstance(arg[0], Argument):
                     if arg[0].stream is not None:
                         for name in orig_node_names:
+                            stream = self.func_args[name][idx][0].stream
                             if name != sample_node.meta_data.name:
-                                if (
-                                    self.func_args[name][idx][0].stream.name
-                                    in self.edges
-                                ):
-                                    self.edges.pop(
-                                        self.func_args[name][idx][0].stream.name
-                                    )
-                            else:
-                                self.func_args[name][idx][0].stream.name = arg[
-                                    0
-                                ].stream.name
+                                if stream.name in self.edges:
+                                    self.edges.pop(stream.name)
+                            # internal edge should not be updated
+                            if not (
+                                stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
+                                stream.name = arg[0].stream.name
                 else:
                     # stream list
                     for name in orig_node_names:
@@ -832,7 +832,13 @@ class ComputationGraph:
                             if name != sample_node.meta_data.name:
                                 if stream_arg.stream.name in self.edges:
                                     self.edges.pop(stream_arg.stream.name)
-                            else:
+                            # internal edge should not be updated
+                            if not (
+                                stream_arg.stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream_arg.stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
                                 stream_arg.stream.name = arg[0][arg_idx].stream.name
             self.func_args[bundled_node.meta_data.name] = self.func_args[
                 sample_node.meta_data.name

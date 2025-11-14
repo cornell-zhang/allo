@@ -42,7 +42,7 @@ def _test_gemm_2D_v1():
         top,
         target="aie",
         mapping_primitives=[
-            ("bundle-multi", [("gemm_0_0", "gemm_1_0"), ("gemm_0_1", "gemm_1_1")]),
+            ("bundle", [("gemm_0_0", "gemm_1_0"), ("gemm_0_1", "gemm_1_1")]),
         ],
     )
     C = np.zeros((M, N)).astype(np.int32)
@@ -134,7 +134,7 @@ def _test_pingpong_gemm_2x2x2():
         target="aie",
         mapping_primitives=[
             (
-                "bundle-multi",
+                "bundle",
                 [
                     ("gemm_0_0_0", "gemm_1_0_0"),
                     ("gemm_0_0_1", "gemm_1_0_1"),
@@ -322,7 +322,7 @@ def _test_pingpong_gemm_2x2x4():
             ("chain", ["gemm_0_1_1", "gemm_1_1_1"]),
             ("chain", ["gemm_2_1_1", "gemm_3_1_1"]),
             (
-                "bundle-multi",
+                "bundle",
                 [
                     ("gemm_0_0_0-gemm_1_0_0", "gemm_2_0_0-gemm_3_0_0"),
                     ("gemm_0_0_1-gemm_1_0_1", "gemm_2_0_1-gemm_3_0_1"),

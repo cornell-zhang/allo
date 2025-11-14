@@ -159,7 +159,6 @@ def test_flash_attention(
             with allo.meta_for(SEQ_LEN // kv_chunk_size) as i:
                 attn_weight: Ty[q_chunk_size, kv_chunk_size]
                 scale_exp: Ty[kv_chunk_size]
-                # FIXME: / sqrt(HEAD_DIM) somewhere (maybe the best choice is to do that in QK external kernel)
                 online_softmax(
                     score_pipe[po, i].get(),
                     max_logit,
@@ -223,7 +222,7 @@ def test_flash_attention(
     if iteration > col_num:
         for idx in range(col_num):
             nodes = [sub_graphs[idx + i * col_num] for i in range(iteration // col_num)]
-            mapping_primitives_.append(("bundle-multi", nodes))
+            mapping_primitives_.append(("bundle", nodes))
 
     mod = df.build(
         top,
@@ -233,7 +232,6 @@ def test_flash_attention(
         profile=True,
         warmup=20,
         num_iters=100,
-        # device_type="npu1_2col",
     )
     Q = np.random.randn(Q_tile_size, HEAD_DIM)
     K = np.random.randn(SEQ_LEN, HEAD_DIM)
