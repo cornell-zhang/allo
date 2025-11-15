@@ -371,7 +371,6 @@ class CodeGenerator:
                                 if isinstance(fifo, tuple):
                                     fifo = fifo[0 if is_put else 1]
                                 if is_put:
-                                    # if False:
                                     if (
                                         op.name == "memref.copy"
                                         and len(list(op.operands[1].uses)) == 1
