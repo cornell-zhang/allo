@@ -24,6 +24,10 @@ from .vitis import (
     write_tensor_to_file,
     read_tensor_from_file,
 )
+from .pynq import (
+    postprocess_hls_code_pynq,
+    codegen_pynq_host,
+)
 from .tapa import (
     codegen_tapa_host,
 )
@@ -105,7 +109,12 @@ open_solution "solution1"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
     if "impl" in mode or "hw" in mode:
-        out_str += "export_design -flow impl\n"
+        if device in {"ultra96v2", "pynqz2", "zedboard"}:
+            # Embedded boards: export IP only, bitstream happens in Python/Vivado later
+            out_str += "export_design -rtl verilog -format ip_catalog\n"
+        else:
+            # Other platforms: run full impl in HLS
+            out_str += "export_design -flow impl\n"
     out_str += "\nexit\n"
     return out_str
 
@@ -189,10 +198,8 @@ class HLSModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
-            self.func = find_func_in_module(self.module, top_func_name)
-            if platform == "vitis_hls":
+            if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
-
                 if wrap_io:
                     generate_input_output_buffers(
                         self.module,
@@ -231,7 +238,7 @@ class HLSModule:
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
@@ -308,12 +315,26 @@ class HLSModule:
                 )
                 with open(f"{project}/tapa_host.cpp", "w", encoding="utf-8") as outfile:
                     outfile.write(self.tapa_host)
+            elif self.platform == "pynq":
+                assert self.mode in {"csim", "csyn", "impl"}, "Invalid mode for pynq"
+                kernel_h = os.path.join(project, "kernel.h")
+
+                # Generate kernel.h
+                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                with open(kernel_h, "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+
+                # Apply PYNQ-specific HLS code tweaks and write kernel.cpp
+                self.hls_code = postprocess_hls_code_pynq(
+                    self.hls_code, self.top_func_name
+                )
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.host_code)
+            if hasattr(self, "host_code") and self.host_code:
+                with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.host_code)
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp
@@ -473,6 +494,72 @@ class HLSModule:
             arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
             args[-1][:] = arr.reshape(args[-1].shape)
             return
+        elif self.platform == "pynq":
+            # Do not assert PYNQ availability here; the presence of a physical
+            # PYNQ device should be checked by callers that need it.
+            if self.mode == "csim":
+                cwd = os.getcwd()
+                mod = IPModule(
+                    top=self.top_func_name,
+                    impl=f"{cwd}/{self.project}/kernel.cpp",
+                    link_hls=True,
+                )
+                mod(*args)
+                return
+            if self.mode in {"csyn", "impl"}:
+                # HLS synthesis
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
+
+                if self.mode == "impl":
+                    # Produce host (deploy.py)
+                    host_code = codegen_pynq_host(
+                        self.top_func_name,
+                        self.module,
+                        self.project,
+                    )
+                    with open(
+                        f"{self.project}/deploy.py", "w", encoding="utf-8"
+                    ) as outfile:
+                        outfile.write(host_code)
+
+                    # Vivado block design
+                    bd_script = "block_design.tcl"
+                    bd_script = os.path.basename(bd_script)
+                    cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
+                    )
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError(
+                            "Failed to create block design / generate bitstream"
+                        )
+
+                    # Package .bit / .hwh / deploy.py into deploy/ folder
+                    deploy_dir = os.path.join(self.project, "deploy")
+                    cmd = (
+                        f"mkdir -p {deploy_dir}; "
+                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
+                    )
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
+                    )
+                    print(f"Files for deployment located in {deploy_dir}")
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError("Failed to collect files")
+                return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
             # Use Makefile (sw_emu, hw_emu, hw)

@@ -1206,7 +1206,14 @@ class Schedule:
                 return ele
         return []
 
-    def build(self, target=None, mode=None, project=None, configs=None, wrap_io=True):
+    def build(
+        self,
+        target=None,
+        mode=None,
+        project=None,
+        configs=None,
+        wrap_io=True,
+    ):
         if target is None or target == "llvm":
             target = "llvm"
             return LLVMModule(
@@ -1214,7 +1221,7 @@ class Schedule:
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
             )
-        if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
+        if target in {"vhls", "vivado_hls", "vitis_hls", "pynq", "tapa", "ihls"}:
             match target:
                 case "vitis_hls":
                     platform = "vitis_hls"
@@ -1222,6 +1229,8 @@ class Schedule:
                     platform = "tapa"
                 case "ihls":
                     platform = "intel_hls"
+                case "pynq":
+                    platform = "pynq"
                 case _:
                     platform = "vivado_hls"
             return HLSModule(

@@ -4,7 +4,7 @@
 
 import os
 import copy
-from typing import Any
+from typing import Any, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
@@ -123,11 +123,10 @@ class CodeGenerator:
             None  # mark the inserting point for buffers
         )
 
-    # pylint: disable=unsupported-binary-operation
     def preporocess_dumped_core_func(
         self,
         original_func: allo_func_d.FuncOp,
-        func_args: dict[int, tuple[Argument | list[Argument], bool]],
+        func_args: dict[int, tuple[Union[Argument, list[Argument]], bool]],
     ) -> str:
         """
         Preprocess the core function in allo MLIR.
