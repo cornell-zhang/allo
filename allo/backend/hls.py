@@ -504,7 +504,7 @@ class HLSModule:
                 )
                 mod(*args)
                 return
-            if self.mode == "csyn" or self.mode == "impl":
+            if self.mode in {"csyn", "impl"}:
                 # HLS synthesis
                 cmd = f"cd {self.project}; vitis_hls -f run.tcl"
                 print(
