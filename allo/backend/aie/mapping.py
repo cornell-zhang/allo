@@ -382,19 +382,6 @@ class NodeMetaData:
         self.input_streams: list[Stream] = []
         self.output_streams: list[Stream] = []
 
-    def test_isomorphism(self, other: "NodeMetaData") -> bool:
-        if self.op_tag != other.op_tag:
-            return False
-        in1 = Counter((s.src, s.type_str) for s in self.input_streams)
-        in2 = Counter((s.src, s.type_str) for s in other.input_streams)
-        if in1 != in2:
-            return False
-        out1 = Counter((s.dst, s.type_str) for s in self.output_streams)
-        out2 = Counter((s.dst, s.type_str) for s in other.output_streams)
-        if out1 != out2:
-            return False
-        return True
-
 
 class NodeBase:
     def __init__(
@@ -428,12 +415,6 @@ class NodeBase:
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
         self.buffered_stream: dict[Stream, BufferedStream] = {}
-
-    def is_isomorphic_to(self, other: "NodeBase") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
-        return self.meta_data.test_isomorphism(other.meta_data)
 
     def __str__(self) -> str:
         def fmt_list(lst: list) -> str:
@@ -578,7 +559,7 @@ class ComputationGraph:
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.dependencies: dict[str, set[str]] = defaultdict(set)
+        self.dependencies: dict[str, dict[str, int]] = {}
         self.tag_to_func: dict[str, func_d.FuncOp] = {}
 
         df_kernels = []
@@ -637,72 +618,153 @@ class ComputationGraph:
                         live_dtensor_tile.last_use = 9
                         node.global_interfaces[idx].append(live_dtensor_tile)
                 self.nodes[func_name] = node
-                self.dependencies[func_name] = set()
+                self.dependencies[func_name] = defaultdict(int)
         # initiate dependencies
         for stream in self.edges.values():
-            self.dependencies[stream.dst].add(stream.src)
+            self.dependencies[func_name][stream.src] += 1
 
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
-    def bundle(self, node_name_list: list[str]):
+    # pylint: disable=too-many-branches
+    def bundle_multi(self, node_name_lists: list[tuple[str]]):
         """
-        [A] [B] [C] [D]  => [A] x 4
+        [A1, A2] [B1, B2] [C1, C2] [D1, D2]  => [A1, A2] x 4
 
         TODO: bundled nodes can be safely reordered
         """
-        assert len(node_name_list) >= 2, "bundle at least two nodes"
-        node_list: list[NodeBase] = []
-        for name in node_name_list:
-            assert name in self.nodes, f"Node({name}) not found"
-            node_list.append(self.nodes.pop(name))
-        sample_node: NodeBase = node_list[0]
-        for node in node_list:
-            if not sample_node.is_isomorphic_to(node):
-                raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                )
-        bundled_node = CollocatedNode(
-            tag=sample_node.meta_data.op_tag,
-            name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
-            length=sample_node.meta_data.length * len(node_name_list),
+        assert len(node_name_lists) >= 2, "bundle at least two nodes"
+        assert all(
+            len(t) == len(node_name_lists[0]) for t in node_name_lists
+        ), "Expect to bundle isomorphic nodes"
+        node_lists: list[list[NodeBase]] = []
+        sample_op_tag_list, sample_input_patterns, sample_output_patterns = (
+            None,
+            None,
+            None,
         )
-        bundled_node.init_for_bundle(node_list)
-        # update stream
-        for name, stream in self.edges.items():
-            if stream.src in node_name_list:
-                self.dependencies[stream.dst].remove(stream.src)
-                stream.src = bundled_node.meta_data.name
-                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
-            if stream.dst in node_name_list:
-                stream.dst = bundled_node.meta_data.name
-                self.dependencies[bundled_node.meta_data.name].add(stream.src)
-        # update nodes and remove bundled function
-        for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            if isinstance(arg[0], Argument):
-                if arg[0].stream is not None:
-                    for name in node_name_list:
-                        if name != sample_node.meta_data.name:
-                            self.edges.pop(self.func_args[name][idx][0].stream.name)
-                        self.func_args[name][idx][0].stream.name = arg[0].stream.name
+        for bundle_idx, name_list in enumerate(node_name_lists):
+            new_token = f"bundled-{name_list[0]}-{bundle_idx}"
+            node_list: list[NodeBase] = []
+            op_tag_list: list[str] = []
+            input_patterns: list[Counter] = []
+            output_patterns: list[Counter] = []
+            for name in name_list:
+                assert name in self.nodes, f"Node({name}) not found"
+                node = self.nodes.pop(name)
+                node_list.append(node)
+                op_tag_list.append(node.meta_data.op_tag)
+                input_streams, output_streams = [], []
+                for s in node.meta_data.input_streams:
+                    if s.src in name_list:
+                        input_streams.append((name_list.index(s.src), s.type_str))
+                    else:
+                        input_streams.append((s.src, s.type_str))
+                for s in node.meta_data.output_streams:
+                    if s.dst in name_list:
+                        output_streams.append((name_list.index(s.dst), s.type_str))
+                    else:
+                        output_streams.append((s.dst, s.type_str))
+                input_patterns.append(Counter(input_streams))
+                output_patterns.append(Counter(output_streams))
+                for live_tile_list in node.global_interfaces.values():
+                    for live_tile in live_tile_list:
+                        live_tile.token = new_token
+            node_lists.append(node_list)
+            if sample_op_tag_list is None:
+                sample_op_tag_list = op_tag_list
+                sample_input_patterns = input_patterns
+                sample_output_patterns = output_patterns
             else:
-                # stream list
-                for name in node_name_list:
-                    for arg_idx, stream_arg in enumerate(self.func_args[name][idx][0]):
-                        if name != sample_node.meta_data.name:
-                            self.edges.pop(stream_arg.stream.name)
-                        stream_arg.stream.name = arg[0][arg_idx].stream.name
-        self.func_args[bundled_node.meta_data.name] = self.func_args[
-            sample_node.meta_data.name
-        ]
-        self.dependencies[bundled_node.meta_data.name] = self.dependencies[
-            sample_node.meta_data.name
-        ]
-        for name in node_name_list:
-            self.func_args.pop(name)
-            self.dependencies.pop(name)
-        self.nodes[bundled_node.meta_data.name] = bundled_node
-        return bundled_node.meta_data.name
+                assert (
+                    sample_op_tag_list == op_tag_list
+                    and sample_input_patterns == input_patterns
+                    and sample_output_patterns == output_patterns
+                ), "Expect to bundle isomorphic nodes."
+        bundled_node_list: list[CollocatedNode] = []
+        bundle_size = len(node_name_lists[0])
+        for i in range(bundle_size):
+            sample_node: NodeBase = node_lists[0][i]
+            orig_nodes, orig_node_names = [], []
+            for node_list in node_lists:
+                orig_nodes.append(node_list[i])
+                orig_node_names.append(node_list[i].meta_data.name)
+            bundled_node = CollocatedNode(
+                tag=sample_node.meta_data.op_tag,
+                name=f"{sample_node.meta_data.name}x{len(node_name_lists)}",
+                length=sample_node.meta_data.length * len(node_name_lists),
+            )
+            self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
+            bundled_node.init_for_bundle(orig_nodes)
+            bundled_node_list.append(bundled_node)
+            # update stream
+            for name, stream in self.edges.items():
+                if stream.src in orig_node_names:
+                    self.dependencies[stream.dst][stream.src] -= 1
+                    if self.dependencies[stream.dst][stream.src] == 0:
+                        del self.dependencies[stream.dst][stream.src]
+                    if stream.src == sample_node.meta_data.name:
+                        stream.src = bundled_node.meta_data.name
+                        self.dependencies[stream.dst][bundled_node.meta_data.name] += 1
+                    elif (
+                        stream.dst
+                        not in node_name_lists[orig_node_names.index(stream.src)]
+                    ):
+                        self.nodes[stream.dst].meta_data.input_streams.remove(stream)
+                if stream.dst in orig_node_names:
+                    if stream.dst == sample_node.meta_data.name:
+                        stream.dst = bundled_node.meta_data.name
+                        self.dependencies[bundled_node.meta_data.name][stream.src] += 1
+                    elif (
+                        stream.src
+                        not in node_name_lists[orig_node_names.index(stream.dst)]
+                    ):
+                        self.nodes[stream.src].meta_data.output_streams.remove(stream)
+            # update nodes and remove bundled function
+            for idx, arg in self.func_args[sample_node.meta_data.name].items():
+                if isinstance(arg[0], Argument):
+                    if arg[0].stream is not None:
+                        for name in orig_node_names:
+                            stream = self.func_args[name][idx][0].stream
+                            if name != sample_node.meta_data.name:
+                                if stream.name in self.edges:
+                                    self.edges.pop(stream.name)
+                            # internal edge should not be updated
+                            if not (
+                                stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
+                                stream.name = arg[0].stream.name
+                else:
+                    # stream list
+                    for name in orig_node_names:
+                        for arg_idx, stream_arg in enumerate(
+                            self.func_args[name][idx][0]
+                        ):
+                            if name != sample_node.meta_data.name:
+                                if stream_arg.stream.name in self.edges:
+                                    self.edges.pop(stream_arg.stream.name)
+                            # internal edge should not be updated
+                            if not (
+                                stream_arg.stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream_arg.stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
+                                stream_arg.stream.name = arg[0][arg_idx].stream.name
+            self.func_args[bundled_node.meta_data.name] = self.func_args[
+                sample_node.meta_data.name
+            ]
+            self.dependencies[bundled_node.meta_data.name] = self.dependencies[
+                sample_node.meta_data.name
+            ]
+            for name in orig_node_names:
+                self.func_args.pop(name)
+                self.dependencies.pop(name)
+            self.nodes[bundled_node.meta_data.name] = bundled_node
+        return bundled_node_list
 
     def chain(self, node_name_a: str, node_name_b: str):
         """
@@ -721,6 +783,7 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
+        self.dependencies[chained_node.meta_data.name] = defaultdict(int)
         chained_node.init_for_chain(node_a, node_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         node_a.meta_data.output_streams = [
@@ -784,16 +847,16 @@ class ComputationGraph:
         self.func_args[chained_node.meta_data.name] = param_a
         for key, value in param_b.items():
             self.func_args[chained_node.meta_data.name][arg_idx_offset + key] = value
-        dep = self.dependencies.pop(node_name_a)
-        dep.update(self.dependencies.pop(node_name_b))
-        self.dependencies[chained_node.meta_data.name] = dep
+        dep_a = self.dependencies.pop(node_name_a)
+        dep_b = self.dependencies.pop(node_name_b)
+        for k, v in dep_b.items():
+            dep_a[k] += v
+        self.dependencies[chained_node.meta_data.name] = dep_a
         for deps in self.dependencies.values():
             if node_name_a in deps:
-                deps.remove(node_name_a)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_a)
             if node_name_b in deps:
-                deps.remove(node_name_b)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_b)
         for stream in self.edges.values():
             if stream.src in (node_name_a, node_name_b):
                 stream.src = chained_node.meta_data.name

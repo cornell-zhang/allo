@@ -1,4 +1,4 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -819,6 +819,27 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
                     init_zero_op.erase()
                     acc_op.operands[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
+    # similar optimization apply to lib function like 'add' (the root cause is the mismatch between allo interface and lib function interface)
+    acc_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "add")
+    for call_add_op in acc_ops:
+        output = call_add_op.operands[-1]
+        uses = list(output.uses)
+        if (
+            isinstance(output.owner, allo_ir.ir.Operation)
+            and output.owner.name == "memref.alloc"
+            and len(uses) == 2
+        ):
+            copy_op = allo_d.get_last_use_in_function(output, function)
+            if copy_op.name == "memref.copy":
+                dst = copy_op.operands[1]
+                # filter out a special case, a better solution is to move the memref.subview operation before function call
+                if (
+                    isinstance(dst.owner, allo_ir.ir.Operation)
+                    and dst.owner.name != "memref.subview"
+                ):
+                    call_add_op.operands[-1] = copy_op.operands[1]
+                    copy_op.erase()
+                    output.owner.erase()
 
 
 # ############################################################

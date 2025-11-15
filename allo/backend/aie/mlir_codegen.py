@@ -76,7 +76,6 @@ class CodeGenerator:
     AIE dialect of MLIR.
     """
 
-    # pylint: disable=unsupported-binary-operation
     def __init__(
         self,
         device_type: str,
@@ -371,17 +370,63 @@ class CodeGenerator:
                             if compact_flag:
                                 if isinstance(fifo, tuple):
                                     fifo = fifo[0 if is_put else 1]
-                                acquired = fifo.acquire(0 if is_put else 1, 1)
                                 if is_put:
-                                    op.operands[1] = acquired
+                                    if (
+                                        op.name == "memref.copy"
+                                        and len(list(op.operands[1].uses)) == 1
+                                    ):
+                                        alloc_op = op.operands[0].owner
+                                        # put once
+                                        if alloc_op.name == "memref.alloc":
+                                            uses = list(op.operands[0].uses)
+                                            with aie_ir.InsertionPoint(alloc_op):
+                                                acquired = fifo.acquire(0, 1)
+                                            for use in uses:
+                                                for i, v in enumerate(
+                                                    use.owner.operands
+                                                ):
+                                                    if (
+                                                        v.type == alloc_op.result.type
+                                                        and v == alloc_op.result
+                                                    ):
+                                                        use.owner.operands[i] = acquired
+                                            with aie_ir.InsertionPoint.at_block_terminator(
+                                                alloc_op.parent.regions[0].blocks[0]
+                                            ):
+                                                fifo.release(0, 1)
+                                            op.erase()
+                                            alloc_op.erase()
+                                            continue
+                                    op.operands[1] = fifo.acquire(0, 1)
                                     new_op = op.clone()  # no use, no need to replace
+                                    fifo.release(0, 1)
+                                elif is_tensor and len(list(op.operands[0].uses)) == 1:
+                                    # an optimize to reduce memref.copy
+                                    # get once
+                                    replaced = op.operands[1]
+                                    uses = list(replaced.uses)
+                                    with aie_ir.InsertionPoint(op):
+                                        acquired = fifo.acquire(1, 1)
+                                    for use in uses:
+                                        for i, v in enumerate(use.owner.operands):
+                                            if (
+                                                v.type == replaced.type
+                                                and v == replaced
+                                            ):
+                                                use.owner.operands[i] = acquired
+
+                                    with aie_ir.InsertionPoint.at_block_terminator(
+                                        op.parent.regions[0].blocks[0]
+                                    ):
+                                        fifo.release(1, 1)
                                 else:
+                                    acquired = fifo.acquire(1, 1)
                                     op.operands[0] = acquired
                                     new_op = op.clone()
                                     if not is_tensor:
                                         for old, new in zip(op.results, new_op.results):
                                             old.replace_all_uses_with(new)
-                                fifo.release(0 if is_put else 1, 1)
+                                    fifo.release(1, 1)
                             else:
                                 assert len(loop_nests) == 1, "To be implemented..."
                                 loop_name = list(loop_nests.keys())[0]
@@ -2259,40 +2304,40 @@ class CodeGenerator:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
-                                # else:
-                                #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
-                                #         global_dma.io_port.fifo.name
-                                #     ][-1]
-                                # the same global tensor must be tiled in the same way
-                                # if (
-                                #     global_dma.dtensor.global_id
-                                #     == prev_task.dtensor_global_id
-                                #     and size[0] == 1
-                                # ):
-                                #     diff = [
-                                #         x - y
-                                #         for x, y in zip(
-                                #             offset,
-                                #             prev_task.dma_tasks[-1][0],
-                                #         )
-                                #     ]
-                                #     # fixme: can be relaxed
-                                #     if prev_task.diff is None and (
-                                #         all(x >= 0 for x in diff)
-                                #         and sum(1 for x in diff if x != 0) <= 1
-                                #     ):
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.diff = diff
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
-                                #     if prev_task.diff == diff:
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
+                                elif os.getenv("COALESCE_MORE") is not None:
+                                    prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
+                                        global_dma.io_port.fifo.name
+                                    ][-1]
+                                    # the same global tensor must be tiled in the same way
+                                    if (
+                                        global_dma.dtensor.global_id
+                                        == prev_task.dtensor_global_id
+                                        and size[0] == 1
+                                    ):
+                                        diff = [
+                                            x - y
+                                            for x, y in zip(
+                                                offset,
+                                                prev_task.dma_tasks[-1][0],
+                                            )
+                                        ]
+                                        # fixme: can be relaxed
+                                        if prev_task.diff is None and (
+                                            all(x >= 0 for x in diff)
+                                            and sum(1 for x in diff if x != 0) <= 1
+                                        ):
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.diff = diff
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
+                                        if prev_task.diff == diff:
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
 
                                 used_shim = (
                                     global_dma.io_port.fifo.src
