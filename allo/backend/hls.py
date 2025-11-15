@@ -187,7 +187,6 @@ class HLSModule:
         self.project = project
         self.platform = platform
         self.ext_libs = [] if ext_libs is None else ext_libs
-
         if configs is not None:
             new_configs = DEFAULT_CONFIG
             new_configs.update(configs)
@@ -372,7 +371,6 @@ class HLSModule:
         return f"HLSModule({self.top_func_name}, {self.mode}, {self.project})"
 
     def __call__(self, *args, shell=True):
-
         if self.platform == "vivado_hls":
             assert is_available("vivado_hls"), "vivado_hls is not available"
             ver = run_process("g++ --version", r"\d+\.\d+\.\d+")[0].split(".")
@@ -506,9 +504,7 @@ class HLSModule:
                 )
                 mod(*args)
                 return
-            if self.mode == "csyn":
-                return
-            if self.mode == "impl":
+            if self.mode == "csyn" or self.mode == "impl":
                 # HLS synthesis
                 cmd = f"cd {self.project}; vitis_hls -f run.tcl"
                 print(
@@ -519,47 +515,48 @@ class HLSModule:
                 if process.returncode != 0:
                     raise RuntimeError("Failed to synthesize the design")
 
-                # Produce host (deploy.py)
-                host_code = codegen_pynq_host(
-                    self.top_func_name,
-                    self.module,
-                    self.project,
-                )
-                with open(
-                    f"{self.project}/deploy.py", "w", encoding="utf-8"
-                ) as outfile:
-                    outfile.write(host_code)
-
-                # Vivado block design
-                bd_script = "block_design.tcl"
-                bd_script = os.path.basename(bd_script)
-                cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
-                )
-                process = subprocess.Popen(cmd, shell=True)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError(
-                        "Failed to create block design / generate bitstream"
+                if self.mode == "impl":
+                    # Produce host (deploy.py)
+                    host_code = codegen_pynq_host(
+                        self.top_func_name,
+                        self.module,
+                        self.project,
                     )
+                    with open(
+                        f"{self.project}/deploy.py", "w", encoding="utf-8"
+                    ) as outfile:
+                        outfile.write(host_code)
 
-                # Package .bit / .hwh / deploy.py into deploy/ folder
-                deploy_dir = os.path.join(self.project, "deploy")
-                cmd = (
-                    f"mkdir -p {deploy_dir}; "
-                    f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
-                    f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
-                    f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
-                )
-                print(
-                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
-                )
-                print(f"Files for deployment located in {deploy_dir}")
-                process = subprocess.Popen(cmd, shell=True)
-                process.wait()
-                if process.returncode != 0:
-                    raise RuntimeError("Failed to collect files")
+                    # Vivado block design
+                    bd_script = "block_design.tcl"
+                    bd_script = os.path.basename(bd_script)
+                    cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
+                    )
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError(
+                            "Failed to create block design / generate bitstream"
+                        )
+
+                    # Package .bit / .hwh / deploy.py into deploy/ folder
+                    deploy_dir = os.path.join(self.project, "deploy")
+                    cmd = (
+                        f"mkdir -p {deploy_dir}; "
+                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
+                    )
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
+                    )
+                    print(f"Files for deployment located in {deploy_dir}")
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError("Failed to collect files")
                 return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
