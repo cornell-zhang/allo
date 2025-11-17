@@ -870,7 +870,20 @@ class AIE_MLIRModule:
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-            raise RuntimeError("Failed to compile the MLIR-AIE code")
+            raise RuntimeError(
+                "Failed to compile the MLIR-AIE code.\n"
+                "Possible causes include:\n"
+                "\n"
+                "  \033[93m1. Program memory overflow:\033[0m\n"
+                "     If you see errors like \033[96m[AIE ERROR] _XAie_LoadProgMemSection():231: Overflow of program memory\033[0m\n"
+                "     it means the generated program is too large for the AIE program memory.\n"
+                "     Consider reducing program size or adjusting virtual mapping primitives (e.g., reducing excessive chaining).\n"
+                "\n"
+                "  \033[93m2. Data memory allocation failure:\033[0m\n"
+                "     If you see errors like \033[96merror: \"-\":13:17: 'aie.tile' op allocated buffers exceeded available memory\033[0m\n"
+                "     it means the total buffer allocation requested in AIE data memory exceeds its capacity.\n"
+                "     Consider adjusting the tiling strategy or using smaller tile sizes.\n"
+            )
         # generate host code
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
