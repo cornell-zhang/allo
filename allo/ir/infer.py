@@ -23,6 +23,8 @@ from .types import (
     UFixed,
     Index,
     uint1,
+    int4,
+    int8,
     int32,
     float16,
     float32,
@@ -1229,6 +1231,9 @@ class TypeInferer(ASTVisitor):
                     argAshape[3] - argBshape[1] + 1,
                 )
             elif op_name == "matmul":
+                # FIXME (Shihan): for aie backend
+                if not ctx.unroll and node.dtype == int4:
+                    node.dtype = int8
                 assert (
                     argAshape[-1] == argBshape[-2]
                 ), f"The last dimension of the first input and the second last dimension of the second input must be the same, got {argAshape} and {argBshape}"

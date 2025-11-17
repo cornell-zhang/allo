@@ -3,7 +3,7 @@
 
 import os
 import allo
-from allo.ir.types import int8, int16, bfloat16, Stream
+from allo.ir.types import int4, int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -82,7 +82,7 @@ def gen_gemm_mapping_primitive_v2(Pm, Pn, Pk, col_num=4, row_num=4):
 
 
 def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
-    assert TyI == TyO
+    assert TyI == TyO or TyI is int4
     Mt, Nt = M // Pm, N // Pn
 
     LyA = Layout("S1S2")
@@ -123,9 +123,9 @@ def _test_pingpong_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
         A = (np.random.random((M, K)) * 0.1).astype(np_bfloat16)
         B = (np.random.random((K, N)) * 0.1).astype(np_bfloat16)
         C = np.zeros((M, N)).astype(np_bfloat16)
-    elif TyI is int8:
-        A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
-        B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+    elif TyI in {int4, int8}:
+        A = np.random.randint(-4, 4, (M, K)).astype(np.int8)
+        B = np.random.randint(-4, 4, (K, N)).astype(np.int8)
         C = np.zeros((M, N)).astype(np.int8)
     elif TyI is int16:
         A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
@@ -157,3 +157,9 @@ if __name__ == "__main__":
         _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")
+
+    # - i4
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    os.environ["ALLO_EXTERNAL_KERNEL_DIR"] = f"{dir_path}/../../../allo/library/aie/"
+    _test_pingpong_gemm(M, N, K, M // m, N // n, K // k, int4, int8)
+    del os.environ["ALLO_EXTERNAL_KERNEL_DIR"]
