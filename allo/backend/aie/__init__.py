@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
+from allo._mlir.exceptions import AlloWarning
 from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
@@ -341,6 +342,28 @@ class AIE_MLIRModule:
                         ]["aie2"]
                 else:
                     continue
+                # validity test
+                if self.device == "npu2" or dtype_a == "i16":
+                    factor_m, factor_n = m * 2, n * 2
+                elif dtype_a == "bf16":
+                    factor_m, factor_n = m * 4, n * 4
+                else:
+                    factor_m, factor_n = m * 4, n * 2
+                valid = K % k == 0 and M % factor_m == 0 and N % factor_n == 0
+                if not valid:
+                    warn = AlloWarning(
+                        "Detected a vectorized matmul kernel, but it cannot be used because the tiling constraints are not met."
+                        f"Ensure that tile_K % {k} == 0, tile_M % {factor_m} == 0, and tile_N % {factor_n} == 0 to enable this optimization."
+                    )
+                    if (
+                        dtype_a == "i4"
+                        or dtype_b == "i4"
+                        or os.environ.get("ALLO_EXTERNAL_KERNEL_DIR") is None
+                    ):
+                        raise warn
+                    else:
+                        warn.warn()
+                        continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
                         input_a.type,
