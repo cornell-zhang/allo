@@ -360,10 +360,11 @@ class AIE_MLIRModule:
                         or dtype_b == "i4"
                         or os.environ.get("ALLO_EXTERNAL_KERNEL_DIR") is None
                     ):
+                        # - we do not provide scalar kernel for i4
+                        # - mlir-aie external kernels instantiate both vector and scalar versions and fail compilation when tiling constraints are not satisfied. Our library is safe to use.
                         raise warn
-                    else:
-                        warn.warn()
-                        continue
+                    warn.warn()
+                    continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
                         input_a.type,
