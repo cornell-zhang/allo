@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
+from allo._mlir.exceptions import AlloWarning
 from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
@@ -340,6 +341,29 @@ class AIE_MLIRModule:
                             (dtype_a, dtype_b, out_dtype)
                         ]["aie2"]
                 else:
+                    continue
+                # validity test
+                if self.device == "npu2" or dtype_a == "i16":
+                    factor_m, factor_n = m * 2, n * 2
+                elif dtype_a == "bf16":
+                    factor_m, factor_n = m * 4, n * 4
+                else:
+                    factor_m, factor_n = m * 4, n * 2
+                valid = K % k == 0 and M % factor_m == 0 and N % factor_n == 0
+                if not valid:
+                    warn = AlloWarning(
+                        "Detected a vectorized matmul kernel, but it cannot be used because the tiling constraints are not met."
+                        f"Ensure that tile_K % {k} == 0, tile_M % {factor_m} == 0, and tile_N % {factor_n} == 0 to enable this optimization."
+                    )
+                    if (
+                        dtype_a == "i4"
+                        or dtype_b == "i4"
+                        or os.environ.get("ALLO_EXTERNAL_KERNEL_DIR") is None
+                    ):
+                        # - we do not provide scalar kernel for i4
+                        # - mlir-aie external kernels instantiate both vector and scalar versions and fail compilation when tiling constraints are not satisfied. Our library is safe to use.
+                        raise warn
+                    warn.warn()
                     continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
@@ -870,7 +894,20 @@ class AIE_MLIRModule:
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-            raise RuntimeError("Failed to compile the MLIR-AIE code")
+            raise RuntimeError(
+                "Failed to compile the MLIR-AIE code.\n"
+                "Possible causes include:\n"
+                "\n"
+                "  \033[93m1. Program memory overflow:\033[0m\n"
+                "     If you see errors like \033[96m[AIE ERROR] _XAie_LoadProgMemSection():231: Overflow of program memory\033[0m\n"
+                "     it means the generated program is too large for the AIE program memory.\n"
+                "     Consider reducing program size or adjusting virtual mapping primitives (e.g., reducing excessive chaining).\n"
+                "\n"
+                "  \033[93m2. Data memory allocation failure:\033[0m\n"
+                "     If you see errors like \033[96merror: \"-\":13:17: 'aie.tile' op allocated buffers exceeded available memory\033[0m\n"
+                "     it means the total buffer allocation requested in AIE data memory exceeds its capacity.\n"
+                "     Consider adjusting the tiling strategy or using smaller tile sizes.\n"
+            )
         # generate host code
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
