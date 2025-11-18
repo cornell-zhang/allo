@@ -1,0 +1,15 @@
+"""Code generation context for tracking variables and state during lowering."""
+
+class CodegenContext:
+    def __init__(self):
+        self.var_map = {}
+        self.memref_shapes = {}
+        self.dslx_stmts = []
+        self.loop_stack = []
+        self.result_buffer = None
+
+    def bind(self, mlir_value, xlscc_node):
+        self.var_map[mlir_value] = xlscc_node
+
+    def lookup(self, mlir_value):
+        return self.var_map.get(mlir_value)
