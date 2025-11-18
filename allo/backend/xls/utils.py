@@ -1,5 +1,6 @@
-from ...utils import get_bitwidth_from_type
+# allo/allo/backend/xls/utils.py
 
+from ...utils import get_bitwidth_from_type
 
 def allo_dtype_to_dslx_type(dtype: str) -> str:
   bw = get_bitwidth_from_type(dtype)

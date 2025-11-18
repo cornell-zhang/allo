@@ -1,5 +1,4 @@
-# XLS backend module
-# holds MLIR module and emits DSLX
+# allo/allo/backend/xls/xls.py
 
 from .lowerer import lower_mlir
 import os
