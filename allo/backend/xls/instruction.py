@@ -18,6 +18,14 @@ class InstructionEmitter:
       return self._emit_constant(op)
     elif isinstance(op, arith_d.AddIOp):
       return self._emit_add(op)
+    elif isinstance(op, arith_d.SubIOp):
+      return self._emit_sub(op)
+    elif isinstance(op, arith_d.OrIOp):
+      return self._emit_or(op)
+    elif isinstance(op, arith_d.AndIOp):
+      return self._emit_and(op)
+    elif isinstance(op, arith_d.XOrIOp):
+      return self._emit_xor(op)
     elif isinstance(op, arith_d.MulIOp):
       return self._emit_mul(op)
     elif isinstance(op, arith_d.ExtUIOp):
@@ -30,6 +38,27 @@ class InstructionEmitter:
       return self._emit_return(op)
 
     raise NotImplementedError(f"not implemented: {repr(op)}")
+  
+  # ---------------------------------------------------------------------
+  # helpers
+  # ---------------------------------------------------------------------
+
+  def _arith_op(self, op, opcode) -> list[str]:
+    lhs = self.p.lookup(op.lhs)
+    rhs = self.p.lookup(op.rhs)
+    tmp = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    return [f"    let {tmp} = ({lhs} {opcode} {rhs});"]
+  
+  def _emit_prec(self, op) -> list[str]:
+    src   = self.p.lookup(op.operands[0])
+    tmp   = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    return [f"    let {tmp} = ({src} as {self.dslx_type(op)});"]
+  
+  # ---------------------------------------------------------------------
+  # instruction
+  # ---------------------------------------------------------------------
 
   def _emit_constant(self, op: arith_d.ConstantOp) -> list[str]:
     tmp = self.p.new_tmp()
@@ -38,24 +67,22 @@ class InstructionEmitter:
     return [f"    let {tmp} = {value};"]
 
   def _emit_add(self, op: arith_d.AddIOp) -> list[str]:
-    lhs = self.p.lookup(op.lhs)
-    rhs = self.p.lookup(op.rhs)
-    tmp = self.p.new_tmp()
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({lhs} + {rhs});"]
+    return self._arith_op(op, "+")
+  
+  def _emit_sub(self, op: arith_d.SubIOp) -> list[str]:
+    return self._arith_op(op, "-")
+  
+  def _emit_and(self, op: arith_d.AndIOp) -> list[str]:
+    return self._arith_op(op, "&")
+  
+  def _emit_or(self, op: arith_d.OrIOp) -> list[str]:
+    return self._arith_op(op, "|")
+  
+  def _emit_xor(self, op: arith_d.XOrIOp) -> list[str]:
+    return self._arith_op(op, "^")
 
   def _emit_mul(self, op: arith_d.MulIOp) -> list[str]:
-    lhs = self.p.lookup(op.lhs)
-    rhs = self.p.lookup(op.rhs)
-    tmp = self.p.new_tmp()
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({lhs} * {rhs});"]
-  
-  def _emit_prec(self, op) -> list[str]:
-    src   = self.p.lookup(op.operands[0])
-    tmp   = self.p.new_tmp()
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({src} as {self.dslx_type(op)});"]
+    return self._arith_op(op, "*")
   
   def _emit_extui(self, op: arith_d.ExtUIOp) -> list[str]:
     return self._emit_prec(op)
