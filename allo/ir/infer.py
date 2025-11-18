@@ -454,11 +454,7 @@ class TypeInferer(ASTVisitor):
         else:
             raise RuntimeError("Unsupported AugAssign")
         # augment LHS
-        TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
-        # store LHS
-        node.dtype = lhs.dtype
-        node.shape = lhs.shape
-        return node
+        return TypeInferer.visit_general_binop(ctx, node, lhs, rhs)
 
     @staticmethod
     def visit_symbol(ctx: ASTContext, node: ast.expr):
