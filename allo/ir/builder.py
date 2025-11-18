@@ -1091,10 +1091,14 @@ class ASTTransformer(ASTBuilder):
         node.target.ctx = ast.Load()
         lhs = build_stmt(ctx, node.target)
         node.target.ctx = ast.Store()
-        # Cast rhs to the target type
-        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype)
-        # Aug LHS
+        # Cast lhs to the operation type
+        lhs = ASTTransformer.build_cast_op(ctx, lhs, node.target.dtype, node.dtype, node.target.shape)
+        # Cast rhs to the operation type
+        rhs = ASTTransformer.build_cast_op(ctx, rhs, node.value.dtype, node.dtype, node.value.shape)
+        # Compute LHS
         res = ASTTransformer.build_general_binop(ctx, node, lhs, rhs)
+        # Cast res to the target type
+        res = ASTTransformer.build_cast_op(ctx, res, node.dtype, node.target.dtype, node.shape)
         # Store LHS
         store_op = build_stmt(ctx, node.target, val=res)
         return store_op
