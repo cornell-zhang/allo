@@ -8,8 +8,10 @@ class InstructionEmitter:
   def __init__(self, parent):
     self.p = parent
 
-  def sgn(self, op):
-    return "u" if any(a.name == "unsigned" for a in op.attributes) else "s"
+  def dslx_type(self, op):
+    sgn =  "u" if any(a.name == "unsigned" for a in op.attributes) else "s"
+    bw = op.result.type.width
+    return f"{sgn}{bw}" if (bw <= 64) else f"{sgn}N[{bw}]"
 
   def emit(self, op: Operation) -> list[str]:
     if isinstance(op, arith_d.ConstantOp):
@@ -49,26 +51,20 @@ class InstructionEmitter:
     self.p.register(op.result, tmp)
     return [f"    let {tmp} = ({lhs} * {rhs});"]
   
-  def _emit_extui(self, op: arith_d.ExtUIOp) -> list[str]:
+  def _emit_prec(self, op) -> list[str]:
     src   = self.p.lookup(op.operands[0])
-    dst_w = op.result.type.width
     tmp   = self.p.new_tmp()
     self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({src} as {self.sgn(op)}{dst_w});"]
+    return [f"    let {tmp} = ({src} as {self.dslx_type(op)});"]
+  
+  def _emit_extui(self, op: arith_d.ExtUIOp) -> list[str]:
+    return self._emit_prec(op)
   
   def _emit_extsi(self, op: arith_d.ExtSIOp) -> list[str]:
-    src   = self.p.lookup(op.operands[0])
-    dst_w = op.result.type.width
-    tmp   = self.p.new_tmp()
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({src} as {self.sgn(op)}{dst_w});"]
+    return self._emit_prec(op)
   
   def _emit_trunc(self, op: arith_d.TruncIOp) -> list[str]:
-    src   = self.p.lookup(op.operands[0])
-    dst_w = op.result.type.width
-    tmp   = self.p.new_tmp()
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = ({src} as {self.sgn(op)}{dst_w});"]
+    return self._emit_prec(op)
   
   def _emit_return(self, op: func_d.ReturnOp) -> list[str]:
     lines = [f"    let tok = join({", ".join([f"tok{i}" for i in range(self.p.tok_counter)])});"]
