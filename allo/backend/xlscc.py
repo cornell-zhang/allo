@@ -1,6 +1,4 @@
 import re
-from dataclasses import dataclass
-from typing import List
 
 import io
 from .._mlir.dialects import allo as allo_d
@@ -47,12 +45,26 @@ class XlsccModule:
         buf.seek(0)
         self.core_code = buf.read()
 
+        pattern = r"""
+            (?P<rtype>[\w:\<\>\~]+)
+            \s+                          
+            (?P<name>[A-Za-z_]\w*(?:::\w*)*)
+            \s*
+            \(
+                (?P<params>[^)]*) 
+            \)
+        """
+
+        match = re.search(pattern, self.core_code, re.VERBOSE)
+        func_name = match.group("name")
+        func_params = match.group("params")
+
         # Wrap core C++ with channels + wrapper class
         self.final_cpp = wrap_xlscc(
             mlir_module_text=self.mlir_text,
             core_code=self.core_code,
-            top_name=self.top_func_name,
-            wrapper_name=self.wrapper_name,
+            function_names=(self.top_func_name, func_name),
+            function_inputs=func_params
         )
 
         if self.project is not None:
