@@ -28,6 +28,10 @@ class InstructionEmitter:
       return self._emit_xor(op)
     elif isinstance(op, arith_d.MulIOp):
       return self._emit_mul(op)
+    elif isinstance(op, arith_d.CmpIOp):
+      return self._emit_cmp(op)
+    elif isinstance(op, arith_d.SelectOp):
+      return self._emit_sel(op)
     elif isinstance(op, arith_d.ExtUIOp):
       return self._emit_extui(op)
     elif isinstance(op, arith_d.ExtSIOp):
@@ -43,7 +47,7 @@ class InstructionEmitter:
   # helpers
   # ---------------------------------------------------------------------
 
-  def _arith_op(self, op, opcode) -> list[str]:
+  def _binary_op(self, op, opcode) -> list[str]:
     lhs = self.p.lookup(op.lhs)
     rhs = self.p.lookup(op.rhs)
     tmp = self.p.new_tmp()
@@ -67,23 +71,36 @@ class InstructionEmitter:
     return [f"    let {tmp} = {value};"]
 
   def _emit_add(self, op: arith_d.AddIOp) -> list[str]:
-    return self._arith_op(op, "+")
+    return self._binary_op(op, "+")
   
   def _emit_sub(self, op: arith_d.SubIOp) -> list[str]:
-    return self._arith_op(op, "-")
+    return self._binary_op(op, "-")
   
   def _emit_and(self, op: arith_d.AndIOp) -> list[str]:
-    return self._arith_op(op, "&")
+    return self._binary_op(op, "&")
   
   def _emit_or(self, op: arith_d.OrIOp) -> list[str]:
-    return self._arith_op(op, "|")
+    return self._binary_op(op, "|")
   
   def _emit_xor(self, op: arith_d.XOrIOp) -> list[str]:
-    return self._arith_op(op, "^")
+    return self._binary_op(op, "^")
 
   def _emit_mul(self, op: arith_d.MulIOp) -> list[str]:
-    return self._arith_op(op, "*")
+    return self._binary_op(op, "*")
   
+  def _emit_cmp(self, op: arith_d.CmpIOp):
+    opcode = ["==", "!=", "<", "<=", ">", ">=", "<", "<=", 
+              ">", ">="][op.predicate.value]
+    return self._binary_op(op, opcode)
+  
+  def _emit_sel(self, op: arith_d.SelectOp):
+    sel = self.p.lookup(op.operands[0])
+    lhs = self.p.lookup(op.operands[1])
+    rhs = self.p.lookup(op.operands[2])
+    tmp = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    return [f"    let {tmp} = if ({sel}) {{ {lhs} }} else {{ {rhs} }}"]
+
   def _emit_extui(self, op: arith_d.ExtUIOp) -> list[str]:
     return self._emit_prec(op)
   

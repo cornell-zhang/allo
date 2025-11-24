@@ -2,6 +2,7 @@
 
 from allo._mlir.dialects import func as func_d
 from allo._mlir.ir import Module
+from allo._mlir.passmanager import PassManager
 from ...utils import get_func_inputs_outputs
 from .utils import allo_dtype_to_dslx_type
 from .instruction import InstructionEmitter
@@ -155,10 +156,16 @@ class DslxModuleLowerer:
       if isinstance(op, func_d.FuncOp):
         self.func_lowerers.append(DslxFuncLowerer(op))
 
+  def clean_mlir(self):
+    with self.module.context:
+      pm = PassManager.parse("builtin.module(canonicalize, sccp, cse, symbol-dce, loop-invariant-code-motion)")
+      pm.run(self.module.operation)
+
   def emit_module(self) -> str:
     functions = [fl.emit_proc() for fl in self.func_lowerers]
     return "\n\n".join(functions)
 
 def lower_mlir(module: Module, top_func_name: str, **kwargs) -> str:
   lowerer = DslxModuleLowerer(module, top_func_name)
+  lowerer.clean_mlir()
   return lowerer.emit_module()
