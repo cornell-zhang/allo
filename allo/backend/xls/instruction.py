@@ -3,6 +3,7 @@
 from allo._mlir.ir import Operation
 from allo._mlir.dialects import arith as arith_d
 from allo._mlir.dialects import func as func_d
+from .utils import allo_dtype_to_dslx_type
 
 class InstructionEmitter:
   def __init__(self, parent):
@@ -65,10 +66,10 @@ class InstructionEmitter:
   # ---------------------------------------------------------------------
 
   def _emit_constant(self, op: arith_d.ConstantOp) -> list[str]:
-    tmp = self.p.new_tmp()
-    value = op.value.value
-    self.p.register(op.result, tmp)
-    return [f"    let {tmp} = {value};"]
+    value = str(op.value).split(":", 1)[0].strip()
+    dslx_prefix = allo_dtype_to_dslx_type(str(op.result.type))
+    self.p.constant(op.result, f"{dslx_prefix}:{value}")
+    return []
 
   def _emit_add(self, op: arith_d.AddIOp) -> list[str]:
     return self._binary_op(op, "+")
@@ -111,10 +112,16 @@ class InstructionEmitter:
     return self._emit_prec(op)
   
   def _emit_return(self, op: func_d.ReturnOp) -> list[str]:
-    lines = [f"    let tok = join({", ".join([f"tok{i}" for i in range(self.p.tok_counter)])});"]
+    if (self.p.tok_counter > 1):
+      lines = [f"    let tok = join({", ".join([f"tok{i}" for i in range(self.p.tok_counter)])});"]
+      token = "tok"
+    else:
+      lines = []
+      token = "tok0"
+    
     for idx, operand in enumerate(op.operands):
       src = self.p.lookup(operand)
       out_chan = self.p.outputs[idx]
-      lines.append(f"    send(tok, {out_chan}, {src});")
+      lines.append(f"    send({token}, {out_chan}, {src});")
     return lines
 

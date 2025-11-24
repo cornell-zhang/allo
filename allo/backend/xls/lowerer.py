@@ -13,6 +13,7 @@ class DslxFuncLowerer:
 
     # mappings
     self.value_map = {} # MLIR value -> dslx identifier
+    self.const_map = {} # MLIR constant -> dslx constant
 
     # input and output channels
     self.inputs   = {}    # mlir_arg -> (dslx_chan, dslx_type)
@@ -46,8 +47,14 @@ class DslxFuncLowerer:
   def register(self, mlir_name: str, dslx_name: str):
     self.value_map[mlir_name] = dslx_name
 
+  # register a mlir constant
+  def constant(self, mlir_name: str, dslx_name: str):
+    self.const_map[mlir_name] = dslx_name
+
   # lookup variable mapping
-  def lookup(self, mlir_name: str) -> str:
+  def lookup(self, mlir_name):
+    if mlir_name in self.const_map:
+        return self.const_map[mlir_name]
     return self.value_map[mlir_name]
   
   # ---------------------------------------------------------------------
@@ -156,16 +163,16 @@ class DslxModuleLowerer:
       if isinstance(op, func_d.FuncOp):
         self.func_lowerers.append(DslxFuncLowerer(op))
 
-  def clean_mlir(self):
-    with self.module.context:
-      pm = PassManager.parse("builtin.module(canonicalize, sccp, cse, symbol-dce, loop-invariant-code-motion)")
-      pm.run(self.module.operation)
-
   def emit_module(self) -> str:
     functions = [fl.emit_proc() for fl in self.func_lowerers]
     return "\n\n".join(functions)
+  
+def clean_mlir(module):
+  with module.context:
+    pm = PassManager.parse("builtin.module(canonicalize, sccp, cse, symbol-dce)")
+    pm.run(module.operation)
 
 def lower_mlir(module: Module, top_func_name: str, **kwargs) -> str:
+  clean_mlir(module)
   lowerer = DslxModuleLowerer(module, top_func_name)
-  lowerer.clean_mlir()
   return lowerer.emit_module()
