@@ -289,33 +289,46 @@ def schedule_systolic(s):
         assert len(s.inst_list) == 8
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-2], s.inst_list[-1]
+        P = 1  # packing factor, 1 means no packing
         kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
     elif s.top_func_name == "packed_systolic":
         assert len(s.inst_list) == 9
         tile_name = "systolic_tile"
-        M0, M1 = s.inst_list[-3], s.inst_list[-2]
+        M0, M1, P = s.inst_list[-3], s.inst_list[-2], s.inst_list[-1]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
         tile_name = "systolic_tile"
-        M0, M1 = s.inst_list[-3], s.inst_list[-2]
+        M0, M1, P = s.inst_list[-3], s.inst_list[-2], s.inst_list[-1]
         kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
     else:
         raise ValueError(
             f"Cannot apply `schedule_systolic` to function: {s.top_func_name}"
         )
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
-    s.partition(s.local_A, dim=1)
-    s.partition(s.local_B, dim=2)
-    load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
-    s.pipeline(load_A_loop)
-    load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
-    s.pipeline(load_B_loop)
-    store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
-    s.pipeline(store_C_loop)
+    s.partition(s.local_A, dim=0)
+    s.partition(s.local_B, dim=0)
+    s.partition(s.A, partition_type=2, factor=M0 // P, dim=1)  # cyclic
+    s.partition(s.A, dim=2)  # complete
+    s.partition(s.B, dim=1)  # complete
+    s.partition(s.B, partition_type=2, factor=M1 // P, dim=2)  # cyclic
+    s.partition(s.C, partition_type=2, factor=M0 // P, dim=1)  # cyclic
+    s.partition(s.C, partition_type=2, factor=M1 // P, dim=2)  # cyclic
+
+    ak = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
+    ai = s.get_loops(s.top_func_name)["outer_tile"]["ai"]
+    bk = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
+    bi = s.get_loops(s.top_func_name)["outer_tile"]["bj"]
+    sj = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
+    si = s.get_loops(s.top_func_name)["outer_tile"]["si"]
+    s.unroll(ak)
+    s.unroll(ai)
+    s.unroll(bk)
+    s.unroll(bi)
+    s.unroll(sj)
+    s.unroll(si)
     inner_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
-    s.dataflow(tile_loop)
     kernel_loop = None
     for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
         try:

@@ -309,12 +309,13 @@ class Schedule:
                 raise AlloValueError("Not supported partition type")
         if isinstance(target, str):
             target = MockBuffer(target.split(":")[0], target.split(":")[1])
-        # test whether partitioning the same array
+        # test whether partitioning the same array along the same dimension
         for parray, items in self.partitioned_arrays.items():
             for item in items:
                 if (
                     parray.split(":")[0] == target.func
                     and parray.split(":")[1] == target.name
+                    and item[1] == dim
                 ):
                     if item[0] == Partition.Complete and item[1] == 0:
                         # this array has been completely partitioned along all the axes
