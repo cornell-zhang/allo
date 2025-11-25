@@ -23,6 +23,8 @@ from .vitis import (
     generate_description_file,
     write_tensor_to_file,
     read_tensor_from_file,
+    generate_hbm_config,
+    extract_hls_arg_names,
 )
 from .pynq import (
     postprocess_hls_code_pynq,
@@ -233,6 +235,7 @@ class HLSModule:
                 allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
+        # pylint: disable=too-many-nested-blocks
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             os.makedirs(project, exist_ok=True)
@@ -263,11 +266,45 @@ class HLSModule:
                     dst_path,
                     frequency=configs["frequency"],
                 )
-                generate_makefile(dst_path, project, self.platform)
+                hbm_mapping = configs.get("hbm_mapping", None)
+                generate_makefile(dst_path, project, self.platform, hbm_mapping)
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+
+                # Generate HBM/DDR configuration file if hbm_mapping is provided
+                # This must be done AFTER postprocess_hls_code to get correct arg names
+                if hbm_mapping is not None:
+                    # Extract HLS argument names from the postprocessed code
+                    hls_arg_names = extract_hls_arg_names(
+                        self.hls_code, self.top_func_name
+                    )
+                    # Build mapping from user arg names to HLS arg names
+                    user_arg_names = []
+                    if func_args is not None and self.top_func_name in func_args:
+                        for arg in func_args[self.top_func_name]:
+                            if hasattr(arg, "name"):
+                                user_arg_names.append(arg.name)
+                            else:
+                                user_arg_names.append(str(arg))
+                    # Add return value name - it becomes the last argument
+                    # Use the last HLS arg name count to determine if there's a return
+                    if len(hls_arg_names) > len(user_arg_names):
+                        # There's a return value, add placeholder names
+                        for i in range(len(hls_arg_names) - len(user_arg_names)):
+                            user_arg_names.append(f"output_{i}")
+
+                    arg_name_mapping = None
+                    if len(user_arg_names) == len(hls_arg_names):
+                        arg_name_mapping = dict(zip(user_arg_names, hls_arg_names))
+
+                    cfg_content = generate_hbm_config(
+                        self.top_func_name, hbm_mapping, arg_name_mapping
+                    )
+                    cfg_path = os.path.join(project, f"{self.top_func_name}.cfg")
+                    with open(cfg_path, "w", encoding="utf-8") as cfg_file:
+                        cfg_file.write(cfg_content)
                 for lib in self.ext_libs:
                     cpp_file = lib.impl.split("/")[-1]
                     with open(f"{project}/{cpp_file}", "r", encoding="utf-8") as infile:
@@ -302,7 +339,37 @@ class HLSModule:
                     frequency=configs["frequency"],
                 )
                 self.args = []
-                generate_makefile(dst_path, project, self.platform)
+                hbm_mapping = configs.get("hbm_mapping", None)
+                generate_makefile(dst_path, project, self.platform, hbm_mapping)
+                # Generate HBM/DDR configuration file if hbm_mapping is provided
+                if hbm_mapping is not None:
+                    # Extract HLS argument names from the code
+                    hls_arg_names = extract_hls_arg_names(
+                        self.hls_code, self.top_func_name
+                    )
+                    # Build mapping from user arg names to HLS arg names
+                    user_arg_names = []
+                    if func_args is not None and self.top_func_name in func_args:
+                        for arg in func_args[self.top_func_name]:
+                            if hasattr(arg, "name"):
+                                user_arg_names.append(arg.name)
+                            else:
+                                user_arg_names.append(str(arg))
+                    # Add placeholder for return values if needed
+                    if len(hls_arg_names) > len(user_arg_names):
+                        for i in range(len(hls_arg_names) - len(user_arg_names)):
+                            user_arg_names.append(f"output_{i}")
+
+                    arg_name_mapping = None
+                    if len(user_arg_names) == len(hls_arg_names):
+                        arg_name_mapping = dict(zip(user_arg_names, hls_arg_names))
+
+                    cfg_content = generate_hbm_config(
+                        self.top_func_name, hbm_mapping, arg_name_mapping
+                    )
+                    cfg_path = os.path.join(project, f"{self.top_func_name}.cfg")
+                    with open(cfg_path, "w", encoding="utf-8") as cfg_file:
+                        cfg_file.write(cfg_content)
                 # [NOTE] (Shihan): I guess tapa backend do not use this one. I modified codegen_host for vitis, similar logic should be updated for tapa if self.host_code is useful here
                 self.host_code = codegen_host(
                     self.top_func_name,

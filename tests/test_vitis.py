@@ -275,6 +275,99 @@ def test_packed_add():
         print("Passed Test!")
 
 
+def test_hbm_mapping_config():
+    """Test that HBM mapping generates the correct configuration file."""
+    import os
+    import shutil
+
+    def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+        C: int32[32, 32] = 0
+        for i, j, k in allo.grid(32, 32, 32, name="C"):
+            C[i, j] += A[i, k] * B[k, j]
+        return C
+
+    s = allo.customize(gemm)
+    project_name = "test_hbm_mapping.prj"
+
+    # Test with HBM mapping configuration
+    # Use actual argument names from the function definition
+    # Return values are named "output_0", "output_1", etc.
+    hbm_mapping = {
+        "A": 0,  # HBM channel 0 (using int)
+        "B": "HBM[1]",  # HBM channel 1 (using string)
+        "output_0": "DDR[0]",  # Return value -> DDR bank 0
+    }
+
+    # Build with HBM mapping
+    mod = s.build(
+        target="vitis_hls",
+        mode="csyn",  # Just use csyn to generate files without running HLS
+        project=project_name,
+        configs={"hbm_mapping": hbm_mapping},
+    )
+
+    # Check that the configuration file was created
+    cfg_file = os.path.join(project_name, "gemm.cfg")
+    assert os.path.exists(cfg_file), f"Configuration file {cfg_file} was not created"
+
+    # Read and verify the configuration file content
+    with open(cfg_file, "r") as f:
+        cfg_content = f.read()
+
+    print("Generated config file content:")
+    print(cfg_content)
+
+    # Verify the content - user names should be mapped to HLS argument names
+    # The generated HLS code uses names like v15, v16, v17
+    assert "[connectivity]" in cfg_content
+    assert ":HBM[0]" in cfg_content  # Check memory spec is present
+    assert ":HBM[1]" in cfg_content
+    assert ":DDR[0]" in cfg_content
+    # Verify HLS argument names are used (vXX format)
+    assert "sp=gemm.v" in cfg_content, "Config should use HLS argument names"
+
+    # Check that VPP_LDFLAGS in makefile includes the config file
+    makefile_us = os.path.join(project_name, "makefile_us_alveo.mk")
+    if os.path.exists(makefile_us):
+        with open(makefile_us, "r") as f:
+            makefile_content = f.read()
+        assert (
+            "--config gemm.cfg" in makefile_content
+        ), "Makefile should reference the config file"
+
+    # Cleanup
+    if os.path.exists(project_name):
+        shutil.rmtree(project_name)
+
+    print("HBM mapping test passed!")
+
+
+def test_hbm_mapping_function():
+    """Test the generate_hbm_config function directly."""
+    from allo.backend.vitis import generate_hbm_config
+
+    # Test with mixed input types
+    hbm_mapping = {
+        "inp_addr_0": 0,
+        "inp_addr_1": "HBM[0]",
+        "wk_addr_0": 1,
+        "wv_addr_0": "DDR[0]",
+    }
+
+    cfg_content = generate_hbm_config("my_kernel", hbm_mapping)
+    print("Generated config content:")
+    print(cfg_content)
+
+    # Verify content
+    assert "[connectivity]" in cfg_content
+    assert "sp=my_kernel.inp_addr_0:HBM[0]" in cfg_content
+    assert "sp=my_kernel.inp_addr_1:HBM[0]" in cfg_content
+    assert "sp=my_kernel.wk_addr_0:HBM[1]" in cfg_content
+    assert "sp=my_kernel.wv_addr_0:DDR[0]" in cfg_content
+
+    print("generate_hbm_config test passed!")
+
+
 if __name__ == "__main__":
     test_grid_for_gemm()
     test_vitis_gemm_template_int32()
@@ -286,3 +379,7 @@ if __name__ == "__main__":
 
     test_vadd()
     test_packed_add()
+
+    # Test HBM mapping
+    test_hbm_mapping_function()
+    test_hbm_mapping_config()
