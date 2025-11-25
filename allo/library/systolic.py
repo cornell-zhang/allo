@@ -170,9 +170,7 @@ def systolic[
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
-            # reuse along the ni dimension
-            if ni == 0:
-                local_A[ai, ak] = A[mi * Mt + ai, ak]
+            local_A[ai, ak] = A[mi * Mt + ai, ak]
         for bk, bj in dsl.grid(K, Nt, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -211,11 +209,9 @@ def packed_systolic[
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
-            # reuse along the ni dimension
-            if ni == 0:
-                a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
-                for p in range(P):
-                    local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
+            a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
+            for p in range(P):
+                local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -252,11 +248,9 @@ def packed_int8xint8_systolic[
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
-            # reuse along the ni dimension
-            if ni == 0:
-                a: Int(8 * P) = A[mi * Mt // P + ai, ak]
-                for p in range(P):
-                    local_A[ai * P + p, ak] = a[p * 8 : (p + 1) * 8]
+            a: Int(8 * P) = A[mi * Mt // P + ai, ak]
+            for p in range(P):
+                local_A[ai * P + p, ak] = a[p * 8 : (p + 1) * 8]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
