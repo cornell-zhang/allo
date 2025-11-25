@@ -275,9 +275,11 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
           %5 = affine.load %alloc_0[%arg4] : memref&lt;32xi32&gt;
-          %6 = arith.trunci %4 : i64 to i32
-          %7 = arith.addi %5, %6 : i32
-          affine.store %7, %alloc_0[%arg4] : memref&lt;32xi32&gt;
+          %6 = arith.extsi %5 : i32 to i65
+          %7 = arith.extsi %4 : i64 to i65
+          %8 = arith.addi %6, %7 : i65
+          %9 = arith.trunci %8 : i65 to i32
+          affine.store %9, %alloc_0[%arg4] : memref&lt;32xi32&gt;
         } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 32 {
@@ -310,9 +312,11 @@ We first create a schedule for the <code class="docutils literal notranslate"><s
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
           %5 = affine.load %alloc[%arg2, %arg3] {from = &quot;C&quot;} : memref&lt;32x32xi32&gt;
-          %6 = arith.trunci %4 : i64 to i32
-          %7 = arith.addi %5, %6 : i32
-          affine.store %7, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
+          %6 = arith.extsi %5 : i32 to i65
+          %7 = arith.extsi %4 : i64 to i65
+          %8 = arith.addi %6, %7 : i65
+          %9 = arith.trunci %8 : i65 to i32
+          affine.store %9, %alloc[%arg2, %arg3] {to = &quot;C&quot;} : memref&lt;32x32xi32&gt;
         } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       } {loop_name = &quot;j&quot;}
     } {loop_name = &quot;i&quot;, op_name = &quot;S_i_j_0&quot;}
@@ -371,9 +375,11 @@ In Allo, we can use the <code class="docutils literal notranslate"><span class="
           %3 = arith.extsi %1 : i32 to i64
           %4 = arith.muli %2, %3 : i64
           %5 = affine.load %alloc_0[%arg4] : memref&lt;32xi32&gt;
-          %6 = arith.trunci %4 : i64 to i32
-          %7 = arith.addi %5, %6 : i32
-          affine.store %7, %alloc_0[%arg4] : memref&lt;32xi32&gt;
+          %6 = arith.extsi %5 : i32 to i65
+          %7 = arith.extsi %4 : i64 to i65
+          %8 = arith.addi %6, %7 : i65
+          %9 = arith.trunci %8 : i65 to i32
+          affine.store %9, %alloc_0[%arg4] : memref&lt;32xi32&gt;
         } {loop_name = &quot;j&quot;, pipeline_ii = 1 : ui32}
       } {loop_name = &quot;k&quot;, op_name = &quot;S_k_0&quot;, reduction}
       affine.for %arg3 = 0 to 32 {
@@ -525,7 +531,7 @@ module {
 </pre></div>
 </div>
 <p>We can see from the printed module that the loop in the first kernel is unrolled by a factor of 4, and the loop in the second kernel is pipelined.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.651 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.011 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-dive-03-composition-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/39c6904b3f007c07e3d59200d0bf98b4/dive_03_composition.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">dive_03_composition.ipynb</span></code></a></p>

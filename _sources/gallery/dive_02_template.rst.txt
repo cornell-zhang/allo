@@ -286,7 +286,7 @@ In final generated code, we can see that only a single branch is generated based
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.324 seconds)
+   **Total running time of the script:** (0 minutes 0.507 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_02_template.py:

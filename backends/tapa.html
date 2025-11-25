@@ -240,6 +240,26 @@ It still requires the <a class="reference external" href="https://www.amd.com/en
 </dd>
 </dl>
 </section>
+<section id="hbm-ddr-memory-mapping">
+<h2>HBM/DDR Memory Mapping<a class="headerlink" href="#hbm-ddr-memory-mapping" title="Link to this heading"><span>¶</span></a></h2>
+<p>Similar to the Vitis HLS backend, TAPA also supports HBM/DDR memory channel mapping through the <code class="docutils literal notranslate"><span class="pre">hbm_mapping</span></code> configuration option. This allows you to specify which memory channels each kernel argument should be mapped to.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define HBM channel mapping using argument names</span>
+<span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;A&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1"># Input A -&gt; HBM channel 0</span>
+    <span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[1]&quot;</span><span class="p">,</span>       <span class="c1"># Input B -&gt; HBM channel 1</span>
+    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># Return value -&gt; DDR bank 0</span>
+<span class="p">}</span>
+
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;tapa&quot;</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
+    <span class="n">configs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;hbm_mapping&quot;</span><span class="p">:</span> <span class="n">hbm_mapping</span><span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>For more details on HBM/DDR memory mapping options, please refer to the <a class="reference internal" href="vitis.html"><span class="doc">Vitis HLS documentation</span></a>.</p>
+</section>
 </section>
 
 
@@ -260,6 +280,7 @@ It still requires the <a class="reference external" href="https://www.amd.com/en
 <li><a class="reference internal" href="#kernel-definition">Kernel Definition</a></li>
 <li><a class="reference internal" href="#code-generation-for-rapidstream-tapa">Code Generation for RapidStream TAPA</a></li>
 <li><a class="reference internal" href="#project-structure-and-execution">Project Structure and Execution</a></li>
+<li><a class="reference internal" href="#hbm-ddr-memory-mapping">HBM/DDR Memory Mapping</a></li>
 </ul>
 </li>
 </ul>

@@ -268,6 +268,96 @@ Set the target to <cite>“vivado_hls”</cite> to generate a legacy HLS project
 </dd>
 </dl>
 </section>
+<section id="hbm-ddr-memory-mapping">
+<h2>HBM/DDR Memory Mapping<a class="headerlink" href="#hbm-ddr-memory-mapping" title="Link to this heading"><span>¶</span></a></h2>
+<p>For designs targeting platforms with High Bandwidth Memory (HBM) or multiple DDR banks (such as Alveo U280), Allo provides an easy way to specify memory channel mappings for kernel arguments. This is done through the <code class="docutils literal notranslate"><span class="pre">hbm_mapping</span></code> configuration option in the <code class="docutils literal notranslate"><span class="pre">configs</span></code> dictionary.</p>
+<p><strong>Basic Usage</strong></p>
+<p>The <code class="docutils literal notranslate"><span class="pre">hbm_mapping</span></code> dictionary maps function argument names to memory channels. You can specify:</p>
+<ul class="simple">
+<li><p><strong>Integer values</strong>: Interpreted as HBM channel numbers (e.g., <code class="docutils literal notranslate"><span class="pre">0</span></code> → <code class="docutils literal notranslate"><span class="pre">HBM[0]</span></code>)</p></li>
+<li><p><strong>String values</strong>: Full memory specification (e.g., <code class="docutils literal notranslate"><span class="pre">&quot;HBM[0]&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;DDR[1]&quot;</span></code>)</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">allo.ir.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">int32</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gemm</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">],</span> <span class="n">B</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>
+    <span class="n">C</span><span class="p">:</span> <span class="n">int32</span><span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allo</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">C</span>
+
+<span class="n">s</span> <span class="o">=</span> <span class="n">allo</span><span class="o">.</span><span class="n">customize</span><span class="p">(</span><span class="n">gemm</span><span class="p">)</span>
+
+<span class="c1"># Define HBM channel mapping using argument names</span>
+<span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;A&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1"># Input A -&gt; HBM channel 0</span>
+    <span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[1]&quot;</span><span class="p">,</span>       <span class="c1"># Input B -&gt; HBM channel 1</span>
+    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># Return value -&gt; DDR bank 0</span>
+<span class="p">}</span>
+
+<span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
+    <span class="n">configs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;hbm_mapping&quot;</span><span class="p">:</span> <span class="n">hbm_mapping</span><span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Argument Naming Convention</strong></p>
+<ul class="simple">
+<li><p><strong>Input arguments</strong>: Use the same names as in your function definition (e.g., <code class="docutils literal notranslate"><span class="pre">&quot;A&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;B&quot;</span></code>)</p></li>
+<li><p><strong>Return values</strong>: Use <code class="docutils literal notranslate"><span class="pre">&quot;output_0&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;output_1&quot;</span></code>, etc. for functions with return values</p></li>
+</ul>
+<p><strong>Generated Configuration File</strong></p>
+<p>Allo automatically generates a <code class="docutils literal notranslate"><span class="pre">.cfg</span></code> file in the project directory with the connectivity settings. For example, the above configuration would generate a file like:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[connectivity]
+
+sp=gemm.v15:HBM[0]
+sp=gemm.v16:HBM[1]
+sp=gemm.v17:DDR[0]
+</pre></div>
+</div>
+<p>Note that Allo automatically translates your user-friendly argument names (<code class="docutils literal notranslate"><span class="pre">A</span></code>, <code class="docutils literal notranslate"><span class="pre">B</span></code>, <code class="docutils literal notranslate"><span class="pre">output_0</span></code>) to the actual HLS-generated argument names (<code class="docutils literal notranslate"><span class="pre">v15</span></code>, <code class="docutils literal notranslate"><span class="pre">v16</span></code>, <code class="docutils literal notranslate"><span class="pre">v17</span></code>).</p>
+<p><strong>Complex Example with Multiple Arguments</strong></p>
+<p>For larger designs with many memory interfaces, you can specify different HBM channels for each argument:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">hbm_mapping</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;inp_0&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0]</span>
+    <span class="s2">&quot;inp_1&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>           <span class="c1"># HBM[0] - can share channels</span>
+    <span class="s2">&quot;weight_0&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>        <span class="c1"># HBM[1]</span>
+    <span class="s2">&quot;weight_1&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>        <span class="c1"># HBM[2]</span>
+    <span class="s2">&quot;bias&quot;</span><span class="p">:</span> <span class="s2">&quot;HBM[3]&quot;</span><span class="p">,</span>     <span class="c1"># HBM[3]</span>
+    <span class="s2">&quot;output_0&quot;</span><span class="p">:</span> <span class="s2">&quot;DDR[0]&quot;</span><span class="p">,</span> <span class="c1"># DDR bank 0</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>This feature is particularly useful for:</p>
+<ul class="simple">
+<li><p><strong>Memory bandwidth optimization</strong>: Distribute data across multiple HBM channels to maximize bandwidth</p></li>
+<li><p><strong>Bank conflict avoidance</strong>: Place frequently accessed data on separate memory banks</p></li>
+<li><p><strong>Platform-specific tuning</strong>: Match memory assignments to your target FPGA platform’s memory architecture</p></li>
+</ul>
+</section>
+<section id="device-and-frequency-configuration">
+<h2>Device and Frequency Configuration<a class="headerlink" href="#device-and-frequency-configuration" title="Link to this heading"><span>¶</span></a></h2>
+<p>You can specify the target device and clock frequency through the <code class="docutils literal notranslate"><span class="pre">configs</span></code> dictionary:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">mod</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">build</span><span class="p">(</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;vitis_hls&quot;</span><span class="p">,</span>
+    <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hw&quot;</span><span class="p">,</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;gemm.prj&quot;</span><span class="p">,</span>
+    <span class="n">configs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;u280&quot;</span><span class="p">,</span>     <span class="c1"># Target device (default: &quot;u280&quot;)</span>
+        <span class="s2">&quot;frequency&quot;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>     <span class="c1"># Target frequency in MHz (default: 300)</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Supported Devices</strong></p>
+<ul class="simple">
+<li><p><strong>Alveo</strong>: <code class="docutils literal notranslate"><span class="pre">u200</span></code>, <code class="docutils literal notranslate"><span class="pre">u250</span></code>, <code class="docutils literal notranslate"><span class="pre">u280</span></code></p></li>
+<li><p><strong>Zynq UltraScale+</strong>: <code class="docutils literal notranslate"><span class="pre">zcu102</span></code>, <code class="docutils literal notranslate"><span class="pre">zcu104</span></code>, <code class="docutils literal notranslate"><span class="pre">zcu106</span></code>, <code class="docutils literal notranslate"><span class="pre">zcu111</span></code></p></li>
+<li><p><strong>Versal</strong>: <code class="docutils literal notranslate"><span class="pre">vck190</span></code>, <code class="docutils literal notranslate"><span class="pre">vhk158</span></code></p></li>
+<li><p><strong>Embedded</strong>: <code class="docutils literal notranslate"><span class="pre">ultra96v2</span></code>, <code class="docutils literal notranslate"><span class="pre">pynqz2</span></code>, <code class="docutils literal notranslate"><span class="pre">zedboard</span></code></p></li>
+</ul>
+</section>
 <section id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading"><span>¶</span></a></h2>
 <p>This example illustrates the process of defining a GEMM kernel using the Allo ADL and generating HLS code for FPGA acceleration with the Vitis HLS backend. The approach supports various synthesis modes (sw_emu, hw_emu, hw) to cater to different design and verification needs.</p>
@@ -292,6 +382,8 @@ Set the target to <cite>“vivado_hls”</cite> to generate a legacy HLS project
 <li><a class="reference internal" href="#kernel-definition">Kernel Definition</a></li>
 <li><a class="reference internal" href="#code-generation-for-vivado-vitis-hls">Code Generation for Vivado/Vitis HLS</a></li>
 <li><a class="reference internal" href="#project-structure-and-execution">Project Structure and Execution</a></li>
+<li><a class="reference internal" href="#hbm-ddr-memory-mapping">HBM/DDR Memory Mapping</a></li>
+<li><a class="reference internal" href="#device-and-frequency-configuration">Device and Frequency Configuration</a></li>
 <li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 </li>

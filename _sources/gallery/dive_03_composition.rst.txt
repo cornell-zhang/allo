@@ -155,9 +155,11 @@ Then we create a schedule for the ``gemm`` kernel and optimize it.
               %3 = arith.extsi %1 : i32 to i64
               %4 = arith.muli %2, %3 : i64
               %5 = affine.load %alloc_0[%arg4] : memref<32xi32>
-              %6 = arith.trunci %4 : i64 to i32
-              %7 = arith.addi %5, %6 : i32
-              affine.store %7, %alloc_0[%arg4] : memref<32xi32>
+              %6 = arith.extsi %5 : i32 to i65
+              %7 = arith.extsi %4 : i64 to i65
+              %8 = arith.addi %6, %7 : i65
+              %9 = arith.trunci %8 : i65 to i32
+              affine.store %9, %alloc_0[%arg4] : memref<32xi32>
             } {loop_name = "j", pipeline_ii = 1 : ui32}
           } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 32 {
@@ -208,9 +210,11 @@ Notice that now we only optimize the separate kernels but do not incorporate the
               %3 = arith.extsi %1 : i32 to i64
               %4 = arith.muli %2, %3 : i64
               %5 = affine.load %alloc[%arg2, %arg3] {from = "C"} : memref<32x32xi32>
-              %6 = arith.trunci %4 : i64 to i32
-              %7 = arith.addi %5, %6 : i32
-              affine.store %7, %alloc[%arg2, %arg3] {to = "C"} : memref<32x32xi32>
+              %6 = arith.extsi %5 : i32 to i65
+              %7 = arith.extsi %4 : i64 to i65
+              %8 = arith.addi %6, %7 : i65
+              %9 = arith.trunci %8 : i65 to i32
+              affine.store %9, %alloc[%arg2, %arg3] {to = "C"} : memref<32x32xi32>
             } {loop_name = "k", op_name = "S_k_0", reduction}
           } {loop_name = "j"}
         } {loop_name = "i", op_name = "S_i_j_0"}
@@ -287,9 +291,11 @@ In Allo, we can use the ``.compose()`` primitive to compose the schedules togeth
               %3 = arith.extsi %1 : i32 to i64
               %4 = arith.muli %2, %3 : i64
               %5 = affine.load %alloc_0[%arg4] : memref<32xi32>
-              %6 = arith.trunci %4 : i64 to i32
-              %7 = arith.addi %5, %6 : i32
-              affine.store %7, %alloc_0[%arg4] : memref<32xi32>
+              %6 = arith.extsi %5 : i32 to i65
+              %7 = arith.extsi %4 : i64 to i65
+              %8 = arith.addi %6, %7 : i65
+              %9 = arith.trunci %8 : i65 to i32
+              affine.store %9, %alloc_0[%arg4] : memref<32xi32>
             } {loop_name = "j", pipeline_ii = 1 : ui32}
           } {loop_name = "k", op_name = "S_k_0", reduction}
           affine.for %arg3 = 0 to 32 {
@@ -505,7 +511,7 @@ We can see from the printed module that the loop in the first kernel is unrolled
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.651 seconds)
+   **Total running time of the script:** (0 minutes 1.011 seconds)
 
 
 .. _sphx_glr_download_gallery_dive_03_composition.py:
