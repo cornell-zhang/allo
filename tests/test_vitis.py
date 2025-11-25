@@ -293,8 +293,8 @@ def test_hbm_mapping_config():
     # Use actual argument names from the function definition
     # Return values are named "output_0", "output_1", etc.
     hbm_mapping = {
-        "A": 0,           # HBM channel 0 (using int)
-        "B": "HBM[1]",    # HBM channel 1 (using string)
+        "A": 0,  # HBM channel 0 (using int)
+        "B": "HBM[1]",  # HBM channel 1 (using string)
         "output_0": "DDR[0]",  # Return value -> DDR bank 0
     }
 
@@ -331,7 +331,9 @@ def test_hbm_mapping_config():
     if os.path.exists(makefile_us):
         with open(makefile_us, "r") as f:
             makefile_content = f.read()
-        assert "--config gemm.cfg" in makefile_content, "Makefile should reference the config file"
+        assert (
+            "--config gemm.cfg" in makefile_content
+        ), "Makefile should reference the config file"
 
     # Cleanup
     if os.path.exists(project_name):
