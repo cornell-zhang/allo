@@ -309,7 +309,7 @@ class Schedule:
                 raise AlloValueError("Not supported partition type")
         if isinstance(target, str):
             target = MockBuffer(target.split(":")[0], target.split(":")[1])
-        # test whether partitioning the same array along the same dimension
+        # test whether partitioning the same array
         for parray, items in self.partitioned_arrays.items():
             for item in items:
                 if (

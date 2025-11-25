@@ -162,12 +162,11 @@ def systolic_tile[
 def systolic[
     TyA, TyB, TyC, M: int32, K: int32, N: int32, Mt: int32, Nt: int32
 ](A: "TyA[M, K]", B: "TyB[K, N]", C: "TyC[M, N]"):
-    local_A: TyA[Mt, K]
-    local_B: TyB[K, Nt]
-    local_C: TyC[Mt, Nt]
-
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
+        local_A: TyA[Mt, K]
+        local_B: TyB[K, Nt]
+        local_C: TyC[Mt, Nt]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
@@ -204,12 +203,11 @@ def packed_systolic[
     B: "Int(TyB.bits * P)[K, N // P]",
     C: "Int(TyC.bits * P)[M // P, N]",
 ):
-    local_A: TyA[Mt, K]
-    local_B: TyB[K, Nt]
-    local_C: TyC[Mt, Nt]
-
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
+        local_A: TyA[Mt, K]
+        local_B: TyB[K, Nt]
+        local_C: TyC[Mt, Nt]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
@@ -246,12 +244,11 @@ def packed_int8xint8_systolic[
     Nt: int32,
     P: int32,  # packing factor
 ](A: "Int(8 * P)[M // P, K]", B: "Int(8 * P)[K, N // P]", C: "Int(8 * P)[M // P, N]"):
-    local_A: int8[Mt, K]
-    local_B: int16[K, Nt // 2]
-    local_C: int32[Mt, Nt // 2]
-
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
+        local_A: int8[Mt, K]
+        local_B: int16[K, Nt // 2]
+        local_C: int32[Mt, Nt // 2]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
@@ -289,16 +286,15 @@ def schedule_systolic(s):
         assert len(s.inst_list) == 8
         tile_name = "systolic_tile"
         M0, M1 = s.inst_list[-2], s.inst_list[-1]
-        P = 1  # packing factor, 1 means no packing
         kernel_loop = s.get_loops(f"PE_kernel")["reduction"]["k"]
     elif s.top_func_name == "packed_systolic":
         assert len(s.inst_list) == 9
         tile_name = "systolic_tile"
-        M0, M1, P = s.inst_list[-3], s.inst_list[-2], s.inst_list[-1]
+        M0, M1 = s.inst_list[-3], s.inst_list[-2]
     elif s.top_func_name == "packed_int8xint8_systolic":
         assert len(s.inst_list) == 6
         tile_name = "systolic_tile"
-        M0, M1, P = s.inst_list[-3], s.inst_list[-2], s.inst_list[-1]
+        M0, M1 = s.inst_list[-3], s.inst_list[-2]
         kernel_loop = s.get_loops(f"PE_kernel_packed_int8xint8")["reduction"]["k"]
     else:
         raise ValueError(
@@ -307,28 +303,10 @@ def schedule_systolic(s):
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
     s.partition(s.local_A, dim=0)
     s.partition(s.local_B, dim=0)
-    s.partition(s.A, partition_type=2, factor=M0 // P, dim=1)  # cyclic
-    s.partition(s.A, dim=2)  # complete
-    s.partition(s.B, dim=1)  # complete
-    s.partition(s.B, partition_type=2, factor=M1 // P, dim=2)  # cyclic
-    s.partition(s.C, partition_type=2, factor=M0 // P, dim=1)  # cyclic
-    s.partition(s.C, partition_type=2, factor=M1 // P, dim=2)  # cyclic
-
-    ak = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
-    ai = s.get_loops(s.top_func_name)["outer_tile"]["ai"]
-    bk = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
-    bi = s.get_loops(s.top_func_name)["outer_tile"]["bj"]
-    sj = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
-    si = s.get_loops(s.top_func_name)["outer_tile"]["si"]
-    s.unroll(ak)
-    s.unroll(ai)
-    s.unroll(bk)
-    s.unroll(bi)
-    s.unroll(sj)
-    s.unroll(si)
     inner_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
+    s.dataflow(tile_loop)
     kernel_loop = None
     for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
         try:
