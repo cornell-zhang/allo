@@ -429,7 +429,17 @@ public:
 
   /// Special operations.
   bool visitOp(func::CallOp op) { return emitter.emitCall(op), true; }
-  bool visitOp(func::ReturnOp op) { return true; }
+  bool visitOp(func::ReturnOp op) {
+    if (op.getNumoperands() == 1 && !op.getOperand(0).getType().isa<ShapedType>()) {
+      emitter.indent();
+      emitter.os << "return ";
+      emitter.emitValue(op.getOperand(0));
+      emitter.os << ";\n"
+      return true
+    }
+
+    return true;
+  }
   bool visitOp(arith::SelectOp op) { return emitter.emitSelect(op), true; }
   bool visitOp(arith::ConstantOp op) { return emitter.emitConstant(op), true; }
   bool visitOp(arith::IndexCastOp op) {
@@ -2029,32 +2039,26 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = getLoopDirective(op, "pipeline_ii")) {
     reduceIndent();
     indent();
-    os << "#pragma HLS pipeline II=" << ii.cast<IntegerAttr>().getValue();
-    // https://docs.xilinx.com/r/en-US/ug1399-vitis-hls/Rewinding-Pipelined-Loops-for-Performance
-    if (op->hasAttr("rewind"))
-      os << " rewind";
-    os << "\n";
+    auto val = ii.cast<IntegerAttr>().getValue();
+    os << "#pragma hls_pipeline_init_interval " << val << "\n";
     addIndent();
   }
 
   if (auto factor = getLoopDirective(op, "unroll")) {
     reduceIndent();
     indent();
-    auto val = factor.cast<IntegerAttr>().getValue();
-    if (val == 0)
-      os << "#pragma HLS unroll"
-         << "\n";
-    else
-      os << "#pragma HLS unroll factor=" << val << "\n";
+    os << "#pragma hls_unroll_yes\n";
     addIndent();
   }
 
-  if (auto dataflow = getLoopDirective(op, "dataflow")) {
-    reduceIndent();
-    indent();
-    os << "#pragma HLS dataflow\n";
-    addIndent();
-  }
+  // Ignore Dataflow for now.
+
+  // if (auto dataflow = getLoopDirective(op, "dataflow")) {
+  //   reduceIndent();
+  //   indent();
+  //   os << "#pragma HLS dataflow\n";
+  //   addIndent();
+  // }
 }
 
 void ModuleEmitter::emitArrayDirectives(Value memref) {
@@ -2240,8 +2244,18 @@ void ModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("top"))
     os << "/// This is top function.\n";
 
-  // Emit function signature.
-  os << "void " << func.getName() << "(\n";
+  Type retType;
+  auto funcType = func.getFunctionType();
+  if (funcType.getNumResults() == 1 && !funcType.getResult(0).isa<ShapedType>()) {
+    retType = funcType.getResult(0);
+  }
+
+  if (retType)
+    os << getTypeName(retType) << " ";
+  else
+    os << "void ";
+
+  os << func.getName() << "(\n";
   addIndent();
 
   // This vector is to record all ports of the function.
@@ -2390,18 +2404,11 @@ void ModuleEmitter::emitModule(ModuleOp module) {
   std::string device_header = R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Automatically generated file for High-level Synthesis (HLS).
+// Automatically generated file for XLS[cc].
 //
 //===----------------------------------------------------------------------===//
-#include <algorithm>
-#include <ap_axi_sdata.h>
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_math.h>
-#include <hls_stream.h>
-#include <math.h>
-#include <stdint.h>
-using namespace std;
+#include <cstdint>
+#include <cmath>
 )XXX";
 
   std::string host_header = R"XXX(
