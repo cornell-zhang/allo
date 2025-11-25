@@ -235,6 +235,7 @@ class HLSModule:
                 allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
+        # pylint: disable=too-many-nested-blocks
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             os.makedirs(project, exist_ok=True)
