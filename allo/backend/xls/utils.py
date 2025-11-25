@@ -3,6 +3,10 @@
 from ...utils import get_bitwidth_from_type
 
 def allo_dtype_to_dslx_type(dtype: str) -> str:
+  # Handle index type (used for loop indices) - treat as signed 32-bit
+  if dtype == "index":
+    return "s32"
+  
   bw = get_bitwidth_from_type(dtype)
 
   # signed int
@@ -13,4 +17,4 @@ def allo_dtype_to_dslx_type(dtype: str) -> str:
   if dtype.startswith("ui"):
     return f"u{bw}" if bw <= 64 else f"uN[{bw}]"
   
-  raise NotImplementedError("only support integers for now")
+  raise NotImplementedError(f"only support integers for now, got: {dtype}")
