@@ -315,7 +315,6 @@ class Schedule:
                 if (
                     parray.split(":")[0] == target.func
                     and parray.split(":")[1] == target.name
-                    and item[1] == dim
                 ):
                     if item[0] == Partition.Complete and item[1] == 0:
                         # this array has been completely partitioned along all the axes

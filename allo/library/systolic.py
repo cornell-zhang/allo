@@ -162,15 +162,18 @@ def systolic_tile[
 def systolic[
     TyA, TyB, TyC, M: int32, K: int32, N: int32, Mt: int32, Nt: int32
 ](A: "TyA[M, K]", B: "TyB[K, N]", C: "TyC[M, N]"):
+    local_A: TyA[Mt, K]
+    local_B: TyB[K, Nt]
+    local_C: TyC[Mt, Nt]
+
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
-        local_A: TyA[Mt, K]
-        local_B: TyB[K, Nt]
-        local_C: TyC[Mt, Nt]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt, name="load_A_tile"):
-            local_A[ai, ak] = A[mi * Mt + ai, ak]
+            # reuse along the ni dimension
+            if ni == 0:
+                local_A[ai, ak] = A[mi * Mt + ai, ak]
         for bk, bj in dsl.grid(K, Nt, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -201,17 +204,20 @@ def packed_systolic[
     B: "Int(TyB.bits * P)[K, N // P]",
     C: "Int(TyC.bits * P)[M // P, N]",
 ):
+    local_A: TyA[Mt, K]
+    local_B: TyB[K, Nt]
+    local_C: TyC[Mt, Nt]
+
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
-        local_A: TyA[Mt, K]
-        local_B: TyB[K, Nt]
-        local_C: TyC[Mt, Nt]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
-            a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
-            for p in range(P):
-                local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
+            # reuse along the ni dimension
+            if ni == 0:
+                a: Int(TyA.bits * P) = A[mi * Mt // P + ai, ak]
+                for p in range(P):
+                    local_A[ai * P + p, ak] = a[p * TyA.bits : (p + 1) * TyA.bits]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -240,17 +246,20 @@ def packed_int8xint8_systolic[
     Nt: int32,
     P: int32,  # packing factor
 ](A: "Int(8 * P)[M // P, K]", B: "Int(8 * P)[K, N // P]", C: "Int(8 * P)[M // P, N]"):
+    local_A: int8[Mt, K]
+    local_B: int16[K, Nt // 2]
+    local_C: int32[Mt, Nt // 2]
+
     # k needs not be tiled, since it is temporal dimension
     for mi, ni in dsl.grid(M // Mt, N // Nt, name="outer_tile"):
-        local_A: int8[Mt, K]
-        local_B: int16[K, Nt // 2]
-        local_C: int32[Mt, Nt // 2]
         # reversed traversal, better for cascading systolic arrays with FIFOs
         # corresponds to the order of the previous `store_C_tile` output
         for ak, ai in dsl.grid(K, Mt // P, name="load_A_tile"):
-            a: Int(8 * P) = A[mi * Mt // P + ai, ak]
-            for p in range(P):
-                local_A[ai * P + p, ak] = a[p * 8 : (p + 1) * 8]
+            # reuse along the ni dimension
+            if ni == 0:
+                a: Int(8 * P) = A[mi * Mt // P + ai, ak]
+                for p in range(P):
+                    local_A[ai * P + p, ak] = a[p * 8 : (p + 1) * 8]
         for bk, bj in dsl.grid(K, Nt // P, name="load_B_tile"):
             # reuse along the mi dimension
             # since the inner access order is different from the outer one,
@@ -295,12 +304,17 @@ def schedule_systolic(s):
             f"Cannot apply `schedule_systolic` to function: {s.top_func_name}"
         )
     s.partition(s.local_C, dim=0)  # required, otherwise it will fail dataflow checking
-    s.partition(s.local_A, dim=0)
-    s.partition(s.local_B, dim=0)
+    s.partition(s.local_A, dim=1)
+    s.partition(s.local_B, dim=2)
+    load_A_loop = s.get_loops(s.top_func_name)["outer_tile"]["ak"]
+    s.pipeline(load_A_loop)
+    load_B_loop = s.get_loops(s.top_func_name)["outer_tile"]["bk"]
+    s.pipeline(load_B_loop)
+    store_C_loop = s.get_loops(s.top_func_name)["outer_tile"]["sj"]
+    s.pipeline(store_C_loop)
     inner_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
-    s.dataflow(tile_loop)
     kernel_loop = None
     for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
         try:
