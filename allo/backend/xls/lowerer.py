@@ -219,7 +219,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
   def _analyze(self):
     block = self.func.body.blocks[0]
     for op in block.operations:
-      if isinstance(op, scf_d.ForOp):
+      if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
         self.loop, self.loop_type = op, 'for'
         break
       elif isinstance(op, scf_d.WhileOp):
@@ -240,8 +240,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       used = self._collect_memrefs(body, memrefs)
       used |= self._collect_memrefs(list(self.loop.before.blocks)[0], memrefs)
     else:
-      # scf.for exposes its body directly as a block
-      body = self.loop.body
+      body = self._loop_body(self.loop)
       used = self._collect_memrefs(body, memrefs)
 
     for m in used:
@@ -272,8 +271,8 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
   # recursively collect nested for ops so we can track loop order
   def _collect_nested_loops(self, loop_op):
     self.loops.append(loop_op)
-    for op in loop_op.body.operations:
-      if isinstance(op, scf_d.ForOp):
+    for op in self._loop_body(loop_op).operations:
+      if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
         self._collect_nested_loops(op)
 
   def _collect_memrefs(self, block, memrefs):
@@ -282,10 +281,15 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       for operand in op.operands:
         if operand in memrefs:
           used.add(operand)
-      if isinstance(op, scf_d.ForOp):
-        # scf.for exposes its body directly
-        used |= self._collect_memrefs(op.body, memrefs)
+      if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+        used |= self._collect_memrefs(self._loop_body(op), memrefs)
       elif isinstance(op, scf_d.IfOp):
+        then_blk = self._get_region_block(op, 'then_block', 'thenRegion')
+        used |= self._collect_memrefs(then_blk, memrefs)
+        else_blk = self._get_region_block(op, 'else_block', 'elseRegion')
+        if else_blk:
+          used |= self._collect_memrefs(else_blk, memrefs)
+      elif isinstance(op, affine_d.AffineIfOp):
         then_blk = self._get_region_block(op, 'then_block', 'thenRegion')
         used |= self._collect_memrefs(then_blk, memrefs)
         else_blk = self._get_region_block(op, 'else_block', 'elseRegion')
@@ -296,7 +300,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
   def _get_init(self, memref):
     func_args = list(self.func.arguments)
     for op in self.func.body.blocks[0].operations:
-      if isinstance(op, (scf_d.ForOp, scf_d.WhileOp)):
+      if isinstance(op, (scf_d.ForOp, scf_d.WhileOp, affine_d.AffineForOp)):
         break
       if isinstance(op, affine_d.AffineStoreOp) and op.operands[1] == memref:
         v = op.operands[0]
@@ -320,6 +324,21 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     region = getattr(op, region_attr, None)
     return list(region.blocks)[0] if region and len(region.blocks) > 0 else None
 
+  def _loop_body(self, loop_op):
+    if hasattr(loop_op, "body"):
+      return loop_op.body
+    if hasattr(loop_op, "region"):
+      return list(loop_op.region.blocks)[0]
+    raise NotImplementedError(f"unsupported loop op: {type(loop_op)}")
+
+  def _loop_induction_var(self, loop_op):
+    if hasattr(loop_op, "induction_variable"):
+      return loop_op.induction_variable
+    body = getattr(loop_op, "body", None)
+    if body and len(body.arguments) > 0:
+      return body.arguments[0]
+    raise NotImplementedError(f"cannot determine induction variable for {type(loop_op)}")
+
   # ================================================================
   # body lowering helpers
   # ================================================================
@@ -330,7 +349,8 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     updated = {}
     
     for op in ops:
-      if isinstance(op, (arith_d.ConstantOp, scf_d.ForOp, scf_d.YieldOp)):
+      if isinstance(op, (arith_d.ConstantOp, scf_d.ForOp, scf_d.YieldOp,
+                         affine_d.AffineForOp, affine_d.AffineYieldOp)):
         continue
       if isinstance(op, memref_d.AllocOp):
         temp_memrefs[str(op.result)] = None
@@ -450,14 +470,14 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
     # register each loop induction variable
     for i, loop_op in enumerate(self.loops):
-      self.register(loop_op.induction_variable, f"index{i}")
+      self.register(self._loop_induction_var(loop_op), f"index{i}")
     
     # register state memrefs with their accumulator aliases
     for i, (m, _, _) in enumerate(self.state):
       self.register(m, acc_names[i])
 
     # emit the innermost loop body
-    innermost_body = self.loops[-1].body
+    innermost_body = self._loop_body(self.loops[-1])
     updated = self._emit_body(innermost_body.operations, acc_names, lines)
 
     # build carry logic from the innermost loop outward
@@ -589,9 +609,10 @@ class DslxModuleLowerer:
     for op in module.body.operations:
       if isinstance(op, func_d.FuncOp):
 
-        # detect whether the function contains scf.for or scf.while
+        # detect whether the function contains loops we can lower statefully
+        loop_ops = ("scf.for", "scf.while", "affine.for")
         has_loop = any(
-          inner_op.operation.name in ("scf.for", "scf.while")
+          inner_op.operation.name in loop_ops
           for block in op.body.blocks
           for inner_op in block.operations
         )

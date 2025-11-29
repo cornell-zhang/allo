@@ -127,7 +127,7 @@ class InstructionEmitter:
     rhs = self.p.lookup(op.operands[2])
     tmp = self.p.new_tmp()
     self.p.register(op.result, tmp)
-    return [f"    let {tmp} = if ({sel}) {{ {lhs} }} else {{ {rhs} }}"]
+    return [f"    let {tmp} = if ({sel}) {{ {lhs} }} else {{ {rhs} }};"]
 
   def _emit_extui(self, op: arith_d.ExtUIOp) -> list[str]:
     return self._emit_prec(op)
