@@ -210,6 +210,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     self.loop_type = None  # 'for' or 'while'
     self.state = []        # list of tuples (memref value, dslx type, init value)
     self.loops = []        # list of nested for ops from outermost to innermost
+    self.loop_preambles = []
     self.return_state_idx = 0  # index of the state variable returned by the func
     self._analyze()
 
@@ -230,8 +231,10 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       self._collect_nested_loops(self.loop)
 
     # collect memrefs defined before the loop
-    memrefs = {op.result for op in block.operations 
+    memrefs = {op.result for op in block.operations
                if isinstance(op, memref_d.AllocOp) and op.result != self.loop}
+    if self.loop is not None and self.loop_type == 'for':
+      memrefs |= self._collect_loop_allocs(self.loop)
     
     # find memrefs used inside the loop body
     # note: scf.for body is already a block, while scf.while before/after are regions
@@ -270,10 +273,45 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
   # recursively collect nested for ops so we can track loop order
   def _collect_nested_loops(self, loop_op):
-    self.loops.append(loop_op)
-    for op in self._loop_body(loop_op).operations:
+    body = self._loop_body(loop_op)
+    preamble = []
+    nested = None
+    for op in body.operations:
       if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
-        self._collect_nested_loops(op)
+        nested = op
+        break
+      preamble.append(op)
+    self.loops.append(loop_op)
+    self.loop_preambles.append(preamble if nested is not None else [])
+    if nested is not None:
+      self._collect_nested_loops(nested)
+
+  def _collect_loop_allocs(self, loop_op):
+    return self._collect_allocs_from_block(self._loop_body(loop_op))
+
+  def _collect_memref_allocs_in_block(self, block):
+    return self._collect_allocs_from_block(block)
+
+  def _collect_allocs_from_block(self, block):
+    if block is None:
+      return set()
+    allocs = set()
+    for op in block.operations:
+      allocs |= self._collect_allocs_from_op(op)
+    return allocs
+
+  def _collect_allocs_from_op(self, op):
+    allocs = set()
+    if isinstance(op, memref_d.AllocOp):
+      allocs.add(op.result)
+    if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+      allocs |= self._collect_allocs_from_block(self._loop_body(op))
+    elif isinstance(op, (scf_d.IfOp, affine_d.AffineIfOp)):
+      then_blk = self._get_region_block(op, 'then_block', 'thenRegion')
+      else_blk = self._get_region_block(op, 'else_block', 'elseRegion')
+      allocs |= self._collect_allocs_from_block(then_blk)
+      allocs |= self._collect_allocs_from_block(else_blk)
+    return allocs
 
   def _collect_memrefs(self, block, memrefs):
     used = set()
@@ -338,6 +376,21 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     if body and len(body.arguments) > 0:
       return body.arguments[0]
     raise NotImplementedError(f"cannot determine induction variable for {type(loop_op)}")
+
+  def _inner_guard_condition(self, level, ubs):
+    conds = []
+    if level < len(ubs):
+      conds.append(f"index{level} < {ubs[level]}")
+    conds.extend(f"index{i} == s32:0" for i in range(level + 1, len(self.loops)))
+    if not conds:
+      return "true"
+    return " && ".join(conds)
+
+  def _loop_iteration_guard(self, ubs):
+    conds = [f"index{i} < {ubs[i]}" for i in range(min(len(self.loops), len(ubs)))]
+    if not conds:
+      return "true"
+    return " && ".join(conds)
 
   # ================================================================
   # body lowering helpers
@@ -476,9 +529,40 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     for i, (m, _, _) in enumerate(self.state):
       self.register(m, acc_names[i])
 
+    temp_memrefs = {}
+
+    # emit outer-loop preambles guarded on inner-loop resets
+    for level in range(max(0, len(self.loops) - 1)):
+      ops = self.loop_preambles[level] if level < len(self.loop_preambles) else []
+      if not ops:
+        continue
+      pre_updates = self._emit_body(ops, acc_names, lines, temp_memrefs)
+      cond = self._inner_guard_condition(level, ubs)
+      for idx, val in pre_updates.items():
+        prev = acc_names[idx]
+        if cond != "true":
+          guarded = self.new_tmp()
+          lines.append(f"    let {guarded} = if ({cond}) {{ {val} }} else {{ {prev} }};")
+          acc_names[idx] = guarded
+          self.register(self.state[idx][0], guarded)
+        else:
+          acc_names[idx] = val
+
     # emit the innermost loop body
     innermost_body = self._loop_body(self.loops[-1])
-    updated = self._emit_body(innermost_body.operations, acc_names, lines)
+    updated = self._emit_body(innermost_body.operations, acc_names, lines, temp_memrefs)
+
+    loop_guard = self._loop_iteration_guard(ubs)
+    for i in range(n):
+      if i in updated:
+        new_val = updated[i]
+        if loop_guard != "true":
+          guarded = self.new_tmp()
+          lines.append(f"    let {guarded} = if ({loop_guard}) {{ {new_val} }} else {{ {acc_names[i]} }};")
+          acc_names[i] = guarded
+        else:
+          acc_names[i] = new_val
+        self.register(self.state[i][0], acc_names[i])
 
     # build carry logic from the innermost loop outward
     # each level wraps to zero when reaching its bound
@@ -502,7 +586,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     done = carry  # outermost carry indicates completion
 
     # pick updated accumulator values or fall back to the previous ones
-    upd_accs = [updated.get(i, acc_names[i]) for i in range(n)]
+    upd_accs = acc_names[:]
 
     # send results and reset accumulators when finished
     self._emit_send_on_done(lines, base_tok, done, upd_accs)
