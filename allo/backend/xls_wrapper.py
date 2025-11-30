@@ -99,6 +99,64 @@ public:
 
     return testblock
 
+# XLS legality checks on MLIR text
+
+DYNAMIC_TYPE_RE = re.compile(
+    r'\b(memref|tensor)<[^>]*\?>'
+)
+
+LOOP_HEADER_RE = re.compile(
+    r'^\s*(affine\.for|scf\.for)\b.*$'
+)
+
+def validate_xls_ir(mlir_text: str) -> None:
+    """
+    Raises RuntimeError with a human-readable message if not.
+    Cannot have
+    - Dynamic memref/tensor shapes (no '?' in type).
+    - Memref.alloc or memref.alloca (dynamic allocation).
+    - Every affine.for / scf.for must be annotated with allo.pipeline
+      or allo.unroll in its header line.
+    """
+    errors = []
+
+    # Dynamic shapes: look for '?' inside memref<...> or tensor<...>.
+    if DYNAMIC_TYPE_RE.search(mlir_text):
+        errors.append(
+            "XLS backend requires static shapes: found memref/tensor type "
+            "with dynamic dimension ('?')."
+        )
+
+    # Disallow dynamic allocation ops.
+    if "memref.alloca" in mlir_text:
+        errors.append(
+            "memref.alloca is not supported by the XLS backend (no dynamic stack "
+            "allocation)."
+        )
+    if "memref.alloc " in mlir_text or "memref.alloc\n" in mlir_text:
+        errors.append(
+            "memref.alloc is not supported by the XLS backend (no dynamic heap "
+            "allocation). Lower to static buffers or globals instead."
+        )
+
+    # For each affine.for/scf.for, require allo.pipeline or allo.unroll
+    for line in mlir_text.splitlines():
+        m = LOOP_HEADER_RE.match(line)
+        if not m:
+            continue
+
+        if "allo.pipeline" not in line and "allo.unroll" not in line:
+            errors.append(
+                "Loop missing XLS directive: each affine.for/scf.for must have "
+                "either 'allo.pipeline' or 'allo.unroll' attribute.\n"
+                f"  Offending loop header: {line.strip()}"
+            )
+
+    if errors:
+        raise RuntimeError(
+            "MLIR module is not legal for XLS[cc] backend:\n"
+            + "\n".join(f"  - {msg}" for msg in errors)
+        )
 
 def wrap_xlscc(mlir_module_text: str,
                core_code: str,
@@ -117,6 +175,8 @@ def wrap_xlscc(mlir_module_text: str,
     parts.append("\n// ---- End core code ----\n\n")
     parts.append(render_testblock(input=function_inputs, function_names=function_names))
     return "".join(parts)
+
+
 
 if __name__ == "__main__":
     # Example core C++ code that emitXlscc might return

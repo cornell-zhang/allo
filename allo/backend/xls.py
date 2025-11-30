@@ -1,12 +1,13 @@
 import re
-
 import io
+from typing import List
+
 from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import Context, Location, Module
 from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
 
-from .xls_wrapper import wrap_xlscc 
+from .xls_wrapper import wrap_xlscc, validate_xls_ir  # <-- NEW import
 
 class XlsccModule:
     def __init__(self,
@@ -37,34 +38,52 @@ class XlsccModule:
             )
             pm.run(self.module.operation)
 
+        # 1) Take a snapshot of the lowered MLIR as text and validate for XLS.
         self.mlir_text = str(self.module)
+        validate_xls_ir(self.mlir_text)  # <-- ERROR OUT EARLY IF NOT XLS-LEGAL
 
-        # emit the XLS [cc] HLS Code
+        # 2) Emit the XLS[cc] HLS Code from MLIR
         buf = io.StringIO()
         allo_d.emit_xhls(self.module, buf)
         buf.seek(0)
         self.core_code = buf.read()
 
+        # 3) Extract function signature from core_code (simple regex hacking)
         pattern = r"""
             (?P<rtype>[\w:\<\>\~]+)
-            \s+                          
+            \s+
             (?P<name>[A-Za-z_]\w*(?:::\w*)*)
             \s*
             \(
-                (?P<params>[^)]*) 
+                (?P<params>[^)]*)
             \)
         """
 
         match = re.search(pattern, self.core_code, re.VERBOSE)
+        if not match:
+            raise RuntimeError(
+                "Failed to find a function signature in the XLS[cc] core code."
+            )
+
         func_name = match.group("name")
         func_params = match.group("params")
 
-        # Wrap core C++ with channels + wrapper class
+        # Turn "int a, int b" into ["a", "b"]
+        param_names: List[str] = []
+        for p in func_params.split(","):
+            p = p.strip()
+            if not p:
+                continue
+            # assume form: "int a" or "MyType const &x"
+            tokens = p.split()
+            param_names.append(tokens[-1])
+
+        # Wrap core C++ with channels + wrapper class in XLS[cc] style
         self.final_cpp = wrap_xlscc(
             mlir_module_text=self.mlir_text,
             core_code=self.core_code,
             function_names=(self.top_func_name, func_name),
-            function_inputs=func_params
+            function_inputs=param_names,  # <-- PASS LIST OF NAMES, NOT RAW STRING
         )
 
         if self.project is not None:
