@@ -1,5 +1,7 @@
 # allo/allo/backend/xls/lowerer.py
 
+import re
+
 from allo._mlir.dialects import func as func_d
 from allo._mlir.dialects import scf as scf_d, arith as arith_d, affine as affine_d
 from allo._mlir.dialects import memref as memref_d
@@ -9,10 +11,9 @@ from allo._mlir.passmanager import PassManager
 from ...utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
 from .utils import allo_dtype_to_dslx_type
 from .instruction import InstructionEmitter
+from .memory import RAM_TEMPLATE, MemoryEmitter, discover_memory_bindings
 
-# ================================================================
-# base class
-# ================================================================
+
 class DslxFuncLowererBase:
   def __init__(self, func: func_d.FuncOp):
     self.func = func
@@ -26,6 +27,8 @@ class DslxFuncLowererBase:
     self.outputs = {}  # mlir return index maps to dslx channel name
     self.channels = []  # channel declaration strings
     self.input_types = []  # dslx types for inputs
+    self.channel_handles = []  # handles returned by config in declaration order
+    self.scalar_arg_order = []
 
     # naming variables
     self.tmp_counter = 0
@@ -33,6 +36,7 @@ class DslxFuncLowererBase:
 
     # instruction emitter
     self.inst_emitter = InstructionEmitter(self)
+    self.pending_tokens = []
     
     # register all constants upfront
     self._register_all_constants()
@@ -75,35 +79,45 @@ class DslxFuncLowererBase:
       return self.const_map[mlir_name]
     return self.value_map[mlir_name]
 
+  def track_token(self, token):
+    if token and token != "join()":
+      self.pending_tokens.append(token)
+
+  def _consume_tokens(self, base_tok, lines):
+    tokens = []
+    if base_tok and base_tok != "join()":
+      tokens.append(base_tok)
+    tokens.extend(self.pending_tokens)
+    self.pending_tokens = []
+    if not tokens:
+      return "join()"
+    if len(tokens) == 1:
+      return tokens[0]
+    joined = self.new_tok()
+    lines.append(f"    let {joined} = join({', '.join(tokens)});")
+    return joined
+
   # ================================================================
   # channels and config
   # ================================================================
+  def _func_args_for_io(self):
+    args = []
+    for arg in self.func.arguments:
+      if "!allo.stream" in str(arg.type):
+        continue
+      args.append(arg)
+    return args
+
   def _emit_channels(self) -> str:
-    inputs, outputs = get_func_inputs_outputs(self.func)
-
-    # input channels
-    self.input_types = []
-    for idx, (dtype, shape) in enumerate(inputs):
-      assert shape == (), "arrays not currently supported"
-      dslx_type = allo_dtype_to_dslx_type(dtype)
-      self.input_types.append(dslx_type)
-      name = f"in{idx}"
-      self.inputs[idx] = name
-      self.channels.append(f"{name}: chan<{dslx_type}> in")
-
-    # output channels
-    for idx, (dtype, shape) in enumerate(outputs):
-      assert shape == (), "arrays not currently supported"
-      dslx_type = allo_dtype_to_dslx_type(dtype)
-      name = f"out{idx}"
-      self.outputs[idx] = name
-      self.channels.append(f"{name}: chan<{dslx_type}> out")
-
+    self.channel_handles = []
+    self.channels = self._build_channel_decls()
     return "\n".join([f"  {s};" for s in self.channels])
 
+  def _build_channel_decls(self):
+    raise NotImplementedError
+
   def _emit_config(self):
-    names = ", ".join(list(self.inputs.values()) + list(self.outputs.values()))
-    return f"  config({', '.join(self.channels)}) {{ ({names}) }}"
+    return f"  config({', '.join(self.channels)}) {{ ({', '.join(self.channel_handles)}) }}"
 
   # ================================================================
   # input helpers
@@ -113,7 +127,6 @@ class DslxFuncLowererBase:
     lines = []
     values = []
     tokens = []
-    func_args = list(self.func.arguments)
     for idx, ch in enumerate(self.inputs.values()):
       tok = self.new_tok()
       val = self.new_tmp()
@@ -121,8 +134,8 @@ class DslxFuncLowererBase:
       lines.append(f"    let ({tok}, {val}) = recv_if(join(), {ch}, {busy_guard}, {default});")
       values.append(val)
       tokens.append(tok)
-      if idx < len(func_args):
-        self.register(func_args[idx], val)
+      if idx < len(self.scalar_arg_order):
+        self.register(self.scalar_arg_order[idx], val)
     if not tokens:
       base_tok = "join()"
     elif join_tokens and len(tokens) > 1:
@@ -167,9 +180,40 @@ class DslxFuncLowererBase:
 # combinational lowerer
 # ================================================================
 class DslxCombLowerer(DslxFuncLowererBase):
+  def _build_channel_decls(self):
+    inputs, outputs = get_func_inputs_outputs(self.func)
+    func_args = self._func_args_for_io()
+    assert len(inputs) == len(func_args), "func arg mismatch"
+
+    self.input_types = []
+    self.scalar_arg_order = []
+    self.inputs = {}
+    self.outputs = {}
+    channels = []
+    handles = []
+
+    for idx, (arg, (dtype, shape)) in enumerate(zip(func_args, inputs)):
+      dslx_type = allo_dtype_to_dslx_type(dtype)
+      self.input_types.append(dslx_type)
+      name = f"in{idx}"
+      self.inputs[idx] = name
+      self.scalar_arg_order.append(arg)
+      channels.append(f"{name}: chan<{dslx_type}> in")
+      handles.append(name)
+
+    for idx, (dtype, shape) in enumerate(outputs):
+      dslx_type = allo_dtype_to_dslx_type(dtype)
+      name = f"out{idx}"
+      self.outputs[idx] = name
+      channels.append(f"{name}: chan<{dslx_type}> out")
+      handles.append(name)
+
+    self.channel_handles = handles
+    return channels
+
   def _emit_inputs(self):
     lines = []
-    for idx, mlir_arg in enumerate(self.func.arguments):
+    for idx, mlir_arg in enumerate(self.scalar_arg_order):
       chan = self.inputs[idx]
       var = self.new_tmp()
       tok = self.new_tok()
@@ -203,14 +247,20 @@ class DslxCombLowerer(DslxFuncLowererBase):
 # stateful lowerer
 # ================================================================
 class DslxStatefulLowerer(DslxFuncLowererBase):
+  uses_memory = False
 
   def __init__(self, func):
     super(DslxStatefulLowerer, self).__init__(func)
+    self.memory_bindings, self.memory_map = discover_memory_bindings(self.func)
+    self.mem_emitter = MemoryEmitter(self)
+    self.uses_memory = any(b.needs_read or b.needs_write for b in self.memory_bindings)
     self.loop = None
     self.loop_type = None  # 'for' or 'while'
     self.state = []        # list of tuples (memref value, dslx type, init value)
     self.loops = []        # list of nested for ops from outermost to innermost
     self.loop_preambles = []
+    self.loop_postambles = []  # code after nested loops
+    self.loop_upper_bounds = []
     self.return_state_idx = 0  # index of the state variable returned by the func
     self._analyze()
 
@@ -248,6 +298,8 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
     for m in used:
       if "memref" in str(getattr(m, "type", "")):
+        if str(m) in self.memory_map:
+          continue
         mt = MemRefType(m.type)
         dtype, _ = get_dtype_and_shape_from_type(mt.element_type)
         self.state.append((m, allo_dtype_to_dslx_type(dtype), self._get_init(m)))
@@ -275,16 +327,37 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
   def _collect_nested_loops(self, loop_op):
     body = self._loop_body(loop_op)
     preamble = []
+    postamble = []
     nested = None
+    found_nested = False
     for op in body.operations:
       if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
-        nested = op
-        break
-      preamble.append(op)
+        if not found_nested:
+          nested = op
+          found_nested = True
+        # don't add loop ops to postamble, they're handled separately
+      elif found_nested:
+        # code after the nested loop (non-loop ops only)
+        postamble.append(op)
+      else:
+        preamble.append(op)
     self.loops.append(loop_op)
     self.loop_preambles.append(preamble if nested is not None else [])
+    self.loop_postambles.append(postamble if nested is not None else [])
+    self.loop_upper_bounds.append(self._extract_loop_upper_bound(loop_op))
     if nested is not None:
       self._collect_nested_loops(nested)
+
+  def _extract_loop_upper_bound(self, loop_op):
+    if isinstance(loop_op, affine_d.AffineForOp):
+      try:
+        header = loop_op.operation.get_asm().splitlines()[0]
+      except AttributeError:
+        header = str(loop_op.operation).splitlines()[0]
+      match = re.search(r"\bto\b\s+([0-9]+)", header)
+      if match:
+        return f"s32:{match.group(1)}"
+    return None
 
   def _collect_loop_allocs(self, loop_op):
     return self._collect_allocs_from_block(self._loop_body(loop_op))
@@ -377,25 +450,39 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       return body.arguments[0]
     raise NotImplementedError(f"cannot determine induction variable for {type(loop_op)}")
 
-  def _inner_guard_condition(self, level, ubs):
+  def _inner_guard_condition(self, level, ubs, get_check_fn=None):
     conds = []
     if level < len(ubs):
-      conds.append(f"index{level} < {ubs[level]}")
+      if get_check_fn:
+        conds.append(get_check_fn(level, 'lt'))
+      else:
+        conds.append(f"index{level} < {ubs[level]}")
     conds.extend(f"index{i} == s32:0" for i in range(level + 1, len(self.loops)))
     if not conds:
       return "true"
     return " && ".join(conds)
 
-  def _loop_iteration_guard(self, ubs):
-    conds = [f"index{i} < {ubs[i]}" for i in range(min(len(self.loops), len(ubs)))]
+  def _loop_iteration_guard(self, ubs, get_check_fn=None):
+    conds = []
+    for i in range(min(len(self.loops), len(ubs))):
+      if get_check_fn:
+        conds.append(get_check_fn(i, 'lt'))
+      else:
+        conds.append(f"index{i} < {ubs[i]}")
     if not conds:
       return "true"
     return " && ".join(conds)
 
+  def _loop_bound_is_dynamic(self, idx):
+    if idx >= len(self.loop_upper_bounds):
+      return True
+    bound = self.loop_upper_bounds[idx]
+    return bound is None
+
   # ================================================================
   # body lowering helpers
   # ================================================================
-  def _emit_body(self, ops, acc_names, lines, temp_memrefs=None):
+  def _emit_body(self, ops, acc_names, lines, temp_memrefs=None, predicate=None):
     state_memrefs = {str(m): i for i, (m, _, _) in enumerate(self.state)}
     if temp_memrefs is None:
       temp_memrefs = {}  # track temporary memrefs inside the loop body (string keys to values)
@@ -408,25 +495,11 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       if isinstance(op, memref_d.AllocOp):
         temp_memrefs[str(op.result)] = None
       elif isinstance(op, affine_d.AffineLoadOp):
-        mkey = str(op.operands[0])
-        if mkey in state_memrefs:
-          self.register(op.result, self.lookup(self.state[state_memrefs[mkey]][0]))
-        elif mkey in temp_memrefs:
-          self.register(op.result, temp_memrefs[mkey])
-        else:
-          self.inst_emitter.emit(op)
+        if not self._handle_affine_load(op, lines, temp_memrefs, state_memrefs):
+          lines.extend(self.inst_emitter.emit(op))
       elif isinstance(op, affine_d.AffineStoreOp):
-        val, mkey = self.lookup(op.operands[0]), str(op.operands[1])
-        if mkey in state_memrefs:
-          i = state_memrefs[mkey]
-          tmp = self.new_tmp()
-          updated[i] = tmp
-          lines.append(f"    let {tmp} = {val};")
-          self.register(self.state[i][0], tmp)
-        elif mkey in temp_memrefs:
-          temp_memrefs[mkey] = val
-        else:
-          self.inst_emitter.emit(op)
+        if not self._handle_affine_store(op, lines, temp_memrefs, state_memrefs, updated, predicate):
+          lines.extend(self.inst_emitter.emit(op))
       elif isinstance(op, scf_d.IfOp):
         cond = self.lookup(op.operands[0])
         saved = dict(self.value_map)
@@ -446,6 +519,38 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
         lines.extend(self.inst_emitter.emit(op))
     return updated
 
+  def _handle_affine_load(self, op, lines, temp_memrefs, state_memrefs):
+    binding = self.memory_map.get(str(op.operands[0]))
+    if binding and binding.needs_read:
+      lines.extend(self.mem_emitter.emit_read(binding, op))
+      return True
+    mkey = str(op.operands[0])
+    if mkey in state_memrefs:
+      self.register(op.result, self.lookup(self.state[state_memrefs[mkey]][0]))
+      return True
+    if mkey in temp_memrefs:
+      self.register(op.result, temp_memrefs[mkey])
+      return True
+    return False
+
+  def _handle_affine_store(self, op, lines, temp_memrefs, state_memrefs, updated, predicate=None):
+    val, mkey = self.lookup(op.operands[0]), str(op.operands[1])
+    binding = self.memory_map.get(mkey)
+    if binding and binding.needs_write:
+      lines.extend(self.mem_emitter.emit_write(binding, op, predicate))
+      return True
+    if mkey in state_memrefs:
+      i = state_memrefs[mkey]
+      tmp = self.new_tmp()
+      updated[i] = tmp
+      lines.append(f"    let {tmp} = {val};")
+      self.register(self.state[i][0], tmp)
+      return True
+    if mkey in temp_memrefs:
+      temp_memrefs[mkey] = val
+      return True
+    return False
+
   # ================================================================
   # shared state helpers
   # ================================================================
@@ -463,7 +568,11 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       return
     ret_idx = self.return_state_idx
     out_chan = list(self.outputs.values())[0]
-    lines.append(f"    send_if({base_tok}, {out_chan}, {predicate}, {values[ret_idx]});")
+    token_expr = self._consume_tokens(base_tok, lines)
+    send_tok = self.new_tok()
+    lines.append(
+        f"    let {send_tok} = send_if({token_expr}, {out_chan}, {predicate}, {values[ret_idx]});")
+    self.track_token(send_tok)
 
   def _emit_state_reset(self, lines, predicate, values, arg_sources=None):
     reset = []
@@ -473,6 +582,72 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       lines.append(f"    let {tmp} = if ({predicate}) {{ {init_expr} }} else {{ {values[i]} }};")
       reset.append(tmp)
     return reset
+
+  # ================================================================
+  # memory helpers
+  # ================================================================
+
+  def _build_channel_decls(self):
+    inputs, outputs = get_func_inputs_outputs(self.func)
+    func_args = self._func_args_for_io()
+    assert len(inputs) == len(func_args), "func arg mismatch"
+
+    self.input_types = []
+    self.scalar_arg_order = []
+    channels = []
+    self.inputs = {}
+    self.outputs = {}
+    handles = []
+
+    scalar_idx = 0
+    for arg, (dtype, shape) in zip(func_args, inputs):
+      if shape:
+        continue
+      dslx_type = allo_dtype_to_dslx_type(dtype)
+      self.input_types.append(dslx_type)
+      name = f"in{scalar_idx}"
+      self.inputs[scalar_idx] = name
+      self.scalar_arg_order.append(arg)
+      channels.append(f"{name}: chan<{dslx_type}> in")
+      handles.append(name)
+      scalar_idx += 1
+
+    for idx, (dtype, shape) in enumerate(outputs):
+      if shape:
+        continue
+      dslx_type = allo_dtype_to_dslx_type(dtype)
+      name = f"out{idx}"
+      self.outputs[idx] = name
+      channels.append(f"{name}: chan<{dslx_type}> out")
+      handles.append(name)
+
+    for binding in self.memory_bindings:
+      if binding.needs_read:
+        req_decl = f"{binding.read_req_chan}: chan<SimpleReadReq<{binding.addr_param()}>> out"
+        resp_decl = f"{binding.read_resp_chan}: chan<SimpleReadResp<{binding.data_param()}>> in"
+        channels.append(req_decl)
+        channels.append(resp_decl)
+        handles.extend([binding.read_req_chan, binding.read_resp_chan])
+      if binding.needs_write:
+        req_decl = (
+            f"{binding.write_req_chan}: "
+            f"chan<SimpleWriteReq<{binding.addr_param()}, {binding.data_param()}>> out"
+        )
+        resp_decl = f"{binding.write_resp_chan}: chan<SimpleWriteResp> in"
+        channels.append(req_decl)
+        channels.append(resp_decl)
+        handles.extend([binding.write_req_chan, binding.write_resp_chan])
+
+    if self.memory_bindings:
+      channels.append("go: chan<bool> in")
+      channels.append("done: chan<bool> out")
+      self.control_channels = ("go", "done")
+      handles.extend(["go", "done"])
+    else:
+      self.control_channels = None
+
+    self.channel_handles = handles
+    return channels
 
   # ================================================================
   # init and next assembly
@@ -485,8 +660,10 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     if self.loop_type == 'for':
       num_loops = len(self.loops) if self.loops else 1
       # for each loop level store index_i and upper_bound_i
-      for _ in range(num_loops):
-        fields += ["0", "0"]
+      for i in range(num_loops):
+        fields.append("0")
+        if self._loop_bound_is_dynamic(i):
+          fields.append("0")
       fields.append("false")  # busy flag
     else:
       fields.append("false")
@@ -504,22 +681,53 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     # for loops (1d, 2d, nd share the same logic here)
     bt = self.input_types[0] if self.input_types else "s32"
     
-    # state packs accumulators, every loop index and bound, and a busy bit
-    loop_types = [bt, bt] * num_loops
+    # state packs accumulators, loop indices (and dynamic bounds), plus a busy bit
+    loop_types = []
+    loop_state_vars = []
+    for i in range(num_loops):
+      loop_types.append(bt)
+      loop_state_vars.append(f"index{i}")
+      if self._loop_bound_is_dynamic(i):
+        loop_types.append(bt)
+        loop_state_vars.append(f"ub{i}")
     state_type = "(" + ", ".join([t for _, t, _ in self.state] + loop_types + ["bool"]) + ")"
-    idx_pairs = [val for i in range(num_loops) for val in (f"index{i}", f"ub{i}")]
-    state_vars = acc_names + idx_pairs + ["busy"]
+    state_vars = acc_names + loop_state_vars + ["busy"]
 
+    self.pending_tokens = []
     lines = [f"  next(state: {state_type}) {{"]
     lines.append(f"    let ({', '.join(state_vars)}) = state;")
+    if self.control_channels:
+      go_tok = self.new_tok()
+      go_val = self.new_tmp()
+      start_flag = self.new_tmp()
+      lines.append(f"    let ({go_tok}, {go_val}) = recv_if(join(), go, !busy, bool:0);")
+      self.track_token(go_tok)
+      lines.append(f"    let {start_flag} = !busy && ({go_val} == bool:1);")
+      busy_guard_expr = start_flag
+    else:
+      go_tok = None
+      start_flag = None
+      busy_guard_expr = "!busy"
 
     # receive inputs (upper bounds for each loop level)
-    recv_defaults = [f"ub{i}" for i in range(num_loops)]
-    recv_lines, ubs, base_tok = self._recv_inputs("!busy", recv_defaults)
+    recv_defaults = [
+        f"ub{i}" for i in range(num_loops) if self._loop_bound_is_dynamic(i)
+    ]
+    recv_lines, scalar_inputs, base_tok = self._recv_inputs(busy_guard_expr, recv_defaults)
     lines.extend(recv_lines)
     
-    # pad ubs if fewer inputs than loops (should be rare)
-    ubs += ["s32:0"] * max(0, num_loops - len(ubs))
+    ubs = []
+    input_idx = 0
+    for i in range(num_loops):
+      if self._loop_bound_is_dynamic(i):
+        if input_idx < len(scalar_inputs):
+          ubs.append(scalar_inputs[input_idx])
+        else:
+          ubs.append(f"ub{i}")
+        input_idx += 1
+      else:
+        literal = self.loop_upper_bounds[i] if i < len(self.loop_upper_bounds) else None
+        ubs.append(literal or "s32:0")
 
     # register each loop induction variable
     for i, loop_op in enumerate(self.loops):
@@ -529,6 +737,26 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     for i, (m, _, _) in enumerate(self.state):
       self.register(m, acc_names[i])
 
+    # cache common bounds checks to avoid recomputation
+    bounds_cache = {}  # maps (loop_idx, check_type) -> tmp variable name
+    
+    def get_bounds_check(loop_idx, check_type):
+      """check_type: 'lt' for index < ub, 'ge' for index+1 >= ub, 'lt_ub' for index < ub (explicit)"""
+      key = (loop_idx, check_type)
+      if key in bounds_cache:
+        return bounds_cache[key]
+      tmp = self.new_tmp()
+      if check_type == 'lt':
+        lines.append(f"    let {tmp} = index{loop_idx} < {ubs[loop_idx]};")
+      elif check_type == 'ge':
+        lines.append(f"    let {tmp} = index{loop_idx} + 1 >= {ubs[loop_idx]};")
+      elif check_type == 'lt_ub':
+        lines.append(f"    let {tmp} = index{loop_idx} < {ubs[loop_idx]};")
+      else:
+        raise ValueError(f"unknown check_type: {check_type}")
+      bounds_cache[key] = tmp
+      return tmp
+
     temp_memrefs = {}
 
     # emit outer-loop preambles guarded on inner-loop resets
@@ -537,7 +765,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       if not ops:
         continue
       pre_updates = self._emit_body(ops, acc_names, lines, temp_memrefs)
-      cond = self._inner_guard_condition(level, ubs)
+      cond = self._inner_guard_condition(level, ubs, bounds_cache, lines)
       for idx, val in pre_updates.items():
         prev = acc_names[idx]
         if cond != "true":
@@ -552,7 +780,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     innermost_body = self._loop_body(self.loops[-1])
     updated = self._emit_body(innermost_body.operations, acc_names, lines, temp_memrefs)
 
-    loop_guard = self._loop_iteration_guard(ubs)
+    loop_guard = self._loop_iteration_guard(ubs, bounds_cache, lines)
     for i in range(n):
       if i in updated:
         new_val = updated[i]
@@ -570,16 +798,34 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     new_indices = [None] * num_loops
     for i in range(num_loops - 1, -1, -1):
       next_idx = self.new_tmp()
+      # get or compute the "index+1 >= ub" check for this loop level
+      ge_check = get_bounds_check(i, 'ge')
       if carry is None:
         # innermost loop always increments then wraps
-        lines.append(f"    let {next_idx} = if (index{i} + 1 >= {ubs[i]}) {{ s32:0 }} else {{ index{i} + 1 }};")
-        carry = self.new_tmp()
-        lines.append(f"    let {carry} = index{i} + 1 >= {ubs[i]};")
+        lines.append(f"    let {next_idx} = if ({ge_check}) {{ s32:0 }} else {{ index{i} + 1 }};")
+        carry = ge_check
+        # emit postamble for outer loop when inner loop completes AND outer loop is still valid
+        if i > 0 and (i - 1) < len(self.loop_postambles):
+          post_ops = self.loop_postambles[i - 1]
+          if post_ops:
+            # postamble should execute when inner loop completes and outer loop is valid
+            outer_valid = get_bounds_check(i - 1, 'lt')
+            postamble_cond = self.new_tmp()
+            lines.append(f"    let {postamble_cond} = {carry} && {outer_valid};")
+            # emit postamble operations conditionally
+            post_updates = self._emit_body(post_ops, acc_names, lines, temp_memrefs, predicate=postamble_cond)
+            # update accumulators with postamble results when postamble executes
+            for idx, val in post_updates.items():
+              guarded = self.new_tmp()
+              lines.append(f"    let {guarded} = if ({postamble_cond}) {{ {val} }} else {{ {acc_names[idx]} }};")
+              acc_names[idx] = guarded
+              self.register(self.state[idx][0], guarded)
       else:
         # outer loops increment only when the inner loop carried
-        lines.append(f"    let {next_idx} = if ({carry} && index{i} + 1 >= {ubs[i]}) {{ s32:0 }} else if ({carry}) {{ index{i} + 1 }} else {{ index{i} }};")
+        outer_ge = get_bounds_check(i, 'ge')
+        lines.append(f"    let {next_idx} = if ({carry} && {outer_ge}) {{ s32:0 }} else if ({carry}) {{ index{i} + 1 }} else {{ index{i} }};")
         new_carry = self.new_tmp()
-        lines.append(f"    let {new_carry} = {carry} && (index{i} + 1 >= {ubs[i]});")
+        lines.append(f"    let {new_carry} = {carry} && {outer_ge};")
         carry = new_carry
       new_indices[i] = next_idx
     
@@ -590,6 +836,11 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
     # send results and reset accumulators when finished
     self._emit_send_on_done(lines, base_tok, done, upd_accs)
+    if self.control_channels:
+      done_tok = self._consume_tokens("join()", lines)
+      done_send = self.new_tok()
+      lines.append(f"    let {done_send} = send_if({done_tok}, done, {done}, bool:1);")
+      self.track_token(done_send)
     final_accs = self._emit_state_reset(lines, done, upd_accs)
 
     # build the composite state tuple returned by next()
@@ -597,9 +848,14 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     for i in range(num_loops):
       idx_out = self.new_tmp()
       lines.append(f"    let {idx_out} = if ({done}) {{ s32:0 }} else {{ {new_indices[i]} }};")
-      state_out += [idx_out, ubs[i]]
+      state_out.append(idx_out)
+      if self._loop_bound_is_dynamic(i):
+        state_out.append(ubs[i])
     busy_out = self.new_tmp()
-    lines.append(f"    let {busy_out} = !{done};")
+    if self.control_channels:
+      lines.append(f"    let {busy_out} = ({start_flag}) || (busy && !{done});")
+    else:
+      lines.append(f"    let {busy_out} = !{done};")
     state_out.append(busy_out)
     
     lines.append(f"    ({', '.join(state_out)})")
@@ -615,6 +871,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     state_type = "(" + ", ".join([t for _, t, _ in self.state] + ["bool"]) + ")"
     state_vars = acc_names + ["busy"]
 
+    self.pending_tokens = []
     lines = [f"  next(state: {state_type}) {{"]
     lines.append(f"    let ({', '.join(state_vars)}) = state;")
 
@@ -701,12 +958,14 @@ class DslxModuleLowerer:
           for inner_op in block.operations
         )
 
-        # ensure we only instantiate the stateful lowerer when loops exist
         lowerer_cls = DslxStatefulLowerer if has_loop else DslxCombLowerer
         self.func_lowerers.append(lowerer_cls(op))
 
   def emit_module(self):
-    return "\n\n".join(fl.emit_proc() for fl in self.func_lowerers)
+    body = "\n\n".join(fl.emit_proc() for fl in self.func_lowerers)
+    if any(getattr(fl, "uses_memory", False) for fl in self.func_lowerers):
+      return f"{RAM_TEMPLATE}\n\n{body}"
+    return body
 
 
 # ================================================================
