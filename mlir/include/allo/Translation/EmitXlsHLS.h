@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ALLO_TRANSLATION_EMITCATAPULTHLS_H
-#define ALLO_TRANSLATION_EMITCATAPULTHLS_H
+#ifndef ALLO_TRANSLATION_EMITXLSHLS_H
+#define ALLO_TRANSLATION_EMITXLSHLS_H
 
 #include "mlir/IR/BuiltinOps.h"
 
@@ -17,4 +17,4 @@ void registerEmitXlsHLSTranslation();
 } // namespace allo
 } // namespace mlir
 
-#endif // ALLO_TRANSLATION_EMITCATAPULTHLS_H 
+#endif // ALLO_TRANSLATION_EMITXLSHLS_H 

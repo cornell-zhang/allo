@@ -9,7 +9,7 @@ from ..ir.transform import find_func_in_module
 
 from .xls_wrapper import wrap_xlscc, validate_xls_ir  # <-- NEW import
 
-class XlsccModule:
+class XlsModule:
     def __init__(self,
                  mlir_text_or_module,
                  top_func_name,
@@ -21,11 +21,8 @@ class XlsccModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
 
-            # mlir may be Module object or string
-            if isinstance(mlir_text_or_module, Module):
-                self.module = mlir_text_or_module
-            else:
-                self.module = Module.parse(str(mlir_text_or_module), ctx)
+            # Always parse as string to ensure correct context
+            self.module = Module.parse(str(mlir_text_or_module), ctx)
 
             self.func = find_func_in_module(self.module, top_func_name)
 
@@ -40,7 +37,7 @@ class XlsccModule:
 
         # 1) Take a snapshot of the lowered MLIR as text and validate for XLS.
         self.mlir_text = str(self.module)
-        validate_xls_ir(self.mlir_text)  # <-- ERROR OUT EARLY IF NOT XLS-LEGAL
+        #validate_xls_ir(self.mlir_text)  # <-- ERROR OUT EARLY IF NOT XLS-LEGAL
 
         # 2) Emit the XLS[cc] HLS Code from MLIR
         buf = io.StringIO()

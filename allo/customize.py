@@ -66,6 +66,7 @@ from .passes import (
 from .utils import freeze_list
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
+from .backend.xls import XlsModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
 
@@ -1213,6 +1214,12 @@ class Schedule:
                 self.module,
                 top_func_name=self.top_func_name,
                 ext_libs=self.ext_libs,
+            )
+        if target == "xls":
+            return XlsModule(
+                self.module,
+                top_func_name=self.top_func_name,
+                project=project,
             )
         if target in {"vhls", "vivado_hls", "vitis_hls", "tapa", "ihls"}:
             match target:
