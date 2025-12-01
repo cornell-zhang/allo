@@ -450,25 +450,17 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       return body.arguments[0]
     raise NotImplementedError(f"cannot determine induction variable for {type(loop_op)}")
 
-  def _inner_guard_condition(self, level, ubs, get_check_fn=None):
+  def _inner_guard_condition(self, level, ubs):
     conds = []
     if level < len(ubs):
-      if get_check_fn:
-        conds.append(get_check_fn(level, 'lt'))
-      else:
-        conds.append(f"index{level} < {ubs[level]}")
+      conds.append(f"index{level} < {ubs[level]}")
     conds.extend(f"index{i} == s32:0" for i in range(level + 1, len(self.loops)))
     if not conds:
       return "true"
     return " && ".join(conds)
 
-  def _loop_iteration_guard(self, ubs, get_check_fn=None):
-    conds = []
-    for i in range(min(len(self.loops), len(ubs))):
-      if get_check_fn:
-        conds.append(get_check_fn(i, 'lt'))
-      else:
-        conds.append(f"index{i} < {ubs[i]}")
+  def _loop_iteration_guard(self, ubs):
+    conds = [f"index{i} < {ubs[i]}" for i in range(min(len(self.loops), len(ubs)))]
     if not conds:
       return "true"
     return " && ".join(conds)
@@ -737,26 +729,6 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     for i, (m, _, _) in enumerate(self.state):
       self.register(m, acc_names[i])
 
-    # cache common bounds checks to avoid recomputation
-    bounds_cache = {}  # maps (loop_idx, check_type) -> tmp variable name
-    
-    def get_bounds_check(loop_idx, check_type):
-      """check_type: 'lt' for index < ub, 'ge' for index+1 >= ub, 'lt_ub' for index < ub (explicit)"""
-      key = (loop_idx, check_type)
-      if key in bounds_cache:
-        return bounds_cache[key]
-      tmp = self.new_tmp()
-      if check_type == 'lt':
-        lines.append(f"    let {tmp} = index{loop_idx} < {ubs[loop_idx]};")
-      elif check_type == 'ge':
-        lines.append(f"    let {tmp} = index{loop_idx} + 1 >= {ubs[loop_idx]};")
-      elif check_type == 'lt_ub':
-        lines.append(f"    let {tmp} = index{loop_idx} < {ubs[loop_idx]};")
-      else:
-        raise ValueError(f"unknown check_type: {check_type}")
-      bounds_cache[key] = tmp
-      return tmp
-
     temp_memrefs = {}
 
     # emit outer-loop preambles guarded on inner-loop resets
@@ -765,7 +737,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       if not ops:
         continue
       pre_updates = self._emit_body(ops, acc_names, lines, temp_memrefs)
-      cond = self._inner_guard_condition(level, ubs, bounds_cache, lines)
+      cond = self._inner_guard_condition(level, ubs)
       for idx, val in pre_updates.items():
         prev = acc_names[idx]
         if cond != "true":
@@ -780,7 +752,7 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     innermost_body = self._loop_body(self.loops[-1])
     updated = self._emit_body(innermost_body.operations, acc_names, lines, temp_memrefs)
 
-    loop_guard = self._loop_iteration_guard(ubs, bounds_cache, lines)
+    loop_guard = self._loop_iteration_guard(ubs)
     for i in range(n):
       if i in updated:
         new_val = updated[i]
@@ -798,34 +770,36 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     new_indices = [None] * num_loops
     for i in range(num_loops - 1, -1, -1):
       next_idx = self.new_tmp()
-      # get or compute the "index+1 >= ub" check for this loop level
-      ge_check = get_bounds_check(i, 'ge')
       if carry is None:
         # innermost loop always increments then wraps
-        lines.append(f"    let {next_idx} = if ({ge_check}) {{ s32:0 }} else {{ index{i} + 1 }};")
-        carry = ge_check
+        lines.append(f"    let {next_idx} = if (index{i} + 1 >= {ubs[i]}) {{ s32:0 }} else {{ index{i} + 1 }};")
+        carry = self.new_tmp()
+        lines.append(f"    let {carry} = index{i} + 1 >= {ubs[i]};")
         # emit postamble for outer loop when inner loop completes AND outer loop is still valid
         if i > 0 and (i - 1) < len(self.loop_postambles):
           post_ops = self.loop_postambles[i - 1]
           if post_ops:
             # postamble should execute when inner loop completes and outer loop is valid
-            outer_valid = get_bounds_check(i - 1, 'lt')
-            postamble_cond = self.new_tmp()
-            lines.append(f"    let {postamble_cond} = {carry} && {outer_valid};")
-            # emit postamble operations conditionally
-            post_updates = self._emit_body(post_ops, acc_names, lines, temp_memrefs, predicate=postamble_cond)
+            outer_valid = f"index{i-1} < {ubs[i-1]}"
+            # emit postamble operations conditionally under the guard
+            post_updates = self._emit_body(
+                post_ops,
+                acc_names,
+                lines,
+                temp_memrefs,
+                predicate=f"{carry} && ({outer_valid})")
             # update accumulators with postamble results when postamble executes
             for idx, val in post_updates.items():
               guarded = self.new_tmp()
-              lines.append(f"    let {guarded} = if ({postamble_cond}) {{ {val} }} else {{ {acc_names[idx]} }};")
+              lines.append(
+                  f"    let {guarded} = if ({carry} && ({outer_valid})) {{ {val} }} else {{ {acc_names[idx]} }};")
               acc_names[idx] = guarded
               self.register(self.state[idx][0], guarded)
       else:
         # outer loops increment only when the inner loop carried
-        outer_ge = get_bounds_check(i, 'ge')
-        lines.append(f"    let {next_idx} = if ({carry} && {outer_ge}) {{ s32:0 }} else if ({carry}) {{ index{i} + 1 }} else {{ index{i} }};")
+        lines.append(f"    let {next_idx} = if ({carry} && index{i} + 1 >= {ubs[i]}) {{ s32:0 }} else if ({carry}) {{ index{i} + 1 }} else {{ index{i} }};")
         new_carry = self.new_tmp()
-        lines.append(f"    let {new_carry} = {carry} && {outer_ge};")
+        lines.append(f"    let {new_carry} = {carry} && (index{i} + 1 >= {ubs[i]});")
         carry = new_carry
       new_indices[i] = next_idx
     
