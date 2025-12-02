@@ -1,29 +1,42 @@
 # allo/allo/backend/xls/tester.py
-# Generate DSLX test harnesses for function verification.
+# generate dslx test harnesses for function verification.
 
 from allo._mlir.dialects import func as func_d
 
 from ...utils import get_func_inputs_outputs
 from .memory import discover_memory_bindings
-from .utils import allo_dtype_to_dslx_type
+from .utils import allo_dtype_to_dslx_type, is_float_type, float_to_dslx_literal
 
-# Builder for generating DSLX #[test_proc] test harnesses.
+# builder for generating dslx #[test_proc] test harnesses
 class DslxTestBuilder:
   def __init__(self, module, func_name):
     self.module = module
     self.func_name = func_name
     self.func = self._find_func()
+    self.float_types_used = set()
     inputs, outputs = get_func_inputs_outputs(self.func)
     self.inputs_meta = inputs
     self.outputs_meta = outputs
     self.scalar_input_indices = [i for i, (_, shape) in enumerate(inputs) if shape == ()]
     self.scalar_output_indices = [i for i, (_, shape) in enumerate(outputs) if shape == ()]
+    # track float types used
+    for i in self.scalar_input_indices:
+      dtype = inputs[i][0]
+      if is_float_type(dtype):
+        self.float_types_used.add(dtype)
+    for i in self.scalar_output_indices:
+      dtype = outputs[i][0]
+      if is_float_type(dtype):
+        self.float_types_used.add(dtype)
     self.scalar_input_types = [
         allo_dtype_to_dslx_type(inputs[i][0]) for i in self.scalar_input_indices
     ]
     self.scalar_output_types = [
         allo_dtype_to_dslx_type(outputs[i][0]) for i in self.scalar_output_indices
     ]
+    # store raw dtypes for float handling
+    self.scalar_input_dtypes = [inputs[i][0] for i in self.scalar_input_indices]
+    self.scalar_output_dtypes = [outputs[i][0] for i in self.scalar_output_indices]
     self.func_args = [arg for arg in self.func.arguments if "!allo.stream" not in str(arg.type)]
     self.memory_bindings, self.memory_map = discover_memory_bindings(self.func)
     self.binding_by_arg = {binding.value: binding for binding in self.memory_bindings}
@@ -119,11 +132,14 @@ class DslxTestBuilder:
         f"    assert_eq({val_name}, {literal});"
     )
 
-  def _literal(self, value, dtype):
+  # convert value to dslx literal, handling floats specially
+  def _literal(self, value, dtype, raw_dtype=None):
     if isinstance(value, str):
       return value if ":" in value else f"{dtype}:{value}"
     if isinstance(value, bool):
       return f"{dtype}:{1 if value else 0}"
+    if raw_dtype and is_float_type(raw_dtype):
+      return float_to_dslx_literal(float(value), raw_dtype)
     return f"{dtype}:{value}"
 
   def _split_values(self, values):
@@ -176,13 +192,13 @@ class DslxTestBuilder:
     next_lines = ["    let tok = join();", "    // single invocation"]
     for idx, global_idx in enumerate(self.scalar_input_indices):
       value = inputs[global_idx]
-      literal = self._literal(value, self.scalar_input_types[idx])
+      literal = self._literal(value, self.scalar_input_types[idx], self.scalar_input_dtypes[idx])
       next_lines.append(f"    let tok = send(tok, in{idx}_s, {literal});")
     for idx, global_idx in enumerate(self.scalar_output_indices):
       value = outputs[global_idx]
       recv_name = f"result_{idx}"
       next_lines.append(f"    let (tok, {recv_name}) = recv(tok, out{idx}_r);")
-      literal = self._literal(value, self.scalar_output_types[idx])
+      literal = self._literal(value, self.scalar_output_types[idx], self.scalar_output_dtypes[idx])
       next_lines.append(f"    assert_eq({recv_name}, {literal});")
     next_lines.append("    send(tok, terminator, true);")
     next_block = "\n".join(next_lines)
@@ -299,7 +315,7 @@ class DslxTestBuilder:
     next_lines.append("    // drive scalar inputs")
     for idx, global_idx in enumerate(self.scalar_input_indices):
       value = inputs[global_idx]
-      literal = self._literal(value, self.scalar_input_types[idx])
+      literal = self._literal(value, self.scalar_input_types[idx], self.scalar_input_dtypes[idx])
       next_lines.append(f"    let tok = send(tok, in{idx}_s, {literal});")
 
     next_lines.append("    // start DUT")
@@ -310,7 +326,7 @@ class DslxTestBuilder:
       value = outputs[global_idx]
       recv_name = f"result_{idx}"
       next_lines.append(f"    let (tok, {recv_name}) = recv(tok, out{idx}_r);")
-      literal = self._literal(value, self.scalar_output_types[idx])
+      literal = self._literal(value, self.scalar_output_types[idx], self.scalar_output_dtypes[idx])
       next_lines.append(f"    assert_eq({recv_name}, {literal});")
 
     next_lines.append("    // wait for completion")

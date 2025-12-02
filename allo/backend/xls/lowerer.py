@@ -9,7 +9,7 @@ from allo._mlir.dialects import memref as memref_d
 from allo._mlir.ir import BlockArgument, Module, MemRefType
 from allo._mlir.passmanager import PassManager
 from ...utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
-from .utils import allo_dtype_to_dslx_type
+from .utils import allo_dtype_to_dslx_type, emit_float_defs
 from .instruction import InstructionEmitter
 from .memory import RAM_TEMPLATE, MemoryEmitter, discover_memory_bindings, build_memory_channels
 
@@ -731,8 +731,18 @@ class DslxModuleLowerer:
 
   def emit_module(self):
     body = "\n\n".join(fl.emit_proc() for fl in self.func_lowerers)
+    # collect float types used from all instruction emitters
+    float_types = set()
+    for fl in self.func_lowerers:
+      float_types.update(fl.inst_emitter.float_types_used)
+    # build preamble with float defs and ram template if needed
+    preamble = []
+    if float_types:
+      preamble.append(emit_float_defs(float_types))
     if any(getattr(fl, "uses_memory", False) for fl in self.func_lowerers):
-      return f"{RAM_TEMPLATE}\n\n{body}"
+      preamble.append(RAM_TEMPLATE)
+    if preamble:
+      return "\n\n".join(preamble) + "\n\n" + body
     return body
 
 

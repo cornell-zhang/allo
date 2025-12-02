@@ -1,32 +1,51 @@
 # allo/allo/backend/xls/instruction.py
-# Emit DSLX code for individual MLIR operations.
+# emit dslx code for individual mlir operations.
 
-from allo._mlir.ir import Operation, IndexType
+from allo._mlir.ir import Operation, IndexType, F16Type, F32Type, F64Type, BF16Type
 from allo._mlir.dialects import arith as arith_d
 from allo._mlir.dialects import func as func_d
 from allo._mlir.dialects import scf as scf_d
 from allo._mlir.dialects import memref as memref_d
 from allo._mlir.dialects import affine as affine_d
-from .utils import allo_dtype_to_dslx_type
+from .utils import allo_dtype_to_dslx_type, float_to_dslx_literal, float_dtype_to_dslx
 
-# Emits DSLX code for MLIR arithmetic and control operations.
+# mlir float type to dtype string mapping
+MLIR_FLOAT_MAP = {
+  F16Type: "f16", F32Type: "f32", F64Type: "f64", BF16Type: "bf16"
+}
+
+# check if mlir type is a float type and return dtype string
+def get_float_dtype(mlir_type):
+  for ftype, dtype in MLIR_FLOAT_MAP.items():
+    if ftype.isinstance(mlir_type):
+      return dtype
+  return None
+
+# emits dslx code for mlir arithmetic and control operations
 class InstructionEmitter:
   def __init__(self, parent):
     self.p = parent
+    self.float_types_used = set()
 
-  # Convert MLIR type to DSLX type string.
+  # convert mlir type to dslx type string
   def dslx_type(self, op):
     result_type = op.result.type
     if isinstance(result_type, IndexType):
       return "s32"
-    sgn =  "u" if any(a.name == "unsigned" for a in op.attributes) else "s"
+    # handle float types
+    dtype = get_float_dtype(result_type)
+    if dtype:
+      self.float_types_used.add(dtype)
+      return float_dtype_to_dslx(dtype)
+    sgn = "u" if any(a.name == "unsigned" for a in op.attributes) else "s"
     bw = result_type.width
     return f"{sgn}{bw}" if (bw <= 64) else f"{sgn}N[{bw}]"
 
-  # Emit DSLX code for an MLIR operation.
+  # emit dslx code for an mlir operation
   def emit(self, op: Operation) -> list[str]:
     if isinstance(op, arith_d.ConstantOp):
       return self._emit_constant(op)
+    # integer ops
     elif isinstance(op, arith_d.AddIOp):
       return self._emit_add(op)
     elif isinstance(op, arith_d.SubIOp):
@@ -45,6 +64,20 @@ class InstructionEmitter:
       return self._emit_div(op)
     elif isinstance(op, arith_d.CmpIOp):
       return self._emit_cmp(op)
+    # float ops
+    elif isinstance(op, arith_d.AddFOp):
+      return self._emit_addf(op)
+    elif isinstance(op, arith_d.SubFOp):
+      return self._emit_subf(op)
+    elif isinstance(op, arith_d.MulFOp):
+      return self._emit_mulf(op)
+    elif isinstance(op, arith_d.DivFOp):
+      return self._emit_divf(op)
+    elif isinstance(op, arith_d.CmpFOp):
+      return self._emit_cmpf(op)
+    elif isinstance(op, arith_d.NegFOp):
+      return self._emit_negf(op)
+    # common ops
     elif isinstance(op, arith_d.SelectOp):
       return self._emit_sel(op)
     elif isinstance(op, arith_d.ExtUIOp):
@@ -84,6 +117,14 @@ class InstructionEmitter:
     return [f"    let {tmp} = ({src} as {self.dslx_type(op)});"]
   
   def _emit_constant(self, op: arith_d.ConstantOp) -> list[str]:
+    result_type = op.result.type
+    # handle float constants
+    dtype = get_float_dtype(result_type)
+    if dtype:
+      self.float_types_used.add(dtype)
+      value_str = str(op.value).split(":")[0].strip()
+      self.p.constant(op.result, float_to_dslx_literal(float(value_str), dtype))
+      return []
     value = str(op.value).split(":", 1)[0].strip()
     dslx_prefix = allo_dtype_to_dslx_type(str(op.result.type))
     self.p.constant(op.result, f"{dslx_prefix}:{value}")
@@ -112,11 +153,59 @@ class InstructionEmitter:
   
   def _emit_div(self, op: arith_d.FloorDivSIOp) -> list[str]:
     return self._binary_op(op, "/")
-  
+
   def _emit_cmp(self, op: arith_d.CmpIOp):
     opcode = ["==", "!=", "<", "<=", ">", ">=", "<", "<=", 
               ">", ">="][op.predicate.value]
     return self._binary_op(op, opcode)
+
+  # float binary op using apfloat function
+  def _float_binary_op(self, op, func_name) -> list[str]:
+    lhs = self.p.lookup(op.lhs)
+    rhs = self.p.lookup(op.rhs)
+    tmp = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    dtype = get_float_dtype(op.result.type)
+    if dtype:
+      self.float_types_used.add(dtype)
+    return [f"    let {tmp} = apfloat::{func_name}({lhs}, {rhs});"]
+
+  def _emit_addf(self, op: arith_d.AddFOp) -> list[str]:
+    return self._float_binary_op(op, "add")
+
+  def _emit_subf(self, op: arith_d.SubFOp) -> list[str]:
+    return self._float_binary_op(op, "sub")
+
+  def _emit_mulf(self, op: arith_d.MulFOp) -> list[str]:
+    return self._float_binary_op(op, "mul")
+
+  def _emit_divf(self, op: arith_d.DivFOp) -> list[str]:
+    # apfloat doesn't have div, so we need to implement it differently
+    # for now, raise not implemented
+    raise NotImplementedError("float division not yet supported in xls backend")
+
+  def _emit_negf(self, op: arith_d.NegFOp) -> list[str]:
+    src = self.p.lookup(op.operands[0])
+    tmp = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    dtype = get_float_dtype(op.result.type)
+    if dtype:
+      self.float_types_used.add(dtype)
+    return [f"    let {tmp} = apfloat::negate({src});"]
+
+  def _emit_cmpf(self, op: arith_d.CmpFOp) -> list[str]:
+    lhs = self.p.lookup(op.lhs)
+    rhs = self.p.lookup(op.rhs)
+    tmp = self.p.new_tmp()
+    self.p.register(op.result, tmp)
+    dtype = get_float_dtype(op.lhs.type)
+    if dtype:
+      self.float_types_used.add(dtype)
+    # cmpf predicates: 0=false, 1=oeq, 2=ogt, 3=oge, 4=olt, 5=ole, 6=one, 7=ord, etc.
+    cmp_funcs = {1: "eq_2", 2: "gt_2", 3: "gte_2", 4: "lt_2", 5: "lte_2"}
+    if op.predicate.value in cmp_funcs:
+      return [f"    let {tmp} = apfloat::{cmp_funcs[op.predicate.value]}({lhs}, {rhs});"]
+    raise NotImplementedError(f"float comparison predicate {op.predicate.value} not supported")
   
   def _emit_sel(self, op: arith_d.SelectOp):
     sel = self.p.lookup(op.operands[0])
