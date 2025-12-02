@@ -1,4 +1,5 @@
 # allo/allo/backend/xls/instruction.py
+# Emit DSLX code for individual MLIR operations.
 
 from allo._mlir.ir import Operation, IndexType
 from allo._mlir.dialects import arith as arith_d
@@ -8,19 +9,21 @@ from allo._mlir.dialects import memref as memref_d
 from allo._mlir.dialects import affine as affine_d
 from .utils import allo_dtype_to_dslx_type
 
+# Emits DSLX code for MLIR arithmetic and control operations.
 class InstructionEmitter:
   def __init__(self, parent):
     self.p = parent
 
+  # Convert MLIR type to DSLX type string.
   def dslx_type(self, op):
     result_type = op.result.type
-    # Handle IndexType (used for loop indices) - treat as signed 32-bit
     if isinstance(result_type, IndexType):
       return "s32"
     sgn =  "u" if any(a.name == "unsigned" for a in op.attributes) else "s"
     bw = result_type.width
     return f"{sgn}{bw}" if (bw <= 64) else f"{sgn}N[{bw}]"
 
+  # Emit DSLX code for an MLIR operation.
   def emit(self, op: Operation) -> list[str]:
     if isinstance(op, arith_d.ConstantOp):
       return self._emit_constant(op)
@@ -65,10 +68,7 @@ class InstructionEmitter:
 
     raise NotImplementedError(f"not implemented: {repr(op)}")
   
-  # ---------------------------------------------------------------------
-  # helpers
-  # ---------------------------------------------------------------------
-
+  # Emit binary operation with given opcode.
   def _binary_op(self, op, opcode) -> list[str]:
     lhs = self.p.lookup(op.lhs)
     rhs = self.p.lookup(op.rhs)
@@ -76,16 +76,13 @@ class InstructionEmitter:
     self.p.register(op.result, tmp)
     return [f"    let {tmp} = ({lhs} {opcode} {rhs});"]
   
+  # Emit precision cast operation.
   def _emit_prec(self, op) -> list[str]:
     src   = self.p.lookup(op.operands[0])
     tmp   = self.p.new_tmp()
     self.p.register(op.result, tmp)
     return [f"    let {tmp} = ({src} as {self.dslx_type(op)});"]
   
-  # ---------------------------------------------------------------------
-  # instruction
-  # ---------------------------------------------------------------------
-
   def _emit_constant(self, op: arith_d.ConstantOp) -> list[str]:
     value = str(op.value).split(":", 1)[0].strip()
     dslx_prefix = allo_dtype_to_dslx_type(str(op.result.type))
@@ -144,24 +141,21 @@ class InstructionEmitter:
   def _emit_yield(self, op: scf_d.YieldOp) -> list[str]:
     return []
   
+  # Track temporary memref allocation (value set by store).
   def _emit_alloc(self, op: memref_d.AllocOp) -> list[str]:
-    # For temporary memrefs inside loops, we just track them
-    # The actual value will be set by affine.store
     return []
   
+  # Register memref with stored value for later loads.
   def _emit_affine_store(self, op: affine_d.AffineStoreOp) -> list[str]:
-    # Store the value to the memref - register the memref with the stored value
     stored_val = self.p.lookup(op.operands[0])
     memref = op.operands[1]
-    # Register the memref so loads can find the value
     self.p.register(memref, stored_val)
     return []
   
+  # Load value from memref by looking up registered value.
   def _emit_affine_load(self, op: affine_d.AffineLoadOp) -> list[str]:
-    # Load from the memref - look up the stored value
     memref = op.operands[0]
     stored_val = self.p.lookup(memref)
-    # Register the load result with the same value
     self.p.register(op.result, stored_val)
     return []
   

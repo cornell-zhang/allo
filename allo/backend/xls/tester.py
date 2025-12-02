@@ -1,4 +1,5 @@
-"""Helpers for generating DSLX #[test_proc] blocks."""
+# allo/allo/backend/xls/tester.py
+# Generate DSLX test harnesses for function verification.
 
 from allo._mlir.dialects import func as func_d
 
@@ -6,7 +7,7 @@ from ...utils import get_func_inputs_outputs
 from .memory import discover_memory_bindings
 from .utils import allo_dtype_to_dslx_type
 
-
+# Builder for generating DSLX #[test_proc] test harnesses.
 class DslxTestBuilder:
   def __init__(self, module, func_name):
     self.module = module
@@ -136,10 +137,12 @@ class DslxTestBuilder:
     outputs = values[self.num_inputs :]
     return inputs, outputs
 
+  # Generate test harness from flat value list.
   def emit_from_values(self, values):
     inputs, outputs = self._split_values(values)
     return self.emit(inputs, outputs)
 
+  # Generate test harness for given inputs and expected outputs.
   def emit(self, inputs, outputs):
     assert len(inputs) == self.num_inputs, "input count mismatch"
     assert len(outputs) == self.num_outputs, "output count mismatch"

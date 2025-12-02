@@ -1,12 +1,12 @@
+# allo/allo/backend/xls/memory.py
+# Memory binding and channel generation for DSLX proc lowering.
+
 from allo._mlir.ir import MemRefType
 from allo._mlir.dialects import affine as affine_d, func as func_d
 
 from ...utils import get_bitwidth_from_type, get_dtype_and_shape_from_type
 from .utils import allo_dtype_to_dslx_type
 
-# ================================================================
-# RAM template
-# ================================================================
 RAM_TEMPLATE = """\
 // Simple dual-port RAM model with independent read and write ports.
 // Parameterized on address width, data width, and depth.
@@ -71,9 +71,7 @@ pub proc Simple1R1WRam<ADDR_WIDTH: u32, DATA_WIDTH: u32, SIZE: u32> {
 """
 
 
-# ================================================================
-# memory binding metadata
-# ================================================================
+# Metadata for a memory binding (memref argument or return value).
 class MemoryBinding:
   def __init__(self, value, dtype, shape, index, arg_index=None):
     self.value = value
@@ -112,6 +110,7 @@ class MemoryBinding:
       running *= dim
     return list(reversed(reversed_strides))
 
+  # Convert multi-dimensional indices to linear address.
   def linearize(self, index_exprs):
     if not index_exprs:
       return "s32:0"
@@ -130,9 +129,6 @@ class MemoryBinding:
     return "(" + " + ".join(terms) + ")"
 
 
-# ================================================================
-# memory discovery helpers
-# ================================================================
 # Validate memref shape and raise if dynamic dimensions are found.
 def _validate_memref_shape(shape):
   if any(dim == -1 for dim in shape):
@@ -146,6 +142,7 @@ def _create_memory_binding(value, dtype, shape, idx, memory_map, arg_index=None)
   return binding
 
 
+# Discover all memory bindings (memref args and returns) in a function.
 def discover_memory_bindings(func):
   func_args = [
       arg for arg in func.arguments
@@ -172,6 +169,7 @@ def discover_memory_bindings(func):
   return bindings, memory_map
 
 
+# Mark which bindings need read/write channels based on usage.
 def _mark_memory_usage(func, memory_map):
   def visit_block(block):
     for op in block.operations:
@@ -191,6 +189,7 @@ def _mark_memory_usage(func, memory_map):
     visit_block(block)
 
 
+# Discover memrefs returned by the function.
 def _discover_return_memrefs(func, bindings, memory_map, start_idx):
   idx = start_idx
   for block in func.body.blocks:
@@ -216,13 +215,12 @@ def _discover_return_memrefs(func, bindings, memory_map, start_idx):
   return idx
 
 
-# ================================================================
-# memory emitter
-# ================================================================
+# Emits DSLX code for memory read/write operations.
 class MemoryEmitter:
   def __init__(self, parent):
     self.p = parent
 
+  # Emit DSLX code for a memory read operation.
   def emit_read(self, binding, op):
     lines = []
     index_exprs = self._index_exprs(op.operands, start=1)
@@ -243,6 +241,7 @@ class MemoryEmitter:
     self.p.track_token(resp_tok)
     return lines
 
+  # Emit DSLX code for a memory write operation.
   def emit_write(self, binding, op, predicate=None):
     lines = []
     value_expr = self.p.lookup(op.operands[0])
@@ -281,9 +280,7 @@ class MemoryEmitter:
     return exprs
 
 
-# ================================================================
-# channel setup helpers
-# ================================================================
+# Build channel declarations and handles for memory bindings.
 def build_memory_channels(memory_bindings):
   channels = []
   handles = []

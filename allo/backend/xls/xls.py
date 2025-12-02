@@ -1,4 +1,5 @@
 # allo/allo/backend/xls/xls.py
+# XLS backend interface for code generation and testing.
 
 import os
 import subprocess
@@ -6,6 +7,7 @@ import subprocess
 from .lowerer import lower_mlir
 from .tester import DslxTestBuilder
 
+# Main interface for XLS code generation and toolchain execution.
 class XLSModule:
   def __init__(self, mod, top_func_name):
     self.module = mod
@@ -22,9 +24,11 @@ class XLSModule:
       f.write(source)
     return self._dslx_path
 
+  # Generate DSLX code from MLIR.
   def codegen(self) -> str:
     return lower_mlir(self.module, self.func)
   
+  # Run DSLX interpreter on generated code.
   def interpret(self, verbose=True):
     path = self._write_dslx(self.codegen())
     result = subprocess.run(["interpreter_main", path],
@@ -35,13 +39,8 @@ class XLSModule:
       print(result.stderr)
     return result
 
+  # Generate test harness and run interpreter with provided values.
   def test(self, *values):
-    """
-    Emit a temporary #[test_proc] and run interpreter_main.
-
-    Arguments mirror the original Allo function signature: provide all inputs
-    first, followed by the expected outputs (if any).
-    """
     builder = DslxTestBuilder(self.module, self.func)
     base_source = self.codegen()
     harness = builder.emit_from_values(values)
@@ -53,6 +52,7 @@ class XLSModule:
     self._write_dslx(base_source)
     return result
   
+  # Convert DSLX to XLS IR.
   def to_ir(self, verbose=True):
     if not os.path.isfile(self._dslx_path):
       raise FileNotFoundError(f"please run interpret() first")
@@ -66,6 +66,7 @@ class XLSModule:
       print(result.stdout)
       print(result.stderr)
   
+  # Optimize XLS IR.
   def opt(self, verbose=True):
     ir_path = os.path.join(self._out_dir, f"{self.func}.ir")
     if not os.path.isfile(ir_path):
@@ -80,6 +81,7 @@ class XLSModule:
       print(result.stdout)
       print(result.stderr)
   
+  # Generate Verilog from optimized IR.
   def to_vlog(self, verbose=True):
     opt_path = os.path.join(self._out_dir, f"{self.func}.opt.ir")
     if not os.path.isfile(opt_path):
@@ -95,6 +97,7 @@ class XLSModule:
       print(result.stdout)
       print(result.stderr)
   
+  # Run full pipeline: interpret -> IR -> optimize -> Verilog.
   def flow(self):
     self.interpret(verbose=False)
     self.to_ir(verbose=False)
