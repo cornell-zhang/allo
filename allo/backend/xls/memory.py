@@ -133,6 +133,19 @@ class MemoryBinding:
 # ================================================================
 # memory discovery helpers
 # ================================================================
+# Validate memref shape and raise if dynamic dimensions are found.
+def _validate_memref_shape(shape):
+  if any(dim == -1 for dim in shape):
+    raise NotImplementedError("dynamic memrefs are not supported yet")
+
+
+# Create a MemoryBinding and add it to the memory map.
+def _create_memory_binding(value, dtype, shape, idx, memory_map, arg_index=None):
+  binding = MemoryBinding(value, dtype, shape, idx, arg_index)
+  memory_map[binding.key] = binding
+  return binding
+
+
 def discover_memory_bindings(func):
   func_args = [
       arg for arg in func.arguments
@@ -148,12 +161,10 @@ def discover_memory_bindings(func):
     shape = tuple(mt.shape)
     if not shape:
       continue
-    if any(dim == -1 for dim in shape):
-      raise NotImplementedError("dynamic memrefs are not supported yet")
+    _validate_memref_shape(shape)
     elem_dtype, _ = get_dtype_and_shape_from_type(mt.element_type)
-    binding = MemoryBinding(arg, elem_dtype, shape, idx, arg_index)
+    binding = _create_memory_binding(arg, elem_dtype, shape, idx, memory_map, arg_index)
     bindings.append(binding)
-    memory_map[binding.key] = binding
     idx += 1
   idx = _discover_return_memrefs(func, bindings, memory_map, idx)
   if bindings:
@@ -195,13 +206,11 @@ def _discover_return_memrefs(func, bindings, memory_map, start_idx):
           shape = tuple(mt.shape)
           if not shape:
             continue
-          if any(dim == -1 for dim in shape):
-            raise NotImplementedError("dynamic memrefs are not supported yet")
+          _validate_memref_shape(shape)
           elem_dtype, _ = get_dtype_and_shape_from_type(mt.element_type)
-          binding = MemoryBinding(operand, elem_dtype, shape, idx)
+          binding = _create_memory_binding(operand, elem_dtype, shape, idx, memory_map)
           binding.needs_write = True
           bindings.append(binding)
-          memory_map[key] = binding
           idx += 1
         return idx
   return idx
@@ -270,3 +279,31 @@ class MemoryEmitter:
     for idx in operands[start:]:
       exprs.append(f"({self.p.lookup(idx)} as s32)")
     return exprs
+
+
+# ================================================================
+# channel setup helpers
+# ================================================================
+def build_memory_channels(memory_bindings):
+  channels = []
+  handles = []
+  for binding in memory_bindings:
+    if binding.needs_read:
+      channels.extend([
+        f"{binding.read_req_chan}: chan<SimpleReadReq<{binding.addr_param()}>> out",
+        f"{binding.read_resp_chan}: chan<SimpleReadResp<{binding.data_param()}>> in"
+      ])
+      handles.extend([binding.read_req_chan, binding.read_resp_chan])
+    if binding.needs_write:
+      channels.extend([
+        f"{binding.write_req_chan}: chan<SimpleWriteReq<{binding.addr_param()}, {binding.data_param()}>> out",
+        f"{binding.write_resp_chan}: chan<SimpleWriteResp> in"
+      ])
+      handles.extend([binding.write_req_chan, binding.write_resp_chan])
+  
+  needs_control = len(memory_bindings) > 0
+  if needs_control:
+    channels.extend(["go: chan<bool> in", "done: chan<bool> out"])
+    handles.extend(["go", "done"])
+  
+  return channels, handles, needs_control

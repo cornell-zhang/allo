@@ -1,10 +1,8 @@
 """Helpers for generating DSLX #[test_proc] blocks."""
 
-import math
-
 from allo._mlir.dialects import func as func_d
 
-from ...utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
+from ...utils import get_func_inputs_outputs
 from .memory import discover_memory_bindings
 from .utils import allo_dtype_to_dslx_type
 
@@ -234,14 +232,10 @@ class DslxTestBuilder:
     chan_block = "\n".join(chan_lines)
 
     cfg_lines = []
-    scalar_in_handles = []
     for idx, dtype in enumerate(self.scalar_input_types):
       cfg_lines.append(f"    let (in{idx}_s, in{idx}_r) = chan<{dtype}>(\"in{idx}\");")
-      scalar_in_handles.append((idx, dtype))
-    scalar_out_handles = []
     for idx, dtype in enumerate(self.scalar_output_types):
       cfg_lines.append(f"    let (out{idx}_s, out{idx}_r) = chan<{dtype}>(\"out{idx}\");")
-      scalar_out_handles.append((idx, dtype))
 
     mem_handles = []
     for binding in self.memory_bindings:
@@ -342,24 +336,4 @@ class DslxTestBuilder:
         f"{next_block}\n"
         f"  }}\n"
         f"}}"
-    )
-
-  def _memory_write_stmt(self, binding, addr, literal):
-    return (
-        f"    let tok = send(tok, {binding.write_req_chan}_s, "
-        f"SimpleWriteReq<{binding.addr_param()}, {binding.data_param()}> "
-        f"{{ addr: uN[{binding.addr_width}]:{addr}, "
-        f"data: ({literal} as uN[{binding.data_width}]) }});\n"
-        f"    let (tok, _) = recv(tok, {binding.write_resp_chan}_r);"
-    )
-
-  def _memory_read_stmt(self, binding, addr, literal, idx):
-    val_name = f"{binding.base}_val_{idx}"
-    return (
-        f"    let tok = send(tok, {binding.read_req_chan}_s, "
-        f"SimpleReadReq<{binding.addr_param()}> "
-        f"{{ addr: uN[{binding.addr_width}]:{addr} }});\n"
-        f"    let (tok, resp_{val_name}) = recv(tok, {binding.read_resp_chan}_r);\n"
-        f"    let {val_name} = (resp_{val_name}.data as {binding.dslx_type});\n"
-        f"    assert_eq({val_name}, {literal});"
     )
