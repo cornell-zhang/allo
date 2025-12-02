@@ -178,13 +178,276 @@ class DslxCombLowerer(DslxFuncLowererBase):
     return lines
 
   def _emit_body(self):
-    return [line for op in self.func.body.blocks[0].operations for line in self.inst_emitter.emit(op)]
+    lines = []
+    ops = list(self.func.body.blocks[0].operations)
+    for idx, op in enumerate(ops):
+      if isinstance(op, affine_d.AffineForOp) and _is_unrolled_for(op):
+        emitter = UnrolledForEmitter(self, op, lines)
+        emitter.emit(ops[idx + 1:])
+      else:
+        lines.extend(self.inst_emitter.emit(op))
+    return lines
 
   def _emit_init(self):
     return "  init { () }"
 
   def _emit_next(self):
     return "\n".join(["  next(state: ()) {"] + self._emit_inputs() + self._emit_body() + ["  }"])
+
+
+def _is_unrolled_for(loop_op):
+  """Check if an affine.for has unroll=0 attribute and only accesses scalar memrefs."""
+  if not isinstance(loop_op, affine_d.AffineForOp):
+    return False
+  # Check unroll attribute - if specified, must be 0
+  unroll_attr = None
+  for attr in loop_op.attributes:
+    if attr.name == "unroll":
+      unroll_attr = attr
+      break
+  if unroll_attr is not None:
+    # Assert that unroll factor is 0 if specified
+    attr_str = str(unroll_attr.attr)
+    match = re.search(r"(\d+)\s*:", attr_str)
+    assert match is not None, f"Could not parse unroll factor from: {attr_str}"
+    unroll_factor = int(match.group(1))
+    assert unroll_factor == 0, f"If unrolling, loop must be fully unrolled, got: {unroll_factor}"
+  else:
+    return False
+  # Check only scalar memref access (no arrays)
+  body = loop_op.body if hasattr(loop_op, "body") else list(loop_op.region.blocks)[0]
+  for op in body.operations:
+    if isinstance(op, affine_d.AffineLoadOp):
+      mt = MemRefType(op.operands[0].type)
+      if mt.shape:
+        return False
+    elif isinstance(op, affine_d.AffineStoreOp):
+      mt = MemRefType(op.operands[1].type)
+      if mt.shape:
+        return False
+  return True
+
+
+def _has_non_unrolled_loops(func):
+  """Check if function has any non-unrolled for loops or while loops."""
+  def check_block(block):
+    for op in block.operations:
+      if isinstance(op, scf_d.WhileOp):
+        return True
+      if isinstance(op, scf_d.ForOp):
+        return True
+      if isinstance(op, affine_d.AffineForOp):
+        if not _is_unrolled_for(op):
+          return True
+        # Check nested loops in body
+        body = op.body if hasattr(op, "body") else list(op.region.blocks)[0]
+        if check_block(body):
+          return True
+      for region in op.regions:
+        for blk in region.blocks:
+          if check_block(blk):
+            return True
+    return False
+  return check_block(func.body.blocks[0])
+
+
+def _get_loop_body(loop_op):
+  """Get the body block of a loop operation."""
+  if hasattr(loop_op, "body"):
+    return loop_op.body
+  if hasattr(loop_op, "region"):
+    return list(loop_op.region.blocks)[0]
+  raise NotImplementedError(f"unsupported loop: {type(loop_op)}")
+
+
+def _extract_for_upper_bound(loop_op):
+  """Extract upper bound from affine.for loop."""
+  try:
+    header = loop_op.operation.get_asm().splitlines()[0]
+  except AttributeError:
+    header = str(loop_op.operation).splitlines()[0]
+  match = re.search(r"\bto\b\s+([0-9]+)", header)
+  return match.group(1) if match else None
+
+
+class UnrolledForEmitter:
+  """Helper class to emit DSLX for expressions for unrolled affine.for loops."""
+
+  def __init__(self, lowerer, loop_op, lines, indent="    "):
+    self.lowerer = lowerer
+    self.loop_op = loop_op
+    self.lines = lines
+    self.indent = indent
+    self.body = _get_loop_body(loop_op)
+    self.upper_bound = _extract_for_upper_bound(loop_op)
+    self.carried = []  # [(memref_key, dslx_type, init_expr)]
+    self.used_after = set()  # memref keys used after loop
+    self.local_temps = {}
+
+  def _find_carried_and_usage(self, ops_after_loop):
+    """Find loop-carried values and which are used after the loop."""
+    # Find memrefs loaded/stored in loop body (loop-carried)
+    loaded, stored = set(), set()
+    def scan_body(block):
+      for op in block.operations:
+        if isinstance(op, affine_d.AffineLoadOp):
+          mt = MemRefType(op.operands[0].type)
+          if not mt.shape:
+            loaded.add(str(op.operands[0]))
+        elif isinstance(op, affine_d.AffineStoreOp):
+          mt = MemRefType(op.operands[1].type)
+          if not mt.shape:
+            stored.add(str(op.operands[1]))
+        elif isinstance(op, affine_d.AffineForOp) and _is_unrolled_for(op):
+          scan_body(_get_loop_body(op))
+        for region in op.regions:
+          for blk in region.blocks:
+            scan_body(blk)
+    scan_body(self.body)
+    carried_keys = loaded & stored
+
+    # Build carried list with types
+    for op in self.body.operations:
+      if isinstance(op, affine_d.AffineLoadOp):
+        mkey = str(op.operands[0])
+        if mkey in carried_keys and mkey not in [c[0] for c in self.carried]:
+          mt = MemRefType(op.operands[0].type)
+          dtype, _ = get_dtype_and_shape_from_type(mt.element_type)
+          init_expr = self.lowerer.lookup(op.operands[0])
+          self.carried.append((mkey, allo_dtype_to_dslx_type(dtype), init_expr, op.operands[0]))
+
+    # Find which carried values are used after the loop
+    def scan_usage(ops):
+      for op in ops:
+        if isinstance(op, affine_d.AffineLoadOp):
+          mkey = str(op.operands[0])
+          if mkey in carried_keys:
+            self.used_after.add(mkey)
+        for region in op.regions:
+          for blk in region.blocks:
+            scan_usage(blk.operations)
+    scan_usage(ops_after_loop)
+
+  def emit(self, ops_after_loop=None):
+    """Emit the DSLX for expression and return updated memref mappings."""
+    ops_after_loop = ops_after_loop or []
+    self._find_carried_and_usage(ops_after_loop)
+
+    if not self.carried:
+      # No loop-carried state, just emit body inline (will be unrolled)
+      for op in self.body.operations:
+        if isinstance(op, affine_d.AffineYieldOp):
+          continue
+        self.lines.extend(self.lowerer.inst_emitter.emit(op))
+      return
+
+    ub = self.upper_bound
+    if not ub:
+      raise NotImplementedError("Dynamic bounds not supported for unrolled for")
+
+    # Register loop induction variable
+    idx_var = self.lowerer.new_tmp()
+    if hasattr(self.loop_op, "induction_variable"):
+      self.lowerer.register(self.loop_op.induction_variable, idx_var)
+    elif self.body.arguments:
+      self.lowerer.register(self.body.arguments[0], idx_var)
+
+    # Build accumulator type and initial value
+    if len(self.carried) == 1:
+      acc_type = self.carried[0][1]
+      acc_var = self.lowerer.new_tmp()
+      init_val = self.carried[0][2]
+    else:
+      acc_type = f"({', '.join(c[1] for c in self.carried)})"
+      acc_var = self.lowerer.new_tmp()
+      init_val = f"({', '.join(c[2] for c in self.carried)})"
+
+    # Build result destructuring with _ for unused values
+    result_names = []
+    for mkey, _, _, memref in self.carried:
+      if mkey in self.used_after:
+        result_names.append(self.lowerer.new_tmp())
+      else:
+        result_names.append("_")
+
+    if len(self.carried) == 1:
+      result_pattern = result_names[0]
+    else:
+      result_pattern = f"({', '.join(result_names)})"
+
+    # Emit for loop header: let (results) = for (i, acc) in type:0..type:N { ... }(init);
+    self.lines.append(f"{self.indent}let {result_pattern} = for ({idx_var}, {acc_var}): (s32, {acc_type}) in s32:0..s32:{ub} {{")
+
+    # Register accumulators for use in body
+    if len(self.carried) == 1:
+      self.lowerer.register(self.carried[0][3], acc_var)
+    else:
+      for i, (mkey, _, _, memref) in enumerate(self.carried):
+        self.lowerer.register(memref, f"{acc_var}.{i}")
+
+    # Emit body
+    body_updates = self._emit_body_ops()
+
+    # Emit return value (new accumulator state)
+    if len(self.carried) == 1:
+      new_val = body_updates.get(self.carried[0][0], acc_var)
+      self.lines.append(f"{self.indent}  {new_val}")
+    else:
+      new_vals = [body_updates.get(c[0], f"{acc_var}.{i}") for i, c in enumerate(self.carried)]
+      self.lines.append(f"{self.indent}  ({', '.join(new_vals)})")
+
+    self.lines.append(f"{self.indent}}}({init_val});")
+
+    # Update lowerer's value map with results for values used after loop
+    for i, (mkey, _, _, memref) in enumerate(self.carried):
+      if mkey in self.used_after:
+        self.lowerer.register(memref, result_names[i])
+
+  def _emit_body_ops(self):
+    """Emit body operations and return map of memref updates."""
+    body_updates = {}
+    carried_keys = {c[0] for c in self.carried}
+
+    for op in self.body.operations:
+      if isinstance(op, affine_d.AffineYieldOp):
+        continue
+      elif isinstance(op, arith_d.ConstantOp):
+        self.lowerer.inst_emitter.emit(op)
+      elif isinstance(op, memref_d.AllocOp):
+        self.local_temps[str(op.result)] = None
+      elif isinstance(op, affine_d.AffineLoadOp):
+        mkey = str(op.operands[0])
+        if mkey in carried_keys:
+          # Use current accumulator value
+          for i, c in enumerate(self.carried):
+            if c[0] == mkey:
+              self.lowerer.register(op.result, self.lowerer.lookup(c[3]))
+              break
+        elif mkey in self.local_temps:
+          self.lowerer.register(op.result, self.local_temps[mkey])
+        else:
+          for line in self.lowerer.inst_emitter.emit(op):
+            self.lines.append(self.indent + "  " + line.strip())
+      elif isinstance(op, affine_d.AffineStoreOp):
+        val = self.lowerer.lookup(op.operands[0])
+        mkey = str(op.operands[1])
+        if mkey in carried_keys:
+          body_updates[mkey] = val
+          for c in self.carried:
+            if c[0] == mkey:
+              self.lowerer.register(c[3], val)
+              break
+        elif mkey in self.local_temps:
+          self.local_temps[mkey] = val
+      elif isinstance(op, affine_d.AffineForOp) and _is_unrolled_for(op):
+        # Recursively handle nested unrolled for
+        nested = UnrolledForEmitter(self.lowerer, op, self.lines, self.indent + "  ")
+        nested.emit([])
+      else:
+        for line in self.lowerer.inst_emitter.emit(op):
+          self.lines.append(self.indent + "  " + line.strip())
+
+    return body_updates
 
 
 class DslxStatefulLowerer(DslxFuncLowererBase):
@@ -407,9 +670,16 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     state_memrefs = {str(m): i for i, (m, _, _) in enumerate(self.state)}
     temp_memrefs = temp_memrefs or {}
     updated = {}
+    ops_list = list(ops)
 
-    for op in ops:
-      if isinstance(op, (arith_d.ConstantOp, scf_d.ForOp, scf_d.YieldOp, affine_d.AffineForOp, affine_d.AffineYieldOp)):
+    for idx, op in enumerate(ops_list):
+      if isinstance(op, (arith_d.ConstantOp, scf_d.ForOp, scf_d.YieldOp, affine_d.AffineYieldOp)):
+        continue
+      # Handle unrolled affine.for loops
+      if isinstance(op, affine_d.AffineForOp):
+        if _is_unrolled_for(op):
+          emitter = UnrolledForEmitter(self, op, lines)
+          emitter.emit(ops_list[idx + 1:])
         continue
       if isinstance(op, memref_d.AllocOp):
         temp_memrefs[str(op.result)] = None
@@ -723,11 +993,13 @@ class DslxModuleLowerer:
   def __init__(self, module: Module, top_func_name: str):
     self.module = module
     self.func_lowerers = []
-    loop_ops = ("scf.for", "scf.while", "affine.for")
     for op in module.body.operations:
       if isinstance(op, func_d.FuncOp):
-        has_loop = any(inner.operation.name in loop_ops for block in op.body.blocks for inner in block.operations)
-        self.func_lowerers.append((DslxStatefulLowerer if has_loop else DslxCombLowerer)(op))
+        # Use stateful lowerer only if there are non-unrolled loops
+        if _has_non_unrolled_loops(op):
+          self.func_lowerers.append(DslxStatefulLowerer(op))
+        else:
+          self.func_lowerers.append(DslxCombLowerer(op))
 
   def emit_module(self):
     body = "\n\n".join(fl.emit_proc() for fl in self.func_lowerers)
