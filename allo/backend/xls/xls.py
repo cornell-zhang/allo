@@ -62,15 +62,20 @@ class XLSModule:
     path = self._write_dslx(self.codegen())
     return self._run_interpreter(path, verbose)
 
-  # generate test harness and run interpreter with provided values
-  def test(self, *values):
-    builder = DslxTestBuilder(self.module, self.func)
+  # generate test harness and run interpreter
+  # accepts either: test(a, b, expected) for single case
+  #             or: test([(a1, b1, exp1), (a2, b2, exp2), ...]) for batch
+  def test(self, *args):
+    # If first arg is a list of tuples/lists, treat as batch
+    if len(args) == 1 and isinstance(args[0], list) and args[0] and isinstance(args[0][0], (list, tuple)):
+      test_cases = args[0]
+    else:
+      test_cases = [args]  # single test case
     base_source = self.codegen()
-    harness = builder.emit_from_values(values)
+    builder = DslxTestBuilder(self.module, self.func)
+    harness = builder.emit_from_values(test_cases)
     path = self._write_dslx(f"{base_source}\n\n{harness}\n")
-    result = self._run_interpreter(path, verbose=True)
-    self._write_dslx(base_source)
-    return result
+    return self._run_interpreter(path, verbose=True)
   
   # convert dslx to xls ir
   def to_ir(self, verbose=True):

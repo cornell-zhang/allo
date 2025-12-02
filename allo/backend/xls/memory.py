@@ -5,7 +5,7 @@ from allo._mlir.ir import MemRefType
 from allo._mlir.dialects import affine as affine_d, func as func_d
 
 from ...utils import get_bitwidth_from_type, get_dtype_and_shape_from_type
-from .utils import allo_dtype_to_dslx_type
+from .utils import allo_dtype_to_dslx_type, is_float_type
 
 RAM_TEMPLATE = """\
 // Simple dual-port RAM model with independent read and write ports.
@@ -236,7 +236,14 @@ class MemoryEmitter:
     resp_val = self.p.new_tmp()
     lines.append(f"    let ({resp_tok}, {resp_val}) = recv({tok}, {binding.read_resp_chan});")
     data_tmp = self.p.new_tmp()
-    lines.append(f"    let {data_tmp} = ({resp_val}.data as {binding.dslx_type});")
+    # For float memories, convert flattened bits to APFloat via apfloat::unflatten.
+    if is_float_type(binding.dtype):
+      name = binding.dslx_type  # e.g. F32
+      lines.append(
+          f"    let {data_tmp} = "
+          f"apfloat::unflatten<{name}_EXP_SZ, {name}_FRAC_SZ>({resp_val}.data);")
+    else:
+      lines.append(f"    let {data_tmp} = ({resp_val}.data as {binding.dslx_type});")
     self.p.register(op.result, data_tmp)
     self.p.track_token(resp_tok)
     return lines
@@ -250,7 +257,17 @@ class MemoryEmitter:
     addr_bits = self.p.new_tmp()
     lines.append(f"    let {addr_bits} = ({addr_expr} as uN[{binding.addr_width}]);")
     data_bits = self.p.new_tmp()
-    lines.append(f"    let {data_bits} = ({value_expr} as uN[{binding.data_width}]);")
+    # For float memories, flatten APFloat to bits before writing.
+    if is_float_type(binding.dtype):
+      name = binding.dslx_type  # e.g. F32
+      flat = self.p.new_tmp()
+      lines.append(
+          f"    let {flat} = "
+          f"apfloat::flatten<{name}_EXP_SZ, {name}_FRAC_SZ>({value_expr});")
+      lines.append(
+          f"    let {data_bits} = ({flat} as uN[{binding.data_width}]);")
+    else:
+      lines.append(f"    let {data_bits} = ({value_expr} as uN[{binding.data_width}]);")
     req_tmp = self.p.new_tmp()
     lines.append(
         "    let "
