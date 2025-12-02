@@ -41,12 +41,24 @@ static SmallString<16> getXLSTypeName(Type valType) {
     if (intType.getWidth() == 1) {
         return SmallString<16>("ac_int<1, false>");
     } else {
-      std::string signedness = "";
-      bool is_signed = (intType.getSignedness() != IntegerType::SignednessSemantics::Unsigned);
-      return SmallString<16>("ac_int<" +
-                              std::to_string(intType.getWidth()) + ", " +
-                              (is_signed ? "true" : "false") + ">");
-    }
+      switch (intType.getWidth()) {
+      case 32:
+        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+          return SmallString<16>("uint32_t");
+        else
+          return SmallString<16>("int");
+        break;x
+      case 64:
+        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+          return SmallString<16>("uint64_t");
+        else
+          return SmallString<16>("int64_t");
+        break;
+      default:
+        return SmallString<16>("ac_int<" + std::to_string(intType.getWidth()) + ", " +
+                                (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned ? "false" : "true") + ">");
+      }
+    
   }
 
   else if (auto streamType = valType.dyn_cast<StreamType>())
@@ -165,14 +177,16 @@ public:
 
   // Override methods that need XLS-specific behavior
   void emitModule(ModuleOp module) override;
-  void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList) override;
-  void emitArrayDecl(Value array, bool isFunc = false, std::string name = "") override;
-  void emitLoopDirectives(Operation *op);
-  void emitStreamConstruct(allo::StreamConstructOp op);
-  void emitArrayDirectives(Value memref);
-  void emitFunction(func::FuncOp func);
-  void emitAffineFor(AffineForOp op);
-  void emitScfFor(scf::ForOp op);
+  void emitFunctionDirectives(func::FuncOp func,
+                              ArrayRef<Value> portList) override;
+  void emitArrayDecl(Value array, bool isFunc = false,
+                     std::string name = "") override;
+  void emitLoopDirectives(Operation *op) override;
+  void emitStreamConstruct(allo::StreamConstructOp op) override;
+  void emitArrayDirectives(Value memref) override;
+  void emitFunction(func::FuncOp func) override;
+  void emitAffineFor(AffineForOp op) override;
+  void emitScfFor(scf::ForOp op) override;
 
 protected:
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
@@ -308,7 +322,20 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
 }
 
 void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
-  // Emit unroll pragma before loop (if present)
+  // Check for pipeline attributes first - if pipeline is present, don't unroll
+  // Check for pipeline attributes (could be "allo.pipeline" unit attr or "pipeline_ii" with value)
+  if (op->hasAttr("allo.pipeline")) {
+    indent();
+    os << "#pragma hls_pipeline_init_interval 1\n";
+    return;  // Pipeline takes precedence, don't unroll
+  } else if (auto ii = getLoopDirective(op, "pipeline_ii")) {
+    indent();
+    os << "#pragma hls_pipeline_init_interval 1\n";
+    return;  // Pipeline takes precedence, don't unroll
+  }
+
+  // By default, unroll all loops unless they have a pipeline pragma
+  // Check if explicit unroll directive is present (with optional factor)
   if (auto factor = getLoopDirective(op, "unroll")) {
     indent();
     os << "#pragma hls_unroll yes";
@@ -317,16 +344,10 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
       os << " factor=" << val;
     }
     os << "\n";
-  }
-
-  // Emit pipeline pragma before loop (if present) - always use II=1
-  // Check for pipeline attributes (could be "allo.pipeline" unit attr or "pipeline_ii" with value)
-  if (op->hasAttr("allo.pipeline")) {
+  } else {
+    // Default: fully unroll the loop
     indent();
-    os << "#pragma hls_pipeline_init_interval 1\n";
-  } else if (auto ii = getLoopDirective(op, "pipeline_ii")) {
-    indent();
-    os << "#pragma hls_pipeline_init_interval 1\n";
+    os << "#pragma hls_unroll yes\n";
   }
 }
 
@@ -668,7 +689,9 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
             int64_t totalSize = 1;
             for (int64_t dim : shape) totalSize *= dim;
             
-            // Emit a simple loop to copy all elements
+            // Emit a simple loop to copy all elements (unrolled by default)
+            indent();
+            os << "#pragma hls_unroll yes\n";
             indent();
             os << "for (int i = 0; i < " << totalSize << "; ++i) {\n";
             addIndent();
@@ -718,7 +741,7 @@ void XLSModuleEmitter::emitModule(ModuleOp module) {
 //
 //===----------------------------------------------------------------------===//
 // Standard C/C++ headers
-#include <cstdlib>
+#include <cstdint>
 
 // XLS [CC] headers
 #include "/xls_builtin.h"  // NOLINT

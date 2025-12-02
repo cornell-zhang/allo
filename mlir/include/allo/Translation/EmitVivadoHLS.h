@@ -30,12 +30,12 @@ public:
   explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
 
   /// SCF statement emitters.
-  void emitScfFor(scf::ForOp op);
+  virtual void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.
-  void emitAffineFor(affine::AffineForOp op);
+  virtual void emitAffineFor(affine::AffineForOp op);
   void emitAffineIf(affine::AffineIfOp op);
   void emitAffineParallel(affine::AffineParallelOp op);
   void emitAffineApply(affine::AffineApplyOp op);
