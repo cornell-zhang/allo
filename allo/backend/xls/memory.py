@@ -304,3 +304,49 @@ def build_memory_channels(memory_bindings):
     handles.extend(["go", "done"])
   
   return channels, handles, needs_control
+
+
+# parse memory channels from ir and build io constraints for ram response delays.
+def parse_memory_io_constraints(ir_content, ram_latency=1):
+  import re
+  # extract all memory channels from ir
+  chan_pattern = re.compile(r'chan\s+(\w+)\s*\([^)]+\)')
+  channels = {}
+  for line in ir_content.split('\n'):
+    match = chan_pattern.search(line)
+    if match:
+      chan_name = match.group(1)
+      # match memory channel pattern: {func}__mem{idx}__{read_req|read_resp|write_req|write_resp}
+      mem_match = re.match(r'(\w+)__(read_req|read_resp|write_req|write_resp)', chan_name)
+      if mem_match:
+        mem_name, chan_type = mem_match.group(1), mem_match.group(2)
+        channels.setdefault(mem_name, {})[chan_type] = chan_name
+  
+  # build io constraints: req_channel:send:resp_channel:recv:latency:latency
+  io_constraints = []
+  for chans in channels.values():
+    # add constraint for read channels if both req and resp exist
+    if 'read_req' in chans and 'read_resp' in chans:
+      io_constraints.append(f"{chans['read_req']}:send:{chans['read_resp']}:recv:{ram_latency}:{ram_latency}")
+    # add constraint for write channels if both req and resp exist
+    if 'write_req' in chans and 'write_resp' in chans:
+      io_constraints.append(f"{chans['write_req']}:send:{chans['write_resp']}:recv:{ram_latency}:{ram_latency}")
+  
+  return io_constraints, len(channels) > 0
+
+
+# detect memory channels and build io constraints from ir file.
+def detect_memory_and_constraints(opt_path, ram_latency=1):
+  # read ir file and check for memory channels
+  has_memory = False
+  io_constraints = []
+  try:
+    with open(opt_path, "r") as f:
+      ir_content = f.read()
+      # check for memory channel patterns (mem*__read_req, mem*__write_req)
+      if "__read_req" in ir_content or "__write_req" in ir_content:
+        # parse memory channels to build io constraints for ram timing
+        io_constraints, has_memory = parse_memory_io_constraints(ir_content, ram_latency)
+  except Exception:
+    pass
+  return io_constraints, has_memory

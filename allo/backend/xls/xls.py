@@ -6,6 +6,7 @@ import subprocess
 
 from .lowerer import lower_mlir
 from .tester import DslxTestBuilder
+from .memory import detect_memory_and_constraints
 
 # Main interface for XLS code generation and toolchain execution.
 class XLSModule:
@@ -81,21 +82,68 @@ class XLSModule:
       print(result.stdout)
       print(result.stderr)
   
-  # Generate Verilog from optimized IR.
-  def to_vlog(self, verbose=True):
+  # generate verilog from optimized ir.
+  def to_vlog(self, verbose=True, pipeline_stages=None, clock_period_ps=None, 
+              delay_model="sky130", reset="rst", ram_latency=1):
     opt_path = os.path.join(self._out_dir, f"{self.func}.opt.ir")
     if not os.path.isfile(opt_path):
       raise FileNotFoundError(f"please run opt() first")
-    result = subprocess.run(["codegen_main", "--pipeline_stages=1", "--delay_model=unit", 
-                             "--reset=rst", opt_path], capture_output=True, 
-                             text=True, check=True)
-    # write output to file
-    vlog_path = os.path.join(self._out_dir, f"{self.func}.v")
-    with open(vlog_path, "w") as f:
-      f.write(result.stdout)
+    
+    # cannot specify both pipeline_stages and clock_period_ps
+    if pipeline_stages is not None and clock_period_ps is not None:
+      raise ValueError("cannot specify both pipeline_stages and clock_period_ps")
+    
+    # detect memory channels and build io constraints
+    io_constraints, has_memory = detect_memory_and_constraints(opt_path, ram_latency)
+    
+    # if both are None, auto-detect based on memory presence
+    if pipeline_stages is None and clock_period_ps is None:
+      if has_memory:
+        # memory requests take ram_latency cycles for response plus overhead
+        pipeline_stages = max(ram_latency + 2, 3)
+      else:
+        pipeline_stages = 1
+    
+    # build codegen_main command
+    cmd = ["codegen_main", f"--delay_model={delay_model}", f"--reset={reset}"]
+    
+    # add either pipeline_stages or clock_period_ps (not both)
+    if pipeline_stages is not None:
+      cmd.append(f"--pipeline_stages={pipeline_stages}")
+    elif clock_period_ps is not None:
+      cmd.append(f"--clock_period_ps={clock_period_ps}")
+    
+    # add io constraints for ram response delays if we have memory channels
+    if io_constraints:
+      io_constraints_str = ",".join(io_constraints)
+      cmd.append(f"--io_constraints={io_constraints_str}")
+    
+    cmd.append(opt_path)
+    
+    # print command if verbose
     if verbose:
-      print(result.stdout)
-      print(result.stderr)
+      print(" ".join(cmd))
+      print()
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    # write output to file if successful
+    if result.returncode == 0:
+      vlog_path = os.path.join(self._out_dir, f"{self.func}.v")
+      with open(vlog_path, "w") as f:
+        f.write(result.stdout)
+      if verbose:
+        print(result.stdout)
+        print(result.stderr)
+    else:
+      # print error message on failure
+      print(f"codegen_main failed with exit code {result.returncode}")
+      if result.stderr:
+        print("stderr:")
+        print(result.stderr)
+      if result.stdout:
+        print("stdout:")
+        print(result.stdout)
+      raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
   
   # Run full pipeline: interpret -> IR -> optimize -> Verilog.
   def flow(self):
