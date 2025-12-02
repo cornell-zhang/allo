@@ -15,7 +15,10 @@
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloOps.h"
@@ -47,7 +50,7 @@ static SmallString<16> getXLSTypeName(Type valType) {
           return SmallString<16>("uint32_t");
         else
           return SmallString<16>("int");
-        break;x
+        break;
       case 64:
         if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint64_t");
@@ -59,6 +62,7 @@ static SmallString<16> getXLSTypeName(Type valType) {
                                 (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned ? "false" : "true") + ">");
       }
     
+    }
   }
 
   else if (auto streamType = valType.dyn_cast<StreamType>())
@@ -187,6 +191,7 @@ public:
   void emitFunction(func::FuncOp func) override;
   void emitAffineFor(AffineForOp op) override;
   void emitScfFor(scf::ForOp op) override;
+  void emitLoad(memref::LoadOp op);
 
 protected:
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
@@ -194,6 +199,13 @@ protected:
   // Helper method to get XLS-specific type names
   SmallString<16> getTypeName(Type valType) { return getXLSTypeName(valType); }
   SmallString<16> getTypeName(Value val) { return getXLSTypeName(val.getType()); }
+  
+  // Track array arguments that should become local arrays populated from channels
+  bool inArrayFunction = false;
+  DenseMap<Value, std::string> arrayArgToLocalName;  // Maps function arg -> local array name (e.g., "v0")
+  DenseMap<Value, std::string> arrayArgToChannelName; // Maps function arg -> channel name (e.g., "v0_in")
+  Value returnArray = nullptr;
+  std::string outputChannelName = "out";
 };
 } // namespace
 
@@ -512,6 +524,12 @@ void XLSModuleEmitter::emitArrayDirectives(Value memref) {
   allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
 }
 
+void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
+  // For array functions, the local arrays are already registered with the correct names
+  // so the parent implementation will use them automatically
+  allo::vhls::ModuleEmitter::emitLoad(op);
+}
+
 void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   if (func->hasAttr("bit"))
     BIT_FLAG = true;
@@ -552,6 +570,202 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
   bool returnIsArray = returnValue && returnValue.getType().isa<ShapedType>() &&
                        !returnValue.getType().cast<ShapedType>().getElementType().isa<StreamType>();
 
+  // Detect if function has array arguments (non-stream memrefs/tensors)
+  bool hasArrayArgs = false;
+  SmallVector<Value, 4> arrayArgs;
+  for (auto &arg : func.getArguments()) {
+    auto st = arg.getType().dyn_cast<ShapedType>();
+    if (st && !st.getElementType().isa<StreamType>()) {
+      hasArrayArgs = true;
+      arrayArgs.push_back(arg);
+    }
+  }
+  
+  // If function has array arguments, convert to void function with local arrays
+  if (hasArrayArgs || returnIsArray) {
+    // Clear and set up state
+    arrayArgToLocalName.clear();
+    arrayArgToChannelName.clear();
+    returnArray = nullptr;
+    inArrayFunction = true;
+    
+    // Emit void function with no parameters
+    os << "void " << func.getName() << "() {";
+    emitInfoAndNewLine(func);
+    addIndent();
+    
+    // Emit function directives
+    SmallVector<Value, 8> emptyPorts;
+    emitFunctionDirectives(func, emptyPorts);
+    
+    // Declare local arrays for each array argument
+    unsigned argIdx = 0;
+    for (auto &arg : arrayArgs) {
+      auto st = arg.getType().cast<ShapedType>();
+      auto elemType = st.getElementType();
+      auto shape = st.getShape();
+      
+      // Generate local array name (v0, v1, etc.)
+      std::string localName = "v" + std::to_string(argIdx);
+      std::string channelName = localName + "_in";
+      
+      // Store mappings
+      arrayArgToLocalName[arg] = localName;
+      arrayArgToChannelName[arg] = channelName;
+      
+      // Register the local array name for this argument value
+      // This ensures emitLoad will use the local array name instead of the argument name
+      addName(arg, /*isPtr=*/false, localName);
+      
+      // Declare local array
+      indent();
+      os << getXLSTypeName(elemType) << " " << localName;
+      for (int64_t dim : shape) {
+        os << "[" << dim << "]";
+      }
+      os << ";\n";
+      
+      argIdx++;
+    }
+    
+    // Populate arrays from channels
+    for (auto &arg : arrayArgs) {
+      auto st = arg.getType().cast<ShapedType>();
+      auto shape = st.getShape();
+      std::string localName = arrayArgToLocalName[arg];
+      std::string channelName = arrayArgToChannelName[arg];
+      
+      // Calculate total size
+      int64_t totalSize = 1;
+      for (int64_t dim : shape) totalSize *= dim;
+      
+      // Emit loop to populate from channel
+      indent();
+      os << "#pragma hls_unroll yes\n";
+      indent();
+      os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
+      addIndent();
+      indent();
+      
+      // Generate array access with proper indexing for any dimension
+      os << localName;
+      if (shape.size() == 1) {
+        os << "[_idx]";
+      } else {
+        // For multi-dimensional: compute indices using division and modulo
+        // e.g., for [d0][d1]: v0[_idx / d1][_idx % d1]
+        // e.g., for [d0][d1][d2]: v0[_idx / (d1*d2)][(_idx / d2) % d1][_idx % d2]
+        for (size_t i = 0; i < shape.size(); ++i) {
+          os << "[";
+          if (i == shape.size() - 1) {
+            // Last dimension: just modulo
+            os << "_idx % " << shape[i];
+          } else {
+            // Calculate divisor (product of all dimensions after this one)
+            int64_t divisor = 1;
+            for (size_t j = i + 1; j < shape.size(); ++j) {
+              divisor *= shape[j];
+            }
+            if (i == 0) {
+              os << "_idx / " << divisor;
+            } else {
+              os << "(_idx / " << divisor << ") % " << shape[i];
+            }
+          }
+          os << "]";
+        }
+      }
+      os << " = " << channelName << ".read();\n";
+      
+      reduceIndent();
+      indent();
+      os << "}\n";
+    }
+    
+    // Track return array if it exists
+    if (returnIsArray && returnValue) {
+      returnArray = returnValue;
+      if (func->hasAttr("outputs")) {
+        outputChannelName = func->getAttr("outputs").cast<StringAttr>().getValue().str();
+      }
+    }
+    
+    // Emit the function body
+    Block &block = func.front();
+    allo::vhls::ModuleEmitter::emitBlock(block);
+    
+    // Handle return value: write array to output channel
+    if (returnIsArray && returnValue) {
+      auto terminator = block.getTerminator();
+      if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
+        for (auto operand : returnOp.getOperands()) {
+          if (operand == returnValue) {
+            auto returnType = returnValue.getType().cast<ShapedType>();
+            auto shape = returnType.getShape();
+            int64_t totalSize = 1;
+            for (int64_t dim : shape) totalSize *= dim;
+            
+            // Emit loop to write to output channel
+            indent();
+            os << "#pragma hls_unroll yes\n";
+            indent();
+            os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
+            addIndent();
+            indent();
+            
+            // Generate array access with proper indexing for any dimension
+            os << outputChannelName << ".write(";
+            emitValue(returnValue);
+            if (shape.size() == 1) {
+              os << "[_idx]";
+            } else {
+              // For multi-dimensional: compute indices using division and modulo
+              for (size_t i = 0; i < shape.size(); ++i) {
+                os << "[";
+                if (i == shape.size() - 1) {
+                  os << "_idx % " << shape[i];
+                } else {
+                  int64_t divisor = 1;
+                  for (size_t j = i + 1; j < shape.size(); ++j) {
+                    divisor *= shape[j];
+                  }
+                  if (i == 0) {
+                    os << "_idx / " << divisor;
+                  } else {
+                    os << "(_idx / " << divisor << ") % " << shape[i];
+                  }
+                }
+                os << "]";
+              }
+            }
+            os << ");\n";
+            
+            reduceIndent();
+            indent();
+            os << "}\n";
+            break;
+          }
+        }
+      }
+    }
+    
+    // Reset state
+    inArrayFunction = false;
+    arrayArgToLocalName.clear();
+    arrayArgToChannelName.clear();
+    returnArray = nullptr;
+    
+    reduceIndent();
+    os << "}\n\n";
+    return;
+  }
+
+  // COMBINATIONAL MODE: Simple function without arrays
+  // Add #pragma hls_top for top-level combinational functions
+  if (func->hasAttr("top")) {
+    os << "#pragma hls_top\n";
+  }
+  
   // Emit function signature: void if returning array, otherwise use return type
   if (returnIsArray) {
     // For array/matrix returns, make function void
@@ -740,20 +954,10 @@ void XLSModuleEmitter::emitModule(ModuleOp module) {
 // Automatically Generated by Allo (XLS [CC] Backend)
 //
 //===----------------------------------------------------------------------===//
-// Standard C/C++ headers
 #include <cstdint>
+#include "/xls_builtin.h"
+#include "xls_int.h"
 
-// XLS [CC] headers
-#include "/xls_builtin.h"  // NOLINT
-#include "xls_int.h"       // NOLINT
-
-// Templated Types for XLS [CC]
-template<typename T>
-using InputChannel = __xls_channel<T, __xls_channel_dir_In>;
-template<typename T>
-using OutputChannel = __xls_channel<T, __xls_channel_dir_Out>;
-template<typename T, int Size>
-using Memory = __xls_memory<T, Size>;
 template <int Width, bool Signed = true>
 using ac_int = XlsInt<Width, Signed>;
 

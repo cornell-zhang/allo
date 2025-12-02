@@ -1,6 +1,8 @@
 import re
 from typing import List, Tuple
+from dataclasses import dataclass
 
+@dataclass
 class AffineForBound:
     iv: str        # induction variable, e.g. "%arg2"
     lower: int     # lower bound, e.g. 0
@@ -40,51 +42,99 @@ def get_loop_extents(mlir_text: str) -> List[int]:
     bounds = parse_affine_for_bounds(mlir_text)
     return [b.upper - b.lower for b in bounds]
 
-def render_testblock(input: List[str],
-                     function_names: Tuple[str, str],
-                     combinational: bool = True,
-                     memory: List[Tuple[int, str]] = [],
-                     output: List[str] = ["out"]) -> str:
-
-    # --- Channels ---
-    input_channels = "\n    ".join(
-        f"InputChannel<int> {name};" for name in input
-    )
-    output_channels = "\n    ".join(
-        f"OutputChannel<int> {name};" for name in output
-    )
-    memory_blocks = "\n    ".join(
-        f"Memory<int, {size}> {name};" for size, name in memory
-    )
-
-    if combinational:
-        # Combinational block: return type is int
-        run_body = f"""
-    #pragma hls_top
-    int {function_names[0]}({", ".join(f"int {param}" for param in input)}) {{
-        return {function_names[1]}({", ".join(f"{param}" for param in input)});
-    }}
-        """
-    else:
-        # Sequential block: return type is void
-        run_body = f"""
-    {input_channels}
-    {output_channels}
-    {memory_blocks}
-        
-    #pragma hls_top
-    void {function_names[0]}() {{
-        // TODO: Fill in sequential FSM logic
-    }}
+def extract_function_body(core_code: str, func_name: str) -> str:
     """
+    Extract the body of a void function from the generated C++ code.
+    Returns the content inside the braces.
+    """
+    # Find the function: void func_name() { ... }
+    # We need to match balanced braces
+    pattern = rf'void\s+{re.escape(func_name)}\s*\(\s*\)\s*\{{'
+    match = re.search(pattern, core_code)
+    if not match:
+        return f"// Could not extract body of {func_name}\n"
+    
+    start = match.end()  # Position after opening brace
+    brace_count = 1
+    pos = start
+    
+    while pos < len(core_code) and brace_count > 0:
+        if core_code[pos] == '{':
+            brace_count += 1
+        elif core_code[pos] == '}':
+            brace_count -= 1
+        pos += 1
+    
+    if brace_count != 0:
+        return f"// Could not find matching brace for {func_name}\n"
+    
+    # Extract body (excluding final closing brace)
+    body = core_code[start:pos-1]
+    return body
 
-    # --- Build class ---
+
+def reindent_body(body: str, base_indent: str = "    ") -> str:
+    """
+    Re-indent the function body to align with the class method.
+    Preserves relative indentation structure (nested blocks stay nested).
+    base_indent: 4 spaces (2 for class + 2 for method body)
+    """
+    lines = body.split('\n')
+    
+    # Find minimum indentation (excluding empty lines)
+    min_indent = float('inf')
+    for line in lines:
+        if line.strip():  # non-empty line
+            # Count leading spaces
+            leading = len(line) - len(line.lstrip())
+            min_indent = min(min_indent, leading)
+    
+    if min_indent == float('inf'):
+        min_indent = 0
+    
+    # Re-indent: remove min_indent and add base_indent
+    result = []
+    for line in lines:
+        if not line.strip():
+            result.append("")
+        else:
+            # Remove the common minimum indentation, then add our base indent
+            dedented = line[min_indent:] if len(line) >= min_indent else line.lstrip()
+            result.append(base_indent + dedented)
+    
+    return '\n'.join(result)
+
+
+def render_testblock_with_body(input_channels: List[str],
+                                output_channels: List[str],
+                                function_body: str,
+                                top_name: str) -> str:
+    """
+    Render a TestBlock class with the function body embedded directly as the top method.
+    """
+    # Format channel declarations using direct XLS types (2-space indentation)
+    input_decls = "\n  ".join(
+        f"__xls_channel<int, __xls_channel_dir_In> {name};" for name in input_channels
+    )
+    output_decls = "\n  ".join(
+        f"__xls_channel<int, __xls_channel_dir_Out> {name};" for name in output_channels
+    )
+    
+    # Re-indent the function body to align properly inside the class method
+    indented_body = reindent_body(function_body)
+    
+    # Build the class with the function body embedded directly (2-space indentation)
     testblock = f"""class TestBlock {{
 public:
-    {run_body}
+  {input_decls}
+  {output_decls}
+
+  #pragma hls_top
+  void {top_name}() {{
+{indented_body}
+  }}
 }};
 """
-
     return testblock
 
 # XLS legality checks on MLIR text
@@ -152,28 +202,86 @@ def wrap_xlscc(mlir_module_text: str,
                function_inputs: List[str]) -> str:
     """
     mlir_module_text: MLIR (string) with affine.for loops.
-    core_code:        C++ code produced by emitXlscc (contains 'top_name').
-    function_name:    (foo, bar) -> foo is top, bar is generated function
-    Returns:          Full C++ code with channel, core code, etc. wrapped in Xls [cc] Style
+    core_code:        C++ code produced by emitXlscc (contains the generated function).
+    function_names:   (top_name, generated_func_name) -> we extract body from generated_func_name
+    function_inputs:  List of input argument names (used to generate channel names)
+    Returns:          Full C++ code - either:
+                      - COMBINATIONAL: Just the core code with #pragma hls_top (no arrays)
+                      - SEQUENTIAL: TestBlock class with channels (has arrays)
     """
+    top_name, generated_func_name = function_names
+    
+    # COMBINATIONAL MODE: No array inputs -> just return core code as-is
+    # The #pragma hls_top is already added by EmitXlsHLS.cpp
+    if len(function_inputs) == 0:
+        return core_code
+    
+    # SEQUENTIAL MODE: Has array inputs -> wrap in TestBlock with channels
+    # Extract the function body from the generated code
+    func_body = extract_function_body(core_code, generated_func_name)
+    
+    # Generate channel names: v0_in, v1_in, ... for input arrays
+    n_inputs = len(function_inputs)
+    input_channels = [f"v{i}_in" for i in range(n_inputs)]
+    output_channels = ["out"]
+    
+    # Extract headers from core_code (everything before the function definition)
+    func_pattern = rf'void\s+{re.escape(generated_func_name)}\s*\(\s*\)\s*\{{'
+    match = re.search(func_pattern, core_code)
+    headers = core_code[:match.start()] if match else ""
+    
+    # Build the final code: headers + TestBlock class with embedded function body
     parts: List[str] = []
-    parts.append(core_code)
-    parts.append("\n// ---- End core code ----\n")
+    parts.append(headers)
+    parts.append("\n// ---- TestBlock with embedded function ----\n")
+    
+    testblock = render_testblock_with_body(
+        input_channels=input_channels,
+        output_channels=output_channels,
+        function_body=func_body,
+        top_name=top_name,
+    )
+    parts.append(testblock)
+    
     return "".join(parts)
 
 
 
 if __name__ == "__main__":
-    # Example core C++ code that emitXlscc might return
+    # Example core C++ code that emitXlscc might return for array function
     core_code = """
-int add(int a, int b) {
-    return a + b;
+// Headers...
+#include <cstdint>
+
+void vvadd() {
+    int v0[16];
+    int v1[16];
+    
+    #pragma hls_unroll yes
+    for (int i = 0; i < 16; ++i) {
+        v0[i] = v0_in.read();
+    }
+    #pragma hls_unroll yes
+    for (int i = 0; i < 16; ++i) {
+        v1[i] = v1_in.read();
+    }
+    
+    int result[16];
+    #pragma hls_unroll yes
+    for (int i = 0; i < 16; ++i) {
+        result[i] = v0[i] + v1[i];
+    }
+    
+    #pragma hls_unroll yes
+    for (int i = 0; i < 16; ++i) {
+        out.write(result[i]);
+    }
 }
     """
 
-    # (top_name, inner_function_name)
-    function_names = ("Run", "add")
-    function_inputs = ["a", "b"]
+    # (top_name, generated_function_name)
+    function_names = ("Run", "vvadd")
+    function_inputs = ["v0", "v1"]
 
     wrapped_cpp = wrap_xlscc(
         mlir_module_text="",

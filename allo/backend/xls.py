@@ -24,8 +24,6 @@ class XlsModule:
             # Always parse as string to ensure correct context
             self.module = Module.parse(str(mlir_text_or_module), ctx)
 
-            self.func = find_func_in_module(self.module, top_func_name)
-
             # run same lowering pipeline (DO NOT lower affine)
             pm = PassManager.parse(
                 "builtin.module("
@@ -34,6 +32,9 @@ class XlsModule:
                 ")"
             )
             pm.run(self.module.operation)
+            
+            # Re-find the function after running passes (previous reference is invalidated)
+            self.func = find_func_in_module(self.module, top_func_name)
 
         # 1) Take a snapshot of the lowered MLIR as text and validate for XLS.
         self.mlir_text = str(self.module)
@@ -45,35 +46,18 @@ class XlsModule:
         buf.seek(0)
         self.core_code = buf.read()
 
-        # 3) Extract function signature from core_code (simple regex hacking)
-        pattern = r"""
-            (?P<rtype>[\w:\<\>\~]+)
-            \s+
-            (?P<name>[A-Za-z_]\w*(?:::\w*)*)
-            \s*
-            \(
-                (?P<params>[^)]*)
-            \)
-        """
-
-        match = re.search(pattern, self.core_code, re.VERBOSE)
-        if not match:
-            raise RuntimeError(
-                "Failed to find a function signature in the XLS[cc] core code."
-            )
-
-        func_name = match.group("name")
-        func_params = match.group("params")
-
-        # Turn "int a, int b" into ["a", "b"]
+        # 3) Extract function name and count array arguments from MLIR
+        # For XLS, functions with arrays have no parameters, so we detect array args from MLIR
+        func_name = top_func_name
+        
+        # Count array arguments (non-stream shaped types) from the function
         param_names: List[str] = []
-        for p in func_params.split(","):
-            p = p.strip()
-            if not p:
-                continue
-            # assume form: "int a" or "MyType const &x"
-            tokens = p.split()
-            param_names.append(tokens[-1])
+        if self.func:
+            for arg in self.func.arguments:
+                arg_type_str = str(arg.type)
+                # Check if it's a memref/tensor (array) that's not a stream
+                if ("memref" in arg_type_str or "tensor" in arg_type_str) and "stream" not in arg_type_str.lower():
+                    param_names.append(f"arg{len(param_names)}")
 
         # Wrap core C++ with channels + wrapper class in XLS[cc] style
         self.final_cpp = wrap_xlscc(
