@@ -115,25 +115,25 @@ public:
   explicit ModuleEmitter(AlloEmitterState &state) : AlloEmitterBase(state) {}
 
   /// SCF statement emitters.
-  void emitScfFor(scf::ForOp op);
+  virtual void emitScfFor(scf::ForOp op);
   void emitScfIf(scf::IfOp op);
   void emitScfYield(scf::YieldOp op);
 
   /// Affine statement emitters.
-  void emitAffineFor(AffineForOp op);
+  virtual void emitAffineFor(AffineForOp op);
   void emitAffineIf(AffineIfOp op);
   void emitAffineParallel(AffineParallelOp op);
   void emitAffineApply(AffineApplyOp op);
   template <typename OpType>
   void emitAffineMaxMin(OpType op, const char *syntax);
-  void emitAffineLoad(AffineLoadOp op);
-  void emitAffineStore(AffineStoreOp op);
+  virtual void emitAffineLoad(AffineLoadOp op);
+  virtual void emitAffineStore(AffineStoreOp op);
   void emitAffineYield(AffineYieldOp op);
 
   /// Memref-related statement emitters.
   template <typename OpType> void emitAlloc(OpType op);
-  void emitLoad(memref::LoadOp op);
-  void emitStore(memref::StoreOp op);
+  virtual void emitLoad(memref::LoadOp op);
+  virtual void emitStore(memref::StoreOp op);
   void emitGetGlobal(memref::GetGlobalOp op);
   void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);
@@ -166,7 +166,7 @@ public:
   void emitBitcast(arith::BitcastOp op);
 
   /// Stream operation emitters.
-  void emitStreamConstruct(allo::StreamConstructOp op);
+  virtual void emitStreamConstruct(allo::StreamConstructOp op);
   void emitStreamGet(allo::StreamGetOp op);
   void emitStreamPut(allo::StreamPutOp op);
 
@@ -184,10 +184,10 @@ protected:
 
   /// MLIR component and HLS C++ pragma emitters.
   void emitBlock(Block &block);
-  void emitLoopDirectives(Operation *op);
-  void emitArrayDirectives(Value memref);
+  virtual void emitLoopDirectives(Operation *op);
+  virtual void emitArrayDirectives(Value memref);
   virtual void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
-  void emitFunction(func::FuncOp func);
+  virtual void emitFunction(func::FuncOp func);
   void emitHostFunction(func::FuncOp func);
 };
 } // namespace vhls

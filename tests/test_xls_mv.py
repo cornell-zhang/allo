@@ -11,6 +11,23 @@ def mv(A: int32[32, 32], x: int32[32]) -> int32[32]:
 
 s = allo.customize(mv)
 s.pipeline("i")
+print("=" * 60)
+print("MLIR Module:")
+print("=" * 60)
 print(s.module)
-mod = s.build(target="xls", project="my_project.prj")
-print(mod)
+
+# Register mode (default) - arrays as plain C arrays
+print("\n" + "=" * 60)
+print("REGISTER MODE (use_memory=False):")
+print("Arrays emitted as: int A[32][32], int x[32]")
+print("=" * 60)
+mod_register = s.build(target="xls", project="mv_register.prj", use_memory=False)
+print(mod_register)
+
+# Memory mode - arrays as __xls_memory<T, size>
+print("\n" + "=" * 60)
+print("MEMORY MODE (use_memory=True):")
+print("Arrays emitted as: __xls_memory<int, 1024>, __xls_memory<int, 32>")
+print("=" * 60)
+mod_memory = s.build(target="xls", project="mv_memory.prj", use_memory=True)
+print(mod_memory)

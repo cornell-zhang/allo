@@ -13,9 +13,11 @@ class XlsModule:
     def __init__(self,
                  mlir_text_or_module,
                  top_func_name,
-                 project=None):
+                 project=None,
+                 use_memory=False):
         self.top_func_name = top_func_name
         self.project = project
+        self.use_memory = use_memory
 
         # Parse MLIR + run minimal lowering
         with Context() as ctx, Location.unknown():
@@ -42,7 +44,7 @@ class XlsModule:
 
         # 2) Emit the XLS[cc] HLS Code from MLIR
         buf = io.StringIO()
-        allo_d.emit_xhls(self.module, buf)
+        allo_d.emit_xhls(self.module, buf, self.use_memory)
         buf.seek(0)
         self.core_code = buf.read()
 
@@ -65,6 +67,7 @@ class XlsModule:
             core_code=self.core_code,
             function_names=(self.top_func_name, func_name),
             function_inputs=param_names,  # <-- PASS LIST OF NAMES, NOT RAW STRING
+            use_memory=self.use_memory,
         )
 
         if self.project is not None:

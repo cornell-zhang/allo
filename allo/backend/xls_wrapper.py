@@ -137,6 +137,103 @@ public:
 """
     return testblock
 
+
+def parse_memory_declarations(function_body: str) -> Tuple[List[str], str]:
+    """
+    Parse __xls_memory_decl__ comment placeholders from function body.
+    Returns (memory_declarations, cleaned_body) where:
+    - memory_declarations: list of "__xls_memory<type, size> name;" strings
+    - cleaned_body: function body with comment placeholders removed
+    """
+    memory_decls = []
+    cleaned_lines = []
+    
+    # Pattern: // __xls_memory_decl__: type, size, name, dim1, dim2, ...
+    memory_pattern = re.compile(r'^\s*//\s*__xls_memory_decl__:\s*(.+)$')
+    
+    for line in function_body.split('\n'):
+        match = memory_pattern.match(line)
+        if match:
+            # Parse: type, size, name, dims...
+            parts = [p.strip() for p in match.group(1).split(',')]
+            if len(parts) >= 3:
+                elem_type = parts[0]
+                total_size = parts[1]
+                var_name = parts[2]
+                # Original dims for comment
+                orig_dims = parts[3:] if len(parts) > 3 else []
+                
+                # Build the __xls_memory declaration
+                decl = f"__xls_memory<{elem_type}, {total_size}> {var_name};"
+                if orig_dims:
+                    orig_shape = ''.join(f'[{d}]' for d in orig_dims)
+                    decl += f"  // original: {elem_type} {var_name}{orig_shape}"
+                memory_decls.append(decl)
+        else:
+            cleaned_lines.append(line)
+    
+    return memory_decls, '\n'.join(cleaned_lines)
+
+
+def render_testblock_with_memory(input_channels: List[str],
+                                  output_channels: List[str],
+                                  function_body: str,
+                                  top_name: str) -> str:
+    """
+    Render a TestBlock class with __xls_memory for arrays (memory mode).
+    In memory mode:
+    - __xls_memory declarations are placed at class level (after channels)
+    - Function body references them directly
+    """
+    # Parse and extract __xls_memory declarations from function body
+    memory_decls, cleaned_body = parse_memory_declarations(function_body)
+    
+    # Format channel declarations using direct XLS types (2-space indentation)
+    input_decls = "\n  ".join(
+        f"__xls_channel<int, __xls_channel_dir_In> {name};" for name in input_channels
+    )
+    output_decls = "\n  ".join(
+        f"__xls_channel<int, __xls_channel_dir_Out> {name};" for name in output_channels
+    )
+    
+    # Format memory declarations at class level
+    memory_decls_str = "\n  ".join(memory_decls) if memory_decls else ""
+    
+    # Re-indent the cleaned function body
+    indented_body = reindent_body(cleaned_body)
+    
+    # Build the class with memory declarations at class level
+    if memory_decls_str:
+        testblock = f"""class TestBlock {{
+public:
+  // Channels
+  {input_decls}
+  {output_decls}
+
+  // Memory (SRAM/BRAM)
+  {memory_decls_str}
+
+  #pragma hls_top
+  void {top_name}() {{
+{indented_body}
+  }}
+}};
+"""
+    else:
+        testblock = f"""class TestBlock {{
+public:
+  {input_decls}
+  {output_decls}
+
+  #pragma hls_top
+  void {top_name}() {{
+{indented_body}
+  }}
+}};
+"""
+    return testblock
+
+
 # XLS legality checks on MLIR text
 
 DYNAMIC_TYPE_RE = re.compile(
@@ -199,12 +296,15 @@ def validate_xls_ir(mlir_text: str) -> None:
 def wrap_xlscc(mlir_module_text: str,
                core_code: str,
                function_names: Tuple[str, str],
-               function_inputs: List[str]) -> str:
+               function_inputs: List[str],
+               use_memory: bool = False) -> str:
     """
     mlir_module_text: MLIR (string) with affine.for loops.
     core_code:        C++ code produced by emitXlscc (contains the generated function).
     function_names:   (top_name, generated_func_name) -> we extract body from generated_func_name
     function_inputs:  List of input argument names (used to generate channel names)
+    use_memory:       If True, arrays are emitted as __xls_memory<T, size> (for SRAM/BRAM).
+                      If False (default), arrays are plain C arrays (for registers).
     Returns:          Full C++ code - either:
                       - COMBINATIONAL: Just the core code with #pragma hls_top (no arrays)
                       - SEQUENTIAL: TestBlock class with channels (has arrays)
@@ -233,14 +333,23 @@ def wrap_xlscc(mlir_module_text: str,
     # Build the final code: headers + TestBlock class with embedded function body
     parts: List[str] = []
     parts.append(headers)
-    parts.append("\n// ---- TestBlock with embedded function ----\n")
     
-    testblock = render_testblock_with_body(
-        input_channels=input_channels,
-        output_channels=output_channels,
-        function_body=func_body,
-        top_name=top_name,
-    )
+    if use_memory:
+        parts.append("\n// ---- TestBlock with __xls_memory (SRAM/BRAM mode) ----\n")
+        testblock = render_testblock_with_memory(
+            input_channels=input_channels,
+            output_channels=output_channels,
+            function_body=func_body,
+            top_name=top_name,
+        )
+    else:
+        parts.append("\n// ---- TestBlock with embedded function (register mode) ----\n")
+        testblock = render_testblock_with_body(
+            input_channels=input_channels,
+            output_channels=output_channels,
+            function_body=func_body,
+            top_name=top_name,
+        )
     parts.append(testblock)
     
     return "".join(parts)
@@ -248,8 +357,8 @@ def wrap_xlscc(mlir_module_text: str,
 
 
 if __name__ == "__main__":
-    # Example core C++ code that emitXlscc might return for array function
-    core_code = """
+    # Example core C++ code that emitXlscc might return for array function (REGISTER MODE)
+    core_code_register = """
 // Headers...
 #include <cstdint>
 
@@ -257,11 +366,11 @@ void vvadd() {
     int v0[16];
     int v1[16];
     
-    #pragma hls_unroll yes
+    #pragma hls_pipeline_init_interval 1
     for (int i = 0; i < 16; ++i) {
         v0[i] = v0_in.read();
     }
-    #pragma hls_unroll yes
+    #pragma hls_pipeline_init_interval 1
     for (int i = 0; i < 16; ++i) {
         v1[i] = v1_in.read();
     }
@@ -272,7 +381,38 @@ void vvadd() {
         result[i] = v0[i] + v1[i];
     }
     
+    #pragma hls_pipeline_init_interval 1
+    for (int i = 0; i < 16; ++i) {
+        out.write(result[i]);
+    }
+}
+    """
+
+    # Example core C++ code for MEMORY MODE (__xls_memory)
+    core_code_memory = """
+// Headers...
+#include <cstdint>
+
+void vvadd() {
+    __xls_memory<int, 16> v0 /* original shape: int v0[16] */;
+    __xls_memory<int, 16> v1 /* original shape: int v1[16] */;
+    
+    #pragma hls_pipeline_init_interval 1
+    for (int i = 0; i < 16; ++i) {
+        v0[i] = v0_in.read();
+    }
+    #pragma hls_pipeline_init_interval 1
+    for (int i = 0; i < 16; ++i) {
+        v1[i] = v1_in.read();
+    }
+    
+    __xls_memory<int, 16> result /* original shape: int result[16] */;
     #pragma hls_unroll yes
+    for (int i = 0; i < 16; ++i) {
+        result[i] = v0[i] + v1[i];
+    }
+    
+    #pragma hls_pipeline_init_interval 1
     for (int i = 0; i < 16; ++i) {
         out.write(result[i]);
     }
@@ -283,11 +423,26 @@ void vvadd() {
     function_names = ("Run", "vvadd")
     function_inputs = ["v0", "v1"]
 
-    wrapped_cpp = wrap_xlscc(
+    print("=" * 60)
+    print("REGISTER MODE (use_memory=False):")
+    print("=" * 60)
+    wrapped_cpp_register = wrap_xlscc(
         mlir_module_text="",
-        core_code=core_code,
+        core_code=core_code_register,
         function_names=function_names,
         function_inputs=function_inputs,
+        use_memory=False,
     )
+    print(wrapped_cpp_register)
 
-    print(wrapped_cpp)
+    print("\n" + "=" * 60)
+    print("MEMORY MODE (use_memory=True):")
+    print("=" * 60)
+    wrapped_cpp_memory = wrap_xlscc(
+        mlir_module_text="",
+        core_code=core_code_memory,
+        function_names=function_names,
+        function_inputs=function_inputs,
+        use_memory=True,
+    )
+    print(wrapped_cpp_memory)

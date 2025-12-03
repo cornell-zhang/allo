@@ -107,11 +107,11 @@ static bool emitTapaHls(MlirModule &mod, py::object fileObject) {
       mlirEmitTapaHls(mod, accum.getCallback(), accum.getUserData()));
 }
 
-static bool emitXlsHls(MlirModule &mod, py::object fileObject) {
+static bool emitXlsHls(MlirModule &mod, py::object fileObject, bool useMemory = false) {
   PyFileAccumulator accum(fileObject, false);
   py::gil_scoped_release();
   return mlirLogicalResultIsSuccess(
-      mlirEmitXlsHls(mod, accum.getCallback(), accum.getUserData()));
+      mlirEmitXlsHls(mod, accum.getCallback(), accum.getUserData(), useMemory));
 }
 
 //===----------------------------------------------------------------------===//
@@ -300,7 +300,8 @@ PYBIND11_MODULE(_allo, m) {
   allo_m.def("emit_vhls", &emitVivadoHls);
   allo_m.def("emit_ihls", &emitIntelHls);
   allo_m.def("emit_thls", &emitTapaHls);
-  allo_m.def("emit_xhls", &emitXlsHls);
+  allo_m.def("emit_xhls", &emitXlsHls,
+             py::arg("module"), py::arg("file_object"), py::arg("use_memory") = false);
 
   // LLVM backend APIs.
   allo_m.def("lower_allo_to_llvm", &lowerAlloToLLVM);

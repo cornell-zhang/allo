@@ -41,14 +41,14 @@ public:
   void emitAffineApply(affine::AffineApplyOp op);
   template <typename OpType>
   void emitAffineMaxMin(OpType op, const char *syntax);
-  void emitAffineLoad(affine::AffineLoadOp op);
-  void emitAffineStore(affine::AffineStoreOp op);
+  virtual void emitAffineLoad(affine::AffineLoadOp op);
+  virtual void emitAffineStore(affine::AffineStoreOp op);
   void emitAffineYield(affine::AffineYieldOp op);
 
   /// Memref-related statement emitters.
   template <typename OpType> void emitAlloc(OpType op);
-  void emitLoad(memref::LoadOp op);
-  void emitStore(memref::StoreOp op);
+  virtual void emitLoad(memref::LoadOp op);
+  virtual void emitStore(memref::StoreOp op);
   void emitGetGlobal(memref::GetGlobalOp op);
   void emitGetGlobalFixed(allo::GetGlobalFixedOp op);
   void emitGlobal(memref::GlobalOp op);

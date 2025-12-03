@@ -33,6 +33,10 @@ using namespace allo;
 // used for determine whether to generate C++ default types or ac_(u)int
 static bool BIT_FLAG = false;
 
+// Flag to control whether arrays are emitted as __xls_memory<T, size> (true)
+// or as plain C arrays int arr[size] (false - default for registers)
+static bool USE_MEMORY_FLAG = false;
+
 static SmallString<16> getXLSTypeName(Type valType) {
   if (auto arrayType = valType.dyn_cast<ShapedType>())
     valType = arrayType.getElementType();
@@ -55,7 +59,7 @@ static SmallString<16> getXLSTypeName(Type valType) {
         if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint64_t");
         else
-          return SmallString<16>("int64_t");
+          return SmallString<16>("long long");
         break;
       default:
         return SmallString<16>("ac_int<" + std::to_string(intType.getWidth()) + ", " +
@@ -191,9 +195,17 @@ public:
   void emitFunction(func::FuncOp func) override;
   void emitAffineFor(AffineForOp op) override;
   void emitScfFor(scf::ForOp op) override;
-  void emitLoad(memref::LoadOp op);
+  void emitLoad(memref::LoadOp op) override;
+  void emitStore(memref::StoreOp op) override;
+  void emitAffineLoad(AffineLoadOp op) override;
+  void emitAffineStore(AffineStoreOp op) override;
 
 protected:
+  // Helper to emit flattened index for multi-dimensional array access
+  void emitFlattenedIndex(MemRefType memrefType, Operation::operand_range indices);
+  // Helper to emit flattened affine index
+  void emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap, 
+                                 AffineExprEmitter &affineEmitter);
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
                  std::string name = "");
   // Helper method to get XLS-specific type names
@@ -299,7 +311,23 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
       return;
     }
 
-    // 3) DEFAULT MEMREF -> plain C array: T name[d0][d1]...
+    // 3) DEFAULT MEMREF -> either skip (if USE_MEMORY_FLAG, wrapper handles it)
+    //    or plain C array: T name[d0][d1]...
+    if (USE_MEMORY_FLAG) {
+      // Memory mode: Don't emit declaration here - wrapper will add __xls_memory at class level
+      // Just register the name so subsequent uses work
+      addName(array, /*isPtr=*/false, name);
+      // Emit a comment placeholder so the wrapper knows about this array
+      int64_t totalSize = 1;
+      for (int64_t dim : shape) totalSize *= dim;
+      os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", " << totalSize << ", ";
+      os << (name.empty() ? std::string(getName(array).c_str()) : name);
+      for (int64_t dim : shape)
+        os << ", " << dim;
+      return;
+    }
+
+    // Register mode (default): plain C array
     if (isFunc)
       os << "const ";   // or drop const if you need writes
 
@@ -333,6 +361,54 @@ void XLSModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name)
   os << " /* tensor-like shaped type */";
 }
 
+/// Helper function to check if a region contains channel operations.
+/// Returns true if any operation in the region reads from or writes to a channel.
+static bool containsChannelOperations(Region &region) {
+  bool hasChannelOps = false;
+  region.walk([&](Operation *op) {
+    // Check for StreamGetOp (channel read)
+    if (isa<StreamGetOp>(op)) {
+      hasChannelOps = true;
+      return WalkResult::interrupt();
+    }
+    // Check for StreamPutOp (channel write)
+    if (isa<StreamPutOp>(op)) {
+      hasChannelOps = true;
+      return WalkResult::interrupt();
+    }
+    // Check for memref::LoadOp on stream memory space
+    if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
+      auto memref = loadOp.getMemRef();
+      if (auto memrefType = memref.getType().dyn_cast<MemRefType>()) {
+        if (auto attr = memrefType.getMemorySpace()) {
+          if (auto strAttr = attr.dyn_cast<StringAttr>()) {
+            if (strAttr.getValue().str().rfind("stream", 0) == 0) {
+              hasChannelOps = true;
+              return WalkResult::interrupt();
+            }
+          }
+        }
+      }
+    }
+    // Check for memref::StoreOp on stream memory space
+    if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
+      auto memref = storeOp.getMemRef();
+      if (auto memrefType = memref.getType().dyn_cast<MemRefType>()) {
+        if (auto attr = memrefType.getMemorySpace()) {
+          if (auto strAttr = attr.dyn_cast<StringAttr>()) {
+            if (strAttr.getValue().str().rfind("stream", 0) == 0) {
+              hasChannelOps = true;
+              return WalkResult::interrupt();
+            }
+          }
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  return hasChannelOps;
+}
+
 void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
   // Check for pipeline attributes first - if pipeline is present, don't unroll
   // Check for pipeline attributes (could be "allo.pipeline" unit attr or "pipeline_ii" with value)
@@ -344,6 +420,24 @@ void XLSModuleEmitter::emitLoopDirectives(Operation *op) {
     indent();
     os << "#pragma hls_pipeline_init_interval 1\n";
     return;  // Pipeline takes precedence, don't unroll
+  }
+
+  // Check if loop body contains channel operations.
+  // If it does, we cannot unroll because multiple unrolled iterations
+  // would all read/write from the same channel simultaneously, which is not allowed.
+  // In this case, use pipelining with init interval 1 instead.
+  bool hasChannelOps = false;
+  if (auto affineFor = dyn_cast<AffineForOp>(op)) {
+    hasChannelOps = containsChannelOperations(affineFor.getRegion());
+  } else if (auto scfFor = dyn_cast<scf::ForOp>(op)) {
+    hasChannelOps = containsChannelOperations(scfFor.getRegion());
+  }
+
+  if (hasChannelOps) {
+    // Cannot unroll loops with channel operations - use pipelining instead
+    indent();
+    os << "#pragma hls_pipeline_init_interval 1\n";
+    return;
   }
 
   // By default, unroll all loops unless they have a pipeline pragma
@@ -377,9 +471,10 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
   indent();
   os << "for (";
   
-  // Emit lower bound.
+  // Emit lower bound - first declare the loop variable
   os << getXLSTypeName(iterVar.getType()) << " ";
-  emitValue(iterVar, 0, false, loop_name);
+  // Add the name to the table without re-emitting type
+  os << addName(iterVar, false, loop_name);
   os << " = ";
   auto lowerMap = op.getLowerBoundMap();
   AffineExprEmitter lowerEmitter(state, lowerMap.getNumDims(),
@@ -524,10 +619,221 @@ void XLSModuleEmitter::emitArrayDirectives(Value memref) {
   allo::vhls::ModuleEmitter::emitArrayDirectives(memref);
 }
 
+void XLSModuleEmitter::emitFlattenedIndex(MemRefType memrefType, Operation::operand_range indices) {
+  // For __xls_memory (flattened), compute linear index: i * d1 * d2 + j * d2 + k
+  auto shape = memrefType.getShape();
+  bool first = true;
+  
+  for (unsigned i = 0; i < indices.size(); ++i) {
+    // Calculate stride (product of all dimensions after this one)
+    int64_t stride = 1;
+    for (unsigned j = i + 1; j < shape.size(); ++j) {
+      stride *= shape[j];
+    }
+    
+    if (!first) {
+      os << " + ";
+    }
+    first = false;
+    
+    if (stride == 1) {
+      emitValue(indices[i]);
+    } else {
+      emitValue(indices[i]);
+      os << " * " << stride;
+    }
+  }
+}
+
 void XLSModuleEmitter::emitLoad(memref::LoadOp op) {
-  // For array functions, the local arrays are already registered with the correct names
-  // so the parent implementation will use them automatically
-  allo::vhls::ModuleEmitter::emitLoad(op);
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << " = ";
+  
+  auto memref = op.getMemRef();
+  auto memrefType = memref.getType().cast<MemRefType>();
+  emitValue(memref);
+  
+  // Check for stream memory space
+  auto attr = memrefType.getMemorySpace();
+  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+    // Stream case - use parent's implementation
+    allo::vhls::ModuleEmitter::emitLoad(op);
+    return;
+  }
+  
+  // For regular memref, handle memory mode vs register mode
+  if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
+    // Memory mode with multi-dimensional array: use flattened index
+    os << "[";
+    emitFlattenedIndex(memrefType, op.getIndices());
+    os << "]";
+  } else {
+    // Register mode or 1D array: use normal indexing
+    for (auto index : op.getIndices()) {
+      os << "[";
+      emitValue(index);
+      os << "]";
+    }
+  }
+  os << ";";
+  emitInfoAndNewLine(op);
+}
+
+void XLSModuleEmitter::emitStore(memref::StoreOp op) {
+  indent();
+  
+  auto memref = op.getMemRef();
+  auto memrefType = memref.getType().cast<MemRefType>();
+  emitValue(memref);
+  
+  // Check for stream memory space
+  auto attr = memrefType.getMemorySpace();
+  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+    // Stream case - use parent's implementation
+    allo::vhls::ModuleEmitter::emitStore(op);
+    return;
+  }
+  
+  // For regular memref, handle memory mode vs register mode
+  if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
+    // Memory mode with multi-dimensional array: use flattened index
+    os << "[";
+    emitFlattenedIndex(memrefType, op.getIndices());
+    os << "]";
+  } else {
+    // Register mode or 1D array: use normal indexing
+    for (auto index : op.getIndices()) {
+      os << "[";
+      emitValue(index);
+      os << "]";
+    }
+  }
+  
+  os << " = ";
+  emitValue(op.getValueToStore());
+  os << ";";
+  emitInfoAndNewLine(op);
+}
+
+void XLSModuleEmitter::emitFlattenedAffineIndex(MemRefType memrefType, AffineMap affineMap,
+                                                 AffineExprEmitter &affineEmitter) {
+  // For __xls_memory (flattened), compute linear index from affine expressions
+  auto shape = memrefType.getShape();
+  auto results = affineMap.getResults();
+  bool first = true;
+  
+  for (unsigned i = 0; i < results.size(); ++i) {
+    // Calculate stride (product of all dimensions after this one)
+    int64_t stride = 1;
+    for (unsigned j = i + 1; j < shape.size(); ++j) {
+      stride *= shape[j];
+    }
+    
+    if (!first) {
+      os << " + ";
+    }
+    first = false;
+    
+    if (stride == 1) {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ")";
+    } else {
+      os << "(";
+      affineEmitter.emitAffineExpr(results[i]);
+      os << ") * " << stride;
+    }
+  }
+}
+
+void XLSModuleEmitter::emitAffineLoad(AffineLoadOp op) {
+  indent();
+  std::string load_from_name = "";
+  if (op->hasAttr("from")) {
+    load_from_name = op->getAttr("from").cast<StringAttr>().getValue().str();
+  }
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << " = ";
+  
+  auto memref = op.getMemRef();
+  emitValue(memref, 0, false, load_from_name);
+  
+  auto memrefType = memref.getType().cast<MemRefType>();
+  auto attr = memrefType.getMemorySpace();
+  auto affineMap = op.getAffineMap();
+  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(), op.getMapOperands());
+  
+  // Check for stream memory space
+  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+    // Stream case - delegate to parent
+    allo::vhls::ModuleEmitter::emitAffineLoad(op);
+    return;
+  }
+  
+  // For regular memref, handle memory mode vs register mode
+  if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
+    // Memory mode with multi-dimensional array: use flattened index
+    os << "[";
+    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    os << "]";
+  } else {
+    // Register mode or 1D array: use normal indexing
+    for (auto index : affineMap.getResults()) {
+      os << "[";
+      affineEmitter.emitAffineExpr(index);
+      os << "]";
+    }
+  }
+  os << ";";
+  emitInfoAndNewLine(op);
+}
+
+void XLSModuleEmitter::emitAffineStore(AffineStoreOp op) {
+  indent();
+  std::string store_to_name = "";
+  if (op->hasAttr("to")) {
+    store_to_name = op->getAttr("to").cast<StringAttr>().getValue().str();
+  }
+  
+  auto memref = op.getMemRef();
+  emitValue(memref, 0, false, store_to_name);
+  
+  auto memrefType = memref.getType().cast<MemRefType>();
+  auto attr = memrefType.getMemorySpace();
+  auto affineMap = op.getAffineMap();
+  AffineExprEmitter affineEmitter(state, affineMap.getNumDims(), op.getMapOperands());
+  
+  // Check for stream memory space
+  if (attr && attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream") {
+    // Stream case - delegate to parent
+    allo::vhls::ModuleEmitter::emitAffineStore(op);
+    return;
+  }
+  
+  // For regular memref, handle memory mode vs register mode
+  if (USE_MEMORY_FLAG && memrefType.getRank() > 1) {
+    // Memory mode with multi-dimensional array: use flattened index
+    os << "[";
+    emitFlattenedAffineIndex(memrefType, affineMap, affineEmitter);
+    os << "]";
+  } else {
+    // Register mode or 1D array: use normal indexing
+    for (auto index : affineMap.getResults()) {
+      os << "[";
+      affineEmitter.emitAffineExpr(index);
+      os << "]";
+    }
+  }
+  
+  os << " = ";
+  emitValue(op.getValueToStore());
+  os << ";";
+  emitInfoAndNewLine(op);
 }
 
 void XLSModuleEmitter::emitFunction(func::FuncOp func) {
@@ -617,13 +923,24 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       // This ensures emitLoad will use the local array name instead of the argument name
       addName(arg, /*isPtr=*/false, localName);
       
-      // Declare local array
+      // Declare local array - emit comment placeholder if USE_MEMORY_FLAG (wrapper handles class-level decl)
       indent();
-      os << getXLSTypeName(elemType) << " " << localName;
-      for (int64_t dim : shape) {
-        os << "[" << dim << "]";
+      if (USE_MEMORY_FLAG) {
+        // Memory mode: emit comment placeholder for wrapper to parse
+        // Wrapper will add __xls_memory at class level
+        int64_t totalSize = 1;
+        for (int64_t dim : shape) totalSize *= dim;
+        os << "// __xls_memory_decl__: " << getXLSTypeName(elemType) << ", " << totalSize << ", " << localName;
+        for (int64_t dim : shape) os << ", " << dim;
+        os << "\n";
+      } else {
+        // Register mode: plain C array
+        os << getXLSTypeName(elemType) << " " << localName;
+        for (int64_t dim : shape) {
+          os << "[" << dim << "]";
+        }
+        os << ";\n";
       }
-      os << ";\n";
       
       argIdx++;
     }
@@ -640,19 +957,21 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       for (int64_t dim : shape) totalSize *= dim;
       
       // Emit loop to populate from channel
+      // Use pipelining instead of unrolling since we're reading from a channel
       indent();
-      os << "#pragma hls_unroll yes\n";
+      os << "#pragma hls_pipeline_init_interval 1\n";
       indent();
       os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
       addIndent();
       indent();
       
-      // Generate array access with proper indexing for any dimension
+      // Generate array access with proper indexing
       os << localName;
-      if (shape.size() == 1) {
+      if (USE_MEMORY_FLAG || shape.size() == 1) {
+        // Memory mode uses flat indexing (already flattened), or 1D array
         os << "[_idx]";
       } else {
-        // For multi-dimensional: compute indices using division and modulo
+        // Register mode with multi-dimensional: compute indices using division and modulo
         // e.g., for [d0][d1]: v0[_idx / d1][_idx % d1]
         // e.g., for [d0][d1][d2]: v0[_idx / (d1*d2)][(_idx / d2) % d1][_idx % d2]
         for (size_t i = 0; i < shape.size(); ++i) {
@@ -706,20 +1025,22 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
             for (int64_t dim : shape) totalSize *= dim;
             
             // Emit loop to write to output channel
+            // Use pipelining instead of unrolling since we're writing to a channel
             indent();
-            os << "#pragma hls_unroll yes\n";
+            os << "#pragma hls_pipeline_init_interval 1\n";
             indent();
             os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
             addIndent();
             indent();
             
-            // Generate array access with proper indexing for any dimension
+            // Generate array access with proper indexing
             os << outputChannelName << ".write(";
             emitValue(returnValue);
-            if (shape.size() == 1) {
+            if (USE_MEMORY_FLAG || shape.size() == 1) {
+              // Memory mode uses flat indexing (already flattened), or 1D array
               os << "[_idx]";
             } else {
-              // For multi-dimensional: compute indices using division and modulo
+              // Register mode with multi-dimensional: compute indices using division and modulo
               for (size_t i = 0; i < shape.size(); ++i) {
                 os << "[";
                 if (i == shape.size() - 1) {
@@ -978,15 +1299,21 @@ using ac_int = XlsInt<Width, Signed>;
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os) {
+LogicalResult allo::emitXlsHLS(ModuleOp module, llvm::raw_ostream &os, bool useMemory) {
+  USE_MEMORY_FLAG = useMemory;
   AlloEmitterState state(os);
   XLSModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
 }
 
+// Wrapper function for TranslateFromMLIRRegistration (uses default useMemory=false)
+static LogicalResult emitXlsHLSDefault(ModuleOp module, llvm::raw_ostream &os) {
+  return allo::emitXlsHLS(module, os, /*useMemory=*/false);
+}
+
 void allo::registerEmitXlsHLSTranslation() {
   static TranslateFromMLIRRegistration toXLSHLS(
-      "emit-XLS-hls", "Emit XLS HLS", emitXlsHLS,
+      "emit-XLS-hls", "Emit XLS HLS", emitXlsHLSDefault,
       [&](DialectRegistry &registry) {
         // clang-format off
         registry.insert<

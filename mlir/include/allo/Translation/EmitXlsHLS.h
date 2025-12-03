@@ -11,7 +11,12 @@
 namespace mlir {
 namespace allo {
 
-LogicalResult emitXlsHLS(ModuleOp module, llvm::raw_ostream &os);
+/// Emit XLS HLS code from MLIR module.
+/// @param module The MLIR module to emit
+/// @param os Output stream to write to
+/// @param useMemory If true, emit arrays as __xls_memory<T, size> (for SRAM/BRAM).
+///                  If false (default), emit as plain C arrays (for registers).
+LogicalResult emitXlsHLS(ModuleOp module, llvm::raw_ostream &os, bool useMemory = false);
 void registerEmitXlsHLSTranslation();
 
 } // namespace allo
