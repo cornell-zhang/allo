@@ -496,7 +496,9 @@ def generate_hbm_config(top_func_name, hbm_mapping, arg_name_mapping=None):
     cfg_lines = ["[connectivity]", ""]
 
     # Vitis creates kernel instances with a postfix (e.g., gemm_1 for the first instance)
-    # The sp tag must reference the kernel instance, not just the kernel name
+    # The sp tag must reference the kernel instance, not just the kernel name.
+    # Note: This assumes a single kernel instance (compute unit). For multiple instances,
+    # the numbering is _1, _2, _3, etc. Currently, we only support single instance configurations.
     kernel_instance = f"{top_func_name}_1"
 
     for user_arg_name, mem_spec in hbm_mapping.items():
