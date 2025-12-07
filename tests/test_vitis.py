@@ -324,7 +324,9 @@ def test_hbm_mapping_config():
     assert ":HBM[1]" in cfg_content
     assert ":DDR[0]" in cfg_content
     # Verify HLS argument names are used (vXX format) with kernel instance suffix
-    assert "sp=gemm_1.v" in cfg_content, "Config should use kernel instance name with HLS argument names"
+    assert (
+        "sp=gemm_1.v" in cfg_content
+    ), "Config should use kernel instance name with HLS argument names"
 
     # Check that VPP_LDFLAGS in makefile includes the config file
     makefile_us = os.path.join(project_name, "makefile_us_alveo.mk")
