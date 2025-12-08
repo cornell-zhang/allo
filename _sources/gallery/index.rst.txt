@@ -20,7 +20,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_developer_01_ir_builder_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_developer_01_ir_builder.py`
+  :doc:`/gallery/developer_01_ir_builder`
 
 .. raw:: html
 
@@ -37,7 +37,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_dive_01_data_types_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_dive_01_data_types.py`
+  :doc:`/gallery/dive_01_data_types`
 
 .. raw:: html
 
@@ -54,7 +54,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_tutorial_02_vhls_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_tutorial_02_vhls.py`
+  :doc:`/gallery/tutorial_02_vhls`
 
 .. raw:: html
 
@@ -71,7 +71,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_tutorial_01_get_started_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_tutorial_01_get_started.py`
+  :doc:`/gallery/tutorial_01_get_started`
 
 .. raw:: html
 
@@ -88,7 +88,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_dive_02_template_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_dive_02_template.py`
+  :doc:`/gallery/dive_02_template`
 
 .. raw:: html
 
@@ -105,7 +105,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_dive_05_verifier_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_dive_05_verifier.py`
+  :doc:`/gallery/dive_05_verifier`
 
 .. raw:: html
 
@@ -122,7 +122,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_dive_04_features_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_dive_04_features.py`
+  :doc:`/gallery/dive_04_features`
 
 .. raw:: html
 
@@ -139,7 +139,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_developer_02_mlir_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_developer_02_mlir.py`
+  :doc:`/gallery/developer_02_mlir`
 
 .. raw:: html
 
@@ -156,7 +156,7 @@ Allo Documentations
   .. image:: /gallery/images/thumb/sphx_glr_dive_03_composition_thumb.png
     :alt:
 
-  :ref:`sphx_glr_gallery_dive_03_composition.py`
+  :doc:`/gallery/dive_03_composition`
 
 .. raw:: html
 
