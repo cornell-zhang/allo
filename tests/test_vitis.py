@@ -323,8 +323,10 @@ def test_hbm_mapping_config():
     assert ":HBM[0]" in cfg_content  # Check memory spec is present
     assert ":HBM[1]" in cfg_content
     assert ":DDR[0]" in cfg_content
-    # Verify HLS argument names are used (vXX format)
-    assert "sp=gemm.v" in cfg_content, "Config should use HLS argument names"
+    # Verify HLS argument names are used (vXX format) with kernel instance suffix
+    assert (
+        "sp=gemm_1.v" in cfg_content
+    ), "Config should use kernel instance name with HLS argument names"
 
     # Check that VPP_LDFLAGS in makefile includes the config file
     makefile_us = os.path.join(project_name, "makefile_us_alveo.mk")
@@ -360,10 +362,10 @@ def test_hbm_mapping_function():
 
     # Verify content
     assert "[connectivity]" in cfg_content
-    assert "sp=my_kernel.inp_addr_0:HBM[0]" in cfg_content
-    assert "sp=my_kernel.inp_addr_1:HBM[0]" in cfg_content
-    assert "sp=my_kernel.wk_addr_0:HBM[1]" in cfg_content
-    assert "sp=my_kernel.wv_addr_0:DDR[0]" in cfg_content
+    assert "sp=my_kernel_1.inp_addr_0:HBM[0]" in cfg_content
+    assert "sp=my_kernel_1.inp_addr_1:HBM[0]" in cfg_content
+    assert "sp=my_kernel_1.wk_addr_0:HBM[1]" in cfg_content
+    assert "sp=my_kernel_1.wv_addr_0:DDR[0]" in cfg_content
 
     print("generate_hbm_config test passed!")
 
