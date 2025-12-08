@@ -2,6 +2,13 @@ import re
 from typing import List, Tuple
 from dataclasses import dataclass
 
+from .xls_error_handler import (
+    ValidationError,
+    write_diagnostic_file,
+    format_error_summary,
+)
+
+
 @dataclass
 class AffineForBound:
     iv: str        # induction variable, e.g. "%arg2"
@@ -244,54 +251,113 @@ LOOP_HEADER_RE = re.compile(
     r'^\s*(affine\.for|scf\.for)\b.*$'
 )
 
-def validate_xls_ir(mlir_text: str) -> None:
+# Patterns for unsupported types
+FLOAT_TYPE_RE = re.compile(r'\b(f16|f32|f64|bf16)\b')
+FIXED_TYPE_RE = re.compile(r'\ballo\.(fixed|ufixed)<[^>]+>')
+
+# Unsupported Allo pragmas/ops (XLS only supports pipeline and unroll)
+UNSUPPORTED_PRAGMAS = {
+    'allo.partition': 'Array partitioning is not supported in XLS. Use register mode (use_memory=False) for automatic register allocation.',
+    'allo.parallel': 'Parallel loops are not supported in XLS. Use pipeline or unroll instead.',
+    'allo.bind': 'Thread binding is not supported in XLS (no GPU-style parallelism).',
+    'allo.dataflow': 'Dataflow regions are not supported in XLS. Consider restructuring as sequential pipelined loops.',
+    'allo.buffer_at': 'Buffer insertion is not supported in XLS. Arrays are either registers or __xls_memory.',
+    'allo.reuse_at': 'Reuse buffers are not supported in XLS. Manual buffering required.',
+    'allo.reshape': 'Reshape operations are not supported in XLS. Use flat arrays instead.',
+    'allo.compute_at': 'Compute-at scheduling is not supported in XLS.',
+    'allo.unfold': 'Unfold (spatial PE arrays) is not supported in XLS.',
+    'allo.fuse': 'Loop fusion is not supported in XLS. Manually fuse loops in source.',
+    'allo.tile': 'Loop tiling is not supported in XLS. Manually tile loops in source.',
+    'allo.split': 'Loop splitting is not supported in XLS. Manually split loops in source.',
+    'allo.reorder': 'Loop reordering is not supported in XLS. Manually reorder loops in source.',
+    'allo.inter_kernel_to': 'Inter-kernel streaming is not supported in XLS.',
+}
+
+
+def validate_xls_ir(mlir_text: str, project: str = None) -> None:
     """
-    Raises RuntimeError with a human-readable message if not.
-    Cannot have
-    - Dynamic memref/tensor shapes (no '?' in type).
-    - Memref.alloc or memref.alloca (dynamic allocation).
-    - Every affine.for / scf.for must be annotated with allo.pipeline
-      or allo.unroll in its header line.
+    Validates MLIR text for XLS[cc] backend compatibility.
+    
+    Raises RuntimeError with a human-readable message if validation fails.
+    If project is provided, writes a diagnostic file showing annotated MLIR.
+    
+    Checks for:
+    - Floating-point types (f16, f32, f64, bf16) - not supported
+    - Fixed-point types (allo.fixed, allo.ufixed) - not supported  
+    - Dynamic memref/tensor shapes (no '?' in type)
+    - Dynamic allocation (memref.alloc, memref.alloca)
+    - Unsupported Allo pragmas (partition, parallel, dataflow, etc.)
     """
-    errors = []
-
-    # Dynamic shapes: look for '?' inside memref<...> or tensor<...>.
-    if DYNAMIC_TYPE_RE.search(mlir_text):
-        errors.append(
-            "XLS backend requires static shapes: found memref/tensor type "
-            "with dynamic dimension ('?')."
-        )
-
-    # Disallow dynamic allocation ops.
-    if "memref.alloca" in mlir_text:
-        errors.append(
-            "memref.alloca is not supported by the XLS backend (no dynamic stack "
-            "allocation)."
-        )
-    if "memref.alloc " in mlir_text or "memref.alloc\n" in mlir_text:
-        errors.append(
-            "memref.alloc is not supported by the XLS backend (no dynamic heap "
-            "allocation). Lower to static buffers or globals instead."
-        )
-
-    # For each affine.for/scf.for, require allo.pipeline or allo.unroll
-    for line in mlir_text.splitlines():
-        m = LOOP_HEADER_RE.match(line)
-        if not m:
-            continue
-
-        if "allo.pipeline" not in line and "allo.unroll" not in line:
-            errors.append(
-                "Loop missing XLS directive: each affine.for/scf.for must have "
-                "either 'allo.pipeline' or 'allo.unroll' attribute.\n"
-                f"  Offending loop header: {line.strip()}"
-            )
-
-    if errors:
-        raise RuntimeError(
-            "MLIR module is not legal for XLS[cc] backend:\n"
-            + "\n".join(f"  - {msg}" for msg in errors)
-        )
+    errors: List[ValidationError] = []
+    lines = mlir_text.splitlines()
+    
+    for line_num, line in enumerate(lines, start=1):
+        # Check for floating-point types
+        float_match = FLOAT_TYPE_RE.search(line)
+        if float_match:
+            errors.append(ValidationError(
+                line_num=line_num,
+                line_content=line,
+                error_type='FLOAT_TYPE',
+                message=f"Floating-point type '{float_match.group()}' is not supported. "
+                        f"XLS requires integer types. Consider using fixed-point emulation with integers."
+            ))
+        
+        # Check for fixed-point types
+        fixed_match = FIXED_TYPE_RE.search(line)
+        if fixed_match:
+            errors.append(ValidationError(
+                line_num=line_num,
+                line_content=line,
+                error_type='FIXED_TYPE',
+                message=f"Fixed-point type '{fixed_match.group()}' is not supported. "
+                        f"Use integer types with manual scaling instead."
+            ))
+        
+        # Check for dynamic shapes
+        if DYNAMIC_TYPE_RE.search(line):
+            errors.append(ValidationError(
+                line_num=line_num,
+                line_content=line,
+                error_type='DYNAMIC_SHAPE',
+                message="Dynamic shapes ('?') are not supported. All dimensions must be static constants."
+            ))
+        
+        # Check for dynamic allocation
+        if "memref.alloca" in line:
+            errors.append(ValidationError(
+                line_num=line_num,
+                line_content=line,
+                error_type='DYNAMIC_ALLOC',
+                message="memref.alloca (stack allocation) is not supported. Use static arrays."
+            ))
+        if "memref.alloc " in line or line.strip().endswith("memref.alloc"):
+            errors.append(ValidationError(
+                line_num=line_num,
+                line_content=line,
+                error_type='DYNAMIC_ALLOC',
+                message="memref.alloc (heap allocation) is not supported. Use static arrays."
+            ))
+        
+        # Check for unsupported pragmas
+        for pragma, help_msg in UNSUPPORTED_PRAGMAS.items():
+            if pragma in line:
+                errors.append(ValidationError(
+                    line_num=line_num,
+                    line_content=line,
+                    error_type='UNSUPPORTED_PRAGMA',
+                    message=f"'{pragma}' is not supported. {help_msg}"
+                ))
+    
+    if not errors:
+        return  # Validation passed
+    
+    # Write diagnostic file if project path provided
+    if project:
+        write_diagnostic_file(errors, mlir_text, project)
+    
+    # Raise exception with summary
+    raise RuntimeError(format_error_summary(errors, project))
 
 def wrap_xlscc(mlir_module_text: str,
                core_code: str,

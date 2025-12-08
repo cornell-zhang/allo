@@ -40,7 +40,7 @@ class XlsModule:
 
         # 1) Take a snapshot of the lowered MLIR as text and validate for XLS.
         self.mlir_text = str(self.module)
-        #validate_xls_ir(self.mlir_text)  # <-- ERROR OUT EARLY IF NOT XLS-LEGAL
+        validate_xls_ir(self.mlir_text, project=project)  # ERROR OUT EARLY IF NOT XLS-LEGAL
 
         # 2) Emit the XLS[cc] HLS Code from MLIR
         buf = io.StringIO()
