@@ -421,9 +421,15 @@ def handle_overflow(np_array, bitwidth, dtype):
         # Round to nearest integer towards zero
         np_dtype = np.int64 if dtype.startswith("fixed") else np.uint64
         np_array = np.fix(np_array).astype(np_dtype)
+
     sb = 1 << bitwidth
     sb_limit = 1 << (bitwidth - 1)
-    np_array = np_array % sb
+    if bitwidth < 64:
+        # since numpy array only supports up to 64-bit integers
+        # we only need to do modulo operation if bitwidth is less than 64
+        # for larger bitwidth, it's handled already with np.fix(np_array).astype(np_dtype)
+        # this is to avoid the numpy OverflowError: Python int too large to convert to C long
+        np_array = np_array % sb
 
     if dtype.startswith("fixed") or dtype.startswith("i"):
 
