@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     # This job runs on Linux
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     container:
       image: chhzh123/allo:latest
 
@@ -60,12 +60,11 @@ jobs:
         source activate allo
         export LLVM_BUILD_DIR=/root/llvm-project/build
         python3 -m pytest examples/polybench -v
-    # no left space!
-    # - name: PyTorch
-    #   shell: bash
-    #   run: |
-    #     source activate allo
-    #     export LLVM_BUILD_DIR=/root/llvm-project/build
-    #     python3 -m pip install torch==2.5.1
-    #     python3 examples/torch/toy.py
-    #     python3 examples/torch/mlp.py
+    - name: PyTorch
+      shell: bash
+      run: |
+        source activate allo
+        export LLVM_BUILD_DIR=/root/llvm-project/build
+        python3 -m pip install torch==2.5.1
+        python3 examples/torch/toy.py
+        python3 examples/torch/mlp.py
