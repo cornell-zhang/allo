@@ -49,6 +49,11 @@ static SmallString<16> getXLSTypeName(Type valType) {
         return SmallString<16>("ac_int<1, false>");
     } else {
       switch (intType.getWidth()) {
+      case 16:
+        if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
+          return SmallString<16>("uint16_t");
+        else
+          return SmallString<16>("short");
       case 32:
         if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
           return SmallString<16>("uint32_t");
