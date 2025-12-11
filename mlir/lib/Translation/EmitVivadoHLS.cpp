@@ -1126,7 +1126,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   auto arrayType = memref.getType().cast<ShapedType>();
 
   // Check if this is a function argument - use linearized indexing for pointers
-  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+  if (state.linearize_pointers && isFunctionArgument(memref) && arrayType.hasStaticShape()) {
     emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
                               affineMap.getNumDims(), op.getMapOperands(),
                               state);
@@ -1181,7 +1181,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   auto arrayType = memref.getType().cast<ShapedType>();
 
   // Check if this is a function argument - use linearized indexing for pointers
-  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+  if (state.linearize_pointers && isFunctionArgument(memref) && arrayType.hasStaticShape()) {
     emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
                               affineMap.getNumDims(), op.getMapOperands(),
                               state);
@@ -1376,7 +1376,7 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
   auto arrayType = memref.getType().cast<ShapedType>();
 
   // Check if this is a function argument - use linearized indexing for pointers
-  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+  if (state.linearize_pointers && isFunctionArgument(memref) && arrayType.hasStaticShape()) {
     emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
   } else {
     // Use standard multi-dimensional array access for local arrays
@@ -1423,7 +1423,7 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
   auto arrayType = memref.getType().cast<ShapedType>();
 
   // Check if this is a function argument - use linearized indexing for pointers
-  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+  if (state.linearize_pointers && isFunctionArgument(memref) && arrayType.hasStaticShape()) {
     emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
   } else {
     // Use standard multi-dimensional array access for local arrays
@@ -2666,10 +2666,15 @@ using namespace std;
 // Entry of allo-translate
 //===----------------------------------------------------------------------===//
 
-LogicalResult allo::emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os) {
+LogicalResult allo::emitVivadoHLSWithFlag(ModuleOp module, llvm::raw_ostream &os, bool linearize_pointers) {
   AlloEmitterState state(os);
+  state.linearize_pointers = linearize_pointers;
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
+}
+
+LogicalResult allo::emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os) {
+  return emitVivadoHLSWithFlag(module, os, false);
 }
 
 void allo::registerEmitVivadoHLSTranslation() {
