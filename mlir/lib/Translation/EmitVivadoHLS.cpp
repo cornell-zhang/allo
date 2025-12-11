@@ -99,6 +99,181 @@ static SmallString<16> getTypeName(Type valType) {
   return SmallString<16>();
 }
 
+/// Check if a Value is a function block argument (i.e., a function parameter)
+/// These are pointers in the generated HLS code, not local arrays.
+static bool isFunctionArgument(Value val) {
+  // A value is a function argument if it has no defining operation
+  // (block arguments don't have defining ops) AND it's an argument
+  // of the entry block of a FuncOp.
+  if (auto blockArg = dyn_cast<BlockArgument>(val)) {
+    Block *block = blockArg.getOwner();
+    if (block && block->isEntryBlock()) {
+      if (auto funcOp = dyn_cast<func::FuncOp>(block->getParentOp())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Emit a linearized index expression for pointer access.
+/// For a memref with shape [D0, D1, D2, ...] accessed at indices [i0, i1, i2, ...],
+/// the linearized index is: i0 * (D1 * D2 * ...) + i1 * (D2 * ...) + i2 * ... + ...
+static void emitLinearizedAffineIndex(raw_ostream &os, 
+                                       AffineMap affineMap,
+                                       ArrayRef<int64_t> shape,
+                                       unsigned numDim,
+                                       Operation::operand_range operands,
+                                       AlloEmitterState &state) {
+  auto results = affineMap.getResults();
+  unsigned rank = results.size();
+  
+  if (rank == 0) {
+    os << "[0]";
+    return;
+  }
+  
+  // Compute strides for row-major layout
+  // stride[i] = shape[i+1] * shape[i+2] * ... * shape[rank-1]
+  SmallVector<int64_t, 8> strides(rank);
+  strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * shape[i + 1];
+  }
+  
+  // Create a temporary AffineExprEmitter to emit index expressions
+  // We'll build the linearized expression manually
+  os << "[";
+  
+  for (unsigned i = 0; i < rank; ++i) {
+    if (i > 0)
+      os << " + ";
+    
+    os << "(";
+    // Emit the affine expression for this dimension
+    // We need to create an AffineExprEmitter inline
+    class InlineAffineEmitter : public AffineExprVisitor<InlineAffineEmitter> {
+    public:
+      InlineAffineEmitter(raw_ostream &os, unsigned numDim, 
+                          Operation::operand_range operands,
+                          AlloEmitterState &state)
+          : os(os), numDim(numDim), operands(operands), state(state) {}
+      
+      void visitAddExpr(AffineBinaryOpExpr expr) {
+        os << "(";
+        visit(expr.getLHS());
+        os << " + ";
+        visit(expr.getRHS());
+        os << ")";
+      }
+      void visitMulExpr(AffineBinaryOpExpr expr) {
+        os << "(";
+        visit(expr.getLHS());
+        os << " * ";
+        visit(expr.getRHS());
+        os << ")";
+      }
+      void visitModExpr(AffineBinaryOpExpr expr) {
+        os << "(";
+        visit(expr.getLHS());
+        os << " % ";
+        visit(expr.getRHS());
+        os << ")";
+      }
+      void visitFloorDivExpr(AffineBinaryOpExpr expr) {
+        os << "(";
+        visit(expr.getLHS());
+        os << " / ";
+        visit(expr.getRHS());
+        os << ")";
+      }
+      void visitCeilDivExpr(AffineBinaryOpExpr expr) {
+        os << "((";
+        visit(expr.getLHS());
+        os << " + ";
+        visit(expr.getRHS());
+        os << " - 1) / ";
+        visit(expr.getRHS());
+        os << ")";
+      }
+      void visitConstantExpr(AffineConstantExpr expr) {
+        os << expr.getValue();
+      }
+      void visitDimExpr(AffineDimExpr expr) {
+        Value operand = operands[expr.getPosition()];
+        if (state.nameTable.count(operand)) {
+          os << state.nameTable[operand];
+        } else {
+          os << "dim" << expr.getPosition();
+        }
+      }
+      void visitSymbolExpr(AffineSymbolExpr expr) {
+        Value operand = operands[numDim + expr.getPosition()];
+        if (state.nameTable.count(operand)) {
+          os << state.nameTable[operand];
+        } else {
+          os << "sym" << expr.getPosition();
+        }
+      }
+      
+      raw_ostream &os;
+      unsigned numDim;
+      Operation::operand_range operands;
+      AlloEmitterState &state;
+    };
+    
+    InlineAffineEmitter emitter(os, numDim, operands, state);
+    emitter.visit(results[i]);
+    os << ")";
+    
+    if (strides[i] > 1) {
+      os << " * " << strides[i];
+    }
+  }
+  
+  os << "]";
+}
+
+/// Emit a linearized index expression for non-affine (memref.load/store) access.
+static void emitLinearizedIndex(raw_ostream &os,
+                                 ValueRange indices,
+                                 ArrayRef<int64_t> shape,
+                                 AlloEmitterState &state) {
+  unsigned rank = indices.size();
+  
+  if (rank == 0) {
+    os << "[0]";
+    return;
+  }
+  
+  // Compute strides for row-major layout
+  SmallVector<int64_t, 8> strides(rank);
+  strides[rank - 1] = 1;
+  for (int i = rank - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * shape[i + 1];
+  }
+  
+  os << "[";
+  
+  for (unsigned i = 0; i < rank; ++i) {
+    if (i > 0)
+      os << " + ";
+    
+    Value idx = indices[i];
+    if (state.nameTable.count(idx)) {
+      os << state.nameTable[idx];
+    } else {
+      os << "idx" << i;
+    }
+    
+    if (strides[i] > 1) {
+      os << " * " << strides[i];
+    }
+  }
+  
+  os << "]";
+}
+
 static SmallString<16> getTypeName(Value val) {
   // Handle memref, tensor, and vector types.
   auto valType = val.getType();
@@ -955,11 +1130,19 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
     os << ".read(); // ";
     emitValue(memref, 0, false, load_from_name); // comment
   }
-  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
-  for (auto index : affineMap.getResults()) {
-    os << "[";
-    affineEmitter.emitAffineExpr(index);
-    os << "]";
+  auto arrayType = memref.getType().cast<ShapedType>();
+  
+  // Check if this is a function argument - use linearized indexing for pointers
+  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+    emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
+                              affineMap.getNumDims(), op.getMapOperands(), state);
+  } else {
+    // Use standard multi-dimensional array access for local arrays
+    for (auto index : affineMap.getResults()) {
+      os << "[";
+      affineEmitter.emitAffineExpr(index);
+      os << "]";
+    }
   }
   os << ";";
   emitInfoAndNewLine(op);
@@ -1002,11 +1185,19 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
     os << "); // ";
     emitValue(memref, 0, false, store_to_name); // comment
   }
-  auto arrayType = llvm::dyn_cast<ShapedType>(memref.getType());
-  for (auto index : affineMap.getResults()) {
-    os << "[";
-    affineEmitter.emitAffineExpr(index);
-    os << "]";
+  auto arrayType = memref.getType().cast<ShapedType>();
+  
+  // Check if this is a function argument - use linearized indexing for pointers
+  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+    emitLinearizedAffineIndex(os, affineMap, arrayType.getShape(),
+                              affineMap.getNumDims(), op.getMapOperands(), state);
+  } else {
+    // Use standard multi-dimensional array access for local arrays
+    for (auto index : affineMap.getResults()) {
+      os << "[";
+      affineEmitter.emitAffineExpr(index);
+      os << "]";
+    }
   }
   os << " = ";
   emitValue(op.getValueToStore());
@@ -1187,10 +1378,19 @@ void ModuleEmitter::emitLoad(memref::LoadOp op) {
     os << ".read(); // ";
     emitValue(memref); // comment
   }
-  for (auto index : op.getIndices()) {
-    os << "[";
-    emitValue(index);
-    os << "]";
+  
+  auto arrayType = memref.getType().cast<ShapedType>();
+  
+  // Check if this is a function argument - use linearized indexing for pointers
+  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+    emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
+  } else {
+    // Use standard multi-dimensional array access for local arrays
+    for (auto index : op.getIndices()) {
+      os << "[";
+      emitValue(index);
+      os << "]";
+    }
   }
   os << ";";
   emitInfoAndNewLine(op);
@@ -1225,10 +1425,19 @@ void ModuleEmitter::emitStore(memref::StoreOp op) {
     os << "); // ";
     emitValue(memref); // comment
   }
-  for (auto index : op.getIndices()) {
-    os << "[";
-    emitValue(index);
-    os << "]";
+  
+  auto arrayType = memref.getType().cast<ShapedType>();
+  
+  // Check if this is a function argument - use linearized indexing for pointers
+  if (isFunctionArgument(memref) && arrayType.hasStaticShape()) {
+    emitLinearizedIndex(os, op.getIndices(), arrayType.getShape(), state);
+  } else {
+    // Use standard multi-dimensional array access for local arrays
+    for (auto index : op.getIndices()) {
+      os << "[";
+      emitValue(index);
+      os << "]";
+    }
   }
   os << " = ";
   emitValue(op.getValueToStore());
