@@ -232,7 +232,7 @@ class HLSModule:
             case "intel_hls":
                 allo_d.emit_ihls(self.module, buf)
             case _:
-                allo_d.emit_vhls(self.module, buf)
+                allo_d.emit_vhls(self.module, buf, flatten=(not wrap_io))
         buf.seek(0)
         self.hls_code = buf.read()
         # pylint: disable=too-many-nested-blocks

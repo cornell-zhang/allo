@@ -14,7 +14,8 @@ using namespace allo;
 
 MlirLogicalResult mlirEmitVivadoHls(MlirModule module,
                                     MlirStringCallback callback,
-                                    void *userData) {
+                                    void *userData,
+                                    bool linearize_pointers) {
   mlir::detail::CallbackOstream stream(callback, userData);
-  return wrap(emitVivadoHLS(unwrap(module), stream));
+  return wrap(emitVivadoHLSWithFlag(unwrap(module), stream, linearize_pointers));
 }

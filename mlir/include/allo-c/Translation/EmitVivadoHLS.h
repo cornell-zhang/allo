@@ -14,7 +14,8 @@ extern "C" {
 
 MLIR_CAPI_EXPORTED MlirLogicalResult mlirEmitVivadoHls(MlirModule module,
                                                     MlirStringCallback callback,
-                                                    void *userData);
+                                                    void *userData,
+                                                    bool linearize_pointers);
 
 #ifdef __cplusplus
 }
