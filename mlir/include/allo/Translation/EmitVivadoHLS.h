@@ -12,6 +12,7 @@ namespace mlir {
 namespace allo {
 
 LogicalResult emitVivadoHLS(ModuleOp module, llvm::raw_ostream &os);
+LogicalResult emitVivadoHLSWithFlag(ModuleOp module, llvm::raw_ostream &os, bool linearize_pointers);
 void registerEmitVivadoHLSTranslation();
 
 } // namespace allo

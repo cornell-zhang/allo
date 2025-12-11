@@ -85,11 +85,12 @@ static bool loopTransformation(MlirModule &mlir_mod) {
 // Emission APIs
 //===----------------------------------------------------------------------===//
 
-static bool emitVivadoHls(MlirModule &mod, py::object fileObject) {
+static bool emitVivadoHls(MlirModule &mod, py::object fileObject,
+                          bool flatten = false) {
   PyFileAccumulator accum(fileObject, false);
   py::gil_scoped_release();
-  return mlirLogicalResultIsSuccess(
-      mlirEmitVivadoHls(mod, accum.getCallback(), accum.getUserData()));
+  return mlirLogicalResultIsSuccess(mlirEmitVivadoHls(
+      mod, accum.getCallback(), accum.getUserData(), flatten));
 }
 
 static bool emitIntelHls(MlirModule &mod, py::object fileObject) {
@@ -289,7 +290,8 @@ PYBIND11_MODULE(_allo, m) {
   allo_m.def("loop_transformation", &loopTransformation);
 
   // Codegen APIs.
-  allo_m.def("emit_vhls", &emitVivadoHls);
+  allo_m.def("emit_vhls", &emitVivadoHls, py::arg("module"),
+             py::arg("file_object"), py::arg("flatten") = false);
   allo_m.def("emit_ihls", &emitIntelHls);
   allo_m.def("emit_thls", &emitTapaHls);
 
