@@ -41,13 +41,14 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
     if (auto constOp = dyn_cast<arith::ConstantOp>(defOp)) {
       auto constAttr = constOp.getValue();
 
-      if (auto boolAttr = constAttr.dyn_cast<BoolAttr>()) {
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(constAttr)) {
         return SmallString<8>(std::to_string(boolAttr.getValue()));
 
-      } else if (auto floatAttr = constAttr.dyn_cast<FloatAttr>()) {
+      } else if (auto floatAttr = llvm::dyn_cast<FloatAttr>(constAttr)) {
         // as 0.0 will be interpreted as double constant, we need to explicitly
         // declare it as float32
-        int bitwidth = floatAttr.getType().cast<FloatType>().getWidth();
+        int bitwidth =
+            llvm::dyn_cast<FloatType>(floatAttr.getType()).getWidth();
         std::string prefix = (bitwidth == 32) ? "(float)" : "(double)";
         auto value = floatAttr.getValueAsDouble();
         if (std::isfinite(value))
@@ -57,7 +58,7 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
         else
           return SmallString<8>("-INFINITY");
 
-      } else if (auto intAttr = constAttr.dyn_cast<IntegerAttr>()) {
+      } else if (auto intAttr = llvm::dyn_cast<IntegerAttr>(constAttr)) {
         auto value = intAttr.getInt();
         return SmallString<8>(std::to_string(value));
       }
@@ -67,14 +68,14 @@ SmallString<8> AlloEmitterBase::getName(Value val) {
 };
 
 Type getUnsignedTypeFromSigned(Type type) {
-  if (auto intType = type.dyn_cast<IntegerType>()) {
+  if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
     return IntegerType::get(type.getContext(), intType.getWidth(),
                             IntegerType::SignednessSemantics::Unsigned);
-  } else if (auto memrefType = type.dyn_cast<MemRefType>()) {
+  } else if (auto memrefType = llvm::dyn_cast<MemRefType>(type)) {
     Type elt = getUnsignedTypeFromSigned(memrefType.getElementType());
     return MemRefType::get(memrefType.getShape(), elt, memrefType.getLayout(),
                            memrefType.getMemorySpace());
-  } else if (auto streamType = type.dyn_cast<StreamType>()) {
+  } else if (auto streamType = llvm::dyn_cast<StreamType>(type)) {
     Type elt = getUnsignedTypeFromSigned(streamType.getBaseType());
     return StreamType::get(type.getContext(), elt, streamType.getDepth());
   }

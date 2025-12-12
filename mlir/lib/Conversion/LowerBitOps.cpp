@@ -13,7 +13,7 @@
 // - BitReverse
 //===----------------------------------------------------------------------===//
 
-#include "allo/Conversion/Passes.h"
+#include "PassDetail.h"
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloOps.h"
 #include "allo/Dialect/AlloTypes.h"
@@ -26,6 +26,13 @@
 
 using namespace mlir;
 using namespace allo;
+
+namespace mlir {
+namespace allo {
+#define GEN_PASS_DEF_LOWERBITOPS
+#include "allo/Conversion/Passes.h.inc"
+} // namespace allo
+} // namespace mlir
 
 namespace mlir {
 namespace allo {
@@ -45,8 +52,8 @@ void lowerBitReverseOps(func::FuncOp &func) {
     unsigned iwidth = input.getType().getIntOrFloatBitWidth();
     OpBuilder rewriter(bitReverseOp);
     // Create two constants: number of bits, and zero
-    Value const_width_i32 = rewriter.create<mlir::arith::ConstantIntOp>(
-        loc, iwidth - 1, rewriter.getI32Type());
+    Value const_width_i32 =
+        rewriter.create<mlir::arith::ConstantIntOp>(loc, iwidth - 1, 32);
     Value const_width = rewriter.create<mlir::arith::IndexCastOp>(
         loc, rewriter.getIndexType(), const_width_i32);
     SmallVector<Value> const_0_indices;
@@ -111,8 +118,7 @@ void lowerSetSliceOps(func::FuncOp &func) {
     Location loc = op->getLoc();
     OpBuilder rewriter(op);
     // Add 1 to hi to make it inclusive
-    Type i32 = rewriter.getIntegerType(32);
-    Value one_i32 = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, i32);
+    Value one_i32 = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 32);
     Value one_idx =
         rewriter.create<mlir::arith::IndexCastOp>(loc, hi.getType(), one_i32);
     Value ub = rewriter.create<mlir::arith::AddIOp>(loc, hi, one_idx);
@@ -124,7 +130,7 @@ void lowerSetSliceOps(func::FuncOp &func) {
     }
 
     // Create a step of 1, index type
-    Value step_i32 = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, i32);
+    Value step_i32 = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 32);
     Value step =
         rewriter.create<mlir::arith::IndexCastOp>(loc, hi.getType(), step_i32);
 
@@ -330,7 +336,7 @@ bool applyLowerBitOps(ModuleOp &mod) {
 
 namespace {
 struct AlloLowerBitOpsTransformation
-    : public LowerBitOpsBase<AlloLowerBitOpsTransformation> {
+    : public mlir::allo::impl::LowerBitOpsBase<AlloLowerBitOpsTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLowerBitOps(mod)) {

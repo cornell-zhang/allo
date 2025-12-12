@@ -55,6 +55,6 @@ def Stream : Allo_Type<"Stream", [MemRefElementTypeInterface]> {
   let assemblyFormat = "`<` $baseType `,` $depth `>`";
 }
 
-def StreamLike : TypeOrContainer<Stream, "stream-like">;
+def StreamLike : TypeOrValueSemanticsContainer<Stream, "stream-like">;
 
 #endif // ALLO_TYPES

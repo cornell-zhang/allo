@@ -7,6 +7,7 @@
 #define ALLO_TRANSLATION_UTILS_H
 
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/AffineExprVisitor.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/InitAllDialects.h"

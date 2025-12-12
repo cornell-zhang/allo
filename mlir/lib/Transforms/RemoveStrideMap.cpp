@@ -30,7 +30,7 @@ void removeStrideMap(func::FuncOp &func) {
 
   for (auto op : allocOps) {
     auto allocOp = dyn_cast<memref::AllocOp>(op);
-    MemRefType memRefType = allocOp.getType().cast<MemRefType>();
+    MemRefType memRefType = llvm::cast<MemRefType>(allocOp.getType());
     auto memRefMaps = memRefType.getLayout();
     if (memRefMaps.getAffineMap().isIdentity() ||
         memRefMaps.getAffineMap().isEmpty()) {
@@ -50,19 +50,19 @@ void removeStrideMap(func::FuncOp &func) {
   SmallVector<Type, 4> new_result_types;
   SmallVector<Type, 8> new_arg_types;
   for (auto result_type : result_types) {
-    if (result_type.isa<MemRefType>()) {
+    if (llvm::isa<MemRefType>(result_type)) {
       MemRefType new_result_type;
       if (auto layout = dyn_cast<AffineMapAttr>(
-              result_type.cast<MemRefType>().getLayout())) {
+              llvm::cast<MemRefType>(result_type).getLayout())) {
         // array partition
-        new_result_type =
-            MemRefType::get(result_type.cast<MemRefType>().getShape(),
-                            result_type.cast<MemRefType>().getElementType());
+        new_result_type = MemRefType::get(
+            llvm::cast<MemRefType>(result_type).getShape(),
+            llvm::cast<MemRefType>(result_type).getElementType());
       } else {
-        new_result_type =
-            MemRefType::get(result_type.cast<MemRefType>().getShape(),
-                            result_type.cast<MemRefType>().getElementType(),
-                            result_type.cast<MemRefType>().getLayout());
+        new_result_type = MemRefType::get(
+            llvm::cast<MemRefType>(result_type).getShape(),
+            llvm::cast<MemRefType>(result_type).getElementType(),
+            llvm::cast<MemRefType>(result_type).getLayout());
       }
       new_result_types.push_back(new_result_type);
     } else {
@@ -70,19 +70,19 @@ void removeStrideMap(func::FuncOp &func) {
     }
   }
   for (auto arg_type : arg_types) {
-    if (arg_type.isa<MemRefType>()) {
+    if (llvm::isa<MemRefType>(arg_type)) {
       MemRefType new_arg_type;
       if (auto layout = dyn_cast<AffineMapAttr>(
-              arg_type.cast<MemRefType>().getLayout())) {
+              llvm::cast<MemRefType>(arg_type).getLayout())) {
         // array partition
         new_arg_type =
-            MemRefType::get(arg_type.cast<MemRefType>().getShape(),
-                            arg_type.cast<MemRefType>().getElementType());
+            MemRefType::get(llvm::cast<MemRefType>(arg_type).getShape(),
+                            llvm::cast<MemRefType>(arg_type).getElementType());
       } else {
         new_arg_type =
-            MemRefType::get(arg_type.cast<MemRefType>().getShape(),
-                            arg_type.cast<MemRefType>().getElementType(),
-                            arg_type.cast<MemRefType>().getLayout());
+            MemRefType::get(llvm::cast<MemRefType>(arg_type).getShape(),
+                            llvm::cast<MemRefType>(arg_type).getElementType(),
+                            llvm::cast<MemRefType>(arg_type).getLayout());
       }
       new_arg_types.push_back(new_arg_type);
     } else {
@@ -117,7 +117,8 @@ bool applyRemoveStrideMap(ModuleOp &module) {
 
 namespace {
 struct AlloRemoveStrideMapTransformation
-    : public RemoveStrideMapBase<AlloRemoveStrideMapTransformation> {
+    : public mlir::allo::impl::RemoveStrideMapBase<
+          AlloRemoveStrideMapTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyRemoveStrideMap(mod)) {
