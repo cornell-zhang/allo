@@ -84,8 +84,6 @@ def wrapped_apply(fn):
         with sch.module.context, Location.unknown():
             res = fn(*args, **kwargs)
         _mlir_lower_pipeline(sch.module)
-        # Remove previous Python-C++ references
-        sch.module.context._clear_live_operations()
         # Update top function in the current context
         for op in sch.module.body.operations:
             if isinstance(op, func_d.FuncOp) and op.name.value == sch.top_func_name:
@@ -699,8 +697,6 @@ class Schedule:
         with self.module.context, Location.unknown():
             self.buffer_at_regular(target, axis)
         _mlir_lower_pipeline(self.module)
-        # Remove previous Python-C++ references
-        self.module.context._clear_live_operations()
         # Update top function in the current context
         for op in self.module.body.operations:
             if isinstance(op, func_d.FuncOp) and op.name.value == self.top_func_name:
