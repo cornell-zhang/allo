@@ -271,12 +271,12 @@ Then we know that there is a problem in the return value of our MLIR code, which
     ^bb0(%arg5: i32 [unknown], %arg6: i32 [unknown]):
       &quot;linalg.yield&quot;(%arg5) : (i32) -&gt; () [unknown]
     }) : (i32, memref&lt;32x32xi32&gt;) -&gt; () -:5:3
-    &quot;linalg.matmul&quot;(%arg0, %arg1, %0) &lt;{operandSegmentSizes = array&lt;i32: 2, 1&gt;}&gt; ({
+    &quot;linalg.matmul&quot;(%arg0, %arg1, %0) &lt;{indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d2, d1)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;], operandSegmentSizes = array&lt;i32: 2, 1&gt;}&gt; ({
     ^bb0(%arg2: i32 [unknown], %arg3: i32 [unknown], %arg4: i32 [unknown]):
       %2 = &quot;arith.muli&quot;(%arg2, %arg3) &lt;{overflowFlags = #arith.overflow&lt;none&gt;}&gt; : (i32, i32) -&gt; i32 [unknown]
       %3 = &quot;arith.addi&quot;(%arg4, %2) &lt;{overflowFlags = #arith.overflow&lt;none&gt;}&gt; : (i32, i32) -&gt; i32 [unknown]
       &quot;linalg.yield&quot;(%3) : (i32) -&gt; () [unknown]
-    }) {linalg.memoized_indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d2, d1)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]} : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; () -:6:3
+    }) : (memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;, memref&lt;32x32xi32&gt;) -&gt; () -:6:3
     &quot;func.return&quot;(%0) : (memref&lt;32x32xi32&gt;) -&gt; () -:8:3
   }) : () -&gt; () -:2:1
 }) : () -&gt; () -:0:0
@@ -368,7 +368,7 @@ And we can also invoke the LLVM execution engine trying to execute the program.<
 </div>
 <p>Unfortunately, the program cannot be lowered to LLVM dialect, because we have not added
 the lowering pass from tensor dialect to LLVM dialect, and that is something we need to do next.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.072 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.070 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-gallery-developer-02-mlir-py">
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/26d9fb3f431f94846c086960be43203e/developer_02_mlir.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">developer_02_mlir.ipynb</span></code></a></p>

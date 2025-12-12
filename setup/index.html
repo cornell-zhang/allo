@@ -184,10 +184,10 @@
             
   <section id="installation">
 <span id="setup"></span><h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"><span>¶</span></a></h1>
-<p>To install and use Allo, we need to first install the <a class="reference external" href="https://github.com/cornell-zhang/allo/tree/main/externals">LLVM-19 project</a>. You can choose to use our provided docker or build from source.</p>
+<p>To install and use Allo, we need to first install the latest <a class="reference external" href="https://github.com/cornell-zhang/allo/tree/main/externals">LLVM project</a>. You can choose to use our provided docker or build from source.</p>
 <section id="install-from-docker">
 <h2>Install from Docker<a class="headerlink" href="#install-from-docker" title="Link to this heading"><span>¶</span></a></h2>
-<p>To simplify the installation process, we provide a docker image that has already installed the LLVM-19 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the <code class="code docutils literal notranslate"><span class="pre">/root/llvm-project</span></code> folder in the docker image.</p>
+<p>To simplify the installation process, we provide a docker image that has already installed the latest LLVM project. Please pull the image from Docker Hub as described below. The LLVM is installed under the <code class="code docutils literal notranslate"><span class="pre">/root/llvm-project</span></code> folder in the docker image.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>pull<span class="w"> </span>chhzh123/allo:latest
 <span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>chhzh123/allo:latest
 <span class="gp gp-VirtualEnv">(docker)</span> <span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cornell-zhang/allo.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>allo
@@ -197,11 +197,9 @@
 </section>
 <section id="install-from-source">
 <span id="id1"></span><h2>Install from Source<a class="headerlink" href="#install-from-source" title="Link to this heading"><span>¶</span></a></h2>
-<p>Please follow the instructions below to build the LLVM-19 project from source. You can also refer to the <a class="reference external" href="https://mlir.llvm.org/getting_started/">official guide</a> for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the <a class="reference external" href="https://github.com/cornell-zhang/allo/tree/main/externals">externals</a> folder.</p>
+<p>Please follow the instructions below to build the LLVM project from source. You can also refer to the <a class="reference external" href="https://mlir.llvm.org/getting_started/">official guide</a> for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the <a class="reference external" href="https://github.com/cornell-zhang/allo/tree/main/externals">externals</a> folder.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>--recursive<span class="w"> </span>https://github.com/cornell-zhang/allo.git
 <span class="nb">cd</span><span class="w"> </span>allo/externals/llvm-project
-<span class="c1"># Apply our patch</span>
-git<span class="w"> </span>apply<span class="w"> </span>../llvm_patch
 <span class="c1"># Python 3.12 is required</span>
 mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
 cmake<span class="w"> </span>-G<span class="w"> </span>Ninja<span class="w"> </span>../llvm<span class="w"> </span><span class="se">\</span>
@@ -216,6 +214,7 @@ cmake<span class="w"> </span>-G<span class="w"> </span>Ninja<span class="w"> </s
 ninja
 <span class="c1"># export environment variable</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">LLVM_BUILD_DIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/bin:<span class="nv">$PATH</span>
 </pre></div>
 </div>
 <p>We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is <strong>3.12</strong>.</p>
@@ -271,6 +270,11 @@ ninja
 <span class="go">  cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory</span>
 </pre></div>
 </div>
+<p>If you are seeing the errors reported by the linker like this:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">/opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-19.x/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files</span>
+</pre></div>
+</div>
+<p>It means you have hit the limit of file descriptors that can be open at a time. You can fix this by <code class="code docutils literal notranslate"><span class="pre">ulimit</span> <span class="pre">-n</span> <span class="pre">4096</span></code>, then try compiling Allo again.</p>
 </section>
 </section>
 

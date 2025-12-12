@@ -30,7 +30,7 @@ Before proceeding with the Allo installation, please follow the instructions on 
 Install from Source
 -------------------
 
-Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project, cloned Allo repository and created the ``allo`` conda environment.
+Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the latest LLVM project and the Allo package. In the following, we suppose you have already installed the LLVM project, cloned Allo repository and created the ``allo`` conda environment.
 
 Below are the exact commands to set up the environment:
 

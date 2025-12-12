@@ -168,12 +168,12 @@ To further check what causes the error, we can print out the generic form of the
         ^bb0(%arg5: i32 [unknown], %arg6: i32 [unknown]):
           "linalg.yield"(%arg5) : (i32) -> () [unknown]
         }) : (i32, memref<32x32xi32>) -> () -:5:3
-        "linalg.matmul"(%arg0, %arg1, %0) <{operandSegmentSizes = array<i32: 2, 1>}> ({
+        "linalg.matmul"(%arg0, %arg1, %0) <{indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>], operandSegmentSizes = array<i32: 2, 1>}> ({
         ^bb0(%arg2: i32 [unknown], %arg3: i32 [unknown], %arg4: i32 [unknown]):
           %2 = "arith.muli"(%arg2, %arg3) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32 [unknown]
           %3 = "arith.addi"(%arg4, %2) <{overflowFlags = #arith.overflow<none>}> : (i32, i32) -> i32 [unknown]
           "linalg.yield"(%3) : (i32) -> () [unknown]
-        }) {linalg.memoized_indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>]} : (memref<32x32xi32>, memref<32x32xi32>, memref<32x32xi32>) -> () -:6:3
+        }) : (memref<32x32xi32>, memref<32x32xi32>, memref<32x32xi32>) -> () -:6:3
         "func.return"(%0) : (memref<32x32xi32>) -> () -:8:3
       }) : () -> () -:2:1
     }) : () -> () -:0:0
@@ -331,7 +331,7 @@ the lowering pass from tensor dialect to LLVM dialect, and that is something we 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.072 seconds)
+   **Total running time of the script:** (0 minutes 0.070 seconds)
 
 
 .. _sphx_glr_download_gallery_developer_02_mlir.py:
