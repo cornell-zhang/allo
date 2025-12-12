@@ -1,7 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import tempfile
+
 import numpy as np
 import pytest
 import allo
@@ -113,11 +114,10 @@ def test_subview_systolic_stream():
     code = s.build("vhls")
     assert "#pragma HLS dataflow" in str(code)
     if hls.is_available():
-        hls_mod = s.build(
-            target="vivado_hls", mode="debug", project="systolic_stream.prj"
-        )
-        print(hls_mod)
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s.build(target="vivado_hls", mode="debug", project=tmpdir)
+            print(hls_mod)
+            hls_mod()
 
 
 def test_parameterized_systolic():
@@ -201,10 +201,9 @@ def test_cascade_systolic():
     code = s_top.build("vhls")
     print(code)
     if hls.is_available("vitis_hls"):
-        hls_mod = s_top.build(
-            target="vitis_hls", mode="csyn", project=f"sa_{M0}x{M1}.prj"
-        )
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s_top.build(target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
 
 
 def test_cascade_specialized_systolic():
@@ -260,12 +259,9 @@ def test_cascade_specialized_systolic():
     code = s_top.build("vhls")
     print(code)
     if hls.is_available("vitis_hls"):
-        hls_mod = s_top.build(
-            target="vitis_hls",
-            mode="csyn",
-            project=f"sa_{MM}x{NN}_tile_{M0}x{M1}.prj",
-        )
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s_top.build(target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
 
 
 def test_ffn():
@@ -307,12 +303,9 @@ def test_ffn():
     code = s_top.build("vhls")
     print(code)
     if hls.is_available("vitis_hls"):
-        hls_mod = s_top.build(
-            target="vitis_hls",
-            mode="csyn",
-            project=f"FFN_{L}x{D}_tile_{M0}x{M1}.prj",
-        )
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s_top.build(target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
 
 
 def test_int8_packed_gemm():
@@ -364,12 +357,9 @@ def test_int8_packed_gemm():
     # TODO: Fix input loop ordering
     code = s_top.build("vhls")
     if hls.is_available("vitis_hls"):
-        hls_mod = s_top.build(
-            target="vitis_hls",
-            mode="csyn",
-            project=f"single_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
-        )
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s_top.build(target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
 
 
 def test_int8_gemm_dsp_packing():
@@ -412,12 +402,9 @@ def test_int8_gemm_dsp_packing():
     # TODO: Fix input loop ordering
     code = s_top.build("vhls")
     if hls.is_available("vitis_hls"):
-        hls_mod = s_top.build(
-            target="vitis_hls",
-            mode="csyn",
-            project=f"DSP_packed_{PP}_{L}x{D}_tile_{M0}x{M1}.prj",
-        )
-        hls_mod()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hls_mod = s_top.build(target="vitis_hls", mode="csyn", project=tmpdir)
+            hls_mod()
 
 
 def test_subview_systolic_dsp_packed_int4xint4():
@@ -630,14 +617,15 @@ def test_three_level_systolic_csim():
     s.to(buf_A, pe, axis=1, depth=M + 1)
     s.to(buf_B, pe, axis=0, depth=N + 1)
     if hls.is_available("vitis_hls"):
-        mod = s.build(target="vitis_hls", mode="csim", project="systolic_csim.prj")
-        np_A = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
-        np_B = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
-        np_C = np.matmul(np_A, np_B)
-        np_C_allo = np.zeros((4, 4), dtype=np.int16)
-        mod(np_A, np_B, np_C_allo)
-        np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-3)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            np_A = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
+            np_B = np.random.randint(0, 10, size=(4, 4)).astype(np.int16)
+            np_C = np.matmul(np_A, np_B)
+            np_C_allo = np.zeros((4, 4), dtype=np.int16)
+            mod(np_A, np_B, np_C_allo)
+            np.testing.assert_allclose(np_C, np_C_allo, rtol=1e-3)
+            print("Passed!")
 
 
 if __name__ == "__main__":

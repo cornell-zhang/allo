@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
 from allo.ir.types import float32, Stream
 import allo.dataflow as df
@@ -64,11 +66,12 @@ def test_systolic():
         s.partition("top:A", dim=1, factor=2)
         s.partition("top:B", dim=2, factor=2)
         s.partition("top:C", dim=0, factor=2)
-        mod = s.build(target="vitis_hls", mode="hw_emu", project="systolic.prj")
-        C = np.zeros((M, N), dtype=np.float32)
-        mod(A, B, C)
-        np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="hw_emu", project=tmpdir)
+            C = np.zeros((M, N), dtype=np.float32)
+            mod(A, B, C)
+            np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+            print("Passed!")
 
 
 if __name__ == "__main__":
