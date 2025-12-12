@@ -2023,17 +2023,14 @@ class ASTTransformer(ASTBuilder):
                 cond,
                 [get_mlir_op_result(var)],
                 ip=ctx.get_ip(),
-                hasElse=len(node.orelse),
+                has_else=len(node.orelse),
             )
-            # TODO: MLIR bug, need to create a then_block function
-            then_block = if_op.thenRegion.blocks[0]
         else:
             cond = build_stmt(ctx, node.test)
             if_op = scf_d.IfOp(
                 get_mlir_op_result(cond), ip=ctx.get_ip(), hasElse=len(node.orelse)
             )
-            then_block = if_op.then_block
-        ctx.set_ip(then_block)
+        ctx.set_ip(if_op.then_block)
         with ctx.block_scope_guard():
             build_stmts(ctx, node.body)
             if is_affine:

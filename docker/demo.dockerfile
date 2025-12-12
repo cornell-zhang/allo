@@ -45,7 +45,7 @@ RUN cd /root/ && git clone https://github.com/llvm/llvm-project.git
 
 # install llvm (need to update the hash when the version changes)
 RUN cd /root/llvm-project && \
-    git checkout fbec1c2 && \
+    git checkout 1335a05 && \
     python3 -m pip install --upgrade pip && \
     python3 -m pip install numpy PyYAML dataclasses pybind11>=2.9.0  && \
     mkdir build && cd build && \
