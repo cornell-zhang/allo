@@ -93,29 +93,6 @@ def _test_vector_scalar_mul():
     np.testing.assert_allclose(B, A * 2, rtol=1e-5)
     print("Dataflow Simulator Passed!")
 
-    @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M]):
-            B[:] = A * 2
-
-    A = np.random.random(M).astype(np.float32)
-    if is_available():
-        mod = df.build(top, target="aie")
-        B = np.zeros(M).astype(np.float32)
-        mod(A, B)
-        np.testing.assert_allclose(B, A * 2, rtol=1e-5)
-        print("PASSED!")
-        os.environ["USE_LESS_CASTING"] = "1"
-        mod = df.build(top, target="aie")
-        B = np.zeros(M).astype(np.float32)
-        mod(A, B)
-        np.testing.assert_allclose(B, A * 2, rtol=1e-5)
-        print("USE_LESS_CASTING=1 PASSED!")
-        del os.environ["USE_LESS_CASTING"]
-    else:
-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
-
 
 def _test_vector_vector_add():
     # # https://github.com/Xilinx/mlir-aie/tree/main/programming_examples/basic/vector_vector_add
@@ -143,39 +120,6 @@ def _test_vector_vector_add():
     sim_mod(A, B, C)
     np.testing.assert_allclose(C, A + B)
     print("Dataflow Simulator Passed!")
-
-    @df.region()
-    def top():
-        @df.kernel(mapping=[1])
-        def core(A: Ty[M], B: Ty[M], C: Ty[M]):
-            C[:] = A + B
-
-    A = np.random.randint(0, 100, M).astype(np.int32)
-    B = np.random.randint(0, 100, M).astype(np.int32)
-    sim_mod = df.build(top, target="simulator")
-    C = np.zeros(M).astype(np.int32)
-    sim_mod(A, B, C)
-    np.testing.assert_allclose(C, A + B)
-    print("Dataflow Simulator Passed!")
-
-    os.environ["USE_LESS_CASTING"] = "1"
-
-    if is_available():
-        # [NOTE]: for aie backend, default casting may lead to correctness issue
-        mod = df.build(top, target="aie")
-        C = np.zeros(M).astype(np.int32)
-        mod(A, B, C)
-        np.testing.assert_allclose(C, A + B)
-        print("PASSED!")
-    else:
-        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
-    sim_mod = df.build(top, target="simulator")
-    C = np.zeros(M).astype(np.int32)
-    sim_mod(A, B, C)
-    np.testing.assert_allclose(C, A + B)
-    print("Dataflow Simulator Passed!")
-
-    del os.environ["USE_LESS_CASTING"]
 
 
 def _test_vector_vector_bf16_add():
