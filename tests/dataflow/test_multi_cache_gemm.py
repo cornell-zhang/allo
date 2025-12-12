@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import pytest
 import allo
 from allo.ir.types import int8, Stream, UInt
@@ -184,39 +186,42 @@ def test_large_scale_gemm():
 
     if hls.is_available("vitis_hls"):
 
-        modc = df.build(
-            top,
-            target="vitis_hls",
-            mode="csyn",
-            project=f"multicache-M{M}N{N}K{K}-R{Rt}xC{Ct}.prj",
-            wrap_io=False,
-        )
-        modc()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            modc = df.build(
+                top,
+                target="vitis_hls",
+                mode="csyn",
+                project=tmpdir,
+                wrap_io=False,
+            )
+            modc()
 
         C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
-        modhw = df.build(
-            top,
-            target="vitis_hls",
-            mode="hw",
-            project=f"hwmulticache-M{M}N{N}K{K}-R{Rt}xC{Ct}.prj",
-            wrap_io=False,
-        )
-        modhw(A_packed, B_packed, C_packed)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            modhw = df.build(
+                top,
+                target="vitis_hls",
+                mode="hw",
+                project=tmpdir,
+                wrap_io=False,
+            )
+            modhw(A_packed, B_packed, C_packed)
 
         # # Enable the hw_emu test with data types that OpenCL supports
-        # C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
-        # mod = df.build(
-        #     top,
-        #     target="vitis_hls",
-        #     mode="hw_emu",
-        #     project=f"df-packed-{Rt}x{Ct}.prj",
-        #     wrap_io=False,
-        # )
-        # mod(A_packed, B_packed, C_packed)
-        # C = deserialize_C(C_packed.view(np.int8))
-        # C_golden = np.dot(A, B)
-        # np.testing.assert_allclose(C, C_golden, atol=1e-5)
-        # print("Passed hw_emu Test!")
+        # with tempfile.TemporaryDirectory() as tmpdir:
+        #     C_packed = np.zeros((M * N // Rt), dtype=np_type_C)
+        #     mod = df.build(
+        #         top,
+        #         target="vitis_hls",
+        #         mode="hw_emu",
+        #         project=tmpdir,
+        #         wrap_io=False,
+        #     )
+        #     mod(A_packed, B_packed, C_packed)
+        #     C = deserialize_C(C_packed.view(np.int8))
+        #     C_golden = np.dot(A, B)
+        #     np.testing.assert_allclose(C, C_golden, atol=1e-5)
+        #     print("Passed hw_emu Test!")
 
 
 if __name__ == "__main__":
