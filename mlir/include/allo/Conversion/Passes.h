@@ -33,7 +33,7 @@ bool applyLowerPrintOps(ModuleOp &module);
 /// Registers all Allo conversion passes
 void registerAlloConversionPasses();
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DECL
 #include "allo/Conversion/Passes.h.inc"
 
 } // namespace allo

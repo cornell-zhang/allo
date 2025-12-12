@@ -1,12 +1,11 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module, no-value-for-parameter, redundant-keyword-arg, unexpected-keyword-arg
 import os
 
 from .._mlir.ir import (
     Location,
     InsertionPoint,
-    IntegerSetAttr,
     Block,
     Module,
     StringAttr,
@@ -387,7 +386,7 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     if len(irrelevant_ivs) == 0:
         return False
 
-    with InsertionPoint.at_block_begin(loop_nest[0].body):
+    with InsertionPoint.at_block_begin(loop_nest[0].body) as ip:
         first_iter_set = affine_d.IntegerSet.get(
             len(irrelevant_ivs),
             0,
@@ -396,14 +395,16 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
         )
 
         first_iter_if = affine_d.AffineIfOp(
-            results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown()
+            first_iter_set,
+            results_=[],
+            cond_operands=irrelevant_ivs,
+            loc=Location.unknown(),
+            ip=ip,
         )
 
-        first_iter_if.attributes["condition"] = IntegerSetAttr.get(first_iter_set)
-
     # In the if block, load from original buffer and store to new_alloc1
-    then_block = Block.create_at_start(parent=first_iter_if.thenRegion)
-    with InsertionPoint(then_block):
+    then_block = first_iter_if.then_block
+    with InsertionPoint.at_block_begin(then_block):
         new_load = affine_d.AffineLoadOp(
             memref_type.element_type, alloc_op.result, loop_load.indices, loop_load.map
         )
@@ -427,15 +428,17 @@ def store_load_store_load_pattern(alloc_op, loads, stores, ret):
     )
 
     last_iter_if = affine_d.AffineIfOp(
-        results_=[], _gen_arg_0=irrelevant_ivs, loc=Location.unknown(), ip=ip
+        last_iter_set,
+        results_=[],
+        cond_operands=irrelevant_ivs,
+        loc=Location.unknown(),
+        ip=ip,
     )
 
     last_iter_if.move_after(loop_store)
 
-    last_iter_if.attributes["condition"] = IntegerSetAttr.get(last_iter_set)
-
-    final_then_block = Block.create_at_start(parent=last_iter_if.thenRegion)
-    with InsertionPoint(final_then_block):
+    final_then_block = last_iter_if.then_block
+    with InsertionPoint.at_block_begin(final_then_block):
         final_loop_load = affine_d.AffineLoadOp(
             memref_type.element_type,
             new_alloc1.result,
@@ -759,17 +762,16 @@ def _insert_guard(op: Operation, loops: list[LoopInfo]):
 
             with InsertionPoint(op) as ip:
                 guard_if = affine_d.AffineIfOp(
+                    guard_condition,
                     results_=[],
-                    _gen_arg_0=[
+                    cond_operands=[
                         loop.op.opview.induction_variable for loop in irrelevant_loops
                     ],
                     loc=Location.unknown(),
                     ip=ip,
                 )
 
-                guard_if.attributes["condition"] = IntegerSetAttr.get(guard_condition)
-
-                then_block = Block.create_at_start(parent=guard_if.thenRegion)
+                then_block = guard_if.then_block
                 yield_op = affine_d.AffineYieldOp(
                     [],
                     ip=InsertionPoint.at_block_begin(then_block),

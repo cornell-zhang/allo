@@ -38,8 +38,8 @@ void removeRedundantCopy(func::FuncOp &func) {
     auto src = op->getOperand(0);
     auto dst = op->getOperand(1);
 
-    auto srcType = src.getType().dyn_cast<MemRefType>();
-    auto dstType = dst.getType().dyn_cast<MemRefType>();
+    auto srcType = llvm::dyn_cast<MemRefType>(src.getType());
+    auto dstType = llvm::dyn_cast<MemRefType>(dst.getType());
     if (!srcType || !dstType || srcType != dstType) {
       continue;
     }
@@ -109,7 +109,7 @@ void applyCopyOnWriteOnFunction(Operation &func) {
 
 namespace {
 struct AlloCopyOnWriteTransformation
-    : public CopyOnWriteBase<AlloCopyOnWriteTransformation> {
+    : public mlir::allo::impl::CopyOnWriteBase<AlloCopyOnWriteTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyCopyOnWrite(mod)) {

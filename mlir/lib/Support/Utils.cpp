@@ -25,7 +25,7 @@ Attribute allo::getLoopDirective(Operation *op, std::string name) {
 
 StringRef allo::getLoopName(AffineForOp &forOp) {
   if (forOp->hasAttr("loop_name"))
-    return forOp->getAttr("loop_name").cast<StringAttr>().getValue();
+    return llvm::cast<StringAttr>(forOp->getAttr("loop_name")).getValue();
   else
     return "";
 }
@@ -55,7 +55,7 @@ SmallVector<int64_t, 8> allo::getIntArrayAttrValue(Operation *op,
   SmallVector<int64_t, 8> array;
   if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
     for (auto attr : arrayAttr)
-      if (auto intAttr = attr.dyn_cast<IntegerAttr>())
+      if (auto intAttr = llvm::dyn_cast<IntegerAttr>(attr))
         array.push_back(intAttr.getInt());
       else
         return SmallVector<int64_t, 8>();
@@ -101,7 +101,7 @@ LogicalResult allo::getStage(func::FuncOp &func, AffineForOp &forOp,
                              StringRef op_name) {
   for (auto rootForOp : func.getOps<AffineForOp>()) {
     if (op_name ==
-        rootForOp->getAttr("op_name").cast<StringAttr>().getValue()) {
+        llvm::dyn_cast<StringAttr>(rootForOp->getAttr("op_name")).getValue()) {
       forOp = rootForOp;
       return success();
     }
@@ -176,7 +176,7 @@ bool allo::findContiguousNestedLoops(const AffineForOp &rootAffineForOp,
     }
 
     Attribute attr = forOp->getAttr("loop_name");
-    const StringRef curr_loop = attr.cast<StringAttr>().getValue();
+    const StringRef curr_loop = llvm::dyn_cast<StringAttr>(attr).getValue();
     if (sizeNameArr != 0 && curr_loop != nameArr[i])
       return false;
 
@@ -320,7 +320,7 @@ allo::getBoundOfAffineBound(AffineBound bound) {
     auto newExpr =
         bound.getMap().getResult(0).replaceDimsAndSymbols(replacements, {});
 
-    if (auto constExpr = newExpr.dyn_cast<AffineConstantExpr>())
+    if (auto constExpr = llvm::dyn_cast<AffineConstantExpr>(newExpr))
       results.push_back(constExpr.getValue());
     else
       return std::optional<std::pair<int64_t, int64_t>>();
@@ -362,7 +362,7 @@ bool allo::isFullyPartitioned(MemRefType memrefType, int axis) {
       bool flag = true;
       for (int64_t dim = 0; dim < memrefType.getRank(); ++dim) {
         auto expr = layoutMap.getResult(dim);
-        if (!expr.isa<AffineDimExpr>()) {
+        if (!llvm::isa<AffineDimExpr>(expr)) {
           flag = false;
           break;
         }
@@ -370,7 +370,7 @@ bool allo::isFullyPartitioned(MemRefType memrefType, int axis) {
       fullyPartitioned |= flag;
     } else {
       auto expr = layoutMap.getResult(axis);
-      fullyPartitioned |= expr.isa<AffineDimExpr>();
+      fullyPartitioned |= llvm::isa<AffineDimExpr>(expr);
     }
   }
 
@@ -392,8 +392,9 @@ int64_t allo::getPartitionFactors(MemRefType memrefType,
     if (layoutMap) {
       auto expr = layoutMap.getResult(dim);
 
-      if (auto binaryExpr = expr.dyn_cast<AffineBinaryOpExpr>())
-        if (auto rhsExpr = binaryExpr.getRHS().dyn_cast<AffineConstantExpr>()) {
+      if (auto binaryExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr))
+        if (auto rhsExpr =
+                llvm::dyn_cast<AffineConstantExpr>(binaryExpr.getRHS())) {
           if (expr.getKind() == AffineExprKind::Mod)
             factor = rhsExpr.getValue();
           else if (expr.getKind() == AffineExprKind::FloorDiv)
@@ -484,13 +485,13 @@ void allo::getArrays(Block &block, SmallVectorImpl<Value> &arrays,
   // Collect argument arrays.
   if (allowArguments)
     for (auto arg : block.getArguments()) {
-      if (arg.getType().isa<MemRefType>())
+      if (llvm::isa<MemRefType>(arg.getType()))
         arrays.push_back(arg);
     }
 
   // Collect local arrays.
   for (auto &op : block.getOperations()) {
-    if (isa<memref::AllocaOp, memref::AllocOp>(op))
+    if (llvm::isa<memref::AllocaOp, memref::AllocOp>(op))
       arrays.push_back(op.getResult(0));
   }
 }
@@ -553,7 +554,7 @@ static bool gatherLoadOpsAndStoreOps(AffineForOp forOp,
       storeOps.push_back(op);
     else if (auto store = dyn_cast<memref::StoreOp>(op))
       storeOps.push_back(op);
-    else if (isa<AffineIfOp>(op))
+    else if (llvm::isa<AffineIfOp>(op))
       hasIfOp = true;
   });
   return !hasIfOp;
@@ -723,8 +724,8 @@ allo::getSliceStr(const mlir::affine::ComputationSliceState &sliceUnion) {
 
 Value allo::castInteger(OpBuilder builder, Location loc, Value input,
                         Type srcType, Type tgtType, bool is_signed) {
-  int oldWidth = srcType.cast<IntegerType>().getWidth();
-  int newWidth = tgtType.cast<IntegerType>().getWidth();
+  int oldWidth = llvm::dyn_cast<IntegerType>(srcType).getWidth();
+  int newWidth = llvm::dyn_cast<IntegerType>(tgtType).getWidth();
   Value casted;
   if (newWidth < oldWidth) {
     // trunc
@@ -751,18 +752,17 @@ Value allo::castIntMemRef(OpBuilder &builder, Location loc, Value &oldMemRef,
                           size_t newWidth, bool unsign, bool replace,
                           const Value &dstMemRef) {
   // If newWidth == oldWidth, no need to cast.
-  if (newWidth == oldMemRef.getType()
-                      .cast<MemRefType>()
-                      .getElementType()
-                      .cast<IntegerType>()
-                      .getWidth()) {
+  if (newWidth ==
+      llvm::dyn_cast<IntegerType>(
+          llvm::dyn_cast<MemRefType>(oldMemRef.getType()).getElementType())
+          .getWidth()) {
     return oldMemRef;
   }
   // first, alloc new memref
-  MemRefType oldMemRefType = oldMemRef.getType().cast<MemRefType>();
+  MemRefType oldMemRefType = llvm::dyn_cast<MemRefType>(oldMemRef.getType());
   Type newElementType = builder.getIntegerType(newWidth);
   MemRefType newMemRefType =
-      oldMemRefType.clone(newElementType).cast<MemRefType>();
+      llvm::dyn_cast<MemRefType>(oldMemRefType.clone(newElementType));
   Value newMemRef;
   if (!dstMemRef) {
     newMemRef = builder.create<memref::AllocOp>(loc, newMemRefType);
@@ -774,7 +774,9 @@ Value allo::castIntMemRef(OpBuilder &builder, Location loc, Value &oldMemRef,
   SmallVector<int64_t, 4> lbs(oldMemRefType.getRank(), 0);
   SmallVector<int64_t, 4> steps(oldMemRefType.getRank(), 1);
   size_t oldWidth =
-      oldMemRefType.getElementType().cast<IntegerType>().getWidth();
+      llvm::dyn_cast<IntegerType>(
+          llvm::dyn_cast<MemRefType>(oldMemRef.getType()).getElementType())
+          .getWidth();
   buildAffineLoopNest(
       builder, loc, lbs, oldMemRefType.getShape(), steps,
       [&](OpBuilder &nestedBuilder, Location loc, ValueRange ivs) {
@@ -820,12 +822,12 @@ Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
   Type I64 = rewriter.getIntegerType(64);
   Type F64 = rewriter.getF64Type();
   Value casted;
-  if (t.isa<IndexType>()) {
+  if (llvm::isa<IndexType>(t)) {
     Type I32 = rewriter.getIntegerType(32);
     Value intValue =
         rewriter.create<arith::IndexCastOp>(src.getLoc(), I32, src);
     return castToF64(rewriter, intValue, hasUnsignedAttr);
-  } else if (t.isa<IntegerType>()) {
+  } else if (llvm::isa<IntegerType>(t)) {
     size_t iwidth = t.getIntOrFloatBitWidth();
     if (t.isUnsignedInteger() or hasUnsignedAttr) {
       Value widthAdjusted;
@@ -852,8 +854,8 @@ Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
       casted =
           rewriter.create<arith::SIToFPOp>(src.getLoc(), F64, widthAdjusted);
     }
-  } else if (t.isa<FloatType>()) {
-    unsigned width = t.cast<FloatType>().getWidth();
+  } else if (llvm::isa<FloatType>(t)) {
+    unsigned width = llvm::dyn_cast<FloatType>(t).getWidth();
     if (width < 64) {
       casted = rewriter.create<arith::ExtFOp>(src.getLoc(), F64, src);
     } else if (width > 64) {
@@ -861,9 +863,9 @@ Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
     } else {
       casted = src;
     }
-  } else if (t.isa<FixedType>()) {
-    unsigned width = t.cast<FixedType>().getWidth();
-    unsigned frac = t.cast<FixedType>().getFrac();
+  } else if (llvm::isa<FixedType>(t)) {
+    unsigned width = llvm::dyn_cast<FixedType>(t).getWidth();
+    unsigned frac = llvm::dyn_cast<FixedType>(t).getFrac();
     Value widthAdjusted;
     if (width < 64) {
       widthAdjusted = rewriter.create<arith::ExtSIOp>(src.getLoc(), I64, src);
@@ -878,9 +880,9 @@ Value mlir::allo::castToF64(OpBuilder &rewriter, const Value &src,
         src.getLoc(), F64, rewriter.getFloatAttr(F64, std::pow(2, frac)));
     casted =
         rewriter.create<arith::DivFOp>(src.getLoc(), F64, srcF64, const_frac);
-  } else if (t.isa<UFixedType>()) {
-    unsigned width = t.cast<UFixedType>().getWidth();
-    unsigned frac = t.cast<UFixedType>().getFrac();
+  } else if (llvm::isa<UFixedType>(t)) {
+    unsigned width = llvm::dyn_cast<UFixedType>(t).getWidth();
+    unsigned frac = llvm::dyn_cast<UFixedType>(t).getFrac();
     Value widthAdjusted;
     if (width < 64) {
       widthAdjusted = rewriter.create<arith::ExtUIOp>(src.getLoc(), I64, src);
@@ -951,7 +953,8 @@ bool chaseAffineApply(Value iv, Value target) {
 // If we want to find the memref axis of %some_memref that
 // %i operates on, the return result is 0.
 int mlir::allo::findMemRefAxisFromIV(AffineStoreOp store, Value iv) {
-  auto memrefRank = store.getMemRef().getType().cast<MemRefType>().getRank();
+  auto memrefRank =
+      llvm::dyn_cast<MemRefType>(store.getMemRef().getType()).getRank();
   auto indices = store.getIndices();
   for (int i = 0; i < memrefRank; i++) {
     if (iv == indices[i]) {
