@@ -956,7 +956,7 @@ class Schedule:
         new_reuse_buffers = [
             buf for buf in new_reuse_buffers if buf not in prev_reuse_buffers
         ]
-        if len(new_reuse_buffers) - len(prev_reuse_buffers) != 1:
+        if len(new_reuse_buffers) != 1:
             raise RuntimeError("Reuse buffer not found")
         return MockBuffer(
             self.top_func_name,
