@@ -1272,7 +1272,6 @@ def customize(
         instantiate = []
     if global_vars is None:
         global_vars = get_global_vars(fn)
-    use_less_casting = os.getenv("USE_LESS_CASTING") == "1"
     # Type construction
     ctx_type_inf = ASTContext(
         tree=tree,
@@ -1281,7 +1280,6 @@ def customize(
         inst=instantiate,
         unroll=unroll,
         enable_tensor=enable_tensor,
-        use_less_casting=use_less_casting,
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
@@ -1295,7 +1293,6 @@ def customize(
         unroll=unroll,
         meta_fors_to_unroll=ctx_type_inf.meta_fors_to_unroll,
         enable_tensor=enable_tensor,
-        use_less_casting=use_less_casting,
         verbose=verbose,
     )
     module = ASTTransformer()(ctx, tree, file_name)

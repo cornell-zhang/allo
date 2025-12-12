@@ -17,7 +17,7 @@ from .types import (
 )
 
 
-def get_typing_rule(node, less_casting):
+def get_typing_rule(node, less_casting=False):
     if less_casting and node in {
         ast.Add,
         ast.Sub,
