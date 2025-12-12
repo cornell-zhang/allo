@@ -3,7 +3,6 @@
 # pylint: disable=no-name-in-module
 
 import re
-import os
 import inspect
 import textwrap
 import copy
@@ -1256,6 +1255,7 @@ def customize(
     global_vars: dict = None,
     instantiate: list = None,
     context: Context = None,
+    typing_rule_set="default",
     unroll: bool = True,
 ) -> Schedule:
     # Get Python AST
@@ -1280,6 +1280,7 @@ def customize(
         inst=instantiate,
         unroll=unroll,
         enable_tensor=enable_tensor,
+        typing_rule_set=typing_rule_set,
         verbose=verbose,
     )
     tree = TypeInferer()(ctx_type_inf, tree)
