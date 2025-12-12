@@ -6,9 +6,10 @@ import allo.dataflow as df
 from allo.ir.types import int16
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
 
 
-def _test_increase_decrease():
+def test_increase_decrease():
     LyA = Layout("S0R")
 
     Ty = int16
@@ -25,18 +26,21 @@ def _test_increase_decrease():
         def dec(D: Ty[M, N] @ LyA, F: Ty[M, N] @ LyA):
             F[:, :] = allo.add(D, -1)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 64, (M, N)).astype(np.int16)
-    C = np.zeros((M, N)).astype(np.int16)
-    F = np.zeros((M, N)).astype(np.int16)
-    mod(A, C, A, F)
-    np.testing.assert_allclose(C, A + 1, atol=1e-5)
-    np.testing.assert_allclose(F, A - 1, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 64, (M, N)).astype(np.int16)
+        C = np.zeros((M, N)).astype(np.int16)
+        F = np.zeros((M, N)).astype(np.int16)
+        mod(A, C, A, F)
+        np.testing.assert_allclose(C, A + 1, atol=1e-5)
+        np.testing.assert_allclose(F, A - 1, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 # [NOTE] export ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=0
-def _test_increase_decrease_more_arg():
+def test_increase_decrease_more_arg():
     LyA = Layout("S0R")
 
     Ty = int16
@@ -61,20 +65,23 @@ def _test_increase_decrease_more_arg():
         def decdec(G: Ty[M, N] @ LyA, H: Ty[M, N] @ LyA):
             H[:, :] = allo.add(G, -2)
 
-    mod = df.build(top, target="aie")
-    A = np.random.randint(0, 64, (M, N)).astype(np.int16)
-    B = np.zeros((M, N)).astype(np.int16)
-    D = np.zeros((M, N)).astype(np.int16)
-    F = np.zeros((M, N)).astype(np.int16)
-    G = np.zeros((M, N)).astype(np.int16)
-    mod(A, B, A, D, A, F, A, G)
-    np.testing.assert_allclose(B, A + 1, atol=1e-5)
-    np.testing.assert_allclose(D, A + 2, atol=1e-5)
-    np.testing.assert_allclose(F, A - 1, atol=1e-5)
-    np.testing.assert_allclose(G, A - 2, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(top, target="aie")
+        A = np.random.randint(0, 64, (M, N)).astype(np.int16)
+        B = np.zeros((M, N)).astype(np.int16)
+        D = np.zeros((M, N)).astype(np.int16)
+        F = np.zeros((M, N)).astype(np.int16)
+        G = np.zeros((M, N)).astype(np.int16)
+        mod(A, B, A, D, A, F, A, G)
+        np.testing.assert_allclose(B, A + 1, atol=1e-5)
+        np.testing.assert_allclose(D, A + 2, atol=1e-5)
+        np.testing.assert_allclose(F, A - 1, atol=1e-5)
+        np.testing.assert_allclose(G, A - 2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
-    _test_increase_decrease()
-    _test_increase_decrease_more_arg()
+    test_increase_decrease()
+    test_increase_decrease_more_arg()

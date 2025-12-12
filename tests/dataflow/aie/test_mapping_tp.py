@@ -2,11 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import allo
 import allo.dataflow as df
 from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
+from allo.backend.aie import is_available
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    os.environ["FORCE_UNROLL_INDEX"] = "1"
+    yield
+    del os.environ["FORCE_UNROLL_INDEX"]
+
 
 # RRxRS->RS
 # RSxSR->RR
@@ -14,7 +24,7 @@ LyW1 = Layout("RS0")
 LyW2 = Layout("S0R")
 
 
-def _test_tp_v1():
+def test_tp_v1():
     Ty = int32
     M, K, N, L = 8, 8, 8, 8
     P0 = 2
@@ -46,33 +56,55 @@ def _test_tp_v1():
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
     W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
 
-    mod = df.build(
-        top,
-        target="aie",
-        mapping_primitives=[
-            ("chain", ["gemm1_1", "acc_0"]),
-        ],
-    )
-    Z = np.zeros((M, L)).astype(np.int32)
-    mod(X, W1, W2, Z)
-    np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=[
+                ("chain", ["gemm1_1", "acc_0"]),
+            ],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
-    mod = df.build(
-        top,
-        target="aie",
-        mapping_primitives=[
-            ("chain", ["gemm1_1", "acc_0"]),
-            ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
-        ],
-    )
-    Z = np.zeros((M, L)).astype(np.int32)
-    mod(X, W1, W2, Z)
-    np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=[
+                ("chain", ["gemm1_1", "acc_0"]),
+                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+            ],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=[
+                ("chain", ["gemm1_1", "acc_0"]),
+                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+            ],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
-def _test_tp_v2():
+def test_tp_v2():
     Ty = int32
     M, K, N, L = 8, 8, 8, 8
     P0 = 2
@@ -104,17 +136,36 @@ def _test_tp_v2():
     W1 = np.random.randint(0, 64, (K, N)).astype(np.int32)
     W2 = np.random.randint(0, 64, (N, L)).astype(np.int32)
 
-    mod = df.build(
-        top,
-        target="aie",
-        mapping_primitives=[
-            ("bundle", [("gemm0_0", "gemm1_0"), ("gemm0_1", "gemm1_1")]),
-        ],
-    )
-    Z = np.zeros((M, L)).astype(np.int32)
-    mod(X, W1, W2, Z)
-    np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
-    print("PASSED!")
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=[
+                ("chain", ["gemm1_1", "acc_0"]),
+                ("chain", ["gemm1_0", "gemm1_1-acc_0"]),
+            ],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+    if is_available():
+        mod = df.build(
+            top,
+            target="aie",
+            mapping_primitives=[
+                ("bundle", [("gemm0_0", "gemm1_0"), ("gemm0_1", "gemm1_1")]),
+            ],
+        )
+        Z = np.zeros((M, L)).astype(np.int32)
+        mod(X, W1, W2, Z)
+        np.testing.assert_allclose(Z, X @ W1 @ W2, atol=1e-5)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
@@ -127,6 +178,6 @@ if __name__ == "__main__":
     you can set `FORCE_UNROLL_INDEX` to prevent `meta_for` with index-based iterators from being optimized.
     """
     os.environ["FORCE_UNROLL_INDEX"] = "1"
-    _test_tp_v1()
+    test_tp_v1()
+    test_tp_v2()
     del os.environ["FORCE_UNROLL_INDEX"]
-    _test_tp_v2()

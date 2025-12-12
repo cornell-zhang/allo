@@ -2,12 +2,24 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pytest
 import allo
 from allo.ir.types import int8, int16, bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from ml_dtypes import bfloat16 as np_bfloat16
+from allo.backend.aie import is_available
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_env():
+    dma_opt_flag = os.getenv("ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH") == "1"
+    if dma_opt_flag:
+        os.environ["FACTOR"] = "2"
+    yield
+    if dma_opt_flag:
+        del os.environ["FACTOR"]
 
 
 # [NOTE]: export FACTOR=2
@@ -42,7 +54,13 @@ def gen_gemm_mapping_primitive(prefix, Pm, Pn, Pk, col_num=4, row_num=4):
     return mapping_primitives
 
 
-def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
+@pytest.mark.parametrize(
+    "M, N, K, Pm, Pn, Pk, TyI, TyO",
+    [
+        (512, 512, 512, 8, 8, 8, int16, int16),
+    ],
+)
+def test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     assert TyI == TyO
     Mt, Nt = M // Pm, N // Pn
 
@@ -90,44 +108,48 @@ def _test_batched_gemm(M, N, K, Pm, Pn, Pk, TyI, TyO):
     mapping_primitives.extend(
         gen_gemm_mapping_primitive("gemmb", Pm, Pn, Pk, col_num=2, row_num=2)
     )
-    mod = df.build(
-        top,
-        project="gemm.prj",
-        target="aie",
-        mapping_primitives=mapping_primitives,
-        profile=True,
-        warmup=200,
-        num_iters=1000,
-        device_type="npu1_2col",
-    )
-    if TyI is bfloat16:
-        A = np.random.random((M, K)).astype(np_bfloat16)
-        B = np.random.random((K, N)).astype(np_bfloat16)
-        C = np.zeros((M, N)).astype(np_bfloat16)
-        D = np.zeros((M, N)).astype(np_bfloat16)
-    elif TyI is int8:
-        A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
-        B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
-        C = np.zeros((M, N)).astype(np.int8)
-        D = np.zeros((M, N)).astype(np.int8)
-    elif TyI is int16:
-        A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
-        B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
-        C = np.zeros((M, N)).astype(np.int16)
-        D = np.zeros((M, N)).astype(np.int16)
-    else:
-        raise ValueError(f"unsupported data type {TyI}")
-    mod(A, B, C, A, B, D)
-    if TyI is bfloat16:
-        np.testing.assert_allclose(
-            C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+    if is_available():
+        mod = df.build(
+            top,
+            project="gemm.prj",
+            target="aie",
+            mapping_primitives=mapping_primitives,
+            profile=True,
+            warmup=200,
+            num_iters=1000,
+            device_type="npu1_2col",
         )
-        np.testing.assert_allclose(
-            D.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
-        )
+        if TyI is bfloat16:
+            A = np.random.random((M, K)).astype(np_bfloat16)
+            B = np.random.random((K, N)).astype(np_bfloat16)
+            C = np.zeros((M, N)).astype(np_bfloat16)
+            D = np.zeros((M, N)).astype(np_bfloat16)
+        elif TyI is int8:
+            A = np.random.randint(-8, 8, (M, K)).astype(np.int8)
+            B = np.random.randint(-8, 8, (K, N)).astype(np.int8)
+            C = np.zeros((M, N)).astype(np.int8)
+            D = np.zeros((M, N)).astype(np.int8)
+        elif TyI is int16:
+            A = np.random.randint(-8, 8, (M, K)).astype(np.int16)
+            B = np.random.randint(-8, 8, (K, N)).astype(np.int16)
+            C = np.zeros((M, N)).astype(np.int16)
+            D = np.zeros((M, N)).astype(np.int16)
+        else:
+            raise ValueError(f"unsupported data type {TyI}")
+        mod(A, B, C, A, B, D)
+        if TyI is bfloat16:
+            np.testing.assert_allclose(
+                C.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+            )
+            np.testing.assert_allclose(
+                D.astype(np.float32), (A @ B).astype(np.float32), atol=1e-2
+            )
+        else:
+            np.testing.assert_allclose(C, A @ B, atol=1e-5)
+            np.testing.assert_allclose(D, A @ B, atol=1e-5)
+        print("PASSED!")
     else:
-        np.testing.assert_allclose(C, A @ B, atol=1e-5)
-        np.testing.assert_allclose(D, A @ B, atol=1e-5)
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
 if __name__ == "__main__":
@@ -135,10 +157,10 @@ if __name__ == "__main__":
     if dma_opt_flag:
         os.environ["FACTOR"] = "2"
 
-    _test_batched_gemm(512, 512, 512, 8, 8, 8, int16, int16)
-    _test_batched_gemm(512, 512, 512, 8, 8, 8, int8, int8)
+    test_batched_gemm(512, 512, 512, 8, 8, 8, int16, int16)
+    test_batched_gemm(512, 512, 512, 8, 8, 8, int8, int8)
     try:
-        _test_batched_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
+        test_batched_gemm(512, 512, 512, 8, 8, 8, bfloat16, bfloat16)
     except:
         print("[NOTE]: bfloat16 have accuracy issue")
 
