@@ -66,6 +66,7 @@ from .passes import (
 from .utils import freeze_list
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
+from .backend.xls import XLSModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
 
@@ -1234,6 +1235,11 @@ class Schedule:
                 configs=configs,
                 func_args=self.func_args,
                 wrap_io=wrap_io,
+            )
+        if target == "xls":
+            return XLSModule(
+                self.module,
+                top_func_name=self.top_func_name,
             )
         raise NotImplementedError(f"Target {target} is not supported")
 
