@@ -19,15 +19,15 @@ print("\n" + "=" * 60)
 print("REGISTER MODE (use_memory=False):")
 print("Arrays emitted as: int arr[32][32]")
 print("=" * 60)
-mod_register = s.build(target="xls", project="gemm_register.prj", use_memory=False)
+mod_register = s.build(target="xlscc", project="gemm_register.prj", use_memory=False)
 print(mod_register)
 
 # Memory mode - arrays as __xls_memory<T, size>
-print("\n" + "=" * 60)
+print("\n" + "=" * 60) 
 print("MEMORY MODE (use_memory=True):")
 print("Arrays emitted as: __xls_memory<int, 1024> (flattened 32x32)")
 print("=" * 60)
-mod_memory = s.build(target="xls", project="gemm_memory.prj", use_memory=True)
+mod_memory = s.build(target="xlscc", project="gemm_memory.prj", use_memory=True)
 print(mod_memory)
 
 # Print the textproto
