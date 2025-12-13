@@ -85,11 +85,16 @@ static SmallString<16> getXLSTypeName(Type valType) {
            valType.isa<Float64Type>()) {
     assert(1 == 0 && "XLS[cc] backend does not currently support floating-point types. Please use integer or fixed-point types instead.");
   }
+  // Replace the fixed-point assertion with actual type emission
   else if (auto fixedType = valType.dyn_cast<allo::FixedType>()) {
-    assert(1 == 0 && "XLS[cc] backend does not currently support fixed-point types. Please use integer types instead.");
+    // Emit Fixed<WIDTH, FRAC, true> for signed fixed-point
+    return SmallString<16>("Fixed<" + std::to_string(fixedType.getWidth()) + ", " +
+                           std::to_string(fixedType.getFrac()) + ", true>");
   }
   else if (auto ufixedType = valType.dyn_cast<allo::UFixedType>()) {
-    assert(1 == 0 && "XLS[cc] backend does not currently support unsigned fixed-point types. Please use integer types instead.");
+    // Emit UFixed<WIDTH, FRAC> (alias for Fixed<WIDTH, FRAC, false>)
+    return SmallString<16>("UFixed<" + std::to_string(ufixedType.getWidth()) + ", " +
+                           std::to_string(ufixedType.getFrac()) + ">");
   }
   else {
     assert(1 == 0 && "XLS[cc] backend encountered unsupported type. Only integer types and streams are currently supported.");
@@ -253,14 +258,8 @@ void XLSModuleEmitter::emitValue(Value val,
 
 void XLSModuleEmitter::emitFunctionDirectives(func::FuncOp func,
                                                    ArrayRef<Value> portList) {
-  // For XLS HLS, emit the hls_design top pragma for top-level functions
-  if (func->hasAttr("top")) {
-    indent();
-    os << "#pragma hls_design top\n";
-    os << "\n";
-  }
-
-  // Emit array directives for function ports
+  // Note: #pragma hls_top is emitted at function definition level, not here
+  // This function handles array directives for function ports
   for (auto &port : portList)
     if (port.getType().isa<MemRefType>())
       emitArrayDirectives(port);

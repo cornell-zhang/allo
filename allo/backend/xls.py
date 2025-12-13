@@ -3,7 +3,7 @@ import io
 from typing import List
 
 from .._mlir.dialects import allo as allo_d
-from .._mlir.ir import Context, Location, Module
+from .._mlir.ir import Context, Location, Module, UnitAttr
 from .._mlir.passmanager import PassManager
 from ..ir.transform import find_func_in_module
 
@@ -37,6 +37,10 @@ class XLSCCModule:
             
             # Re-find the function after running passes (previous reference is invalidated)
             self.func = find_func_in_module(self.module, top_func_name)
+            
+            # Mark the top function with "top" attribute for code generation
+            if self.func is not None:
+                self.func.attributes["top"] = UnitAttr.get()
 
         # 1) Take a snapshot of the lowered MLIR as text and validate for XLS.
         self.mlir_text = str(self.module)
