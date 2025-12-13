@@ -67,7 +67,7 @@ from .utils import freeze_list
 from .backend.llvm import LLVMModule
 from .backend.hls import HLSModule
 from .backend.xls import XLSCCModule
-from .backend.xls.xls import DSLXModule
+from .backend.dslx import DSLXModule
 from .library import KERNEL2SCHEDULE
 from .library.systolic import check_systolic, prepare_systolic
 
