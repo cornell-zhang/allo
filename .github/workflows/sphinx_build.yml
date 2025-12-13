@@ -20,8 +20,8 @@ on:
 
 jobs:
   build:
-    # This job runs on Linux
-    runs-on: ubuntu-latest
+    # This job runs on self-hosted due to github's storage capacity limit
+    runs-on: self-hosted
     container:
       image: chhzh123/allo:latest
 

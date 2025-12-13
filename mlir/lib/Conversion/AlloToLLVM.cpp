@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "allo/Conversion/Passes.h"
+#include "PassDetail.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
@@ -30,6 +30,13 @@
 
 using namespace mlir;
 using namespace allo;
+
+namespace mlir {
+namespace allo {
+#define GEN_PASS_DEF_ALLOTOLLVMLOWERING
+#include "allo/Conversion/Passes.h.inc"
+} // namespace allo
+} // namespace mlir
 
 namespace {
 
@@ -65,7 +72,7 @@ public:
 
 namespace {
 struct AlloToLLVMLoweringPass
-    : public AlloToLLVMLoweringBase<AlloToLLVMLoweringPass> {
+    : public mlir::allo::impl::AlloToLLVMLoweringBase<AlloToLLVMLoweringPass> {
   void runOnOperation() override {
     auto module = getOperation();
     if (!applyAlloToLLVMLoweringPass(module, getContext()))
@@ -106,8 +113,7 @@ bool applyAlloToLLVMLoweringPass(ModuleOp &module, MLIRContext &context) {
   arith::populateArithExpandOpsPatterns(patterns);
   arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
 
-  populateExpandCtlzPattern(patterns);
-  populateExpandTanhPattern(patterns);
+  populatePolynomialApproximateTanhPattern(patterns);
   populateMathAlgebraicSimplificationPatterns(patterns);
   populateMathPolynomialApproximationPatterns(patterns);
   populateMathToLLVMConversionPatterns(typeConverter, patterns);

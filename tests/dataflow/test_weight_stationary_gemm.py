@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import float32
+from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -13,8 +13,8 @@ P0, P1 = K, N + 2
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=float32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[float32, 4][P0, P1]
+    fifo_B: Stream[float32, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: float32[M, K], B: float32[K, N], C: float32[M, N]):

@@ -1,6 +1,6 @@
-# pylint: disable=c-extension-no-member, too-many-instance-attributes
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=c-extension-no-member, too-many-instance-attributes, too-many-nested-blocks, no-name-in-module, too-many-arguments, unsupported-binary-operation
 
 import os
 import re
@@ -15,30 +15,32 @@ except ImportError:
     pass
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.dialects import (
+from allo._mlir.exceptions import AlloWarning
+from ..._mlir.dialects import (
     allo as allo_d,
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
-from allo._mlir.ir import (
+from ..._mlir.ir import (
     Type,
     StringAttr,
     InsertionPoint,
     FlatSymbolRefAttr,
-    BlockArgument,
     MemRefType,
 )
-from allo._mlir.passmanager import PassManager as mlir_pass_manager
+from ..._mlir.passmanager import PassManager as mlir_pass_manager
 from ...passes import analyze_read_write_patterns
 from ...memory import DTensor
 from ...utils import construct_kernel_name
 from .external_kernel import ExternalModule, ExternalModuleBase
 from .mlir_codegen import CodeGenerator
+from .vliw import vliw
 from .utils import (
     Argument,
     Stream,
     inject_external_kernels,
     matmul_external_kernel_config_map,
+    device_config_map,
     get_df_kernels,
     classify_aie_functions,
     codegen_external_kernels,
@@ -48,8 +50,13 @@ from .utils import (
     read_tensor_from_file,
     codegen_host,
     RuntimeArgs,
+    is_inverse_transform_layout,
 )
 from .mapping import ComputationGraph
+
+
+def is_available():
+    return "MLIR_AIE_INSTALL_DIR" in os.environ
 
 
 class AIE_MLIRModule:
@@ -67,6 +74,7 @@ class AIE_MLIRModule:
         stream_types_dict: dict[str, Type],
         ext_libs: list = None,
         func_instances: dict = None,
+        extra_stream_info: dict = None,
     ):
         """
         Note: the module is data-driven,
@@ -88,17 +96,21 @@ class AIE_MLIRModule:
             if isinstance(ext_kernel, ExternalModule):
                 self.external_kernel_lib[ext_kernel.top] = ext_kernel
 
-        self.func_args: dict[str, list[Argument]] = {}
+        self.func_args: dict[str, list[Argument | list[Argument]]] = {}
         self.streams: dict[str, Stream] = {}
         self.stream_info: dict[str, dict[str, bool]] = {}
         self._init_func_args(func_args)
-        self.computation_is_dag = self._init_streams(stream_info, stream_types_dict)
+        self.computation_is_dag = self._init_streams(
+            stream_info, stream_types_dict, extra_stream_info
+        )
 
         # index in top function argument list -> DTensor
         self.global_tensors: dict[int, DTensor] = None
         self.module_runtime_args: list[RuntimeArgs] = None
         # function name -> (argument index -> (argument, is_input))
-        self.core_func_args: dict[str, dict[int, tuple[Argument, bool]]] = None
+        self.core_func_args: dict[
+            str, dict[int, tuple[Argument | list[Argument], bool]]
+        ] = None
 
         self.aie_module: aie_ir.Module = None
 
@@ -107,7 +119,20 @@ class AIE_MLIRModule:
         for func_name, args in func_args.items():
             self.func_args[func_name] = []
             for arg in args:
-                if arg in tmp_map:
+                if isinstance(arg, list):
+                    stream_args = []
+                    for stream_ in arg:
+                        assert isinstance(stream_, str)
+                        if stream_ in tmp_map:
+                            stream_args.append(tmp_map[stream_])
+                        else:
+                            stream = Stream(stream_)
+                            self.streams[stream_] = stream
+                            argument = Argument(None, stream)
+                            stream_args.append(argument)
+                            tmp_map[stream_] = argument
+                    self.func_args[func_name].append(stream_args)
+                elif arg in tmp_map:
                     self.func_args[func_name].append(tmp_map[arg])
                 elif isinstance(arg, DTensor):
                     argument = Argument(arg, None)
@@ -122,7 +147,12 @@ class AIE_MLIRModule:
                 else:
                     raise ValueError(f"Unresolved function argument {arg}")
 
-    def _init_streams(self, stream_info: dict, stream_types_dict: dict[str, Type]):
+    def _init_streams(
+        self,
+        stream_info: dict,
+        stream_types_dict: dict[str, Type],
+        extra_stream_info: dict,
+    ):
         """
         Collect allo.stream information for each function.
         """
@@ -135,9 +165,23 @@ class AIE_MLIRModule:
                 if io == "in":
                     self.streams[name].dst = func_name
                     self.stream_info[func_name][name] = True
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
+                        self.streams[name].dst_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
                 else:
                     self.streams[name].src = func_name
                     self.stream_info[func_name][name] = False
+                    if (
+                        extra_stream_info is not None
+                        and name in extra_stream_info[func_name]
+                    ):
+                        self.streams[name].src_related_iter_info = extra_stream_info[
+                            func_name
+                        ][name]
         edge_map = {src: set() for src in stream_info.keys()}
         for stream in self.streams.values():
             edge_map[stream.src].add(stream.dst)
@@ -165,7 +209,7 @@ class AIE_MLIRModule:
     # ############################################################
     # Build
     # ############################################################
-    def init_virtual_graph(self, use_external_kernels: dict[str, bool]):
+    def init_virtual_graph(self, used_external_kernels: dict[str, set[str]]):
         assert (
             self.core_func_args is not None and self.global_tensors is not None
         ), "Analysis of kernel parameters should be done before initializing virtual graph"
@@ -174,7 +218,7 @@ class AIE_MLIRModule:
             self.top_func_name,
             self.streams,
             self.core_func_args,
-            use_external_kernels,
+            used_external_kernels,
             self.func_instances,
         )
 
@@ -216,12 +260,15 @@ class AIE_MLIRModule:
                     (out_idx_list, "out"),
                 ):
                     for io_idx in io_idx_list:
-                        argument: Argument = self.func_args[kernel_name][io_idx]
+                        argument = self.func_args[kernel_name][io_idx]
                         self.core_func_args[kernel_name][io_idx] = (
                             argument,
                             io_type == "in",
                         )
-                        if not argument.dtensor is None:
+                        if (
+                            isinstance(argument, Argument)
+                            and not argument.dtensor is None
+                        ):
                             argument.dtensor.set_access_pattern()
                             argument.dtensor.type_as_param = kernel.arguments[
                                 io_idx
@@ -236,14 +283,19 @@ class AIE_MLIRModule:
                 # streams
                 for i, _ in enumerate(kernel.arguments):
                     func_arg = self.func_args[kernel_name][i]
-                    if (
-                        i in self.core_func_args[kernel_name]
-                        or func_arg.stream is None  # unused
-                    ):
+                    if i in self.core_func_args[kernel_name]:
                         continue
+                    # unused Dtensor
+                    if isinstance(func_arg, Argument) and func_arg.stream is None:
+                        continue
+                    if isinstance(func_arg, Argument):
+                        sample_stream = func_arg.stream
+                    else:
+                        assert len(func_arg) > 0 and func_arg[0].stream is not None
+                        sample_stream = func_arg[0].stream
                     self.core_func_args[kernel_name][i] = (
                         func_arg,
-                        self.stream_info[kernel_name][func_arg.stream.name],
+                        self.stream_info[kernel_name][sample_stream.name],
                     )
 
     def allo_opt(self):
@@ -289,6 +341,29 @@ class AIE_MLIRModule:
                             (dtype_a, dtype_b, out_dtype)
                         ]["aie2"]
                 else:
+                    continue
+                # validity test
+                if self.device == "npu2" or dtype_a == "i16":
+                    factor_m, factor_n = m * 2, n * 2
+                elif dtype_a == "bf16":
+                    factor_m, factor_n = m * 4, n * 4
+                else:
+                    factor_m, factor_n = m * 4, n * 2
+                valid = K % k == 0 and M % factor_m == 0 and N % factor_n == 0
+                if not valid:
+                    warn = AlloWarning(
+                        "Detected a vectorized matmul kernel, but it cannot be used because the tiling constraints are not met."
+                        f"Ensure that tile_K % {k} == 0, tile_M % {factor_m} == 0, and tile_N % {factor_n} == 0 to enable this optimization."
+                    )
+                    if (
+                        dtype_a == "i4"
+                        or dtype_b == "i4"
+                        or os.environ.get("ALLO_EXTERNAL_KERNEL_DIR") is None
+                    ):
+                        # - we do not provide scalar kernel for i4
+                        # - mlir-aie external kernels instantiate both vector and scalar versions and fail compilation when tiling constraints are not satisfied. Our library is safe to use.
+                        raise warn
+                    warn.warn()
                     continue
                 with function.context, allo_ir.ir.Location.unknown():
                     new_input_0 = allo_d.transform_layout(
@@ -347,21 +422,31 @@ class AIE_MLIRModule:
                     allo_memref_d.copy(
                         matmul_output, output, ip=InsertionPoint(call_matmul_op)
                     )
+                    self.virtual_computation_graph.nodes[
+                        function.attributes["sym_name"].value
+                    ].meta_data.used_external_kernel.add(vectorized_kernel_name)
+
                     if vectorized_kernel_name not in self.injected_external_kernels:
                         scalar_kernel: ExternalModuleBase = (
                             self.injected_external_kernels[
                                 call_matmul_op.attributes["lib"].value
                             ]
                         )
+                        kernel_code = scalar_kernel.kernel_code.replace(
+                            "matmul_scalar_", "matmul_vectorized_"
+                        )
                         self.injected_external_kernels[vectorized_kernel_name] = (
                             ExternalModuleBase(
                                 vectorized_kernel_name,
                                 scalar_kernel.input_idx,
                                 scalar_kernel.output_idx,
-                                scalar_kernel.kernel_code,
+                                kernel_code,
                                 scalar_kernel.kernel_header,
                             )
                         )
+                        self.include_src[vectorized_kernel_name] = self.include_src[
+                            scalar_kernel.top
+                        ]
                         operand_types = [x.type for x in call_matmul_op.operands]
                         func_type = allo_func_d.FunctionType.get(
                             operand_types,
@@ -387,7 +472,6 @@ class AIE_MLIRModule:
                 func.attributes["sym_name"].value
             ]
             dead_ops = []
-            op_stack_map: dict = {}
             # no need to transform if the result is unchanged
             excuse_operands = set()
 
@@ -405,68 +489,183 @@ class AIE_MLIRModule:
                         excuse_operands.remove(op.operands[0])
                         dead_ops.append(op)
                         return
-                    if op.operands[0] in func.arguments:
-                        arg = BlockArgument(op.operands[0])
-                        if arg.arg_number in node.global_interfaces:
-                            # only used once
-                            transform_layout_cnt = 0
-                            for use in arg.uses:
-                                if (
-                                    use.owner.name == "allo.transform_layout"
-                                    and use.owner not in dead_ops
-                                ):
-                                    transform_layout_cnt += 1
-                            if transform_layout_cnt == 1:
-                                node.interface_layout[arg.arg_number] = (
-                                    list(op.attributes["offsets"]),
-                                    list(op.attributes["sizes"]),
-                                    list(op.attributes["strides"]),
-                                )
-                                op.result.replace_all_uses_with(arg)
-                                dead_ops.append(op)
-                                return
                     if "layout_hint" in op.attributes:
                         layout_hint = op.attributes["layout_hint"].value
                         parts = re.findall(r"[^_]+", layout_hint)
                         if len(parts) == 4 and parts[1] == "from":
-                            result_uses = list(op.result.uses)
-                            if (
-                                len(result_uses) == 1
-                                and result_uses[0].owner.name == "memref.copy"
-                                and result_uses[0].owner.operands[1] == op.operands[0]
-                            ):
-                                op_stack_map[op.operands[0]] = (
-                                    parts[0] + parts[2] + parts[3],
-                                    op,
-                                    result_uses[0].owner,
-                                )
-                        if (
-                            len(parts) == 4
-                            and parts[1] == "to"
-                            and op.operands[0] in op_stack_map
-                        ):
-                            if (
-                                parts[0] + parts[2] + parts[3]
-                                == op_stack_map[op.operands[0]][0]
-                            ):
-                                op.result.replace_all_uses_with(op.operands[0])
-                                dead_ops.append(op)
-                                dead_ops.append(op_stack_map[op.operands[0]][2])
-                                dead_ops.append(op_stack_map[op.operands[0]][1])
-                                op_stack_map.pop(op.operands[0])
-                                return
+                            next_use_op = allo_d.get_next_use_in_function(
+                                op.result, op, function
+                            )
+                            if next_use_op is not None:
+                                # transform_layout
+                                if "layout_hint" in next_use_op.attributes:
+                                    if is_inverse_transform_layout(op, next_use_op):
+                                        next_use_op.result.replace_all_uses_with(
+                                            op.operands[0]
+                                        )
+                                        dead_ops.append(op)
+                                        dead_ops.append(next_use_op)
+                                # memcpy to another memref
+                                elif (
+                                    next_use_op.name == "memref.copy"
+                                    and op.result == next_use_op.operands[0]
+                                ):
+                                    memcpy_op = next_use_op
+                                    next_use_op = allo_d.get_next_use_in_function(
+                                        memcpy_op.operands[1], next_use_op, function
+                                    )
+                                    # cpy result used in transform_layout
+                                    if (
+                                        next_use_op is not None
+                                        and "layout_hint" in next_use_op.attributes
+                                    ):
+                                        if is_inverse_transform_layout(op, next_use_op):
+                                            if (
+                                                allo_d.get_next_use_in_function(
+                                                    memcpy_op.operands[1],
+                                                    next_use_op,
+                                                    function,
+                                                ).name
+                                                == "memref.copy"
+                                            ):
+                                                next_use_op.result.replace_all_uses_with(
+                                                    op.operands[0]
+                                                )
+                                                dead_ops.append(next_use_op)
+                                                dead_ops.append(memcpy_op)
+                                                dead_ops.append(op)
+                                                return
 
                 for region in op.regions:
                     for block in region.blocks:
                         # fixme: using 'stack' for nested blocks can be better
                         excuse_operands.clear()
-                        op_stack_map.clear()
                         for inner_op in block.operations:
                             optimize_layout_transformation_recursive(inner_op)
+
+            def transform_with_dma():
+                arg_info = self.core_func_args[function.name.value]
+                for arg in func.arguments:
+                    if arg.arg_number not in arg_info:
+                        continue
+                    # input: transform to the same layout before every 'use'
+                    sample_stream = (
+                        arg_info[arg.arg_number][0].stream
+                        if isinstance(arg_info[arg.arg_number][0], Argument)
+                        else arg_info[arg.arg_number][0][0].stream
+                    )
+                    if arg_info[arg.arg_number][1]:
+                        var = arg
+                        if (
+                            sample_stream is not None
+                            and len(list(arg.uses)) == 1  # allo.stream_get
+                        ):
+                            var = list(arg.uses)[0].owner.result
+                        op = None
+                        for use in var.uses:
+                            if use.owner.name == "allo.transform_layout":
+                                if op is not None:
+                                    if (
+                                        op.attributes["offsets"]
+                                        != use.owner.attributes["offsets"]
+                                        or op.attributes["sizes"]
+                                        != use.owner.attributes["sizes"]
+                                        or op.attributes["strides"]
+                                        != use.owner.attributes["strides"]
+                                    ):
+                                        op = None
+                                        break
+                                op = use.owner
+                            else:
+                                op = None
+                                break
+                        if op is not None:
+                            node.interface_layout[arg.arg_number] = (
+                                list(op.attributes["offsets"]),
+                                list(op.attributes["sizes"]),
+                                list(op.attributes["strides"]),
+                            )
+                            if sample_stream is not None:
+                                sample_stream.dst_layout_transform = (
+                                    list(op.attributes["offsets"]),
+                                    list(op.attributes["sizes"]),
+                                    list(op.attributes["strides"]),
+                                    (
+                                        None
+                                        if "layout_hint" not in op.attributes
+                                        else op.attributes["layout_hint"].value
+                                    ),
+                                )
+                            op.result.replace_all_uses_with(var)
+                            op.erase()
+                    # output
+                    else:
+                        op = allo_d.get_last_use_in_function(arg, function)
+                        is_dtensor = sample_stream is None
+                        operand_idx = 0 if is_dtensor else 1
+                        if (
+                            (
+                                op.name == "memref.copy"
+                                if is_dtensor
+                                else op.name == "allo.stream_put"
+                            )
+                            and op.operands[operand_idx] not in func.arguments
+                            and op.operands[operand_idx].owner.name
+                            == "allo.transform_layout"
+                        ):
+                            transform_layout_op = op.operands[operand_idx].owner
+                            # the layout transfer before copy can be forwarded to transfer after copy
+                            forward_layout_transform_flag = (
+                                transform_layout_op.operands[0] not in func.arguments
+                                and allo_d.get_last_use_in_function(
+                                    transform_layout_op.operands[0],
+                                    function,
+                                )
+                                == transform_layout_op
+                            )
+                            opt_flag = False
+                            if is_dtensor:
+                                # typical transform before transfer pattern
+                                if transform_layout_op.operands[0] == arg:
+                                    opt_flag = True
+                                else:
+                                    opt_flag = forward_layout_transform_flag
+                            else:
+                                opt_flag = forward_layout_transform_flag
+                            if opt_flag:
+                                node.interface_layout[arg.arg_number] = (
+                                    list(transform_layout_op.attributes["offsets"]),
+                                    list(transform_layout_op.attributes["sizes"]),
+                                    list(transform_layout_op.attributes["strides"]),
+                                )
+                                if not is_dtensor:
+                                    sample_stream.src_layout_transform = (
+                                        list(transform_layout_op.attributes["offsets"]),
+                                        list(transform_layout_op.attributes["sizes"]),
+                                        list(transform_layout_op.attributes["strides"]),
+                                        (
+                                            None
+                                            if "layout_hint"
+                                            not in transform_layout_op.attributes
+                                            else transform_layout_op.attributes[
+                                                "layout_hint"
+                                            ].value
+                                        ),
+                                    )
+                                    op.operands[1] = transform_layout_op.operands[0]
+                                if not forward_layout_transform_flag:
+                                    # if is forward, cannot erase the op
+                                    op.erase()
+                                transform_layout_op.result.replace_all_uses_with(
+                                    transform_layout_op.operands[0]
+                                )
+                                transform_layout_op.erase()
 
             optimize_layout_transformation_recursive(function)
             for op in dead_ops:
                 op.erase()
+            allo_d.copy_on_write_on_function(function)
+            transform_with_dma()
 
         for func in self.allo_module.body.operations:
             if isinstance(func, allo_func_d.FuncOp) and "df.kernel" in func.attributes:
@@ -524,7 +723,7 @@ class AIE_MLIRModule:
             f.write(str(self.allo_module))
         # inject external kernels
         # (inject before virtual mapping since using external kernel may require layout transformation when transferring data)
-        use_external_kernels, self.injected_external_kernels, include_src = (
+        used_external_kernels, self.injected_external_kernels, self.include_src = (
             inject_external_kernels(
                 self.allo_module,
                 self.top_func_name,
@@ -536,7 +735,10 @@ class AIE_MLIRModule:
             get_df_kernels(self.allo_module), self.injected_external_kernels
         )
         # ------------------------- virtual mapping -------------------------
-        self.init_virtual_graph(use_external_kernels)
+        self.init_virtual_graph(used_external_kernels)
+        if os.getenv("DEBUG") == "1":
+            self.virtual_computation_graph.dump(self.project_dir)
+
         if mapping_primitives is not None:
             for mapping in mapping_primitives:
                 primitive = mapping[0]
@@ -545,7 +747,12 @@ class AIE_MLIRModule:
                     assert len(arg_list) == 2
                     self.virtual_computation_graph.chain(arg_list[0], arg_list[1])
                 if primitive == "bundle":
-                    self.virtual_computation_graph.bundle(arg_list)
+                    if isinstance(arg_list[0], str):
+                        arg_list = [(x,) for x in arg_list]
+                    self.virtual_computation_graph.bundle_multi(arg_list)
+            if os.getenv("DEBUG") == "1":
+                self.virtual_computation_graph.dump(self.project_dir, "after_mapping")
+
         self.virtual_computation_graph.refactor()
 
         # record original allo mlir
@@ -553,11 +760,20 @@ class AIE_MLIRModule:
             os.path.join(self.project_dir, "original.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.allo_module))
+
+        # mapping guard
+        logical_node_num = len(self.virtual_computation_graph.nodes)
+        assert device_type in device_config_map, "Unsupported device type"
+        physical_node_num = np.prod(device_config_map[device_type]["mesh"])
+        assert (
+            logical_node_num <= physical_node_num
+        ), f"Unresolvable mapping from {logical_node_num} logical nodes to {physical_node_num} physical nodes"
+
         # ------------------------- code optimization -------------------------
         self.allo_opt()
 
         passes = [
-            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops,lower-affine",
+            "func.func(convert-linalg-to-affine-loops),lower-transform-layout-ops",
         ]
         pipeline = f'builtin.module({",".join(passes)})'
         with self.allo_module.context:
@@ -582,6 +798,22 @@ class AIE_MLIRModule:
             self.allo_module, self.top_func_name
         )
 
+        external_cc_list: list[set[str]] = []
+        linked_external_cc: dict[str, int] = {}
+
+        for func in core_funcs:
+            func_name = func.attributes["sym_name"].value
+            used_external_kernel = self.virtual_computation_graph.nodes[
+                func_name
+            ].meta_data.used_external_kernel
+            try:
+                linked_external_cc[func_name] = external_cc_list.index(
+                    used_external_kernel
+                )
+            except ValueError:
+                linked_external_cc[func_name] = len(external_cc_list)
+                external_cc_list.append(used_external_kernel)
+
         code_generator = CodeGenerator(
             device_type,
             self.global_tensors,
@@ -596,6 +828,7 @@ class AIE_MLIRModule:
         ) = code_generator.aie_codegen(
             core_funcs,
             external_funcs,
+            linked_external_cc,
             trace,
             trace_size,
         )
@@ -609,17 +842,15 @@ class AIE_MLIRModule:
             aie_pass_manager.PassManager.parse(pipeline).run(self.aie_module.operation)
 
         # ------------------------- build project -------------------------
-        self.post_codegen_build(self.injected_external_kernels, include_src)
+        self.post_codegen_build(external_cc_list)
         return self
 
-    def post_codegen_build(
-        self, injected_kernels: dict[str, ExternalModuleBase], include_src: set[str]
-    ):
+    def post_codegen_build(self, external_cc_list: list[set[str]]):
         with open(
             os.path.join(self.project_dir, "top.mlir"), "w", encoding="utf-8"
         ) as f:
             f.write(str(self.aie_module))
-        if len(injected_kernels) > 0:
+        if len(self.injected_external_kernels) > 0:
             paths = set()
             # user defined external kernels
             for ext_module in self.external_kernel_lib.values():
@@ -631,26 +862,52 @@ class AIE_MLIRModule:
                 ):
                     continue
                 shutil.copy(src_path, target_path)
-            kernel_code = codegen_external_kernels(
-                injected_kernels,
-                include_src,
-                "aie2" if self.device == "npu1" else "aie2p",
-            )
-            with open(
-                os.path.join(self.project_dir, "external.cc"), "w", encoding="utf-8"
-            ) as f:
-                f.write(kernel_code)
-            cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2{"p" if self.device == "npu2" else ""}-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/ -I. -c external.cc -o external.o"
-            with subprocess.Popen(cmd, shell=True) as process:
-                process.wait()
-            if process.returncode != 0:
-                raise RuntimeError("Failed to compile external kernels.")
+            for idx, kernel_info in enumerate(external_cc_list):
+                if len(kernel_info) == 0:
+                    continue
+                injected_kernels_ = {
+                    k: v
+                    for k, v in self.injected_external_kernels.items()
+                    if k in kernel_info
+                }
+                include_src_ = set()
+                for kernel in kernel_info:
+                    include_src_.add(self.include_src[kernel])
+                kernel_code = codegen_external_kernels(
+                    injected_kernels_,
+                    include_src_,
+                    "aie2" if self.device == "npu1" else "aie2p",
+                )
+                with open(
+                    os.path.join(self.project_dir, f"external{idx}.cc"),
+                    "w",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(kernel_code)
+                cmd = f"cd {self.project_dir} && $PEANO_INSTALL_DIR/bin/clang++ -O2 -v -std=c++20 --target=aie2{"p" if self.device == "npu2" else ""}-none-unknown-elf -Wno-parentheses -Wno-attributes -Wno-macro-redefined -DNDEBUG -I $MLIR_AIE_INSTALL_DIR/include -I $MLIR_AIE_EXTERNAL_KERNEL_DIR/ -I. -c external{idx}.cc -o external{idx}.o"
+                with subprocess.Popen(cmd, shell=True) as process:
+                    process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to compile external kernels.")
         # build mlir-aie
         cmd = f"cd {self.project_dir} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
         with subprocess.Popen(cmd, shell=True) as process:
             process.wait()
         if process.returncode != 0:
-            raise RuntimeError("Failed to compile the MLIR-AIE code")
+            raise RuntimeError(
+                "Failed to compile the MLIR-AIE code.\n"
+                "Possible causes include:\n"
+                "\n"
+                "  \033[93m1. Program memory overflow:\033[0m\n"
+                "     If you see errors like \033[96m[AIE ERROR] _XAie_LoadProgMemSection():231: Overflow of program memory\033[0m\n"
+                "     it means the generated program is too large for the AIE program memory.\n"
+                "     Consider reducing program size or adjusting virtual mapping primitives (e.g., reducing excessive chaining).\n"
+                "\n"
+                "  \033[93m2. Data memory allocation failure:\033[0m\n"
+                "     If you see errors like \033[96merror: \"-\":13:17: 'aie.tile' op allocated buffers exceeded available memory\033[0m\n"
+                "     it means the total buffer allocation requested in AIE data memory exceeds its capacity.\n"
+                "     Consider adjusting the tiling strategy or using smaller tile sizes.\n"
+            )
         # generate host code
         path = os.path.dirname(__file__)
         path = os.path.join(path, "../../harness/aie")
@@ -703,3 +960,54 @@ class AIE_MLIRModule:
                     f"{self.project_dir}/output{idx}.data",
                 )
                 args[idx][:] = result
+
+
+def _call_prj(
+    project: str,
+    dtype_list: list,
+    trace_size: int,
+    input_idx: list[int],
+    output_idx: list[int],
+    *args,
+):
+    """
+    This function allows you to manually adjust files under the project
+    directory (e.g., top.prj) after building with AIE_MLIRModule, such as
+    `top.mlir`, external kernel functions, or `test.cpp`, and then
+    recompile and rerun.
+
+    Note (Shihan): currently intended for internal debugging use only.
+    """
+    # generate insts.txt
+    cmd = f"cd {project} && aiecc.py --alloc-scheme=basic-sequential --aie-generate-xclbin --no-compile-host --xclbin-name=build/final.xclbin --no-xchesscc --no-xbridge --peano ${{PEANO_INSTALL_DIR}} --aie-generate-npu-insts --npu-insts-name=insts.txt top.mlir"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to compile the MLIR-AIE code")
+    cmd = f"cd {project}/build && cmake .. -DTARGET_NAME=top -DMLIR_AIE_DIR=$RUNTIME_LIB_DIR/.. && cmake --build . --config Release"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to build AIE project.")
+    # suppose the last argument is output
+    for idx in input_idx:
+        arg = args[idx]
+        if str(dtype_list[idx]) == "i4":
+            arg = pack_int4(arg)
+        with open(os.path.join(project, f"input{idx}.data"), "wb") as f:
+            f.write(arg.tobytes())
+    if trace_size > 0:
+        cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE --trace_sz {trace_size}"
+    else:
+        cmd = f"cd {project} && ./build/top -x build/final.xclbin -i insts.txt -k MLIR_AIE -p false --warmup 20 --test_iter 100"
+    with subprocess.Popen(cmd, shell=True) as process:
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Failed to execute AIE code.")
+    for idx in output_idx:
+        result = read_tensor_from_file(
+            dtype_list[idx],
+            args[idx].shape,
+            f"{project}/output{idx}.data",
+        )
+        args[idx][:] = result

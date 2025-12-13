@@ -58,6 +58,12 @@ void removeNeverLoadedMemRef(func::FuncOp &func) {
       } else if (isa<StructConstructOp>(u)) {
         loaded_from = true;
         break;
+      } else if (isa<memref::CopyOp>(u)) {
+        loaded_from = true;
+        break;
+      } else if (isa<memref::ReinterpretCastOp>(u)) {
+        loaded_from = true;
+        break;
       }
     }
     if (!loaded_from) {
@@ -83,7 +89,7 @@ bool applyMemRefDCE(ModuleOp &mod) {
 
 namespace {
 struct AlloMemRefDCETransformation
-    : public MemRefDCEBase<AlloMemRefDCETransformation> {
+    : public mlir::allo::impl::MemRefDCEBase<AlloMemRefDCETransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyMemRefDCE(mod)) {

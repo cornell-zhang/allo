@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int32, int128, index
+from allo.ir.types import int32, int128, index, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -16,9 +16,9 @@ NZ = int(K // 2)
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_idx = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=int128, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[int32, 4][P0, P1]
+    fifo_idx: Stream[int32, 4][P0, P1]
+    fifo_B: Stream[int128, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def semm(A_nz: int32[M, NZ], A_in: int32[M, NZ], B: int32[K, N], C: int32[M, N]):

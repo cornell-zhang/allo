@@ -1,16 +1,19 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: "[Feature]"
-labels: enhancement
+name: 🚀 Feature request
+description: Suggest an idea for this project
+title: "[Feature] "
 
----
-
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
-
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
-
-**Additional context**
-Add any other context or screenshots about the feature request here.
+body:
+- type: textarea
+  attributes:
+    label: Motivation and Expected Behavior
+    description: |
+      Clearly and concisely describe the feature's motivation and expected behavior.
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Related resources
+    description: |
+      Provide any other context about the feature request here.
+  validations:
+    required: false

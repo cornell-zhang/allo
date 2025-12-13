@@ -4,6 +4,7 @@
 
 import os
 import copy
+from typing import Any, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
@@ -20,7 +21,7 @@ import aie.ir as aie_ir
 # =======================
 
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     func as allo_func_d,
     _memref_ops_gen as allo_memref_d,
 )
@@ -97,7 +98,7 @@ class CodeGenerator:
         self.virtual_computation_graph: ComputationGraph = virtual_computation_graph
 
         self.tile_map: dict[str, aie_d.TileOp] = {}
-        self.fifo_map: dict[str, aie_d.object_fifo] = {}
+        self.fifo_map: dict[str, aie_d.object_fifo | tuple[aie_d.object_fifo]] = {}
         # function name (with id) -> a map from DTensor to fifo name
         self.compute_core_io: dict[str : dict[DTensor, str]] = {}
         self.external_functions: str = ""
@@ -125,7 +126,7 @@ class CodeGenerator:
     def preporocess_dumped_core_func(
         self,
         original_func: allo_func_d.FuncOp,
-        func_args: dict[int, tuple[Argument, bool]],
+        func_args: dict[int, tuple[Union[Argument, list[Argument]], bool]],
     ) -> str:
         """
         Preprocess the core function in allo MLIR.
@@ -142,11 +143,19 @@ class CodeGenerator:
             func_inputs = original_func.type.inputs
             new_func_inputs = []
             for idx in range(len(func_inputs)):
-                if idx in func_args and func_args[idx][0].stream is not None:
-                    new_func_inputs.append(func_args[idx][0].stream.allo_element_type)
-                    func_inputs[idx] = func_args[idx][0].stream.allo_element_type
-                elif idx in func_args and func_args[idx][0].dtensor is not None:
-                    new_func_inputs.append(func_inputs[idx])
+                if idx in func_args:
+                    sample_stream = (
+                        func_args[idx][0].stream
+                        if isinstance(func_args[idx][0], Argument)
+                        else func_args[idx][0][0].stream
+                    )
+                    if sample_stream is not None:
+                        new_func_inputs.append(sample_stream.allo_element_type)
+                        func_inputs[idx] = sample_stream.allo_element_type
+                        continue
+                    if func_args[idx][0].dtensor is not None:
+                        new_func_inputs.append(func_inputs[idx])
+                        continue
                 else:
                     # fixme: this is a fake placeholder, we'd better remove the useless argument, but doing so leads to crash
                     #           "Cannot destroy a value that still has uses!"
@@ -175,14 +184,19 @@ class CodeGenerator:
                             old.replace_all_uses_with(new)
             original_func.erase()
             for idx, arg_info in func_args.items():
-                if arg_info[0].stream is not None:
+                sample_stream = (
+                    arg_info[0].stream
+                    if isinstance(arg_info[0], Argument)
+                    else arg_info[0][0].stream
+                )
+                if sample_stream is not None:
                     argument = new_function.arguments[idx]
                     for use_ in argument.uses:
                         op = use_.owner
                         if op.name == "allo.stream_put":
                             operands = op.operands
                             # store/copy
-                            if arg_info[0].stream.is_tensor:
+                            if sample_stream.is_tensor:
                                 new_op = allo_memref_d.CopyOp(
                                     operands[1], operands[0], ip=InsertionPoint(op)
                                 )
@@ -192,10 +206,10 @@ class CodeGenerator:
                                 )
                         elif op.name == "allo.stream_get":
                             # load/alloc
-                            if arg_info[0].stream.is_tensor:
+                            if sample_stream.is_tensor:
                                 # replace use with alloc
                                 new_op = allo_memref_d.AllocOp(
-                                    arg_info[0].stream.allo_element_type,
+                                    sample_stream.allo_element_type,
                                     [],
                                     [],
                                     ip=InsertionPoint(op),
@@ -239,6 +253,12 @@ class CodeGenerator:
             - original_func (FuncOp): The Allo function to compile.
             - func_args (dict): Maps argument indices to (Argument, is_output) tuples.
         """
+        if "input_depth" in original_func.attributes:
+            input_arg_depth = []
+            for elem in original_func.attributes["input_depth"]:
+                input_arg_depth.append(elem.value)
+        else:
+            input_arg_depth = None
         func_string = self.preporocess_dumped_core_func(original_func, func_args)
         original_module = aie_ir.Module.parse(func_string)
         parsed_function: aie_func_d.FuncOp = None
@@ -263,64 +283,220 @@ class CodeGenerator:
             cmax = aie_arith_d.ConstantOp(value=9223372036854775807, result=index_type)
             # scf.for %arg0 = %c0 to %cmax step %c1
             loop = aie_scf_d.ForOp(lower_bound=c0, upper_bound=cmax, step=c1)
-            reused_fifo_name: dict[str, bool] = {}
+            reused_fifo_info: dict[str, tuple[bool, Any]] = {}
             for i, argument in enumerate(parsed_function.arguments):
                 if not i in func_args:
                     continue
                 arg_info: tuple[Argument, bool] = func_args[i]
-                if arg_info[0].dtensor is not None:
+                if (
+                    isinstance(arg_info[0], Argument)
+                    and arg_info[0].dtensor is not None
+                ):
+                    nest_depth = (
+                        input_arg_depth[i] if input_arg_depth is not None else 0
+                    )
                     # fixme: argument.uses is unordered??
-                    first_use = list(argument.uses)[-1]
+                    arg_use = list(argument.uses)
+                    first_use = arg_use[-1] if len(arg_use) > 0 else None
                     if first_use is not None:
                         first_use_op = first_use.owner
-                        # no branch
-                        while first_use_op.parent.name != "func.func":
+                        # find parenting nest
+                        while nest_depth > 0:
+                            while "task_nest" not in first_use_op.parent.attributes:
+                                first_use_op = first_use_op.parent
+                            nest_depth -= 1
+                            first_use_op = first_use_op.parent
+                        while (
+                            first_use_op.parent.name != "func.func"
+                            and "task_nest" not in first_use_op.parent.attributes
+                        ):
                             first_use_op = first_use_op.parent
                         fifo = self.fifo_map[arg_to_fifo[i].name]
+                        block = first_use_op.parent.regions[0].blocks[0]
                         with aie_ir.InsertionPoint(first_use_op):
-                            if arg_to_fifo[i].name in reused_fifo_name:
+                            if arg_to_fifo[i].name in reused_fifo_info:
+                                assert block == reused_fifo_info[arg_to_fifo[i].name][1]
                                 fifo.release(
                                     1 if arg_info[0].dtensor.is_input else 0, 1
                                 )
                             else:
-                                reused_fifo_name[arg_to_fifo[i].name] = arg_info[
-                                    0
-                                ].dtensor.is_input
+                                reused_fifo_info[arg_to_fifo[i].name] = (
+                                    arg_info[0].dtensor.is_input,
+                                    block,
+                                )
                             acquired = fifo.acquire(
                                 1 if arg_info[0].dtensor.is_input else 0, 1
                             )
                             # incorrect
                             argument.replace_all_uses_with(acquired)
                 else:
-                    stream: Stream = arg_info[0].stream
-                    fifo = self.fifo_map[stream.name]
+                    fifo_list = []
+                    if isinstance(arg_info[0], Argument):
+                        fifo_list.append(self.fifo_map[arg_info[0].stream.name])
+                    else:
+                        for stream_arg in arg_info[0]:
+                            fifo_list.append(self.fifo_map[stream_arg.stream.name])
+                    compact_flag = len(fifo_list) == 1 or len(set(fifo_list)) == 1
+                    fifo = fifo_list[0]
                     for use_ in argument.uses:
                         op = use_.owner
+                        # get loop nests
+                        loop_nests = {}
+                        parent = op.parent
+                        while parent is not None and not isinstance(
+                            parent, aie_func_d.FuncOp
+                        ):
+                            if (
+                                "loop_name" in parent.attributes
+                                and "op_name" in parent.attributes
+                            ):
+                                loop_nests[parent.attributes["op_name"].value] = parent
+                            parent = parent.parent
                         with aie_ir.InsertionPoint(op.operation):
+                            is_put, is_tensor = None, None
                             if op.name == "memref.store" or (
                                 op.name == "memref.copy" and argument == op.operands[1]
                             ):  # allo.stream_put
-                                acquired = fifo.acquire(0, 1)
-                                op.operands[1] = acquired
-                                new_op = op.clone()  # no use, no need to replace
-                                fifo.release(0, 1)
-                                op.erase()
+                                is_put = True
                             elif (
                                 op.name == "memref.load"
                             ):  # allo.stream_get, non-tensor
-                                acquired = fifo.acquire(1, 1)
-                                op.operands[0] = acquired
-                                new_op = op.clone()
-                                for old, new in zip(op.results, new_op.results):
-                                    old.replace_all_uses_with(new)
-                                fifo.release(1, 1)
-                                op.erase()
+                                is_put, is_tensor = False, False
                             elif op.name == "memref.copy":  # allo.stream_get, tensor
-                                acquired = fifo.acquire(1, 1)
-                                op.operands[0] = acquired
-                                new_op = op.clone()
-                                fifo.release(1, 1)
-                                op.erase()
+                                is_put, is_tensor = False, True
+                            else:
+                                continue
+                            if compact_flag:
+                                if isinstance(fifo, tuple):
+                                    fifo = fifo[0 if is_put else 1]
+                                if is_put:
+                                    if (
+                                        op.name == "memref.copy"
+                                        and len(list(op.operands[1].uses)) == 1
+                                    ):
+                                        alloc_op = op.operands[0].owner
+                                        # put once
+                                        if alloc_op.name == "memref.alloc":
+                                            uses = list(op.operands[0].uses)
+                                            with aie_ir.InsertionPoint(alloc_op):
+                                                acquired = fifo.acquire(0, 1)
+                                            for use in uses:
+                                                for i, v in enumerate(
+                                                    use.owner.operands
+                                                ):
+                                                    if (
+                                                        v.type == alloc_op.result.type
+                                                        and v == alloc_op.result
+                                                    ):
+                                                        use.owner.operands[i] = acquired
+                                            with aie_ir.InsertionPoint.at_block_terminator(
+                                                alloc_op.parent.regions[0].blocks[0]
+                                            ):
+                                                fifo.release(0, 1)
+                                            op.erase()
+                                            alloc_op.erase()
+                                            continue
+                                    op.operands[1] = fifo.acquire(0, 1)
+                                    new_op = op.clone()  # no use, no need to replace
+                                    fifo.release(0, 1)
+                                elif is_tensor and len(list(op.operands[0].uses)) == 1:
+                                    # an optimize to reduce memref.copy
+                                    # get once
+                                    replaced = op.operands[1]
+                                    uses = list(replaced.uses)
+                                    with aie_ir.InsertionPoint(op):
+                                        acquired = fifo.acquire(1, 1)
+                                    for use in uses:
+                                        for i, v in enumerate(use.owner.operands):
+                                            if (
+                                                v.type == replaced.type
+                                                and v == replaced
+                                            ):
+                                                use.owner.operands[i] = acquired
+
+                                    with aie_ir.InsertionPoint.at_block_terminator(
+                                        op.parent.regions[0].blocks[0]
+                                    ):
+                                        fifo.release(1, 1)
+                                else:
+                                    acquired = fifo.acquire(1, 1)
+                                    op.operands[0] = acquired
+                                    new_op = op.clone()
+                                    if not is_tensor:
+                                        for old, new in zip(op.results, new_op.results):
+                                            old.replace_all_uses_with(new)
+                                    fifo.release(1, 1)
+                            else:
+                                assert len(loop_nests) == 1, "To be implemented..."
+                                loop_name = list(loop_nests.keys())[0]
+                                cases = []
+                                case_val = []
+                                for fifo, stream_arg in zip(fifo_list, arg_info[0]):
+                                    if is_put:
+                                        cases.append(
+                                            stream_arg.stream.src_related_iter_info[
+                                                loop_name
+                                            ]
+                                        )
+                                    else:
+                                        cases.append(
+                                            stream_arg.stream.dst_related_iter_info[
+                                                loop_name
+                                            ]
+                                        )
+                                    if isinstance(fifo, tuple):
+                                        case_val.append(fifo[0 if is_put else 1])
+                                    else:
+                                        case_val.append(fifo)
+                                switch_op = aie_scf_d.IndexSwitchOp(
+                                    [op.operands[1].type],
+                                    loop_nests[loop_name]
+                                    .regions[0]
+                                    .blocks[0]
+                                    .arguments[0],
+                                    cases[1:],
+                                    len(cases[1:]),
+                                )
+                                cnt = 0
+                                for region in switch_op.caseRegions:
+                                    block = region.blocks.append()
+                                    with aie_ir.InsertionPoint(block):
+                                        acquired = case_val[cnt].acquire(
+                                            0 if is_put else 1, 1
+                                        )
+                                        aie_scf_d.YieldOp([acquired])
+                                        cnt += 1
+                                if is_put:
+                                    op.operands[1] = switch_op.result
+                                    new_op = op.clone()  # no use, no need to replace
+                                else:
+                                    op.operands[0] = switch_op.result
+                                    new_op = op.clone()
+                                    if not is_tensor:
+                                        for old, new in zip(op.results, new_op.results):
+                                            old.replace_all_uses_with(new)
+                                switch_op = aie_scf_d.IndexSwitchOp(
+                                    [],
+                                    loop_nests[loop_name]
+                                    .regions[0]
+                                    .blocks[0]
+                                    .arguments[0],
+                                    cases[1:],
+                                    len(cases[1:]),
+                                )
+                                cnt = 0
+                                for region in switch_op.caseRegions:
+                                    block = region.blocks.append()
+                                    with aie_ir.InsertionPoint(block):
+                                        case_val[cnt].release(0 if is_put else 1, 1)
+                                        aie_scf_d.YieldOp([])
+                                        cnt += 1
+                            op.erase()
+
+            for fifo_name, (is_input, region) in reused_fifo_info.items():
+                with aie_ir.InsertionPoint.at_block_terminator(region):
+                    self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
+
             with aie_ir.InsertionPoint(loop.body):
                 for parsed_func_block in parsed_function.body:
                     for op in parsed_func_block.operations:
@@ -351,9 +527,6 @@ class CodeGenerator:
                     for old, new in zip(alloc_op.results, buffer_op.results):
                         old.replace_all_uses_with(new)
                     alloc_op.erase()
-
-                for fifo_name, is_input in reused_fifo_name.items():
-                    self.fifo_map[fifo_name].release(1 if is_input else 0, 1)
 
                 aie_scf_d.YieldOp([])
             aie_d.EndOp()
@@ -1293,6 +1466,26 @@ class CodeGenerator:
 
                 transfer(size, interface_list)
 
+        # insert placeholder for mem/shim tiles
+        while len(self.used_mem_tiles) < MAX_MEM_TILES:
+            assigned_mem_tile = SwitchNode(
+                name=f"{len(self.used_mem_tiles)}_mem_tile",
+                send_port_num=Config.MEM_MAX_SEND,
+                recv_port_num=Config.MEM_MAX_RECV,
+                col_id=len(self.used_mem_tiles),
+                row_id=1,
+            )
+            self.used_mem_tiles.append(assigned_mem_tile)
+        while len(self.used_shim_tiles) < MAX_SHIM_TILES:
+            assigned_shim_tile = SwitchNode(
+                name=f"{len(self.used_shim_tiles)}_shim_tile",
+                send_port_num=Config.SHIM_MAX_SEND,
+                recv_port_num=Config.SHIM_MAX_RECV,
+                col_id=len(self.used_shim_tiles),
+                row_id=0,
+            )
+            self.used_shim_tiles.append(assigned_shim_tile)
+
         token_map: dict[str, str] = {}
         token_cnt = 0
         related_token_list: list[set[tuple[str]]] = []
@@ -1509,6 +1702,7 @@ class CodeGenerator:
         self,
         core_funcs: list[allo_func_d.FuncOp],
         external_funcs: list[allo_func_d.FuncOp],
+        linked_external_cc: dict[str, int],
         trace: list[tuple[str, tuple[int, ...]]],
         trace_size: int,
     ) -> aie_ir.Module:
@@ -1606,18 +1800,71 @@ class CodeGenerator:
                 # define fifos
                 # - stream fifos: compute <-> compute
                 for stream_name, stream in self.streams.items():
-                    self.fifo_map[stream_name] = aie_d.object_fifo(
-                        stream_name,
-                        self.tile_map[stream.src],
-                        self.tile_map[stream.dst],
-                        depth=stream.type.depth,
-                        datatype=aie_ir.MemRefType.get(
-                            stream.type.shape,
-                            get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
-                        ),
-                    )
+                    dimensions_to_stream = stream.get_dimensions_to_stream()
+                    if len(dimensions_to_stream) <= Config.COMP_COMP_DMA_TRANSFORM_DIM:
+                        self.fifo_map[stream_name] = aie_d.object_fifo(
+                            stream_name,
+                            self.tile_map[stream.src],
+                            self.tile_map[stream.dst],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                            dimensionsToStream=dimensions_to_stream,
+                        )
+                    elif len(dimensions_to_stream) <= Config.MEM_COMP_DMA_TRANSFORM_DIM:
+                        # prioritize the mem tile in the same column
+                        switch_mem = self.used_mem_tiles[
+                            core_function_mapping[stream.src][1]
+                        ]
+                        if (
+                            len(switch_mem.recv_ports) == switch_mem.max_recv
+                            or len(switch_mem.send_ports) == switch_mem.max_send
+                        ):
+                            switch_mem = None
+                            for mem_tile in self.used_mem_tiles:
+                                if (
+                                    len(mem_tile.recv_ports) < mem_tile.max_recv
+                                    and len(mem_tile.send_ports) <= mem_tile.max_send
+                                ):
+                                    switch_mem = mem_tile
+                                    break
+                        stream_src = aie_d.object_fifo(
+                            stream_name + "_src",
+                            self.tile_map[stream.src],
+                            self.tile_map[switch_mem.name],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                        )
+                        stream_dst = aie_d.object_fifo(
+                            stream_name + "_dst",
+                            self.tile_map[switch_mem.name],
+                            self.tile_map[stream.dst],
+                            depth=stream.type.depth,
+                            datatype=aie_ir.MemRefType.get(
+                                stream.type.shape,
+                                get_aie_mlir_dtype_from_str(str(stream.type.dtype)),
+                            ),
+                            dimensionsToStream=dimensions_to_stream,
+                        )
+                        switch_mem.send_ports.append(None)
+                        switch_mem.recv_ports.append(None)
+                        self.fifo_map[stream_name] = (stream_src, stream_dst)
+                        aie_d.object_fifo_link([stream_src], [stream_dst], [], [])
+                    else:
+                        raise ValueError(
+                            "layout transformation cannot be achieved on DMA"
+                        )
                 # - io fifos: shim <-> mem <-> compute
                 for dma_fifo in self.fifo_manager.fifos:
+                    assert (
+                        len(dma_fifo.dimensions_to_stream)
+                        <= Config.MEM_COMP_DMA_TRANSFORM_DIM
+                    )
                     self.fifo_map[dma_fifo.name] = aie_d.object_fifo(
                         dma_fifo.name,
                         self.tile_map[dma_fifo.src],
@@ -1653,12 +1900,16 @@ class CodeGenerator:
                 # compute logic on each compute tile
                 for func in core_funcs:
                     func_name = func.attributes["sym_name"].value
-                    use_external_kernel = self.virtual_computation_graph.nodes[
+                    used_external_kernel = self.virtual_computation_graph.nodes[
                         func_name
-                    ].meta_data.use_external_kernel
+                    ].meta_data.used_external_kernel
                     func_core = aie_d.Core(
                         tile=self.tile_map[func_name],
-                        link_with=("external.o" if use_external_kernel else None),
+                        link_with=(
+                            f"external{linked_external_cc[func_name]}.o"
+                            if len(used_external_kernel) > 0
+                            else None
+                        ),
                     )
                     if self.global_ip is None:
                         self.global_ip = aie_ir.InsertionPoint(func_core)
@@ -2052,40 +2303,40 @@ class CodeGenerator:
                                     updated_fifo_dma_tasks[
                                         global_dma.io_port.fifo.name
                                     ] = []
-                                # else:
-                                #     prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
-                                #         global_dma.io_port.fifo.name
-                                #     ][-1]
-                                # the same global tensor must be tiled in the same way
-                                # if (
-                                #     global_dma.dtensor.global_id
-                                #     == prev_task.dtensor_global_id
-                                #     and size[0] == 1
-                                # ):
-                                #     diff = [
-                                #         x - y
-                                #         for x, y in zip(
-                                #             offset,
-                                #             prev_task.dma_tasks[-1][0],
-                                #         )
-                                #     ]
-                                #     # fixme: can be relaxed
-                                #     if prev_task.diff is None and (
-                                #         all(x >= 0 for x in diff)
-                                #         and sum(1 for x in diff if x != 0) <= 1
-                                #     ):
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.diff = diff
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
-                                #     if prev_task.diff == diff:
-                                #         prev_task.dma_tasks.append(
-                                #             (offset, size, stride)
-                                #         )
-                                #         prev_task.max_task_id = tasks_idx_right
-                                #         continue
+                                elif os.getenv("COALESCE_MORE") is not None:
+                                    prev_task: DMAMemcpyGroup = updated_fifo_dma_tasks[
+                                        global_dma.io_port.fifo.name
+                                    ][-1]
+                                    # the same global tensor must be tiled in the same way
+                                    if (
+                                        global_dma.dtensor.global_id
+                                        == prev_task.dtensor_global_id
+                                        and size[0] == 1
+                                    ):
+                                        diff = [
+                                            x - y
+                                            for x, y in zip(
+                                                offset,
+                                                prev_task.dma_tasks[-1][0],
+                                            )
+                                        ]
+                                        # fixme: can be relaxed
+                                        if prev_task.diff is None and (
+                                            all(x >= 0 for x in diff)
+                                            and sum(1 for x in diff if x != 0) <= 1
+                                        ):
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.diff = diff
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
+                                        if prev_task.diff == diff:
+                                            prev_task.dma_tasks.append(
+                                                (offset, size, stride)
+                                            )
+                                            prev_task.max_task_id = tasks_idx_right
+                                            continue
 
                                 used_shim = (
                                     global_dma.io_port.fifo.src

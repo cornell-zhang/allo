@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from allo.ir.types import int16
+from allo.ir.types import int16, Stream
 import allo.dataflow as df
 import numpy as np
 
@@ -11,7 +11,7 @@ M, N = 32, 32
 
 @df.region()
 def top():
-    pipe = df.pipe(dtype=Ty, shape=(M, N), depth=2)
+    pipe: Stream[Ty[M, N], 2]
 
     @df.kernel(mapping=[1])
     def producer(A: Ty[M, N]):

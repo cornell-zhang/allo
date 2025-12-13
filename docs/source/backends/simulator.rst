@@ -31,7 +31,7 @@ The design consists of a top-level region that contains two kernels: a producer 
 .. code-block:: python
 
    import allo
-   from allo.ir.types import float32
+   from allo.ir.types import float32, Stream
    import allo.dataflow as df
    import numpy as np
 
@@ -41,7 +41,7 @@ The design consists of a top-level region that contains two kernels: a producer 
    @df.region()
    def top():
        # Create a pipe with a depth of 4
-       pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+       pipe: Stream[Ty, 4]
 
        @df.kernel(mapping=[1])
        def producer(A: Ty[M, N]):
@@ -73,3 +73,53 @@ To verify the correctness of the dataflow design, a simulation is executed using
     print("Dataflow Simulator Passed!")
 
 The simulator is implemented using the `OMP dialect <https://mlir.llvm.org/docs/Dialects/OpenMPDialect/>`_ in MLIR, so it can natively support multi-threaded execution on CPU, which greatly speeds up functional testing at the first place.
+
+Controlling OpenMP Threads in Simulator Tests
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When running simulations or tests that use the simulator backend, the number of threads created by OpenMP can be controlled via the ``OMP_NUM_THREADS`` environment variable. This variable controls the number of CPU threads OpenMP uses for parallel execution.
+
+Some dataflow designs may require a large number of threads to simulate properly (otherwise, you might experience "hang" or "stuck"). In such cases, please set ``OMP_NUM_THREADS`` to a larger value.
+
+For example:
+
+.. code-block:: bash
+
+    export OMP_NUM_THREADS=64
+    python3 tests/dataflow/test_1D_systolic.py
+
+
+The OpenMP runtime determines the size of its thread pool during initialization based on the value of ``OMP_NUM_THREADS``.  
+Once the thread pool has been created, modifying ``OMP_NUM_THREADS`` afterward will **not** affect the existing pool size.  
+
+**Please ensure that the thread pool is large enough when running the simulator.**
+
+You can either export ``OMP_NUM_THREADS`` to a sufficiently large value before running all simulators,  
+or adjust it individually within each process as needed.  
+
+**Tip:** If you are using ``pytest`` to run multiple tests and have not pre-exported a large enough ``OMP_NUM_THREADS``,  
+be sure to use the ``--forked`` option so that each test runs in a separate process and the ``OMP_NUM_THREADS`` setting in ``setup_env`` takes effect.
+
+
+Example: To ensure that each test runs in a separate process and the thread pool is recreated according to ``OMP_NUM_THREADS``, you can add the following code to each test file in the target folder:
+
+.. code-block:: python
+
+    import os
+    import pytest
+
+    @pytest.fixture(scope="module", autouse=True)
+    def setup_env():
+        os.environ["OMP_NUM_THREADS"] = "128"
+        yield
+        del os.environ["OMP_NUM_THREADS"]
+
+    def test_xxx():
+        # your test code here
+        pass
+
+Then run the tests with:
+
+.. code-block:: bash
+
+    python3 -m pytest --forked /path/to/tests/folder -v

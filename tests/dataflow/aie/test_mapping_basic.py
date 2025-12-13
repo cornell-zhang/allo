@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16, int32
+from allo.ir.types import Stream, int32
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -96,7 +96,7 @@ def _test_producer_consumer():
 
     @df.region()
     def top():
-        pipe = df.pipe(dtype=Ty, shape=(M, N), depth=1)
+        pipe: Stream[Ty[M, N], 1]
 
         @df.kernel(mapping=[1])
         def producer(A: Ty[M, N]):

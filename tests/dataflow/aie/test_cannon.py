@@ -3,7 +3,7 @@
 
 import allo
 import allo.dataflow as df
-from allo.ir.types import int32
+from allo.ir.types import int32, Stream
 from allo.memory import Layout
 import numpy as np
 
@@ -20,11 +20,11 @@ def _test_cannon():
 
     @df.region()
     def top():
-        A_init = df.array(df.pipe(dtype=Ty, shape=(m, k), depth=2), shape=(P, P))
-        B_init = df.array(df.pipe(dtype=Ty, shape=(k, n), depth=2), shape=(P, P))
+        A_init: Stream[Ty[m, k], 2][P, P]
+        B_init: Stream[Ty[k, n], 2][P, P]
 
-        A_pipe = df.array(df.pipe(dtype=Ty, shape=(m, k), depth=2), shape=(P, P))
-        B_pipe = df.array(df.pipe(dtype=Ty, shape=(k, n), depth=2), shape=(P, P))
+        A_pipe: Stream[Ty[m, k], 2][P, P]
+        B_pipe: Stream[Ty[k, n], 2][P, P]
 
         @df.kernel(mapping=[P, P])
         def init(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB):
@@ -45,14 +45,20 @@ def _test_cannon():
             A_pipe[(pi - 1) % P, pj].put(A_out)
             B_pipe[pi, (pj - 1) % P].put(B_out)
 
-            with allo.meta_for(P - 1) as i:
-                A_out: Ty[m, k] = A_pipe[pi, pj].get()
-                B_out: Ty[k, n] = B_pipe[pi, pj].get()
+            for _ in range(P - 1):
+                """
+                Using an already created variable (A_out) is also valid,
+                but the compiler currently performs better optimization when using a new variable here.
 
-                C[:, :] += allo.matmul(A_out, B_out)
-                if i < P - 1:
-                    A_pipe[(pi - 1) % P, pj].put(A_out)
-                    B_pipe[pi, (pj - 1) % P].put(B_out)
+                    [NOTE] (Shihan): The main reason is that the 'buffer elimination pass' (`copy_on_writ`) is not very strong,
+                            Defining a new variable simplifies the use-def chain, so the pass can better identify redundant buffers.
+                            We may need to strengthen this pass to improve its optimization capability.
+                """
+                A_out_: Ty[m, k] = A_pipe[pi, pj].get()
+                B_out_: Ty[k, n] = B_pipe[pi, pj].get()
+                C[:, :] += allo.matmul(A_out_, B_out_)
+                A_pipe[(pi - 1) % P, pj].put(A_out_)
+                B_pipe[pi, (pj - 1) % P].put(B_out_)
 
     A = np.random.randint(0, 64, (M, K)).astype(np.int32)
     B = np.random.randint(0, 64, (K, N)).astype(np.int32)

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // https://github.com/llvm/llvm-project/blob/main/mlir/test/Dialect/Linalg/transform-op-decompose.mlir
 
-func.func @softmax(%A: memref<2x16x32xf32>, %B: memref<2x16x32xf32>) -> memref<2x16x32xf32> {
+func.func @softmax(%A: memref<2x16x32xf32>) -> memref<2x16x32xf32> {
         %0 = memref.alloc() : memref<2x16xf32>
+        %B = memref.alloc() : memref<2x16x32xf32>
         %C0_f32 = arith.constant 0xFF800000 : f32
         linalg.fill ins(%C0_f32 : f32) outs(%0 : memref<2x16xf32>)
         linalg.generic {indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>], iterator_types = ["parallel",
@@ -36,5 +37,5 @@ func.func @softmax(%A: memref<2x16x32xf32>, %B: memref<2x16x32xf32>) -> memref<2
             %7 = arith.divf %IN1, %IN2 : f32
             linalg.yield %7 : f32
           }
-          return %B : memref<2x16x32xf32>
+      return %B : memref<2x16x32xf32>
 }

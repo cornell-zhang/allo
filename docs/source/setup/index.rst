@@ -24,13 +24,13 @@
 Installation
 ############
 
-To install and use Allo, we need to first install the `LLVM-19 project <https://github.com/cornell-zhang/allo/tree/main/externals>`_. You can choose to use our provided docker or build from source.
+To install and use Allo, we need to first install the latest `LLVM project <https://github.com/cornell-zhang/allo/tree/main/externals>`_. You can choose to use our provided docker or build from source.
 
 
 Install from Docker
 -------------------
 
-To simplify the installation process, we provide a docker image that has already installed the LLVM-19 project. Please pull the image from Docker Hub as described below. The LLVM is installed under the :code:`/root/llvm-project` folder in the docker image.
+To simplify the installation process, we provide a docker image that has already installed the latest LLVM project. Please pull the image from Docker Hub as described below. The LLVM is installed under the :code:`/root/llvm-project` folder in the docker image.
 
 .. code-block:: console
 
@@ -45,14 +45,12 @@ To simplify the installation process, we provide a docker image that has already
 Install from Source
 -------------------
 
-Please follow the instructions below to build the LLVM-19 project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the `externals <https://github.com/cornell-zhang/allo/tree/main/externals>`_ folder.
+Please follow the instructions below to build the LLVM project from source. You can also refer to the `official guide <https://mlir.llvm.org/getting_started/>`_ for more details. As the LLVM/MLIR API changes a lot, if you are using a different LLVM version, the Allo package may not work properly. The LLVM version we used can be found in the `externals <https://github.com/cornell-zhang/allo/tree/main/externals>`_ folder.
 
 .. code-block:: bash
 
     git clone --recursive https://github.com/cornell-zhang/allo.git
     cd allo/externals/llvm-project
-    # Apply our patch
-    git apply ../llvm_patch
     # Python 3.12 is required
     mkdir -p build && cd build
     cmake -G Ninja ../llvm \
@@ -67,6 +65,7 @@ Please follow the instructions below to build the LLVM-19 project from source. Y
     ninja
     # export environment variable
     export LLVM_BUILD_DIR=$(pwd)
+    export PATH=$(pwd)/bin:$PATH
 
 We recommend creating a new conda environment for Allo. Since we are using the latest Python features, the minimum Python version is **3.12**.
 
@@ -141,3 +140,12 @@ If you encounter the following issue when building Allo, it is mostly because yo
 
   running build_ext
     cmake: error while loading shared libraries: libidn.so.11: cannot open shared object file: No such file or directory
+
+
+If you are seeing the errors reported by the linker like this:
+
+.. code-block:: console
+
+  /opt/rh/devtoolset-9/root/usr/libexec/gcc/x86_64-redhat-linux/9/ld: cannot find /work/shared/common/llvm-project-19.x/build/lib/libMLIRLLVMToLLVMIRTranslation.a: Too many open files
+
+It means you have hit the limit of file descriptors that can be open at a time. You can fix this by :code:`ulimit -n 4096`, then try compiling Allo again.

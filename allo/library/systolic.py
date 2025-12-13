@@ -315,7 +315,6 @@ def schedule_systolic(s):
     inner_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["ni"]
     outer_tile_loop = s.get_loops(s.top_func_name)["outer_tile"]["mi"]
     tile_loop = s.fuse(outer_tile_loop, inner_tile_loop)
-    s.dataflow(tile_loop)
     kernel_loop = None
     for kernel_name in {"PE_kernel", "PE_kernel_packed_int8xint8"}:
         try:

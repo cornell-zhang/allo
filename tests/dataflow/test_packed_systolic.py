@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int8, int16, int32
+from allo.ir.types import int8, int16, int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -23,8 +23,8 @@ else:
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=allo_type, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=allo_type, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[allo_type, 4][P0, P1]
+    fifo_B: Stream[allo_type, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(
@@ -78,6 +78,15 @@ def test_packed_systolic():
         np.ascontiguousarray(W_A_cst.transpose()).view(np_type).transpose()
     )
     Z_packed = np.zeros((M // PP, N), dtype=np_type)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(packed_X, W_A_packed, Z_packed)
+    np_C = X @ W_A_cst
+    np_C_packed = np.ascontiguousarray(
+        np.ascontiguousarray(np_C.transpose()).view(np_type).transpose()
+    )
+    np.testing.assert_allclose(Z_packed, np_C_packed, atol=1e-3)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
         mod(packed_X, W_A_packed, Z_packed)

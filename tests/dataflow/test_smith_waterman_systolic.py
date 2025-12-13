@@ -1,8 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
-from allo.ir.types import int8, int32
+from allo.ir.types import int8, int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -41,9 +43,9 @@ def top():
     # FIFO A goes in increasing j direction
     # FIFO B goes in increasing i direction
     # FIFO C goes in increasing i and j direction
-    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_C = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[int32, 4][P0, P1]
+    fifo_B: Stream[int32, 4][P0, P1]
+    fifo_C: Stream[int32, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def Smith_Waterman(A: int8[M], B: int8[N], S: int32[P0 - 1, P1 - 1]):
@@ -98,10 +100,11 @@ def test_systolic():
     np.testing.assert_equal(S[1:, 1:], S_1[1:, 1:])
     print("Dataflow Simulator Passed!")
 
-    mod = df.build(top, target="vitis_hls", mode="hw", project="smith_waterman.prj")
-    if hls.is_available("vitis_hls"):
-        S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
-        mod(A, B, S)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mod = df.build(top, target="vitis_hls", mode="hw", project=tmpdir)
+        if hls.is_available("vitis_hls"):
+            S = np.zeros((P0 - 1, P1 - 1), dtype=np.int32)
+            mod(A, B, S)
 
 
 if __name__ == "__main__":

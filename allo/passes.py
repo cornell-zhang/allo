@@ -22,6 +22,7 @@ from ._mlir.ir import (
     IntegerAttr,
     IntegerType,
     Operation,
+    OpView,
     BlockArgument,
 )
 from ._mlir.dialects import (
@@ -60,6 +61,14 @@ def _mlir_lower_pipeline(module, **kwargs):
 
 
 def lower_linalg_and_attach_names(module):
+    """
+    FIXME (Shihan):
+        This function is intended to lower Linalg operations into Affine operations and
+        attach attributes to the resulting Affine loops for identification during scheduling.
+        However, the current logic of this function does not seem to make complete sense,
+        and it likely requires some refactoring and cleanup to ensure correctness and clarity.
+    """
+
     op_names = []
     cnt_loop_nests = 0
 
@@ -462,11 +471,11 @@ def generate_call_module(target_op, func_op, name):
     if name == "softmax":
         sym_name = f"{name}_{hash(target_op)}"
         args = func.arguments
+        org_input_type = args[0].type
         args[0].set_type(target_op.input.type)
-        args[1].set_type(target_op.output.type)
-        in_types = [args[0].type, args[1].type]
-        out_types = [args[1].type]
-        operands = [target_op.input, target_op.output]
+        in_types = [args[0].type]
+        out_types = [target_op.output.type]
+        operands = [target_op.input]
     elif name in {"gelu", "layernorm", "tril"}:
         sym_name = target_op.attributes["callee"].value
         in_types = [arg.type for arg in target_op.operands_]
@@ -484,6 +493,10 @@ def generate_call_module(target_op, func_op, name):
         operands,
         ip=InsertionPoint(target_op),
     )
+    if name in {"softmax"}:
+        result_def_op = target_op.output.owner
+        result_def_op.result.replace_all_uses_with(call_op.result)
+        result_def_op.erase()
     if name in {"gelu", "layernorm", "tril"}:
         target_op.result.replace_all_uses_with(call_op.result)
 
@@ -491,15 +504,26 @@ def generate_call_module(target_op, func_op, name):
         shape = MemRefType(out_types[0]).shape
         if name == "softmax":
             if isinstance(op, memref_d.AllocOp):
-                alloc_op = memref_d.AllocOp(
-                    MemRefType.get(
-                        shape[:-1],
-                        MemRefType(in_types[0]).element_type,
-                    ),
-                    [],
-                    [],
-                    ip=InsertionPoint(op),
-                )
+                if op.result.type == org_input_type:
+                    alloc_op = memref_d.AllocOp(
+                        MemRefType.get(
+                            shape,
+                            MemRefType(in_types[0]).element_type,
+                        ),
+                        [],
+                        [],
+                        ip=InsertionPoint(op),
+                    )
+                else:
+                    alloc_op = memref_d.AllocOp(
+                        MemRefType.get(
+                            shape[:-1],
+                            MemRefType(in_types[0]).element_type,
+                        ),
+                        [],
+                        [],
+                        ip=InsertionPoint(op),
+                    )
                 op.result.replace_all_uses_with(alloc_op.result)
                 op_to_remove.append(op)
 
@@ -685,13 +709,17 @@ def analyze_use_def(mod):
             uf_add(arg_name)
             add_use(arg, arg_name)
         for op in func.entry_block.operations:
-            if isinstance(op, (memref_d.AllocOp, func_d.CallOp, memref_d.GetGlobalOp)):
+            if isinstance(op, OpView) and len(op.results) > 0:
                 if "name" in op.attributes:
                     buf_name = f"{func_name}:{op.attributes['name'].value}"
                 elif " = " in str(op):
-                    buf_name = f"{func_name}:{str(op).split(' = ', maxsplit=1)[0]}"
+                    if "from" in op.attributes:
+                        continue
+                    op_name = str(op).split(" = ", maxsplit=1)[0]
+                    buf_name = f"{func_name}:{op_name}"
+                    op.attributes["name"] = StringAttr.get(op_name, context=mod.context)
                 else:
-                    # call op does not have return value
+                    # op without return value
                     continue
                 uf_add(buf_name)
                 add_use(op.result, buf_name)
@@ -743,9 +771,8 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
             for use in value.uses:
                 user = use.owner
                 if user.name == "memref.subview":
-                    result = user.result(0)
-                    subview_map[result] = arg.arg_number
-                    work_list.append(result)
+                    subview_map[user.result] = arg.arg_number
+                    work_list.append(user.result)
 
     # Helper to resolve a value to its original argument index if it's a subview
     def resolve_to_func_arg_index(value):
@@ -798,12 +825,16 @@ def analyze_read_write_patterns(mlir_func, external_kernel_lib: dict = {}):
                     input_indices.add(resolve_to_func_arg_index(op.operands[idx]))
                 for idx in ext_module.output_idx:
                     output_indices.add(resolve_to_func_arg_index(op.operands[idx]))
-            elif op_name in {"memref.load", "affine.load"}:
+            elif op_name in {"memref.load", "affine.load", "allo.load_slice"}:
                 if len(op.operands) > 0:
                     input_indices.add(resolve_to_func_arg_index(op.operands[0]))
             elif op_name in {"memref.store", "affine.store"}:
                 if len(op.operands) > 1:
                     output_indices.add(resolve_to_func_arg_index(op.operands[1]))
+            elif op_name == "allo.store_slice":
+                assert len(op.operands) >= 2
+                input_indices.add(resolve_to_func_arg_index(op.operands[0]))
+                output_indices.add(resolve_to_func_arg_index(op.operands[1]))
             elif op_name == "memref.copy" and len(op.operands) >= 2:
                 # First operand is source, second is destination
                 input_indices.add(resolve_to_func_arg_index(op.operands[0]))

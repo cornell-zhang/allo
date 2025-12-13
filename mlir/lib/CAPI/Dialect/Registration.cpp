@@ -8,12 +8,23 @@
 #include "allo/Transforms/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Transforms/Passes.h"
-#include "mlir/Dialect/Func/Transforms/Passes.h"
-#include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Passes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"
+#include "mlir/Dialect/PDL/IR/PDL.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Transform/IR/TransformDialect.h"
+#include "mlir/InitAllPasses.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Target/LLVMIR/Transforms/Passes.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "allo/Dialect/AlloDialect.h"
@@ -40,7 +51,6 @@ void alloMlirRegisterAllPasses() {
   // Dialect passes
   mlir::affine::registerAffinePasses();
   mlir::arith::registerArithPasses();
-  mlir::LLVM::registerLLVMPasses();
   mlir::memref::registerMemRefPasses();
   mlir::registerLinalgPasses();
 

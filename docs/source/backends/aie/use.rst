@@ -112,7 +112,7 @@ Producer-consumer
 
    import os
    import allo
-   from allo.ir.types import int32
+   from allo.ir.types import int32, Stream
    import allo.dataflow as df
    import numpy as np
 
@@ -122,7 +122,7 @@ Producer-consumer
 
    @df.region()
    def top():
-       pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+       pipe: Stream[Ty, 4]
 
        @df.kernel(mapping=[1])
        def producer(A: Ty[M, N]):

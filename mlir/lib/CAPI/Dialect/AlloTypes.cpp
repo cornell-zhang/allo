@@ -11,7 +11,7 @@ using namespace mlir;
 using namespace allo;
 
 bool alloMlirTypeIsALoopHandle(MlirType type) {
-  return unwrap(type).isa<allo::LoopHandleType>();
+  return llvm::isa<allo::LoopHandleType>(unwrap(type));
 }
 
 MlirType alloMlirLoopHandleTypeGet(MlirContext ctx) {
@@ -19,7 +19,7 @@ MlirType alloMlirLoopHandleTypeGet(MlirContext ctx) {
 }
 
 bool alloMlirTypeIsAOpHandle(MlirType type) {
-  return unwrap(type).isa<allo::OpHandleType>();
+  return llvm::isa<allo::OpHandleType>(unwrap(type));
 }
 
 MlirType alloMlirOpHandleTypeGet(MlirContext ctx) {
@@ -27,7 +27,7 @@ MlirType alloMlirOpHandleTypeGet(MlirContext ctx) {
 }
 
 bool alloMlirTypeIsAFixedType(MlirType type) {
-  return unwrap(type).isa<allo::FixedType>();
+  return llvm::isa<allo::FixedType>(unwrap(type));
 }
 
 MlirType alloMlirFixedTypeGet(MlirContext ctx, size_t width, size_t frac) {
@@ -35,15 +35,15 @@ MlirType alloMlirFixedTypeGet(MlirContext ctx, size_t width, size_t frac) {
 }
 
 unsigned alloMlirFixedTypeGetWidth(MlirType type) {
-  return unwrap(type).cast<allo::FixedType>().getWidth();
+  return llvm::dyn_cast<allo::FixedType>(unwrap(type)).getWidth();
 }
 
 unsigned alloMlirFixedTypeGetFrac(MlirType type) {
-  return unwrap(type).cast<allo::FixedType>().getFrac();
+  return llvm::dyn_cast<allo::FixedType>(unwrap(type)).getFrac();
 }
 
 bool alloMlirTypeIsAUFixedType(MlirType type) {
-  return unwrap(type).isa<allo::UFixedType>();
+  return llvm::isa<allo::UFixedType>(unwrap(type));
 }
 
 MlirType alloMlirUFixedTypeGet(MlirContext ctx, size_t width, size_t frac) {
@@ -51,15 +51,15 @@ MlirType alloMlirUFixedTypeGet(MlirContext ctx, size_t width, size_t frac) {
 }
 
 unsigned alloMlirUFixedTypeGetWidth(MlirType type) {
-  return unwrap(type).cast<allo::UFixedType>().getWidth();
+  return llvm::dyn_cast<allo::UFixedType>(unwrap(type)).getWidth();
 }
 
 unsigned alloMlirUFixedTypeGetFrac(MlirType type) {
-  return unwrap(type).cast<allo::UFixedType>().getFrac();
+  return llvm::dyn_cast<allo::UFixedType>(unwrap(type)).getFrac();
 }
 
 bool alloMlirTypeIsAStructType(MlirType type) {
-  return unwrap(type).isa<allo::StructType>();
+  return llvm::isa<allo::StructType>(unwrap(type));
 }
 
 MlirType alloMlirStructTypeGet(MlirContext ctx, intptr_t numElements,
@@ -70,15 +70,18 @@ MlirType alloMlirStructTypeGet(MlirContext ctx, intptr_t numElements,
 }
 
 MlirType alloMlirStructGetEleType(MlirType type, size_t pos) {
-  return wrap(unwrap(type).cast<allo::StructType>().getElementTypes()[pos]);
+  return wrap(
+      llvm::dyn_cast<allo::StructType>(unwrap(type)).getElementTypes()[pos]);
 }
 
 unsigned alloMlirStructTypeGetNumFields(MlirType type) {
-  return unwrap(type).cast<allo::StructType>().getElementTypes().size();
+  return llvm::dyn_cast<allo::StructType>(unwrap(type))
+      .getElementTypes()
+      .size();
 }
 
 bool alloMlirTypeIsAStreamType(MlirType type) {
-  return unwrap(type).isa<allo::StreamType>();
+  return llvm::isa<allo::StreamType>(unwrap(type));
 }
 
 MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType,
@@ -87,9 +90,9 @@ MlirType alloMlirStreamTypeGet(MlirContext ctx, MlirType baseType,
 }
 
 MlirType alloMlirStreamTypeGetBaseType(MlirType type) {
-  return wrap(unwrap(type).cast<allo::StreamType>().getBaseType());
+  return wrap(llvm::dyn_cast<allo::StreamType>(unwrap(type)).getBaseType());
 }
 
 unsigned alloMlirStreamTypeGetDepth(MlirType type) {
-  return unwrap(type).cast<allo::StreamType>().getDepth();
+  return llvm::dyn_cast<allo::StreamType>(unwrap(type)).getDepth();
 }

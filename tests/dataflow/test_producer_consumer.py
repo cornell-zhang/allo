@@ -1,8 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import allo
-from allo.ir.types import float32
+from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -13,7 +15,7 @@ M, N, K = 16, 16, 16
 
 @df.region()
 def top():
-    pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+    pipe: Stream[Ty, 4]
 
     @df.kernel(mapping=[1])
     def producer(A: Ty[M, N]):
@@ -41,16 +43,17 @@ def test_producer_consumer():
     np.testing.assert_allclose(B, A + 1)
     print("Dataflow Simulator Passed!")
 
-    mod = df.build(
-        top,
-        target="vitis_hls",
-        mode="csim",
-        project="producer_consumer.prj",
-    )
     if hls.is_available("vitis_hls"):
-        mod(A, B)
-        np.testing.assert_allclose(A + 1, B)
-        print("Passed!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = df.build(
+                top,
+                target="vitis_hls",
+                mode="csim",
+                project=tmpdir,
+            )
+            mod(A, B)
+            np.testing.assert_allclose(A + 1, B)
+            print("Passed!")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import int16, int32, float32, int8
+from allo.ir.types import int16, int32, float32, int8, Stream
 import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
@@ -19,17 +19,16 @@ def test_cooperative_gemm(Ty):
 
     @df.region()
     def top():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn)
-        )
+        pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
         @df.kernel(mapping=[Pk, Pm, Pn])
         def gemm(A: Ty[M, K] @ LyA, B: Ty[K, N] @ LyB, C: Ty[M, N] @ LyC):
             pk, pm, pn = df.get_pid()
+            C_in: Ty[Mt, Nt]
             with allo.meta_if(pk > 0):
-                C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+                C_in[:, :] = pipe[pk - 1, pm, pn].get()
             with allo.meta_else():
-                C_in: Ty[Mt, Nt] = 0
+                C_in[:, :] = 0
             C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
             with allo.meta_if(pk < Pk - 1):
                 pipe[pk, pm, pn].put(C_out)

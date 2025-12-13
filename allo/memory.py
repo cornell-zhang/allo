@@ -540,7 +540,7 @@ def coalesce_memory_access(offset_map: dict[Offset4D, list]):
                 inc_offset = inc_offset.get_next_offset(coalesce_dim)
                 if inc_offset in access:
                     base_size.inc_on_dim(coalesce_dim)
-                    coalesced.add(offset)
+                    coalesced.add(inc_offset)
                     coalesce_info[base_offset].extend(coalesce_info[inc_offset])
                     connected_nodes[base_offset].extend(connected_nodes[inc_offset])
                 else:

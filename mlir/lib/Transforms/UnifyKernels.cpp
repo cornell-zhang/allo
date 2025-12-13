@@ -37,18 +37,18 @@ bool compareAffineExprs(AffineExpr lhsExpr, AffineExpr rhsExpr) {
   // Compare affine exprs based on kind
   switch (lhsExpr.getKind()) {
   case AffineExprKind::Constant: {
-    auto lhsConst = lhsExpr.cast<AffineConstantExpr>();
-    auto rhsConst = rhsExpr.cast<AffineConstantExpr>();
+    auto lhsConst = llvm::cast<AffineConstantExpr>(lhsExpr);
+    auto rhsConst = llvm::cast<AffineConstantExpr>(rhsExpr);
     return lhsConst.getValue() == rhsConst.getValue();
   }
   case AffineExprKind::DimId: {
-    auto lhsDim = lhsExpr.cast<AffineDimExpr>();
-    auto rhsDim = rhsExpr.cast<AffineDimExpr>();
+    auto lhsDim = llvm::cast<AffineDimExpr>(lhsExpr);
+    auto rhsDim = llvm::cast<AffineDimExpr>(rhsExpr);
     return lhsDim.getPosition() == rhsDim.getPosition();
   }
   case AffineExprKind::SymbolId: {
-    auto lhsSymbol = lhsExpr.cast<AffineSymbolExpr>();
-    auto rhsSymbol = rhsExpr.cast<AffineSymbolExpr>();
+    auto lhsSymbol = llvm::cast<AffineSymbolExpr>(lhsExpr);
+    auto rhsSymbol = llvm::cast<AffineSymbolExpr>(rhsExpr);
     return lhsSymbol.getPosition() == rhsSymbol.getPosition();
   }
   case AffineExprKind::Add:
@@ -56,8 +56,8 @@ bool compareAffineExprs(AffineExpr lhsExpr, AffineExpr rhsExpr) {
   case AffineExprKind::Mod:
   case AffineExprKind::FloorDiv:
   case AffineExprKind::CeilDiv: {
-    auto lhsBinary = lhsExpr.cast<AffineBinaryOpExpr>();
-    auto rhsBinary = rhsExpr.cast<AffineBinaryOpExpr>();
+    auto lhsBinary = llvm::cast<AffineBinaryOpExpr>(lhsExpr);
+    auto rhsBinary = llvm::cast<AffineBinaryOpExpr>(rhsExpr);
     return compareAffineExprs(lhsBinary.getLHS(), rhsBinary.getLHS()) &&
            compareAffineExprs(lhsBinary.getRHS(), rhsBinary.getRHS());
   }

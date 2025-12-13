@@ -42,13 +42,14 @@ Model Architecture: https://huggingface.co/openai-community/gpt2
     )
 """
 
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import allo
 import allo.dataflow as df
-from allo.ir.types import float32, bfloat16, int32
+from allo.ir.types import float32, int32, Stream
 from allo.memory import Layout
 from allo.backend.aie import ExternalModule
 
@@ -59,7 +60,9 @@ np.random.seed(0)
 # Model Configuration
 # ===============================================================================
 USE_ALL_NPU_KERNELS = True  # if False, we will offload softmax and gelu to cpu
-KERNEL_LIB_PATH = "../../../../allo/library/aie/"
+KERNEL_LIB_PATH = os.path.join(
+    os.path.dirname(__file__), "../../../../allo/library/aie/"
+)
 BATCH = 1  # fixme: don't care for now
 SEQ = 64
 EMBD = 768  # 64 * 12
@@ -177,9 +180,7 @@ def run(x_fp32: np.ndarray, params: dict):
 
     @df.region()
     def layer_norm_kernel():
-        pipe = df.array(
-            df.pipe(dtype=Ty, shape=(NORM_TILE, EMBD), depth=1), shape=(NORM_P0,)
-        )
+        pipe: Stream[Ty[NORM_TILE, EMBD], 1][NORM_P0]
 
         @df.kernel(mapping=[NORM_P0])
         def norm_no_bias(

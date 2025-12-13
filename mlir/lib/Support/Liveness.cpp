@@ -14,14 +14,13 @@ namespace allo {
 // ! These functions may fail if multiple first/last use are in branches
 Operation *getFirstUse(Value value, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
   DominanceInfo domInfo(&func);
   OpOperand *firstUse = nullptr;
   for (auto &use : value.getUses()) {
     auto *op = use.getOwner();
     if (!firstUse || domInfo.properlyDominates(op, firstUse->getOwner())) {
       firstUse = &use;
-      //   llvm::errs() << firstUse->get() << "\n";
-      //   llvm::errs() << *firstUse->getOwner() << "\n";
     }
   }
   if (!firstUse) {
@@ -33,14 +32,13 @@ Operation *getFirstUse(Value value, Operation &func) {
 
 Operation *getLastUse(Value value, Operation &func) {
   func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
   PostDominanceInfo postDom(&func);
   OpOperand *lastUse = nullptr;
   for (auto &use : value.getUses()) {
     auto *op = use.getOwner();
     if (!lastUse || postDom.properlyPostDominates(op, lastUse->getOwner())) {
       lastUse = &use;
-      //   llvm::errs() << lastUse->get() << "\n";
-      //   llvm::errs() << *lastUse->getOwner() << "\n";
     }
   }
   if (!lastUse) {
@@ -49,5 +47,26 @@ Operation *getLastUse(Value value, Operation &func) {
     return lastUse->getOwner();
   }
 }
+
+Operation *getNextUse(Value value, Operation *curUse, Operation &func) {
+  func::FuncOp funcOp = llvm::cast<mlir::func::FuncOp>(func);
+  (void)funcOp; // Suppress unused variable warning
+  DominanceInfo domInfo(&func);
+  OpOperand *nextUse = nullptr;
+  for (auto &use : value.getUses()) {
+    Operation *useOp = use.getOwner();
+    if (useOp != curUse && domInfo.properlyDominates(curUse, useOp)) {
+      if (!nextUse || domInfo.properlyDominates(useOp, nextUse->getOwner())) {
+        nextUse = &use;
+      }
+    }
+  }
+  if (!nextUse) {
+    return nullptr;
+  } else {
+    return nextUse->getOwner();
+  }
+}
+
 } // namespace allo
 } // namespace mlir

@@ -17,6 +17,7 @@ namespace mlir {
 namespace allo {
 Operation *getFirstUse(Value value, Operation &func);
 Operation *getLastUse(Value value, Operation &func);
+Operation *getNextUse(Value value, Operation *curUse, Operation &func);
 } // namespace allo
 } // namespace mlir
 

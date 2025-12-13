@@ -1,9 +1,10 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
 from collections import defaultdict
 from typing import NamedTuple
 
-from allo._mlir.ir import (
+from .._mlir.ir import (
     Location,
     Module,
     Operation,
@@ -11,14 +12,13 @@ from allo._mlir.ir import (
     AffineExpr,
     Block,
 )
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
 )
-from allo.customize import Schedule
-from allo.ir.types import MemRefType
-from allo._mlir.ir import WalkResult
+from ..ir.types import MemRefType
+from .._mlir.ir import WalkResult
 
 
 # PREPROCESSING
@@ -198,7 +198,7 @@ def check_single_producer_single_consumer(module: Module) -> bool:
     return spsc
 
 
-def check_preprocess_ok(schedule: Schedule) -> bool:
+def check_preprocess_ok(schedule) -> bool:
     module = schedule.module
     top_fn_name = schedule.top_func_name
     return (
@@ -318,9 +318,10 @@ def is_reduction_loop(for_op: affine_d.AffineForOp) -> bool:
             return False
 
         while current:
-            if current.parent == loop_op:
+            parent = current.parent
+            if parent is not None and parent == loop_op:
                 return True
-            current = current.parent
+            current = parent
         return False
 
     def walk_callback(op):

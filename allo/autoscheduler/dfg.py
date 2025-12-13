@@ -1,5 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=no-name-in-module
+
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -9,13 +11,13 @@ import itertools
 from typing import Union, Optional
 import gurobipy as gp
 from gurobipy import GRB
-from allo._mlir.dialects import (
+from .._mlir.dialects import (
     func as func_d,
     affine as affine_d,
     memref as memref_d,
 )
-from allo._mlir.ir import WalkResult, Operation, AffineMap, Block, AffineExpr
-from allo.ir.types import MemRefType
+from .._mlir.ir import WalkResult, Operation, AffineMap, Block, AffineExpr
+from ..ir.types import MemRefType
 from .util import (
     LoopInfo,
     is_reduction_loop,

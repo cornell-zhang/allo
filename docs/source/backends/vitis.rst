@@ -104,6 +104,109 @@ To run the design, prepare the input matrices using NumPy and allocate an output
 Note:
   Ensure that the Vitis HLS and XRT environments are correctly configured before running the HLS flow. For further environment setup and synthesis mode details, please consult the `Vitis HLS <https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis/vitis-hls.html>`_ documentation.
 
+
+HBM/DDR Memory Mapping
+----------------------
+For designs targeting platforms with High Bandwidth Memory (HBM) or multiple DDR banks (such as Alveo U280), Allo provides an easy way to specify memory channel mappings for kernel arguments. This is done through the ``hbm_mapping`` configuration option in the ``configs`` dictionary.
+
+**Basic Usage**
+
+The ``hbm_mapping`` dictionary maps function argument names to memory channels. You can specify:
+
+- **Integer values**: Interpreted as HBM channel numbers (e.g., ``0`` → ``HBM[0]``)
+- **String values**: Full memory specification (e.g., ``"HBM[0]"``, ``"DDR[1]"``)
+
+.. code-block:: python
+
+   from allo.ir.types import int32
+
+   def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
+       C: int32[32, 32] = 0
+       for i, j, k in allo.grid(32, 32, 32):
+           C[i, j] += A[i, k] * B[k, j]
+       return C
+
+   s = allo.customize(gemm)
+
+   # Define HBM channel mapping using argument names
+   hbm_mapping = {
+       "A": 0,              # Input A -> HBM channel 0
+       "B": "HBM[1]",       # Input B -> HBM channel 1
+       "output_0": "DDR[0]", # Return value -> DDR bank 0
+   }
+
+   mod = s.build(
+       target="vitis_hls",
+       mode="hw",
+       project="gemm.prj",
+       configs={"hbm_mapping": hbm_mapping},
+   )
+
+**Argument Naming Convention**
+
+- **Input arguments**: Use the same names as in your function definition (e.g., ``"A"``, ``"B"``)
+- **Return values**: Use ``"output_0"``, ``"output_1"``, etc. for functions with return values
+
+**Generated Configuration File**
+
+Allo automatically generates a ``.cfg`` file in the project directory with the connectivity settings. For example, the above configuration would generate a file like:
+
+.. code-block:: text
+
+   [connectivity]
+
+   sp=gemm.v15:HBM[0]
+   sp=gemm.v16:HBM[1]
+   sp=gemm.v17:DDR[0]
+
+Note that Allo automatically translates your user-friendly argument names (``A``, ``B``, ``output_0``) to the actual HLS-generated argument names (``v15``, ``v16``, ``v17``).
+
+**Complex Example with Multiple Arguments**
+
+For larger designs with many memory interfaces, you can specify different HBM channels for each argument:
+
+.. code-block:: python
+
+   hbm_mapping = {
+       "inp_0": 0,           # HBM[0]
+       "inp_1": 0,           # HBM[0] - can share channels
+       "weight_0": 1,        # HBM[1]
+       "weight_1": 2,        # HBM[2]
+       "bias": "HBM[3]",     # HBM[3]
+       "output_0": "DDR[0]", # DDR bank 0
+   }
+
+This feature is particularly useful for:
+
+- **Memory bandwidth optimization**: Distribute data across multiple HBM channels to maximize bandwidth
+- **Bank conflict avoidance**: Place frequently accessed data on separate memory banks
+- **Platform-specific tuning**: Match memory assignments to your target FPGA platform's memory architecture
+
+
+Device and Frequency Configuration
+----------------------------------
+You can specify the target device and clock frequency through the ``configs`` dictionary:
+
+.. code-block:: python
+
+   mod = s.build(
+       target="vitis_hls",
+       mode="hw",
+       project="gemm.prj",
+       configs={
+           "device": "u280",     # Target device (default: "u280")
+           "frequency": 300,     # Target frequency in MHz (default: 300)
+       },
+   )
+
+**Supported Devices**
+
+- **Alveo**: ``u200``, ``u250``, ``u280``
+- **Zynq UltraScale+**: ``zcu102``, ``zcu104``, ``zcu106``, ``zcu111``
+- **Versal**: ``vck190``, ``vhk158``
+- **Embedded**: ``ultra96v2``, ``pynqz2``, ``zedboard``
+
+
 Conclusion
 ----------
 This example illustrates the process of defining a GEMM kernel using the Allo ADL and generating HLS code for FPGA acceleration with the Vitis HLS backend. The approach supports various synthesis modes (sw_emu, hw_emu, hw) to cater to different design and verification needs.

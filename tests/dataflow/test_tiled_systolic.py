@@ -1,12 +1,15 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import pytest
 import re
 import allo
-from allo.ir.types import int32
+from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
+
 
 # M, N, K = 512, 512, 512
 # Mt, Nt = 16, 16
@@ -19,8 +22,8 @@ P0, P1 = Mt + 2, Nt + 2
 
 @df.region()
 def top():
-    fifo_A = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
-    fifo_B = df.array(df.pipe(dtype=int32, shape=(), depth=4), shape=(P0, P1))
+    fifo_A: Stream[int32, 4][P0, P1]
+    fifo_B: Stream[int32, 4][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm(A: int32[M, K], B: int32[K, N], C: int32[M, N]):
@@ -103,4 +106,7 @@ def test_tiled_systolic():
 
 
 if __name__ == "__main__":
+    # we need to set OMP_NUM_THREADS to a large number here for simulator
+    os.environ["OMP_NUM_THREADS"] = "64"
     test_tiled_systolic()
+    del os.environ["OMP_NUM_THREADS"]

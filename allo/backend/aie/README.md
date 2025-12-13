@@ -5,6 +5,7 @@
 - [Environment Setup](#environment-setup)
 - [Usage](#usage)
     - [Basic Examples](#example)
+    - [Environment Variables for Controlling Compiler Behavior](#environment-variables-for-controlling-compiler-behavior)
     - [New Features](#new-feature)
         - [Timing-based Profiling](#profiling)
         - [Tracing-based Profiling](#profiling-with-trace)
@@ -220,7 +221,7 @@ producer consumer
 ```python
 import os
 import allo
-from allo.ir.types import int32
+from allo.ir.types import int32, Stream
 import allo.dataflow as df
 import numpy as np
 
@@ -230,7 +231,7 @@ M, N, K = 16, 16, 16
 
 @df.region()
 def top():
-    pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+    pipe: Stream[Ty, 4]
 
     @df.kernel(mapping=[1])
     def producer(A: Ty[M, N]):
@@ -312,6 +313,93 @@ for i in range(total_K // K):
 np.testing.assert_allclose(C, A @ B, atol=1e-5)
 print("PASSED!")
 ```
+
+### Environment Variables for Controlling Compiler Behavior
+The compiler exposes several environment variables that can be used to fine-tune its behavior.
+
+You can set them globally in the terminal, for example:
+```bash
+export FORCE_UNROLL_INDEX=1
+```
+Or only for a specific test case in Python:
+
+```python
+import os
+
+os.environ["FORCE_UNROLL_INDEX"] = "1"
+# run your test
+del os.environ["FORCE_UNROLL_INDEX"]  # reset after use
+```
+
+#### `FORCE_UNROLL_INDEX`
+
+By default, the AIE backend tries to **avoid unrolling** `meta_for` loops to optimize code size.
+However, when the iterator of a rolled `meta_for` is used as the index of a pipe, the current virtual mapping (especially chain) faces significant restrictions.
+
+If you prefer to sacrifice code size in exchange for greater flexibility in using mapping primitives, you can set:
+
+```
+FORCE_UNROLL_INDEX=1
+```
+
+This will force the compiler to **unroll any `meta_for` loop whose iterator is used as an index**, bypassing the default optimization.
+
+#### `ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH`
+This variable controls an optimization patch for DMA scheduling.
+
+If you want to maximize DMA performance, you can try:
+```
+ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH=1
+```
+This enables an aggressive strategy that tries to fully utilize available DMA ports.
+
+#### `DEBUG`
+
+This variable controls whether virtual mapping graphs are dumped.
+
+You can use the virtual mapping graph to identify the available virtual mapping primitives, understand how to apply them and verify if the mapping behaves as expected. 
+
+If you want to dump the virtual mapping graphs for debugging, you can set:
+```
+DEBUG=1
+```
+After building the dataflow module, you can find the visualization result as a PDF file in the build project directory.
+
+##### Example 
+The visualization result for [`tests/dataflow/aie/test_cannon.py`](../../../tests/dataflow/aie/test_cannon.py) can be found as a PDF file named "virtual_graph.pdf" in the project directory (`top.prj`).
+
+<img width="80%" alt="cannon" src="https://github.com/user-attachments/assets/37b6db68-92f5-4961-b41e-b4af1fb7fb2d" />
+
+For programs that use virtual mapping primitives, two visualization results are generated (using `_test_split_k_gemm_2x2x4` in `tests/dataflow/aie/test_mapping_gemm.py` as an example):
+
+- The original virtual mapping graph (named "virtual_graph.pdf")
+    <img width="60%" alt="before" src="https://github.com/user-attachments/assets/884e183f-1c36-4e89-83dc-99f9d415861e" />
+
+
+- The virtual mapping graph after applying all mapping primitives (named "after_mapping.pdf")
+    <img width="60%" alt="after" src="https://github.com/user-attachments/assets/22f82618-68a1-409e-b8c7-d10d252ef85a" />
+
+#### `ALLO_EXTERNAL_KERNEL_DIR`
+
+This variable specifies the path to the Allo external kernel library.
+You can find this library under [`allo/library/aie`](../../library/aie/).
+
+Allo has modified and extended the [`mm.cc` kernel](https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc) in the `mlir-aie` kernel library.
+The changes include:
+* Adding support for `int4`.
+* Avoiding certain function name conflicts.
+
+If you want to use [Allo’s customized `mm.cc`](../../library/aie/mm.cc) or other external kernels in Allo external kernel library, you can set:
+
+```
+ALLO_EXTERNAL_KERNEL_DIR=/path/to/allo/root/allo/library/aie
+```
+
+#### `COALESCE_MORE`
+
+This variable controls the DMA scheduling behavior. If you want the compiler to generate fewer `dma_memcpy_nd` operations in `aiex.runtime_sequence` (e.g., to reduce buffer descriptor usage), set `COALESCE_MORE=1`.
+
+Note that avoiding using single `dma_memcpy_nd` operation for multiple transfer epochs (the default behavior) usually leads to better performance due to some optimizations we have for overlapping communication and computation.
 
 ### New Feature
 #### Profiling

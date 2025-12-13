@@ -7,6 +7,7 @@ import re
 import io
 import subprocess
 import time
+import numpy as np
 from .._mlir.dialects import allo as allo_d
 from .._mlir.ir import (
     Context,
@@ -22,6 +23,12 @@ from .vitis import (
     generate_description_file,
     write_tensor_to_file,
     read_tensor_from_file,
+    generate_hbm_config,
+    extract_hls_arg_names,
+)
+from .pynq import (
+    postprocess_hls_code_pynq,
+    codegen_pynq_host,
 )
 from .tapa import (
     codegen_tapa_host,
@@ -35,7 +42,12 @@ from ..passes import (
 )
 from ..harness.makefile_gen.makegen import generate_makefile
 from ..ir.transform import find_func_in_module
-from ..utils import get_func_inputs_outputs, c2allo_type
+from ..utils import (
+    get_func_inputs_outputs,
+    c2allo_type,
+    get_bitwidth_from_type,
+    np_supported_types,
+)
 
 
 def is_available(backend="vivado_hls"):
@@ -99,7 +111,12 @@ open_solution "solution1"
     if "cosim" in mode or "hw_emu" in mode:
         out_str += "cosim_design\n"
     if "impl" in mode or "hw" in mode:
-        out_str += "export_design -flow impl\n"
+        if device in {"ultra96v2", "pynqz2", "zedboard"}:
+            # Embedded boards: export IP only, bitstream happens in Python/Vivado later
+            out_str += "export_design -rtl verilog -format ip_catalog\n"
+        else:
+            # Other platforms: run full impl in HLS
+            out_str += "export_design -flow impl\n"
     out_str += "\nexit\n"
     return out_str
 
@@ -131,7 +148,16 @@ def separate_header(hls_code, top=None):
             _, var = arg_type.rsplit(" ", 1)
             comma = "," if var[-1] == "," else ""
             ele_type = arg_type.split("[")[0].split(" ")[0].strip()
-            allo_type = c2allo_type[ele_type]
+            allo_type = None
+            if ele_type in c2allo_type:
+                allo_type = c2allo_type[ele_type]
+            else:
+                pattern = r"^ap_(u?)int<(\d+)>$"
+                match = re.match(pattern, ele_type)
+                if not match:
+                    raise ValueError(f"Fail to resolve ctype {ele_type}")
+                unsigned_flag, width = match.groups()
+                allo_type = f"{'u' if unsigned_flag else ''}int{int(width)}"
             shape = tuple(s.split("]")[0] for s in arg_type.split("[")[1:])
             args.append((allo_type, shape))
             if "[" in var:  # array
@@ -174,10 +200,8 @@ class HLSModule:
         with Context() as ctx, Location.unknown():
             allo_d.register_dialect(ctx)
             self.module = Module.parse(str(mod), ctx)
-            self.func = find_func_in_module(self.module, top_func_name)
-            if platform == "vitis_hls":
+            if platform in {"vitis_hls", "pynq"}:
                 assert func_args is not None, "Need to specify func_args"
-
                 if wrap_io:
                     generate_input_output_buffers(
                         self.module,
@@ -211,12 +235,13 @@ class HLSModule:
                 allo_d.emit_vhls(self.module, buf)
         buf.seek(0)
         self.hls_code = buf.read()
+        # pylint: disable=too-many-nested-blocks
         if project is not None:
             assert mode is not None, "mode must be specified when project is specified"
             os.makedirs(project, exist_ok=True)
             path = os.path.dirname(__file__)
             path = os.path.join(path, "../harness/")
-            if platform in {"vivado_hls", "vitis_hls", "tapa"}:
+            if platform in {"vivado_hls", "vitis_hls", "tapa", "pynq"}:
                 os.system("cp " + path + f"{platform.split('_')[0]}/* " + project)
                 with open(f"{project}/run.tcl", "w", encoding="utf-8") as outfile:
                     outfile.write(codegen_tcl(top_func_name, configs))
@@ -241,11 +266,45 @@ class HLSModule:
                     dst_path,
                     frequency=configs["frequency"],
                 )
-                generate_makefile(dst_path, project, self.platform)
+                hbm_mapping = configs.get("hbm_mapping", None)
+                generate_makefile(dst_path, project, self.platform, hbm_mapping)
                 header, self.args = separate_header(self.hls_code, self.top_func_name)
                 with open(f"{project}/kernel.h", "w", encoding="utf-8") as outfile:
                     outfile.write(header)
                 self.hls_code = postprocess_hls_code(self.hls_code, self.top_func_name)
+
+                # Generate HBM/DDR configuration file if hbm_mapping is provided
+                # This must be done AFTER postprocess_hls_code to get correct arg names
+                if hbm_mapping is not None:
+                    # Extract HLS argument names from the postprocessed code
+                    hls_arg_names = extract_hls_arg_names(
+                        self.hls_code, self.top_func_name
+                    )
+                    # Build mapping from user arg names to HLS arg names
+                    user_arg_names = []
+                    if func_args is not None and self.top_func_name in func_args:
+                        for arg in func_args[self.top_func_name]:
+                            if hasattr(arg, "name"):
+                                user_arg_names.append(arg.name)
+                            else:
+                                user_arg_names.append(str(arg))
+                    # Add return value name - it becomes the last argument
+                    # Use the last HLS arg name count to determine if there's a return
+                    if len(hls_arg_names) > len(user_arg_names):
+                        # There's a return value, add placeholder names
+                        for i in range(len(hls_arg_names) - len(user_arg_names)):
+                            user_arg_names.append(f"output_{i}")
+
+                    arg_name_mapping = None
+                    if len(user_arg_names) == len(hls_arg_names):
+                        arg_name_mapping = dict(zip(user_arg_names, hls_arg_names))
+
+                    cfg_content = generate_hbm_config(
+                        self.top_func_name, hbm_mapping, arg_name_mapping
+                    )
+                    cfg_path = os.path.join(project, f"{self.top_func_name}.cfg")
+                    with open(cfg_path, "w", encoding="utf-8") as cfg_file:
+                        cfg_file.write(cfg_content)
                 for lib in self.ext_libs:
                     cpp_file = lib.impl.split("/")[-1]
                     with open(f"{project}/{cpp_file}", "r", encoding="utf-8") as infile:
@@ -280,7 +339,38 @@ class HLSModule:
                     frequency=configs["frequency"],
                 )
                 self.args = []
-                generate_makefile(dst_path, project, self.platform)
+                hbm_mapping = configs.get("hbm_mapping", None)
+                generate_makefile(dst_path, project, self.platform, hbm_mapping)
+                # Generate HBM/DDR configuration file if hbm_mapping is provided
+                if hbm_mapping is not None:
+                    # Extract HLS argument names from the code
+                    hls_arg_names = extract_hls_arg_names(
+                        self.hls_code, self.top_func_name
+                    )
+                    # Build mapping from user arg names to HLS arg names
+                    user_arg_names = []
+                    if func_args is not None and self.top_func_name in func_args:
+                        for arg in func_args[self.top_func_name]:
+                            if hasattr(arg, "name"):
+                                user_arg_names.append(arg.name)
+                            else:
+                                user_arg_names.append(str(arg))
+                    # Add placeholder for return values if needed
+                    if len(hls_arg_names) > len(user_arg_names):
+                        for i in range(len(hls_arg_names) - len(user_arg_names)):
+                            user_arg_names.append(f"output_{i}")
+
+                    arg_name_mapping = None
+                    if len(user_arg_names) == len(hls_arg_names):
+                        arg_name_mapping = dict(zip(user_arg_names, hls_arg_names))
+
+                    cfg_content = generate_hbm_config(
+                        self.top_func_name, hbm_mapping, arg_name_mapping
+                    )
+                    cfg_path = os.path.join(project, f"{self.top_func_name}.cfg")
+                    with open(cfg_path, "w", encoding="utf-8") as cfg_file:
+                        cfg_file.write(cfg_content)
+                # [NOTE] (Shihan): I guess tapa backend do not use this one. I modified codegen_host for vitis, similar logic should be updated for tapa if self.host_code is useful here
                 self.host_code = codegen_host(
                     self.top_func_name,
                     self.module,
@@ -292,12 +382,26 @@ class HLSModule:
                 )
                 with open(f"{project}/tapa_host.cpp", "w", encoding="utf-8") as outfile:
                     outfile.write(self.tapa_host)
+            elif self.platform == "pynq":
+                assert self.mode in {"csim", "csyn", "impl"}, "Invalid mode for pynq"
+                kernel_h = os.path.join(project, "kernel.h")
+
+                # Generate kernel.h
+                header, self.args = separate_header(self.hls_code, self.top_func_name)
+                with open(kernel_h, "w", encoding="utf-8") as outfile:
+                    outfile.write(header)
+
+                # Apply PYNQ-specific HLS code tweaks and write kernel.cpp
+                self.hls_code = postprocess_hls_code_pynq(
+                    self.hls_code, self.top_func_name
+                )
             else:
                 self.host_code = ""
             with open(f"{project}/kernel.cpp", "w", encoding="utf-8") as outfile:
                 outfile.write(self.hls_code)
-            with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
-                outfile.write(self.host_code)
+            if hasattr(self, "host_code") and self.host_code:
+                with open(f"{project}/host.cpp", "w", encoding="utf-8") as outfile:
+                    outfile.write(self.host_code)
             if len(ext_libs) > 0:
                 for lib in ext_libs:
                     # Update kernel.cpp
@@ -405,12 +509,21 @@ class HLSModule:
             assert len(args) == len(inputs) + len(
                 outputs
             ), f"Number of arguments mismatch, got {len(args)}, expected {len(inputs) + len(outputs)}"
-            for i, ((_, in_shape), arg) in enumerate(zip(inputs, args)):
-                write_tensor_to_file(
-                    arg,
-                    in_shape,
-                    f"{self.project}/input{i}.data",
-                )
+            for i, ((in_dtype, in_shape), arg) in enumerate(zip(inputs, args)):
+                assert (len(in_shape) == 0 and np.isscalar(arg)) or np.prod(
+                    arg.shape
+                ) == np.prod(
+                    in_shape
+                ), f"invalid arguemnt {i}, {np.asarray(arg).shape}-{in_shape}"
+                ele_bitwidth = get_bitwidth_from_type(in_dtype)
+                assert (
+                    ele_bitwidth == 1 or ele_bitwidth % 8 == 0
+                ), "can only handle bytes"
+                # store as byte stream
+                with open(f"{self.project}/input{i}.data", "wb") as f:
+                    if np.isscalar(arg):
+                        arg = np.array(arg, dtype=np_supported_types[in_dtype])
+                    f.write(arg.tobytes())
             # check if the build folder exists
             bitstream_folder = f"{self.project}/build_dir.{self.mode}.{os.environ['XDEVICE'].rsplit('/')[-1].split('.')[0]}"
             if not os.path.exists(
@@ -430,10 +543,12 @@ class HLSModule:
             else:
                 print("Build folder exists, skip building")
                 # run the executable
-                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
-                prefix += f" cd {self.project};"
+                prefix = f"cd {self.project};"
                 if not os.path.exists(f"{self.project}/{self.top_func_name}"):
                     prefix += " make host PLATFORM=$XDEVICE;"
+                prefix += (
+                    f" XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                )
                 cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
                 print(cmd)
                 process = subprocess.Popen(cmd, shell=True)
@@ -441,11 +556,77 @@ class HLSModule:
                 if process.returncode != 0:
                     raise RuntimeError("Failed to run the executable")
             # suppose the last argument is the output tensor
-            result = read_tensor_from_file(
-                inputs[-1][0], args[-1].shape, f"{self.project}/output.data"
-            )
-            args[-1][:] = result
+            if np.isscalar(args[-1]):
+                raise RuntimeError("The output must be a tensor")
+            arr = np.fromfile(f"{self.project}/output.data", dtype=args[-1].dtype)
+            args[-1][:] = arr.reshape(args[-1].shape)
             return
+        elif self.platform == "pynq":
+            # Do not assert PYNQ availability here; the presence of a physical
+            # PYNQ device should be checked by callers that need it.
+            if self.mode == "csim":
+                cwd = os.getcwd()
+                mod = IPModule(
+                    top=self.top_func_name,
+                    impl=f"{cwd}/{self.project}/kernel.cpp",
+                    link_hls=True,
+                )
+                mod(*args)
+                return
+            if self.mode in {"csyn", "impl"}:
+                # HLS synthesis
+                cmd = f"cd {self.project}; vitis_hls -f run.tcl"
+                print(
+                    f"[{time.strftime('%H:%M:%S', time.gmtime())}] Begin synthesizing project ..."
+                )
+                process = subprocess.Popen(cmd, shell=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise RuntimeError("Failed to synthesize the design")
+
+                if self.mode == "impl":
+                    # Produce host (deploy.py)
+                    host_code = codegen_pynq_host(
+                        self.top_func_name,
+                        self.module,
+                        self.project,
+                    )
+                    with open(
+                        f"{self.project}/deploy.py", "w", encoding="utf-8"
+                    ) as outfile:
+                        outfile.write(host_code)
+
+                    # Vivado block design
+                    bd_script = "block_design.tcl"
+                    bd_script = os.path.basename(bd_script)
+                    cmd = f"cd {self.project}; vivado -mode batch -source {bd_script}"
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Running Vivado Block Design ..."
+                    )
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError(
+                            "Failed to create block design / generate bitstream"
+                        )
+
+                    # Package .bit / .hwh / deploy.py into deploy/ folder
+                    deploy_dir = os.path.join(self.project, "deploy")
+                    cmd = (
+                        f"mkdir -p {deploy_dir}; "
+                        f"cp {self.project}/build_vivado/project_1.runs/impl_1/project_1_bd_wrapper.bit {deploy_dir}/{self.top_func_name}.bit; "
+                        f"cp {self.project}/build_vivado/project_1.gen/sources_1/bd/project_1_bd/hw_handoff/project_1_bd.hwh {deploy_dir}/{self.top_func_name}.hwh; "
+                        f"cp {self.project}/deploy.py {deploy_dir}/deploy.py"
+                    )
+                    print(
+                        f"[{time.strftime('%H:%M:%S', time.gmtime())}] Collecting files for deployment ..."
+                    )
+                    print(f"Files for deployment located in {deploy_dir}")
+                    process = subprocess.Popen(cmd, shell=True)
+                    process.wait()
+                    if process.returncode != 0:
+                        raise RuntimeError("Failed to collect files")
+                return
         elif self.platform == "tapa":
             assert is_available("tapa"), "tapa is not available"
             # Use Makefile (sw_emu, hw_emu, hw)
@@ -486,10 +667,12 @@ class HLSModule:
             else:
                 print("Build folder exists, skip building")
                 # run the executable
-                prefix = f"XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
-                prefix += f" cd {self.project};"
+                prefix = f"cd {self.project};"
                 if not os.path.exists(f"{self.project}/{self.top_func_name}"):
                     prefix += " make host PLATFORM=$XDEVICE;"
+                prefix += (
+                    f" XCL_EMULATION_MODE={self.mode}" if self.mode != "hw" else ""
+                )
                 cmd = f"{prefix} ./{self.top_func_name} ../{bitstream_folder}/{self.top_func_name}.xclbin"
                 print(cmd)
                 process = subprocess.Popen(cmd, shell=True)

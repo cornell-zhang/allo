@@ -46,8 +46,8 @@ struct ExprCompare {
     int value = -1;
     // TODO: only support one constant now
     exp.walk([&](AffineExpr inner) {
-      if (inner.isa<AffineConstantExpr>())
-        value = inner.cast<AffineConstantExpr>().getValue();
+      if (llvm::isa<AffineConstantExpr>(inner))
+        value = llvm::cast<AffineConstantExpr>(inner).getValue();
     });
     return value;
   }
@@ -59,9 +59,9 @@ struct ExprCompare {
 };
 
 Attribute createZeroAttr(OpBuilder &builder, mlir::Type elementType) {
-  if (elementType.isa<FloatType>())
+  if (llvm::isa<FloatType>(elementType))
     return builder.getFloatAttr(elementType, 0.0);
-  if (elementType.isa<IntegerType>())
+  if (llvm::isa<IntegerType>(elementType))
     return builder.getIntegerAttr(elementType, 0);
   return {};
 }
@@ -128,7 +128,8 @@ LogicalResult runSplitting(func::FuncOp &f, SplitOp &splitOp) {
     // #map1 = affine_map<(d0, d1) -> (7, -d0 + 1024)>
     // %5 = affine.apply #map0(%arg3)
     // affine.for %arg4 = 0 to min #map1(%5, %5)
-    auto cstUb = ubMap.getResult(0).dyn_cast<AffineConstantExpr>().getValue();
+    auto cstUb =
+        llvm::dyn_cast<AffineConstantExpr>(ubMap.getResult(0)).getValue();
     OpBuilder opBuilder(tiledNest[1]);
     tiledNest[1].setUpperBound({}, opBuilder.getConstantAffineMap(cstUb));
   } else {
@@ -247,7 +248,7 @@ LogicalResult runTiling(func::FuncOp &f, TileOp &tileOp) {
         << band[1].getConstantUpperBound() << ") of the loop";
     return failure();
   }
-  if (band[0]->hasAttr("op_name"))
+  if (llvm::cast<AffineForOp>(band[0])->hasAttr("op_name"))
     isOuterMost = true;
 
   // 4) Tile the loops
@@ -271,7 +272,8 @@ LogicalResult runTiling(func::FuncOp &f, TileOp &tileOp) {
     auto ub = tiledNest[i].getUpperBound();
     auto ubMap = ub.getMap();
     if (ubMap.isConstant()) {
-      auto cstUb = ubMap.getResult(0).dyn_cast<AffineConstantExpr>().getValue();
+      auto cstUb =
+          llvm::dyn_cast<AffineConstantExpr>(ubMap.getResult(0)).getValue();
       OpBuilder opBuilder(tiledNest[i]);
       tiledNest[i].setUpperBound({}, opBuilder.getConstantAffineMap(cstUb));
     } else {
@@ -385,11 +387,10 @@ LogicalResult runReordering(func::FuncOp &f, ReorderOp &reorderOp) {
   // 5.1) Map input arguments to the corresponding loop names
   SmallVector<std::string> nameOfLoopsToReorder;
   for (auto loop : loopsToReorder) {
-    nameOfLoopsToReorder.push_back(loop.getDefiningOp()
-                                       ->getAttr("loop_name")
-                                       .cast<StringAttr>()
-                                       .getValue()
-                                       .str());
+    nameOfLoopsToReorder.push_back(
+        llvm::dyn_cast<StringAttr>(loop.getDefiningOp()->getAttr("loop_name"))
+            .getValue()
+            .str());
   }
 
   // 5.2) Make Case b) to Case a)
@@ -476,14 +477,15 @@ LogicalResult runIntraKernelOpCheck(func::FuncOp &f, IntraKernelToOp &intraOp) {
         isOuterMost = true;
       if (forOp->hasAttr("dep_distance")) {
         dependency_distance =
-            forOp->getAttr("dep_distance").cast<IntegerAttr>().getInt();
+            llvm::dyn_cast<IntegerAttr>(forOp->getAttr("dep_distance"))
+                .getInt();
       }
     }
   });
 
   // 4) Get data movement direction as int array
   Attribute attr = intraOp->getAttr("pe_index");
-  auto pe_index = attr.cast<ArrayAttr>().getValue();
+  auto pe_index = llvm::dyn_cast<ArrayAttr>(attr).getValue();
 
   // 5) Verify the intra-kernel data movement schedule
   if (pe_index.size() == 0) {
@@ -872,7 +874,7 @@ LogicalResult runFusing(func::FuncOp &f, FuseOp &fuseOp) {
       return;
     if (auto cst = dyn_cast<arith::ConstantOp>(
             applyOp.getOperand(1).getDefiningOp())) { // get symbolic operand
-      int cstVal = cst.getValue().cast<IntegerAttr>().getInt();
+      int cstVal = llvm::dyn_cast<IntegerAttr>(cst.getValue()).getInt();
       auto builder = OpBuilder(applyOp);
       SmallVector<AffineExpr> newDims{builder.getAffineDimExpr(0)};
       SmallVector<AffineExpr> newSymbols{builder.getAffineConstantExpr(cstVal)};
@@ -927,7 +929,7 @@ LogicalResult runComputeAt(func::FuncOp &f, ComputeAtOp &computeAtOp) {
   std::pair<bool, bool> isFound{false, false};
   for (auto rootForOp : f.getOps<AffineForOp>()) {
     auto curr_name =
-        rootForOp->getAttr("op_name").cast<StringAttr>().getValue();
+        llvm::dyn_cast<StringAttr>(rootForOp->getAttr("op_name")).getValue();
     if (producer_name == curr_name) {
       producerFor = rootForOp;
       isFound.first = true;
@@ -951,7 +953,7 @@ LogicalResult runComputeAt(func::FuncOp &f, ComputeAtOp &computeAtOp) {
     if (!forOp->hasAttr("loop_name"))
       return WalkResult::advance();
     Attribute attr = forOp->getAttr("loop_name");
-    if (loop_name == attr.cast<StringAttr>().getValue()) {
+    if (loop_name == llvm::dyn_cast<StringAttr>(attr).getValue()) {
       requested_depth = cnt_depth;
     }
     consumerIVs.push_back(forOp.getInductionVar());
@@ -1172,7 +1174,7 @@ LogicalResult runComputeAt(func::FuncOp &f, ComputeAtOp &computeAtOp) {
       return WalkResult::advance();
     auto buf = dyn_cast<memref::AllocOp>(store.getOperand(1).getDefiningOp());
     if (buf->hasAttr("name") &&
-        buf->getAttr("name").cast<StringAttr>().getValue().str() ==
+        llvm::dyn_cast<StringAttr>(buf->getAttr("name")).getValue().str() ==
             producer_name) {
       alloc = buf;
       targetStore = store;
@@ -1183,7 +1185,7 @@ LogicalResult runComputeAt(func::FuncOp &f, ComputeAtOp &computeAtOp) {
   });
   consumerFor.walk([&](AffineLoadOp load) {
     if (load->hasAttr("from") &&
-        load->getAttr("from").cast<StringAttr>().getValue().str() ==
+        llvm::dyn_cast<StringAttr>(load->getAttr("from")).getValue().str() ==
             producer_name) {
       // Check if load and targetStore are in the same block
       if (load->getBlock() == targetStore->getBlock()) {
@@ -1248,7 +1250,7 @@ LogicalResult runPartition(func::FuncOp &f, PartitionOp &partitionOp,
 
   // 3) Construct new memory layout map
   auto builder = Builder(array.getContext());
-  auto arrayType = array.getType().dyn_cast<MemRefType>();
+  auto arrayType = llvm::dyn_cast<MemRefType>(array.getType());
   auto layout = arrayType.getLayout().getAffineMap();
 
   // Walk through each dimension of the current memory
@@ -1347,7 +1349,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
   const auto op_name =
       dyn_cast<CreateOpHandleOp>(loopHandle.getOp().getDefiningOp())
           .getOpName();
-  auto arrayType = target.getType().dyn_cast<MemRefType>();
+  auto arrayType = llvm::dyn_cast<MemRefType>(target.getType());
   unsigned int rank = arrayType.getRank();
 
   // Determine whether the target array is unsigned
@@ -1360,7 +1362,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     // function argument
     if (f->hasAttr("itypes")) {
       auto top_itypes =
-          f->getAttr("itypes").cast<StringAttr>().getValue().str();
+          llvm::dyn_cast<StringAttr>(f->getAttr("itypes")).getValue().str();
       int argIdx = 0;
       for (auto arg : f.getArguments()) {
         if (arg == target) {
@@ -1457,53 +1459,57 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     // TODO: require strict load order
     AffineExpr baseExpr = originalLoadExprs[i][0];
     int baseCst = 0;
-    if (baseExpr.isa<AffineDimExpr>()) {
+    if (llvm::isa<AffineDimExpr>(baseExpr)) {
       bool allAffineDimExpr = true;
       for (int j = 0; j < cntLoad; ++j) {
         auto diff = originalLoadExprs[i][j] - baseExpr;
-        if (!originalLoadExprs[i][j].isa<AffineDimExpr>())
+        if (!llvm::isa<AffineDimExpr>(originalLoadExprs[i][j]))
           allAffineDimExpr = false;
-        if (diff.isa<AffineConstantExpr>()) {
-          span = std::max(span,
-                          (int)diff.cast<AffineConstantExpr>().getValue() + 1);
+        if (llvm::isa<AffineConstantExpr>(diff)) {
+          span = std::max(
+              span,
+              (int)llvm::dyn_cast<AffineConstantExpr>(diff).getValue() + 1);
         } else {
           assert(1 == 0 && "Load order is not strict");
         }
       }
       if (allAffineDimExpr &&
-          reductionVars.count(dim2iv[baseExpr.cast<AffineDimExpr>()]) > 0) {
-        span = reductionVars[dim2iv[baseExpr.cast<AffineDimExpr>()]];
+          reductionVars.count(dim2iv[llvm::dyn_cast<AffineDimExpr>(baseExpr)]) >
+              0) {
+        span = reductionVars[dim2iv[llvm::dyn_cast<AffineDimExpr>(baseExpr)]];
       }
-    } else if (baseExpr.isa<AffineConstantExpr>()) {
+    } else if (llvm::isa<AffineConstantExpr>(baseExpr)) {
       for (int j = 0; j < cntLoad; ++j) {
         auto diff = originalLoadExprs[i][j] - baseExpr;
-        if (diff.isa<AffineConstantExpr>()) {
-          span = std::max(span,
-                          (int)diff.cast<AffineConstantExpr>().getValue() + 1);
+        if (llvm::isa<AffineConstantExpr>(diff)) {
+          span = std::max(
+              span,
+              (int)llvm::dyn_cast<AffineConstantExpr>(diff).getValue() + 1);
         } else {
           assert(1 == 0 && "Load order is not strict");
         }
       }
     } else { // AffineBinaryOpExpr, reduction
-      auto binaryExpr = baseExpr.cast<AffineBinaryOpExpr>();
+      auto binaryExpr = llvm::dyn_cast<AffineBinaryOpExpr>(baseExpr);
       auto lhs = binaryExpr.getLHS();
       auto rhs = binaryExpr.getRHS();
       // d0 * s + d1, d1 is the reduction variable
-      if (rhs.isa<AffineDimExpr>()) {
-        auto dimExpr = rhs.cast<AffineDimExpr>();
+      if (llvm::isa<AffineDimExpr>(rhs)) {
+        auto dimExpr = llvm::dyn_cast<AffineDimExpr>(rhs);
         if (reductionVars.count(dim2iv[dimExpr]) > 0) {
           span = reductionVars[dim2iv[dimExpr]];
         }
-      } else if (rhs.isa<AffineConstantExpr>()) {
-        int cst = rhs.cast<AffineConstantExpr>().getValue();
+      } else if (llvm::isa<AffineConstantExpr>(rhs)) {
+        int cst = llvm::dyn_cast<AffineConstantExpr>(rhs).getValue();
         if (baseCst == 0)
           baseCst = cst;
         span = std::max(span, cst - baseCst + 1);
       }
-      if (lhs.isa<AffineBinaryOpExpr>()) {
-        auto binLHS = lhs.cast<AffineBinaryOpExpr>();
-        if (binLHS.getRHS().isa<AffineConstantExpr>())
-          stride = binLHS.getRHS().cast<AffineConstantExpr>().getValue();
+      if (llvm::isa<AffineBinaryOpExpr>(lhs)) {
+        auto binLHS = llvm::dyn_cast<AffineBinaryOpExpr>(lhs);
+        if (llvm::isa<AffineConstantExpr>(binLHS.getRHS()))
+          stride =
+              llvm::dyn_cast<AffineConstantExpr>(binLHS.getRHS()).getValue();
         else
           assert(1 == 0 && "Unsupported memref format");
       }
@@ -1537,12 +1543,12 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     for (int j = 0; j < (int)loadMap.getNumResults(); ++j) {
       AffineExpr expr = loadMap.getResult(j);
       if (axis == -1) {
-        if (expr.isa<AffineDimExpr>()) {
+        if (llvm::isa<AffineDimExpr>(expr)) {
           if (operands[operandIdx++] ==
               nonReductionLoops[loopAxis].getInductionVar()) {
             axis = j;
           }
-        } else if (expr.isa<AffineBinaryOpExpr>()) {
+        } else if (llvm::isa<AffineBinaryOpExpr>(expr)) {
           auto targetIV = nonReductionLoops[loopAxis].getInductionVar();
           if (operands[operandIdx] == targetIV) {
             // if the loadOp's AffineMap operand at operandIdx
@@ -1551,14 +1557,15 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
             axis = j;
           }
 
-          else if (!operands[operandIdx].isa<BlockArgument>() &&
-                   isa<AffineApplyOp>(operands[operandIdx].getDefiningOp())) {
+          else if (!llvm::isa<BlockArgument>(operands[operandIdx]) &&
+                   llvm::isa<AffineApplyOp>(
+                       operands[operandIdx].getDefiningOp())) {
             // However, the reuse loop can be transformed
             // so the induction var may not directly be the
             // loadOp's AffineMap operand at operandIdx,
             // instead, it is a result of affine.apply
-            auto applyOp =
-                dyn_cast<AffineApplyOp>(operands[operandIdx].getDefiningOp());
+            auto applyOp = llvm::dyn_cast<AffineApplyOp>(
+                operands[operandIdx].getDefiningOp());
             for (auto applyOpOperand : applyOp.getOperands()) {
               if (applyOpOperand == targetIV) {
                 axis = j;
@@ -1616,8 +1623,8 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     } else {
       requestedVars.insert(expr);
       auto var = expr - *(requestedVars.begin());
-      distance = std::max(distance,
-                          (int)(var.dyn_cast<AffineConstantExpr>().getValue()));
+      distance = std::max(
+          distance, (int)(llvm::dyn_cast<AffineConstantExpr>(var).getValue()));
     }
     return WalkResult::advance();
   });
@@ -1707,12 +1714,12 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
         // i > axis
         for (unsigned int i = axis + 1; i < rank; ++i) {
           auto expr = loadMap.getResult(i);
-          if (expr.isa<AffineBinaryOpExpr>()) {
+          if (llvm::isa<AffineBinaryOpExpr>(expr)) {
             singleLoadAffineExpr.push_back(
                 builder.getAffineDimExpr(loadRank++));
             memAffineIndices.push_back(operands[operandIdx++]);
             operandIdx++;
-          } else if (expr.isa<AffineDimExpr>()) {
+          } else if (llvm::isa<AffineDimExpr>(expr)) {
             singleLoadAffineExpr.push_back(
                 builder.getAffineDimExpr(loadRank++));
             memAffineIndices.push_back(operands[operandIdx++]);
@@ -1744,7 +1751,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
         }
       }
       // i = axis
-      if (diff.isa<AffineConstantExpr>()) {
+      if (llvm::isa<AffineConstantExpr>(diff)) {
         singleLoadAffineExpr.push_back(diff);
       } else {
         reuseAtOp.emitError("Cannot support non-constant stride");
@@ -1784,7 +1791,8 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
   auto buf = out_builder.create<memref::AllocOp>(
       rootForOp.getLoc(),
       MemRefType::get(
-          shape, target.getType().dyn_cast<MemRefType>().getElementType()));
+          shape,
+          llvm::dyn_cast<MemRefType>(target.getType()).getElementType()));
   buf->setAttr("name", StringAttr::get(buf->getContext(),
                                        StringRef(op_name.str() + "_reuse_" +
                                                  std::to_string(loopAxis))));
@@ -1849,7 +1857,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
   SmallVector<Operation *> opToRemove;
   reuseLoop.walk([&](AffineStoreOp op) {
     // skip reduction variable store
-    auto arrayType = op.getOperand(1).getType().dyn_cast<MemRefType>();
+    auto arrayType = llvm::dyn_cast<MemRefType>(op.getOperand(1).getType());
     if (arrayType.getRank() == 1 && arrayType.getShape()[0] == 1) {
       return WalkResult::advance();
     }
@@ -1901,11 +1909,12 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
     for (auto cond : condSet.getConstraints()) {
       bool sign = false;
       cond.walk([&](AffineExpr expr) {
-        if (expr.isa<AffineBinaryOpExpr>() &&
+        if (llvm::isa<AffineBinaryOpExpr>(expr) &&
             expr.getKind() == AffineExprKind::Mul) {
-          auto binExpr = expr.cast<AffineBinaryOpExpr>();
-          if (binExpr.getRHS().isa<AffineConstantExpr>() &&
-              binExpr.getRHS().cast<AffineConstantExpr>().getValue() == -1) {
+          auto binExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr);
+          if (llvm::isa<AffineConstantExpr>(binExpr.getRHS()) &&
+              llvm::dyn_cast<AffineConstantExpr>(binExpr.getRHS()).getValue() ==
+                  -1) {
             sign = true;
           }
         }
@@ -1964,7 +1973,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
       SmallVector<AffineExpr> dims;
       for (int i = 0; i < axis + 1; ++i) {
         auto expr = loadMap.getResult(i);
-        if (!expr.isa<AffineConstantExpr>()) {
+        if (!llvm::isa<AffineConstantExpr>(expr)) {
           operandIdx++;
           dims.push_back(rewriter.getAffineDimExpr(0)); // placeholder
         }
@@ -1991,10 +2000,10 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
         // reduction axis
         if (i < axis) {
           if (spans[i] > 1) {
-            if (expr.isa<AffineBinaryOpExpr>()) {
+            if (llvm::isa<AffineBinaryOpExpr>(expr)) {
               loadAffineExpr.push_back(rewriter.getAffineDimExpr(loadRank++));
               operandIdx++;
-            } else if (expr.isa<AffineDimExpr>()) {
+            } else if (llvm::isa<AffineDimExpr>(expr)) {
               loadAffineExpr.push_back(rewriter.getAffineDimExpr(loadRank++));
             } else { // expr is a constant
               loadAffineExpr.push_back(expr);
@@ -2002,16 +2011,16 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
             memAffineIndices.push_back(operands[operandIdx++]);
           } else {
             // TODO: suppose no other reduction axis before `axis`
-            if (!expr.isa<AffineConstantExpr>())
+            if (!llvm::isa<AffineConstantExpr>(expr))
               operandIdx++;
           }
         } else if (i == axis) {
           loadAffineExpr.push_back(rewriter.getAffineDimExpr(loadRank++));
-          if (expr.isa<AffineBinaryOpExpr>()) // put reduction dim
+          if (llvm::isa<AffineBinaryOpExpr>(expr)) // put reduction dim
             operandIdx++;
           memAffineIndices.push_back(operands[operandIdx++]);
         } else { // i > axis
-          if (expr.isa<AffineBinaryOpExpr>()) {
+          if (llvm::isa<AffineBinaryOpExpr>(expr)) {
             auto dim0 = rewriter.getAffineDimExpr(loadRank++);
             auto dim1 = rewriter.getAffineDimExpr(loadRank++);
             if (stride != 1) {
@@ -2022,7 +2031,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
             }
             memAffineIndices.push_back(operands[operandIdx++]);
             memAffineIndices.push_back(operands[operandIdx++]);
-          } else if (expr.isa<AffineDimExpr>()) {
+          } else if (llvm::isa<AffineDimExpr>(expr)) {
             loadAffineExpr.push_back(rewriter.getAffineDimExpr(loadRank++));
             memAffineIndices.push_back(operands[operandIdx++]);
           } else { // AffineConstantExpr
@@ -2139,8 +2148,8 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
   }
   AffineLoopBand shiftForOps; // after reuse `axis`
   for (unsigned int i = loopAxis + 1; i < nonReductionLoops.size(); ++i) {
-    auto ub =
-        target.getType().dyn_cast<MemRefType>().getShape()[i - loopAxis + axis];
+    auto ub = llvm::dyn_cast<MemRefType>(target.getType())
+                  .getShape()[i - loopAxis + axis];
     shiftForOps.push_back(builder.create<AffineForOp>(loc, 0, ub));
     shiftForOps.back()->setAttr("spatial", builder.getUnitAttr());
     builder =
@@ -2190,7 +2199,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
           auto expr = loadMap.getResult(i);
           if (i < axis) {
             if (spans[i] > 1) {
-              if (expr.isa<AffineBinaryOpExpr>()) {
+              if (llvm::isa<AffineBinaryOpExpr>(expr)) {
                 auto dim0 = builder.getAffineDimExpr(loadRank++);
                 auto dim1 = builder.getAffineDimExpr(loadRank++);
                 loadAffineExpr.push_back(dim0 + dim1);
@@ -2200,7 +2209,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
                     reductionForOps[RLCnt++].getInductionVar());
                 operandIdx++;
                 operandIdx++;
-              } else if (expr.isa<AffineDimExpr>()) { // single reduction
+              } else if (llvm::isa<AffineDimExpr>(expr)) { // single reduction
                 loadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
                 memAffineIndices.push_back(
                     reductionForOps[RLCnt++].getInductionVar());
@@ -2217,16 +2226,16 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
           } else if (i == axis) {
             loadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
             memAffineIndices.push_back(operands[operandIdx++]);
-            if (expr.isa<AffineBinaryOpExpr>())
+            if (llvm::isa<AffineBinaryOpExpr>(expr))
               operandIdx++;
           } else {
-            if (expr.isa<AffineBinaryOpExpr>()) {
+            if (llvm::isa<AffineBinaryOpExpr>(expr)) {
               loadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
               operandIdx++;
               memAffineIndices.push_back(
                   shiftForOps[SLCnt++].getInductionVar());
               operandIdx++;
-            } else if (expr.isa<AffineDimExpr>()) {
+            } else if (llvm::isa<AffineDimExpr>(expr)) {
               loadAffineExpr.push_back(builder.getAffineDimExpr(loadRank++));
               memAffineIndices.push_back(
                   shiftForOps[SLCnt++].getInductionVar());
@@ -2241,25 +2250,25 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
         for (auto operand_item : llvm::enumerate(memAffineIndices)) {
           auto operand = operand_item.value();
           // if operand is block argument, skip it
-          if (operand.isa<BlockArgument>())
+          if (llvm::isa<BlockArgument>(operand))
             continue;
 
           // if the operand's defining op is an affine.apply op, we need to
           // create identical affine.apply ops for the load op
           // there might be a cascade of affine.apply ops, so we need to
           // clone them all
-          if (isa<AffineApplyOp>(operand.getDefiningOp())) {
+          if (llvm::isa<AffineApplyOp>(operand.getDefiningOp())) {
             SmallVector<Operation *, 4> affineApplyOps;
             SmallVector<Operation *, 2> worklist{operand.getDefiningOp()};
             while (!worklist.empty()) {
               auto front = worklist[0];
               worklist.erase(worklist.begin()); // pop front
-              if (isa<AffineApplyOp>(front)) {
+              if (llvm::isa<AffineApplyOp>(front)) {
                 affineApplyOps.push_back(front);
                 for (auto opr : front->getOperands()) {
-                  if (opr.isa<BlockArgument>())
+                  if (llvm::isa<BlockArgument>(opr))
                     continue;
-                  if (isa<AffineApplyOp>(opr.getDefiningOp())) {
+                  if (llvm::isa<AffineApplyOp>(opr.getDefiningOp())) {
                     worklist.push_back(opr.getDefiningOp());
                   }
                 }
@@ -2280,7 +2289,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
               for (unsigned opr_idx = 0; opr_idx < orgOp->getNumOperands();
                    ++opr_idx) {
                 auto orgOpr = orgOp->getOperand(opr_idx);
-                if (orgOpr.isa<BlockArgument>())
+                if (llvm::isa<BlockArgument>(orgOpr))
                   continue;
                 // get the index of orgOpr.getDefiningOp() in affineApplyOps
                 auto oprDefOp_idx =
@@ -2306,13 +2315,13 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
         for (int i = 0; i < (int)rank; ++i) {
           AffineExpr baseExpr = originalLoadExprs[i][0];
           // remove the reduction ivs from the baseExpr
-          if (baseExpr.isa<AffineDimExpr>()) {
+          if (llvm::isa<AffineDimExpr>(baseExpr)) {
             memAffineIndices.push_back(dim2iv[baseExpr]);
-          } else if (baseExpr.isa<AffineBinaryOpExpr>()) {
-            auto expr = baseExpr.cast<AffineBinaryOpExpr>();
+          } else if (llvm::isa<AffineBinaryOpExpr>(baseExpr)) {
+            auto expr = llvm::dyn_cast<AffineBinaryOpExpr>(baseExpr);
             // walk LHS
             expr.getLHS().walk([&](AffineExpr e) {
-              if (e.isa<AffineDimExpr>()) {
+              if (llvm::isa<AffineDimExpr>(e)) {
                 bool isReductionIV = reductionVars.count(dim2iv[e]);
                 if (!isReductionIV)
                   memAffineIndices.push_back(dim2iv[e]);
@@ -2321,7 +2330,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
 
             // walk RHS
             expr.getRHS().walk([&](AffineExpr e) {
-              if (e.isa<AffineDimExpr>()) {
+              if (llvm::isa<AffineDimExpr>(e)) {
                 bool isReductionIV = reductionVars.count(dim2iv[e]);
                 if (!isReductionIV)
                   memAffineIndices.push_back(dim2iv[e]);
@@ -2329,7 +2338,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
             });
           } else {
             memAffineIndices.push_back(builder.create<arith::ConstantIndexOp>(
-                loc, baseExpr.dyn_cast<AffineConstantExpr>().getValue()));
+                loc, llvm::dyn_cast<AffineConstantExpr>(baseExpr).getValue()));
           }
         }
 
@@ -2338,7 +2347,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
           memAffineIndices[j] =
               shiftForOps[j - size + shiftForOps.size()].getInductionVar();
         }
-        auto shape = target.getType().dyn_cast<MemRefType>().getShape();
+        auto shape = llvm::dyn_cast<MemRefType>(target.getType()).getShape();
         for (int i = 0; i < axis; ++i) {
           if (shape[i] == 1)
             memAffineIndices[i] =
@@ -2393,7 +2402,7 @@ LogicalResult runReuseAt(func::FuncOp &f, ReuseAtOp &reuseAtOp) {
       firstLoop.erase();
       auto parent = secondLoop->getParentOp();
       if (llvm::isa<AffineIfOp>(parent)) {
-        auto ifOp = llvm::cast<AffineIfOp>(parent);
+        auto ifOp = llvm::dyn_cast<AffineIfOp>(parent);
         auto &ifBody = ifOp.getThenBlock()->getOperations();
         auto &parentBody =
             nonReductionLoops[loopAxis - 1].getBody()->getOperations();
@@ -2491,7 +2500,7 @@ LogicalResult runBufferAt(func::FuncOp &f, BufferAtOp &bufferAtOp) {
     OpBuilder builder(band[firstReductionIdx]);
     Location loc_front = band[firstReductionIdx].getLoc();
     mlir::Type elementType =
-        target.getType().dyn_cast<MemRefType>().getElementType();
+        llvm::dyn_cast<MemRefType>(target.getType()).getElementType();
     SmallVector<Value, 4> memIndices;
     // a) Initialization
     // buffer only has one element
@@ -2559,7 +2568,7 @@ LogicalResult runBufferAt(func::FuncOp &f, BufferAtOp &bufferAtOp) {
     }
     // TODO: support more data types
     mlir::Type elementType =
-        target.getType().dyn_cast<MemRefType>().getElementType();
+        llvm::dyn_cast<MemRefType>(target.getType()).getElementType();
     SmallVector<Value, 4> memIndices;
     // a) Initialization
     // a.1) Allocate buffer
@@ -2687,8 +2696,8 @@ LogicalResult runBufferAt(func::FuncOp &f, BufferAtOp &bufferAtOp) {
 
 LogicalResult runReshape(func::FuncOp &f, ReshapeOp &reshapeOp, Value &array) {
   // 1) Get the schedule
-  auto oldType = array.getType().dyn_cast<MemRefType>();
-  auto newType = reshapeOp.getOutput().getType().dyn_cast<MemRefType>();
+  auto oldType = llvm::dyn_cast<MemRefType>(array.getType());
+  auto newType = llvm::dyn_cast<MemRefType>(reshapeOp.getOutput().getType());
   int oldRank = oldType.getRank();
   int newRank = newType.getRank();
   auto oldShape = oldType.getShape();
@@ -2771,7 +2780,7 @@ LogicalResult
 runInterKernelDataPlacement(std::map<std::string, func::FuncOp> &funcMap,
                             Value &arrayToStream, int fifo_depth = -1) {
   // Construct new array type (add stream attribute)
-  auto arrayType = arrayToStream.getType().dyn_cast<MemRefType>();
+  auto arrayType = llvm::dyn_cast<MemRefType>(arrayToStream.getType());
   auto shape = arrayType.getShape();
   if (fifo_depth == -1) {
     // a conversative estimation
@@ -2824,7 +2833,7 @@ runInterKernelDataPlacement(std::map<std::string, func::FuncOp> &funcMap,
 LogicalResult runInterKernelDataPlacementSingleFunction(Value &arrayToStream,
                                                         int fifo_depth = -1) {
   // Construct new array type (add stream attribute)
-  auto arrayType = arrayToStream.getType().dyn_cast<MemRefType>();
+  auto arrayType = llvm::dyn_cast<MemRefType>(arrayToStream.getType());
   auto shape = arrayType.getShape();
   if (fifo_depth == -1) {
     // a conversative estimation
@@ -2858,7 +2867,7 @@ void getInputMemRefs(AffineForOp stage, SmallVector<Value> &allMemrefs,
       for (unsigned argIdx = 1, e = op->getNumOperands(); argIdx < e;
            ++argIdx) {
         auto operand = op.getOperand(argIdx);
-        auto memrefType = operand.getType().template dyn_cast<MemRefType>();
+        auto memrefType = llvm::dyn_cast<MemRefType>(operand.getType());
         if (operand.getDefiningOp()) {
           if (memrefType && memrefType.getRank() == 1 &&
               memrefType.getShape()[0] == 1)
@@ -2875,7 +2884,7 @@ void getOutputMemRefs(AffineForOp stage, SmallVector<Value> &allMemrefs,
                       std::set<Operation *> &opToMove) {
   SmallVector<Value> memrefToRemove;
   const auto op_name =
-      stage->getAttr("op_name").cast<StringAttr>().getValue().str();
+      llvm::dyn_cast<StringAttr>(stage->getAttr("op_name")).getValue().str();
   stage.walk([&](T op) {
     auto target = op.getOperand(opId);
     if (std::find(allMemrefs.begin(), allMemrefs.end(), target) ==
@@ -2884,7 +2893,7 @@ void getOutputMemRefs(AffineForOp stage, SmallVector<Value> &allMemrefs,
     } else {
       if (allMemrefs.size() == 1)
         return WalkResult::advance();
-      auto memrefType = target.getType().template dyn_cast<MemRefType>();
+      auto memrefType = llvm::dyn_cast<MemRefType>(target.getType());
       if (target.getDefiningOp()) {
         memrefToRemove.push_back(target);
         if (memrefType && memrefType.getRank() == 1 &&
@@ -2910,7 +2919,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
   std::set<Operation *> opToMove;
   for (auto stage : stages) {
     const auto op_name =
-        dyn_cast<CreateOpHandleOp>(stage.getDefiningOp()).getOpName();
+        llvm::dyn_cast<CreateOpHandleOp>(stage.getDefiningOp()).getOpName();
     stageNames.push_back(op_name.str());
 
     // 2) Find the requested stages
@@ -2937,7 +2946,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
   if (outlineOp->hasAttr("unify")) {
     func::FuncOp targetFunc;
     auto preFuncName =
-        outlineOp->getAttr("unify").cast<StringAttr>().getValue();
+        llvm::dyn_cast<StringAttr>(outlineOp->getAttr("unify")).getValue();
     for (func::FuncOp func : mod.getOps<func::FuncOp>()) {
       if (func.getName() == preFuncName) {
         targetFunc = func;
@@ -3061,11 +3070,12 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
         auto getConstant = [&](AffineExpr cond) {
           int cst = 0;
           cond.walk([&](AffineExpr expr) {
-            if (expr.isa<AffineBinaryOpExpr>() &&
+            if (llvm::isa<AffineBinaryOpExpr>(expr) &&
                 expr.getKind() == AffineExprKind::Add) {
-              auto binExpr = expr.cast<AffineBinaryOpExpr>();
-              if (binExpr.getRHS().isa<AffineConstantExpr>()) {
-                cst = binExpr.getRHS().cast<AffineConstantExpr>().getValue();
+              auto binExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr);
+              if (llvm::isa<AffineConstantExpr>(binExpr.getRHS())) {
+                cst = llvm::dyn_cast<AffineConstantExpr>(binExpr.getRHS())
+                          .getValue();
                 return WalkResult::interrupt();
               }
             }
@@ -3147,43 +3157,41 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
           auto expr = std::get<0>(item);
           auto targetExpr = std::get<1>(item);
           if (targetLoadMap.getNumSymbols() > 0 &&
-              targetExpr.isa<AffineBinaryOpExpr>() &&
+              llvm::isa<AffineBinaryOpExpr>(targetExpr) &&
               targetExpr.getKind() != AffineExprKind::Add) {
             int cst = 1;
-            if (expr.isa<AffineBinaryOpExpr>() &&
+            if (llvm::isa<AffineBinaryOpExpr>(expr) &&
                 expr.getKind() != AffineExprKind::Add)
-              cst = expr.cast<AffineBinaryOpExpr>()
-                        .getRHS()
-                        .cast<AffineConstantExpr>()
+              cst = llvm::dyn_cast<AffineConstantExpr>(
+                        llvm::dyn_cast<AffineBinaryOpExpr>(expr).getRHS())
                         .getValue();
             auto cstOp = call_builder.create<arith::ConstantIndexOp>(
                 targetFunc.getLoc(), cst);
             if (!isParameterized)
               allMemrefs.push_back(cstOp);
             isParameterized = true;
-          } else if (expr.isa<AffineBinaryOpExpr>() &&
+          } else if (llvm::isa<AffineBinaryOpExpr>(expr) &&
                      expr.getKind() != AffineExprKind::Add) {
-            auto cst = expr.cast<AffineBinaryOpExpr>()
-                           .getRHS()
-                           .cast<AffineConstantExpr>()
+            auto cst = llvm::dyn_cast<AffineConstantExpr>(
+                           llvm::dyn_cast<AffineBinaryOpExpr>(expr).getRHS())
                            .getValue();
             auto cstOp = call_builder.create<arith::ConstantIndexOp>(
                 targetFunc.getLoc(), cst);
-            if (targetExpr.isa<AffineBinaryOpExpr>()) {
-              targetCst = targetExpr.cast<AffineBinaryOpExpr>()
-                              .getRHS()
-                              .cast<AffineConstantExpr>()
-                              .getValue();
+            if (llvm::isa<AffineBinaryOpExpr>(targetExpr)) {
+              targetCst =
+                  llvm::dyn_cast<AffineConstantExpr>(
+                      llvm::dyn_cast<AffineBinaryOpExpr>(targetExpr).getRHS())
+                      .getValue();
             }
             if (!isDifferent)
               allMemrefs.push_back(cstOp);
             isDifferent = true;
             AffineExpr newExpr;
             if (expr.getKind() == AffineExprKind::Mul)
-              newExpr = expr.cast<AffineBinaryOpExpr>().getLHS() *
+              newExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr).getLHS() *
                         call_builder.getAffineSymbolExpr(0);
             else if (expr.getKind() == AffineExprKind::Mod) {
-              newExpr = expr.cast<AffineBinaryOpExpr>().getLHS() %
+              newExpr = llvm::dyn_cast<AffineBinaryOpExpr>(expr).getLHS() %
                         call_builder.getAffineSymbolExpr(0);
               isMod = true;
             } else
@@ -3209,7 +3217,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
             for (auto item :
                  llvm::enumerate(targetLoadOp.getAffineMap().getResults())) {
               auto expr = item.value();
-              if (expr.isa<AffineBinaryOpExpr>() &&
+              if (llvm::isa<AffineBinaryOpExpr>(expr) &&
                   expr.getKind() == AffineExprKind::Mod) {
                 pos = item.index();
                 break;
@@ -3260,8 +3268,8 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
         auto idx = item.index();
         auto srcMemref = std::get<0>(item.value());
         auto targetMemref = std::get<1>(item.value());
-        auto funcArgType = targetMemref.getType().dyn_cast<MemRefType>();
-        auto arrayType = srcMemref.getType().dyn_cast<MemRefType>();
+        auto funcArgType = llvm::dyn_cast<MemRefType>(targetMemref.getType());
+        auto arrayType = llvm::dyn_cast<MemRefType>(srcMemref.getType());
         if (!funcArgType || !arrayType) { // not a memref (index type)
           assert(funcArgType == arrayType && "Type mismatch");
           continue;
@@ -3324,9 +3332,9 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
         if (callOp.getCallee() == func.getName()) {
           for (int i = 0, size = func.getNumArguments(); i < size; ++i) {
             auto callMemrefType =
-                callOp.getOperand(i).getType().dyn_cast<MemRefType>();
+                llvm::dyn_cast<MemRefType>(callOp.getOperand(i).getType());
             auto funcMemrefType =
-                func.getArgument(i).getType().dyn_cast<MemRefType>();
+                llvm::dyn_cast<MemRefType>(func.getArgument(i).getType());
             if (callMemrefType != funcMemrefType) {
               outlineOp.emitWarning("Argument ")
                   << i << " of CallOp " << callOp
@@ -3372,7 +3380,8 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
   if (outlineOp->hasAttr("axis")) {
     // Suppose only one stage is given
     assert(rootForOps.size() == 1 && "Only one stage is expected");
-    auto loopName = outlineOp->getAttr("axis").cast<StringAttr>().getValue();
+    auto loopName =
+        llvm::dyn_cast<StringAttr>(outlineOp->getAttr("axis")).getValue();
     targetForOp = rootForOps[0];
     axis = getLoop(targetForOp, loopName);
     for (int i = 0; i <= axis; ++i)
@@ -3381,7 +3390,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
     targetForOp = rootForOps[rootForOps.size() - 1];
   }
   TypeRange argTypes(TypeArr);
-  FunctionType funcType = builder.getFunctionType(argTypes, std::nullopt);
+  FunctionType funcType = builder.getFunctionType(argTypes, TypeRange{});
   std::string func_name = "Stage";
   for (auto op_name : stageNames) {
     func_name += "_" + op_name;
@@ -3403,7 +3412,7 @@ LogicalResult runOutline(ModuleOp &mod, func::FuncOp &f, OutlineOp &outlineOp) {
     } else {
       if (f->hasAttr("itypes")) {
         auto top_itypes =
-            f->getAttr("itypes").cast<StringAttr>().getValue().str();
+            llvm::dyn_cast<StringAttr>(f->getAttr("itypes")).getValue().str();
         int argIdx = 0;
         for (auto arg : f.getArguments()) {
           if (arg == memref) {
@@ -3497,7 +3506,7 @@ void updateMemrefAccess(Operation *&user, SmallVector<AffineExpr> &dimExprs) {
     auto oldAffineMap = op.getAffineMap();
     SmallVector<AffineExpr> memAffineIndices;
     for (auto dim : dimExprs) {
-      auto pos = dim.cast<AffineDimExpr>().getPosition();
+      auto pos = llvm::dyn_cast<AffineDimExpr>(dim).getPosition();
       memAffineIndices.push_back(oldAffineMap.getResult(pos));
     }
     auto newAffineMap =
@@ -3509,16 +3518,17 @@ void updateMemrefAccess(Operation *&user, SmallVector<AffineExpr> &dimExprs) {
 
 LogicalResult runReform(func::FuncOp &f, ReformOp &reformOp, Value &array) {
   // 1) Get the schedule
-  auto oldType = array.getType().dyn_cast<MemRefType>();
+  auto oldType = llvm::dyn_cast<MemRefType>(array.getType());
   auto oldShape = oldType.getShape();
   auto layoutMap =
-      reformOp->getAttr("layout").template cast<AffineMapAttr>().getValue();
+      llvm::dyn_cast<AffineMapAttr>(reformOp->getAttr("layout")).getValue();
 
   // 2) Get new shape
   SmallVector<int64_t> newShape;
   SmallVector<AffineExpr> dimExprs;
   for (auto dim : layoutMap.getResults()) {
-    newShape.push_back(oldShape[dim.cast<AffineDimExpr>().getPosition()]);
+    newShape.push_back(
+        oldShape[llvm::dyn_cast<AffineDimExpr>(dim).getPosition()]);
     dimExprs.push_back(dim);
   }
 
@@ -3726,7 +3736,7 @@ bool applyLoopTransformation(ModuleOp &mod) {
 namespace {
 
 struct AlloLoopTransformation
-    : public LoopTransformationBase<AlloLoopTransformation> {
+    : public mlir::allo::impl::LoopTransformationBase<AlloLoopTransformation> {
 
   void runOnOperation() override {
     auto mod = getOperation();

@@ -79,3 +79,26 @@ To execute the design, prepare the input matrices using NumPy. For instance, gen
 
 Note:
   Ensure that the TAPA and required toolchain environments are correctly configured before running the flow. For further environment setup and detailed information on synthesis modes, please consult the `RapidStream TAPA <https://tapa.readthedocs.io/en/main/>`_ documentation.
+
+
+HBM/DDR Memory Mapping
+----------------------
+Similar to the Vitis HLS backend, TAPA also supports HBM/DDR memory channel mapping through the ``hbm_mapping`` configuration option. This allows you to specify which memory channels each kernel argument should be mapped to.
+
+.. code-block:: python
+
+   # Define HBM channel mapping using argument names
+   hbm_mapping = {
+       "A": 0,              # Input A -> HBM channel 0
+       "B": "HBM[1]",       # Input B -> HBM channel 1
+       "output_0": "DDR[0]", # Return value -> DDR bank 0
+   }
+
+   mod = s.build(
+       target="tapa",
+       mode="hw",
+       project="gemm.prj",
+       configs={"hbm_mapping": hbm_mapping},
+   )
+
+For more details on HBM/DDR memory mapping options, please refer to the :doc:`Vitis HLS documentation <vitis>`.

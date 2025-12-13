@@ -3,9 +3,10 @@
 
 import os
 import torch
+import math
 import torch.nn.functional as F
 import allo
-from allo.ir.types import bfloat16
+from allo.ir.types import bfloat16, Stream
 import allo.dataflow as df
 import numpy as np
 from ml_dtypes import bfloat16 as np_bfloat16
@@ -21,16 +22,17 @@ os.environ["ENABLE_AGGRESSIVE_PORT_UTILIZATION_PATCH"] = "1"
 N = 1024
 D = 64
 
-Q = np.random.randn(N, D) * 0.5
-K = np.random.randn(N, D) * 0.5
-V = np.random.randn(N, D) * 0.5
+Q = np.random.randn(N, D)
+K = np.random.randn(N, D)
+V = np.random.randn(N, D)
 
 
 # ===============================================================================
 # Torch Version
 # ===============================================================================
 def scaled_dot_product_attention(q, k, v):
-    scores = torch.matmul(q, k.transpose(-2, -1))
+    _, D = k.shape
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(D)
     attn = F.softmax(scores, dim=-1)
     output = torch.matmul(attn, v)
     return output
@@ -97,15 +99,16 @@ def gen_attn_score_primitives():
 
 @df.region()
 def attn_score_kernel():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
+    pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, D] @ LyA, B: Ty[D, N] @ LyB, C: Ty[N, N] @ LyC):
         pk, pm, pn = df.get_pid()
+        C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
-            C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+            C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
-            C_in: Ty[Mt, Nt] = 0
+            C_in[:, :] = 0
         C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
@@ -123,6 +126,41 @@ attn_score_mod = df.build(
     num_iters=1000,
 )
 
+
+SCALING_P0 = N // 64
+SCALING_P1 = N // 64
+
+
+@df.region()
+def scaling_kernel():
+
+    @df.kernel(mapping=[SCALING_P0, SCALING_P1])
+    def core(C_in: Ty[N, N] @ LyC, C_out: Ty[N, N] @ LyC):
+        C_out[:, :] = allo.mul(C_in, 0.125)
+
+
+def gen_scaling_primitives():
+    COL, ROW = 4, 4
+    primitives = []
+    for row in range(ROW):
+        for col in range(COL):
+            nodes = []
+            for i in range(SCALING_P0 // ROW):
+                for j in range(SCALING_P1 // COL):
+                    nodes.append(f"core_{row + i * ROW}_{col + j * COL}")
+            primitives.append(("bundle", nodes))
+    return primitives
+
+
+scaling_mod = df.build(
+    scaling_kernel,
+    target="aie",
+    project="scaling.prj",
+    mapping_primitives=gen_scaling_primitives(),
+    profile=True,
+    warmup=200,
+    num_iters=1000,
+)
 
 SOFTMAX_P0 = N // 4
 SOFTMAX_Ly = Layout("S0R")
@@ -174,15 +212,16 @@ LyC = Layout("S1S0")
 
 @df.region()
 def top():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(Pk - 1, Pm, Pn))
+    pipe: Stream[Ty[Mt, Nt], 2][Pk - 1, Pm, Pn]
 
     @df.kernel(mapping=[Pk, Pm, Pn])
     def gemm(A: Ty[N, N] @ LyA, B: Ty[N, D] @ LyB, C: Ty[N, D] @ LyC):
         pk, pm, pn = df.get_pid()
+        C_in: Ty[Mt, Nt]
         with allo.meta_if(pk > 0):
-            C_in: Ty[Mt, Nt] = pipe[pk - 1, pm, pn].get()
+            C_in[:, :] = pipe[pk - 1, pm, pn].get()
         with allo.meta_else():
-            C_in: Ty[Mt, Nt] = 0
+            C_in[:, :] = 0
         C_out: Ty[Mt, Nt] = allo.add(allo.matmul(A, B), C_in)
         with allo.meta_if(pk < Pk - 1):
             pipe[pk, pm, pn].put(C_out)
@@ -231,6 +270,7 @@ V_ = V.astype(np_bfloat16)
 
 attention_score = np.empty((N, N), dtype=np_bfloat16)
 attn_score_mod(Q_, K_.T, attention_score)
+scaling_mod(attention_score, attention_score)
 attn_weight = np.zeros((N, N)).astype(np_bfloat16)
 softmax_mod(attention_score, attn_weight)
 x = np.zeros((N, D)).astype(np_bfloat16)

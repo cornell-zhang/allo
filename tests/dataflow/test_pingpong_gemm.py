@@ -1,7 +1,7 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from allo.ir.types import float32
+from allo.ir.types import float32, Stream
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
@@ -14,7 +14,7 @@ Mt, Nt = M // P0, N // P1
 
 @df.region()
 def top():
-    pipe = df.array(df.pipe(dtype=Ty, shape=(Mt, Nt), depth=2), shape=(P0, P1))
+    pipe: Stream[Ty[Mt, Nt], 2][P0, P1]
 
     @df.kernel(mapping=[P0, P1])
     def gemm0(A: Ty[M, K], B: Ty[K, N]):
@@ -44,6 +44,11 @@ def test_cooperative_gemm():
     A = np.random.rand(M, K).astype(np.float32)
     B = np.random.rand(K, N).astype(np.float32)
     C = np.zeros((M, N), dtype=np.float32)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(A, B, C)
+    np.testing.assert_allclose(C, np.dot(A, B), atol=1e-5)
+    print("Dataflow Simulator Passed!")
+
     mod = df.build(top)
     if hls.is_available("vitis_hls"):
         C = np.zeros((M, N), dtype=np.float32)

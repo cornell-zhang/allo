@@ -84,11 +84,7 @@ def CustomizationOp : Allo_Op<"customization", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type);
   let regions = (region AnyRegion:$body);
-  
-  let builders = [OpBuilder<(ins
-    "StringRef":$name, "FunctionType":$type,
-    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)
-  >];
+
   let extraClassDeclaration = [{
     //===------------------------------------------------------------------===//
     // CallableOpInterface
@@ -230,6 +226,29 @@ def ApplyOp : Allo_Op<"apply", [CallOpInterface,
     /// Set the callee for this operation.
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
+    }
+    
+    /// ArgAndResultAttrsOpInterface
+    ::mlir::ArrayAttr getArgAttrsAttr() {
+      return nullptr;
+    }
+
+    ::mlir::ArrayAttr getResAttrsAttr() {
+      return nullptr;
+    }
+    
+    void setArgAttrsAttr(::mlir::ArrayAttr attrs) {
+    }
+
+    void setResAttrsAttr(::mlir::ArrayAttr attrs) {
+    }
+
+    ::mlir::Attribute removeArgAttrsAttr() {
+        return nullptr;
+    }
+
+    ::mlir::Attribute removeResAttrsAttr() {
+        return nullptr;
     }
   }];
 }
@@ -682,10 +701,10 @@ def Allo_ReplaceOp : Allo_Op<"replace">
 // Fixed-point operations
 //===----------------------------------------------------------------------===//
 
-def AnyFixed : Type<CPred<"$_self.isa<allo::FixedType>() || $_self.isa<allo::UFixedType>()">, "fixed-point",
+def AnyFixed : Type<CPred<"::llvm::isa<::mlir::allo::FixedType>($_self) || ::llvm::isa<::mlir::allo::UFixedType>($_self)">, "fixed-point",
                     "allo::AnyFixedType">;
 def FixedLike: TypeConstraint<Or<[AnyFixed.predicate,
-        VectorOf<[AnyFixed]>.predicate, TensorOf<[AnyFixed]>.predicate]>,
+        VectorOfAnyRankOf<[AnyFixed]>.predicate, TensorOf<[AnyFixed]>.predicate]>,
     "fixed-point-like">;
 
 class FixedBinaryOp<string mnemonic, list<Trait> traits = []> :

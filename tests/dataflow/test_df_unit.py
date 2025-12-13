@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import allo
-from allo.ir.types import UInt, float32, index
+from allo.ir.types import UInt, float32, index, Stream
 import allo.dataflow as df
 import numpy as np
 
@@ -12,7 +12,7 @@ def test_uint():
 
     @df.region()
     def top():
-        stream = df.pipe(dtype=UInt(B * 8), shape=(), depth=4)
+        stream: Stream[UInt(B * 8), 4]
 
         @df.kernel(mapping=[1])
         def load(A: UInt(B * 8)[M, N]):
@@ -41,7 +41,7 @@ def test_func_index():
 
     @df.region()
     def top():
-        pipe = df.pipe(dtype=Ty, shape=(), depth=4)
+        pipe: Stream[Ty, 4]
 
         @df.kernel(mapping=[1])
         def producer(A: Ty[M, N]):
@@ -60,7 +60,7 @@ def test_func_index():
     sim_mod = df.build(top, target="simulator")
     sim_mod(A, B)
     np.testing.assert_allclose(A + 1, B)
-    print("Passed!")
+    print("Dataflow Simulator Passed!")
 
 
 if __name__ == "__main__":

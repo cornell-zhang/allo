@@ -1,9 +1,10 @@
-# pylint: disable=import-error, no-name-in-module, c-extension-no-member, too-many-nested-blocks, consider-using-namedtuple-or-dataclass, too-many-branches
+# pylint: disable=import-error, no-name-in-module, c-extension-no-member, consider-using-namedtuple-or-dataclass, too-many-branches, unsubscriptable-object
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import re
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 import numpy as np
 
@@ -17,6 +18,7 @@ from ..._mlir.dialects import (
     allo as allo_d,
     arith as allo_arith_d,
     func as allo_func_d,
+    memref as allo_memref_d,
 )
 
 from ..._mlir.ir import (
@@ -45,6 +47,8 @@ class Config:
     MEM_MAX_RECV = 6
     SHIM_MAX_SEND = 2
     SHIM_MAX_RECV = 2
+    MEM_COMP_DMA_TRANSFORM_DIM = 4
+    COMP_COMP_DMA_TRANSFORM_DIM = 3
     # https://github.com/Xilinx/mlir-aie/blob/46bb8c25967f173eebe56056661be226b3933a14/programming_guide/section-2/section-2d/DMATasks.md#best-practices-for-data-movement-and-synchronization-with-npu_dma_memcpy_nd
     DMA_MAX_BDS = 16
 
@@ -113,6 +117,14 @@ class Stream:
         self.src: str = None  # source tile of the stream
         self.dst: str = None  # destination tile of the stream
 
+        # used to 'select' the right stream in a regular for loop
+        self.src_related_iter_info = None
+        self.dst_related_iter_info = None
+
+        # layout transform on stream
+        self.src_layout_transform: tuple[list[int], list[int], list[int], str] = None
+        self.dst_layout_transform: tuple[list[int], list[int], list[int], str] = None
+
     def set_element_type(self, type_str: str, context: Context):
         """
         Set the element type of the stream from a type string.
@@ -178,6 +190,39 @@ class Stream:
         else:
             raise ValueError(f"Invalid stream type {type_str}.")
 
+    def get_dimensions_to_stream(self):
+        if (
+            self.src_layout_transform is not None
+            and self.dst_layout_transform is not None
+        ):
+            if is_inverse_transform_layout_from_hint(
+                self.src_layout_transform[3], self.dst_layout_transform[3]
+            ):
+                self.src_layout_transform = None
+                self.dst_layout_transform = None
+        if self.src_layout_transform is None and self.dst_layout_transform is None:
+            return []
+        layout_transform = None
+        if self.src_layout_transform is None and self.dst_layout_transform is not None:
+            layout_transform = self.dst_layout_transform
+        elif (
+            self.src_layout_transform is not None and self.dst_layout_transform is None
+        ):
+            layout_transform = self.src_layout_transform
+        else:
+            raise ValueError("To be implemented.")
+        dimensions_to_stream: list[tuple[int, int]] = []
+        sizes = list(layout_transform[1])
+        strides = list(layout_transform[2])
+        assert len(sizes) == len(strides)
+        if self.type_str == "i4":
+            sizes[-1] //= 2
+            for i in range(len(sizes) - 1):
+                strides[i] //= 2
+        for size, stride in zip(sizes, strides):
+            dimensions_to_stream.append((size, stride))
+        return dimensions_to_stream
+
     def __str__(self):
         return f"Stream (name={self.name}, dtype={self.allo_element_type}, is_tensor={self.is_tensor}, src={self.src}, dst={self.dst})"
 
@@ -215,6 +260,7 @@ external_kernel_aie2c_type = {
     "bf16": "bfloat16",
     "f32": "float",
     "f64": "double",
+    "i4": "int8_t",  # invalid, only a placeholder
     "i8": "int8_t",
     "i16": "short",
     "i32": "int",
@@ -232,15 +278,31 @@ external_kernel_aie2c_type = {
 #   - aie2 kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2/mm.cc
 #   - aie2p kernel: https://github.com/Xilinx/mlir-aie/blob/v1.0/aie_kernels/aie2p/mm.cc
 matmul_external_kernel_config_map = {
-    ("i4", "i8"): {"aie2": (4, 16, 8)},
+    ("i4", "i8"): {"ctype": ("int8", "int8"), "aie2": (4, 16, 8)},
     ("i8", "i4", "i8"): {"aie2": (4, 16, 8)},  # i8xi4 -> i8
-    ("i8", "i8"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i8", "i16"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i8", "i32"): {"aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
-    ("i16", "i16"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
-    ("i16", "i32"): {"aie2": (4, 4, 4), "aie2p": (4, 4, 8)},
-    ("bf16", "bf16"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
-    ("bf16", "f32"): {"aie2": (4, 8, 4), "aie2p": (8, 8, 8)},
+    ("i8", "i8"): {"ctype": ("int8", "int8"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i16"): {"ctype": ("int8", "int16"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i8", "i32"): {"ctype": ("int8", "int32"), "aie2": (4, 8, 8), "aie2p": (8, 8, 8)},
+    ("i16", "i16"): {
+        "ctype": ("int16", "int16"),
+        "aie2": (4, 4, 4),
+        "aie2p": (4, 4, 8),
+    },
+    ("i16", "i32"): {
+        "ctype": ("int16", "int32"),
+        "aie2": (4, 4, 4),
+        "aie2p": (4, 4, 8),
+    },
+    ("bf16", "bf16"): {
+        "ctype": ("bfloat16", "bfloat16"),
+        "aie2": (4, 8, 4),
+        "aie2p": (8, 8, 8),
+    },
+    ("bf16", "f32"): {
+        "ctype": ("bfloat16", "bfloat"),
+        "aie2": (4, 8, 4),
+        "aie2p": (8, 8, 8),
+    },
 }
 
 
@@ -249,7 +311,7 @@ def inject_external_kernels(
     top_function_name,
     external_kernel_lib: dict[str, ExternalModule],
     lib_dir: str = "aie2",
-) -> tuple[dict[str, bool], dict[str, ExternalModuleBase], set[str]]:
+) -> tuple[dict[str, set[str]], dict[str, ExternalModuleBase], dict[str, str]]:
     """
     Inject external kernels for compute cores.
     TODO: is it possible to use cpp pass to inject?
@@ -262,28 +324,57 @@ def inject_external_kernels(
     and generates corresponding C++ kernel code snippets.
 
     Returns:
-        - use_external_kernels: A mapping from function names to a boolean flag indicating
-                                whether an external kernel was injected in that function.
+        - used_external_kernels: A mapping from function names to a set of kernel names of
+                                the kernels injected in that function.
         - injected_external_kernels: A dictionary mapping kernel names to tuples of external code
                             strings (C++ code and preprocessor defines).
-        - include_src: A set of C++ include directives needed for the external kernels.
+        - include_src: A dict of kernel name to C++ include directives needed for the external kernels.
     """
-    use_external_kernels: dict[str, bool] = {}
+    used_external_kernels: dict[str, set[str]] = defaultdict(set)
     injected_external_kernels: dict[str, ExternalModuleBase] = {}
-    include_src: set[str] = set()
+    include_src: dict[str, str] = {}
 
     def inject_external_kernels_recursive(operations, df_function_tag: str):
         for op in operations:
+
+            def fix_arg_type(operands, input_idx, ip):
+                """
+                Returns:
+                    - operand_types
+                    - call_operands
+                """
+                operand_types = []
+                call_operands = []
+                for operand_idx, operand in enumerate(operands):
+                    if isinstance(operand.type, MemRefType):
+                        memref_type = MemRefType.get(
+                            operand.type.shape, operand.type.element_type
+                        )
+                        operand_types.append(memref_type)
+                        if memref_type != operand.type:
+                            alloc_op = allo_memref_d.AllocOp(memref_type, [], [], ip=ip)
+                            call_operands.append(alloc_op.result)
+                            if operand_idx in input_idx:
+                                allo_memref_d.CopyOp(operand, alloc_op.result, ip=ip)
+                        else:
+                            call_operands.append(operand)
+                    else:
+                        operand_types.append(operand.type)
+                        call_operands.append(operand)
+
+                return operand_types, call_operands
+
             # 1. customized external kernel
             if isinstance(op, allo_func_d.CallOp):
-                use_external_kernels[df_function_tag] = True
+                # [NOTE]: in allo/ir/builder.py, when constructing function type, the argument types are static
                 callee_name = op.callee.value
-                # register external kernel
+                used_external_kernels[df_function_tag].add(callee_name)
                 if callee_name in injected_external_kernels:
                     continue
                 external_module = external_kernel_lib[callee_name]
+                # register external kernel
                 assert external_module is not None, "external module not found"
-                include_src.add(f'#include "{external_module.filename}"\n')
+                include_src[callee_name] = f'#include "{external_module.filename}"\n'
                 injected_external_kernels[callee_name] = external_module
                 continue
             # 2. builtin external kernel
@@ -297,6 +388,7 @@ def inject_external_kernels(
             ):
                 if (
                     op.inputs[0].owner.opview.literal_value == 0
+                    and len(op.outputs[0].type.shape) > 0
                     and len(op.outputs[0].type.shape) <= 2
                 ):
                     M = (
@@ -307,9 +399,8 @@ def inject_external_kernels(
                     N = op.outputs[0].type.shape[-1]
                     dtype = str(op.outputs[0].type.element_type)
                     ctype = external_kernel_aie2c_type[dtype]
-                    include_src.add(f'#include "{lib_dir}/zero.cc"\n')
-                    use_external_kernels[df_function_tag] = True
                     kernel_name = f"fill_zeros_{dtype}_{M}_{N}_vector"
+                    include_src[kernel_name] = f'#include "{lib_dir}/zero.cc"\n'
                     kernel_code += f"void {kernel_name}({ctype} *A)"
                     kernel_code += " {\n"
                     kernel_code += f"  zero_vectorized<{ctype}, {M}, {N}>(A);\n"
@@ -320,12 +411,10 @@ def inject_external_kernels(
             # vec add/mul
             elif op.operation.name in {"linalg.add", "linalg.mul"}:
                 op_name = op.operation.name.split(".")[1]
-                include_src.add(f'#include "aie2/{op_name}.cc"\n')
                 dtype = str(op.inputs[0].type.element_type)
                 if dtype in external_kernel_aie2c_type:
                     ctype = external_kernel_aie2c_type[dtype]
                     kernel_name = f"{op_name}_{dtype}_vector"
-                    use_external_kernels[df_function_tag] = True
                     kernel_code += f"void {kernel_name}({ctype} *A_in, {ctype} *B_in, {ctype} *C_out)"
                     kernel_code += " {\n"
                     kernel_code += f"  eltwise_v{op_name}<{ctype}, {ctype}, {np.prod(op.inputs[0].type.shape)}>(A_in, B_in, C_out);\n"
@@ -338,6 +427,7 @@ def inject_external_kernels(
                         op.inputs[1],
                         op.outputs[0],
                     ]
+                    include_src[kernel_name] = f'#include "aie2/{op_name}.cc"\n'
             # matmul
             elif op.operation.name == "linalg.matmul":
                 M, K = MemRefType(op.inputs[0].type).shape
@@ -362,18 +452,28 @@ def inject_external_kernels(
                         replace_casting = True
                 if dtype_a == dtype_b:
                     if (dtype_a, out_dtype) in matmul_external_kernel_config_map:
-                        if dtype_a == "i4":
-                            include_src.add('#include "mmi4.cc"\n')
-                        else:
-                            include_src.add('#include "mm.cc"\n')
-                        use_external_kernels[df_function_tag] = True
-                        kernel_header += f"#define DIM_M {M}\n"
-                        kernel_header += f"#define DIM_N {N}\n"
-                        kernel_header += f"#define DIM_K {K}\n"
-                        kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
                         input_idx.extend([0, 1])
                         output_idx.append(2)
-                        kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
+                        if path is None or lib_dir != "aie2":
+                            kernel_header += f"#define DIM_M {M}\n"
+                            kernel_header += f"#define DIM_N {N}\n"
+                            kernel_header += f"#define DIM_K {K}\n"
+                            kernel_header += f"#define {dtype_a}_{out_dtype}_ONLY\n"
+                            kernel_name = f"matmul_scalar_{dtype_a}_{out_dtype}"
+                        else:
+                            kernel_name = (
+                                f"matmul_scalar_{dtype_a}_{out_dtype}_{M}x{K}x{N}"
+                            )
+                            ctype = matmul_external_kernel_config_map[
+                                (dtype_a, out_dtype)
+                            ]["ctype"]
+                            m, k, n = matmul_external_kernel_config_map[
+                                (dtype_a, out_dtype)
+                            ][lib_dir]
+                            # scalar version
+                            kernel_code += f"matmul_scalar_c_func({ctype[0]}, {dtype_a}, {ctype[1]}, {out_dtype}, {m}, {k}, {n}, {M}, {K}, {N})\n\n"
+                        include_src[kernel_name] = '#include "mm.cc"\n'
                         call_builtin = True
                         if not replace_casting:
                             operands = [
@@ -391,9 +491,11 @@ def inject_external_kernels(
                             parts = init_op.attributes["lib"].value.split("_")
                             init_M, init_N = parts[3], parts[4]
                             ctype = external_kernel_aie2c_type[out_dtype]
-                            include_src.add(f'#include "{lib_dir}/zero.cc"\n')
                             init_kernel_name = (
                                 f"fill_zeros_{out_dtype}_{init_M}_{init_N}_vector"
+                            )
+                            include_src[init_kernel_name] = (
+                                f'#include "{lib_dir}/zero.cc"\n'
                             )
                             init_kernel_code = f"void {init_kernel_name}({ctype} *A)"
                             init_kernel_code += " {\n"
@@ -424,10 +526,16 @@ def inject_external_kernels(
                                 kernel.attributes["sym_visibility"] = StringAttr.get(
                                     "private"
                                 )
+                            operand_types, call_operands = fix_arg_type(
+                                operands, [0, 1], InsertionPoint(cast_op)
+                            )
+                            assert (
+                                call_operands[-1] == operands[-1]
+                            ), "The cast op should not have the dynamic memref type issue."
                             call_op = allo_func_d.CallOp(
                                 [],
                                 FlatSymbolRefAttr.get(kernel_name),
-                                operands,
+                                call_operands,
                                 ip=InsertionPoint(cast_op),
                             )
                             call_op.attributes["lib"] = StringAttr.get(kernel_name)
@@ -443,14 +551,13 @@ def inject_external_kernels(
                             for use in op.outputs[0].uses:
                                 use.owner.erase()
                 elif dtype_a == "i8" and dtype_b == "i4":
-                    include_src.add('#include "mmi4.cc"\n')
-                    use_external_kernels[df_function_tag] = True
                     kernel_header += f"#define DIM_M {M}\n"
                     kernel_header += f"#define DIM_N {N}\n"
                     kernel_header += f"#define DIM_K {K}\n"
                     input_idx.extend([0, 1])
                     output_idx.append(2)
                     kernel_name = f"matmul_scalar_{dtype_a}x{dtype_b}_{out_dtype}"
+                    include_src[kernel_name] = '#include "mixed_mm.cc"\n'
                     call_builtin = True
                     operands = [
                         op.inputs[0],
@@ -458,15 +565,27 @@ def inject_external_kernels(
                         op.outputs[0],
                     ]
             if call_builtin:
+                # [NOTE]: add more comment
+                used_external_kernels[df_function_tag].add(kernel_name)
                 if replace_op:
+                    operand_types, call_operands = fix_arg_type(
+                        operands, input_idx, InsertionPoint(op)
+                    )
                     # replace operation
                     call_op = allo_func_d.CallOp(
                         [],
                         FlatSymbolRefAttr.get(kernel_name),
-                        operands,
+                        call_operands,
                         ip=InsertionPoint(op),
                     )
                     call_op.attributes["lib"] = StringAttr.get(kernel_name)
+                    for idx, (call_operand, operand) in enumerate(
+                        zip(call_operands, operands)
+                    ):
+                        if idx in output_idx and call_operand != operand:
+                            allo_memref_d.CopyOp(
+                                call_operand, operand, ip=InsertionPoint(op)
+                            )
                     op.erase()
                 # register external kernel
                 if kernel_name in injected_external_kernels:
@@ -478,7 +597,6 @@ def inject_external_kernels(
                     kernel_code,
                     kernel_header,
                 )
-                operand_types = [x.type for x in operands]
                 func_type = allo_func_d.FunctionType.get(
                     operand_types,
                     [],
@@ -504,11 +622,10 @@ def inject_external_kernels(
             ):
                 if func.attributes["sym_name"].value != top_function_name:
                     func_tag: str = func.attributes["tag"].value
-                    use_external_kernels[func_tag] = False
                     for block in func.regions[0].blocks:
                         inject_external_kernels_recursive(block.operations, func_tag)
     return (
-        use_external_kernels,
+        used_external_kernels,
         injected_external_kernels,
         include_src,
     )
@@ -553,7 +670,7 @@ def classify_aie_functions(
     return top_func, core_funcs, external_funcs
 
 
-def get_aie_mlir_dtype_from_str(dtype_str: str) -> aie_ir.Type:
+def get_aie_mlir_dtype_from_str(dtype_str: str):
     """
     Convert a string representing a data type into the corresponding AIE IR type.
     """
@@ -591,24 +708,30 @@ def codegen_external_kernels(
     # [NOTE]: include too much may lead to 'Overflow of program memory'
     kernel_file_code = ""
     for src in include_src:
-        if "mm.cc" in src:  # this file is too large to be included
+        if "mixed_mm.cc" in src:
             with open(
-                os.path.expandvars(f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"),
-                "r",
-                encoding="utf-8",
-            ) as f:
-                mm_kernel = f.read()
-                pattern = r'#include\s+"zero\.cc"'
-                mm_kernel = re.sub(pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel)
-                kernel_file_code += mm_kernel
-        elif "mmi4.cc" in src:
-            with open(
-                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/matmul.cc"),
+                os.path.expandvars("$ALLO_EXTERNAL_KERNEL_DIR/mixed_mm.cc"),
                 "r",
                 encoding="utf-8",
             ) as f:
                 mm_kernel = f.read()
                 kernel_file_code += mm_kernel
+        elif "mm.cc" in src:  # this file is too large to be included
+            path = os.environ.get("ALLO_EXTERNAL_KERNEL_DIR")
+            if path is None or lib_dir != "aie2":
+                path = os.path.expandvars(
+                    f"$MLIR_AIE_EXTERNAL_KERNEL_DIR/{lib_dir}/mm.cc"
+                )
+                with open(path, "r", encoding="utf-8") as f:
+                    mm_kernel = f.read()
+                    pattern = r'#include\s+"zero\.cc"'
+                    mm_kernel = re.sub(
+                        pattern, f'#include "{lib_dir}/zero.cc"', mm_kernel
+                    )
+            else:
+                with open(f"{path}/mm.cc", "r", encoding="utf-8") as f:
+                    mm_kernel = f.read()
+            kernel_file_code += mm_kernel
         else:
             code += src
 
@@ -617,11 +740,12 @@ def codegen_external_kernels(
         code += kernel.kernel_header
         kernel_code += kernel.kernel_code
 
+    code += kernel_file_code
+
     code += '\nextern "C" {\n\n'
     code += kernel_code
     code += '} // extern "C"\n\n'
 
-    code += kernel_file_code
     return code
 
 
@@ -695,6 +819,27 @@ def simplify_matmul_accumulate(function: allo_func_d.FuncOp):
                     init_zero_op.erase()
                     acc_op.operands[-1].replace_all_uses_with(acc_base)
                     acc_op.erase()
+    # similar optimization apply to lib function like 'add' (the root cause is the mismatch between allo interface and lib function interface)
+    acc_ops: list[allo_func_d.CallOp] = collect_lib_func_call(function, "add")
+    for call_add_op in acc_ops:
+        output = call_add_op.operands[-1]
+        uses = list(output.uses)
+        if (
+            isinstance(output.owner, allo_ir.ir.Operation)
+            and output.owner.name == "memref.alloc"
+            and len(uses) == 2
+        ):
+            copy_op = allo_d.get_last_use_in_function(output, function)
+            if copy_op.name == "memref.copy":
+                dst = copy_op.operands[1]
+                # filter out a special case, a better solution is to move the memref.subview operation before function call
+                if (
+                    isinstance(dst.owner, allo_ir.ir.Operation)
+                    and dst.owner.name != "memref.subview"
+                ):
+                    call_add_op.operands[-1] = copy_op.operands[1]
+                    copy_op.erase()
+                    output.owner.erase()
 
 
 # ############################################################
@@ -1108,3 +1253,23 @@ def merge_token_sets(token_sets: list) -> list:
 def string_sort_key(s: str):
     nums = tuple(int(x) for x in re.findall(r"\d+", s))
     return (len(nums), nums)
+
+
+def is_inverse_transform_layout_from_hint(op1_hint, op2_hint):
+    parts_1 = re.findall(r"[^_]+", op1_hint)
+    parts_2 = re.findall(r"[^_]+", op2_hint)
+    return (
+        len(parts_1) == len(parts_2) == 4
+        and parts_1[1] == "from"
+        and parts_2[1] == "to"
+        and parts_1[0] + parts_1[2] + parts_1[3] == parts_2[0] + parts_2[2] + parts_2[3]
+    )
+
+
+def is_inverse_transform_layout(op1, op2):
+    # TODO: better checking
+    if "layout_hint" in op1.attributes and "layout_hint" in op2.attributes:
+        return is_inverse_transform_layout_from_hint(
+            op1.attributes["layout_hint"].value, op2.attributes["layout_hint"].value
+        )
+    return False

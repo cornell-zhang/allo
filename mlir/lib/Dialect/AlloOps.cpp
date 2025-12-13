@@ -12,7 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "allo/Dialect/AlloOps.h"
+#include "allo/Dialect/AlloAttrs.h"
 #include "allo/Dialect/AlloDialect.h"
+#include "allo/Dialect/AlloTypes.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -71,11 +73,11 @@ LogicalResult CustomizationOp::verify() {
 // Return the type of the same shape (scalar, vector or tensor) containing i1.
 static Type getI1SameShape(Type type) {
   auto i1Type = IntegerType::get(type.getContext(), 1);
-  if (auto tensorType = type.dyn_cast<RankedTensorType>())
+  if (auto tensorType = llvm::dyn_cast<RankedTensorType>(type))
     return RankedTensorType::get(tensorType.getShape(), i1Type);
-  if (type.isa<UnrankedTensorType>())
+  if (llvm::isa<UnrankedTensorType>(type))
     return UnrankedTensorType::get(i1Type);
-  if (auto vectorType = type.dyn_cast<VectorType>())
+  if (auto vectorType = llvm::dyn_cast<VectorType>(type))
     return VectorType::get(vectorType.getShape(), i1Type);
   return i1Type;
 }
@@ -96,6 +98,39 @@ static void buildCmpFixedOp(OpBuilder &build, OperationState &result,
 
 } // namespace allo
 } // namespace mlir
+
+//===----------------------------------------------------------------------===//
+// Custom build method implementations
+//===----------------------------------------------------------------------===//
+
+void mlir::allo::PipelineOp::build(OpBuilder &builder, OperationState &state,
+                                   allo::LoopHandleType loop, uint64_t ii) {
+  state.addTypes(loop);
+  state.addAttribute("ii", builder.getUI32IntegerAttr(ii));
+}
+
+void mlir::allo::ThreadBindOp::build(OpBuilder &builder, OperationState &state,
+                                     allo::LoopHandleType loop, uint64_t dim) {
+  state.addAttribute("dim", allo::NDRangeDimKindEnumAttr::get(
+                                builder.getContext(),
+                                static_cast<allo::NDRangeDimKindEnum>(dim)));
+}
+
+void mlir::allo::ApplyOp::build(OpBuilder &builder, OperationState &state,
+                                StringRef callee, ArrayRef<Value> operands) {
+  state.addOperands(operands);
+  state.addAttribute("callee",
+                     SymbolRefAttr::get(builder.getContext(), callee));
+}
+
+void mlir::allo::StructGetOp::build(OpBuilder &builder, OperationState &state,
+                                    Value input, size_t index) {
+  auto structType = llvm::cast<allo::StructType>(input.getType());
+  Type resultType = structType.getElementTypes()[index];
+  state.addOperands(input);
+  state.addAttribute("index", builder.getI64IntegerAttr(index));
+  state.addTypes(resultType);
+}
 
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions

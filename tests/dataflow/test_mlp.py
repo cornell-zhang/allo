@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from allo.ir.types import float32
+import tempfile
+
+from allo.ir.types import float32, Stream
 from allo.ir.utils import MockBuffer
 import allo.dataflow as df
 import allo.backend.hls as hls
 import numpy as np
+
 
 Ty = float32
 BS = 2
@@ -42,8 +45,8 @@ else:
 
 @df.region()
 def top():
-    Z0 = df.pipe(dtype=Ty, shape=(), depth=BS * M1)
-    Z1 = df.pipe(dtype=Ty, shape=(), depth=BS * M2)
+    Z0: Stream[Ty, BS * M1]
+    Z1: Stream[Ty, BS * M2]
 
     @df.kernel(mapping=[1])
     def linear1(X: Ty[BS, M0]):
@@ -117,20 +120,30 @@ def test_mlp():
     schedule_linear(s, 2, factor=8)
     schedule_linear(s, 3, factor=1)
     print(s.module)
+
+    sim_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
+    sim_mod = df.build(top, target="simulator")
+    sim_mod(X, sim_final_Y)
+    np.testing.assert_allclose(Y, sim_final_Y, rtol=1e-5)
+    print("Dataflow Simulator Passed!")
+
     if hls.is_available("vitis_hls"):
         allo_final_Y = np.zeros((BS, NUM_CLASSES), dtype=np.float32)
-        mod = s.build(target="vitis_hls", mode="csim", project="top.prj")
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED CSIM!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="csim", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED CSIM!")
         # hls
-        mod = s.build(
-            target="vitis_hls", mode="hw", project="df-mlp3-relu-unroll-new.prj"
-        )
-        mod(X, allo_final_Y)
-        np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
-        print("PASSED HW!")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod = s.build(target="vitis_hls", mode="hw", project=tmpdir)
+            mod(X, allo_final_Y)
+            np.testing.assert_allclose(Y, allo_final_Y, rtol=1e-5)
+            print("PASSED HW!")
 
 
 if __name__ == "__main__":
+    # we need to set OMP_NUM_THREADS to a large number here for simulator
+    os.environ["OMP_NUM_THREADS"] = "128"
     test_mlp()
+    del os.environ["OMP_NUM_THREADS"]

@@ -104,6 +104,10 @@ void layer_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
                                                         &C_out[0][0]);
 }
 
+void single_row_layer_norm(float A_in[512], float B_in[512], float C_out[512]) {
+  layer_norm_single_batch_no_bias<float, float, 1, 512>(A_in, B_in, C_out);
+}
+
 void rms_norm(float A_in[4][512], float B_in[512], float C_out[4][512]) {
   rms_norm_single_batch<float, float, 4, 512>(&A_in[0][0], B_in, &C_out[0][0]);
 }

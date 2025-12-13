@@ -9,7 +9,6 @@ import allo.dataflow as df
 import numpy as np
 from allo.memory import Layout
 from allo.backend.aie.external_kernel import ExternalModule
-from allo.ir.types import float32
 
 Ly = Layout("R")
 LyA = Layout("S0R")
@@ -114,7 +113,42 @@ def _test_rms_norm():
         print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
 
 
+def _test_single_row_layer_norm():
+
+    norm = ExternalModule(
+        top="single_row_layer_norm",
+        impl_path="norm.cc",
+        input_idx=[0, 1],
+        output_idx=[2],
+    )
+
+    Ty = float32
+    M, N = 4, 512
+
+    @df.region()
+    def top():
+        @df.kernel(mapping=[1])
+        def core(A: Ty[M, N], B: Ty[N], C: Ty[M, N]):
+            for i in range(M):
+                # [NOTE]: test using buffer slice as customized external kernel arguments
+                norm(A[i], B, C[i])
+
+    input_tensor = torch.randn(M, N, dtype=torch.float32)
+    weight = torch.randn(N, dtype=torch.float32)
+    output = layernorm(input_tensor, weight)
+
+    if "MLIR_AIE_INSTALL_DIR" in os.environ:
+        mod = df.build(top, target="aie")
+        output_allo = np.zeros((M, N)).astype(np.float32)
+        mod(input_tensor.cpu().numpy(), weight.cpu().numpy(), output_allo)
+        np.testing.assert_allclose(output_allo, output, rtol=1e-2)
+        print("PASSED!")
+    else:
+        print("MLIR_AIE_INSTALL_DIR unset. Skipping AIE backend test.")
+
+
 if __name__ == "__main__":
     _test_layer_norm()
     _test_rms_norm()
+    _test_single_row_layer_norm()
     _test_layer_norm(enable_trace=True)

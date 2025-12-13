@@ -38,7 +38,12 @@ def create_params(target, data):
         "############################## Setting up Project Variables ##############################\n"
     )
     target.write("TARGET := fast_hw_emu\n")
-    target.write("VPP_LDFLAGS :=\n")
+    # Add config file to VPP_LDFLAGS if hbm_mapping is provided
+    if "hbm_mapping" in data and data["hbm_mapping"]:
+        kernel_name = data["containers"][0]["name"]
+        target.write(f"VPP_LDFLAGS := --config {kernel_name}.cfg\n")
+    else:
+        target.write("VPP_LDFLAGS :=\n")
     target.write("include ./utils.mk\n")
     target.write("\n")
     target.write("TEMP_DIR := ./_x.$(TARGET).$(XSA)\n")

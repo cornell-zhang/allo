@@ -1,8 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 from typing import Any
-from allo.customize import Schedule
-from allo.ir.utils import MockBuffer
+from ..customize import Schedule
+from ..ir.utils import MockBuffer
 
 KINDS = ["reorder", "pipeline", "to", "split", "unroll"]
 

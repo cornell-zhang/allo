@@ -1,24 +1,28 @@
-# pylint: disable=consider-using-enumerate, too-many-nested-blocks, consider-iterating-dictionary， consider-using-dict-items, unsupported-binary-operation, c-extension-no-member
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# pylint: disable=consider-using-enumerate, too-many-nested-blocks, consider-iterating-dictionary, consider-using-dict-items, unsupported-binary-operation, c-extension-no-member, no-name-in-module
 
 from dataclasses import dataclass
 from collections import defaultdict, Counter
+from graphviz import Digraph
 import allo._mlir._mlir_libs._mlir as allo_ir
-from allo._mlir.ir import (
+from ..._mlir.ir import (
     InsertionPoint,
     FunctionType,
+    IntegerType,
     UnitAttr,
+    IntegerAttr,
+    ArrayAttr,
     IndexType,
     StringAttr,
 )
-from allo._mlir.dialects import (
+from ..._mlir.dialects import (
     func as func_d,
     allo as allo_d,
     arith as arith_d,
     scf as scf_d,
 )
-from allo.utils import parse_kernel_name, construct_kernel_name
+from ...utils import parse_kernel_name, construct_kernel_name
 from .utils import (
     Argument,
     Stream,
@@ -120,9 +124,10 @@ class FIFO:
         if dimensions_to_stream is not None and len(dimensions_to_stream) == 3:
             sizes = list(dimensions_to_stream[1])
             strides = list(dimensions_to_stream[2])
+            assert len(sizes) == len(strides)
             if str(dtype) == "i4":
                 sizes[-1] //= 2
-                for i in range(3):
+                for i in range(len(sizes) - 1):
                     strides[i] //= 2
             for size, stride in zip(sizes, strides):
                 self.dimensions_to_stream.append((size, stride))
@@ -344,13 +349,14 @@ class BufferedStream:
     dst_arg_idx: int
 
 
+# pylint: disable=too-many-instance-attributes
 class NodeMetaData:
     node_cnt = 0
 
     def __init__(
         self,
         name: str,
-        use_external_kernel: bool,
+        used_external_kernel: set[str],
         tag: str,
         in_types: list,
         out_types: list,
@@ -360,28 +366,21 @@ class NodeMetaData:
         self.id = NodeMetaData.node_cnt
         NodeMetaData.node_cnt += 1
         self.name = name
-        self.use_external_kernel = use_external_kernel
+        self.used_external_kernel: set[str] = (
+            used_external_kernel if used_external_kernel is not None else set()
+        )
         self.op_tag: str = tag
         self.df_kernels: set[str] = set()
         self.in_types: list = in_types
         self.out_types: list = out_types
+        self.in_types_nest_depth = [0] * len(in_types) if in_types is not None else []
+        self.out_types_nest_depth = (
+            [0] * len(out_types) if out_types is not None else []
+        )
         self.repeat: int = repeat  # repeat count after bundling
         self.length: int = length
         self.input_streams: list[Stream] = []
         self.output_streams: list[Stream] = []
-
-    def test_isomorphism(self, other: "NodeMetaData") -> bool:
-        if self.op_tag != other.op_tag:
-            return False
-        in1 = Counter((s.src, s.type_str) for s in self.input_streams)
-        in2 = Counter((s.src, s.type_str) for s in other.input_streams)
-        if in1 != in2:
-            return False
-        out1 = Counter((s.dst, s.type_str) for s in self.output_streams)
-        out2 = Counter((s.dst, s.type_str) for s in other.output_streams)
-        if out1 != out2:
-            return False
-        return True
 
 
 class NodeBase:
@@ -389,14 +388,14 @@ class NodeBase:
         self,
         name: str = None,
         func_sample: func_d.FuncOp = None,
-        use_external_kernel: bool = False,
+        used_external_kernel: set[str] = None,
         tag: str = None,
         repeat: int = 0,
         length: int = 1,
     ):
         self.meta_data: NodeMetaData = NodeMetaData(
             name,
-            use_external_kernel,
+            used_external_kernel,
             tag,
             in_types=(
                 func_sample.attributes["function_type"].value.inputs
@@ -416,12 +415,6 @@ class NodeBase:
         self.global_interfaces: dict[int, list[LiveDTensorTile]] = defaultdict(list)
         self.interface_layout: dict[int, tuple[list[int], list[int], list[int]]] = {}
         self.buffered_stream: dict[Stream, BufferedStream] = {}
-
-    def is_isomorphic_to(self, other: "NodeBase") -> bool:
-        # TODO: check in a more robust way
-        if self is other:
-            return True
-        return self.meta_data.test_isomorphism(other.meta_data)
 
     def __str__(self) -> str:
         def fmt_list(lst: list) -> str:
@@ -445,10 +438,10 @@ class InitialNode(NodeBase):
         self,
         func_sample: func_d.FuncOp,
         func_name: str,
-        use_external_kernel: bool,
+        used_external_kernel: bool,
         tag: str,
     ):
-        super().__init__(func_name, func_sample, use_external_kernel, tag, 1)
+        super().__init__(func_name, func_sample, used_external_kernel, tag, 1)
         self.org_tags.append(tag)
         self.meta_data.df_kernels.add(func_name)
 
@@ -478,25 +471,38 @@ class CollocatedNode(NodeBase):
 
     def init_for_bundle(self, node_list: list[NodeBase]):
         sample_node: NodeBase = node_list[0]
-        self.meta_data.use_external_kernel = sample_node.meta_data.use_external_kernel
+        self.meta_data.used_external_kernel = sample_node.meta_data.used_external_kernel
         self.meta_data.in_types = sample_node.meta_data.in_types
+        for i_depth in sample_node.meta_data.in_types_nest_depth:
+            self.meta_data.in_types_nest_depth.append(i_depth + 1)
         self.meta_data.out_types = sample_node.meta_data.out_types
+        for o_depth in sample_node.meta_data.out_types_nest_depth:
+            self.meta_data.out_types_nest_depth.append(o_depth + 1)
         self.meta_data.input_streams = sample_node.meta_data.input_streams
         self.meta_data.output_streams = sample_node.meta_data.output_streams
         self.global_interfaces = {key: [] for key in sample_node.global_interfaces}
         org_tags = []
-        for node in node_list:
+        for idx, node in enumerate(node_list):
             org_tags.append(node.org_tags)
             self.meta_data.df_kernels.update(node.meta_data.df_kernels)
             self.buffered_stream.update(node.buffered_stream)
             for key, value in node.global_interfaces.items():
                 assert key in self.global_interfaces
+                for v in value:
+                    v.first_use += (
+                        idx * sample_node.meta_data.length * Config.LOCAL_CODE_OFFSET
+                    )
+                    v.last_use += (
+                        idx * sample_node.meta_data.length * Config.LOCAL_CODE_OFFSET
+                    )
                 self.global_interfaces[key].extend(value)
         self.org_tags.append(tuple(org_tags))
 
     def init_for_chain(self, node_a: NodeBase, node_b: NodeBase):
-        self.meta_data.use_external_kernel = (
-            node_a.meta_data.use_external_kernel or node_b.meta_data.use_external_kernel
+        self.meta_data.used_external_kernel = (
+            node_a.meta_data.used_external_kernel.union(
+                node_b.meta_data.used_external_kernel
+            )
         )
         in_types_a: list = node_a.meta_data.in_types
         arg_idx_offset = len(in_types_a)
@@ -504,7 +510,14 @@ class CollocatedNode(NodeBase):
         out_types_a = node_a.meta_data.out_types
         out_types_b = node_b.meta_data.out_types
         self.meta_data.in_types = in_types_a + in_types_b
+        self.meta_data.in_types_nest_depth = (
+            node_a.meta_data.in_types_nest_depth + node_b.meta_data.in_types_nest_depth
+        )
         self.meta_data.out_types = out_types_a + out_types_b
+        self.meta_data.out_types_nest_depth = (
+            node_a.meta_data.out_types_nest_depth
+            + node_b.meta_data.out_types_nest_depth
+        )
         self.buffered_stream.update(node_a.buffered_stream)
         for stream_info in node_b.buffered_stream.values():
             stream_info.src_arg_idx += arg_idx_offset
@@ -535,8 +548,8 @@ class ComputationGraph:
         allo_module: allo_ir.ir.Module,
         top_func_name: str,
         stream_map: dict[str, Stream],
-        core_func_args: dict[str, dict[int, tuple[Argument, bool]]],
-        use_external_kernels: dict[str, bool],
+        core_func_args: dict[str, dict[int, tuple[Argument | list[Argument], bool]]],
+        used_external_kernels: dict[str, set[str]],
         func_instances: dict = None,
     ):
         self.allo_module = allo_module
@@ -546,7 +559,7 @@ class ComputationGraph:
         self.edges: dict[str, Stream] = stream_map
         self.func_args = core_func_args
 
-        self.dependencies: dict[str, set[str]] = defaultdict(set)
+        self.dependencies: dict[str, dict[str, int]] = {}
         self.tag_to_func: dict[str, func_d.FuncOp] = {}
 
         df_kernels = []
@@ -573,12 +586,20 @@ class ComputationGraph:
                 node = InitialNode(
                     func_sample,
                     func_name,
-                    use_external_kernels[predicate_tag],
+                    used_external_kernels[predicate_tag],
                     predicate_tag,
                 )
                 _, indexes = parse_kernel_name(func_name)
                 params = core_func_args[func_name]
                 for idx, (argument, is_input) in params.items():
+                    if isinstance(argument, list):
+                        for arg in argument:
+                            if arg.stream is not None:
+                                if is_input:
+                                    node.meta_data.input_streams.append(arg.stream)
+                                else:
+                                    node.meta_data.output_streams.append(arg.stream)
+                        continue
                     if argument.stream is not None:
                         if is_input:
                             node.meta_data.input_streams.append(argument.stream)
@@ -597,64 +618,153 @@ class ComputationGraph:
                         live_dtensor_tile.last_use = 9
                         node.global_interfaces[idx].append(live_dtensor_tile)
                 self.nodes[func_name] = node
-                self.dependencies[func_name] = set()
+                self.dependencies[func_name] = defaultdict(int)
         # initiate dependencies
         for stream in self.edges.values():
-            self.dependencies[stream.dst].add(stream.src)
+            self.dependencies[func_name][stream.src] += 1
 
     # ------------------------------------------------------------
     # Transformation Primitives
     # ------------------------------------------------------------
-    def bundle(self, node_name_list: list[str]):
+    # pylint: disable=too-many-branches
+    def bundle_multi(self, node_name_lists: list[tuple[str]]):
         """
-        [A] [B] [C] [D]  => [A] x 4
+        [A1, A2] [B1, B2] [C1, C2] [D1, D2]  => [A1, A2] x 4
 
         TODO: bundled nodes can be safely reordered
         """
-        assert len(node_name_list) >= 2, "bundle at least two nodes"
-        node_list: list[NodeBase] = []
-        for name in node_name_list:
-            assert name in self.nodes, f"Node({name}) not found"
-            node_list.append(self.nodes.pop(name))
-        sample_node: NodeBase = node_list[0]
-        for node in node_list:
-            if not sample_node.is_isomorphic_to(node):
-                raise ValueError(
-                    f"Expect to bundle isomorphic nodes, Node({node.meta_data.name}) is not isomorphic to Node({sample_node.meta_data.name})"
-                )
-        bundled_node = CollocatedNode(
-            tag=sample_node.meta_data.op_tag,
-            name=f"{sample_node.meta_data.name}x{len(node_name_list)}",
-            length=sample_node.meta_data.length,
+        assert len(node_name_lists) >= 2, "bundle at least two nodes"
+        assert all(
+            len(t) == len(node_name_lists[0]) for t in node_name_lists
+        ), "Expect to bundle isomorphic nodes"
+        node_lists: list[list[NodeBase]] = []
+        sample_op_tag_list, sample_input_patterns, sample_output_patterns = (
+            None,
+            None,
+            None,
         )
-        bundled_node.init_for_bundle(node_list)
-        # update stream
-        for name, stream in self.edges.items():
-            if stream.src in node_name_list:
-                self.dependencies[stream.dst].remove(stream.src)
-                stream.src = bundled_node.meta_data.name
-                self.dependencies[stream.dst].add(bundled_node.meta_data.name)
-            if stream.dst in node_name_list:
-                stream.dst = bundled_node.meta_data.name
-                self.dependencies[bundled_node.meta_data.name].add(stream.src)
-        # update nodes and remove bundled function
-        for idx, arg in self.func_args[sample_node.meta_data.name].items():
-            if arg[0].stream is not None:
-                for name in node_name_list:
-                    if name != sample_node.meta_data.name:
-                        self.edges.pop(self.func_args[name][idx][0].stream.name)
-                    self.func_args[name][idx][0].stream.name = arg[0].stream.name
-        self.func_args[bundled_node.meta_data.name] = self.func_args[
-            sample_node.meta_data.name
-        ]
-        self.dependencies[bundled_node.meta_data.name] = self.dependencies[
-            sample_node.meta_data.name
-        ]
-        for name in node_name_list:
-            self.func_args.pop(name)
-            self.dependencies.pop(name)
-        self.nodes[bundled_node.meta_data.name] = bundled_node
-        return bundled_node.meta_data.name
+        for bundle_idx, name_list in enumerate(node_name_lists):
+            new_token = f"bundled-{name_list[0]}-{bundle_idx}"
+            node_list: list[NodeBase] = []
+            op_tag_list: list[str] = []
+            input_patterns: list[Counter] = []
+            output_patterns: list[Counter] = []
+            for name in name_list:
+                assert name in self.nodes, f"Node({name}) not found"
+                node = self.nodes.pop(name)
+                node_list.append(node)
+                op_tag_list.append(node.meta_data.op_tag)
+                input_streams, output_streams = [], []
+                for s in node.meta_data.input_streams:
+                    if s.src in name_list:
+                        input_streams.append((name_list.index(s.src), s.type_str))
+                    else:
+                        input_streams.append((s.src, s.type_str))
+                for s in node.meta_data.output_streams:
+                    if s.dst in name_list:
+                        output_streams.append((name_list.index(s.dst), s.type_str))
+                    else:
+                        output_streams.append((s.dst, s.type_str))
+                input_patterns.append(Counter(input_streams))
+                output_patterns.append(Counter(output_streams))
+                for live_tile_list in node.global_interfaces.values():
+                    for live_tile in live_tile_list:
+                        live_tile.token = new_token
+            node_lists.append(node_list)
+            if sample_op_tag_list is None:
+                sample_op_tag_list = op_tag_list
+                sample_input_patterns = input_patterns
+                sample_output_patterns = output_patterns
+            else:
+                assert (
+                    sample_op_tag_list == op_tag_list
+                    and sample_input_patterns == input_patterns
+                    and sample_output_patterns == output_patterns
+                ), "Expect to bundle isomorphic nodes."
+        bundled_node_list: list[CollocatedNode] = []
+        bundle_size = len(node_name_lists[0])
+        for i in range(bundle_size):
+            sample_node: NodeBase = node_lists[0][i]
+            orig_nodes, orig_node_names = [], []
+            for node_list in node_lists:
+                orig_nodes.append(node_list[i])
+                orig_node_names.append(node_list[i].meta_data.name)
+            bundled_node = CollocatedNode(
+                tag=sample_node.meta_data.op_tag,
+                name=f"{sample_node.meta_data.name}x{len(node_name_lists)}",
+                length=sample_node.meta_data.length * len(node_name_lists),
+            )
+            self.dependencies[bundled_node.meta_data.name] = defaultdict(int)
+            bundled_node.init_for_bundle(orig_nodes)
+            bundled_node_list.append(bundled_node)
+            # update stream
+            for name, stream in self.edges.items():
+                if stream.src in orig_node_names:
+                    self.dependencies[stream.dst][stream.src] -= 1
+                    if self.dependencies[stream.dst][stream.src] == 0:
+                        del self.dependencies[stream.dst][stream.src]
+                    if stream.src == sample_node.meta_data.name:
+                        stream.src = bundled_node.meta_data.name
+                        self.dependencies[stream.dst][bundled_node.meta_data.name] += 1
+                    elif (
+                        stream.dst
+                        not in node_name_lists[orig_node_names.index(stream.src)]
+                    ):
+                        self.nodes[stream.dst].meta_data.input_streams.remove(stream)
+                if stream.dst in orig_node_names:
+                    if stream.dst == sample_node.meta_data.name:
+                        stream.dst = bundled_node.meta_data.name
+                        self.dependencies[bundled_node.meta_data.name][stream.src] += 1
+                    elif (
+                        stream.src
+                        not in node_name_lists[orig_node_names.index(stream.dst)]
+                    ):
+                        self.nodes[stream.src].meta_data.output_streams.remove(stream)
+            # update nodes and remove bundled function
+            for idx, arg in self.func_args[sample_node.meta_data.name].items():
+                if isinstance(arg[0], Argument):
+                    if arg[0].stream is not None:
+                        for name in orig_node_names:
+                            stream = self.func_args[name][idx][0].stream
+                            if name != sample_node.meta_data.name:
+                                if stream.name in self.edges:
+                                    self.edges.pop(stream.name)
+                            # internal edge should not be updated
+                            if not (
+                                stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
+                                stream.name = arg[0].stream.name
+                else:
+                    # stream list
+                    for name in orig_node_names:
+                        for arg_idx, stream_arg in enumerate(
+                            self.func_args[name][idx][0]
+                        ):
+                            if name != sample_node.meta_data.name:
+                                if stream_arg.stream.name in self.edges:
+                                    self.edges.pop(stream_arg.stream.name)
+                            # internal edge should not be updated
+                            if not (
+                                stream_arg.stream.src
+                                in node_name_lists[orig_node_names.index(name)]
+                                and stream_arg.stream.dst
+                                in node_name_lists[orig_node_names.index(name)]
+                            ):
+                                stream_arg.stream.name = arg[0][arg_idx].stream.name
+            self.func_args[bundled_node.meta_data.name] = self.func_args[
+                sample_node.meta_data.name
+            ]
+            self.dependencies[bundled_node.meta_data.name] = self.dependencies[
+                sample_node.meta_data.name
+            ]
+            for name in orig_node_names:
+                self.func_args.pop(name)
+                self.dependencies.pop(name)
+            self.nodes[bundled_node.meta_data.name] = bundled_node
+        return bundled_node_list
 
     def chain(self, node_name_a: str, node_name_b: str):
         """
@@ -673,6 +783,7 @@ class ComputationGraph:
             repeat=1,
             length=node_a.meta_data.length + node_b.meta_data.length,
         )
+        self.dependencies[chained_node.meta_data.name] = defaultdict(int)
         chained_node.init_for_chain(node_a, node_b)
         param_a, param_b = self.func_args[node_name_a], self.func_args[node_name_b]
         node_a.meta_data.output_streams = [
@@ -686,11 +797,35 @@ class ComputationGraph:
             if stream.src == node_name_a:
                 idx_a, idx_b = -1, -1
                 for idx, arg_info in param_a.items():
-                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                    stream_names = set()
+                    if isinstance(arg_info[0], list):
+                        for stream_arg in arg_info[0]:
+                            stream_names.add(stream_arg.stream.name)
+                    assert (
+                        isinstance(arg_info[0], Argument) or len(stream_names) == 1
+                    ), "TODO: add support to handle producer-consumer chaining where stream is used in non-unrolled meta_for loops"
+                    arg_info_ = (
+                        arg_info[0]
+                        if isinstance(arg_info[0], Argument)
+                        else arg_info[0][0]
+                    )
+                    if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_a = idx
                         break
                 for idx, arg_info in param_b.items():
-                    if arg_info[0].stream is not None and arg_info[0].stream == stream:
+                    stream_names = set()
+                    if isinstance(arg_info[0], list):
+                        for stream_arg in arg_info[0]:
+                            stream_names.add(stream_arg.stream.name)
+                    assert (
+                        isinstance(arg_info[0], Argument) or len(stream_names) == 1
+                    ), "TODO: add support to handle producer-consumer chaining where stream is used in non-unrolled meta_for loops"
+                    arg_info_ = (
+                        arg_info[0]
+                        if isinstance(arg_info[0], Argument)
+                        else arg_info[0][0]
+                    )
+                    if arg_info_.stream is not None and arg_info_.stream == stream:
                         idx_b = idx
                         break
                 assert idx_a >= 0 and idx_b >= 0
@@ -712,16 +847,16 @@ class ComputationGraph:
         self.func_args[chained_node.meta_data.name] = param_a
         for key, value in param_b.items():
             self.func_args[chained_node.meta_data.name][arg_idx_offset + key] = value
-        dep = self.dependencies.pop(node_name_a)
-        dep.update(self.dependencies.pop(node_name_b))
-        self.dependencies[chained_node.meta_data.name] = dep
+        dep_a = self.dependencies.pop(node_name_a)
+        dep_b = self.dependencies.pop(node_name_b)
+        for k, v in dep_b.items():
+            dep_a[k] += v
+        self.dependencies[chained_node.meta_data.name] = dep_a
         for deps in self.dependencies.values():
             if node_name_a in deps:
-                deps.remove(node_name_a)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_a)
             if node_name_b in deps:
-                deps.remove(node_name_b)
-                deps.add(chained_node.meta_data.name)
+                deps[chained_node.meta_data.name] = deps.pop(node_name_b)
         for stream in self.edges.values():
             if stream.src in (node_name_a, node_name_b):
                 stream.src = chained_node.meta_data.name
@@ -753,6 +888,24 @@ class ComputationGraph:
                     ip=self.insert_point,
                 )
                 new_function.attributes["df.kernel"] = UnitAttr.get()
+                new_function.attributes["input_depth"] = ArrayAttr.get(
+                    [
+                        IntegerAttr.get(
+                            IntegerType.get_signless(64),
+                            max(node.meta_data.in_types_nest_depth) - v,
+                        )
+                        for v in node.meta_data.in_types_nest_depth
+                    ]
+                )
+                new_function.attributes["output_depth"] = ArrayAttr.get(
+                    [
+                        IntegerAttr.get(
+                            IntegerType.get_signless(64),
+                            max(node.meta_data.out_types_nest_depth) - v,
+                        )
+                        for v in node.meta_data.out_types_nest_depth
+                    ]
+                )
                 entry_block = new_function.add_entry_block()
                 arg_offset = 0
                 with InsertionPoint(entry_block):
@@ -790,6 +943,10 @@ class ComputationGraph:
                                 loop = scf_d.ForOp(
                                     lower_bound=c0, upper_bound=cmax, step=c1
                                 )
+                                # "task_nest" marks the boundary of original tasks (virtual nodes).
+                                # It ensures acquire/release operations for input/output arguments
+                                # are inserted at the correct points after virtual mapping.
+                                loop.attributes["task_nest"] = UnitAttr.get()
                                 with InsertionPoint(loop.body):
                                     construct_kernel(ele_tag[0])
                                     scf_d.YieldOp([])
@@ -825,14 +982,25 @@ class ComputationGraph:
                         for ele in node.org_tags:
                             construct_kernel(ele)
                     func_d.ReturnOp([])
+
                     # Step3: Convert some streams to local buffers
+                    def is_op_in_func(op_, target_func):
+                        parent = op_
+                        while parent is not None:
+                            if parent.operation.name == "func.func":
+                                return parent == target_func
+                            parent = parent.parent
+                        return False
+
                     for bufferized_stream_info in node.buffered_stream.values():
+                        # collect put/get, filter out the put/get not in the new kernel function
                         stream_puts = [
                             use.owner
                             for use in new_function.arguments[
                                 bufferized_stream_info.src_arg_idx
                             ].uses
                             if isinstance(use.owner, allo_d.StreamPutOp)
+                            and is_op_in_func(use.owner, new_function)
                         ]
                         stream_gets = [
                             use.owner
@@ -840,18 +1008,51 @@ class ComputationGraph:
                                 bufferized_stream_info.dst_arg_idx
                             ].uses
                             if isinstance(use.owner, allo_d.StreamGetOp)
+                            and is_op_in_func(use.owner, new_function)
                         ]
                         assert len(stream_puts) == len(stream_gets)
                         for i in range(len(stream_puts)):
                             stream_put: allo_d.StreamPutOp = stream_puts[i]
                             stream_get: allo_d.StreamGetOp = stream_gets[i]
-                            # TODO: support bufferize stream in branches or even loops
                             if stream_put.parent is stream_get.parent:
                                 put_value = stream_put.operands[-1]
                                 get_result = stream_get.result
                                 get_result.replace_all_uses_with(put_value)
                                 stream_put.erase()
                                 stream_get.erase()
+                            else:
+                                put_in_loop = (
+                                    stream_put.parent is not None
+                                    and stream_put.parent.name
+                                    in {"scf.for", "affine.for"}
+                                )
+                                get_in_loop = (
+                                    stream_get.parent is not None
+                                    and stream_get.parent.name
+                                    in {"scf.for", "affine.for"}
+                                )
+                                if (
+                                    put_in_loop
+                                    and get_in_loop
+                                    and stream_put.parent.parent
+                                    == stream_get.parent.parent
+                                ):
+                                    # fixme: this is only a little trick to do very simple loop fusion
+                                    if (
+                                        len(
+                                            list(stream_put.parent.regions[0].blocks[0])
+                                        )
+                                        == 2
+                                    ):
+                                        # only contains `put` and `yield`
+                                        put_value = stream_put.operands[-1]
+                                        get_result = stream_get.result
+                                        get_result.replace_all_uses_with(put_value)
+                                        stream_put.parent.erase()
+                                        stream_get.erase()
+                                        continue
+                                # TODO: support bufferize stream across regions
+                                raise RuntimeError("TODO")
         # Step4: Clean up unused functions
         for func in self.allo_module.body.operations:
             if isinstance(func, func_d.FuncOp) and "df.kernel" in func.attributes:
@@ -936,3 +1137,12 @@ class ComputationGraph:
         for (name_1, name_2), count in connections.items():
             connection_info.append((count, name_1, name_2))
         return connection_info
+
+    def dump(self, output_dir, file_name="virtual_graph"):
+        dot = Digraph(comment="Virtual Computation Graph")
+        dot.attr(rankdir="LR")
+        for node in self.nodes.values():
+            dot.node(node.meta_data.name, label=node.meta_data.name)
+        for edge in self.edges.values():
+            dot.edge(edge.src, edge.dst, label=edge.name)
+        dot.render(file_name, directory=output_dir, format="pdf")
