@@ -662,7 +662,11 @@ class ASTTransformer(ASTBuilder):
             in_cst = ASTTransformer.build_array(ctx, dtype, tuple())
             with ctx.get_ip():
                 fill = linalg_d.fill(get_mlir_op_result(op), outs=[in_cst.result])
-            op = fill.owner if ctx.enable_tensor else in_cst
+            op = (
+                (fill.owner if hasattr(fill, "owner") else fill)
+                if ctx.enable_tensor
+                else in_cst
+            )
         # target
         alloc_op = ASTTransformer.build_array(ctx, dtype, dst_shape)
         with ctx.get_ip():
@@ -919,7 +923,11 @@ class ASTTransformer(ASTBuilder):
                     )
                     with ctx.get_ip():
                         linalg_op = linalg_d.fill(rhs_result, outs=[alloc_op.result])
-                    rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
+                    rhs = (
+                        (linalg_op.owner if hasattr(linalg_op, "owner") else linalg_op)
+                        if ctx.enable_tensor
+                        else alloc_op
+                    )
                 else:
                     rhs = ASTTransformer.build_broadcast_op(
                         ctx,
@@ -971,10 +979,14 @@ class ASTTransformer(ASTBuilder):
                             ctx, target.dtype, target.shape
                         )
                         with ctx.get_ip():
-                            linalg_op = linalg_d.copy(
+                            copy_op = linalg_d.copy(
                                 get_mlir_op_result(rhs), outs=[alloc_op.result]
                             )
-                        rhs = linalg_op.owner if ctx.enable_tensor else alloc_op
+                        rhs = (
+                            (copy_op.owner if hasattr(copy_op, "owner") else copy_op)
+                            if ctx.enable_tensor
+                            else alloc_op
+                        )
                     assert idx is None, "Not Supported"
                     ctx.buffers[target.id] = rhs
                     # FIXME (Shihan): GetGlobalOp has a "name" attribute, which may have assignment conflict
@@ -2011,17 +2023,14 @@ class ASTTransformer(ASTBuilder):
                 cond,
                 [get_mlir_op_result(var)],
                 ip=ctx.get_ip(),
-                hasElse=len(node.orelse),
+                has_else=len(node.orelse),
             )
-            # TODO: MLIR bug, need to create a then_block function
-            then_block = if_op.thenRegion.blocks[0]
         else:
             cond = build_stmt(ctx, node.test)
             if_op = scf_d.IfOp(
                 get_mlir_op_result(cond), ip=ctx.get_ip(), hasElse=len(node.orelse)
             )
-            then_block = if_op.then_block
-        ctx.set_ip(then_block)
+        ctx.set_ip(if_op.then_block)
         with ctx.block_scope_guard():
             build_stmts(ctx, node.body)
             if is_affine:
@@ -2594,7 +2603,11 @@ class ASTTransformer(ASTBuilder):
                     )
                     op = ASTTransformer.build_cast_op(ctx, res, Int(32), node.dtype)
                     op = linalg_d.fill(get_mlir_op_result(op), outs=[alloc_op.result])
-                    return op.owner if ctx.enable_tensor else alloc_op
+                    return (
+                        (op.owner if hasattr(op, "owner") else op)
+                        if ctx.enable_tensor
+                        else alloc_op
+                    )
             if fn_name == "get_pid":
                 res = []
                 for i in range(3):
@@ -2866,7 +2879,7 @@ class ASTTransformer(ASTBuilder):
                 ASTTransformer.attach_op_name(
                     ctx,
                     node,
-                    linalg_fill.owner,
+                    linalg_fill.owner if hasattr(linalg_fill, "owner") else linalg_fill,
                     f"{attr}_init_zero",
                     postfix="init_zero",
                 )
@@ -2937,7 +2950,7 @@ class ASTTransformer(ASTBuilder):
                         )
                     ],
                 )
-                op = op.owner
+                op = op.owner if hasattr(op, "owner") else op
             elif attr in {"exp", "log", "abs", "copy"}:
                 op = {
                     "exp": linalg_d.exp,
@@ -2954,7 +2967,7 @@ class ASTTransformer(ASTBuilder):
                         )
                     ],
                 )
-                op = op.owner
+                op = op.owner if hasattr(op, "owner") else op
             elif attr == "softmax":
                 # TODO: Failed to lower to LLVM, see https://reviews.llvm.org/D153422
                 # We temporarily replace SoftmaxOp with a predefined lowered function to enable LLVM execution
@@ -2981,7 +2994,7 @@ class ASTTransformer(ASTBuilder):
                         zero_op.result,
                         outs=[result_tensor],
                     )
-                    op = op.owner
+                    op = op.owner if hasattr(op, "owner") else op
                 else:
                     op = linalg_d.max(
                         get_mlir_op_result(new_args[0]),
@@ -2992,7 +3005,7 @@ class ASTTransformer(ASTBuilder):
                         ),
                         outs=[result_tensor],
                     )
-                    op = op.owner
+                    op = op.owner if hasattr(op, "owner") else op
             elif attr == "transpose":
                 with ctx.get_ip():
                     op = linalg_d.transpose(

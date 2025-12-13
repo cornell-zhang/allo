@@ -318,9 +318,10 @@ def is_reduction_loop(for_op: affine_d.AffineForOp) -> bool:
             return False
 
         while current:
-            if current.parent == loop_op:
+            parent = current.parent
+            if parent is not None and parent == loop_op:
                 return True
-            current = current.parent
+            current = parent
         return False
 
     def walk_callback(op):

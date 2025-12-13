@@ -1,6 +1,8 @@
 # Copyright Allo authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
+
 import numpy as np
 import pytest
 import allo
@@ -54,15 +56,16 @@ def test_grid_for_gemm():
     if not hls.is_available("vitis_hls"):
         print("Vitis HLS not found, skipping...")
         return
-    hls_mod = s.build(
-        target="vitis_hls",
-        mode="csim",
-        project=f"test_gemm.prj",
-    )
-    csim_out = np.zeros((32, 32), dtype=np.int32)
-    hls_mod(np_A, np_B, csim_out)
-    np.testing.assert_allclose(csim_out, np_C, atol=1e-3)
-    print("Passed HLS csim test!")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hls_mod = s.build(
+            target="vitis_hls",
+            mode="csim",
+            project=tmpdir,
+        )
+        csim_out = np.zeros((32, 32), dtype=np.int32)
+        hls_mod(np_A, np_B, csim_out)
+        np.testing.assert_allclose(csim_out, np_C, atol=1e-3)
+        print("Passed HLS csim test!")
 
 
 def test_all_gemm():

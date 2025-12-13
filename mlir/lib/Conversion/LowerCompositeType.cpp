@@ -10,7 +10,7 @@
 // in other backends as well, such as HLS backend.
 //===----------------------------------------------------------------------===//
 
-#include "allo/Conversion/Passes.h"
+#include "PassDetail.h"
 #include "allo/Dialect/AlloDialect.h"
 #include "allo/Dialect/AlloOps.h"
 #include "allo/Dialect/AlloTypes.h"
@@ -22,6 +22,13 @@
 
 using namespace mlir;
 using namespace allo;
+
+namespace mlir {
+namespace allo {
+#define GEN_PASS_DEF_LOWERCOMPOSITETYPE
+#include "allo/Conversion/Passes.h.inc"
+} // namespace allo
+} // namespace mlir
 
 namespace mlir {
 namespace allo {
@@ -94,9 +101,10 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
     BlockArgument arg = funcArgs[i];
     // Look for arguments with struct type
     Type argType = arg.getType();
-    if (const MemRefType memrefArgType = argType.dyn_cast<MemRefType>()) {
+    if (const MemRefType memrefArgType = llvm::dyn_cast<MemRefType>(argType)) {
       Type elementType = memrefArgType.getElementType();
-      if (const StructType structArgType = elementType.dyn_cast<StructType>()) {
+      if (const StructType structArgType =
+              llvm::dyn_cast<StructType>(elementType)) {
         // Confirmed that `arg` is a `memref<Struct>` argument
         // Append members to function arguments at back
         uint structArgNo = arg.getArgNumber();
@@ -106,7 +114,7 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
         ArrayRef<Type> memberTypes = structArgType.getElementTypes();
         for (const Type memberType : memberTypes) { // Memref member
           if (const MemRefType memrefMemberType =
-                  memberType.dyn_cast<MemRefType>()) {
+                  llvm::dyn_cast<MemRefType>(memberType)) {
             functionBody.addArgument(memberType, func.getLoc());
             decomposedArgTypes.push_back(memrefMemberType);
           } else { // Create memref pointer for other member type
@@ -138,7 +146,7 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
         memberArgs.push_back(memberArg);
       }
       structMemRef2fieldMemRefs.insert(
-          std::make_pair(structArg.cast<Value>().getImpl(), memberArgs));
+          std::make_pair(llvm::cast<Value>(structArg).getImpl(), memberArgs));
     }
   }
 
@@ -182,13 +190,12 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
       if (it == structMemRef2fieldMemRefs.end()) {
         // Create a memref for each field
         OpBuilder builder(struct_memref.getDefiningOp());
-        StructType struct_type = struct_value.getType().cast<StructType>();
+        StructType struct_type = llvm::cast<StructType>(struct_value.getType());
 
         for (Type field_type : struct_type.getElementTypes()) {
-          MemRefType newMemRefType = struct_memref.getType()
-                                         .cast<MemRefType>()
-                                         .clone(field_type)
-                                         .cast<MemRefType>();
+          MemRefType newMemRefType = llvm::dyn_cast<MemRefType>(
+              llvm::dyn_cast<MemRefType>(struct_memref.getType())
+                  .clone(field_type));
           Value field_memref =
               builder.create<memref::AllocOp>(loc, newMemRefType);
           field_memrefs.push_back(field_memref);
@@ -335,8 +342,9 @@ void lowerStructType(func::FuncOp &func, ModuleOp &mod) {
 Value buildStructFromInt(OpBuilder &builder, Location loc, Value int_value,
                          StructType struct_type, int lo) {
   SmallVector<Value, 4> struct_elements;
-  for (Type field_type : struct_type.cast<StructType>().getElementTypes()) {
-    if (field_type.isa<IntegerType>()) {
+  for (Type field_type :
+       llvm::dyn_cast<StructType>(struct_type).getElementTypes()) {
+    if (llvm::isa<IntegerType>(field_type)) {
       int field_bitwidth = field_type.getIntOrFloatBitWidth();
       int hi = lo + (field_bitwidth - 1);
       Value hi_idx = builder.create<mlir::arith::ConstantIndexOp>(loc, hi);
@@ -345,9 +353,9 @@ Value buildStructFromInt(OpBuilder &builder, Location loc, Value int_value,
       Value field_value = builder.create<mlir::allo::GetIntSliceOp>(
           loc, field_type, int_value, hi_idx, lo_idx);
       struct_elements.push_back(field_value);
-    } else if (field_type.isa<StructType>()) {
+    } else if (llvm::isa<StructType>(field_type)) {
       struct_elements.push_back(buildStructFromInt(
-          builder, loc, int_value, field_type.cast<StructType>(), lo));
+          builder, loc, int_value, llvm::dyn_cast<StructType>(field_type), lo));
     } else {
       llvm_unreachable("unexpected type");
     }
@@ -369,7 +377,7 @@ void lowerIntToStructOp(func::FuncOp &func) {
     Value int_value = intToStructOp->getOperand(0);
     Location loc = op->getLoc();
     // Step1: create get_bit op for each field
-    StructType struct_type = struct_value.getType().cast<StructType>();
+    StructType struct_type = llvm::cast<StructType>(struct_value.getType());
     OpBuilder builder(op);
     int lo = 0;
     // Step2: create struct construct op
@@ -451,7 +459,8 @@ bool applyLowerCompositeType(ModuleOp &mod) {
 
 namespace {
 struct AlloLowerCompositeTypeTransformation
-    : public LowerCompositeTypeBase<AlloLowerCompositeTypeTransformation> {
+    : public mlir::allo::impl::LowerCompositeTypeBase<
+          AlloLowerCompositeTypeTransformation> {
   void runOnOperation() override {
     auto mod = getOperation();
     if (!applyLowerCompositeType(mod)) {

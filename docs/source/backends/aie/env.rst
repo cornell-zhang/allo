@@ -30,7 +30,7 @@ Before proceeding with the Allo installation, please follow the instructions on 
 Install from Source
 -------------------
 
-Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the LLVM-19 project and the Allo package. In the following, we suppose you have already installed the LLVM-19 project, cloned Allo repository and created the ``allo`` conda environment.
+Please follow the general instructions in :ref:`Install from Source <install-from-source>` to install the latest LLVM project and the Allo package. In the following, we suppose you have already installed the LLVM project, cloned Allo repository and created the ``allo`` conda environment.
 
 Below are the exact commands to set up the environment:
 
@@ -109,13 +109,16 @@ To build and install Allo, you may want to set up environment variables first to
 
 .. code-block:: bash
 
-   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH
-   export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
+   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH
+   export LLVM_BUILD_DIR=/opt/llvm-project/build
 
 Next, enter Allo's root directory and install by running the following commands
 
 .. code-block:: bash
 
+   python3 -m pip install pybind11 nanobind
+   export PYBIND11_CMAKE_DIR="$(python3 -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+   export NANOBIND_CMAKE_DIR="$(python3 -c 'import nanobind; print(nanobind.cmake_dir())')"
    python3 -m pip install -v -e .
 
 .. note::
@@ -148,8 +151,8 @@ For Zhang Group students, please set up environment variables in :ref:`step3` wi
 
 .. code-block:: console
 
-   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project-19.x/build/bin:$PATH  
-   export LLVM_BUILD_DIR=/opt/llvm-project-19.x/build
+   export PATH=/opt/cmake-3.31.5-linux-x86_64/bin:/opt/llvm-project/build/bin:$PATH  
+   export LLVM_BUILD_DIR=/opt/llvm-project/build
 
 And set up Vitis and XRT in :ref:`step4` by running the following commands.
 
