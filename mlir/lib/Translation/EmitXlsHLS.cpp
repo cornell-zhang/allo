@@ -469,6 +469,9 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
     loop_name = op->getAttr("loop_name").cast<StringAttr>().getValue().str();
   }
 
+  // Memory mode compute state: emit normal for loops with local declarations
+  // (The state machine 'i' is only used for loading/output, not compute loops)
+  // Fall through to register mode loop emission for compute state
   // Emit loop directives BEFORE the loop (unroll first, then pipeline)
   emitLoopDirectives(op);
 
@@ -537,13 +540,17 @@ void XLSModuleEmitter::emitAffineFor(AffineForOp op) {
 }
 
 void XLSModuleEmitter::emitScfFor(scf::ForOp op) {
+  auto iterVar = op.getInductionVar();
+
+  // Memory mode compute state: emit normal for loops with local declarations
+  // (The state machine 'i' is only used for loading/output, not compute loops)
+  // Fall through to register mode loop emission for compute state
   // Emit loop directives BEFORE the loop (unroll first, then pipeline)
   emitLoopDirectives(op);
 
   // Emit the for loop WITHOUT label
   indent();
   os << "for (";
-  auto iterVar = op.getInductionVar();
 
   // Emit lower bound.
   emitValue(iterVar);
@@ -951,59 +958,101 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
     }
     
     // Populate arrays from channels
-    for (auto &arg : arrayArgs) {
-      auto st = arg.getType().cast<ShapedType>();
-      auto shape = st.getShape();
-      std::string localName = arrayArgToLocalName[arg];
-      std::string channelName = arrayArgToChannelName[arg];
-      
-      // Calculate total size
-      int64_t totalSize = 1;
-      for (int64_t dim : shape) totalSize *= dim;
-      
-      // Emit loop to populate from channel
-      // Use pipelining instead of unrolling since we're reading from a channel
+    if (USE_MEMORY_FLAG) {
+      // Memory mode: Generate state-based code instead of loops
+      // Emit comment placeholder for state/index variables (wrapper will add at class level)
       indent();
-      os << "#pragma hls_pipeline_init_interval 1\n";
-      indent();
-      os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
-      addIndent();
-      indent();
+      os << "// __xls_state_vars__: state, i\n";
       
-      // Generate array access with proper indexing
-      os << localName;
-      if (USE_MEMORY_FLAG || shape.size() == 1) {
-        // Memory mode uses flat indexing (already flattened), or 1D array
-        os << "[_idx]";
-      } else {
-        // Register mode with multi-dimensional: compute indices using division and modulo
-        // e.g., for [d0][d1]: v0[_idx / d1][_idx % d1]
-        // e.g., for [d0][d1][d2]: v0[_idx / (d1*d2)][(_idx / d2) % d1][_idx % d2]
-        for (size_t i = 0; i < shape.size(); ++i) {
-          os << "[";
-          if (i == shape.size() - 1) {
-            // Last dimension: just modulo
-            os << "_idx % " << shape[i];
-          } else {
-            // Calculate divisor (product of all dimensions after this one)
-            int64_t divisor = 1;
-            for (size_t j = i + 1; j < shape.size(); ++j) {
-              divisor *= shape[j];
-            }
-            if (i == 0) {
-              os << "_idx / " << divisor;
-            } else {
-              os << "(_idx / " << divisor << ") % " << shape[i];
-            }
-          }
-          os << "]";
-        }
+      // Generate state-based code for loading each input array
+      unsigned stateNum = 0;
+      for (auto &arg : arrayArgs) {
+        auto st = arg.getType().cast<ShapedType>();
+        auto shape = st.getShape();
+        std::string localName = arrayArgToLocalName[arg];
+        std::string channelName = arrayArgToChannelName[arg];
+        
+        // Calculate total size
+        int64_t totalSize = 1;
+        for (int64_t dim : shape) totalSize *= dim;
+        
+        // Emit state for loading this array
+        indent();
+        os << "// State " << stateNum << ": Load " << localName << " from " << channelName << "\n";
+        indent();
+        os << "if (state == " << stateNum << ") {\n";
+        addIndent();
+        indent();
+        os << getXLSTypeName(st.getElementType()) << " x;\n";
+        indent();
+        os << "if (" << channelName << ".nb_read(x)) {\n";
+        addIndent();
+        indent();
+        os << localName << "[i] = x;\n";
+        indent();
+        os << "i++;\n";
+        indent();
+        os << "if (i == " << totalSize << ") { i = 0; state = " << (stateNum + 1) << "; }\n";
+        reduceIndent();
+        indent();
+        os << "}\n";
+        reduceIndent();
+        indent();
+        os << "}\n\n";
+        
+        stateNum++;
       }
-      os << " = " << channelName << ".read();\n";
-      
-      reduceIndent();
-      indent();
-      os << "}\n";
+    } else {
+      // Register mode: Use for loops
+      for (auto &arg : arrayArgs) {
+        auto st = arg.getType().cast<ShapedType>();
+        auto shape = st.getShape();
+        std::string localName = arrayArgToLocalName[arg];
+        std::string channelName = arrayArgToChannelName[arg];
+        
+        // Calculate total size
+        int64_t totalSize = 1;
+        for (int64_t dim : shape) totalSize *= dim;
+        
+        // Emit loop to populate from channel
+        // Use pipelining instead of unrolling since we're reading from a channel
+        indent();
+        os << "#pragma hls_pipeline_init_interval 1\n";
+        indent();
+        os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
+        addIndent();
+        indent();
+        
+        // Generate array access with proper indexing
+        os << localName;
+        if (shape.size() == 1) {
+          os << "[_idx]";
+        } else {
+          // Register mode with multi-dimensional: compute indices using division and modulo
+          for (size_t i = 0; i < shape.size(); ++i) {
+            os << "[";
+            if (i == shape.size() - 1) {
+              os << "_idx % " << shape[i];
+            } else {
+              int64_t divisor = 1;
+              for (size_t j = i + 1; j < shape.size(); ++j) {
+                divisor *= shape[j];
+              }
+              if (i == 0) {
+                os << "_idx / " << divisor;
+              } else {
+                os << "(_idx / " << divisor << ") % " << shape[i];
+              }
+            }
+            os << "]";
+          }
+        }
+        os << " = " << channelName << ".read();\n";
+        
+        reduceIndent();
+        indent();
+        os << "}\n";
+      }
     }
     
     // Track return array if it exists
@@ -1014,62 +1063,122 @@ void XLSModuleEmitter::emitFunction(func::FuncOp func) {
       }
     }
     
-    // Emit the function body
-    Block &block = func.front();
-    allo::vhls::ModuleEmitter::emitBlock(block);
+    // Calculate compute and output state numbers
+    unsigned computeState = arrayArgs.size();
+    unsigned outputState = computeState + (returnIsArray ? 1 : 0);
     
-    // Handle return value: write array to output channel
-    if (returnIsArray && returnValue) {
-      auto terminator = block.getTerminator();
-      if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
-        for (auto operand : returnOp.getOperands()) {
-          if (operand == returnValue) {
-            auto returnType = returnValue.getType().cast<ShapedType>();
-            auto shape = returnType.getShape();
-            int64_t totalSize = 1;
-            for (int64_t dim : shape) totalSize *= dim;
-            
-            // Emit loop to write to output channel
-            // Use pipelining instead of unrolling since we're writing to a channel
-            indent();
-            os << "#pragma hls_pipeline_init_interval 1\n";
-            indent();
-            os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
-            addIndent();
-            indent();
-            
-            // Generate array access with proper indexing
-            os << outputChannelName << ".write(";
-            emitValue(returnValue);
-            if (USE_MEMORY_FLAG || shape.size() == 1) {
-              // Memory mode uses flat indexing (already flattened), or 1D array
-              os << "[_idx]";
-            } else {
-              // Register mode with multi-dimensional: compute indices using division and modulo
-              for (size_t i = 0; i < shape.size(); ++i) {
-                os << "[";
-                if (i == shape.size() - 1) {
-                  os << "_idx % " << shape[i];
-                } else {
-                  int64_t divisor = 1;
-                  for (size_t j = i + 1; j < shape.size(); ++j) {
-                    divisor *= shape[j];
-                  }
-                  if (i == 0) {
-                    os << "_idx / " << divisor;
-                  } else {
-                    os << "(_idx / " << divisor << ") % " << shape[i];
-                  }
-                }
-                os << "]";
-              }
+    if (USE_MEMORY_FLAG) {
+      // Memory mode: Generate state-based compute and output
+      
+      // Compute state: Execute function body with normal for loops
+      indent();
+      os << "// State " << computeState << ": Compute\n";
+      indent();
+      os << "else if (state == " << computeState << ") {\n";
+      addIndent();
+      
+      // Emit the function body - loops will emit as normal for loops with local declarations
+      Block &block = func.front();
+      allo::vhls::ModuleEmitter::emitBlock(block);
+      
+      // After compute completes, transition to output state (or back to 0 if no output)
+      indent();
+      unsigned nextState = returnIsArray ? outputState : 0;
+      os << "state = " << nextState << ";\n";
+      
+      reduceIndent();
+      indent();
+      os << "}\n\n";
+      
+      // Output state: Write return array to channel
+      if (returnIsArray && returnValue) {
+        auto terminator = block.getTerminator();
+        if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
+          for (auto operand : returnOp.getOperands()) {
+            if (operand == returnValue) {
+              auto returnType = returnValue.getType().cast<ShapedType>();
+              auto shape = returnType.getShape();
+              int64_t totalSize = 1;
+              for (int64_t dim : shape) totalSize *= dim;
+              
+              indent();
+              os << "// State " << outputState << ": Output\n";
+              indent();
+              os << "else { // state == " << outputState << "\n";
+              addIndent();
+              indent();
+              os << outputChannelName << ".write(";
+              emitValue(returnValue);
+              os << "[i]);\n";
+              indent();
+              os << "i++;\n";
+              indent();
+              os << "if (i == " << totalSize << ") { i = 0; state = 0; }\n";
+              reduceIndent();
+              indent();
+              os << "}\n";
+              break;
             }
-            os << ");\n";
-            
-            reduceIndent();
-            indent();
-            os << "}\n";
-            break;
+          }
+        }
+      }
+    } else {
+      // Register mode: Use normal function body and loops
+      // Emit the function body
+      Block &block = func.front();
+      allo::vhls::ModuleEmitter::emitBlock(block);
+      
+      // Handle return value: write array to output channel
+      if (returnIsArray && returnValue) {
+        auto terminator = block.getTerminator();
+        if (auto returnOp = dyn_cast<func::ReturnOp>(terminator)) {
+          for (auto operand : returnOp.getOperands()) {
+            if (operand == returnValue) {
+              auto returnType = returnValue.getType().cast<ShapedType>();
+              auto shape = returnType.getShape();
+              int64_t totalSize = 1;
+              for (int64_t dim : shape) totalSize *= dim;
+              
+              // Emit loop to write to output channel
+              indent();
+              os << "#pragma hls_pipeline_init_interval 1\n";
+              indent();
+              os << "for (int _idx = 0; _idx < " << totalSize << "; ++_idx) {\n";
+              addIndent();
+              indent();
+              
+              // Generate array access with proper indexing
+              os << outputChannelName << ".write(";
+              emitValue(returnValue);
+              if (shape.size() == 1) {
+                os << "[_idx]";
+              } else {
+                // Register mode with multi-dimensional: compute indices
+                for (size_t i = 0; i < shape.size(); ++i) {
+                  os << "[";
+                  if (i == shape.size() - 1) {
+                    os << "_idx % " << shape[i];
+                  } else {
+                    int64_t divisor = 1;
+                    for (size_t j = i + 1; j < shape.size(); ++j) {
+                      divisor *= shape[j];
+                    }
+                    if (i == 0) {
+                      os << "_idx / " << divisor;
+                    } else {
+                      os << "(_idx / " << divisor << ") % " << shape[i];
+                    }
+                  }
+                  os << "]";
+                }
+              }
+              os << ");\n";
+              
+              reduceIndent();
+              indent();
+              os << "}\n";
+              break;
+            }
           }
         }
       }

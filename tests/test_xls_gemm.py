@@ -1,9 +1,9 @@
 import allo
 from allo.ir.types import int32
 
-def gemm(A: int32[32, 32], B: int32[32, 32]) -> int32[32, 32]:
-    C: int32[32, 32] = 0
-    for i, j, k in allo.grid(32, 32, 32):
+def gemm(A: int32[4, 4], B: int32[4, 4]) -> int32[4, 4]:
+    C: int32[4, 4] = 0
+    for i, j, k in allo.grid(4, 4, 4):
         C[i, j] += A[i, k] * B[k, j]
     return C
 

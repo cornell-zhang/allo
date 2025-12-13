@@ -1,8 +1,8 @@
 import allo
 from allo.ir.types import int32
 
-def mv(A: int32[32, 32], x: int32[32]) -> int32[32]:
-    y: int32[32] = 0
+def mv(A: int32[4, 4], x: int32[4]) -> int32[4]:
+    y: int32[4] = 0
     for i in allo.grid(32):
         y[i] = 0
         for j in allo.grid(32):
