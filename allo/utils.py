@@ -15,7 +15,6 @@ from ._mlir.ir import (
     F32Type,
     F64Type,
     BF16Type,
-    OpResultList,
 )
 from ._mlir.exceptions import DTypeWarning
 from ._mlir.runtime import to_numpy
@@ -31,7 +30,6 @@ from .ir.types import (
     float32,
     float64,
 )
-from .ir.utils import MockConstant
 
 np_supported_types = {
     "bf16": ml_dtypes.bfloat16,
@@ -510,12 +508,3 @@ def parse_kernel_name(name: str):
     prefix = match.group(1).rstrip("_")
     ids = tuple(int(n) for n in match.group(2).split("_") if n != "")
     return prefix, ids
-
-
-def get_mlir_op_result(op, dtype=None):
-    if isinstance(op.result, OpResultList):
-        assert len(op.result) == 1
-        return op.result[0]
-    if isinstance(op, MockConstant) and dtype is not None:
-        op.dtype = dtype
-    return op.result

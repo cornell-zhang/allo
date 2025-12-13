@@ -269,6 +269,29 @@ class Stream(AlloType):
         return f"Stream({self.dtype}[{shape}])"
 
 
+def allo_type_from_mlir_type(mlir_type):
+    """
+    Reconstruct an Allo Type from an MLIR type.
+    """
+    # index
+    if isinstance(mlir_type, IndexType):
+        return Index()
+    # integer
+    if isinstance(mlir_type, IntegerType):
+        # MLIR integer reconstructed as Int
+        return Int(bits=mlir_type.width)
+    # float
+    if isinstance(mlir_type, BF16Type):
+        return Float(16, 7)
+    if isinstance(mlir_type, F16Type):
+        return Float(16, 10)
+    if isinstance(mlir_type, F32Type):
+        return Float(32, 23)
+    if isinstance(mlir_type, F64Type):
+        return Float(64, 52)
+    raise TypeError(f"Cannot reconstruct Allo Type from MLIR type: {mlir_type}")
+
+
 # boolean type should not be used as i1!
 bool = UInt(1)
 # signed integer types
