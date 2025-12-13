@@ -17,6 +17,7 @@ soda_*
 out
 rapidjson
 project_*
+.eggs/*
 
 # Downloaded files
 *.params

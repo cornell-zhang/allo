@@ -11,7 +11,7 @@ from allo._mlir.passmanager import PassManager
 from ...utils import get_func_inputs_outputs, get_dtype_and_shape_from_type
 from .utils import allo_dtype_to_dslx_type, emit_float_defs
 from .instruction import InstructionEmitter
-from .memory import RAM_TEMPLATE, MemoryEmitter, discover_memory_bindings, build_memory_channels
+from .memory import RAM_TEMPLATE, MemoryEmitter, discover_memory_bindings, discover_memory_bindings_pe, build_memory_channels
 
 
 class DslxFuncLowererBase:
@@ -94,12 +94,15 @@ class DslxFuncLowererBase:
     return f"  config({', '.join(self.channels)}) {{ ({', '.join(self.channel_handles)}) }}"
 
   # Receive inputs with conditional guard.
-  def _recv_inputs(self, busy_guard, defaults=None, join_tokens=False):
-    defaults = defaults or []
+  def _recv_inputs(self, busy_guard, defaults=None, join_tokens=False, skip_array_inputs=False):
+    defaults, default_idx = defaults or [], 0
     lines, values, tokens = [], [], []
     for idx, ch in enumerate(self.inputs.values()):
+      if skip_array_inputs and idx < len(self.input_types) and '[' in self.input_types[idx]:
+        continue
       tok, val = self.new_tok(), self.new_tmp()
-      default = defaults[idx] if idx < len(defaults) else "s32:0"
+      default = defaults[default_idx] if default_idx < len(defaults) else "s32:0"
+      default_idx += 1
       lines.append(f"    let ({tok}, {val}) = recv_if(join(), {ch}, {busy_guard}, {default});")
       values.append(val)
       tokens.append(tok)
@@ -454,9 +457,28 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
   # Lowerer for stateful (looping) functions.
   uses_memory = False
 
-  def __init__(self, func):
-    super().__init__(func)
-    self.memory_bindings, self.memory_map = discover_memory_bindings(self.func)
+  def __init__(self, func, is_systolic = False):
+    super(DslxStatefulLowerer, self).__init__(func)
+    self.is_systolic = is_systolic
+    self.is_pe = self.is_pe()
+
+    # prepare PE channel discovery state
+    self.channel_infos = []
+    self.channel_arg_keys = []
+    self.channel_map = {}
+    self.uses_channels = False
+
+    # if this looks like a PE, discover channel candidates first so we
+    # can avoid creating MemoryBinding objects for those args
+    if self.is_pe:
+      cis, ckeys = discover_memory_bindings_pe(self.func)
+      self.channel_infos = cis
+      self.channel_arg_keys = ckeys
+      self.channel_map = {ci['key']: ci for ci in cis} if cis else {}
+      self.uses_channels = bool(cis)
+
+    self.memory_bindings, self.memory_map = discover_memory_bindings(
+        self.func, channel_arg_keys=self.channel_arg_keys if self.uses_channels else None)
     self.mem_emitter = MemoryEmitter(self)
     self.uses_memory = any(b.needs_read or b.needs_write for b in self.memory_bindings)
     self.loop = None
@@ -468,6 +490,13 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     self.loop_upper_bounds = []
     self.return_state_idx = 0
     self._analyze()
+
+  def is_pe(self) -> bool:
+    name = getattr(self.func, "name", None)
+    if not name:
+      return False
+    ln = name.value.lower()
+    return ("pe_" in ln) or ("_pe" in ln) or (ln == "pe")
 
   # Analyze function structure to find loops and state variables.
   def _analyze(self):
@@ -482,7 +511,8 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
         self._collect_nested_loops_from_block(list(op.after.blocks)[0], op)
         break
 
-    memrefs = {op.result for op in block.operations if isinstance(op, memref_d.AllocOp) and op.result != self.loop}
+    ordered_allocs = self._collect_ordered_allocs_from_block(block)
+    memrefs = {m for m in ordered_allocs if m != self.loop}
     if self.loop:
       if self.loop_type == 'for':
         memrefs |= self._collect_loop_allocs(self.loop)
@@ -494,12 +524,18 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     else:
       used = set()
 
-    for m in used:
+    for m in ordered_allocs:
+      if m not in used:
+        continue
       if "memref" in str(getattr(m, "type", "")) and str(m) not in self.memory_map:
         mt = MemRefType(m.type)
-        dtype, _ = get_dtype_and_shape_from_type(mt.element_type)
-        self.state.append((m, allo_dtype_to_dslx_type(dtype), self._get_init(m)))
-
+        dtype, shape = get_dtype_and_shape_from_type(mt)
+        if self.is_systolic and shape:
+          if len(shape) == 2:
+            dslx_type = allo_dtype_to_dslx_type(dtype, shape)
+            self.state.append((m, dslx_type, self._zero_literal_from_dslx_type(dslx_type)))
+        else:
+          self.state.append((m, allo_dtype_to_dslx_type(dtype), self._get_init(m)))
     self._find_return_state_idx(block)
 
   # Find which state variable is returned by the function.
@@ -568,6 +604,30 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
           allocs |= self._collect_allocs_from_block(self._get_region_block(op, *attr))
     return allocs
 
+  def _collect_ordered_allocs_from_block(self, block):
+    if not block:
+      return []
+    allocs = []
+    seen = set()
+
+    def scan(b):
+      for op in b.operations:
+        if isinstance(op, memref_d.AllocOp):
+          key = str(op.result)
+          if key not in seen:
+            seen.add(key)
+            allocs.append(op.result)
+        if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+          scan(self._loop_body(op))
+        elif isinstance(op, (scf_d.IfOp, affine_d.AffineIfOp)):
+          for attr in [('then_block', 'thenRegion'), ('else_block', 'elseRegion')]:
+            blk = self._get_region_block(op, *attr)
+            if blk:
+              scan(blk)
+
+    scan(block)
+    return allocs
+
   def _collect_memrefs(self, block, memrefs):
     used = set()
     for op in block.operations:
@@ -580,6 +640,22 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
           if blk:
             used |= self._collect_memrefs(blk, memrefs)
     return used
+
+  def _zero_literal_from_dslx_type(self, dslx_type: str) -> str:
+    if '[' not in dslx_type:
+      return f"{dslx_type}:0"
+    base = dslx_type.split('[')[0]
+    dims = list(reversed([int(x[:-1]) for x in dslx_type.split('[')[1:]]))
+
+    leaf = f"{base}:0"
+
+    def nest(dim_list):
+      if len(dim_list) == 1:
+        return '[' + ', '.join([leaf] * dim_list[0]) + ']'
+      inner = nest(dim_list[1:])
+      return '[' + ', '.join([inner] * dim_list[0]) + ']'
+
+    return nest(dims)
 
   # Get initial value for a state memref from stores before the loop.
   def _get_init(self, memref):
@@ -712,6 +788,16 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
   def _handle_affine_load(self, op, lines, temp_memrefs, state_memrefs):
     mkey = str(op.operands[0])
+    # if memref was converted to a simple channel (PE path)
+    ci = self.channel_map.get(mkey)
+    if ci and ci.get('chan_dir') == 'in':
+      chan = ci['channel_name']
+      tok = self.new_tok()
+      val = self.new_tmp()
+      lines.append(f"    let ({tok}, {val}) = recv(join(), {chan});")
+      self.register(op.result, val)
+      self.track_token(tok)
+      return True
     binding = self.memory_map.get(mkey)
     if binding and binding.needs_read:
       lines.extend(self.mem_emitter.emit_read(binding, op))
@@ -726,6 +812,18 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
 
   def _handle_affine_store(self, op, lines, temp_memrefs, state_memrefs, updated, predicate=None):
     val, mkey = self.lookup(op.operands[0]), str(op.operands[1])
+    # if memref was converted to a simple channel (PE path)
+    ci = self.channel_map.get(mkey)
+    if ci and ci.get('chan_dir') == 'out':
+      chan = ci['channel_name']
+      token_expr = self._consume_tokens("join()", lines)
+      tok = self.new_tok()
+      if predicate:
+        lines.append(f"    let {tok} = send_if({token_expr}, {chan}, {predicate}, {val});")
+      else:
+        lines.append(f"    let {tok} = send({token_expr}, {chan}, {val});")
+      self.track_token(tok)
+      return True
     binding = self.memory_map.get(mkey)
     if binding and binding.needs_write:
       lines.extend(self.mem_emitter.emit_write(binding, op, predicate))
@@ -785,15 +883,18 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     self.inputs, self.outputs = {}, {}
     channels, handles = [], []
 
-    for idx, (arg, (dtype, shape)) in enumerate(zip(func_args, inputs)):
+    scalar_idx = 0
+    for arg, (dtype, shape) in zip(func_args, inputs):
       if shape:
         continue
       dslx_type = allo_dtype_to_dslx_type(dtype)
       self.input_types.append(dslx_type)
-      self.inputs[idx] = f"in{idx}"
+      name = f"in{scalar_idx}"
+      self.inputs[scalar_idx] = name
       self.scalar_arg_order.append(arg)
-      channels.append(f"in{idx}: chan<{dslx_type}> in")
-      handles.append(f"in{idx}")
+      channels.append(f"{name}: chan<{dslx_type}> in")
+      handles.append(name)
+      scalar_idx += 1
 
     for idx, (dtype, shape) in enumerate(outputs):
       if shape:
@@ -803,14 +904,21 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       channels.append(f"out{idx}: chan<{dslx_type}> out")
       handles.append(f"out{idx}")
 
+    # Data channels for PE proc
+    if getattr(self, 'uses_channels', False):
+      for ci in self.channel_infos:
+        dir_decl = 'in' if ci.get('chan_dir') == 'in' else 'out'
+        channels.append(f"{ci['channel_name']}: chan<{ci['chan_dslx_type']}> {dir_decl}")
+        handles.append(ci['channel_name'])
+
     mem_channels, mem_handles, needs_control = build_memory_channels(self.memory_bindings)
     channels.extend(mem_channels)
     handles.extend(mem_handles)
     self.control_channels = ("go", "done") if needs_control else None
     self.channel_handles = handles
     return channels
-
-  def _emit_init(self):
+  
+  def _init_tuple_type(self):
     fields = []
     for _, _, init in self.state:
       fields.append("0" if init and init.startswith("__arg") else (init or "0"))
@@ -822,6 +930,10 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
       else:
         fields.append("0")
     fields.append("false")
+    return fields
+  
+  def _emit_init(self):
+    fields = self._init_tuple_type()  
     return f"  init {{ ({', '.join(fields)}) }}"
 
   def _build_loop_state_type(self, num_loops):
@@ -988,6 +1100,387 @@ class DslxStatefulLowerer(DslxFuncLowererBase):
     return "\n".join(lines)
 
 
+class DslxSystolicLowerer(DslxStatefulLowerer):
+  # Lowerer for systolic arrays.
+  def __init__(self, func):
+    super(DslxSystolicLowerer, self).__init__(func, True)
+    self.pe_dims = None
+    self.systolic_loops = []
+    self._analyze_systolic()
+    if not self.pe_dims or not self.systolic_loops:
+      raise RuntimeError("systolic lowerer requires detectable PE dims and systolic loops")
+
+    # Register only mode (no memory)
+    self.memory_bindings = []
+    self.memory_map = {}
+    self.uses_memory = False
+    return
+
+  def _analyze_systolic(self):
+    self.systolic_loops = []
+    self.pe_dims = None
+
+    # Scan for PE
+    def scan_block(block, loop_stack):
+      for op in block.operations:
+        if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+          ret = scan_block(self._loop_body(op), loop_stack + [op])
+          if ret:
+            return True
+          continue
+
+        for region in op.regions:
+          for blk in region.blocks:
+            if scan_block(blk, loop_stack):
+              return True
+
+        asm = op.operation.get_asm() if hasattr(op.operation, 'get_asm') else str(op.operation)
+        if 'func.call' in asm:
+          m = re.search(r'@([A-Za-z0-9_]+)', asm)
+          if not m:
+            continue
+          callee = m.group(1)
+          if 'pe' in callee.lower():
+            numeric_ubs = []
+            for lop in loop_stack:
+              ub = self._extract_loop_upper_bound(lop)
+              if ub is not None:
+                mm = re.match(r's32:([0-9]+)', ub)
+                if mm:
+                  numeric_ubs.append(int(mm.group(1)))
+
+            if len(numeric_ubs) > 2:
+              raise NotImplementedError("systolic array with >=2D not supported yet")
+            elif len(numeric_ubs) == 1:
+              self.pe_dims = (1, numeric_ubs[0])
+              self.pe_callee = callee
+            elif len(numeric_ubs) == 2:
+              self.pe_dims = (numeric_ubs[-2], numeric_ubs[-1])
+              self.pe_callee = callee
+            else:
+              raise NotImplementedError(f"cannot determine PE array dimensions for callee {callee}")
+            return True
+      return False
+
+    # classify top-level loops (PE vs temporal)
+    top_block = self.func.body.blocks[0]
+    for op in top_block.operations:
+      if isinstance(op, (scf_d.ForOp, affine_d.AffineForOp)):
+        contains_pe = scan_block(self._loop_body(op), [op])
+        ub_str = self._extract_loop_upper_bound(op)
+        kind = 'spawn_pe' if contains_pe else 'temporal'
+        self.systolic_loops.append({'op': op, 'kind': kind, 'ub_str': ub_str})
+    return
+
+  # TODO use unroll helper instead of hard coded
+  def _unroll_for(self, loop_op, body_emitter):
+    ub_str = self._extract_loop_upper_bound(loop_op)
+    if ub_str is None:
+      raise NotImplementedError("Cannot unroll loop with dynamic upper bound")
+    m = re.match(r's32:([0-9]+)', ub_str)
+    if not m:
+      raise NotImplementedError("Only literal integer loop bounds supported for unrolling")
+    ub = int(m.group(1))
+
+    lines = []
+    for i in range(ub):
+      lines.extend(body_emitter(i))
+    return lines
+
+  def _systolic_config_body(self):
+    rows, cols = self.pe_dims
+    bt = self.input_types[0] if getattr(self, 'input_types', None) and len(self.input_types) > 0 else "s32"
+
+    if '[' in bt:
+      bt = bt.split('[')[0]
+
+    lines = []
+
+    # Create internal channels
+    lines.append(f"    let (to_hor, from_hor) = chan<{bt}, u32:1>[{cols + 1}][{rows}](\"hor_chans\");")
+    lines.append(f"    let (to_vert, from_vert) = chan<{bt}, u32:1>[{cols}][{rows + 1}](\"vert_chans\");")
+    lines.append(f"    let (result_chans_out, result_chans_in) = chan<{bt}, u32:1>[{cols}][{rows}](\"result_chans\");")
+    
+    # Spawn PEs
+    lines.append(f"    unroll_for! (row, _): (u32, ()) in u32:0..u32:{rows} {{")
+    lines.append(f"      unroll_for! (col, _): (u32, ()) in u32:0..u32:{cols} {{")
+    pe_name = getattr(self, 'pe_callee', 'pe')
+    lines.append(
+      f"        spawn {pe_name}(" +
+      f"result_chans_out[row][col],  // result_out\n" +
+      "        " + f"from_hor[row][col],          // a_in\n" +
+      "        " + f"from_vert[row][col],          // b_in\n" +
+      "        " + f"to_hor[row][col + u32:1],    // a_out\n" +
+      "        " + f"to_vert[row + u32:1][col]     // b_out\n" +
+      "        );"
+    )
+    lines.append("      }(());")
+    lines.append("    }(());")
+    return "\n".join(lines)
+
+
+  def emit_proc(self):
+    proc_name = self.func.name.value
+    channels = self._emit_channels()
+    systolic_body = self._systolic_config_body() if hasattr(self, '_systolic_config_body') else None
+    if systolic_body:
+      extern_chans = getattr(self, 'external_channels', self.channels)
+      config_section = (
+          f"  config({', '.join(extern_chans)}) {{\n"
+          f"{systolic_body}\n"
+          f"    ({', '.join(self.channel_handles)})\n"
+          f"  }}"
+      )
+      cfg_text = config_section
+    else:
+      cfg_text = self._emit_config()
+
+    if getattr(self, 'loops', None):
+      self.loops = self.loops[:1]
+      self.loop_preambles = self.loop_preambles[:1]
+      self.loop_postambles = self.loop_postambles[:1]
+      self.loop_upper_bounds = self.loop_upper_bounds[:1]
+
+    init_section = self._emit_init()
+    next_section = self._emit_next()
+
+    func = f"pub proc {proc_name} {{\n"
+    func += channels + "\n\n"
+    func += cfg_text + "\n\n"
+    func += init_section + "\n\n"
+    func += next_section + "\n"
+    func += "}"
+    return func
+
+  def _build_channel_decls(self):
+    inputs, outputs = get_func_inputs_outputs(self.func)
+    func_args = list(self.func.arguments)
+    assert len(inputs) == len(func_args), "func arg mismatch"
+
+    self.input_types = []
+    self.scalar_arg_order = []
+    channels = []
+    self.inputs = {}
+    self.outputs = {}
+    handles = []
+
+    for idx, (arg, (dtype, shape)) in enumerate(zip(func_args, inputs)):
+      dslx_type = allo_dtype_to_dslx_type(dtype, shape)
+      self.input_types.append(dslx_type)
+      arg_name = None
+      try:
+        arg_name = getattr(arg, 'name', None)
+      except Exception:
+        arg_name = None
+      if not arg_name:
+        try:
+          arg_name = f"arg{arg.arg_number}"
+        except Exception:
+          arg_name = f"in{idx}"
+      name = f"{arg_name}"
+      name = re.sub(r"[^A-Za-z0-9_]+", "_", name)
+      self.inputs[idx] = name
+      self.scalar_arg_order.append(arg)
+      channels.append(f"{name}: chan<{dslx_type}> in")
+      handles.append(name)
+
+    for idx, (dtype, shape) in enumerate(outputs):
+      dslx_type = allo_dtype_to_dslx_type(dtype, shape)
+      name = f"out{idx}"
+      self.outputs[idx] = name
+      channels.append(f"{name}: chan<{dslx_type}> out")
+      handles.append(name)
+
+    if getattr(self, 'uses_channels', False):
+      for ci in self.channel_infos:
+        dir_decl = 'in' if ci.get('chan_dir') == 'in' else 'out'
+        channels.append(f"{ci['channel_name']}: chan<{ci['chan_dslx_type']}> {dir_decl}")
+        handles.append(ci['channel_name'])
+
+    self.external_channels = channels[:]
+    self.external_channel_handles = handles[:]
+
+    if getattr(self, 'pe_dims', None):
+      rows, cols = self.pe_dims
+      bt = self.input_types[0] if self.input_types else "s32"
+      if '[' in bt:
+        bt = bt.split('[')[0]
+      channels.append(f"from_hor: chan<{bt}>[{rows + 1}][{cols}] in")
+      channels.append(f"to_hor: chan<{bt}>[{rows + 1}][{cols}] out")
+      handles.extend(["from_hor", "to_hor"])
+      # vertical channels
+      channels.append(f"from_vert: chan<{bt}>[{rows}][{cols + 1}] in")
+      channels.append(f"to_vert: chan<{bt}>[{rows}][{cols + 1}] out")
+      handles.extend(["from_vert", "to_vert"])
+      # result inbound channels
+      channels.append(f"result_chans_in: chan<{bt}>[{rows}][{cols}] in")
+      handles.append("result_chans_in")
+
+    self.channel_handles = handles
+    self.control_channels = None
+    return channels
+
+  def _emit_next(self):
+    n = len(self.state)
+    acc_names = [f"acc{i}" for i in range(n)]
+    acc_types = [t for _, t, _ in self.state]
+    if n == 0 and getattr(self, 'input_types', None) and len(self.input_types) >= 2:
+      acc_types = [self.input_types[0], self.input_types[1]]
+      n = len(acc_types)
+      acc_names = [f"acc{i}" for i in range(n)]
+    num_loops = 1
+
+    if self.loop_type == 'while':
+      raise NotImplementedError("while loops not supported in systolic lowerer")
+
+    loop_types = []
+    loop_state_vars = []
+    for i in range(num_loops):
+      loop_types.append("s32")
+      loop_state_vars.append(f"index{i}")
+      if self._loop_bound_is_dynamic(i):
+        loop_types.append("s32")
+        loop_state_vars.append(f"ub{i}")
+    state_type = "(" + ", ".join(acc_types + loop_types + ["bool"]) + ")"
+    state_vars = acc_names + loop_state_vars + ["busy"]
+
+    self.pending_tokens = []
+    lines = [f"  next(state: {state_type}) {{"]
+    lines.append(f"    let ({', '.join(state_vars)}) = state;")
+
+    if self.control_channels:
+      go_tok = self.new_tok()
+      go_val = self.new_tmp()
+      start_flag = self.new_tmp()
+      lines.append(f"    let ({go_tok}, {go_val}) = recv_if(join(), go, !busy, bool:0);")
+      self.track_token(go_tok)
+      lines.append(f"    let {start_flag} = !busy && ({go_val} == bool:1);")
+      busy_guard_expr = start_flag
+    else:
+      busy_guard_expr = "!busy"
+
+    recv_defaults = [f"ub{i}" for i in range(num_loops) if self._loop_bound_is_dynamic(i)]
+    recv_lines, scalar_inputs, base_tok = self._recv_inputs(busy_guard_expr, recv_defaults, skip_array_inputs=True)
+    lines.extend(recv_lines)
+
+    ubs = []
+    input_idx = 0
+    for i in range(num_loops):
+      if self._loop_bound_is_dynamic(i):
+        if input_idx < len(scalar_inputs):
+          ubs.append(scalar_inputs[input_idx])
+        else:
+          ubs.append(f"ub{i}")
+        input_idx += 1
+      else:
+        literal = self.loop_upper_bounds[i] if i < len(self.loop_upper_bounds) else None
+        ubs.append(literal or "s32:0")
+
+    for i, loop_op in enumerate(self.loops):
+      self.register(self._loop_induction_var(loop_op), f"index{i}")
+    for i, (m, _, _) in enumerate(self.state):
+      self.register(m, acc_names[i])
+
+    k_var = "index0" if num_loops > 0 else "index0"
+
+    c_chan = list(self.outputs.values())[0] if self.outputs else "c_out"
+
+    # Systolic sends: send A to left, B to top
+    rows, cols = self.pe_dims
+    in0 = self.inputs.get(0, 'in0')
+    in1 = self.inputs.get(1, 'in1')
+    lines.append(f"    let (tok0, a_mat2, b_mat2) = if {k_var} == s32:0 {{")
+    lines.append(f"      let (a_tok, a_recv) = recv(token(), {in0});")
+    lines.append(f"      let (b_tok, b_recv) = recv(token(), {in1});")
+    lines.append(f"      let tok = join(a_tok, b_tok);")
+    lines.append(f"      (tok, a_recv, b_recv)")
+    lines.append(f"    }} else {{")
+    acc0 = acc_names[0] if len(acc_names) > 0 else 'acc0'
+    acc1 = acc_names[1] if len(acc_names) > 1 else 'acc1'
+    lines.append(f"      (token(), {acc0}, {acc1})")
+    lines.append(f"    }};")
+
+    lines.append("    // Send values of A to left side")
+    lines.append("    let tok1 = {")
+    lines.append(f"      let t = tok0;")
+    lines.append(f"      if {k_var} < {ubs[0] if ubs else f's32:{rows}'} {{")
+    lines.append(f"        unroll_for!(row,_):(u32, ()) in u32:0..u32:{rows} {{")
+    lines.append(f"          let t = send(t, to_hor[row][0], a_mat2[row][({k_var} as u32)]);")
+    lines.append("        }(());")
+    lines.append("      };")
+    lines.append("      t")
+    lines.append("    };\n")
+
+    lines.append("    // Send values of B to top side")
+    lines.append("    let tok2 = {")
+    lines.append(f"      let t = tok0;")
+    lines.append(f"      if {k_var} < {ubs[0] if ubs else f's32:{cols}'} {{")
+    lines.append(f"        unroll_for!(col,_):(u32, ()) in u32:0..u32:{cols} {{")
+    lines.append(f"          let t = send(t, to_vert[0][col], b_mat2[({k_var} as u32)][col]);")
+    lines.append("        }(());")
+    lines.append("      };")
+    lines.append("      t")
+    lines.append("    };\n")
+
+    # Drop values from edges
+    lines.append("    // Drop values from right side")
+    lines.append(f"    unroll_for!(row,_):(u32, ()) in u32:0..u32:{rows} {{")
+    lines.append(f"      recv_non_blocking(token(), from_hor[row][{cols}], s32:0);")
+    lines.append("    }(());\n")
+
+    lines.append("    // Drop values from bottom side")
+    lines.append(f"    unroll_for!(col,_):(u32, ()) in u32:0..u32:{cols}{{")
+    lines.append(f"      recv_non_blocking(token(), from_vert[{rows}][col], s32:0);")
+    lines.append("    }(());\n")
+
+    lines.append("    let tok3 = join(tok1, tok2);")
+
+    # Collect results on final iteration
+    final_k = f"s32:{rows + cols - 1}"
+    lines.append(f"    if {k_var} == {final_k} {{")
+    recv_tok = "tok3"
+    for r in range(rows):
+      for c in range(cols):
+        tname = f"t{r}{c}"
+        cname = f"c{r}{c}"
+        lines.append(f"      let ({tname}, {cname}) = recv({recv_tok}, result_chans_in[{r}][{c}]);")
+        recv_tok = tname
+    lines.append(f"      let tok_final = {recv_tok};")
+    rows_list = []
+    for r in range(rows):
+      elems = ", ".join(f"{f'c{r}{c}'}" for c in range(cols))
+      rows_list.append(f"[{elems}]")
+    mat_text = "[" + ", ".join(rows_list) + "]"
+    lines.append(f"      let c: s32[{rows}][{cols}] = {mat_text};")
+    lines.append(f"      let tok_send = send(tok_final, {c_chan}, c);\n")
+
+    if self.control_channels:
+      done_send_tmp = self.new_tok()
+      lines.append(f"      let {done_send_tmp} = send(tok_send, done, bool:1);")
+    lines.append(f"      ({", ".join(self._init_tuple_type())})")
+    lines.append("    } else {")
+
+    next_indices = []
+    for i in range(num_loops):
+      if i == (num_loops - 1):
+        next_indices.append(f"index{i} + s32:1")
+      else:
+        next_indices.append(f"index{i}")
+      if self._loop_bound_is_dynamic(i):
+        next_indices.append(f"ub{i}")
+
+    a_val = "a_mat2" if True else acc_names[0]
+    b_val = "b_mat2" if True else acc_names[1]
+    next_state_parts = [a_val, b_val] if len(acc_names) >= 2 else acc_names
+    next_state_parts.extend(next_indices)
+    next_state_parts.append("true")
+    lines.append(f"      ({', '.join(next_state_parts)})")
+    lines.append("    }")
+
+    lines.append("  }")
+    return "\n".join(lines)
+
+
 class DslxModuleLowerer:
   # Lowerer for an entire MLIR module containing multiple functions.
   def __init__(self, module: Module, top_func_name: str):
@@ -995,8 +1488,11 @@ class DslxModuleLowerer:
     self.func_lowerers = []
     for op in module.body.operations:
       if isinstance(op, func_d.FuncOp):
+        # Use systolic lowerer only if systolic module
+        if "systolic" in op.name.value.lower():
+          self.func_lowerers.append(DslxSystolicLowerer(op))
         # Use stateful lowerer only if there are non-unrolled loops
-        if _has_non_unrolled_loops(op):
+        elif _has_non_unrolled_loops(op):
           self.func_lowerers.append(DslxStatefulLowerer(op))
         else:
           self.func_lowerers.append(DslxCombLowerer(op))

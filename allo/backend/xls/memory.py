@@ -143,7 +143,7 @@ def _create_memory_binding(value, dtype, shape, idx, memory_map, arg_index=None)
 
 
 # Discover all memory bindings (memref args and returns) in a function.
-def discover_memory_bindings(func):
+def discover_memory_bindings(func, channel_arg_keys={}):
   func_args = [
       arg for arg in func.arguments
       if "!allo.stream" not in str(arg.type)
@@ -153,6 +153,8 @@ def discover_memory_bindings(func):
   idx = 0
   for arg_index, arg in enumerate(func_args):
     if not MemRefType.isinstance(arg.type):
+      continue
+    if channel_arg_keys and str(arg) in channel_arg_keys:
       continue
     mt = MemRefType(arg.type)
     shape = tuple(mt.shape)
@@ -213,6 +215,97 @@ def _discover_return_memrefs(func, bindings, memory_map, start_idx):
           idx += 1
         return idx
   return idx
+
+# Discover memory bindings (PE specific), uses channels for streamed data
+def discover_memory_bindings_pe(func):
+  reads, writes, index_patterns = _collect_memref_accesses(func)
+
+  func_args = [arg for arg in func.arguments if "!allo.stream" not in str(arg.type)]
+  channel_size = None
+  memref_args = []
+  for arg in func_args:
+    if not MemRefType.isinstance(arg.type):
+      continue
+    mt = MemRefType(arg.type)
+    shape = tuple(mt.shape)
+    if not shape:
+      continue
+    if any(dim == -1 for dim in shape):
+      continue
+    memref_args.append((arg, shape))
+    if channel_size is None and len(shape) > 0:
+      channel_size = shape[0]
+
+  if channel_size is None:
+    raise ValueError("no channels found for PE element")
+
+  channel_infos = []
+  channel_arg_keys = []
+  for arg, shape in memref_args:
+    if shape[0] != channel_size:  # not a channel
+      continue
+    key = str(arg)
+    seen_reads = key in reads
+    seen_writes = key in writes
+    # channels must be read-only or write-only
+    if seen_reads and seen_writes:
+      continue
+    
+    chan_dir = 'in' if seen_reads and not seen_writes else ('out' if seen_writes and not seen_reads else None)
+    if chan_dir is None:
+      continue
+
+    pats = index_patterns.get(key, [])
+    if not pats:
+      continue
+    pat_lens = {len(p) for p in pats}
+    if len(pat_lens) != 1:
+      continue
+    plen = pat_lens.pop()
+    if plen == 0:
+      continue
+    prefixes = {p[:-1] for p in pats}
+    if len(prefixes) != 1:
+      continue
+
+    ci = {
+      'key': key,
+      'channel_name': f"mem{len(channel_arg_keys)}__chan",
+      'chan_dir': chan_dir,
+      'chan_dslx_type': allo_dtype_to_dslx_type(get_dtype_and_shape_from_type(MemRefType(arg.type).element_type)[0]),
+      'index_patterns': pats,
+    }
+    channel_infos.append(ci)
+    channel_arg_keys.append(key)
+
+  return channel_infos, channel_arg_keys
+
+# Analyze memref accesses to collect read/write and index patterns
+def _collect_memref_accesses(func):
+  reads = set()
+  writes = set()
+  index_patterns = {}
+
+  def visit_block(block):
+    for op in block.operations:
+      if isinstance(op, affine_d.AffineLoadOp):
+        key = str(op.operands[0])
+        reads.add(key)
+        idxs = tuple(str(o) for o in op.operands[1:])
+        index_patterns.setdefault(key, []).append(idxs)
+      elif isinstance(op, affine_d.AffineStoreOp):
+        key = str(op.operands[1])
+        writes.add(key)
+        idxs = tuple(str(o) for o in op.operands[2:])
+        index_patterns.setdefault(key, []).append(idxs)
+      for region in op.regions:
+        for blk in region.blocks:
+          visit_block(blk)
+
+  for block in func.body.blocks:
+    visit_block(block)
+
+  return reads, writes, index_patterns
 
 
 # Emits DSLX code for memory read/write operations.

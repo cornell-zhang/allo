@@ -261,4 +261,3 @@ class InstructionEmitter:
       out_chan = self.p.outputs[idx]
       lines.append(f"    send({token}, {out_chan}, {src});")
     return lines
-
